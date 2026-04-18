@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { WorkspaceFolder } from '../hooks/useExtensionMessages.js';
+import { isBrowserRuntime } from '../runtime.js';
 import { transport } from '../transport/index.js';
 import { Button } from './ui/Button.js';
 import { Dropdown, DropdownItem } from './ui/Dropdown.js';
@@ -82,40 +83,43 @@ export function BottomToolbar({
 
   return (
     <div className="absolute bottom-10 left-10 z-20 flex items-center gap-4 pixel-panel p-4">
-      <div
-        ref={folderPickerRef}
-        className="relative"
-        onMouseEnter={handleAgentHover}
-        onMouseLeave={handleAgentLeave}
-      >
-        <Button
-          variant="accent"
-          onClick={handleAgentClick}
-          className={
-            isFolderPickerOpen || isBypassMenuOpen
-              ? 'bg-accent-bright'
-              : 'bg-accent hover:bg-accent-bright'
-          }
+      {/* Hide + Agent in standalone browser mode (no terminal to interact with) */}
+      {!isBrowserRuntime && (
+        <div
+          ref={folderPickerRef}
+          className="relative"
+          onMouseEnter={handleAgentHover}
+          onMouseLeave={handleAgentLeave}
         >
-          + Agent
-        </Button>
-        <Dropdown isOpen={isBypassMenuOpen}>
-          <DropdownItem onClick={() => handleBypassSelect(true)}>
-            Skip permissions mode <span className="text-2xs text-warning">⚠</span>
-          </DropdownItem>
-        </Dropdown>
-        <Dropdown isOpen={isFolderPickerOpen} className="min-w-128">
-          {workspaceFolders.map((folder) => (
-            <DropdownItem
-              key={folder.path}
-              onClick={() => handleFolderSelect(folder)}
-              className="text-base"
-            >
-              {folder.name}
+          <Button
+            variant="accent"
+            onClick={handleAgentClick}
+            className={
+              isFolderPickerOpen || isBypassMenuOpen
+                ? 'bg-accent-bright'
+                : 'bg-accent hover:bg-accent-bright'
+            }
+          >
+            + Agent
+          </Button>
+          <Dropdown isOpen={isBypassMenuOpen}>
+            <DropdownItem onClick={() => handleBypassSelect(true)}>
+              Skip permissions mode <span className="text-2xs text-warning">⚠</span>
             </DropdownItem>
-          ))}
-        </Dropdown>
-      </div>
+          </Dropdown>
+          <Dropdown isOpen={isFolderPickerOpen} className="min-w-128">
+            {workspaceFolders.map((folder) => (
+              <DropdownItem
+                key={folder.path}
+                onClick={() => handleFolderSelect(folder)}
+                className="text-base"
+              >
+                {folder.name}
+              </DropdownItem>
+            ))}
+          </Dropdown>
+        </div>
+      )}
       <Button
         variant={isEditMode ? 'active' : 'default'}
         onClick={onToggleEditMode}

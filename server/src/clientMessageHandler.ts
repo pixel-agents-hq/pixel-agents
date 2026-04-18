@@ -58,7 +58,7 @@ export function handleClientMessage(
       break;
 
     default:
-      // launchAgent, focusAgent, closeAgent, exportLayout, importLayout
+      // focusAgent, exportLayout, importLayout
       // require IDE-specific handling (not yet implemented for standalone)
       break;
   }

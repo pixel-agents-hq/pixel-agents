@@ -10,6 +10,7 @@
 
 import * as path from 'path';
 
+import { AgentRuntime } from './agentRuntime.js';
 import { AgentStateStore } from './agentStateStore.js';
 import {
   loadCharacterSprites,
@@ -19,6 +20,7 @@ import {
   loadWallTiles,
 } from './assetLoader.js';
 import type { AssetCache } from './clientMessageHandler.js';
+import { claudeProvider, copyHookScript } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -74,11 +76,12 @@ async function main(): Promise<void> {
     `[Pixel Agents] Assets loaded: ${charCount} characters, ${furnitureCount} furniture items`,
   );
 
-  // ── Start server ──
+  // ── Create store + runtime (runtime needs port/token, deferred until server starts) ──
   const store = new AgentStateStore();
   const server = new PixelAgentsServer();
 
   try {
+    // Start server first to get port + token
     const config = await server.start({
       store,
       embedded: false,
@@ -88,21 +91,50 @@ async function main(): Promise<void> {
       assetCache,
     });
 
+    // Create shared runtime (same class used by VS Code adapter)
+    const runtime = new AgentRuntime(store, claudeProvider);
+
+    // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
+    server.onHookEvent((providerId, event) => {
+      runtime.handleHookEvent(providerId, event);
+    });
+
+    // Install hooks so Claude CLI knows where to POST events
+    try {
+      await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+      copyHookScript(distRoot);
+      console.log('[Pixel Agents] Hooks installed');
+    } catch (err) {
+      console.error('[Pixel Agents] Failed to install hooks:', err);
+    }
+
+    // Start scanning for external sessions (Claude running in user's terminal)
+    const cwd = process.cwd();
+    const dirs = claudeProvider.getSessionDirs?.(cwd);
+    if (dirs && dirs[0]) {
+      const projectDir = dirs[0];
+      console.log(`[Pixel Agents] Scanning project dir: ${projectDir}`);
+      runtime.startProjectScan(projectDir);
+      runtime.startExternalScanning(projectDir);
+      runtime.startStaleCheck();
+    }
+
     console.log(`\n  Pixel Agents server running at http://${args.host}:${config.port}\n`);
+
+    // ── Graceful shutdown ──
+    function shutdown(): void {
+      console.log('\nShutting down...');
+      runtime.dispose();
+      server.stop();
+      process.exit(0);
+    }
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);
   }
-
-  // ── Graceful shutdown ──
-  function shutdown(): void {
-    console.log('\nShutting down...');
-    server.stop();
-    process.exit(0);
-  }
-
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
 }
 
 main().catch((err) => {
