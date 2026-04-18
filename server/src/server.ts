@@ -1,15 +1,12 @@
 import * as crypto from 'crypto';
+import type { FastifyInstance } from 'fastify';
 import * as fs from 'fs';
-import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 
-import {
-  HOOK_API_PREFIX,
-  MAX_HOOK_BODY_SIZE,
-  SERVER_JSON_DIR,
-  SERVER_JSON_NAME,
-} from './constants.js';
+import type { AgentStateStore } from './agentStateStore.js';
+import { SERVER_JSON_DIR, SERVER_JSON_NAME } from './constants.js';
+import { createHttpServer } from './httpServer.js';
 
 /** Discovery file written to ~/.pixel-agents/server.json so hook scripts can find the server. */
 export interface ServerConfig {
@@ -27,24 +24,23 @@ export interface ServerConfig {
 type HookEventCallback = (providerId: string, event: Record<string, unknown>) => void;
 
 /**
- * HTTP server that receives hook events from CLI tool hook scripts.
+ * Pixel Agents server: receives hook events, broadcasts state via WebSocket,
+ * and optionally serves the SPA in standalone mode.
  *
- * Routes:
+ * Routes (via Fastify in httpServer.ts):
  * - `POST /api/hooks/:providerId` -- hook event (auth required, 64KB body limit)
  * - `GET /api/health` -- health check (no auth)
+ * - `GET /ws` -- WebSocket for real-time agent state (auth required)
  *
  * Discovery: writes `~/.pixel-agents/server.json` with port, PID, and auth token.
  * Multi-window: second VS Code window detects running server via server.json and
  * reuses it (does not start a second server).
- *
- * This will becomes the standalone server with added WebSocket and SPA serving.
  */
 export class PixelAgentsServer {
-  private server: http.Server | null = null;
+  private app: FastifyInstance | null = null;
   private config: ServerConfig | null = null;
   private ownsServer = false;
   private callback: HookEventCallback | null = null;
-  private startTime = Date.now();
 
   /** Register a callback for incoming hook events from any provider. */
   onHookEvent(callback: HookEventCallback): void {
@@ -52,15 +48,19 @@ export class PixelAgentsServer {
   }
 
   /**
-   * Start the HTTP server. If another instance is already running (detected via
+   * Start the server. If another instance is already running (detected via
    * server.json PID check), reuses that server's config without starting a new one.
-   * @returns The server config (port, token) for hook script discovery.
    */
-  async start(): Promise<ServerConfig> {
+  async start(options?: {
+    store?: AgentStateStore;
+    embedded?: boolean;
+    host?: string;
+    port?: number;
+    staticDir?: string;
+  }): Promise<ServerConfig> {
     // Check if another instance already has a server running
     const existing = this.readServerJson();
     if (existing && isProcessRunning(existing.pid)) {
-      // Another VS Code window owns the server, reuse its config
       this.config = existing;
       this.ownsServer = false;
       console.log(
@@ -71,48 +71,38 @@ export class PixelAgentsServer {
 
     // Start our own server
     const token = crypto.randomUUID();
-    this.startTime = Date.now();
+    const store = options?.store;
 
-    return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
-        this.handleRequest(req, res);
-      });
-
-      this.server.on('error', reject);
-      this.server.setTimeout(5000);
-
-      this.server.listen(0, '127.0.0.1', () => {
-        const addr = this.server?.address();
-        if (addr && typeof addr === 'object') {
-          this.config = {
-            port: addr.port,
-            pid: process.pid,
-            token,
-            startedAt: this.startTime,
-          };
-          this.ownsServer = true;
-          this.writeServerJson(this.config);
-          // Replace startup error handler with runtime error handler
-          this.server!.removeListener('error', reject);
-          this.server!.on('error', (err) => {
-            console.error(`[Pixel Agents] Server: error: ${err}`);
-          });
-          console.log(`[Pixel Agents] Server: listening on 127.0.0.1:${addr.port}`);
-          resolve(this.config);
-        } else {
-          reject(new Error('Failed to get server address'));
-        }
-      });
+    const { app, port } = await createHttpServer({
+      embedded: options?.embedded ?? true,
+      host: options?.host,
+      port: options?.port,
+      token,
+      store: store!,
+      staticDir: options?.staticDir,
+      onHookEvent: (providerId, event) => this.callback?.(providerId, event),
     });
+
+    this.app = app;
+    this.config = {
+      port,
+      pid: process.pid,
+      token,
+      startedAt: Date.now(),
+    };
+    this.ownsServer = true;
+    this.writeServerJson(this.config);
+    console.log(`[Pixel Agents] Server: listening on 127.0.0.1:${port}`);
+
+    return this.config;
   }
 
-  /** Stop the HTTP server and clean up server.json (only if we own it). */
+  /** Stop the server and clean up server.json (only if we own it). */
   stop(): void {
-    if (this.server) {
-      this.server.close();
-      this.server = null;
+    if (this.app) {
+      this.app.close();
+      this.app = null;
     }
-    // Only delete server.json if we own it (our PID)
     if (this.ownsServer) {
       this.deleteServerJson();
     }
@@ -123,93 +113,6 @@ export class PixelAgentsServer {
   /** Returns the current server config, or null if not started. */
   getConfig(): ServerConfig | null {
     return this.config;
-  }
-
-  /** Top-level request router. Dispatches to health or hook handler based on method + path. */
-  private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-    const url = req.url ?? '';
-
-    // Health endpoint (no auth required)
-    if (req.method === 'GET' && url === '/api/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          status: 'ok',
-          uptime: Math.floor((Date.now() - this.startTime) / 1000),
-          pid: process.pid,
-        }),
-      );
-      return;
-    }
-
-    // Hook event endpoint: POST /api/hooks/:providerId
-    if (req.method === 'POST' && url.startsWith(HOOK_API_PREFIX + '/')) {
-      this.handleHookRequest(req, res, url);
-      return;
-    }
-
-    res.writeHead(404);
-    res.end();
-  }
-
-  /** Handle POST /api/hooks/:providerId. Validates auth, enforces body size limit, parses JSON. */
-  private handleHookRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    url: string,
-  ): void {
-    // Validate auth token (timing-safe comparison prevents side-channel attacks)
-    const authHeader = req.headers['authorization'] ?? '';
-    const expectedToken = `Bearer ${this.config?.token ?? ''}`;
-    const authBuf = Buffer.from(authHeader);
-    const expectedBuf = Buffer.from(expectedToken);
-    if (authBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(authBuf, expectedBuf)) {
-      res.writeHead(401);
-      res.end('unauthorized');
-      return;
-    }
-
-    // Extract and validate provider ID from URL: /api/hooks/claude -> "claude"
-    const providerId = url.slice(HOOK_API_PREFIX.length + 1);
-    if (!providerId || !/^[a-z0-9-]+$/.test(providerId)) {
-      res.writeHead(400);
-      res.end('invalid provider id');
-      return;
-    }
-
-    // Read body with size limit and response guard
-    let body = '';
-    let bodySize = 0;
-    let responded = false;
-
-    req.on('data', (chunk: Buffer) => {
-      bodySize += chunk.length;
-      if (bodySize > MAX_HOOK_BODY_SIZE && !responded) {
-        responded = true;
-        res.writeHead(413);
-        res.end('payload too large');
-        req.destroy();
-        return;
-      }
-      if (!responded) {
-        body += chunk.toString();
-      }
-    });
-
-    req.on('end', () => {
-      if (responded) return;
-      try {
-        const event = JSON.parse(body) as Record<string, unknown>;
-        if (event.session_id && event.hook_event_name) {
-          this.callback?.(providerId, event);
-        }
-        res.writeHead(200);
-        res.end('ok');
-      } catch {
-        res.writeHead(400);
-        res.end('invalid json');
-      }
-    });
   }
 
   /** Returns the absolute path to ~/.pixel-agents/server.json. */
@@ -236,7 +139,6 @@ export class PixelAgentsServer {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
       }
-      // Atomic write with restricted permissions
       const tmpPath = filePath + '.tmp';
       fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), { mode: 0o600 });
       fs.renameSync(tmpPath, filePath);
@@ -250,7 +152,6 @@ export class PixelAgentsServer {
     try {
       const filePath = this.getServerJsonPath();
       if (!fs.existsSync(filePath)) return;
-      // Only delete if our PID matches (don't delete another instance's server file)
       const existing = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as ServerConfig;
       if (existing.pid === process.pid) {
         fs.unlinkSync(filePath);

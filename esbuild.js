@@ -99,6 +99,25 @@ async function main() {
     // Copy assets and hooks after build
     copyAssets();
     buildHooks();
+    await buildCli();
+  }
+}
+
+/** Bundle the standalone CLI entry point. */
+async function buildCli() {
+  await esbuild.build({
+    entryPoints: ['server/src/cli.ts'],
+    bundle: true,
+    format: 'cjs',
+    minify: production,
+    sourcemap: !production,
+    platform: 'node',
+    outfile: 'dist/cli.js',
+    external: ['fastify', '@fastify/websocket', '@fastify/static', '@fastify/cors'],
+    logLevel: 'silent',
+  });
+  if (!production) {
+    console.log('[build] CLI bundled: dist/cli.mjs');
   }
 }
 
