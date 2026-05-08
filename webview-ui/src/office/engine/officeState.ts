@@ -705,7 +705,7 @@ export class OfficeState {
               { col: ownerSeat.seatCol, row: ownerSeat.seatRow + 1 },
             ];
             for (const target of candidates) {
-              if (!isWalkable(target.col, target.row, this.tileMap)) continue;
+              if (!isWalkable(target.col, target.row, this.tileMap, this.blockedTiles)) continue;
               const path = this.withOwnSeatUnblocked(ch, () =>
                 findPath(
                   ch.tileCol,
