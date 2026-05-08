@@ -148,3 +148,5 @@ export const FUEL_COLOR_CRITICAL = '#ff2222';
 export const FUEL_GAUGE_BG = '#222';
 export const TEAM_LEAD_COLOR = '#ffd700';
 export const TEAM_ROLE_COLOR = '#66aaff';
+export const OWNER_BADGE_COLOR = '#B87333';
+export const OWNER_BADGE_BG = '#0a0a14';

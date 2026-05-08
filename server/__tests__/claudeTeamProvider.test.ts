@@ -30,11 +30,22 @@ describe('claudeTeamProvider', () => {
     { tool: 'Task', input: { run_in_background: true }, expected: false },
     { tool: 'Read', input: {}, expected: false },
     { tool: 'WebSearch', input: { run_in_background: true }, expected: false },
-  ])('isTeammateSpawnCall($tool, $input)', ({ tool, input, expected }) => {
-    it(`returns ${expected}`, () => {
-      expect(claudeTeamProvider.isTeammateSpawnCall(tool, input)).toBe(expected);
-    });
-  });
+  ])(
+    'isTeammateSpawnCall($tool, $input)',
+    ({
+      tool,
+      input,
+      expected,
+    }: {
+      tool: string;
+      input: Record<string, unknown>;
+      expected: boolean;
+    }) => {
+      it(`returns ${expected}`, () => {
+        expect(claudeTeamProvider.isTeammateSpawnCall(tool, input)).toBe(expected);
+      });
+    },
+  );
 
   describe('extractTeammateNameFromEvent', () => {
     it('reads agent_type field when present', () => {

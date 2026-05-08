@@ -75,6 +75,7 @@ export function createCharacter(
     wanderCount: 0,
     wanderLimit: randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX),
     isActive: true,
+    isOwner: false,
     seatId,
     bubbleType: null,
     bubbleTimer: 0,
@@ -97,6 +98,18 @@ export function updateCharacter(
   tileMap: TileTypeVal[][],
   blockedTiles: Set<string>,
 ): void {
+  // Owner always stays at seat — only animate, never wander
+  if (ch.isOwner) {
+    ch.frameTimer += dt;
+    if (ch.state === CharacterState.TYPE) {
+      if (ch.frameTimer >= TYPE_FRAME_DURATION_SEC) {
+        ch.frameTimer -= TYPE_FRAME_DURATION_SEC;
+        ch.frame = (ch.frame + 1) % 2;
+      }
+    }
+    return;
+  }
+
   ch.frameTimer += dt;
 
   switch (ch.state) {

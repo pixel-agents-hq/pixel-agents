@@ -761,22 +761,25 @@ describe('HookEventHandler', () => {
   describe.each([
     { label: 'run_in_background=true', toolInput: { run_in_background: true }, expected: true },
     { label: 'run_in_background=false', toolInput: { run_in_background: false }, expected: false },
-  ])('PreToolUse(Agent, $label)', ({ toolInput, expected }) => {
-    it(`sets currentHookIsTeammateSpawn=${expected}`, () => {
-      const agent = createTestAgent({ id: 1 });
-      agents.set(1, agent);
-      handler.registerAgent('sess-1', 1);
+  ])(
+    'PreToolUse(Agent, $label)',
+    ({ toolInput, expected }: { toolInput: Record<string, unknown>; expected: boolean }) => {
+      it(`sets currentHookIsTeammateSpawn=${expected}`, () => {
+        const agent = createTestAgent({ id: 1 });
+        agents.set(1, agent);
+        handler.registerAgent('sess-1', 1);
 
-      handler.handleEvent('claude', {
-        hook_event_name: 'PreToolUse',
-        session_id: 'sess-1',
-        tool_name: 'Agent',
-        tool_input: { description: 'Code review', ...toolInput },
+        handler.handleEvent('claude', {
+          hook_event_name: 'PreToolUse',
+          session_id: 'sess-1',
+          tool_name: 'Agent',
+          tool_input: { description: 'Code review', ...toolInput },
+        });
+
+        expect(agent.currentHookIsTeammateSpawn).toBe(expected);
       });
-
-      expect(agent.currentHookIsTeammateSpawn).toBe(expected);
-    });
-  });
+    },
+  );
 
   // SubagentStart routes to teammate discovery ONLY when both conditions hold:
   // currentHookIsTeammateSpawn === true AND agent.teamName is set (JSONL-confirmed lead).
@@ -804,47 +807,60 @@ describe('HookEventHandler', () => {
       seedActiveTool: false,
       expectTeammateDetected: false,
     },
-  ])('SubagentStart: $label', ({ spawn, teamName, seedActiveTool, expectTeammateDetected }) => {
-    it(`onTeammateDetected called=${expectTeammateDetected}`, () => {
-      const agent = createTestAgent({
-        id: 1,
-        currentHookIsTeammateSpawn: spawn,
-        ...(teamName ? { teamName } : {}),
-      });
-      if (seedActiveTool) {
-        agent.activeToolNames.set('toolu_real', 'Agent');
-      } else if (!spawn) {
-        agent.currentHookToolId = 'hook-XXX';
-        agent.currentHookToolName = 'Agent';
-      }
-      agents.set(1, agent);
-      handler.registerAgent('sess-1', 1);
-
-      const onTeammateDetected = vi.fn();
-      handler.setLifecycleCallbacks({ onTeammateDetected });
-
-      handler.handleEvent('claude', {
-        hook_event_name: 'SubagentStart',
-        session_id: 'sess-1',
-        agent_type: expectTeammateDetected ? 'web-researcher' : 'general-purpose',
-      });
-
-      if (expectTeammateDetected) {
-        expect(onTeammateDetected).toHaveBeenCalledWith(1, 'sess-1', 'web-researcher');
-        // Teammate path skips subagentToolStart (no ghost sub-agent character).
-        expect(mockWebview.messages.find((m) => m.type === 'subagentToolStart')).toBeUndefined();
-      } else {
-        expect(onTeammateDetected).not.toHaveBeenCalled();
-        const msg = mockWebview.messages.find((m) => m.type === 'subagentToolStart');
+  ])(
+    'SubagentStart: $label',
+    ({
+      spawn,
+      teamName,
+      seedActiveTool,
+      expectTeammateDetected,
+    }: {
+      spawn: boolean;
+      teamName: string | undefined;
+      seedActiveTool: boolean;
+      expectTeammateDetected: boolean;
+    }) => {
+      it(`onTeammateDetected called=${expectTeammateDetected}`, () => {
+        const agent = createTestAgent({
+          id: 1,
+          currentHookIsTeammateSpawn: spawn,
+          ...(teamName ? { teamName } : {}),
+        });
         if (seedActiveTool) {
-          // Basic path with real tool id available.
-          expect(msg).toBeTruthy();
-          expect(msg?.parentToolId).toBe('toolu_real');
-        } else {
-          // No real tool id yet -- JSONL will create the sub-agent character.
-          expect(msg).toBeUndefined();
+          agent.activeToolNames.set('toolu_real', 'Agent');
+        } else if (!spawn) {
+          agent.currentHookToolId = 'hook-XXX';
+          agent.currentHookToolName = 'Agent';
         }
-      }
-    });
-  });
+        agents.set(1, agent);
+        handler.registerAgent('sess-1', 1);
+
+        const onTeammateDetected = vi.fn();
+        handler.setLifecycleCallbacks({ onTeammateDetected });
+
+        handler.handleEvent('claude', {
+          hook_event_name: 'SubagentStart',
+          session_id: 'sess-1',
+          agent_type: expectTeammateDetected ? 'web-researcher' : 'general-purpose',
+        });
+
+        if (expectTeammateDetected) {
+          expect(onTeammateDetected).toHaveBeenCalledWith(1, 'sess-1', 'web-researcher');
+          // Teammate path skips subagentToolStart (no ghost sub-agent character).
+          expect(mockWebview.messages.find((m) => m.type === 'subagentToolStart')).toBeUndefined();
+        } else {
+          expect(onTeammateDetected).not.toHaveBeenCalled();
+          const msg = mockWebview.messages.find((m) => m.type === 'subagentToolStart');
+          if (seedActiveTool) {
+            // Basic path with real tool id available.
+            expect(msg).toBeTruthy();
+            expect(msg?.parentToolId).toBe('toolu_real');
+          } else {
+            // No real tool id yet -- JSONL will create the sub-agent character.
+            expect(msg).toBeUndefined();
+          }
+        }
+      });
+    },
+  );
 });

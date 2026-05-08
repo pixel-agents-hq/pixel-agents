@@ -23,6 +23,8 @@ import {
   GRID_LINE_COLOR,
   HOVERED_OUTLINE_ALPHA,
   OUTLINE_Z_SORT_OFFSET,
+  OWNER_BADGE_BG,
+  OWNER_BADGE_COLOR,
   ROTATE_BUTTON_BG,
   SEAT_AVAILABLE_COLOR,
   SEAT_BUSY_COLOR,
@@ -196,10 +198,16 @@ export function renderScene(
       });
     }
 
+    const isOwner = ch.isOwner;
+    const chDrawX = drawX;
+    const chDrawY = drawY;
     drawables.push({
       zY: charZY,
       draw: (c) => {
-        c.drawImage(cached, drawX, drawY);
+        c.drawImage(cached, chDrawX, chDrawY);
+        if (isOwner) {
+          renderOwnerBadge(c, chDrawX + cached.width / 2, chDrawY, zoom);
+        }
       },
     });
   }
@@ -482,6 +490,36 @@ function renderRotateButton(
   ctx.restore();
 
   return { cx, cy, radius };
+}
+
+// ── Owner badge ─────────────────────────────────────────────────
+
+function renderOwnerBadge(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  topY: number,
+  zoom: number,
+): void {
+  const label = 'Tiago';
+  const fontSize = Math.max(8, zoom * 4);
+  ctx.save();
+  ctx.font = `bold ${fontSize}px 'Courier New', monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  const metrics = ctx.measureText(label);
+  const tw = metrics.width;
+  const th = fontSize;
+  const pad = zoom;
+  const bx = centerX - tw / 2 - pad;
+  const by = topY - th - pad * 2 - zoom;
+  ctx.fillStyle = OWNER_BADGE_BG;
+  ctx.fillRect(bx, by, tw + pad * 2, th + pad);
+  ctx.strokeStyle = OWNER_BADGE_COLOR;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(bx, by, tw + pad * 2, th + pad);
+  ctx.fillStyle = OWNER_BADGE_COLOR;
+  ctx.fillText(label, centerX, topY - pad * 2 - zoom);
+  ctx.restore();
 }
 
 // ── Speech bubbles ──────────────────────────────────────────────

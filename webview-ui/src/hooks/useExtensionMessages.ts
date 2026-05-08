@@ -141,6 +141,8 @@ export function useExtensionMessages(
           os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
         }
         pendingAgents = [];
+        // Spawn owner character (Tiago) — always present
+        os.addOwner();
         layoutReadyRef.current = true;
         setLayoutReady(true);
         if (msg.wasReset) {
