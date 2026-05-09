@@ -12,8 +12,6 @@ function createMockAdapter(): StateAdapter {
     saveSeats: vi.fn(),
     getSetting: vi.fn(<T>(_k: string, d: T): T => d),
     setSetting: vi.fn<(key: string, value: unknown) => void>(),
-    loadLegacyLayout: vi.fn(() => undefined),
-    clearLegacyLayout: vi.fn(),
   };
 }
 

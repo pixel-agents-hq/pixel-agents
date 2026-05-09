@@ -5,6 +5,14 @@ const path = require('path');
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
+/** Extension version read from package.json at build time, inlined via esbuild `define`. */
+const pkgVersion = JSON.parse(
+  fs.readFileSync(path.join(__dirname, 'package.json'), 'utf-8'),
+).version;
+const versionDefine = {
+  'process.env.PIXEL_AGENTS_VERSION': JSON.stringify(pkgVersion),
+};
+
 /**
  * Copy assets folder to dist/assets
  */
@@ -85,6 +93,7 @@ async function main() {
     platform: 'node',
     outfile: 'dist/extension.js',
     external: ['vscode'],
+    define: versionDefine,
     logLevel: 'silent',
     plugins: [
       /* add to the end of plugins array */
@@ -114,6 +123,7 @@ async function buildCli() {
     platform: 'node',
     outfile: 'dist/cli.js',
     external: ['fastify', '@fastify/websocket', '@fastify/static', '@fastify/cors'],
+    define: versionDefine,
     logLevel: 'silent',
   });
   if (!production) {

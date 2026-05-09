@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { normalizeProjectPath } from '../../../../../core/src/normalizeProjectPath.js';
 import type { AgentEvent, HookProvider } from '../../../../../core/src/provider.js';
 import {
   BASH_COMMAND_DISPLAY_MAX_LENGTH,
@@ -69,9 +70,7 @@ export function formatToolStatus(toolName: string, input?: unknown): string {
 
 function getSessionDirs(workspacePath: string): string[] {
   // Claude stores sessions at ~/.claude/projects/<workspace-path-with-dashes>/.
-  // Normalize every non-alphanumeric char (except '-') to '-' to match Claude's
-  // directory naming convention across platforms.
-  const dirName = workspacePath.replace(/[^a-zA-Z0-9-]/g, '-');
+  const dirName = normalizeProjectPath(workspacePath);
   const projectDir = path.join(os.homedir(), '.claude', 'projects', dirName);
 
   // Try exact match first.

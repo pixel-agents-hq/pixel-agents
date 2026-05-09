@@ -2,7 +2,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import type { StateAdapter } from '../../core/src/adapter.js';
 import {
   LAYOUT_FILE_DIR,
   LAYOUT_FILE_NAME,
@@ -54,17 +53,20 @@ interface LayoutLoadResult {
 }
 
 /**
- * Load layout with migration from workspace state:
+ * Load layout from file. Falls back to bundled default if the file is empty.
+ * Resets to the bundled default when a newer revision is bundled.
+ *
+ * Migration from VS Code workspaceState happens earlier, in
+ * adapters/vscode/migrateVsCodeState.ts (run on extension activate). By the
+ * time this is called, the file is the only source of truth.
+ *
  * 1. If file exists → return it (reset if bundled default has a newer revision)
- * 2. Else if workspace state has layout → write to file, clear workspace state, return it
- * 3. Else if defaultLayout provided → write to file, return it
- * 4. Else → return null
+ * 2. Else if defaultLayout provided → write to file, return it
+ * 3. Else → return null
  */
-export function migrateAndLoadLayout(
-  adapter: StateAdapter,
+export function loadLayout(
   defaultLayout?: Record<string, unknown> | null,
 ): LayoutLoadResult | null {
-  // 1. Try file — but reset if bundled default has a newer revision
   const fromFile = readLayoutFromFile();
   if (fromFile) {
     const fileRevision = (fromFile[LAYOUT_REVISION_KEY] as number) ?? 0;
@@ -80,23 +82,12 @@ export function migrateAndLoadLayout(
     return { layout: fromFile, wasReset: false };
   }
 
-  // 2. Migrate from workspace state (one-time: old versions stored layout in VS Code state)
-  const fromState = adapter.loadLegacyLayout();
-  if (fromState) {
-    console.log('[Pixel Agents] Migrating layout from workspace state to file');
-    writeLayoutToFile(fromState);
-    adapter.clearLegacyLayout();
-    return { layout: fromState, wasReset: false };
-  }
-
-  // 3. Use bundled default
   if (defaultLayout) {
     console.log('[Pixel Agents] Writing bundled default layout to file');
     writeLayoutToFile(defaultLayout);
     return { layout: defaultLayout, wasReset: false };
   }
 
-  // 4. Nothing
   return null;
 }
 

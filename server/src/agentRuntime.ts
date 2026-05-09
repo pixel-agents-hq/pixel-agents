@@ -9,7 +9,7 @@
  * This is the single source of truth for agent lifecycle wiring. No duplication.
  */
 
-import type * as fs from 'fs';
+import * as fs from 'fs';
 import * as path from 'path';
 
 import type { HookProvider } from '../../core/src/provider.js';
@@ -27,6 +27,7 @@ import {
   setTeammateRemovalCallback,
   setTeamProvider,
   startExternalSessionScanning,
+  startFileWatching,
   startStaleExternalAgentCheck,
 } from './fileWatcher.js';
 import type { HookEvent } from './hookEventHandler.js';
@@ -312,6 +313,101 @@ export class AgentRuntime {
       this.knownJsonlFiles,
       this.hooksEnabled,
     );
+  }
+
+  // ── Restore persisted external agents (standalone) ──
+
+  /**
+   * Re-create external agents from the adapter's persistence on startup.
+   * Only external agents are restorable here (no terminal to rebind).
+   * VS Code uses its own restoreAgents() in agentManager.ts to also handle
+   * terminal agents via vscode.window.terminals.
+   */
+  restoreExternalAgents(): void {
+    const adapter = this.store.getAdapter();
+    if (!adapter) return;
+    const persisted = adapter.loadAgents();
+    if (persisted.length === 0) return;
+
+    let maxId = 0;
+
+    for (const p of persisted) {
+      if (!p.isExternal) continue;
+      try {
+        if (!fs.existsSync(p.jsonlFile)) continue;
+      } catch {
+        continue;
+      }
+      if (this.store.has(p.id)) {
+        this.knownJsonlFiles.add(p.jsonlFile);
+        if (p.id > maxId) maxId = p.id;
+        continue;
+      }
+
+      const agent: AgentState = {
+        id: p.id,
+        sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
+        terminalRef: undefined,
+        isExternal: true,
+        projectDir: p.projectDir,
+        jsonlFile: p.jsonlFile,
+        fileOffset: 0,
+        lineBuffer: '',
+        activeToolIds: new Set(),
+        activeToolStatuses: new Map(),
+        activeToolNames: new Map(),
+        activeSubagentToolIds: new Map(),
+        activeSubagentToolNames: new Map(),
+        backgroundAgentToolIds: new Set(),
+        isWaiting: false,
+        permissionSent: false,
+        hadToolsInTurn: false,
+        lastDataAt: 0,
+        linesProcessed: 0,
+        seenUnknownRecordTypes: new Set(),
+        folderName: p.folderName,
+        hookDelivered: false,
+        inputTokens: 0,
+        outputTokens: 0,
+        teamName: p.teamName,
+        agentName: p.agentName,
+        isTeamLead: p.isTeamLead,
+        leadAgentId: p.leadAgentId,
+        teamUsesTmux: p.teamUsesTmux,
+      };
+
+      this.store.set(p.id, agent);
+      this.knownJsonlFiles.add(p.jsonlFile);
+
+      try {
+        const stat = fs.statSync(p.jsonlFile);
+        agent.fileOffset = stat.size;
+        startFileWatching(
+          p.id,
+          p.jsonlFile,
+          this.store,
+          this.fileWatchers,
+          this.pollingTimers,
+          this.waitingTimers,
+          this.permissionTimers,
+        );
+      } catch {
+        /* ignore stat errors on restore */
+      }
+
+      this.registerAgent(agent.sessionId, agent.id);
+
+      if (p.id > maxId) maxId = p.id;
+      console.log(
+        `[Pixel Agents] Restored external agent ${p.id} -> ${path.basename(p.jsonlFile)}`,
+      );
+    }
+
+    if (maxId >= this.store.nextAgentId.current) {
+      this.store.nextAgentId.current = maxId + 1;
+    }
+
+    this.store.persist();
   }
 
   // ── Cleanup ──

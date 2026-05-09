@@ -5,8 +5,9 @@ import * as crypto from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 
+import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import type { AssetCache } from './clientMessageHandler.js';
+import type { AssetCache, SetHooksEnabledSideEffect } from './clientMessageHandler.js';
 import { handleClientMessage } from './clientMessageHandler.js';
 import { HOOK_API_PREFIX, MAX_HOOK_BODY_SIZE } from './constants.js';
 import type { AgentState } from './types.js';
@@ -23,12 +24,16 @@ export interface HttpServerOptions {
   token: string;
   /** AgentStateStore for WebSocket broadcast piping */
   store: AgentStateStore;
+  /** Shared agent lifecycle core (for toggle side effects + standalone restore). Optional in embedded mode. */
+  runtime?: AgentRuntime;
   /** Path to SPA dist directory for static serving (standalone only) */
   staticDir?: string;
   /** Cached assets loaded at startup (standalone only) */
   assetCache?: AssetCache;
   /** Callback when a hook event is received */
   onHookEvent?: (providerId: string, event: Record<string, unknown>) => void;
+  /** Invoked when setHooksEnabled is toggled via WebSocket. Standalone installs/uninstalls hooks here. */
+  onSetHooksEnabled?: SetHooksEnabledSideEffect;
 }
 
 /** Result of createHttpServer(). */
@@ -178,7 +183,12 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
         if (!options.embedded && msg.type) {
           console.log('[Pixel Agents] WS client message:', msg.type);
         }
-        handleClientMessage(msg, store, (m) => safeSend(socket, m), options.assetCache ?? null);
+        handleClientMessage(msg, (m) => safeSend(socket, m), {
+          store,
+          runtime: options.runtime,
+          cache: options.assetCache ?? null,
+          onSetHooksEnabled: options.onSetHooksEnabled,
+        });
       } catch {
         // Malformed JSON, ignore
       }

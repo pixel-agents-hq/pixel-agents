@@ -21,6 +21,7 @@ import {
   sendFloorTilesToWebview,
   sendWallTilesToWebview,
 } from '../../server/src/assetLoader.js';
+import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
 import { setTerminalAdapter } from '../../server/src/fileWatcher.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
 import {
@@ -38,7 +39,6 @@ import {
   sendExistingAgents,
   sendLayout,
 } from './agentManager.js';
-import { readConfig, writeConfig } from './configPersistence.js';
 import {
   CONFIG_KEY_AUTO_SHOW_PANEL,
   CONFIG_KEY_AUTO_SPAWN_AGENT,
@@ -50,7 +50,6 @@ import {
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
 } from './constants.js';
-import { VscodeStateAdapter } from './vscodeStateAdapter.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
 
 export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
@@ -80,8 +79,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   // session, even though webviewReady fires on every panel focus.
   private autoSpawnAttempted = false;
 
-  constructor(private readonly context: vscode.ExtensionContext) {
-    this.adapter = new VscodeStateAdapter(context);
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    adapter: StateAdapter,
+  ) {
+    this.adapter = adapter;
     this.store.setAdapter(this.adapter);
     this.store.on('agentAdded', (id, agent) => {
       this.webview?.postMessage({
@@ -420,7 +422,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             if (!assetsRoot) {
               console.log('[Extension] ⚠️  No assets directory found');
               if (this.webview) {
-                sendLayout(this.adapter, this.webview, this.defaultLayout);
+                sendLayout(this.webview, this.defaultLayout);
                 // Send agent statuses AFTER layoutLoaded so characters exist when messages arrive
                 sendCurrentAgentStatuses(this.store, this.webview);
                 this.startLayoutWatcher();
@@ -468,7 +470,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           // Always send saved layout (or null for default)
           if (this.webview) {
             console.log('[Extension] Sending saved layout');
-            sendLayout(this.adapter, this.webview, this.defaultLayout);
+            sendLayout(this.webview, this.defaultLayout);
             // Send agent statuses AFTER layoutLoaded so characters exist when messages arrive
             sendCurrentAgentStatuses(this.store, this.webview);
             this.startLayoutWatcher();
