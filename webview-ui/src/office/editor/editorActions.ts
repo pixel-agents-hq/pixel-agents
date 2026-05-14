@@ -1,9 +1,17 @@
-import type { ColorValue } from '../../components/ui/types.js';
-import { DEFAULT_NEUTRAL_COLOR } from '../../constants.js';
-import { getCatalogEntry, getRotatedType, getToggledType } from '../layout/furnitureCatalog.js';
-import { getPlacementBlockedTiles } from '../layout/layoutSerializer.js';
-import type { OfficeLayout, PlacedFurniture, TileType as TileTypeVal } from '../types.js';
-import { MAX_COLS, MAX_ROWS, TileType } from '../types.js';
+import type { ColorValue } from "../../components/ui/types.js";
+import { DEFAULT_NEUTRAL_COLOR } from "../../constants.js";
+import {
+  getCatalogEntry,
+  getRotatedType,
+  getToggledType,
+} from "../layout/furnitureCatalog.js";
+import { getPlacementBlockedTiles } from "../layout/layoutSerializer.js";
+import type {
+  OfficeLayout,
+  PlacedFurniture,
+  TileType as TileTypeVal,
+} from "../types.js";
+import { MAX_COLS, MAX_ROWS, TileType } from "../types.js";
 
 /** Paint a single tile with pattern and color. Returns new layout (immutable). */
 export function paintTile(
@@ -16,7 +24,8 @@ export function paintTile(
   const idx = row * layout.cols + col;
   if (idx < 0 || idx >= layout.tiles.length) return layout;
 
-  const existingColors = layout.tileColors || new Array(layout.tiles.length).fill(null);
+  const existingColors =
+    layout.tileColors || new Array(layout.tiles.length).fill(null);
   const newColor =
     color ??
     (tileType === TileType.WALL || tileType === TileType.VOID
@@ -47,13 +56,19 @@ export function paintTile(
 }
 
 /** Place furniture. Returns new layout (immutable). */
-export function placeFurniture(layout: OfficeLayout, item: PlacedFurniture): OfficeLayout {
+export function placeFurniture(
+  layout: OfficeLayout,
+  item: PlacedFurniture,
+): OfficeLayout {
   if (!canPlaceFurniture(layout, item.type, item.col, item.row)) return layout;
   return { ...layout, furniture: [...layout.furniture, item] };
 }
 
 /** Remove furniture by uid. Returns new layout (immutable). */
-export function removeFurniture(layout: OfficeLayout, uid: string): OfficeLayout {
+export function removeFurniture(
+  layout: OfficeLayout,
+  uid: string,
+): OfficeLayout {
   const filtered = layout.furniture.filter((f) => f.uid !== uid);
   if (filtered.length === layout.furniture.length) return layout;
   return { ...layout, furniture: filtered };
@@ -81,7 +96,7 @@ export function moveFurniture(
 export function rotateFurniture(
   layout: OfficeLayout,
   uid: string,
-  direction: 'cw' | 'ccw',
+  direction: "cw" | "ccw",
 ): OfficeLayout {
   const item = layout.furniture.find((f) => f.uid === uid);
   if (!item) return layout;
@@ -89,19 +104,26 @@ export function rotateFurniture(
   if (!newType) return layout;
   return {
     ...layout,
-    furniture: layout.furniture.map((f) => (f.uid === uid ? { ...f, type: newType } : f)),
+    furniture: layout.furniture.map((f) =>
+      f.uid === uid ? { ...f, type: newType } : f,
+    ),
   };
 }
 
 /** Toggle furniture state (on/off). Returns new layout (immutable). */
-export function toggleFurnitureState(layout: OfficeLayout, uid: string): OfficeLayout {
+export function toggleFurnitureState(
+  layout: OfficeLayout,
+  uid: string,
+): OfficeLayout {
   const item = layout.furniture.find((f) => f.uid === uid);
   if (!item) return layout;
   const newType = getToggledType(item.type);
   if (!newType) return layout;
   return {
     ...layout,
-    furniture: layout.furniture.map((f) => (f.uid === uid ? { ...f, type: newType } : f)),
+    furniture: layout.furniture.map((f) =>
+      f.uid === uid ? { ...f, type: newType } : f,
+    ),
   };
 }
 
@@ -197,7 +219,7 @@ export function canPlaceFurniture(
   return true;
 }
 
-export type ExpandDirection = 'left' | 'right' | 'up' | 'down';
+export type ExpandDirection = "left" | "right" | "up" | "down";
 
 /**
  * Expand layout by 1 tile in the given direction. New tiles are VOID.
@@ -216,14 +238,14 @@ export function expandLayout(
   let shiftCol = 0;
   let shiftRow = 0;
 
-  if (direction === 'right') {
+  if (direction === "right") {
     newCols = cols + 1;
-  } else if (direction === 'left') {
+  } else if (direction === "left") {
     newCols = cols + 1;
     shiftCol = 1;
-  } else if (direction === 'down') {
+  } else if (direction === "down") {
     newRows = rows + 1;
-  } else if (direction === 'up') {
+  } else if (direction === "up") {
     newRows = rows + 1;
     shiftRow = 1;
   }
@@ -231,8 +253,12 @@ export function expandLayout(
   if (newCols > MAX_COLS || newRows > MAX_ROWS) return null;
 
   // Build new tile array
-  const newTiles: TileTypeVal[] = new Array(newCols * newRows).fill(TileType.VOID as TileTypeVal);
-  const newColors: Array<ColorValue | null> = new Array(newCols * newRows).fill(null);
+  const newTiles: TileTypeVal[] = new Array(newCols * newRows).fill(
+    TileType.VOID as TileTypeVal,
+  );
+  const newColors: Array<ColorValue | null> = new Array(newCols * newRows).fill(
+    null,
+  );
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {

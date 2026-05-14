@@ -1,14 +1,20 @@
-import type { ColorValue } from '../../components/ui/types.js';
-import { getColorizedSprite } from '../colorize.js';
+import type { ColorValue } from "../../components/ui/types.js";
+import { getColorizedSprite } from "../colorize.js";
 import type {
   FurnitureInstance,
   OfficeLayout,
   PlacedFurniture,
   Seat,
   TileType as TileTypeVal,
-} from '../types.js';
-import { DEFAULT_COLS, DEFAULT_ROWS, Direction, TILE_SIZE, TileType } from '../types.js';
-import { getCatalogEntry, getOrientationInGroup } from './furnitureCatalog.js';
+} from "../types.js";
+import {
+  DEFAULT_COLS,
+  DEFAULT_ROWS,
+  Direction,
+  TILE_SIZE,
+  TileType,
+} from "../types.js";
+import { getCatalogEntry, getOrientationInGroup } from "./furnitureCatalog.js";
 
 /** Convert flat tile array from layout into 2D grid */
 export function layoutToTileMap(layout: OfficeLayout): TileTypeVal[][] {
@@ -24,7 +30,9 @@ export function layoutToTileMap(layout: OfficeLayout): TileTypeVal[][] {
 }
 
 /** Convert placed furniture into renderable FurnitureInstance[] */
-export function layoutToFurnitureInstances(furniture: PlacedFurniture[]): FurnitureInstance[] {
+export function layoutToFurnitureInstances(
+  furniture: PlacedFurniture[],
+): FurnitureInstance[] {
   // Pre-compute desk zY per tile so surface items can sort in front of desks
   const deskZByTile = new Map<string, number>();
   for (const item of furniture) {
@@ -50,8 +58,8 @@ export function layoutToFurnitureInstances(furniture: PlacedFurniture[]): Furnit
     let zY = y + spriteH;
 
     // Chair z-sorting: ensure characters sitting on chairs render correctly
-    if (entry.category === 'chairs') {
-      if (entry.orientation === 'back') {
+    if (entry.category === "chairs") {
+      if (entry.orientation === "back") {
         // Back-facing chairs render IN FRONT of the seated character
         // (the chair back visually occludes the character behind it).
         // Use the bottom footprint row so it sorts after the character
@@ -89,12 +97,18 @@ export function layoutToFurnitureInstances(furniture: PlacedFurniture[]): Furnit
     let mirrored = false;
     if (entry.mirrorSide) {
       const orientInGroup = getOrientationInGroup(item.type);
-      if (orientInGroup === 'left') {
+      if (orientInGroup === "left") {
         mirrored = true;
       }
     }
 
-    instances.push({ sprite, x, y, zY, ...(mirrored ? { mirrored: true } : {}) });
+    instances.push({
+      sprite,
+      x,
+      y,
+      zY,
+      ...(mirrored ? { mirrored: true } : {}),
+    });
   }
   return instances;
 }
@@ -146,14 +160,14 @@ export function getPlacementBlockedTiles(
 /** Map chair orientation to character facing direction */
 function orientationToFacing(orientation: string): Direction {
   switch (orientation) {
-    case 'front':
+    case "front":
       return Direction.DOWN;
-    case 'back':
+    case "back":
       return Direction.UP;
-    case 'left':
+    case "left":
       return Direction.LEFT;
-    case 'right':
-    case 'side':
+    case "right":
+    case "side":
       return Direction.RIGHT;
     default:
       return Direction.DOWN;
@@ -188,7 +202,7 @@ export function layoutToSeats(furniture: PlacedFurniture[]): Map<string, Seat> {
   // Multi-tile chairs (e.g. 2-tile couches) produce multiple seats.
   for (const item of furniture) {
     const entry = getCatalogEntry(item.type);
-    if (!entry || entry.category !== 'chairs') continue;
+    if (!entry || entry.category !== "chairs") continue;
 
     let seatCount = 0;
     const bgRows = entry.backgroundTiles ?? 0;
@@ -255,7 +269,12 @@ export function createDefaultLayout(): OfficeLayout {
 
   for (let r = 0; r < DEFAULT_ROWS; r++) {
     for (let c = 0; c < DEFAULT_COLS; c++) {
-      if (r === 0 || r === DEFAULT_ROWS - 1 || c === 0 || c === DEFAULT_COLS - 1) {
+      if (
+        r === 0 ||
+        r === DEFAULT_ROWS - 1 ||
+        c === 0 ||
+        c === DEFAULT_COLS - 1
+      ) {
         tiles.push(W);
         tileColors.push(null);
       } else if (c < 10) {
@@ -269,7 +288,14 @@ export function createDefaultLayout(): OfficeLayout {
   }
 
   // Minimal fallback with no furniture — the default-layout.json provides the real default
-  return { version: 1, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, tiles, tileColors, furniture: [] };
+  return {
+    version: 1,
+    cols: DEFAULT_COLS,
+    rows: DEFAULT_ROWS,
+    tiles,
+    tileColors,
+    furniture: [],
+  };
 }
 
 /** Serialize layout to JSON string
@@ -282,18 +308,20 @@ export function serializeLayout(layout: OfficeLayout): string {
 
 /** Map old hardcoded FurnitureType values to new manifest-based IDs */
 const LEGACY_TYPE_MAP: Record<string, string | null> = {
-  desk: 'DESK_FRONT',
-  chair: 'WOODEN_CHAIR_FRONT',
-  bookshelf: 'BOOKSHELF',
-  plant: 'PLANT',
+  desk: "DESK_FRONT",
+  chair: "WOODEN_CHAIR_FRONT",
+  bookshelf: "BOOKSHELF",
+  plant: "PLANT",
   cooler: null, // no equivalent in new assets — remove
-  whiteboard: 'WHITEBOARD',
-  pc: 'PC_FRONT_OFF',
+  whiteboard: "WHITEBOARD",
+  pc: "PC_FRONT_OFF",
   lamp: null, // no equivalent in new assets — remove
 };
 
 /** Migrate old furniture type strings to new manifest IDs */
-function migrateFurnitureTypes(furniture: PlacedFurniture[]): PlacedFurniture[] {
+function migrateFurnitureTypes(
+  furniture: PlacedFurniture[],
+): PlacedFurniture[] {
   const migrated: PlacedFurniture[] = [];
   for (const item of furniture) {
     const newType = LEGACY_TYPE_MAP[item.type];
@@ -314,7 +342,12 @@ function migrateFurnitureTypes(furniture: PlacedFurniture[]): PlacedFurniture[] 
 export function deserializeLayout(json: string): OfficeLayout | null {
   try {
     const obj = JSON.parse(json);
-    if (obj && obj.version === 1 && Array.isArray(obj.tiles) && Array.isArray(obj.furniture)) {
+    if (
+      obj &&
+      obj.version === 1 &&
+      Array.isArray(obj.tiles) &&
+      Array.isArray(obj.furniture)
+    ) {
       return migrateLayout(obj as OfficeLayout);
     }
   } catch {
@@ -341,10 +374,15 @@ function migrateLayout(layout: OfficeLayout): OfficeLayout {
 
   // Migrate old VOID value (was 8, now 255) — only for legacy layouts since FLOOR_8 reuses value 8
   const OLD_VOID = 8;
-  if (!layout.layoutRevision && layout.tiles.includes(OLD_VOID as TileTypeVal)) {
+  if (
+    !layout.layoutRevision &&
+    layout.tiles.includes(OLD_VOID as TileTypeVal)
+  ) {
     layout = {
       ...layout,
-      tiles: layout.tiles.map((t) => (t === OLD_VOID ? (TileType.VOID as TileTypeVal) : t)),
+      tiles: layout.tiles.map((t) =>
+        t === OLD_VOID ? (TileType.VOID as TileTypeVal) : t,
+      ),
     };
   }
 
@@ -374,7 +412,11 @@ function migrateLayout(layout: OfficeLayout): OfficeLayout {
         break;
       default:
         // Floor tile types without colors — use neutral gray
-        tileColors.push(tile > 0 && tile !== TileType.VOID ? { h: 0, s: 0, b: 0, c: 0 } : null);
+        tileColors.push(
+          tile > 0 && tile !== TileType.VOID
+            ? { h: 0, s: 0, b: 0, c: 0 }
+            : null,
+        );
     }
   }
 

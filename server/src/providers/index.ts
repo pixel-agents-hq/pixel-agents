@@ -11,5 +11,5 @@
  * than reaching into each provider directory directly.
  */
 
-export { claudeProvider } from './hook/claude/claude.js';
-export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+export { claudeProvider } from "./hook/claude/claude.js";
+export { copyHookScript } from "./hook/claude/claudeHookInstaller.js";

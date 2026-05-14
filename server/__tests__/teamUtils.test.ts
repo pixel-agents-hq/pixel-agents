@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
-import type { AgentState } from '../../src/types.js';
-import { getInlineTeammates, hasInlineTeammates, isInlineTeammateOf } from '../src/teamUtils.js';
+import type { AgentState } from "../../src/types.js";
+import {
+  getInlineTeammates,
+  hasInlineTeammates,
+  isInlineTeammateOf,
+} from "../src/teamUtils.js";
 
 /** Minimal AgentState for testing -- only the fields teamUtils actually reads. */
 function agent(overrides: Partial<AgentState> = {}): AgentState {
@@ -13,31 +17,37 @@ function agent(overrides: Partial<AgentState> = {}): AgentState {
   } as AgentState;
 }
 
-describe('teamUtils', () => {
-  describe('isInlineTeammateOf', () => {
-    it('returns true when leadAgentId matches and teamUsesTmux is false', () => {
-      expect(isInlineTeammateOf(agent({ leadAgentId: 5, teamUsesTmux: false }), 5)).toBe(true);
+describe("teamUtils", () => {
+  describe("isInlineTeammateOf", () => {
+    it("returns true when leadAgentId matches and teamUsesTmux is false", () => {
+      expect(
+        isInlineTeammateOf(agent({ leadAgentId: 5, teamUsesTmux: false }), 5),
+      ).toBe(true);
     });
 
-    it('returns true when leadAgentId matches and teamUsesTmux is undefined', () => {
+    it("returns true when leadAgentId matches and teamUsesTmux is undefined", () => {
       expect(isInlineTeammateOf(agent({ leadAgentId: 5 }), 5)).toBe(true);
     });
 
-    it('returns false when leadAgentId does not match', () => {
+    it("returns false when leadAgentId does not match", () => {
       expect(isInlineTeammateOf(agent({ leadAgentId: 5 }), 6)).toBe(false);
     });
 
-    it('returns false when teamUsesTmux is true (tmux teammate)', () => {
-      expect(isInlineTeammateOf(agent({ leadAgentId: 5, teamUsesTmux: true }), 5)).toBe(false);
+    it("returns false when teamUsesTmux is true (tmux teammate)", () => {
+      expect(
+        isInlineTeammateOf(agent({ leadAgentId: 5, teamUsesTmux: true }), 5),
+      ).toBe(false);
     });
 
-    it('returns false when leadAgentId is undefined (not a teammate)', () => {
-      expect(isInlineTeammateOf(agent({ leadAgentId: undefined }), 5)).toBe(false);
+    it("returns false when leadAgentId is undefined (not a teammate)", () => {
+      expect(isInlineTeammateOf(agent({ leadAgentId: undefined }), 5)).toBe(
+        false,
+      );
     });
   });
 
-  describe('getInlineTeammates', () => {
-    it('returns only inline teammates of the given lead', () => {
+  describe("getInlineTeammates", () => {
+    it("returns only inline teammates of the given lead", () => {
       const agents = new Map<number, AgentState>([
         [1, agent({ id: 1 })], // lead
         [2, agent({ id: 2, leadAgentId: 1 })], // inline teammate of lead 1
@@ -49,12 +59,12 @@ describe('teamUtils', () => {
       expect(result.map(([id]) => id).sort()).toEqual([2, 5]);
     });
 
-    it('returns empty array when no teammates exist', () => {
+    it("returns empty array when no teammates exist", () => {
       const agents = new Map([[1, agent({ id: 1 })]]);
       expect(getInlineTeammates(1, agents)).toEqual([]);
     });
 
-    it('returns [id, agent] pairs preserving agent references', () => {
+    it("returns [id, agent] pairs preserving agent references", () => {
       const teammate = agent({ id: 2, leadAgentId: 1 });
       const agents = new Map([[2, teammate]]);
       const result = getInlineTeammates(1, agents);
@@ -64,8 +74,8 @@ describe('teamUtils', () => {
     });
   });
 
-  describe('hasInlineTeammates', () => {
-    it('returns true when at least one inline teammate exists', () => {
+  describe("hasInlineTeammates", () => {
+    it("returns true when at least one inline teammate exists", () => {
       const agents = new Map([
         [1, agent({ id: 1 })],
         [2, agent({ id: 2, leadAgentId: 1 })],
@@ -73,7 +83,7 @@ describe('teamUtils', () => {
       expect(hasInlineTeammates(1, agents)).toBe(true);
     });
 
-    it('returns false when only tmux teammates exist', () => {
+    it("returns false when only tmux teammates exist", () => {
       const agents = new Map([
         [1, agent({ id: 1 })],
         [2, agent({ id: 2, leadAgentId: 1, teamUsesTmux: true })],
@@ -81,12 +91,12 @@ describe('teamUtils', () => {
       expect(hasInlineTeammates(1, agents)).toBe(false);
     });
 
-    it('returns false when lead has no teammates', () => {
+    it("returns false when lead has no teammates", () => {
       const agents = new Map([[1, agent({ id: 1 })]]);
       expect(hasInlineTeammates(1, agents)).toBe(false);
     });
 
-    it('short-circuits on first match (performance, not behavioral)', () => {
+    it("short-circuits on first match (performance, not behavioral)", () => {
       const agents = new Map([
         [1, agent({ id: 1 })],
         [2, agent({ id: 2, leadAgentId: 1 })],

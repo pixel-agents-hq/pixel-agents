@@ -8,14 +8,25 @@ import {
   WANDER_MOVES_BEFORE_REST_MIN,
   WANDER_PAUSE_MAX_SEC,
   WANDER_PAUSE_MIN_SEC,
-} from '../../constants.js';
-import { findPath } from '../layout/tileMap.js';
-import type { CharacterSprites } from '../sprites/spriteData.js';
-import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../types.js';
-import { CharacterState, Direction, TILE_SIZE } from '../types.js';
+} from "../../constants.js";
+import { findPath } from "../layout/tileMap.js";
+import type { CharacterSprites } from "../sprites/spriteData.js";
+import type {
+  Character,
+  Seat,
+  SpriteData,
+  TileType as TileTypeVal,
+} from "../types.js";
+import { CharacterState, Direction, TILE_SIZE } from "../types.js";
 
 /** Tools that show reading animation instead of typing */
-const READING_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']);
+const READING_TOOLS = new Set([
+  "Read",
+  "Grep",
+  "Glob",
+  "WebFetch",
+  "WebSearch",
+]);
 
 /** @internal */
 export function isReadingTool(tool: string | null): boolean {
@@ -73,7 +84,10 @@ export function createCharacter(
     frameTimer: 0,
     wanderTimer: 0,
     wanderCount: 0,
-    wanderLimit: randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX),
+    wanderLimit: randomInt(
+      WANDER_MOVES_BEFORE_REST_MIN,
+      WANDER_MOVES_BEFORE_REST_MAX,
+    ),
     isActive: true,
     seatId,
     bubbleType: null,
@@ -115,9 +129,15 @@ export function updateCharacter(
         ch.state = CharacterState.IDLE;
         ch.frame = 0;
         ch.frameTimer = 0;
-        ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
+        ch.wanderTimer = randomRange(
+          WANDER_PAUSE_MIN_SEC,
+          WANDER_PAUSE_MAX_SEC,
+        );
         ch.wanderCount = 0;
-        ch.wanderLimit = randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX);
+        ch.wanderLimit = randomInt(
+          WANDER_MOVES_BEFORE_REST_MIN,
+          WANDER_MOVES_BEFORE_REST_MAX,
+        );
       }
       break;
     }
@@ -187,7 +207,8 @@ export function updateCharacter(
           }
         }
         if (walkableTiles.length > 0) {
-          const target = walkableTiles[Math.floor(Math.random() * walkableTiles.length)];
+          const target =
+            walkableTiles[Math.floor(Math.random() * walkableTiles.length)];
           const path = findPath(
             ch.tileCol,
             ch.tileRow,
@@ -205,7 +226,10 @@ export function updateCharacter(
             ch.wanderCount++;
           }
         }
-        ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
+        ch.wanderTimer = randomRange(
+          WANDER_PAUSE_MIN_SEC,
+          WANDER_PAUSE_MAX_SEC,
+        );
       }
       break;
     }
@@ -229,7 +253,11 @@ export function updateCharacter(
             ch.state = CharacterState.TYPE;
           } else {
             const seat = seats.get(ch.seatId);
-            if (seat && ch.tileCol === seat.seatCol && ch.tileRow === seat.seatRow) {
+            if (
+              seat &&
+              ch.tileCol === seat.seatCol &&
+              ch.tileRow === seat.seatRow
+            ) {
               ch.state = CharacterState.TYPE;
               ch.dir = seat.facingDir;
             } else {
@@ -240,7 +268,11 @@ export function updateCharacter(
           // Check if arrived at assigned seat — sit down for a rest before wandering again
           if (ch.seatId) {
             const seat = seats.get(ch.seatId);
-            if (seat && ch.tileCol === seat.seatCol && ch.tileRow === seat.seatRow) {
+            if (
+              seat &&
+              ch.tileCol === seat.seatCol &&
+              ch.tileRow === seat.seatRow
+            ) {
               ch.state = CharacterState.TYPE;
               ch.dir = seat.facingDir;
               // seatTimer < 0 is a sentinel from setAgentActive(false) meaning
@@ -248,7 +280,10 @@ export function updateCharacter(
               if (ch.seatTimer < 0) {
                 ch.seatTimer = 0;
               } else {
-                ch.seatTimer = randomRange(SEAT_REST_MIN_SEC, SEAT_REST_MAX_SEC);
+                ch.seatTimer = randomRange(
+                  SEAT_REST_MIN_SEC,
+                  SEAT_REST_MAX_SEC,
+                );
               }
               ch.wanderCount = 0;
               ch.wanderLimit = randomInt(
@@ -261,7 +296,10 @@ export function updateCharacter(
             }
           }
           ch.state = CharacterState.IDLE;
-          ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
+          ch.wanderTimer = randomRange(
+            WANDER_PAUSE_MIN_SEC,
+            WANDER_PAUSE_MAX_SEC,
+          );
         }
         ch.frame = 0;
         ch.frameTimer = 0;
@@ -270,7 +308,12 @@ export function updateCharacter(
 
       // Move toward next tile in path
       const nextTile = ch.path[0];
-      ch.dir = directionBetween(ch.tileCol, ch.tileRow, nextTile.col, nextTile.row);
+      ch.dir = directionBetween(
+        ch.tileCol,
+        ch.tileRow,
+        nextTile.col,
+        nextTile.row,
+      );
 
       ch.moveProgress += (WALK_SPEED_PX_PER_SEC / TILE_SIZE) * dt;
 
@@ -295,7 +338,11 @@ export function updateCharacter(
         const seat = seats.get(ch.seatId);
         if (seat) {
           const lastStep = ch.path[ch.path.length - 1];
-          if (!lastStep || lastStep.col !== seat.seatCol || lastStep.row !== seat.seatRow) {
+          if (
+            !lastStep ||
+            lastStep.col !== seat.seatCol ||
+            lastStep.row !== seat.seatRow
+          ) {
             const newPath = findPath(
               ch.tileCol,
               ch.tileRow,
@@ -317,7 +364,10 @@ export function updateCharacter(
 }
 
 /** Get the correct sprite frame for a character's current state and direction */
-export function getCharacterSprite(ch: Character, sprites: CharacterSprites): SpriteData {
+export function getCharacterSprite(
+  ch: Character,
+  sprites: CharacterSprites,
+): SpriteData {
   switch (ch.state) {
     case CharacterState.TYPE:
       if (isReadingTool(ch.currentTool)) {

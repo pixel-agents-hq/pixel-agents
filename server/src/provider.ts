@@ -7,33 +7,33 @@
  * speculation.
  */
 
-import type { TeamProvider } from './teamProvider.js';
+import type { TeamProvider } from "./teamProvider.js";
 
 // ── Normalized Events (all provider types produce these) ──────
 
 export type AgentEvent =
-  | { kind: 'toolStart'; toolId: string; toolName: string; input?: unknown }
-  | { kind: 'toolEnd'; toolId: string }
-  | { kind: 'turnEnd' }
-  | { kind: 'userTurn' }
+  | { kind: "toolStart"; toolId: string; toolName: string; input?: unknown }
+  | { kind: "toolEnd"; toolId: string }
+  | { kind: "turnEnd" }
+  | { kind: "userTurn" }
   | {
-      kind: 'subagentStart';
+      kind: "subagentStart";
       parentToolId: string;
       toolId: string;
       toolName: string;
       input?: unknown;
     }
-  | { kind: 'subagentEnd'; parentToolId: string; toolId: string }
-  | { kind: 'subagentTurnEnd'; parentToolId: string }
-  | { kind: 'progress'; toolId: string; data: unknown }
-  | { kind: 'permissionRequest' }
-  | { kind: 'sessionStart'; source?: string }
-  | { kind: 'sessionEnd'; reason?: string };
+  | { kind: "subagentEnd"; parentToolId: string; toolId: string }
+  | { kind: "subagentTurnEnd"; parentToolId: string }
+  | { kind: "progress"; toolId: string; data: unknown }
+  | { kind: "permissionRequest" }
+  | { kind: "sessionStart"; source?: string }
+  | { kind: "sessionEnd"; reason?: string };
 
 // ── Hook-based Provider (CLIs with hooks APIs) ────────────────
 
 export interface HookProvider {
-  readonly kind: 'hook';
+  readonly kind: "hook";
   readonly id: string;
   readonly displayName: string;
 

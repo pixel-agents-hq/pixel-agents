@@ -6,10 +6,14 @@
  * Caches colorized SpriteData by (pattern, h, s, b, c) key.
  */
 
-import type { ColorValue } from '../components/ui/types.js';
-import { CANVAS_ERROR_TILE_COLOR, FALLBACK_FLOOR_COLOR, TILE_SIZE } from '../constants.js';
-import { clearColorizeCache, getColorizedSprite } from './colorize.js';
-import type { SpriteData } from './types.js';
+import type { ColorValue } from "../components/ui/types.js";
+import {
+  CANVAS_ERROR_TILE_COLOR,
+  FALLBACK_FLOOR_COLOR,
+  TILE_SIZE,
+} from "../constants.js";
+import { clearColorizeCache, getColorizedSprite } from "./colorize.js";
+import type { SpriteData } from "./types.js";
 
 /** Default solid gray 16×16 tile used when floor tile PNGs are not loaded */
 const DEFAULT_FLOOR_SPRITE: SpriteData = Array.from(
@@ -21,7 +25,7 @@ const DEFAULT_FLOOR_SPRITE: SpriteData = Array.from(
 let floorSprites: SpriteData[] = [];
 
 // Re-export WALL_COLOR from constants for backward compatibility
-export { WALL_COLOR } from '../constants.js';
+export { WALL_COLOR } from "../constants.js";
 
 /** Set floor tile sprites (called once when extension sends floorTilesLoaded) */
 export function setFloorSprites(sprites: SpriteData[]): void {
@@ -36,7 +40,8 @@ function getFloorSprite(patternIndex: number): SpriteData | null {
   if (idx < 0) return null;
   if (idx < floorSprites.length) return floorSprites[idx];
   // No PNG sprites loaded — return default solid tile for any valid pattern index
-  if (floorSprites.length === 0 && patternIndex >= 1) return DEFAULT_FLOOR_SPRITE;
+  if (floorSprites.length === 0 && patternIndex >= 1)
+    return DEFAULT_FLOOR_SPRITE;
   return null;
 }
 
@@ -60,7 +65,10 @@ export function getFloorPatternCount(): number {
  * Uses Photoshop-style Colorize: grayscale -> HSL with given hue/saturation,
  * then brightness/contrast adjustment.
  */
-export function getColorizedFloorSprite(patternIndex: number, color: ColorValue): SpriteData {
+export function getColorizedFloorSprite(
+  patternIndex: number,
+  color: ColorValue,
+): SpriteData {
   const key = `floor-${patternIndex}-${color.h}-${color.s}-${color.b}-${color.c}`;
 
   const base = getFloorSprite(patternIndex);

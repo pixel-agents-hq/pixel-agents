@@ -5,7 +5,7 @@ export {
   MAX_COLS,
   MAX_ROWS,
   TILE_SIZE,
-} from '../constants.js';
+} from "../constants.js";
 
 export const TileType = {
   WALL: 0,
@@ -23,15 +23,16 @@ export const TileType = {
 export type TileType = (typeof TileType)[keyof typeof TileType];
 
 /** Re-export ColorValue for consumers that import color types from office/types */
-export type { ColorValue } from '../components/ui/types.js';
-import type { ColorValue } from '../components/ui/types.js';
+export type { ColorValue } from "../components/ui/types.js";
+import type { ColorValue } from "../components/ui/types.js";
 
 export const CharacterState = {
-  IDLE: 'idle',
-  WALK: 'walk',
-  TYPE: 'type',
+  IDLE: "idle",
+  WALK: "walk",
+  TYPE: "type",
 } as const;
-export type CharacterState = (typeof CharacterState)[keyof typeof CharacterState];
+export type CharacterState =
+  (typeof CharacterState)[keyof typeof CharacterState];
 
 export const Direction = {
   DOWN: 0,
@@ -76,13 +77,13 @@ export interface ToolActivity {
 }
 
 export const EditTool = {
-  TILE_PAINT: 'tile_paint',
-  WALL_PAINT: 'wall_paint',
-  FURNITURE_PLACE: 'furniture_place',
-  FURNITURE_PICK: 'furniture_pick',
-  SELECT: 'select',
-  EYEDROPPER: 'eyedropper',
-  ERASE: 'erase',
+  TILE_PAINT: "tile_paint",
+  WALL_PAINT: "wall_paint",
+  FURNITURE_PLACE: "furniture_place",
+  FURNITURE_PICK: "furniture_pick",
+  SELECT: "select",
+  EYEDROPPER: "eyedropper",
+  ERASE: "erase",
 } as const;
 export type EditTool = (typeof EditTool)[keyof typeof EditTool];
 
@@ -163,7 +164,7 @@ export interface Character {
   /** Assigned seat uid, or null if no seat */
   seatId: string | null;
   /** Active speech bubble type, or null if none showing */
-  bubbleType: 'permission' | 'waiting' | null;
+  bubbleType: "permission" | "waiting" | null;
   /** Countdown timer for bubble (waiting: 2→0, permission: unused) */
   bubbleTimer: number;
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */
@@ -173,7 +174,7 @@ export interface Character {
   /** Parent agent ID if this is a sub-agent, null otherwise */
   parentAgentId: number | null;
   /** Active matrix spawn/despawn effect, or null */
-  matrixEffect: 'spawn' | 'despawn' | null;
+  matrixEffect: "spawn" | "despawn" | null;
   /** Timer counting up from 0 to MATRIX_EFFECT_DURATION */
   matrixEffectTimer: number;
   /** Per-column random seeds (16 values) for staggered rain timing */

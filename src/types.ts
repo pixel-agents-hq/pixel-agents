@@ -1,4 +1,4 @@
-import type * as vscode from 'vscode';
+import type * as vscode from "vscode";
 
 export interface AgentState {
   id: number;

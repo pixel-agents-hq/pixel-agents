@@ -10,10 +10,14 @@
  * Bitmask convention: N=1, E=2, S=4, W=8. Out-of-bounds = NOT wall.
  */
 
-import type { ColorValue } from '../components/ui/types.js';
-import { getColorizedSprite } from './colorize.js';
-import type { FurnitureInstance, SpriteData, TileType as TileTypeVal } from './types.js';
-import { TILE_SIZE, TileType } from './types.js';
+import type { ColorValue } from "../components/ui/types.js";
+import { getColorizedSprite } from "./colorize.js";
+import type {
+  FurnitureInstance,
+  SpriteData,
+  TileType as TileTypeVal,
+} from "./types.js";
+import { TILE_SIZE, TileType } from "./types.js";
 
 /** Wall tile sets: each set has 16 sprites indexed by bitmask (0-15) */
 let wallSets: SpriteData[][] = [];
@@ -43,7 +47,11 @@ export function getWallSetPreviewSprite(setIndex: number): SpriteData | null {
 /**
  * Build the 4-bit neighbor bitmask for a wall tile at (col, row).
  */
-function buildWallMask(col: number, row: number, tileMap: TileTypeVal[][]): number {
+function buildWallMask(
+  col: number,
+  row: number,
+  tileMap: TileTypeVal[][],
+): number {
   const tmRows = tileMap.length;
   const tmCols = tmRows > 0 ? tileMap[0].length : 0;
 
@@ -96,7 +104,10 @@ function getColorizedWallSprite(
   if (!sprite) return null;
 
   const cacheKey = `wall-${setIndex}-${mask}-${color.h}-${color.s}-${color.b}-${color.c}`;
-  const colorized = getColorizedSprite(cacheKey, sprite, { ...color, colorize: true });
+  const colorized = getColorizedSprite(cacheKey, sprite, {
+    ...color,
+    colorize: true,
+  });
 
   return { sprite: colorized, offsetY: TILE_SIZE - sprite.length };
 }
@@ -193,7 +204,8 @@ export function wallColorToHex(color: ColorValue): string {
   }
 
   const m = lightness - ch / 2;
-  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round((v + m) * 255)));
+  const clamp = (v: number) =>
+    Math.max(0, Math.min(255, Math.round((v + m) * 255)));
 
-  return `#${clamp(r1).toString(16).padStart(2, '0')}${clamp(g1).toString(16).padStart(2, '0')}${clamp(b1).toString(16).padStart(2, '0')}`;
+  return `#${clamp(r1).toString(16).padStart(2, "0")}${clamp(g1).toString(16).padStart(2, "0")}${clamp(b1).toString(16).padStart(2, "0")}`;
 }

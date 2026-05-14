@@ -11,17 +11,21 @@ import {
   INACTIVE_SEAT_TIMER_MIN_SEC,
   INACTIVE_SEAT_TIMER_RANGE_SEC,
   WAITING_BUBBLE_DURATION_SEC,
-} from '../../constants.js';
-import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
+} from "../../constants.js";
+import {
+  getAnimationFrames,
+  getCatalogEntry,
+  getOnStateType,
+} from "../layout/furnitureCatalog.js";
 import {
   createDefaultLayout,
   getBlockedTiles,
   layoutToFurnitureInstances,
   layoutToSeats,
   layoutToTileMap,
-} from '../layout/layoutSerializer.js';
-import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
-import { getLoadedCharacterCount } from '../sprites/spriteData.js';
+} from "../layout/layoutSerializer.js";
+import { findPath, getWalkableTiles, isWalkable } from "../layout/tileMap.js";
+import { getLoadedCharacterCount } from "../sprites/spriteData.js";
 import type {
   Character,
   FurnitureInstance,
@@ -29,10 +33,15 @@ import type {
   PlacedFurniture,
   Seat,
   TileType as TileTypeVal,
-} from '../types.js';
-import { CharacterState, Direction, MATRIX_EFFECT_DURATION, TILE_SIZE } from '../types.js';
-import { createCharacter, updateCharacter } from './characters.js';
-import { matrixEffectSeeds } from './matrixEffect.js';
+} from "../types.js";
+import {
+  CharacterState,
+  Direction,
+  MATRIX_EFFECT_DURATION,
+  TILE_SIZE,
+} from "../types.js";
+import { createCharacter, updateCharacter } from "./characters.js";
+import { matrixEffectSeeds } from "./matrixEffect.js";
 
 export class OfficeState {
   layout: OfficeLayout;
@@ -51,7 +60,8 @@ export class OfficeState {
   /** Maps "parentId:toolId" → sub-agent character ID (negative) */
   subagentIdMap: Map<string, number> = new Map();
   /** Reverse lookup: sub-agent character ID → parent info */
-  subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }> = new Map();
+  subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }> =
+    new Map();
   private nextSubagentId = -1;
 
   constructor(layout?: OfficeLayout) {
@@ -65,7 +75,10 @@ export class OfficeState {
 
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
    *  @param shift Optional pixel shift to apply when grid expands left/up */
-  rebuildFromLayout(layout: OfficeLayout, shift?: { col: number; row: number }): void {
+  rebuildFromLayout(
+    layout: OfficeLayout,
+    shift?: { col: number; row: number },
+  ): void {
     this.layout = layout;
     this.tileMap = layoutToTileMap(layout);
     this.seats = layoutToSeats(layout.furniture);
@@ -144,7 +157,8 @@ export class OfficeState {
   /** Move a character to a random walkable tile */
   private relocateCharacterToWalkable(ch: Character): void {
     if (this.walkableTiles.length === 0) return;
-    const spawn = this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)];
+    const spawn =
+      this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)];
     ch.tileCol = spawn.col;
     ch.tileRow = spawn.row;
     ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
@@ -179,7 +193,7 @@ export class OfficeState {
     const electronicsTiles = new Set<string>();
     for (const item of this.layout.furniture) {
       const entry = getCatalogEntry(item.type);
-      if (!entry || entry.category !== 'electronics') continue;
+      if (!entry || entry.category !== "electronics") continue;
       for (let dr = 0; dr < entry.footprintH; dr++) {
         for (let dc = 0; dc < entry.footprintW; dc++) {
           electronicsTiles.add(`${item.col + dc},${item.row + dr}`);
@@ -196,8 +210,17 @@ export class OfficeState {
       // Check if this seat faces electronics (same logic as auto-state detection)
       let facesPC = false;
       const dCol =
-        seat.facingDir === Direction.RIGHT ? 1 : seat.facingDir === Direction.LEFT ? -1 : 0;
-      const dRow = seat.facingDir === Direction.DOWN ? 1 : seat.facingDir === Direction.UP ? -1 : 0;
+        seat.facingDir === Direction.RIGHT
+          ? 1
+          : seat.facingDir === Direction.LEFT
+            ? -1
+            : 0;
+      const dRow =
+        seat.facingDir === Direction.DOWN
+          ? 1
+          : seat.facingDir === Direction.UP
+            ? -1
+            : 0;
       for (let d = 1; d <= AUTO_ON_FACING_DEPTH && !facesPC; d++) {
         const tileCol = seat.seatCol + dCol * d;
         const tileRow = seat.seatRow + dRow * d;
@@ -227,8 +250,10 @@ export class OfficeState {
     }
 
     // Pick randomly: prefer PC seats, then any seat
-    if (pcSeats.length > 0) return pcSeats[Math.floor(Math.random() * pcSeats.length)];
-    if (otherSeats.length > 0) return otherSeats[Math.floor(Math.random() * otherSeats.length)];
+    if (pcSeats.length > 0)
+      return pcSeats[Math.floor(Math.random() * pcSeats.length)];
+    if (otherSeats.length > 0)
+      return otherSeats[Math.floor(Math.random() * otherSeats.length)];
     return null;
   }
 
@@ -255,7 +280,8 @@ export class OfficeState {
     // First round (minCount === 0): no hue shift. Subsequent rounds: random ≥45°.
     let hueShift = 0;
     if (minCount > 0) {
-      hueShift = HUE_SHIFT_MIN_DEG + Math.floor(Math.random() * HUE_SHIFT_RANGE_DEG);
+      hueShift =
+        HUE_SHIFT_MIN_DEG + Math.floor(Math.random() * HUE_SHIFT_RANGE_DEG);
     }
     return { palette, hueShift };
   }
@@ -302,7 +328,9 @@ export class OfficeState {
       // No seats — spawn at random walkable tile
       const spawn =
         this.walkableTiles.length > 0
-          ? this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)]
+          ? this.walkableTiles[
+              Math.floor(Math.random() * this.walkableTiles.length)
+            ]
           : { col: 1, row: 1 };
       ch = createCharacter(id, palette, null, null, hueShift);
       ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
@@ -315,7 +343,7 @@ export class OfficeState {
       ch.folderName = folderName;
     }
     if (!skipSpawnEffect) {
-      ch.matrixEffect = 'spawn';
+      ch.matrixEffect = "spawn";
       ch.matrixEffectTimer = 0;
       ch.matrixEffectSeeds = matrixEffectSeeds();
     }
@@ -325,7 +353,7 @@ export class OfficeState {
   removeAgent(id: number): void {
     const ch = this.characters.get(id);
     if (!ch) return;
-    if (ch.matrixEffect === 'despawn') return; // already despawning
+    if (ch.matrixEffect === "despawn") return; // already despawning
     // Free seat and clear selection immediately
     if (ch.seatId) {
       const seat = this.seats.get(ch.seatId);
@@ -334,7 +362,7 @@ export class OfficeState {
     if (this.selectedAgentId === id) this.selectedAgentId = null;
     if (this.cameraFollowId === id) this.cameraFollowId = null;
     // Start despawn animation instead of immediate delete
-    ch.matrixEffect = 'despawn';
+    ch.matrixEffect = "despawn";
     ch.matrixEffectTimer = 0;
     ch.matrixEffectSeeds = matrixEffectSeeds();
     ch.bubbleType = null;
@@ -364,7 +392,14 @@ export class OfficeState {
     ch.seatId = seatId;
     // Pathfind to new seat (unblock own seat tile for this query)
     const path = this.withOwnSeatUnblocked(ch, () =>
-      findPath(ch.tileCol, ch.tileRow, seat.seatCol, seat.seatRow, this.tileMap, this.blockedTiles),
+      findPath(
+        ch.tileCol,
+        ch.tileRow,
+        seat.seatCol,
+        seat.seatRow,
+        this.tileMap,
+        this.blockedTiles,
+      ),
     );
     if (path.length > 0) {
       ch.path = path;
@@ -379,7 +414,9 @@ export class OfficeState {
       ch.frame = 0;
       ch.frameTimer = 0;
       if (!ch.isActive) {
-        ch.seatTimer = INACTIVE_SEAT_TIMER_MIN_SEC + Math.random() * INACTIVE_SEAT_TIMER_RANGE_SEC;
+        ch.seatTimer =
+          INACTIVE_SEAT_TIMER_MIN_SEC +
+          Math.random() * INACTIVE_SEAT_TIMER_RANGE_SEC;
       }
     }
   }
@@ -391,7 +428,14 @@ export class OfficeState {
     const seat = this.seats.get(ch.seatId);
     if (!seat) return;
     const path = this.withOwnSeatUnblocked(ch, () =>
-      findPath(ch.tileCol, ch.tileRow, seat.seatCol, seat.seatRow, this.tileMap, this.blockedTiles),
+      findPath(
+        ch.tileCol,
+        ch.tileRow,
+        seat.seatCol,
+        seat.seatRow,
+        this.tileMap,
+        this.blockedTiles,
+      ),
     );
     if (path.length > 0) {
       ch.path = path;
@@ -406,7 +450,9 @@ export class OfficeState {
       ch.frame = 0;
       ch.frameTimer = 0;
       if (!ch.isActive) {
-        ch.seatTimer = INACTIVE_SEAT_TIMER_MIN_SEC + Math.random() * INACTIVE_SEAT_TIMER_RANGE_SEC;
+        ch.seatTimer =
+          INACTIVE_SEAT_TIMER_MIN_SEC +
+          Math.random() * INACTIVE_SEAT_TIMER_RANGE_SEC;
       }
     }
   }
@@ -421,7 +467,14 @@ export class OfficeState {
       if (!key || key !== `${col},${row}`) return false;
     }
     const path = this.withOwnSeatUnblocked(ch, () =>
-      findPath(ch.tileCol, ch.tileRow, col, row, this.tileMap, this.blockedTiles),
+      findPath(
+        ch.tileCol,
+        ch.tileRow,
+        col,
+        row,
+        this.tileMap,
+        this.blockedTiles,
+      ),
     );
     if (path.length === 0) return false;
     ch.path = path;
@@ -445,7 +498,8 @@ export class OfficeState {
     // Find the closest walkable tile to the parent, avoiding tiles occupied by other characters
     const parentCol = parentCh ? parentCh.tileCol : 0;
     const parentRow = parentCh ? parentCh.tileRow : 0;
-    const dist = (c: number, r: number) => Math.abs(c - parentCol) + Math.abs(r - parentRow);
+    const dist = (c: number, r: number) =>
+      Math.abs(c - parentCol) + Math.abs(r - parentRow);
 
     // Build set of tiles occupied by existing characters
     const occupiedTiles = new Set<string>();
@@ -477,7 +531,7 @@ export class OfficeState {
     if (parentCh) ch.dir = parentCh.dir;
     ch.isSubagent = true;
     ch.parentAgentId = parentAgentId;
-    ch.matrixEffect = 'spawn';
+    ch.matrixEffect = "spawn";
     ch.matrixEffectTimer = 0;
     ch.matrixEffectSeeds = matrixEffectSeeds();
     this.characters.set(id, ch);
@@ -495,7 +549,7 @@ export class OfficeState {
 
     const ch = this.characters.get(id);
     if (ch) {
-      if (ch.matrixEffect === 'despawn') {
+      if (ch.matrixEffect === "despawn") {
         // Already despawning — just clean up maps
         this.subagentIdMap.delete(key);
         this.subagentMeta.delete(id);
@@ -506,7 +560,7 @@ export class OfficeState {
         if (seat) seat.assigned = false;
       }
       // Start despawn animation — keep character in map for rendering
-      ch.matrixEffect = 'despawn';
+      ch.matrixEffect = "despawn";
       ch.matrixEffectTimer = 0;
       ch.matrixEffectSeeds = matrixEffectSeeds();
       ch.bubbleType = null;
@@ -526,7 +580,7 @@ export class OfficeState {
       if (meta && meta.parentAgentId === parentAgentId) {
         const ch = this.characters.get(id);
         if (ch) {
-          if (ch.matrixEffect === 'despawn') {
+          if (ch.matrixEffect === "despawn") {
             // Already despawning — just clean up maps
             this.subagentMeta.delete(id);
             toRemove.push(key);
@@ -537,7 +591,7 @@ export class OfficeState {
             if (seat) seat.assigned = false;
           }
           // Start despawn animation
-          ch.matrixEffect = 'despawn';
+          ch.matrixEffect = "despawn";
           ch.matrixEffectTimer = 0;
           ch.matrixEffectSeeds = matrixEffectSeeds();
           ch.bubbleType = null;
@@ -583,8 +637,17 @@ export class OfficeState {
       if (!seat) continue;
       // Find the desk tile(s) the agent faces from their seat
       const dCol =
-        seat.facingDir === Direction.RIGHT ? 1 : seat.facingDir === Direction.LEFT ? -1 : 0;
-      const dRow = seat.facingDir === Direction.DOWN ? 1 : seat.facingDir === Direction.UP ? -1 : 0;
+        seat.facingDir === Direction.RIGHT
+          ? 1
+          : seat.facingDir === Direction.LEFT
+            ? -1
+            : 0;
+      const dRow =
+        seat.facingDir === Direction.DOWN
+          ? 1
+          : seat.facingDir === Direction.UP
+            ? -1
+            : 0;
       // Check tiles in the facing direction (desk could be 1-3 tiles deep)
       for (let d = 1; d <= AUTO_ON_FACING_DEPTH; d++) {
         const tileCol = seat.seatCol + dCol * d;
@@ -613,30 +676,34 @@ export class OfficeState {
     }
 
     // Build modified furniture list with auto-state and animation applied
-    const animFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
-    const modifiedFurniture: PlacedFurniture[] = this.layout.furniture.map((item) => {
-      const entry = getCatalogEntry(item.type);
-      if (!entry) return item;
-      // Check if any tile of this furniture overlaps an auto-on tile
-      for (let dr = 0; dr < entry.footprintH; dr++) {
-        for (let dc = 0; dc < entry.footprintW; dc++) {
-          if (autoOnTiles.has(`${item.col + dc},${item.row + dr}`)) {
-            let onType = getOnStateType(item.type);
-            if (onType !== item.type) {
-              // Check if the on-state type has animation frames
-              const frames = getAnimationFrames(onType);
-              if (frames && frames.length > 1) {
-                const frameIdx = animFrame % frames.length;
-                onType = frames[frameIdx];
+    const animFrame = Math.floor(
+      this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC,
+    );
+    const modifiedFurniture: PlacedFurniture[] = this.layout.furniture.map(
+      (item) => {
+        const entry = getCatalogEntry(item.type);
+        if (!entry) return item;
+        // Check if any tile of this furniture overlaps an auto-on tile
+        for (let dr = 0; dr < entry.footprintH; dr++) {
+          for (let dc = 0; dc < entry.footprintW; dc++) {
+            if (autoOnTiles.has(`${item.col + dc},${item.row + dr}`)) {
+              let onType = getOnStateType(item.type);
+              if (onType !== item.type) {
+                // Check if the on-state type has animation frames
+                const frames = getAnimationFrames(onType);
+                if (frames && frames.length > 1) {
+                  const frameIdx = animFrame % frames.length;
+                  onType = frames[frameIdx];
+                }
+                return { ...item, type: onType };
               }
-              return { ...item, type: onType };
+              return item;
             }
-            return item;
           }
         }
-      }
-      return item;
-    });
+        return item;
+      },
+    );
 
     this.furniture = layoutToFurnitureInstances(modifiedFurniture);
   }
@@ -651,14 +718,14 @@ export class OfficeState {
   showPermissionBubble(id: number): void {
     const ch = this.characters.get(id);
     if (ch) {
-      ch.bubbleType = 'permission';
+      ch.bubbleType = "permission";
       ch.bubbleTimer = 0;
     }
   }
 
   clearPermissionBubble(id: number): void {
     const ch = this.characters.get(id);
-    if (ch && ch.bubbleType === 'permission') {
+    if (ch && ch.bubbleType === "permission") {
       ch.bubbleType = null;
       ch.bubbleTimer = 0;
     }
@@ -667,7 +734,7 @@ export class OfficeState {
   showWaitingBubble(id: number): void {
     const ch = this.characters.get(id);
     if (ch) {
-      ch.bubbleType = 'waiting';
+      ch.bubbleType = "waiting";
       ch.bubbleTimer = WAITING_BUBBLE_DURATION_SEC;
     }
   }
@@ -676,10 +743,10 @@ export class OfficeState {
   dismissBubble(id: number): void {
     const ch = this.characters.get(id);
     if (!ch || !ch.bubbleType) return;
-    if (ch.bubbleType === 'permission') {
+    if (ch.bubbleType === "permission") {
       ch.bubbleType = null;
       ch.bubbleTimer = 0;
-    } else if (ch.bubbleType === 'waiting') {
+    } else if (ch.bubbleType === "waiting") {
       // Trigger immediate fade (0.3s remaining)
       ch.bubbleTimer = Math.min(ch.bubbleTimer, DISMISS_BUBBLE_FAST_FADE_SEC);
     }
@@ -713,9 +780,13 @@ export class OfficeState {
 
   update(dt: number): void {
     // Furniture animation cycling
-    const prevFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
+    const prevFrame = Math.floor(
+      this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC,
+    );
     this.furnitureAnimTimer += dt;
-    const newFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
+    const newFrame = Math.floor(
+      this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC,
+    );
     if (newFrame !== prevFrame) {
       this.rebuildFurnitureInstances();
     }
@@ -726,7 +797,7 @@ export class OfficeState {
       if (ch.matrixEffect) {
         ch.matrixEffectTimer += dt;
         if (ch.matrixEffectTimer >= MATRIX_EFFECT_DURATION) {
-          if (ch.matrixEffect === 'spawn') {
+          if (ch.matrixEffect === "spawn") {
             // Spawn complete — clear effect, resume normal FSM
             ch.matrixEffect = null;
             ch.matrixEffectTimer = 0;
@@ -741,11 +812,18 @@ export class OfficeState {
 
       // Temporarily unblock own seat so character can pathfind to it
       this.withOwnSeatUnblocked(ch, () =>
-        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles),
+        updateCharacter(
+          ch,
+          dt,
+          this.walkableTiles,
+          this.seats,
+          this.tileMap,
+          this.blockedTiles,
+        ),
       );
 
       // Tick bubble timer for waiting bubbles
-      if (ch.bubbleType === 'waiting') {
+      if (ch.bubbleType === "waiting") {
         ch.bubbleTimer -= dt;
         if (ch.bubbleTimer <= 0) {
           ch.bubbleType = null;
@@ -768,16 +846,22 @@ export class OfficeState {
     const chars = this.getCharacters().sort((a, b) => b.y - a.y);
     for (const ch of chars) {
       // Skip characters that are despawning
-      if (ch.matrixEffect === 'despawn') continue;
+      if (ch.matrixEffect === "despawn") continue;
       // Character sprite is 16x24, anchored bottom-center
       // Apply sitting offset to match visual position
-      const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
+      const sittingOffset =
+        ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
       const anchorY = ch.y + sittingOffset;
       const left = ch.x - CHARACTER_HIT_HALF_WIDTH;
       const right = ch.x + CHARACTER_HIT_HALF_WIDTH;
       const top = anchorY - CHARACTER_HIT_HEIGHT;
       const bottom = anchorY;
-      if (worldX >= left && worldX <= right && worldY >= top && worldY <= bottom) {
+      if (
+        worldX >= left &&
+        worldX <= right &&
+        worldY >= top &&
+        worldY <= bottom
+      ) {
         return ch.id;
       }
     }

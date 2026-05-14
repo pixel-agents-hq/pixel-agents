@@ -1,8 +1,8 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 
-import { CONFIG_FILE_NAME, LAYOUT_FILE_DIR } from './constants.js';
+import { CONFIG_FILE_NAME, LAYOUT_FILE_DIR } from "./constants.js";
 
 interface PixelAgentsConfig {
   externalAssetDirectories: string[];
@@ -20,15 +20,17 @@ export function readConfig(): PixelAgentsConfig {
   const filePath = getConfigFilePath();
   try {
     if (!fs.existsSync(filePath)) return { ...DEFAULT_CONFIG };
-    const raw = fs.readFileSync(filePath, 'utf-8');
+    const raw = fs.readFileSync(filePath, "utf-8");
     const parsed = JSON.parse(raw) as Partial<PixelAgentsConfig>;
     return {
       externalAssetDirectories: Array.isArray(parsed.externalAssetDirectories)
-        ? parsed.externalAssetDirectories.filter((d): d is string => typeof d === 'string')
+        ? parsed.externalAssetDirectories.filter(
+            (d): d is string => typeof d === "string",
+          )
         : [],
     };
   } catch (err) {
-    console.error('[Pixel Agents] Failed to read config file:', err);
+    console.error("[Pixel Agents] Failed to read config file:", err);
     return { ...DEFAULT_CONFIG };
   }
 }
@@ -41,10 +43,10 @@ export function writeConfig(config: PixelAgentsConfig): void {
       fs.mkdirSync(dir, { recursive: true });
     }
     const json = JSON.stringify(config, null, 2);
-    const tmpPath = filePath + '.tmp';
-    fs.writeFileSync(tmpPath, json, 'utf-8');
+    const tmpPath = filePath + ".tmp";
+    fs.writeFileSync(tmpPath, json, "utf-8");
     fs.renameSync(tmpPath, filePath);
   } catch (err) {
-    console.error('[Pixel Agents] Failed to write config file:', err);
+    console.error("[Pixel Agents] Failed to write config file:", err);
   }
 }

@@ -5,9 +5,9 @@
  * No VS Code dependency. Only uses pngjs and shared constants.
  */
 
-import { PNG } from 'pngjs';
+import { PNG } from "pngjs";
 
-import { rgbaToHex } from './colorUtils.js';
+import { rgbaToHex } from "./colorUtils.js";
 import {
   CHAR_FRAME_H,
   CHAR_FRAME_W,
@@ -18,8 +18,8 @@ import {
   WALL_GRID_COLS,
   WALL_PIECE_HEIGHT,
   WALL_PIECE_WIDTH,
-} from './constants.js';
-import type { CharacterDirectionSprites } from './types.js';
+} from "./constants.js";
+import type { CharacterDirectionSprites } from "./types.js";
 
 // ── Sprite decoding ──────────────────────────────────────────
 
@@ -27,7 +27,11 @@ import type { CharacterDirectionSprites } from './types.js';
  * Convert a PNG buffer to SpriteData (2D array of hex color strings).
  * '' = transparent, '#RRGGBB' = opaque, '#RRGGBBAA' = semi-transparent.
  */
-export function pngToSpriteData(pngBuffer: Buffer, width: number, height: number): string[][] {
+export function pngToSpriteData(
+  pngBuffer: Buffer,
+  width: number,
+  height: number,
+): string[][] {
   try {
     const png = PNG.sync.read(pngBuffer);
 
@@ -55,10 +59,12 @@ export function pngToSpriteData(pngBuffer: Buffer, width: number, height: number
 
     return sprite;
   } catch (err) {
-    console.warn(`Failed to parse PNG: ${err instanceof Error ? err.message : err}`);
+    console.warn(
+      `Failed to parse PNG: ${err instanceof Error ? err.message : err}`,
+    );
     const sprite: string[][] = [];
     for (let y = 0; y < height; y++) {
-      sprite.push(new Array(width).fill(''));
+      sprite.push(new Array(width).fill(""));
     }
     return sprite;
   }
@@ -96,7 +102,9 @@ export function parseWallPng(pngBuffer: Buffer): string[][][] {
  * Decode a single character PNG (112×96) into direction-keyed frame arrays.
  * Each PNG has 3 direction rows (down, up, right) × 7 frames (16×32 each).
  */
-export function decodeCharacterPng(pngBuffer: Buffer): CharacterDirectionSprites {
+export function decodeCharacterPng(
+  pngBuffer: Buffer,
+): CharacterDirectionSprites {
   const png = PNG.sync.read(pngBuffer);
   const charData: CharacterDirectionSprites = { down: [], up: [], right: [] };
 

@@ -1,29 +1,17 @@
 {
-	"compilerOptions": {
-		"module": "Node16",
-		"target": "ES2022",
-		"lib": [
-			"ES2022"
-		],
-		"sourceMap": true,
-		"rootDir": ".",
-		"strict": true,
-		"skipLibCheck": true,
-		"noUnusedLocals": true,
-		"noUnusedParameters": true,
-		"allowUnreachableCode": false,
-		"noFallthroughCasesInSwitch": true
-	},
-	"include": [
-		"src",
-		"server/src",
-		"shared"
-	],
-	"exclude": [
-		"node_modules",
-		"webview-ui",
-		"dist",
-		"out",
-		"scripts"
-	]
+  "extends": "@minion-stack/tsconfig/node.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "sourceMap": true,
+
+    // Transitional overrides — shared base.json enables both strict flags.
+    // Pixel-agents pre-adoption baseline: 0 errors. Post-adoption without
+    // these overrides: 12 new `possibly undefined` errors across
+    // shared/assets/*, src/PixelAgentsViewProvider.ts, src/agentManager.ts,
+    // src/assetLoader.ts. Phase 8 will remove these and fix inline.
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": false
+  },
+  "include": ["src", "server/src", "shared"],
+  "exclude": ["node_modules", "webview-ui", "dist", "out", "scripts"]
 }

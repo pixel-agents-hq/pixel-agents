@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
 interface MenuItemProps {
   onClick: () => void;
@@ -7,7 +7,12 @@ interface MenuItemProps {
   className?: string;
 }
 
-export function MenuItem({ onClick, children, right, className = '' }: MenuItemProps) {
+export function MenuItem({
+  onClick,
+  children,
+  right,
+  className = "",
+}: MenuItemProps) {
   return (
     <button
       onClick={onClick}

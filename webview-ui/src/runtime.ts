@@ -8,9 +8,10 @@
 
 declare function acquireVsCodeApi(): unknown;
 
-type Runtime = 'vscode' | 'browser';
+type Runtime = "vscode" | "browser";
 // Future: 'cursor' | 'windsurf' | 'electron' | etc.
 
-const runtime: Runtime = typeof acquireVsCodeApi !== 'undefined' ? 'vscode' : 'browser';
+const runtime: Runtime =
+  typeof acquireVsCodeApi !== "undefined" ? "vscode" : "browser";
 
-export const isBrowserRuntime = runtime === 'browser';
+export const isBrowserRuntime = runtime === "browser";

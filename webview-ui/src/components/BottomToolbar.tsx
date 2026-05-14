@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 
-import type { WorkspaceFolder } from '../hooks/useExtensionMessages.js';
-import { vscode } from '../vscodeApi.js';
-import { Button } from './ui/Button.js';
-import { Dropdown, DropdownItem } from './ui/Dropdown.js';
+import type { WorkspaceFolder } from "../hooks/useExtensionMessages.js";
+import { vscode } from "../vscodeApi.js";
+import { Button } from "./ui/Button.js";
+import { Dropdown, DropdownItem } from "./ui/Dropdown.js";
 
 interface BottomToolbarProps {
   isEditMode: boolean;
@@ -30,13 +30,16 @@ export function BottomToolbar({
   useEffect(() => {
     if (!isFolderPickerOpen && !isBypassMenuOpen) return;
     const handleClick = (e: MouseEvent) => {
-      if (folderPickerRef.current && !folderPickerRef.current.contains(e.target as Node)) {
+      if (
+        folderPickerRef.current &&
+        !folderPickerRef.current.contains(e.target as Node)
+      ) {
         setIsFolderPickerOpen(false);
         setIsBypassMenuOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
   }, [isFolderPickerOpen, isBypassMenuOpen]);
 
   const hasMultipleFolders = workspaceFolders.length > 1;
@@ -67,7 +70,11 @@ export function BottomToolbar({
     setIsFolderPickerOpen(false);
     const bypassPermissions = pendingBypassRef.current;
     pendingBypassRef.current = false;
-    vscode.postMessage({ type: 'openClaude', folderPath: folder.path, bypassPermissions });
+    vscode.postMessage({
+      type: "openClaude",
+      folderPath: folder.path,
+      bypassPermissions,
+    });
   };
 
   const handleBypassSelect = (bypassPermissions: boolean) => {
@@ -76,7 +83,7 @@ export function BottomToolbar({
       pendingBypassRef.current = bypassPermissions;
       setIsFolderPickerOpen(true);
     } else {
-      vscode.postMessage({ type: 'openClaude', bypassPermissions });
+      vscode.postMessage({ type: "openClaude", bypassPermissions });
     }
   };
 
@@ -93,15 +100,16 @@ export function BottomToolbar({
           onClick={handleAgentClick}
           className={
             isFolderPickerOpen || isBypassMenuOpen
-              ? 'bg-accent-bright'
-              : 'bg-accent hover:bg-accent-bright'
+              ? "bg-accent-bright"
+              : "bg-accent hover:bg-accent-bright"
           }
         >
           + Agent
         </Button>
         <Dropdown isOpen={isBypassMenuOpen}>
           <DropdownItem onClick={() => handleBypassSelect(true)}>
-            Skip permissions mode <span className="text-2xs text-warning">⚠</span>
+            Skip permissions mode{" "}
+            <span className="text-2xs text-warning">⚠</span>
           </DropdownItem>
         </Dropdown>
         <Dropdown isOpen={isFolderPickerOpen} className="min-w-128">
@@ -117,14 +125,14 @@ export function BottomToolbar({
         </Dropdown>
       </div>
       <Button
-        variant={isEditMode ? 'active' : 'default'}
+        variant={isEditMode ? "active" : "default"}
         onClick={onToggleEditMode}
         title="Edit office layout"
       >
         Layout
       </Button>
       <Button
-        variant={isSettingsOpen ? 'active' : 'default'}
+        variant={isSettingsOpen ? "active" : "default"}
         onClick={onToggleSettings}
         title="Settings"
       >

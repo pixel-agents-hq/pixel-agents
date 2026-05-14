@@ -1,4 +1,4 @@
-import type { AgentState } from '../../src/types.js';
+import type { AgentState } from "../../src/types.js";
 
 /**
  * Pure helpers for working with Lead + Teammates relationships.
@@ -32,7 +32,10 @@ export function getInlineTeammates(
 }
 
 /** Does this lead have any active inline teammates? */
-export function hasInlineTeammates(leadId: number, agents: Map<number, AgentState>): boolean {
+export function hasInlineTeammates(
+  leadId: number,
+  agents: Map<number, AgentState>,
+): boolean {
   for (const a of agents.values()) {
     if (isInlineTeammateOf(a, leadId)) return true;
   }

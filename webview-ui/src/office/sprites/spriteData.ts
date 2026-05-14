@@ -1,10 +1,10 @@
-import type { ColorValue } from '../../components/ui/types.js';
-import { PALETTE_COUNT } from '../../constants.js';
-import { adjustSprite } from '../colorize.js';
-import type { Direction, SpriteData } from '../types.js';
-import { Direction as Dir } from '../types.js';
-import bubblePermissionData from './bubble-permission.json';
-import bubbleWaitingData from './bubble-waiting.json';
+import type { ColorValue } from "../../components/ui/types.js";
+import { PALETTE_COUNT } from "../../constants.js";
+import { adjustSprite } from "../colorize.js";
+import type { Direction, SpriteData } from "../types.js";
+import { Direction as Dir } from "../types.js";
+import bubblePermissionData from "./bubble-permission.json";
+import bubbleWaitingData from "./bubble-waiting.json";
 
 // ── Speech Bubble Sprites ───────────────────────────────────────
 
@@ -18,10 +18,12 @@ function resolveBubbleSprite(data: BubbleSpriteJson): SpriteData {
 }
 
 /** Permission bubble: white square with "..." in amber, and a tail pointer (11x13) */
-export const BUBBLE_PERMISSION_SPRITE: SpriteData = resolveBubbleSprite(bubblePermissionData);
+export const BUBBLE_PERMISSION_SPRITE: SpriteData =
+  resolveBubbleSprite(bubblePermissionData);
 
 /** Waiting bubble: white square with green checkmark, and a tail pointer (11x13) */
-export const BUBBLE_WAITING_SPRITE: SpriteData = resolveBubbleSprite(bubbleWaitingData);
+export const BUBBLE_WAITING_SPRITE: SpriteData =
+  resolveBubbleSprite(bubbleWaitingData);
 
 // ════════════════════════════════════════════════════════════════
 // Loaded character sprites (from PNG assets)
@@ -65,7 +67,10 @@ export interface CharacterSprites {
 const spriteCache = new Map<string, CharacterSprites>();
 
 /** Apply hue shift to every sprite in a CharacterSprites set */
-function hueShiftSprites(sprites: CharacterSprites, hueShift: number): CharacterSprites {
+function hueShiftSprites(
+  sprites: CharacterSprites,
+  hueShift: number,
+): CharacterSprites {
   const color: ColorValue = { h: hueShift, s: 0, b: 0, c: 0 };
   const shift = (s: SpriteData) => adjustSprite(s, color);
   const shiftWalk = (
@@ -76,10 +81,9 @@ function hueShiftSprites(sprites: CharacterSprites, hueShift: number): Character
     shift(arr[2]),
     shift(arr[3]),
   ];
-  const shiftPair = (arr: [SpriteData, SpriteData]): [SpriteData, SpriteData] => [
-    shift(arr[0]),
-    shift(arr[1]),
-  ];
+  const shiftPair = (
+    arr: [SpriteData, SpriteData],
+  ): [SpriteData, SpriteData] => [shift(arr[0]), shift(arr[1])];
   return {
     walk: {
       [Dir.DOWN]: shiftWalk(sprites.walk[Dir.DOWN]),
@@ -106,12 +110,15 @@ function hueShiftSprites(sprites: CharacterSprites, hueShift: number): Character
 function emptySprite(w: number, h: number): SpriteData {
   const rows: string[][] = [];
   for (let y = 0; y < h; y++) {
-    rows.push(new Array(w).fill(''));
+    rows.push(new Array(w).fill(""));
   }
   return rows;
 }
 
-export function getCharacterSprites(paletteIndex: number, hueShift = 0): CharacterSprites {
+export function getCharacterSprites(
+  paletteIndex: number,
+  hueShift = 0,
+): CharacterSprites {
   const cacheKey = `${paletteIndex}:${hueShift}`;
   const cached = spriteCache.get(cacheKey);
   if (cached) return cached;
@@ -149,7 +156,12 @@ export function getCharacterSprites(paletteIndex: number, hueShift = 0): Charact
   } else {
     // Fallback: return transparent placeholder sprites (16×32)
     const e = emptySprite(16, 32);
-    const walkSet: [SpriteData, SpriteData, SpriteData, SpriteData] = [e, e, e, e];
+    const walkSet: [SpriteData, SpriteData, SpriteData, SpriteData] = [
+      e,
+      e,
+      e,
+      e,
+    ];
     const pairSet: [SpriteData, SpriteData] = [e, e];
     sprites = {
       walk: {

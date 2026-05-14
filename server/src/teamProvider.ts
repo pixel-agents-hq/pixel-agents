@@ -28,12 +28,17 @@ export interface TeamProvider {
    *
    *  Claude: `Agent` tool with `run_in_background: true`. Agent without that flag is
    *  a basic within-turn subagent, not a teammate. */
-  isTeammateSpawnCall(toolName: string, toolInput: Record<string, unknown>): boolean;
+  isTeammateSpawnCall(
+    toolName: string,
+    toolInput: Record<string, unknown>,
+  ): boolean;
 
   /** Extract a teammate's identity (name) from a raw hook event payload (pre-normalization).
    *  Used to route TeammateIdle / TaskCompleted hooks to the specific teammate agent.
    *  Claude: reads the `agent_type` field. Returns undefined if not present. */
-  extractTeammateNameFromEvent(event: Record<string, unknown>): string | undefined;
+  extractTeammateNameFromEvent(
+    event: Record<string, unknown>,
+  ): string | undefined;
 
   /** Given a teammate's JSONL path, return the path to its sidecar metadata file.
    *  Claude: `<file>.meta.json`. */

@@ -1,8 +1,8 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from "react";
 
-import type { ColorValue } from '../components/ui/types.js';
-import { LAYOUT_SAVE_DEBOUNCE_MS, ZOOM_MAX, ZOOM_MIN } from '../constants.js';
-import type { ExpandDirection } from '../office/editor/editorActions.js';
+import type { ColorValue } from "../components/ui/types.js";
+import { LAYOUT_SAVE_DEBOUNCE_MS, ZOOM_MAX, ZOOM_MIN } from "../constants.js";
+import type { ExpandDirection } from "../office/editor/editorActions.js";
 import {
   canPlaceFurniture,
   expandLayout,
@@ -13,24 +13,24 @@ import {
   removeFurniture,
   rotateFurniture,
   toggleFurnitureState,
-} from '../office/editor/editorActions.js';
-import type { EditorState } from '../office/editor/editorState.js';
-import type { OfficeState } from '../office/engine/officeState.js';
+} from "../office/editor/editorActions.js";
+import type { EditorState } from "../office/editor/editorState.js";
+import type { OfficeState } from "../office/engine/officeState.js";
 import {
   getCatalogEntry,
   getRotatedType,
   getToggledType,
-} from '../office/layout/furnitureCatalog.js';
-import { defaultZoom } from '../office/toolUtils.js';
+} from "../office/layout/furnitureCatalog.js";
+import { defaultZoom } from "../office/toolUtils.js";
 import type {
   EditTool as EditToolType,
   OfficeLayout,
   PlacedFurniture,
   TileType as TileTypeVal,
-} from '../office/types.js';
-import { EditTool } from '../office/types.js';
-import { TileType } from '../office/types.js';
-import { vscode } from '../vscodeApi.js';
+} from "../office/types.js";
+import { EditTool } from "../office/types.js";
+import { TileType } from "../office/types.js";
+import { vscode } from "../vscodeApi.js";
 
 interface EditorActions {
   isEditMode: boolean;
@@ -84,7 +84,7 @@ export function useEditorActions(
   const saveLayout = useCallback((layout: OfficeLayout) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      vscode.postMessage({ type: 'saveLayout', layout });
+      vscode.postMessage({ type: "saveLayout", layout });
     }, LAYOUT_SAVE_DEBOUNCE_MS);
   }, []);
 
@@ -104,7 +104,7 @@ export function useEditorActions(
   );
 
   const handleOpenClaude = useCallback(() => {
-    vscode.postMessage({ type: 'openClaude' });
+    vscode.postMessage({ type: "openClaude" });
   }, []);
 
   const handleToggleEditMode = useCallback(() => {
@@ -177,7 +177,8 @@ export function useEditorActions(
       // Update all existing wall tiles to the new color
       const os = getOfficeState();
       const layout = os.getLayout();
-      const existingColors = layout.tileColors || new Array(layout.tiles.length).fill(null);
+      const existingColors =
+        layout.tileColors || new Array(layout.tiles.length).fill(null);
       const newColors = [...existingColors];
       let changed = false;
       for (let i = 0; i < layout.tiles.length; i++) {
@@ -249,7 +250,7 @@ export function useEditorActions(
     (type: string) => {
       // Clicking the same item deselects it (no ghost), stays in furniture mode
       if (editorState.selectedFurnitureType === type) {
-        editorState.selectedFurnitureType = '';
+        editorState.selectedFurnitureType = "";
         editorState.clearGhost();
       } else {
         editorState.selectedFurnitureType = type;
@@ -274,7 +275,7 @@ export function useEditorActions(
   const handleRotateSelected = useCallback(() => {
     // If in furniture placement mode, cycle the selected type through the rotation group
     if (editorState.activeTool === EditTool.FURNITURE_PLACE) {
-      const rotated = getRotatedType(editorState.selectedFurnitureType, 'cw');
+      const rotated = getRotatedType(editorState.selectedFurnitureType, "cw");
       if (rotated) {
         editorState.selectedFurnitureType = rotated;
         setEditorTick((n) => n + 1);
@@ -285,7 +286,7 @@ export function useEditorActions(
     const uid = editorState.selectedFurnitureUid;
     if (!uid) return;
     const os = getOfficeState();
-    const newLayout = rotateFurniture(os.getLayout(), uid, 'cw');
+    const newLayout = rotateFurniture(os.getLayout(), uid, "cw");
     if (newLayout !== os.getLayout()) {
       applyEdit(newLayout);
     }
@@ -354,7 +355,7 @@ export function useEditorActions(
     const os = getOfficeState();
     const layout = os.getLayout();
     lastSavedLayoutRef.current = structuredClone(layout);
-    vscode.postMessage({ type: 'saveLayout', layout });
+    vscode.postMessage({ type: "saveLayout", layout });
     editorState.isDirty = false;
     setIsDirty(false);
   }, [getOfficeState, editorState]);
@@ -396,14 +397,15 @@ export function useEditorActions(
       row: number;
       shift: { col: number; row: number };
     } | null => {
-      if (col >= 0 && col < layout.cols && row >= 0 && row < layout.rows) return null;
+      if (col >= 0 && col < layout.cols && row >= 0 && row < layout.rows)
+        return null;
 
       // Determine which directions to expand
       const directions: ExpandDirection[] = [];
-      if (col < 0) directions.push('left');
-      if (col >= layout.cols) directions.push('right');
-      if (row < 0) directions.push('up');
-      if (row >= layout.rows) directions.push('down');
+      if (col < 0) directions.push("left");
+      if (col >= layout.cols) directions.push("right");
+      if (row < 0) directions.push("up");
+      if (row >= layout.rows) directions.push("down");
 
       let current = layout;
       let totalShiftCol = 0;
@@ -496,7 +498,8 @@ export function useEditorActions(
           }
         }
       } else if (editorState.activeTool === EditTool.ERASE) {
-        if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return;
+        if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows)
+          return;
         const idx = row * layout.cols + col;
         if (layout.tiles[idx] === TileType.VOID) return;
         const newLayout = paintTile(layout, col, row, TileType.VOID);
@@ -505,7 +508,7 @@ export function useEditorActions(
         }
       } else if (editorState.activeTool === EditTool.FURNITURE_PLACE) {
         const type = editorState.selectedFurnitureType;
-        if (type === '') {
+        if (type === "") {
           // No item selected — act like SELECT (find furniture hit)
           const hit = layout.furniture.find((f) => {
             const entry = getCatalogEntry(f.type);
@@ -546,14 +549,20 @@ export function useEditorActions(
         });
         if (hit) {
           editorState.selectedFurnitureType = hit.type;
-          editorState.pickedFurnitureColor = hit.color ? { ...hit.color } : null;
+          editorState.pickedFurnitureColor = hit.color
+            ? { ...hit.color }
+            : null;
           editorState.activeTool = EditTool.FURNITURE_PLACE;
         }
         setEditorTick((n) => n + 1);
       } else if (editorState.activeTool === EditTool.EYEDROPPER) {
         const idx = row * layout.cols + col;
         const tile = layout.tiles[idx];
-        if (tile !== undefined && tile !== TileType.WALL && tile !== TileType.VOID) {
+        if (
+          tile !== undefined &&
+          tile !== TileType.WALL &&
+          tile !== TileType.VOID
+        ) {
           editorState.selectedTileType = tile;
           const color = layout.tileColors?.[idx];
           if (color) {
@@ -591,7 +600,8 @@ export function useEditorActions(
     (col: number, row: number) => {
       const os = getOfficeState();
       const layout = os.getLayout();
-      if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return;
+      if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows)
+        return;
       const idx = row * layout.cols + col;
       // Only erase non-VOID tiles
       if (layout.tiles[idx] === TileType.VOID) return;

@@ -1,7 +1,7 @@
-import type * as vscode from 'vscode';
+import type * as vscode from "vscode";
 
-import { PERMISSION_TIMER_DELAY_MS } from '../server/src/constants.js';
-import type { AgentState } from './types.js';
+import { PERMISSION_TIMER_DELAY_MS } from "../server/src/constants.js";
+import type { AgentState } from "./types.js";
 
 export function clearAgentActivity(
   agent: AgentState | undefined,
@@ -19,7 +19,7 @@ export function clearAgentActivity(
       agent.activeToolStatuses.delete(toolId);
       const toolName = agent.activeToolNames.get(toolId);
       agent.activeToolNames.delete(toolId);
-      if (toolName === 'Task' || toolName === 'Agent') {
+      if (toolName === "Task" || toolName === "Agent") {
         agent.activeSubagentToolIds.delete(toolId);
         agent.activeSubagentToolNames.delete(toolId);
       }
@@ -35,20 +35,20 @@ export function clearAgentActivity(
   agent.isWaiting = false;
   agent.permissionSent = false;
   cancelPermissionTimer(agentId, permissionTimers);
-  webview?.postMessage({ type: 'agentToolsClear', id: agentId });
+  webview?.postMessage({ type: "agentToolsClear", id: agentId });
   // Re-send background agent tools so webview re-creates their sub-agents
   for (const toolId of agent.backgroundAgentToolIds) {
     const status = agent.activeToolStatuses.get(toolId);
     if (status) {
       webview?.postMessage({
-        type: 'agentToolStart',
+        type: "agentToolStart",
         id: agentId,
         toolId,
         status,
       });
     }
   }
-  webview?.postMessage({ type: 'agentStatus', id: agentId, status: 'active' });
+  webview?.postMessage({ type: "agentStatus", id: agentId, status: "active" });
 }
 
 export function cancelWaitingTimer(
@@ -77,9 +77,9 @@ export function startWaitingTimer(
       agent.isWaiting = true;
     }
     webview?.postMessage({
-      type: 'agentStatus',
+      type: "agentStatus",
       id: agentId,
-      status: 'waiting',
+      status: "waiting",
     });
   }, delayMs);
   waitingTimers.set(agentId, timer);
@@ -113,7 +113,7 @@ export function startPermissionTimer(
     let hasNonExempt = false;
     for (const toolId of agent.activeToolIds) {
       const toolName = agent.activeToolNames.get(toolId);
-      if (!permissionExemptTools.has(toolName || '')) {
+      if (!permissionExemptTools.has(toolName || "")) {
         hasNonExempt = true;
         break;
       }
@@ -133,15 +133,17 @@ export function startPermissionTimer(
 
     if (hasNonExempt) {
       agent.permissionSent = true;
-      console.log(`[Pixel Agents] Timer: Agent ${agentId} - possible permission wait detected`);
+      console.log(
+        `[Pixel Agents] Timer: Agent ${agentId} - possible permission wait detected`,
+      );
       webview?.postMessage({
-        type: 'agentToolPermission',
+        type: "agentToolPermission",
         id: agentId,
       });
       // Also notify stuck sub-agents
       for (const parentToolId of stuckSubagentParentToolIds) {
         webview?.postMessage({
-          type: 'subagentToolPermission',
+          type: "subagentToolPermission",
           id: agentId,
           parentToolId,
         });

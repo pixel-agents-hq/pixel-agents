@@ -144,33 +144,33 @@ Use `"rotationScheme": "3-way-mirror"` and add `"mirrorSide": true` to the side 
 
 ### Root fields (all manifests)
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | string | Unique identifier. Must be unique across all loaded assets |
-| `name` | string | Display name shown in the palette |
-| `category` | string | Palette category: `desks`, `chairs`, `electronics`, `storage`, `decor`, `misc`, `wall` |
-| `type` | `"asset"` \| `"group"` | Single sprite or grouped (rotation/state/animation) |
-| `canPlaceOnWalls` | boolean | Whether the item can be placed on wall tiles |
-| `canPlaceOnSurfaces` | boolean | Whether the item can be placed on top of desk surfaces |
-| `backgroundTiles` | number | Number of floor tiles the sprite extends below its footprint (for tall sprites) |
+| Field                | Type                   | Description                                                                            |
+| -------------------- | ---------------------- | -------------------------------------------------------------------------------------- |
+| `id`                 | string                 | Unique identifier. Must be unique across all loaded assets                             |
+| `name`               | string                 | Display name shown in the palette                                                      |
+| `category`           | string                 | Palette category: `desks`, `chairs`, `electronics`, `storage`, `decor`, `misc`, `wall` |
+| `type`               | `"asset"` \| `"group"` | Single sprite or grouped (rotation/state/animation)                                    |
+| `canPlaceOnWalls`    | boolean                | Whether the item can be placed on wall tiles                                           |
+| `canPlaceOnSurfaces` | boolean                | Whether the item can be placed on top of desk surfaces                                 |
+| `backgroundTiles`    | number                 | Number of floor tiles the sprite extends below its footprint (for tall sprites)        |
 
 ### Asset-only fields
 
-| Field | Type | Description |
-|---|---|---|
-| `file` | string | PNG filename relative to the item folder |
-| `width` | number | Sprite width in pixels |
-| `height` | number | Sprite height in pixels |
+| Field        | Type   | Description                              |
+| ------------ | ------ | ---------------------------------------- |
+| `file`       | string | PNG filename relative to the item folder |
+| `width`      | number | Sprite width in pixels                   |
+| `height`     | number | Sprite height in pixels                  |
 | `footprintW` | number | Footprint width in tiles (1 tile = 16px) |
-| `footprintH` | number | Footprint height in tiles |
+| `footprintH` | number | Footprint height in tiles                |
 
 ### Group fields
 
-| Field | Type | Description |
-|---|---|---|
-| `groupType` | `"rotation"` \| `"state"` \| `"animation"` | How members relate to each other |
-| `rotationScheme` | `"2-way"` \| `"3-way-mirror"` \| `"4-way"` | Rotation variants available |
-| `members` | array | Child assets or nested groups |
+| Field            | Type                                       | Description                      |
+| ---------------- | ------------------------------------------ | -------------------------------- |
+| `groupType`      | `"rotation"` \| `"state"` \| `"animation"` | How members relate to each other |
+| `rotationScheme` | `"2-way"` \| `"3-way-mirror"` \| `"4-way"` | Rotation variants available      |
+| `members`        | array                                      | Child assets or nested groups    |
 
 ### Member orientation values
 

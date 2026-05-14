@@ -1,63 +1,63 @@
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 
 import {
   BASH_COMMAND_DISPLAY_MAX_LENGTH,
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
-} from '../../../constants.js';
-import type { AgentEvent, HookProvider } from '../../../provider.js';
+} from "../../../constants.js";
+import type { AgentEvent, HookProvider } from "../../../provider.js";
 import {
   areHooksInstalled as installerAreHooksInstalled,
   installHooks as installerInstallHooks,
   uninstallHooks as installerUninstallHooks,
-} from './claudeHookInstaller.js';
-import { claudeTeamProvider } from './claudeTeamProvider.js';
+} from "./claudeHookInstaller.js";
+import { claudeTeamProvider } from "./claudeTeamProvider.js";
 
 // ── formatToolStatus: moved from src/transcriptParser.ts ──
 
 export function formatToolStatus(toolName: string, input?: unknown): string {
   const inp = (input ?? {}) as Record<string, unknown>;
-  const base = (p: unknown) => (typeof p === 'string' ? path.basename(p) : '');
+  const base = (p: unknown) => (typeof p === "string" ? path.basename(p) : "");
   switch (toolName) {
-    case 'Read':
+    case "Read":
       return `Reading ${base(inp.file_path)}`;
-    case 'Edit':
+    case "Edit":
       return `Editing ${base(inp.file_path)}`;
-    case 'Write':
+    case "Write":
       return `Writing ${base(inp.file_path)}`;
-    case 'Bash': {
-      const cmd = (inp.command as string) || '';
-      return `Running: ${cmd.length > BASH_COMMAND_DISPLAY_MAX_LENGTH ? cmd.slice(0, BASH_COMMAND_DISPLAY_MAX_LENGTH) + '\u2026' : cmd}`;
+    case "Bash": {
+      const cmd = (inp.command as string) || "";
+      return `Running: ${cmd.length > BASH_COMMAND_DISPLAY_MAX_LENGTH ? cmd.slice(0, BASH_COMMAND_DISPLAY_MAX_LENGTH) + "\u2026" : cmd}`;
     }
-    case 'Glob':
-      return 'Searching files';
-    case 'Grep':
-      return 'Searching code';
-    case 'WebFetch':
-      return 'Fetching web content';
-    case 'WebSearch':
-      return 'Searching the web';
-    case 'Task':
-    case 'Agent': {
-      const desc = typeof inp.description === 'string' ? inp.description : '';
+    case "Glob":
+      return "Searching files";
+    case "Grep":
+      return "Searching code";
+    case "WebFetch":
+      return "Fetching web content";
+    case "WebSearch":
+      return "Searching the web";
+    case "Task":
+    case "Agent": {
+      const desc = typeof inp.description === "string" ? inp.description : "";
       return desc
-        ? `Subtask: ${desc.length > TASK_DESCRIPTION_DISPLAY_MAX_LENGTH ? desc.slice(0, TASK_DESCRIPTION_DISPLAY_MAX_LENGTH) + '\u2026' : desc}`
-        : 'Running subtask';
+        ? `Subtask: ${desc.length > TASK_DESCRIPTION_DISPLAY_MAX_LENGTH ? desc.slice(0, TASK_DESCRIPTION_DISPLAY_MAX_LENGTH) + "\u2026" : desc}`
+        : "Running subtask";
     }
-    case 'AskUserQuestion':
-      return 'Waiting for your answer';
-    case 'EnterPlanMode':
-      return 'Planning';
-    case 'NotebookEdit':
-      return 'Editing notebook';
-    case 'TeamCreate': {
-      const teamName = typeof inp.team_name === 'string' ? inp.team_name : '';
-      return teamName ? `Creating team: ${teamName}` : 'Creating team';
+    case "AskUserQuestion":
+      return "Waiting for your answer";
+    case "EnterPlanMode":
+      return "Planning";
+    case "NotebookEdit":
+      return "Editing notebook";
+    case "TeamCreate": {
+      const teamName = typeof inp.team_name === "string" ? inp.team_name : "";
+      return teamName ? `Creating team: ${teamName}` : "Creating team";
     }
-    case 'SendMessage': {
-      const recipient = typeof inp.recipient === 'string' ? inp.recipient : '';
-      return recipient ? `-> ${recipient}` : 'Sending message';
+    case "SendMessage": {
+      const recipient = typeof inp.recipient === "string" ? inp.recipient : "";
+      return recipient ? `-> ${recipient}` : "Sending message";
     }
     default:
       return `Using ${toolName}`;
@@ -70,19 +70,21 @@ function getSessionDirs(workspacePath: string): string[] {
   // Claude stores sessions at ~/.claude/projects/<workspace-path-with-dashes>/.
   // Normalize every non-alphanumeric char (except '-') to '-' to match Claude's
   // directory naming convention across platforms.
-  const dirName = workspacePath.replace(/[^a-zA-Z0-9-]/g, '-');
-  const projectDir = path.join(os.homedir(), '.claude', 'projects', dirName);
+  const dirName = workspacePath.replace(/[^a-zA-Z0-9-]/g, "-");
+  const projectDir = path.join(os.homedir(), ".claude", "projects", dirName);
 
   // Try exact match first.
   if (fs.existsSync(projectDir)) return [projectDir];
 
   // Case-insensitive fallback for Windows: drive letter casing can differ
   // between what VS Code gives us (e.g. "c:\...") and Claude's encoding ("C:\...").
-  const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
+  const projectsRoot = path.join(os.homedir(), ".claude", "projects");
   try {
     if (fs.existsSync(projectsRoot)) {
       const lowerDirName = dirName.toLowerCase();
-      const match = fs.readdirSync(projectsRoot).find((c) => c.toLowerCase() === lowerDirName);
+      const match = fs
+        .readdirSync(projectsRoot)
+        .find((c) => c.toLowerCase() === lowerDirName);
       if (match) return [path.join(projectsRoot, match)];
     }
   } catch {
@@ -97,7 +99,11 @@ function buildLaunchCommand(
   sessionId: string,
   cwd: string,
 ): { command: string; args: string[]; env?: Record<string, string> } {
-  return { command: 'claude', args: ['--session-id', sessionId], env: { PWD: cwd } };
+  return {
+    command: "claude",
+    args: ["--session-id", sessionId],
+    env: { PWD: cwd },
+  };
 }
 
 // ── normalizeHookEvent: the single Claude-specific normalization boundary ──
@@ -116,19 +122,20 @@ function normalizeHookEvent(
 ): { sessionId: string; event: AgentEvent } | null {
   const eventName = raw.hook_event_name;
   const sessionId = raw.session_id;
-  if (typeof eventName !== 'string' || typeof sessionId !== 'string') return null;
+  if (typeof eventName !== "string" || typeof sessionId !== "string")
+    return null;
 
   switch (eventName) {
-    case 'PreToolUse': {
-      const toolName = typeof raw.tool_name === 'string' ? raw.tool_name : '';
+    case "PreToolUse": {
+      const toolName = typeof raw.tool_name === "string" ? raw.tool_name : "";
       const toolInput =
-        typeof raw.tool_input === 'object' && raw.tool_input !== null
+        typeof raw.tool_input === "object" && raw.tool_input !== null
           ? (raw.tool_input as Record<string, unknown>)
           : {};
       return {
         sessionId,
         event: {
-          kind: 'toolStart',
+          kind: "toolStart",
           toolId: `hook-${Date.now()}`,
           toolName,
           input: toolInput,
@@ -136,23 +143,24 @@ function normalizeHookEvent(
       };
     }
 
-    case 'PostToolUse':
-    case 'PostToolUseFailure':
-      return { sessionId, event: { kind: 'toolEnd', toolId: 'current' } };
+    case "PostToolUse":
+    case "PostToolUseFailure":
+      return { sessionId, event: { kind: "toolEnd", toolId: "current" } };
 
-    case 'Stop':
-      return { sessionId, event: { kind: 'turnEnd' } };
+    case "Stop":
+      return { sessionId, event: { kind: "turnEnd" } };
 
-    case 'UserPromptSubmit':
-      return { sessionId, event: { kind: 'userTurn' } };
+    case "UserPromptSubmit":
+      return { sessionId, event: { kind: "userTurn" } };
 
-    case 'SubagentStart': {
-      const agentType = typeof raw.agent_type === 'string' ? raw.agent_type : 'unknown';
+    case "SubagentStart": {
+      const agentType =
+        typeof raw.agent_type === "string" ? raw.agent_type : "unknown";
       return {
         sessionId,
         event: {
-          kind: 'subagentStart',
-          parentToolId: 'current',
+          kind: "subagentStart",
+          parentToolId: "current",
           toolId: `hook-sub-${agentType}-${Date.now()}`,
           toolName: agentType,
           input: raw,
@@ -160,56 +168,60 @@ function normalizeHookEvent(
       };
     }
 
-    case 'SubagentStop':
+    case "SubagentStop":
       return {
         sessionId,
-        event: { kind: 'subagentEnd', parentToolId: 'current', toolId: 'current' },
+        event: {
+          kind: "subagentEnd",
+          parentToolId: "current",
+          toolId: "current",
+        },
       };
 
-    case 'PermissionRequest':
-      return { sessionId, event: { kind: 'permissionRequest' } };
+    case "PermissionRequest":
+      return { sessionId, event: { kind: "permissionRequest" } };
 
-    case 'Notification': {
+    case "Notification": {
       const notificationType =
-        typeof raw.notification_type === 'string' ? raw.notification_type : '';
-      if (notificationType === 'permission_prompt') {
-        return { sessionId, event: { kind: 'permissionRequest' } };
+        typeof raw.notification_type === "string" ? raw.notification_type : "";
+      if (notificationType === "permission_prompt") {
+        return { sessionId, event: { kind: "permissionRequest" } };
       }
-      if (notificationType === 'idle_prompt') {
-        return { sessionId, event: { kind: 'turnEnd' } };
+      if (notificationType === "idle_prompt") {
+        return { sessionId, event: { kind: "turnEnd" } };
       }
       return null;
     }
 
-    case 'SessionStart':
+    case "SessionStart":
       return {
         sessionId,
         event: {
-          kind: 'sessionStart',
-          source: typeof raw.source === 'string' ? raw.source : undefined,
+          kind: "sessionStart",
+          source: typeof raw.source === "string" ? raw.source : undefined,
         },
       };
 
-    case 'SessionEnd':
+    case "SessionEnd":
       return {
         sessionId,
         event: {
-          kind: 'sessionEnd',
-          reason: typeof raw.reason === 'string' ? raw.reason : undefined,
+          kind: "sessionEnd",
+          reason: typeof raw.reason === "string" ? raw.reason : undefined,
         },
       };
 
     // Agent Teams: a teammate went idle / marked a task complete. Normalize as
     // `subagentTurnEnd` so the team handler can route by agent_type to the teammate.
-    case 'TeammateIdle':
-    case 'TaskCompleted':
+    case "TeammateIdle":
+    case "TaskCompleted":
       return {
         sessionId,
-        event: { kind: 'subagentTurnEnd', parentToolId: 'current' },
+        event: { kind: "subagentTurnEnd", parentToolId: "current" },
       };
 
     // TaskCreated is informational; no AgentEvent shape fits it. Drop.
-    case 'TaskCreated':
+    case "TaskCreated":
     default:
       return null;
   }
@@ -234,9 +246,9 @@ function areHooksInstalled(): Promise<boolean> {
 // ── The provider ──
 
 export const claudeProvider: HookProvider = {
-  kind: 'hook',
-  id: 'claude',
-  displayName: 'Claude Code',
+  kind: "hook",
+  id: "claude",
+  displayName: "Claude Code",
 
   normalizeHookEvent,
 
@@ -245,11 +257,11 @@ export const claudeProvider: HookProvider = {
   areHooksInstalled,
 
   formatToolStatus,
-  permissionExemptTools: new Set(['Task', 'Agent', 'AskUserQuestion']),
-  subagentToolNames: new Set(['Task', 'Agent']),
+  permissionExemptTools: new Set(["Task", "Agent", "AskUserQuestion"]),
+  subagentToolNames: new Set(["Task", "Agent"]),
 
   getSessionDirs,
-  sessionFilePattern: '*.jsonl',
+  sessionFilePattern: "*.jsonl",
   buildLaunchCommand,
 
   team: claudeTeamProvider,

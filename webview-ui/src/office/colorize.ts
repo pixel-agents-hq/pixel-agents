@@ -6,8 +6,8 @@
  * - Adjust (default for furniture): shift original pixel HSL values.
  */
 
-import type { ColorValue } from '../components/ui/types.js';
-import type { SpriteData } from './types.js';
+import type { ColorValue } from "../components/ui/types.js";
+import type { SpriteData } from "./types.js";
 
 /** Generic colorized sprite cache: arbitrary string key → SpriteData */
 const colorizeCache = new Map<string, SpriteData>();
@@ -24,7 +24,9 @@ export function getColorizedSprite(
 ): SpriteData {
   const cached = colorizeCache.get(cacheKey);
   if (cached) return cached;
-  const result = color.colorize ? colorizeSprite(sprite, color) : adjustSprite(sprite, color);
+  const result = color.colorize
+    ? colorizeSprite(sprite, color)
+    : adjustSprite(sprite, color);
   colorizeCache.set(cacheKey, result);
   return result;
 }
@@ -51,8 +53,8 @@ function colorizeSprite(sprite: SpriteData, color: ColorValue): SpriteData {
   for (const row of sprite) {
     const newRow: string[] = [];
     for (const pixel of row) {
-      if (pixel === '') {
-        newRow.push('');
+      if (pixel === "") {
+        newRow.push("");
         continue;
       }
 
@@ -99,7 +101,7 @@ function extractAlpha(pixel: string): number {
 /** Append alpha to a #RRGGBB hex string, omitting if fully opaque. */
 function appendAlpha(hex: string, alpha: number): string {
   if (alpha >= 255) return hex;
-  return `${hex}${alpha.toString(16).padStart(2, '0').toUpperCase()}`;
+  return `${hex}${alpha.toString(16).padStart(2, "0").toUpperCase()}`;
 }
 
 /** Convert HSL (h: 0-360, s: 0-1, l: 0-1) to #RRGGBB hex string */
@@ -142,7 +144,7 @@ function hslToHex(h: number, s: number, l: number): string {
   const g = Math.round((g1 + m) * 255);
   const bOut = Math.round((b1 + m) * 255);
 
-  return `#${clamp255(r).toString(16).padStart(2, '0')}${clamp255(g).toString(16).padStart(2, '0')}${clamp255(bOut).toString(16).padStart(2, '0')}`.toUpperCase();
+  return `#${clamp255(r).toString(16).padStart(2, "0")}${clamp255(g).toString(16).padStart(2, "0")}${clamp255(bOut).toString(16).padStart(2, "0")}`.toUpperCase();
 }
 
 function clamp255(v: number): number {
@@ -175,15 +177,18 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
  * B slider (-100 to 100): shifts lightness
  * C slider (-100 to 100): adjusts contrast around midpoint
  */
-export function adjustSprite(sprite: SpriteData, color: ColorValue): SpriteData {
+export function adjustSprite(
+  sprite: SpriteData,
+  color: ColorValue,
+): SpriteData {
   const { h: hShift, s: sShift, b, c } = color;
   const result: SpriteData = [];
 
   for (const row of sprite) {
     const newRow: string[] = [];
     for (const pixel of row) {
-      if (pixel === '') {
-        newRow.push('');
+      if (pixel === "") {
+        newRow.push("");
         continue;
       }
 

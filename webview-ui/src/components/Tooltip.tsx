@@ -1,20 +1,25 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
 interface TooltipProps {
   title: string;
   onDismiss: () => void;
-  position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
+  position?: "top-right" | "top-left" | "bottom-right" | "bottom-left";
   children: ReactNode;
 }
 
 const positionStyles: Record<string, React.CSSProperties> = {
-  'top-right': { top: 8, right: 52 },
-  'top-left': { top: 8, left: 8 },
-  'bottom-right': { bottom: 8, right: 52 },
-  'bottom-left': { bottom: 8, left: 8 },
+  "top-right": { top: 8, right: 52 },
+  "top-left": { top: 8, left: 8 },
+  "bottom-right": { bottom: 8, right: 52 },
+  "bottom-left": { bottom: 8, left: 8 },
 };
 
-export function Tooltip({ title, onDismiss, position = 'top-right', children }: TooltipProps) {
+export function Tooltip({
+  title,
+  onDismiss,
+  position = "top-right",
+  children,
+}: TooltipProps) {
   return (
     <div
       className="absolute z-20 pixel-panel whitespace-nowrap p-0"

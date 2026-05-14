@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from "react";
 
 import {
   CAMERA_FOLLOW_LERP,
@@ -7,22 +7,25 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_SCROLL_THRESHOLD,
-} from '../../constants.js';
-import { unlockAudio } from '../../notificationSound.js';
-import { vscode } from '../../vscodeApi.js';
-import { canPlaceFurniture, getWallPlacementRow } from '../editor/editorActions.js';
-import type { EditorState } from '../editor/editorState.js';
-import { startGameLoop } from '../engine/gameLoop.js';
-import type { OfficeState } from '../engine/officeState.js';
+} from "../../constants.js";
+import { unlockAudio } from "../../notificationSound.js";
+import { vscode } from "../../vscodeApi.js";
+import {
+  canPlaceFurniture,
+  getWallPlacementRow,
+} from "../editor/editorActions.js";
+import type { EditorState } from "../editor/editorState.js";
+import { startGameLoop } from "../engine/gameLoop.js";
+import type { OfficeState } from "../engine/officeState.js";
 import type {
   DeleteButtonBounds,
   EditorRenderState,
   RotateButtonBounds,
   SelectionRenderState,
-} from '../engine/renderer.js';
-import { renderFrame } from '../engine/renderer.js';
-import { getCatalogEntry, isRotatable } from '../layout/furnitureCatalog.js';
-import { EditTool, TILE_SIZE } from '../types.js';
+} from "../engine/renderer.js";
+import { renderFrame } from "../engine/renderer.js";
+import { getCatalogEntry, isRotatable } from "../layout/furnitureCatalog.js";
+import { EditTool, TILE_SIZE } from "../types.js";
 
 interface OfficeCanvasProps {
   officeState: OfficeState;
@@ -153,7 +156,10 @@ export function OfficeCanvas({
           };
 
           // Ghost preview for furniture placement
-          if (editorState.activeTool === EditTool.FURNITURE_PLACE && editorState.ghostCol >= 0) {
+          if (
+            editorState.activeTool === EditTool.FURNITURE_PLACE &&
+            editorState.ghostCol >= 0
+          ) {
             const entry = getCatalogEntry(editorState.selectedFurnitureType);
             if (entry) {
               const placementRow = getWallPlacementRow(
@@ -163,7 +169,8 @@ export function OfficeCanvas({
               editorRender.ghostSprite = entry.sprite;
               editorRender.ghostRow = placementRow;
               editorRender.ghostMirrored =
-                !!entry.mirrorSide && editorState.selectedFurnitureType.endsWith(':left');
+                !!entry.mirrorSide &&
+                editorState.selectedFurnitureType.endsWith(":left");
               editorRender.ghostValid = canPlaceFurniture(
                 officeState.getLayout(),
                 editorState.selectedFurnitureType,
@@ -174,20 +181,26 @@ export function OfficeCanvas({
           }
 
           // Ghost preview for drag-to-move
-          if (editorState.isDragMoving && editorState.dragUid && editorState.ghostCol >= 0) {
+          if (
+            editorState.isDragMoving &&
+            editorState.dragUid &&
+            editorState.ghostCol >= 0
+          ) {
             const draggedItem = officeState
               .getLayout()
               .furniture.find((f) => f.uid === editorState.dragUid);
             if (draggedItem) {
               const entry = getCatalogEntry(draggedItem.type);
               if (entry) {
-                const ghostCol = editorState.ghostCol - editorState.dragOffsetCol;
-                const ghostRow = editorState.ghostRow - editorState.dragOffsetRow;
+                const ghostCol =
+                  editorState.ghostCol - editorState.dragOffsetCol;
+                const ghostRow =
+                  editorState.ghostRow - editorState.dragOffsetRow;
                 editorRender.ghostSprite = entry.sprite;
                 editorRender.ghostCol = ghostCol;
                 editorRender.ghostRow = ghostRow;
                 editorRender.ghostMirrored =
-                  !!entry.mirrorSide && draggedItem.type.endsWith(':left');
+                  !!entry.mirrorSide && draggedItem.type.endsWith(":left");
                 editorRender.ghostValid = canPlaceFurniture(
                   officeState.getLayout(),
                   draggedItem.type,
@@ -203,7 +216,9 @@ export function OfficeCanvas({
           if (editorState.selectedFurnitureUid && !editorState.isDragMoving) {
             const item = officeState
               .getLayout()
-              .furniture.find((f) => f.uid === editorState.selectedFurnitureUid);
+              .furniture.find(
+                (f) => f.uid === editorState.selectedFurnitureUid,
+              );
             if (item) {
               const entry = getCatalogEntry(item.type);
               if (entry) {
@@ -220,7 +235,9 @@ export function OfficeCanvas({
 
         // Camera follow: smoothly center on followed agent
         if (officeState.cameraFollowId !== null) {
-          const followCh = officeState.characters.get(officeState.cameraFollowId);
+          const followCh = officeState.characters.get(
+            officeState.cameraFollowId,
+          );
           if (followCh) {
             const layout = officeState.getLayout();
             const mapW = layout.cols * TILE_SIZE * zoom;
@@ -271,8 +288,10 @@ export function OfficeCanvas({
         offsetRef.current = { x: offsetX, y: offsetY };
 
         // Store delete/rotate button bounds for hit-testing
-        deleteButtonBoundsRef.current = editorRender?.deleteButtonBounds ?? null;
-        rotateButtonBoundsRef.current = editorRender?.rotateButtonBounds ?? null;
+        deleteButtonBoundsRef.current =
+          editorRender?.deleteButtonBounds ?? null;
+        rotateButtonBoundsRef.current =
+          editorRender?.rotateButtonBounds ?? null;
       },
     });
 
@@ -280,7 +299,15 @@ export function OfficeCanvas({
       stop();
       observer.disconnect();
     };
-  }, [officeState, resizeCanvas, isEditMode, editorState, _editorTick, zoom, panRef]);
+  }, [
+    officeState,
+    resizeCanvas,
+    isEditMode,
+    editorState,
+    _editorTick,
+    zoom,
+    panRef,
+  ]);
 
   // Convert CSS mouse coords to world (sprite pixel) coords
   const screenToWorld = useCallback(
@@ -317,32 +344,40 @@ export function OfficeCanvas({
           editorState.activeTool === EditTool.WALL_PAINT ||
           editorState.activeTool === EditTool.ERASE)
       ) {
-        if (col < -1 || col > layout.cols || row < -1 || row > layout.rows) return null;
+        if (col < -1 || col > layout.cols || row < -1 || row > layout.rows)
+          return null;
         return { col, row };
       }
-      if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return null;
+      if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows)
+        return null;
       return { col, row };
     },
     [screenToWorld, officeState, isEditMode, editorState],
   );
 
   // Check if device-pixel coords hit the delete button
-  const hitTestDeleteButton = useCallback((deviceX: number, deviceY: number): boolean => {
-    const bounds = deleteButtonBoundsRef.current;
-    if (!bounds) return false;
-    const dx = deviceX - bounds.cx;
-    const dy = deviceY - bounds.cy;
-    return dx * dx + dy * dy <= (bounds.radius + 2) * (bounds.radius + 2); // small padding
-  }, []);
+  const hitTestDeleteButton = useCallback(
+    (deviceX: number, deviceY: number): boolean => {
+      const bounds = deleteButtonBoundsRef.current;
+      if (!bounds) return false;
+      const dx = deviceX - bounds.cx;
+      const dy = deviceY - bounds.cy;
+      return dx * dx + dy * dy <= (bounds.radius + 2) * (bounds.radius + 2); // small padding
+    },
+    [],
+  );
 
   // Check if device-pixel coords hit the rotate button
-  const hitTestRotateButton = useCallback((deviceX: number, deviceY: number): boolean => {
-    const bounds = rotateButtonBoundsRef.current;
-    if (!bounds) return false;
-    const dx = deviceX - bounds.cx;
-    const dy = deviceY - bounds.cy;
-    return dx * dx + dy * dy <= (bounds.radius + 2) * (bounds.radius + 2);
-  }, []);
+  const hitTestRotateButton = useCallback(
+    (deviceX: number, deviceY: number): boolean => {
+      const bounds = rotateButtonBoundsRef.current;
+      if (!bounds) return false;
+      const dx = deviceX - bounds.cx;
+      const dy = deviceY - bounds.cy;
+      return dx * dx + dy * dy <= (bounds.radius + 2) * (bounds.radius + 2);
+    },
+    [],
+  );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
@@ -351,7 +386,10 @@ export function OfficeCanvas({
         const dpr = window.devicePixelRatio || 1;
         const dx = (e.clientX - panStartRef.current.mouseX) * dpr;
         const dy = (e.clientY - panStartRef.current.mouseY) * dpr;
-        panRef.current = clampPan(panStartRef.current.panX + dx, panStartRef.current.panY + dy);
+        panRef.current = clampPan(
+          panStartRef.current.panX + dx,
+          panStartRef.current.panY + dy,
+        );
         return;
       }
 
@@ -363,7 +401,10 @@ export function OfficeCanvas({
 
           // Drag-to-move: check if cursor moved to different tile
           if (editorState.dragUid && !editorState.isDragMoving) {
-            if (tile.col !== editorState.dragStartCol || tile.row !== editorState.dragStartRow) {
+            if (
+              tile.col !== editorState.dragStartCol ||
+              tile.row !== editorState.dragStartRow
+            ) {
               editorState.isDragMoving = true;
             }
           }
@@ -404,7 +445,7 @@ export function OfficeCanvas({
         const canvas = canvasRef.current;
         if (canvas) {
           if (editorState.isDragMoving) {
-            canvas.style.cursor = 'grabbing';
+            canvas.style.cursor = "grabbing";
           } else {
             const pos = screenToWorld(e.clientX, e.clientY);
             if (
@@ -412,8 +453,11 @@ export function OfficeCanvas({
               (hitTestDeleteButton(pos.deviceX, pos.deviceY) ||
                 hitTestRotateButton(pos.deviceX, pos.deviceY))
             ) {
-              canvas.style.cursor = 'pointer';
-            } else if (editorState.activeTool === EditTool.FURNITURE_PICK && tile) {
+              canvas.style.cursor = "pointer";
+            } else if (
+              editorState.activeTool === EditTool.FURNITURE_PICK &&
+              tile
+            ) {
               // Pick mode: show pointer over furniture, crosshair elsewhere
               const layout = officeState.getLayout();
               const hitFurniture = layout.furniture.find((f) => {
@@ -426,11 +470,11 @@ export function OfficeCanvas({
                   tile.row < f.row + entry.footprintH
                 );
               });
-              canvas.style.cursor = hitFurniture ? 'pointer' : 'crosshair';
+              canvas.style.cursor = hitFurniture ? "pointer" : "crosshair";
             } else if (
               (editorState.activeTool === EditTool.SELECT ||
                 (editorState.activeTool === EditTool.FURNITURE_PLACE &&
-                  editorState.selectedFurnitureType === '')) &&
+                  editorState.selectedFurnitureType === "")) &&
               tile
             ) {
               // Check if hovering over furniture
@@ -445,9 +489,9 @@ export function OfficeCanvas({
                   tile.row < f.row + entry.footprintH
                 );
               });
-              canvas.style.cursor = hitFurniture ? 'grab' : 'crosshair';
+              canvas.style.cursor = hitFurniture ? "grab" : "crosshair";
             } else {
-              canvas.style.cursor = 'crosshair';
+              canvas.style.cursor = "crosshair";
             }
           }
         }
@@ -461,18 +505,23 @@ export function OfficeCanvas({
       officeState.hoveredTile = tile;
       const canvas = canvasRef.current;
       if (canvas) {
-        let cursor = 'default';
+        let cursor = "default";
         if (hitId !== null) {
-          cursor = 'pointer';
+          cursor = "pointer";
         } else if (officeState.selectedAgentId !== null && tile) {
           // Check if hovering over a clickable seat (available or own)
           const seatId = officeState.getSeatAtTile(tile.col, tile.row);
           if (seatId) {
             const seat = officeState.seats.get(seatId);
             if (seat) {
-              const selectedCh = officeState.characters.get(officeState.selectedAgentId);
-              if (!seat.assigned || (selectedCh && selectedCh.seatId === seatId)) {
-                cursor = 'pointer';
+              const selectedCh = officeState.characters.get(
+                officeState.selectedAgentId,
+              );
+              if (
+                !seat.assigned ||
+                (selectedCh && selectedCh.seatId === seatId)
+              ) {
+                cursor = "pointer";
               }
             }
           }
@@ -512,7 +561,7 @@ export function OfficeCanvas({
           panY: panRef.current.y,
         };
         const canvas = canvasRef.current;
-        if (canvas) canvas.style.cursor = 'grabbing';
+        if (canvas) canvas.style.cursor = "grabbing";
         return;
       }
 
@@ -526,7 +575,12 @@ export function OfficeCanvas({
             editorState.activeTool === EditTool.ERASE)
         ) {
           const layout = officeState.getLayout();
-          if (tile.col >= 0 && tile.col < layout.cols && tile.row >= 0 && tile.row < layout.rows) {
+          if (
+            tile.col >= 0 &&
+            tile.col < layout.cols &&
+            tile.row >= 0 &&
+            tile.row < layout.rows
+          ) {
             isEraseDraggingRef.current = true;
             onEditorEraseAction(tile.col, tile.row);
           }
@@ -553,7 +607,7 @@ export function OfficeCanvas({
       const actAsSelect =
         editorState.activeTool === EditTool.SELECT ||
         (editorState.activeTool === EditTool.FURNITURE_PLACE &&
-          editorState.selectedFurnitureType === '');
+          editorState.selectedFurnitureType === "");
       if (actAsSelect && tile) {
         const layout = officeState.getLayout();
         // Find all furniture at clicked tile, prefer surface items (on top of desks)
@@ -615,7 +669,7 @@ export function OfficeCanvas({
       if (e.button === 1) {
         isPanningRef.current = false;
         const canvas = canvasRef.current;
-        if (canvas) canvas.style.cursor = isEditMode ? 'crosshair' : 'default';
+        if (canvas) canvas.style.cursor = isEditMode ? "crosshair" : "default";
         return;
       }
       if (e.button === 2) {
@@ -656,7 +710,7 @@ export function OfficeCanvas({
         editorState.clearDrag();
         onEditorSelectionChange();
         const canvas = canvasRef.current;
-        if (canvas) canvas.style.cursor = 'crosshair';
+        if (canvas) canvas.style.cursor = "crosshair";
         return;
       }
 
@@ -690,7 +744,9 @@ export function OfficeCanvas({
 
       // No agent hit — check seat click while agent is selected
       if (officeState.selectedAgentId !== null) {
-        const selectedCh = officeState.characters.get(officeState.selectedAgentId);
+        const selectedCh = officeState.characters.get(
+          officeState.selectedAgentId,
+        );
         // Skip seat reassignment for sub-agents
         if (selectedCh && !selectedCh.isSubagent) {
           const tile = screenToTile(e.clientX, e.clientY);
@@ -711,12 +767,15 @@ export function OfficeCanvas({
                   officeState.selectedAgentId = null;
                   officeState.cameraFollowId = null;
                   // Persist seat assignments (exclude sub-agents)
-                  const seats: Record<number, { palette: number; seatId: string | null }> = {};
+                  const seats: Record<
+                    number,
+                    { palette: number; seatId: string | null }
+                  > = {};
                   for (const ch of officeState.characters.values()) {
                     if (ch.isSubagent) continue;
                     seats[ch.id] = { palette: ch.palette, seatId: ch.seatId };
                   }
-                  vscode.postMessage({ type: 'saveAgentSeats', seats });
+                  vscode.postMessage({ type: "saveAgentSeats", seats });
                   return;
                 }
               }
@@ -751,7 +810,11 @@ export function OfficeCanvas({
       if (officeState.selectedAgentId !== null) {
         const tile = screenToTile(e.clientX, e.clientY);
         if (tile) {
-          officeState.walkToTile(officeState.selectedAgentId, tile.col, tile.row);
+          officeState.walkToTile(
+            officeState.selectedAgentId,
+            tile.col,
+            tile.row,
+          );
         }
       }
     },
@@ -792,7 +855,10 @@ export function OfficeCanvas({
   }, []);
 
   return (
-    <div ref={containerRef} className="w-full h-full relative overflow-hidden bg-bg">
+    <div
+      ref={containerRef}
+      className="w-full h-full relative overflow-hidden bg-bg"
+    >
       <canvas
         ref={canvasRef}
         onMouseMove={handleMouseMove}

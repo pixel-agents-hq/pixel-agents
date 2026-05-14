@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
-import { Button } from './Button.js';
+import { Button } from "./Button.js";
 
 interface ModalProps {
   isOpen: boolean;
@@ -18,13 +18,17 @@ export function Modal({
   title,
   children,
   zIndex = 50,
-  className = '',
+  className = "",
 }: ModalProps) {
   if (!isOpen) return null;
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50" style={{ zIndex }} onClick={onClose} />
+      <div
+        className="fixed inset-0 bg-black/50"
+        style={{ zIndex }}
+        onClick={onClose}
+      />
       <div
         className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-bg border-2 border-border rounded-none shadow-pixel p-4 min-w-xs ${className}`}
         style={{ zIndex: zIndex + 1 }}

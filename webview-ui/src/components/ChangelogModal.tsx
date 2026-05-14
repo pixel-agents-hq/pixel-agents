@@ -1,5 +1,9 @@
-import { CHANGELOG_REPO_URL, changelogEntries, toMajorMinor } from '../changelogData.ts';
-import { Modal } from './ui/Modal.js';
+import {
+  CHANGELOG_REPO_URL,
+  changelogEntries,
+  toMajorMinor,
+} from "../changelogData.ts";
+import { Modal } from "./ui/Modal.js";
 
 interface ChangelogModalProps {
   isOpen: boolean;
@@ -7,9 +11,15 @@ interface ChangelogModalProps {
   currentVersion: string;
 }
 
-export function ChangelogModal({ isOpen, onClose, currentVersion }: ChangelogModalProps) {
+export function ChangelogModal({
+  isOpen,
+  onClose,
+  currentVersion,
+}: ChangelogModalProps) {
   const majorMinor = toMajorMinor(currentVersion);
-  const entry = changelogEntries.find((e) => e.version === majorMinor) ?? changelogEntries[0];
+  const entry =
+    changelogEntries.find((e) => e.version === majorMinor) ??
+    changelogEntries[0];
 
   if (!entry) return null;
 
@@ -25,7 +35,9 @@ export function ChangelogModal({ isOpen, onClose, currentVersion }: ChangelogMod
       <div className="py-4 px-10 max-h-[60vh] overflow-y-auto">
         {entry.sections.map((section) => (
           <div key={section.title} className="mb-12">
-            <div className="text-lg text-accent-bright mb-4">{section.title}</div>
+            <div className="text-lg text-accent-bright mb-4">
+              {section.title}
+            </div>
             <ul className="m-0 pl-18 list-disc">
               {section.items.map((item, i) => (
                 <li key={i} className="text-sm mb-2">
@@ -51,7 +63,7 @@ export function ChangelogModal({ isOpen, onClose, currentVersion }: ChangelogMod
                   >
                     {c.name}
                   </a>
-                  {' — '}
+                  {" — "}
                   {c.description}
                 </li>
               ))}

@@ -11,14 +11,18 @@
  * launch/cleanup is automatic and tests stay focused on assertions. See:
  * https://playwright.dev/docs/test-fixtures
  */
-import { test, expect } from '@playwright/test';
-import fs from 'fs';
-import path from 'path';
+import { test, expect } from "@playwright/test";
+import fs from "fs";
+import path from "path";
 
-import { launchVSCode, waitForWorkbench } from '../helpers/launch';
-import { clickAddAgent, getPixelAgentsFrame, openPixelAgentsPanel } from '../helpers/webview';
+import { launchVSCode, waitForWorkbench } from "../helpers/launch";
+import {
+  clickAddAgent,
+  getPixelAgentsFrame,
+  openPixelAgentsPanel,
+} from "../helpers/webview";
 
-test('clicking + Agent spawns mock claude and creates a JSONL session file', async ({}, testInfo) => {
+test("clicking + Agent spawns mock claude and creates a JSONL session file", async ({}, testInfo) => {
   const session = await launchVSCode(testInfo.title);
   const { window, tmpHome, mockLogFile } = session;
   const runVideo = window.video();
@@ -42,7 +46,7 @@ test('clicking + Agent spawns mock claude and creates a JSONL session file', asy
       .poll(
         () => {
           try {
-            const content = fs.readFileSync(mockLogFile, 'utf8');
+            const content = fs.readFileSync(mockLogFile, "utf8");
             return content.trim().length > 0;
           } catch {
             return false;
@@ -56,11 +60,11 @@ test('clicking + Agent spawns mock claude and creates a JSONL session file', asy
       )
       .toBe(true);
 
-    const invocationLog = fs.readFileSync(mockLogFile, 'utf8');
-    expect(invocationLog).toContain('session-id=');
-    await testInfo.attach('mock-claude-invocations', {
+    const invocationLog = fs.readFileSync(mockLogFile, "utf8");
+    expect(invocationLog).toContain("session-id=");
+    await testInfo.attach("mock-claude-invocations", {
       body: invocationLog,
-      contentType: 'text/plain',
+      contentType: "text/plain",
     });
 
     // 5. Assert: JSONL session file was created.
@@ -68,7 +72,7 @@ test('clicking + Agent spawns mock claude and creates a JSONL session file', asy
     //    specific hash. On Windows, os.tmpdir() may return an 8.3 short path while
     //    the VS Code terminal sees the long path, making the hashes differ even after
     //    normalisation attempts.
-    const projectsDir = path.join(tmpHome, '.claude', 'projects');
+    const projectsDir = path.join(tmpHome, ".claude", "projects");
 
     const findJsonlFiles = (): string[] => {
       try {
@@ -77,7 +81,7 @@ test('clicking + Agent spawns mock claude and creates a JSONL session file', asy
           const sub = path.join(projectsDir, entry);
           try {
             return fs.statSync(sub).isDirectory()
-              ? fs.readdirSync(sub).filter((f) => f.endsWith('.jsonl'))
+              ? fs.readdirSync(sub).filter((f) => f.endsWith(".jsonl"))
               : [];
           } catch {
             return [];
@@ -96,9 +100,9 @@ test('clicking + Agent spawns mock claude and creates a JSONL session file', asy
       })
       .not.toHaveLength(0);
 
-    await testInfo.attach('jsonl-files', {
-      body: findJsonlFiles().join('\n'),
-      contentType: 'text/plain',
+    await testInfo.attach("jsonl-files", {
+      body: findJsonlFiles().join("\n"),
+      contentType: "text/plain",
     });
 
     // 6. Assert: terminal "Claude Code #1" is visible in VS Code UI
@@ -109,15 +113,15 @@ test('clicking + Agent spawns mock claude and creates a JSONL session file', asy
     // Save a screenshot of the final state regardless of outcome
     const screenshotPath = path.join(
       __dirname,
-      '../../test-results/e2e',
+      "../../test-results/e2e",
       `agent-spawn-final-${Date.now()}.png`,
     );
     try {
       fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
       await window.screenshot({ path: screenshotPath });
-      await testInfo.attach('final-screenshot', {
+      await testInfo.attach("final-screenshot", {
         path: screenshotPath,
-        contentType: 'image/png',
+        contentType: "image/png",
       });
     } catch {
       // screenshot failure is non-fatal
@@ -127,11 +131,11 @@ test('clicking + Agent spawns mock claude and creates a JSONL session file', asy
 
     if (runVideo) {
       try {
-        const videoPath = testInfo.outputPath('run-video.webm');
+        const videoPath = testInfo.outputPath("run-video.webm");
         await runVideo.saveAs(videoPath);
-        await testInfo.attach('run-video', {
+        await testInfo.attach("run-video", {
           path: videoPath,
-          contentType: 'video/webm',
+          contentType: "video/webm",
         });
       } catch {
         // video attachment failure is non-fatal

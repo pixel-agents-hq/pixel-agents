@@ -1,16 +1,16 @@
-const esbuild = require('esbuild');
-const fs = require('fs');
-const path = require('path');
+const esbuild = require("esbuild");
+const fs = require("fs");
+const path = require("path");
 
-const production = process.argv.includes('--production');
-const watch = process.argv.includes('--watch');
+const production = process.argv.includes("--production");
+const watch = process.argv.includes("--watch");
 
 /**
  * Copy assets folder to dist/assets
  */
 function copyAssets() {
-  const srcDir = path.join(__dirname, 'webview-ui', 'public', 'assets');
-  const dstDir = path.join(__dirname, 'dist', 'assets');
+  const srcDir = path.join(__dirname, "webview-ui", "public", "assets");
+  const dstDir = path.join(__dirname, "dist", "assets");
 
   if (fs.existsSync(srcDir)) {
     // Remove existing dist/assets if present
@@ -20,9 +20,9 @@ function copyAssets() {
 
     // Copy recursively
     fs.cpSync(srcDir, dstDir, { recursive: true });
-    console.log('✓ Copied assets/ → dist/assets/');
+    console.log("✓ Copied assets/ → dist/assets/");
   } else {
-    console.log('ℹ️  assets/ folder not found (optional)');
+    console.log("ℹ️  assets/ folder not found (optional)");
   }
 }
 
@@ -33,58 +33,60 @@ function copyAssets() {
 function buildHooks() {
   const entry = path.join(
     __dirname,
-    'server',
-    'src',
-    'providers',
-    'file',
-    'hooks',
-    'claude-hook.ts',
+    "server",
+    "src",
+    "providers",
+    "file",
+    "hooks",
+    "claude-hook.ts",
   );
   if (!fs.existsSync(entry)) return;
-  require('esbuild').buildSync({
+  require("esbuild").buildSync({
     entryPoints: [entry],
     bundle: true,
-    platform: 'node',
-    target: 'node18',
-    format: 'cjs',
-    outdir: path.join(__dirname, 'dist', 'hooks'),
-    banner: { js: '#!/usr/bin/env node' },
+    platform: "node",
+    target: "node18",
+    format: "cjs",
+    outdir: path.join(__dirname, "dist", "hooks"),
+    banner: { js: "#!/usr/bin/env node" },
   });
-  console.log('✓ Built hooks/ → dist/hooks/');
+  console.log("✓ Built hooks/ → dist/hooks/");
 }
 
 /**
  * @type {import('esbuild').Plugin}
  */
 const esbuildProblemMatcherPlugin = {
-  name: 'esbuild-problem-matcher',
+  name: "esbuild-problem-matcher",
 
   setup(build) {
     build.onStart(() => {
-      console.log('[watch] build started');
+      console.log("[watch] build started");
     });
     build.onEnd((result) => {
       result.errors.forEach(({ text, location }) => {
         console.error(`✘ [ERROR] ${text}`);
-        console.error(`    ${location.file}:${location.line}:${location.column}:`);
+        console.error(
+          `    ${location.file}:${location.line}:${location.column}:`,
+        );
       });
-      console.log('[watch] build finished');
+      console.log("[watch] build finished");
     });
   },
 };
 
 async function main() {
   const ctx = await esbuild.context({
-    entryPoints: ['src/extension.ts'],
+    entryPoints: ["src/extension.ts"],
     bundle: true,
-    format: 'cjs',
+    format: "cjs",
     minify: production,
     sourcemap: !production,
     sourcesContent: false,
-    platform: 'node',
-    outfile: 'dist/extension.js',
-    external: ['vscode'],
-    logLevel: 'silent',
+    platform: "node",
+    outfile: "dist/extension.js",
+    external: ["vscode"],
+    logLevel: "silent",
     plugins: [
       /* add to the end of plugins array */
       esbuildProblemMatcherPlugin,

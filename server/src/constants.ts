@@ -40,15 +40,18 @@ export const BASH_COMMAND_DISPLAY_MAX_LENGTH = 30;
 export const TASK_DESCRIPTION_DISPLAY_MAX_LENGTH = 40;
 
 // ── Pixel Agents Server ─────────────────────────────────────
-export const SERVER_JSON_DIR = '.pixel-agents';
-export const SERVER_JSON_NAME = 'server.json';
-export const HOOK_SCRIPTS_DIR = '.pixel-agents/hooks';
-export const HOOK_API_PREFIX = '/api/hooks';
+export const SERVER_JSON_DIR = ".pixel-agents";
+export const SERVER_JSON_NAME = "server.json";
+export const HOOK_SCRIPTS_DIR = ".pixel-agents/hooks";
+export const HOOK_API_PREFIX = "/api/hooks";
 
 // Claude-specific constants live in providers/hook/claude/constants.ts.
 // Re-exported here for backward-compatibility of existing callers that import
 // from '../server/src/constants.js'. New code should import directly from the provider.
-export { CLAUDE_HOOK_EVENTS, CLAUDE_HOOK_SCRIPT_NAME } from './providers/hook/claude/constants.js';
+export {
+  CLAUDE_HOOK_EVENTS,
+  CLAUDE_HOOK_SCRIPT_NAME,
+} from "./providers/hook/claude/constants.js";
 
 export const HOOK_EVENT_BUFFER_MS = 5_000;
 /** Grace period after SessionEnd(reason=clear/resume) before triggering onSessionEnd.

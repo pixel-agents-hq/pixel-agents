@@ -28,6 +28,7 @@ playwright-report/
 # Environment files
 .env*
 !.env.example
+!.env.defaults
 
 # Project-specific
 .claude/

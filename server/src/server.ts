@@ -1,15 +1,15 @@
-import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as http from 'http';
-import * as os from 'os';
-import * as path from 'path';
+import * as crypto from "crypto";
+import * as fs from "fs";
+import * as http from "http";
+import * as os from "os";
+import * as path from "path";
 
 import {
   HOOK_API_PREFIX,
   MAX_HOOK_BODY_SIZE,
   SERVER_JSON_DIR,
   SERVER_JSON_NAME,
-} from './constants.js';
+} from "./constants.js";
 
 /** Discovery file written to ~/.pixel-agents/server.json so hook scripts can find the server. */
 export interface ServerConfig {
@@ -24,7 +24,10 @@ export interface ServerConfig {
 }
 
 /** Callback invoked when a hook event is received from a provider's hook script. */
-type HookEventCallback = (providerId: string, event: Record<string, unknown>) => void;
+type HookEventCallback = (
+  providerId: string,
+  event: Record<string, unknown>,
+) => void;
 
 /**
  * HTTP server that receives hook events from CLI tool hook scripts.
@@ -78,12 +81,12 @@ export class PixelAgentsServer {
         this.handleRequest(req, res);
       });
 
-      this.server.on('error', reject);
+      this.server.on("error", reject);
       this.server.setTimeout(5000);
 
-      this.server.listen(0, '127.0.0.1', () => {
+      this.server.listen(0, "127.0.0.1", () => {
         const addr = this.server?.address();
-        if (addr && typeof addr === 'object') {
+        if (addr && typeof addr === "object") {
           this.config = {
             port: addr.port,
             pid: process.pid,
@@ -93,14 +96,16 @@ export class PixelAgentsServer {
           this.ownsServer = true;
           this.writeServerJson(this.config);
           // Replace startup error handler with runtime error handler
-          this.server!.removeListener('error', reject);
-          this.server!.on('error', (err) => {
+          this.server!.removeListener("error", reject);
+          this.server!.on("error", (err) => {
             console.error(`[Pixel Agents] Server: error: ${err}`);
           });
-          console.log(`[Pixel Agents] Server: listening on 127.0.0.1:${addr.port}`);
+          console.log(
+            `[Pixel Agents] Server: listening on 127.0.0.1:${addr.port}`,
+          );
           resolve(this.config);
         } else {
-          reject(new Error('Failed to get server address'));
+          reject(new Error("Failed to get server address"));
         }
       });
     });
@@ -126,15 +131,18 @@ export class PixelAgentsServer {
   }
 
   /** Top-level request router. Dispatches to health or hook handler based on method + path. */
-  private handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
-    const url = req.url ?? '';
+  private handleRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    const url = req.url ?? "";
 
     // Health endpoint (no auth required)
-    if (req.method === 'GET' && url === '/api/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (req.method === "GET" && url === "/api/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
-          status: 'ok',
+          status: "ok",
           uptime: Math.floor((Date.now() - this.startTime) / 1000),
           pid: process.pid,
         }),
@@ -143,7 +151,7 @@ export class PixelAgentsServer {
     }
 
     // Hook event endpoint: POST /api/hooks/:providerId
-    if (req.method === 'POST' && url.startsWith(HOOK_API_PREFIX + '/')) {
+    if (req.method === "POST" && url.startsWith(HOOK_API_PREFIX + "/")) {
       this.handleHookRequest(req, res, url);
       return;
     }
@@ -159,13 +167,16 @@ export class PixelAgentsServer {
     url: string,
   ): void {
     // Validate auth token (timing-safe comparison prevents side-channel attacks)
-    const authHeader = req.headers['authorization'] ?? '';
-    const expectedToken = `Bearer ${this.config?.token ?? ''}`;
+    const authHeader = req.headers["authorization"] ?? "";
+    const expectedToken = `Bearer ${this.config?.token ?? ""}`;
     const authBuf = Buffer.from(authHeader);
     const expectedBuf = Buffer.from(expectedToken);
-    if (authBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(authBuf, expectedBuf)) {
+    if (
+      authBuf.length !== expectedBuf.length ||
+      !crypto.timingSafeEqual(authBuf, expectedBuf)
+    ) {
       res.writeHead(401);
-      res.end('unauthorized');
+      res.end("unauthorized");
       return;
     }
 
@@ -173,21 +184,21 @@ export class PixelAgentsServer {
     const providerId = url.slice(HOOK_API_PREFIX.length + 1);
     if (!providerId || !/^[a-z0-9-]+$/.test(providerId)) {
       res.writeHead(400);
-      res.end('invalid provider id');
+      res.end("invalid provider id");
       return;
     }
 
     // Read body with size limit and response guard
-    let body = '';
+    let body = "";
     let bodySize = 0;
     let responded = false;
 
-    req.on('data', (chunk: Buffer) => {
+    req.on("data", (chunk: Buffer) => {
       bodySize += chunk.length;
       if (bodySize > MAX_HOOK_BODY_SIZE && !responded) {
         responded = true;
         res.writeHead(413);
-        res.end('payload too large');
+        res.end("payload too large");
         req.destroy();
         return;
       }
@@ -196,7 +207,7 @@ export class PixelAgentsServer {
       }
     });
 
-    req.on('end', () => {
+    req.on("end", () => {
       if (responded) return;
       try {
         const event = JSON.parse(body) as Record<string, unknown>;
@@ -204,10 +215,10 @@ export class PixelAgentsServer {
           this.callback?.(providerId, event);
         }
         res.writeHead(200);
-        res.end('ok');
+        res.end("ok");
       } catch {
         res.writeHead(400);
-        res.end('invalid json');
+        res.end("invalid json");
       }
     });
   }
@@ -222,7 +233,7 @@ export class PixelAgentsServer {
     try {
       const filePath = this.getServerJsonPath();
       if (!fs.existsSync(filePath)) return null;
-      return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as ServerConfig;
+      return JSON.parse(fs.readFileSync(filePath, "utf-8")) as ServerConfig;
     } catch {
       return null;
     }
@@ -237,8 +248,10 @@ export class PixelAgentsServer {
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
       }
       // Atomic write with restricted permissions
-      const tmpPath = filePath + '.tmp';
-      fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), { mode: 0o600 });
+      const tmpPath = filePath + ".tmp";
+      fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), {
+        mode: 0o600,
+      });
       fs.renameSync(tmpPath, filePath);
     } catch (e) {
       console.error(`[Pixel Agents] Failed to write server.json: ${e}`);
@@ -251,7 +264,9 @@ export class PixelAgentsServer {
       const filePath = this.getServerJsonPath();
       if (!fs.existsSync(filePath)) return;
       // Only delete if our PID matches (don't delete another instance's server file)
-      const existing = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as ServerConfig;
+      const existing = JSON.parse(
+        fs.readFileSync(filePath, "utf-8"),
+      ) as ServerConfig;
       if (existing.pid === process.pid) {
         fs.unlinkSync(filePath);
       }

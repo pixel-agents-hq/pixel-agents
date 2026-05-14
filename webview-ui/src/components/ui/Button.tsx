@@ -1,14 +1,14 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes } from "react";
 
-const base = 'border-2 rounded-none cursor-pointer';
+const base = "border-2 rounded-none cursor-pointer";
 
 const sizes = {
-  sm: 'py-1 px-8 text-sm',
-  md: 'py-2 px-12',
-  lg: 'py-3 px-14 text-lg',
-  xl: 'py-6 px-24 text-xl',
-  icon: 'p-0 w-16 h-16 flex items-center justify-center',
-  icon_lg: 'p-0 w-40 h-40 flex items-center justify-center',
+  sm: "py-1 px-8 text-sm",
+  md: "py-2 px-12",
+  lg: "py-3 px-14 text-lg",
+  xl: "py-6 px-24 text-xl",
+  icon: "p-0 w-16 h-16 flex items-center justify-center",
+  icon_lg: "p-0 w-40 h-40 flex items-center justify-center",
 } as const;
 
 const variants = {
@@ -28,10 +28,15 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export function Button({
-  variant = 'default',
-  size = 'lg',
-  className = '',
+  variant = "default",
+  size = "lg",
+  className = "",
   ...props
 }: ButtonProps) {
-  return <button className={`${variants[variant]} ${sizes[size]} ${className}`} {...props} />;
+  return (
+    <button
+      className={`${variants[variant]} ${sizes[size]} ${className}`}
+      {...props}
+    />
+  );
 }

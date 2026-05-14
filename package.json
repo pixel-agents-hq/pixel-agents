@@ -72,6 +72,10 @@
     "knip": "knip"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "@eslint/js": "^10.0.1",
+    "@minion-stack/lint-config": "^0.1.1",
+    "@minion-stack/tsconfig": "^0.1.0",
     "@playwright/test": "^1.58.2",
     "@types/node": "25.x",
     "@types/pngjs": "^6.0.5",

@@ -11,7 +11,7 @@ import {
   PERMISSION_NOTE_2_START_SEC,
   PERMISSION_NOTE_DURATION_SEC,
   PERMISSION_VOLUME,
-} from './constants.js';
+} from "./constants.js";
 
 let soundEnabled = true;
 let audioCtx: AudioContext | null = null;
@@ -35,7 +35,7 @@ function playNote(
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
 
-  osc.type = 'sine';
+  osc.type = "sine";
   osc.frequency.setValueAtTime(freq, t);
 
   gain.gain.setValueAtTime(volume, t);
@@ -55,7 +55,7 @@ export async function playDoneSound(): Promise<void> {
       audioCtx = new AudioContext();
     }
     // Resume suspended context (webviews suspend until user gesture)
-    if (audioCtx.state === 'suspended') {
+    if (audioCtx.state === "suspended") {
       await audioCtx.resume();
     }
     // Ascending two-note chime: E5 → B5
@@ -72,7 +72,7 @@ export async function playPermissionSound(): Promise<void> {
     if (!audioCtx) {
       audioCtx = new AudioContext();
     }
-    if (audioCtx.state === 'suspended') {
+    if (audioCtx.state === "suspended") {
       await audioCtx.resume();
     }
     // Descending two-note tap: A5 → E5
@@ -101,7 +101,7 @@ export function unlockAudio(): void {
     if (!audioCtx) {
       audioCtx = new AudioContext();
     }
-    if (audioCtx.state === 'suspended') {
+    if (audioCtx.state === "suspended") {
       audioCtx.resume();
     }
   } catch {

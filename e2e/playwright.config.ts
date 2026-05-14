@@ -1,21 +1,21 @@
-import path from 'path';
+import path from "path";
 
-import { defineConfig } from '@playwright/test';
+import { defineConfig } from "@playwright/test";
 
-const artifactsDir = path.join(__dirname, '../test-results/e2e');
+const artifactsDir = path.join(__dirname, "../test-results/e2e");
 
 export default defineConfig({
-  testDir: path.join(__dirname, 'tests'),
+  testDir: path.join(__dirname, "tests"),
   timeout: 120_000,
-  globalSetup: path.join(__dirname, 'global-setup.ts'),
+  globalSetup: path.join(__dirname, "global-setup.ts"),
   reporter: [
-    ['list'],
+    ["list"],
     [
-      'html',
+      "html",
       {
         // Must be outside outputDir to avoid Playwright clearing artifacts
-        outputFolder: path.join(__dirname, '../playwright-report/e2e'),
-        open: 'never',
+        outputFolder: path.join(__dirname, "../playwright-report/e2e"),
+        open: "never",
       },
     ],
   ],

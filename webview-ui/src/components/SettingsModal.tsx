@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState } from "react";
 
-import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
-import { vscode } from '../vscodeApi.js';
-import { Button } from './ui/Button.js';
-import { Checkbox } from './ui/Checkbox.js';
-import { MenuItem } from './ui/MenuItem.js';
-import { Modal } from './ui/Modal.js';
+import { isSoundEnabled, setSoundEnabled } from "../notificationSound.js";
+import { vscode } from "../vscodeApi.js";
+import { Button } from "./ui/Button.js";
+import { Checkbox } from "./ui/Checkbox.js";
+import { MenuItem } from "./ui/MenuItem.js";
+import { Modal } from "./ui/Modal.js";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -40,7 +40,7 @@ export function SettingsModal({
     <Modal isOpen={isOpen} onClose={onClose} title="Settings">
       <MenuItem
         onClick={() => {
-          vscode.postMessage({ type: 'openSessionsFolder' });
+          vscode.postMessage({ type: "openSessionsFolder" });
           onClose();
         }}
       >
@@ -48,7 +48,7 @@ export function SettingsModal({
       </MenuItem>
       <MenuItem
         onClick={() => {
-          vscode.postMessage({ type: 'exportLayout' });
+          vscode.postMessage({ type: "exportLayout" });
           onClose();
         }}
       >
@@ -56,7 +56,7 @@ export function SettingsModal({
       </MenuItem>
       <MenuItem
         onClick={() => {
-          vscode.postMessage({ type: 'importLayout' });
+          vscode.postMessage({ type: "importLayout" });
           onClose();
         }}
       >
@@ -64,14 +64,17 @@ export function SettingsModal({
       </MenuItem>
       <MenuItem
         onClick={() => {
-          vscode.postMessage({ type: 'addExternalAssetDirectory' });
+          vscode.postMessage({ type: "addExternalAssetDirectory" });
           onClose();
         }}
       >
         Add Asset Directory
       </MenuItem>
       {externalAssetDirectories.map((dir) => (
-        <div key={dir} className="flex items-center justify-between py-4 px-10 gap-8">
+        <div
+          key={dir}
+          className="flex items-center justify-between py-4 px-10 gap-8"
+        >
           <span
             className="text-xs text-text-muted overflow-hidden text-ellipsis whitespace-nowrap"
             title={dir}
@@ -81,7 +84,12 @@ export function SettingsModal({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => vscode.postMessage({ type: 'removeExternalAssetDirectory', path: dir })}
+            onClick={() =>
+              vscode.postMessage({
+                type: "removeExternalAssetDirectory",
+                path: dir,
+              })
+            }
             className="shrink-0"
           >
             x
@@ -95,7 +103,7 @@ export function SettingsModal({
           const newVal = !isSoundEnabled();
           setSoundEnabled(newVal);
           setSoundLocal(newVal);
-          vscode.postMessage({ type: 'setSoundEnabled', enabled: newVal });
+          vscode.postMessage({ type: "setSoundEnabled", enabled: newVal });
         }}
       />
       <Checkbox
@@ -113,7 +121,11 @@ export function SettingsModal({
         checked={alwaysShowOverlay}
         onChange={onToggleAlwaysShowOverlay}
       />
-      <Checkbox label="Debug View" checked={isDebugMode} onChange={onToggleDebugMode} />
+      <Checkbox
+        label="Debug View"
+        checked={isDebugMode}
+        onChange={onToggleDebugMode}
+      />
     </Modal>
   );
 }

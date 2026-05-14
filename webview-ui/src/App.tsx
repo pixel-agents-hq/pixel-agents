@@ -1,28 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { toMajorMinor } from './changelogData.js';
-import { BottomToolbar } from './components/BottomToolbar.js';
-import { ChangelogModal } from './components/ChangelogModal.js';
-import { DebugView } from './components/DebugView.js';
-import { EditActionBar } from './components/EditActionBar.js';
-import { MigrationNotice } from './components/MigrationNotice.js';
-import { SettingsModal } from './components/SettingsModal.js';
-import { Tooltip } from './components/Tooltip.js';
-import { Modal } from './components/ui/Modal.js';
-import { VersionIndicator } from './components/VersionIndicator.js';
-import { ZoomControls } from './components/ZoomControls.js';
-import { useEditorActions } from './hooks/useEditorActions.js';
-import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
-import { useExtensionMessages } from './hooks/useExtensionMessages.js';
-import { OfficeCanvas } from './office/components/OfficeCanvas.js';
-import { ToolOverlay } from './office/components/ToolOverlay.js';
-import { EditorState } from './office/editor/editorState.js';
-import { EditorToolbar } from './office/editor/EditorToolbar.js';
-import { OfficeState } from './office/engine/officeState.js';
-import { isRotatable } from './office/layout/furnitureCatalog.js';
-import { EditTool } from './office/types.js';
-import { isBrowserRuntime } from './runtime.js';
-import { vscode } from './vscodeApi.js';
+import { toMajorMinor } from "./changelogData.js";
+import { BottomToolbar } from "./components/BottomToolbar.js";
+import { ChangelogModal } from "./components/ChangelogModal.js";
+import { DebugView } from "./components/DebugView.js";
+import { EditActionBar } from "./components/EditActionBar.js";
+import { MigrationNotice } from "./components/MigrationNotice.js";
+import { SettingsModal } from "./components/SettingsModal.js";
+import { Tooltip } from "./components/Tooltip.js";
+import { Modal } from "./components/ui/Modal.js";
+import { VersionIndicator } from "./components/VersionIndicator.js";
+import { ZoomControls } from "./components/ZoomControls.js";
+import { useEditorActions } from "./hooks/useEditorActions.js";
+import { useEditorKeyboard } from "./hooks/useEditorKeyboard.js";
+import { useExtensionMessages } from "./hooks/useExtensionMessages.js";
+import { OfficeCanvas } from "./office/components/OfficeCanvas.js";
+import { ToolOverlay } from "./office/components/ToolOverlay.js";
+import { EditorState } from "./office/editor/editorState.js";
+import { EditorToolbar } from "./office/editor/EditorToolbar.js";
+import { OfficeState } from "./office/engine/officeState.js";
+import { isRotatable } from "./office/layout/furnitureCatalog.js";
+import { EditTool } from "./office/types.js";
+import { isBrowserRuntime } from "./runtime.js";
+import { vscode } from "./vscodeApi.js";
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
@@ -40,7 +40,9 @@ function App() {
   // useExtensionMessages listener has been registered.
   useEffect(() => {
     if (isBrowserRuntime) {
-      void import('./browserMock.js').then(({ dispatchMockMessages }) => dispatchMockMessages());
+      void import("./browserMock.js").then(({ dispatchMockMessages }) =>
+        dispatchMockMessages(),
+      );
     }
   }, []);
 
@@ -71,10 +73,15 @@ function App() {
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
-  } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
+  } = useExtensionMessages(
+    getOfficeState,
+    editor.setLastSavedLayout,
+    isEditDirty,
+  );
 
   // Show migration notice once layout reset is detected
-  const [migrationNoticeDismissed, setMigrationNoticeDismissed] = useState(false);
+  const [migrationNoticeDismissed, setMigrationNoticeDismissed] =
+    useState(false);
   const showMigrationNotice = layoutWasReset && !migrationNoticeDismissed;
 
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
@@ -87,12 +94,18 @@ function App() {
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
   const handleWhatsNewDismiss = useCallback(() => {
-    vscode.postMessage({ type: 'setLastSeenVersion', version: currentMajorMinor });
+    vscode.postMessage({
+      type: "setLastSeenVersion",
+      version: currentMajorMinor,
+    });
   }, [currentMajorMinor]);
 
   const handleOpenChangelog = useCallback(() => {
     setIsChangelogOpen(true);
-    vscode.postMessage({ type: 'setLastSeenVersion', version: currentMajorMinor });
+    vscode.postMessage({
+      type: "setLastSeenVersion",
+      version: currentMajorMinor,
+    });
   }, [currentMajorMinor]);
 
   // Sync alwaysShowOverlay from persisted settings
@@ -100,17 +113,20 @@ function App() {
     setAlwaysShowOverlay(alwaysShowLabels);
   }, [alwaysShowLabels]);
 
-  const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), []);
+  const handleToggleDebugMode = useCallback(
+    () => setIsDebugMode((prev) => !prev),
+    [],
+  );
   const handleToggleAlwaysShowOverlay = useCallback(() => {
     setAlwaysShowOverlay((prev) => {
       const newVal = !prev;
-      vscode.postMessage({ type: 'setAlwaysShowLabels', enabled: newVal });
+      vscode.postMessage({ type: "setAlwaysShowLabels", enabled: newVal });
       return newVal;
     });
   }, []);
 
   const handleSelectAgent = useCallback((id: number) => {
-    vscode.postMessage({ type: 'focusAgent', id });
+    vscode.postMessage({ type: "focusAgent", id });
   }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -129,7 +145,7 @@ function App() {
   );
 
   const handleCloseAgent = useCallback((id: number) => {
-    vscode.postMessage({ type: 'closeAgent', id });
+    vscode.postMessage({ type: "closeAgent", id });
   }, []);
 
   const handleClick = useCallback((agentId: number) => {
@@ -137,7 +153,7 @@ function App() {
     const os = getOfficeState();
     const meta = os.subagentMeta.get(agentId);
     const focusId = meta ? meta.parentAgentId : agentId;
-    vscode.postMessage({ type: 'focusAgent', id: focusId });
+    vscode.postMessage({ type: "focusAgent", id: focusId });
   }, []);
 
   const officeState = getOfficeState();
@@ -165,7 +181,11 @@ function App() {
     })();
 
   if (!layoutReady) {
-    return <div className="w-full h-full flex items-center justify-center ">Loading...</div>;
+    return (
+      <div className="w-full h-full flex items-center justify-center ">
+        Loading...
+      </div>
+    );
   }
 
   return (
@@ -189,12 +209,15 @@ function App() {
 
       {!isDebugMode ? (
         <>
-          <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
+          <ZoomControls
+            zoom={editor.zoom}
+            onZoomChange={editor.handleZoomChange}
+          />
 
           {/* Vignette overlay */}
           <div
             className="absolute inset-0 pointer-events-none"
-            style={{ background: 'var(--vignette)' }}
+            style={{ background: "var(--vignette)" }}
           />
 
           {editor.isEditMode && editor.isDirty && (
@@ -214,7 +237,9 @@ function App() {
             (() => {
               const selUid = editorState.selectedFurnitureUid;
               const selColor = selUid
-                ? (officeState.getLayout().furniture.find((f) => f.uid === selUid)?.color ?? null)
+                ? (officeState
+                    .getLayout()
+                    .furniture.find((f) => f.uid === selUid)?.color ?? null)
                 : null;
               return (
                 <EditorToolbar
@@ -231,7 +256,9 @@ function App() {
                   onFloorColorChange={editor.handleFloorColorChange}
                   onWallColorChange={editor.handleWallColorChange}
                   onWallSetChange={editor.handleWallSetChange}
-                  onSelectedFurnitureColorChange={editor.handleSelectedFurnitureColorChange}
+                  onSelectedFurnitureColorChange={
+                    editor.handleSelectedFurnitureColorChange
+                  }
                   onFurnitureTypeChange={editor.handleFurnitureTypeChange}
                   loadedAssets={loadedAssets}
                 />
@@ -268,17 +295,17 @@ function App() {
           position="top-right"
           onDismiss={() => {
             setHooksTooltipDismissed(true);
-            vscode.postMessage({ type: 'setHooksInfoShown' });
+            vscode.postMessage({ type: "setHooksInfoShown" });
           }}
         >
           <span className="text-sm text-text leading-none">
-            Your agents now respond in real-time.{' '}
+            Your agents now respond in real-time.{" "}
             <span
               className="text-accent cursor-pointer underline"
               onClick={() => {
                 setIsHooksInfoOpen(true);
                 setHooksTooltipDismissed(true);
-                vscode.postMessage({ type: 'setHooksInfoShown' });
+                vscode.postMessage({ type: "setHooksInfoShown" });
               }}
             >
               View more
@@ -295,15 +322,24 @@ function App() {
         zIndex={52}
       >
         <div className="text-base text-text px-10" style={{ lineHeight: 1.4 }}>
-          <p className="mb-8">Your Pixel Agents office now reacts in real-time:</p>
+          <p className="mb-8">
+            Your Pixel Agents office now reacts in real-time:
+          </p>
           <ul className="mb-8 pl-18 list-disc m-0">
-            <li className="text-sm mb-2">Permission prompts appear instantly</li>
-            <li className="text-sm mb-2">Turn completions detected the moment they happen</li>
-            <li className="text-sm mb-2">Sound notifications play immediately</li>
+            <li className="text-sm mb-2">
+              Permission prompts appear instantly
+            </li>
+            <li className="text-sm mb-2">
+              Turn completions detected the moment they happen
+            </li>
+            <li className="text-sm mb-2">
+              Sound notifications play immediately
+            </li>
           </ul>
           <p className="mb-12 text-text-muted">
-            This works through Claude Code Hooks, small event listeners that notify Pixel Agents
-            whenever something happens in your Claude sessions.
+            This works through Claude Code Hooks, small event listeners that
+            notify Pixel Agents whenever something happens in your Claude
+            sessions.
           </p>
           <div className="text-center">
             <button
@@ -314,7 +350,7 @@ function App() {
             </button>
           </div>
           <p className="mt-8 text-xs text-text-muted text-center">
-            To disable, go to Settings {'>'} Instant Detection
+            To disable, go to Settings {">"} Instant Detection
           </p>
         </div>
       </Modal>
@@ -353,13 +389,13 @@ function App() {
         onToggleWatchAllSessions={() => {
           const newVal = !watchAllSessions;
           setWatchAllSessions(newVal);
-          vscode.postMessage({ type: 'setWatchAllSessions', enabled: newVal });
+          vscode.postMessage({ type: "setWatchAllSessions", enabled: newVal });
         }}
         hooksEnabled={hooksEnabled}
         onToggleHooksEnabled={() => {
           const newVal = !hooksEnabled;
           setHooksEnabled(newVal);
-          vscode.postMessage({ type: 'setHooksEnabled', enabled: newVal });
+          vscode.postMessage({ type: "setHooksEnabled", enabled: newVal });
         }}
       />
 

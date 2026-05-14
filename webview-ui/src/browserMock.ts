@@ -8,7 +8,7 @@
  * Only imported in browser runtime; tree-shaken from VS Code webview runtime.
  */
 
-import { rgbaToHex } from '../../shared/assets/colorUtils.ts';
+import { rgbaToHex } from "../../shared/assets/colorUtils.ts";
 import {
   CHAR_FRAME_H,
   CHAR_FRAME_W,
@@ -19,12 +19,12 @@ import {
   WALL_GRID_COLS,
   WALL_PIECE_HEIGHT,
   WALL_PIECE_WIDTH,
-} from '../../shared/assets/constants.ts';
+} from "../../shared/assets/constants.ts";
 import type {
   AssetIndex,
   CatalogEntry,
   CharacterDirectionSprites,
-} from '../../shared/assets/types.ts';
+} from "../../shared/assets/types.ts";
 
 interface MockPayload {
   characters: CharacterDirectionSprites[];
@@ -68,7 +68,12 @@ function readSprite(
   for (let y = 0; y < height; y++) {
     const row: string[] = [];
     for (let x = 0; x < width; x++) {
-      const [r, g, b, a] = getPixel(png.data, png.width, offsetX + x, offsetY + y);
+      const [r, g, b, a] = getPixel(
+        png.data,
+        png.width,
+        offsetX + x,
+        offsetY + y,
+      );
       row.push(rgbaToHex(r, g, b, a));
     }
     sprite.push(row);
@@ -83,13 +88,13 @@ async function decodePng(url: string): Promise<DecodedPng> {
   }
   const blob = await res.blob();
   const bitmap = await createImageBitmap(blob);
-  const canvas = document.createElement('canvas');
+  const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
   canvas.height = bitmap.height;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext("2d");
   if (!ctx) {
     bitmap.close();
-    throw new Error('Failed to create 2d canvas context for PNG decode');
+    throw new Error("Failed to create 2d canvas context for PNG decode");
   }
   ctx.drawImage(bitmap, 0, 0);
   bitmap.close();
@@ -107,7 +112,10 @@ async function fetchJsonOptional<T>(url: string): Promise<T | null> {
   }
 }
 
-function getIndexedAssetPath(kind: 'characters' | 'floors' | 'walls', relPath: string): string {
+function getIndexedAssetPath(
+  kind: "characters" | "floors" | "walls",
+  relPath: string,
+): string {
   return relPath.startsWith(`${kind}/`) ? relPath : `${kind}/${relPath}`;
 }
 
@@ -117,7 +125,9 @@ async function decodeCharactersFromPng(
 ): Promise<CharacterDirectionSprites[]> {
   const sprites: CharacterDirectionSprites[] = [];
   for (const relPath of index.characters) {
-    const png = await decodePng(`${base}assets/${getIndexedAssetPath('characters', relPath)}`);
+    const png = await decodePng(
+      `${base}assets/${getIndexedAssetPath("characters", relPath)}`,
+    );
     const byDir: CharacterDirectionSprites = { down: [], up: [], right: [] };
 
     for (let dirIdx = 0; dirIdx < CHARACTER_DIRECTIONS.length; dirIdx++) {
@@ -125,7 +135,15 @@ async function decodeCharactersFromPng(
       const rowOffsetY = dirIdx * CHAR_FRAME_H;
       const frames: string[][][] = [];
       for (let frame = 0; frame < CHAR_FRAMES_PER_ROW; frame++) {
-        frames.push(readSprite(png, CHAR_FRAME_W, CHAR_FRAME_H, frame * CHAR_FRAME_W, rowOffsetY));
+        frames.push(
+          readSprite(
+            png,
+            CHAR_FRAME_W,
+            CHAR_FRAME_H,
+            frame * CHAR_FRAME_W,
+            rowOffsetY,
+          ),
+        );
       }
       byDir[dir] = frames;
     }
@@ -135,19 +153,29 @@ async function decodeCharactersFromPng(
   return sprites;
 }
 
-async function decodeFloorsFromPng(base: string, index: AssetIndex): Promise<string[][][]> {
+async function decodeFloorsFromPng(
+  base: string,
+  index: AssetIndex,
+): Promise<string[][][]> {
   const floors: string[][][] = [];
   for (const relPath of index.floors) {
-    const png = await decodePng(`${base}assets/${getIndexedAssetPath('floors', relPath)}`);
+    const png = await decodePng(
+      `${base}assets/${getIndexedAssetPath("floors", relPath)}`,
+    );
     floors.push(readSprite(png, FLOOR_TILE_SIZE, FLOOR_TILE_SIZE));
   }
   return floors;
 }
 
-async function decodeWallsFromPng(base: string, index: AssetIndex): Promise<string[][][][]> {
+async function decodeWallsFromPng(
+  base: string,
+  index: AssetIndex,
+): Promise<string[][][][]> {
   const wallSets: string[][][][] = [];
   for (const relPath of index.walls) {
-    const png = await decodePng(`${base}assets/${getIndexedAssetPath('walls', relPath)}`);
+    const png = await decodePng(
+      `${base}assets/${getIndexedAssetPath("walls", relPath)}`,
+    );
     const set: string[][][] = [];
     for (let mask = 0; mask < WALL_BITMASK_COUNT; mask++) {
       const ox = (mask % WALL_GRID_COLS) * WALL_PIECE_WIDTH;
@@ -179,32 +207,48 @@ async function decodeFurnitureFromPng(
  * for dispatchMockMessages().
  */
 export async function initBrowserMock(): Promise<void> {
-  console.log('[BrowserMock] Loading assets...');
+  console.log("[BrowserMock] Loading assets...");
 
   const base = import.meta.env.BASE_URL; // '/' in dev, '/sub/' with a subpath, './' in production
 
   const [assetIndex, catalog] = await Promise.all([
-    fetch(`${base}assets/asset-index.json`).then((r) => r.json()) as Promise<AssetIndex>,
-    fetch(`${base}assets/furniture-catalog.json`).then((r) => r.json()) as Promise<CatalogEntry[]>,
+    fetch(`${base}assets/asset-index.json`).then((r) =>
+      r.json(),
+    ) as Promise<AssetIndex>,
+    fetch(`${base}assets/furniture-catalog.json`).then((r) =>
+      r.json(),
+    ) as Promise<CatalogEntry[]>,
   ]);
 
   const shouldTryDecoded = import.meta.env.DEV;
-  const [decodedCharacters, decodedFloors, decodedWalls, decodedFurniture] = shouldTryDecoded
-    ? await Promise.all([
-        fetchJsonOptional<CharacterDirectionSprites[]>(`${base}assets/decoded/characters.json`),
-        fetchJsonOptional<string[][][]>(`${base}assets/decoded/floors.json`),
-        fetchJsonOptional<string[][][][]>(`${base}assets/decoded/walls.json`),
-        fetchJsonOptional<Record<string, string[][]>>(`${base}assets/decoded/furniture.json`),
-      ])
-    : [null, null, null, null];
+  const [decodedCharacters, decodedFloors, decodedWalls, decodedFurniture] =
+    shouldTryDecoded
+      ? await Promise.all([
+          fetchJsonOptional<CharacterDirectionSprites[]>(
+            `${base}assets/decoded/characters.json`,
+          ),
+          fetchJsonOptional<string[][][]>(`${base}assets/decoded/floors.json`),
+          fetchJsonOptional<string[][][][]>(`${base}assets/decoded/walls.json`),
+          fetchJsonOptional<Record<string, string[][]>>(
+            `${base}assets/decoded/furniture.json`,
+          ),
+        ])
+      : [null, null, null, null];
 
-  const hasDecoded = !!(decodedCharacters && decodedFloors && decodedWalls && decodedFurniture);
+  const hasDecoded = !!(
+    decodedCharacters &&
+    decodedFloors &&
+    decodedWalls &&
+    decodedFurniture
+  );
 
   if (!hasDecoded) {
     if (shouldTryDecoded) {
-      console.log('[BrowserMock] Decoded JSON not found, decoding PNG assets in browser...');
+      console.log(
+        "[BrowserMock] Decoded JSON not found, decoding PNG assets in browser...",
+      );
     } else {
-      console.log('[BrowserMock] Decoding PNG assets in browser...');
+      console.log("[BrowserMock] Decoding PNG assets in browser...");
     }
   }
 
@@ -218,7 +262,9 @@ export async function initBrowserMock(): Promise<void> {
       ]);
 
   const layout = assetIndex.defaultLayout
-    ? await fetch(`${base}assets/${assetIndex.defaultLayout}`).then((r) => r.json())
+    ? await fetch(`${base}assets/${assetIndex.defaultLayout}`).then((r) =>
+        r.json(),
+      )
     : null;
 
   mockPayload = {
@@ -231,7 +277,7 @@ export async function initBrowserMock(): Promise<void> {
   };
 
   console.log(
-    `[BrowserMock] Ready (${hasDecoded ? 'decoded-json' : 'browser-png-decode'}) — ${characters.length} chars, ${floorSprites.length} floors, ${wallSets.length} wall sets, ${catalog.length} furniture items`,
+    `[BrowserMock] Ready (${hasDecoded ? "decoded-json" : "browser-png-decode"}) — ${characters.length} chars, ${floorSprites.length} floors, ${wallSets.length} wall sets, ${catalog.length} furniture items`,
   );
 }
 
@@ -242,26 +288,36 @@ export async function initBrowserMock(): Promise<void> {
 export function dispatchMockMessages(): void {
   if (!mockPayload) return;
 
-  const { characters, floorSprites, wallSets, furnitureCatalog, furnitureSprites, layout } =
-    mockPayload;
+  const {
+    characters,
+    floorSprites,
+    wallSets,
+    furnitureCatalog,
+    furnitureSprites,
+    layout,
+  } = mockPayload;
 
   function dispatch(data: unknown): void {
-    window.dispatchEvent(new MessageEvent('message', { data }));
+    window.dispatchEvent(new MessageEvent("message", { data }));
   }
 
   // Must match the load order defined in CLAUDE.md:
   // characterSpritesLoaded → floorTilesLoaded → wallTilesLoaded → furnitureAssetsLoaded → layoutLoaded
-  dispatch({ type: 'characterSpritesLoaded', characters });
-  dispatch({ type: 'floorTilesLoaded', sprites: floorSprites });
-  dispatch({ type: 'wallTilesLoaded', sets: wallSets });
-  dispatch({ type: 'furnitureAssetsLoaded', catalog: furnitureCatalog, sprites: furnitureSprites });
-  dispatch({ type: 'layoutLoaded', layout });
+  dispatch({ type: "characterSpritesLoaded", characters });
+  dispatch({ type: "floorTilesLoaded", sprites: floorSprites });
+  dispatch({ type: "wallTilesLoaded", sets: wallSets });
   dispatch({
-    type: 'settingsLoaded',
+    type: "furnitureAssetsLoaded",
+    catalog: furnitureCatalog,
+    sprites: furnitureSprites,
+  });
+  dispatch({ type: "layoutLoaded", layout });
+  dispatch({
+    type: "settingsLoaded",
     soundEnabled: false,
-    extensionVersion: '1.3.0',
-    lastSeenVersion: '1.2',
+    extensionVersion: "1.3.0",
+    lastSeenVersion: "1.2",
   });
 
-  console.log('[BrowserMock] Messages dispatched');
+  console.log("[BrowserMock] Messages dispatched");
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
 interface ItemSelectProps {
   width: number;
@@ -26,7 +26,7 @@ export function ItemSelect({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     canvas.width = width;
@@ -43,11 +43,11 @@ export function ItemSelect({
       onClick={onClick}
       title={title}
       className={`p-0 rounded-none cursor-pointer overflow-hidden shrink-0 border-2 flex items-center justify-center ${
-        selected ? 'border-accent' : 'border-transparent'
+        selected ? "border-accent" : "border-transparent"
       }`}
       style={{ width, height }}
     >
-      <canvas ref={canvasRef} style={{ width, height, display: 'block' }} />
+      <canvas ref={canvasRef} style={{ width, height, display: "block" }} />
     </button>
   );
 }

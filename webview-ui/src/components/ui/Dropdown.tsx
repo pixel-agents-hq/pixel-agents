@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
 interface DropdownProps {
   isOpen: boolean;
@@ -6,12 +6,14 @@ interface DropdownProps {
   className?: string;
 }
 
-export function Dropdown({ isOpen, children, className = '' }: DropdownProps) {
+export function Dropdown({ isOpen, children, className = "" }: DropdownProps) {
   if (!isOpen) return null;
 
   return (
     <div className="absolute bottom-full left-0 pb-10 z-10">
-      <div className={`bg-bg border-2 border-border rounded-none shadow-pixel p-4 ${className}`}>
+      <div
+        className={`bg-bg border-2 border-border rounded-none shadow-pixel p-4 ${className}`}
+      >
         {children}
       </div>
     </div>
@@ -24,7 +26,11 @@ interface DropdownItemProps {
   className?: string;
 }
 
-export function DropdownItem({ onClick, children, className = '' }: DropdownItemProps) {
+export function DropdownItem({
+  onClick,
+  children,
+  className = "",
+}: DropdownItemProps) {
   return (
     <button
       onClick={onClick}

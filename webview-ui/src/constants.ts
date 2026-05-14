@@ -1,4 +1,4 @@
-import type { ColorValue } from './components/ui/types.js';
+import type { ColorValue } from "./components/ui/types.js";
 
 // ── Grid & Layout ────────────────────────────────────────────
 export const TILE_SIZE = 16;
@@ -26,8 +26,9 @@ export const MATRIX_SPRITE_ROWS = 24;
 export const MATRIX_FLICKER_FPS = 30;
 export const MATRIX_FLICKER_VISIBILITY_THRESHOLD = 180;
 export const MATRIX_COLUMN_STAGGER_RANGE = 0.3;
-export const MATRIX_HEAD_COLOR = '#ccffcc';
-export const matrixGreenBright = (a: number): string => `rgba(0, 255, 65, ${a})`;
+export const MATRIX_HEAD_COLOR = "#ccffcc";
+export const matrixGreenBright = (a: number): string =>
+  `rgba(0, 255, 65, ${a})`;
 export const matrixGreenMid = (a: number): string => `rgba(0, 170, 40, ${a})`;
 export const matrixGreenDim = (a: number): string => `rgba(0, 85, 20, ${a})`;
 export const MATRIX_TRAIL_OVERLAY_ALPHA = 0.6;
@@ -52,27 +53,27 @@ export const BUTTON_LINE_WIDTH_ZOOM_FACTOR = 0.5;
 export const BUBBLE_FADE_DURATION_SEC = 0.5;
 export const BUBBLE_SITTING_OFFSET_PX = 10;
 export const BUBBLE_VERTICAL_OFFSET_PX = 24;
-export const FALLBACK_FLOOR_COLOR = '#808080';
+export const FALLBACK_FLOOR_COLOR = "#808080";
 
 // ── Rendering - Overlay Colors (canvas, not CSS) ─────────────
-export const SEAT_OWN_COLOR = 'rgba(0, 127, 212, 0.35)';
-export const SEAT_AVAILABLE_COLOR = 'rgba(0, 200, 80, 0.35)';
-export const SEAT_BUSY_COLOR = 'rgba(220, 50, 50, 0.35)';
-export const GRID_LINE_COLOR = 'rgba(255,255,255,0.12)';
-export const VOID_TILE_OUTLINE_COLOR = 'rgba(255,255,255,0.08)';
+export const SEAT_OWN_COLOR = "rgba(0, 127, 212, 0.35)";
+export const SEAT_AVAILABLE_COLOR = "rgba(0, 200, 80, 0.35)";
+export const SEAT_BUSY_COLOR = "rgba(220, 50, 50, 0.35)";
+export const GRID_LINE_COLOR = "rgba(255,255,255,0.12)";
+export const VOID_TILE_OUTLINE_COLOR = "rgba(255,255,255,0.08)";
 export const VOID_TILE_DASH_PATTERN: [number, number] = [2, 2];
-export const GHOST_BORDER_HOVER_FILL = 'rgba(60, 130, 220, 0.25)';
-export const GHOST_BORDER_HOVER_STROKE = 'rgba(60, 130, 220, 0.5)';
-export const GHOST_BORDER_STROKE = 'rgba(255, 255, 255, 0.06)';
-export const GHOST_VALID_TINT = '#00ff00';
-export const GHOST_INVALID_TINT = '#ff0000';
-export const SELECTION_HIGHLIGHT_COLOR = '#007fd4';
-export const DELETE_BUTTON_BG = 'rgba(200, 50, 50, 0.85)';
-export const ROTATE_BUTTON_BG = 'rgba(50, 120, 200, 0.85)';
-export const BUTTON_ICON_COLOR = '#fff';
-export const CANVAS_FALLBACK_TILE_COLOR = '#444';
-export const CANVAS_ERROR_TILE_COLOR = '#FF00FF';
-export const WALL_COLOR = '#3A3A5C';
+export const GHOST_BORDER_HOVER_FILL = "rgba(60, 130, 220, 0.25)";
+export const GHOST_BORDER_HOVER_STROKE = "rgba(60, 130, 220, 0.5)";
+export const GHOST_BORDER_STROKE = "rgba(255, 255, 255, 0.06)";
+export const GHOST_VALID_TINT = "#00ff00";
+export const GHOST_INVALID_TINT = "#ff0000";
+export const SELECTION_HIGHLIGHT_COLOR = "#007fd4";
+export const DELETE_BUTTON_BG = "rgba(200, 50, 50, 0.85)";
+export const ROTATE_BUTTON_BG = "rgba(50, 120, 200, 0.85)";
+export const BUTTON_ICON_COLOR = "#fff";
+export const CANVAS_FALLBACK_TILE_COLOR = "#444";
+export const CANVAS_ERROR_TILE_COLOR = "#FF00FF";
+export const WALL_COLOR = "#3A3A5C";
 
 // ── Camera ───────────────────────────────────────────────────
 export const CAMERA_FOLLOW_LERP = 0.1;
@@ -141,10 +142,10 @@ export const TOKEN_DANGER_THRESHOLD = 0.8;
 export const TOKEN_CRITICAL_THRESHOLD = 0.95;
 export const FUEL_GAUGE_WIDTH_PX = 40;
 export const FUEL_GAUGE_HEIGHT_PX = 4;
-export const FUEL_COLOR_OK = '#44cc44';
-export const FUEL_COLOR_WARN = '#ffcc00';
-export const FUEL_COLOR_DANGER = '#ff8800';
-export const FUEL_COLOR_CRITICAL = '#ff2222';
-export const FUEL_GAUGE_BG = '#222';
-export const TEAM_LEAD_COLOR = '#ffd700';
-export const TEAM_ROLE_COLOR = '#66aaff';
+export const FUEL_COLOR_OK = "#44cc44";
+export const FUEL_COLOR_WARN = "#ffcc00";
+export const FUEL_COLOR_DANGER = "#ff8800";
+export const FUEL_COLOR_CRITICAL = "#ff2222";
+export const FUEL_GAUGE_BG = "#222";
+export const TEAM_LEAD_COLOR = "#ffd700";
+export const TEAM_ROLE_COLOR = "#66aaff";

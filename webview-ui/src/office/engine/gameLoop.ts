@@ -1,4 +1,4 @@
-import { MAX_DELTA_TIME_SEC } from '../../constants.js';
+import { MAX_DELTA_TIME_SEC } from "../../constants.js";
 
 /** @internal */
 export interface GameLoopCallbacks {
@@ -6,8 +6,11 @@ export interface GameLoopCallbacks {
   render: (ctx: CanvasRenderingContext2D) => void;
 }
 
-export function startGameLoop(canvas: HTMLCanvasElement, callbacks: GameLoopCallbacks): () => void {
-  const ctx = canvas.getContext('2d')!;
+export function startGameLoop(
+  canvas: HTMLCanvasElement,
+  callbacks: GameLoopCallbacks,
+): () => void {
+  const ctx = canvas.getContext("2d")!;
   ctx.imageSmoothingEnabled = false;
 
   let lastTime = 0;
@@ -16,7 +19,10 @@ export function startGameLoop(canvas: HTMLCanvasElement, callbacks: GameLoopCall
 
   const frame = (time: number) => {
     if (stopped) return;
-    const dt = lastTime === 0 ? 0 : Math.min((time - lastTime) / 1000, MAX_DELTA_TIME_SEC);
+    const dt =
+      lastTime === 0
+        ? 0
+        : Math.min((time - lastTime) / 1000, MAX_DELTA_TIME_SEC);
     lastTime = time;
 
     callbacks.update(dt);

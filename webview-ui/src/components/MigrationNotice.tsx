@@ -1,4 +1,4 @@
-import { Button } from './ui/Button.js';
+import { Button } from "./ui/Button.js";
 
 interface MigrationNoticeProps {
   onDismiss: () => void;
@@ -16,15 +16,18 @@ export function MigrationNotice({ onDismiss }: MigrationNoticeProps) {
       >
         <div className="text-5xl mb-12 text-accent">We owe you an apology!</div>
         <p className="text-xl m-0 mb-12">
-          We've just migrated to fully open-source assets, all built from scratch with love.
-          Unfortunately, this means your previous layout had to be reset.
+          We've just migrated to fully open-source assets, all built from
+          scratch with love. Unfortunately, this means your previous layout had
+          to be reset.
         </p>
         <p className="text-xl m-0 mb-12">We're really sorry about that.</p>
         <p className="text-xl m-0 mb-12">
-          The good news? This was a one-time thing, and it paves the way for some genuinely exciting
-          updates ahead.
+          The good news? This was a one-time thing, and it paves the way for
+          some genuinely exciting updates ahead.
         </p>
-        <p className="text-xl m-0 mb-20">Stay tuned, and thanks for using Pixel Agents!</p>
+        <p className="text-xl m-0 mb-20">
+          Stay tuned, and thanks for using Pixel Agents!
+        </p>
         <Button variant="accent" size="xl" onClick={onDismiss}>
           Got it
         </Button>

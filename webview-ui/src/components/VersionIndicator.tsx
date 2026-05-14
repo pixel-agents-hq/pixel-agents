@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
-import { toMajorMinor } from '../changelogData.ts';
-import { WHATS_NEW_AUTO_CLOSE_MS, WHATS_NEW_FADE_MS } from '../constants.ts';
-import { Button } from './ui/Button.js';
+import { toMajorMinor } from "../changelogData.ts";
+import { WHATS_NEW_AUTO_CLOSE_MS, WHATS_NEW_FADE_MS } from "../constants.ts";
+import { Button } from "./ui/Button.js";
 
 interface VersionIndicatorProps {
   currentVersion: string;
@@ -28,7 +28,10 @@ export function VersionIndicator({
   // Start fade-out after auto-close delay, then fully dismiss after the transition
   useEffect(() => {
     if (!showUpdateNotice || fading) return;
-    const fadeTimer = setTimeout(() => setFading(true), WHATS_NEW_AUTO_CLOSE_MS);
+    const fadeTimer = setTimeout(
+      () => setFading(true),
+      WHATS_NEW_AUTO_CLOSE_MS,
+    );
     return () => clearTimeout(fadeTimer);
   }, [showUpdateNotice, fading]);
 
@@ -73,7 +76,12 @@ export function VersionIndicator({
             <span className="text-lg text-accent-bright leading-none">
               Updated to v{currentMajorMinor}!
             </span>
-            <Button variant="ghost" size="icon" onClick={handleDismiss} className="leading-none">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleDismiss}
+              className="leading-none"
+            >
               x
             </Button>
           </div>

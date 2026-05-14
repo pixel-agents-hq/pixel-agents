@@ -1,221 +1,229 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
-import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import { claudeProvider } from "../src/providers/hook/claude/claude.js";
 
-describe('claudeProvider', () => {
-  describe('identity', () => {
+describe("claudeProvider", () => {
+  describe("identity", () => {
     it('has kind "hook"', () => {
-      expect(claudeProvider.kind).toBe('hook');
+      expect(claudeProvider.kind).toBe("hook");
     });
     it('has id "claude"', () => {
-      expect(claudeProvider.id).toBe('claude');
+      expect(claudeProvider.id).toBe("claude");
     });
-    it('has a displayName', () => {
-      expect(claudeProvider.displayName).toBe('Claude Code');
+    it("has a displayName", () => {
+      expect(claudeProvider.displayName).toBe("Claude Code");
     });
-    it('has Task and Agent in subagentToolNames', () => {
-      expect(claudeProvider.subagentToolNames.has('Task')).toBe(true);
-      expect(claudeProvider.subagentToolNames.has('Agent')).toBe(true);
+    it("has Task and Agent in subagentToolNames", () => {
+      expect(claudeProvider.subagentToolNames.has("Task")).toBe(true);
+      expect(claudeProvider.subagentToolNames.has("Agent")).toBe(true);
     });
-    it('has a linked TeamProvider', () => {
+    it("has a linked TeamProvider", () => {
       expect(claudeProvider.team).toBeDefined();
-      expect(claudeProvider.team?.providerId).toBe('claude');
+      expect(claudeProvider.team?.providerId).toBe("claude");
     });
   });
 
-  describe('normalizeHookEvent', () => {
-    it('returns null when hook_event_name is missing', () => {
-      expect(claudeProvider.normalizeHookEvent({ session_id: 'x' })).toBeNull();
+  describe("normalizeHookEvent", () => {
+    it("returns null when hook_event_name is missing", () => {
+      expect(claudeProvider.normalizeHookEvent({ session_id: "x" })).toBeNull();
     });
-    it('returns null when session_id is missing', () => {
-      expect(claudeProvider.normalizeHookEvent({ hook_event_name: 'Stop' })).toBeNull();
+    it("returns null when session_id is missing", () => {
+      expect(
+        claudeProvider.normalizeHookEvent({ hook_event_name: "Stop" }),
+      ).toBeNull();
     });
-    it('returns null for unknown hook event names', () => {
+    it("returns null for unknown hook event names", () => {
       expect(
         claudeProvider.normalizeHookEvent({
-          hook_event_name: 'SomethingWeird',
-          session_id: 'x',
+          hook_event_name: "SomethingWeird",
+          session_id: "x",
         }),
       ).toBeNull();
     });
 
-    it('normalizes PreToolUse with tool_name + tool_input', () => {
+    it("normalizes PreToolUse with tool_name + tool_input", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'PreToolUse',
-        session_id: 'sess-1',
-        tool_name: 'Read',
-        tool_input: { file_path: '/foo.ts' },
+        hook_event_name: "PreToolUse",
+        session_id: "sess-1",
+        tool_name: "Read",
+        tool_input: { file_path: "/foo.ts" },
       });
-      expect(result?.sessionId).toBe('sess-1');
-      expect(result?.event.kind).toBe('toolStart');
-      if (result?.event.kind === 'toolStart') {
-        expect(result.event.toolName).toBe('Read');
-        expect(result.event.toolId.startsWith('hook-')).toBe(true);
-        expect(result.event.input).toEqual({ file_path: '/foo.ts' });
+      expect(result?.sessionId).toBe("sess-1");
+      expect(result?.event.kind).toBe("toolStart");
+      if (result?.event.kind === "toolStart") {
+        expect(result.event.toolName).toBe("Read");
+        expect(result.event.toolId.startsWith("hook-")).toBe(true);
+        expect(result.event.input).toEqual({ file_path: "/foo.ts" });
       }
     });
 
-    it('normalizes PostToolUse to toolEnd with sentinel toolId', () => {
+    it("normalizes PostToolUse to toolEnd with sentinel toolId", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'PostToolUse',
-        session_id: 'sess-1',
+        hook_event_name: "PostToolUse",
+        session_id: "sess-1",
       });
-      expect(result?.event.kind).toBe('toolEnd');
+      expect(result?.event.kind).toBe("toolEnd");
     });
 
-    it('normalizes PostToolUseFailure to toolEnd (same as PostToolUse)', () => {
+    it("normalizes PostToolUseFailure to toolEnd (same as PostToolUse)", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'PostToolUseFailure',
-        session_id: 'sess-1',
+        hook_event_name: "PostToolUseFailure",
+        session_id: "sess-1",
       });
-      expect(result?.event.kind).toBe('toolEnd');
+      expect(result?.event.kind).toBe("toolEnd");
     });
 
-    it('normalizes Stop to turnEnd', () => {
+    it("normalizes Stop to turnEnd", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'Stop',
-        session_id: 'sess-1',
+        hook_event_name: "Stop",
+        session_id: "sess-1",
       });
-      expect(result?.event.kind).toBe('turnEnd');
+      expect(result?.event.kind).toBe("turnEnd");
     });
 
-    it('normalizes UserPromptSubmit to userTurn', () => {
+    it("normalizes UserPromptSubmit to userTurn", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'UserPromptSubmit',
-        session_id: 'sess-1',
+        hook_event_name: "UserPromptSubmit",
+        session_id: "sess-1",
       });
-      expect(result?.event.kind).toBe('userTurn');
+      expect(result?.event.kind).toBe("userTurn");
     });
 
-    it('normalizes SubagentStart with agent_type as toolName', () => {
+    it("normalizes SubagentStart with agent_type as toolName", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'SubagentStart',
-        session_id: 'sess-1',
-        agent_type: 'web-researcher',
+        hook_event_name: "SubagentStart",
+        session_id: "sess-1",
+        agent_type: "web-researcher",
       });
-      expect(result?.event.kind).toBe('subagentStart');
-      if (result?.event.kind === 'subagentStart') {
-        expect(result.event.toolName).toBe('web-researcher');
-        expect(result.event.toolId.startsWith('hook-sub-web-researcher-')).toBe(true);
+      expect(result?.event.kind).toBe("subagentStart");
+      if (result?.event.kind === "subagentStart") {
+        expect(result.event.toolName).toBe("web-researcher");
+        expect(result.event.toolId.startsWith("hook-sub-web-researcher-")).toBe(
+          true,
+        );
       }
     });
 
-    it('normalizes SubagentStop to subagentEnd', () => {
+    it("normalizes SubagentStop to subagentEnd", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'SubagentStop',
-        session_id: 'sess-1',
+        hook_event_name: "SubagentStop",
+        session_id: "sess-1",
       });
-      expect(result?.event.kind).toBe('subagentEnd');
+      expect(result?.event.kind).toBe("subagentEnd");
     });
 
-    it('normalizes PermissionRequest to permissionRequest', () => {
+    it("normalizes PermissionRequest to permissionRequest", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'PermissionRequest',
-        session_id: 'sess-1',
+        hook_event_name: "PermissionRequest",
+        session_id: "sess-1",
       });
-      expect(result?.event.kind).toBe('permissionRequest');
+      expect(result?.event.kind).toBe("permissionRequest");
     });
 
-    it('normalizes Notification(permission_prompt) to permissionRequest', () => {
+    it("normalizes Notification(permission_prompt) to permissionRequest", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'Notification',
-        session_id: 'sess-1',
-        notification_type: 'permission_prompt',
+        hook_event_name: "Notification",
+        session_id: "sess-1",
+        notification_type: "permission_prompt",
       });
-      expect(result?.event.kind).toBe('permissionRequest');
+      expect(result?.event.kind).toBe("permissionRequest");
     });
 
-    it('normalizes Notification(idle_prompt) to turnEnd', () => {
+    it("normalizes Notification(idle_prompt) to turnEnd", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'Notification',
-        session_id: 'sess-1',
-        notification_type: 'idle_prompt',
+        hook_event_name: "Notification",
+        session_id: "sess-1",
+        notification_type: "idle_prompt",
       });
-      expect(result?.event.kind).toBe('turnEnd');
+      expect(result?.event.kind).toBe("turnEnd");
     });
 
-    it('returns null for Notification with unknown type', () => {
+    it("returns null for Notification with unknown type", () => {
       expect(
         claudeProvider.normalizeHookEvent({
-          hook_event_name: 'Notification',
-          session_id: 'sess-1',
-          notification_type: 'other',
+          hook_event_name: "Notification",
+          session_id: "sess-1",
+          notification_type: "other",
         }),
       ).toBeNull();
     });
 
-    it('normalizes SessionStart with source', () => {
+    it("normalizes SessionStart with source", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'SessionStart',
-        session_id: 'sess-1',
-        source: 'startup',
+        hook_event_name: "SessionStart",
+        session_id: "sess-1",
+        source: "startup",
       });
-      expect(result?.event.kind).toBe('sessionStart');
-      if (result?.event.kind === 'sessionStart') {
-        expect(result.event.source).toBe('startup');
+      expect(result?.event.kind).toBe("sessionStart");
+      if (result?.event.kind === "sessionStart") {
+        expect(result.event.source).toBe("startup");
       }
     });
 
-    it('normalizes SessionEnd with reason', () => {
+    it("normalizes SessionEnd with reason", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'SessionEnd',
-        session_id: 'sess-1',
-        reason: 'clear',
+        hook_event_name: "SessionEnd",
+        session_id: "sess-1",
+        reason: "clear",
       });
-      expect(result?.event.kind).toBe('sessionEnd');
-      if (result?.event.kind === 'sessionEnd') {
-        expect(result.event.reason).toBe('clear');
+      expect(result?.event.kind).toBe("sessionEnd");
+      if (result?.event.kind === "sessionEnd") {
+        expect(result.event.reason).toBe("clear");
       }
     });
 
-    it('normalizes TeammateIdle to subagentTurnEnd', () => {
+    it("normalizes TeammateIdle to subagentTurnEnd", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'TeammateIdle',
-        session_id: 'sess-1',
-        agent_type: 'web-researcher',
+        hook_event_name: "TeammateIdle",
+        session_id: "sess-1",
+        agent_type: "web-researcher",
       });
-      expect(result?.event.kind).toBe('subagentTurnEnd');
+      expect(result?.event.kind).toBe("subagentTurnEnd");
     });
 
-    it('normalizes TaskCompleted to subagentTurnEnd', () => {
+    it("normalizes TaskCompleted to subagentTurnEnd", () => {
       const result = claudeProvider.normalizeHookEvent({
-        hook_event_name: 'TaskCompleted',
-        session_id: 'sess-1',
-        subject: 'Code review',
+        hook_event_name: "TaskCompleted",
+        session_id: "sess-1",
+        subject: "Code review",
       });
-      expect(result?.event.kind).toBe('subagentTurnEnd');
+      expect(result?.event.kind).toBe("subagentTurnEnd");
     });
 
-    it('returns null for TaskCreated (informational only)', () => {
+    it("returns null for TaskCreated (informational only)", () => {
       expect(
         claudeProvider.normalizeHookEvent({
-          hook_event_name: 'TaskCreated',
-          session_id: 'sess-1',
-          subject: 'Code review',
+          hook_event_name: "TaskCreated",
+          session_id: "sess-1",
+          subject: "Code review",
         }),
       ).toBeNull();
     });
   });
 
-  describe('formatToolStatus', () => {
-    it('formats Read', () => {
-      expect(claudeProvider.formatToolStatus('Read', { file_path: '/a/b.ts' })).toBe(
-        'Reading b.ts',
-      );
+  describe("formatToolStatus", () => {
+    it("formats Read", () => {
+      expect(
+        claudeProvider.formatToolStatus("Read", { file_path: "/a/b.ts" }),
+      ).toBe("Reading b.ts");
     });
-    it('formats Task/Agent with description', () => {
-      expect(claudeProvider.formatToolStatus('Task', { description: 'Code review' })).toBe(
-        'Subtask: Code review',
-      );
-      expect(claudeProvider.formatToolStatus('Agent', { description: 'Research' })).toBe(
-        'Subtask: Research',
-      );
+    it("formats Task/Agent with description", () => {
+      expect(
+        claudeProvider.formatToolStatus("Task", { description: "Code review" }),
+      ).toBe("Subtask: Code review");
+      expect(
+        claudeProvider.formatToolStatus("Agent", { description: "Research" }),
+      ).toBe("Subtask: Research");
     });
     it('falls back to "Using X" for unknown tools', () => {
-      expect(claudeProvider.formatToolStatus('FancyTool', {})).toBe('Using FancyTool');
+      expect(claudeProvider.formatToolStatus("FancyTool", {})).toBe(
+        "Using FancyTool",
+      );
     });
-    it('handles undefined input', () => {
-      expect(claudeProvider.formatToolStatus('Read', undefined)).toBe('Reading ');
+    it("handles undefined input", () => {
+      expect(claudeProvider.formatToolStatus("Read", undefined)).toBe(
+        "Reading ",
+      );
     });
   });
 });

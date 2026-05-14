@@ -6,17 +6,21 @@
  * catalog and index structures.
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from "fs";
+import * as path from "path";
 
-import type { FurnitureManifest, InheritedProps, ManifestGroup } from './manifestUtils.js';
-import { flattenManifest } from './manifestUtils.js';
-import type { CatalogEntry } from './types.js';
+import type {
+  FurnitureManifest,
+  InheritedProps,
+  ManifestGroup,
+} from "./manifestUtils.js";
+import { flattenManifest } from "./manifestUtils.js";
+import type { CatalogEntry } from "./types.js";
 
 // ── Furniture catalog ─────────────────────────────────────────────────────────
 
 export function buildFurnitureCatalog(assetsDir: string): CatalogEntry[] {
-  const furnitureDir = path.join(assetsDir, 'furniture');
+  const furnitureDir = path.join(assetsDir, "furniture");
   if (!fs.existsSync(furnitureDir)) return [];
 
   const catalog: CatalogEntry[] = [];
@@ -27,12 +31,14 @@ export function buildFurnitureCatalog(assetsDir: string): CatalogEntry[] {
     .sort();
 
   for (const folderName of dirs) {
-    const manifestPath = path.join(furnitureDir, folderName, 'manifest.json');
+    const manifestPath = path.join(furnitureDir, folderName, "manifest.json");
     if (!fs.existsSync(manifestPath)) continue;
     try {
-      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as FurnitureManifest;
+      const manifest = JSON.parse(
+        fs.readFileSync(manifestPath, "utf-8"),
+      ) as FurnitureManifest;
 
-      if (manifest.type === 'asset') {
+      if (manifest.type === "asset") {
         // Single-asset manifest — validate required fields
         if (
           manifest.width === undefined ||
@@ -58,7 +64,7 @@ export function buildFurnitureCatalog(assetsDir: string): CatalogEntry[] {
           height: manifest.height,
           footprintW: manifest.footprintW,
           footprintH: manifest.footprintH,
-          isDesk: manifest.category === 'desks',
+          isDesk: manifest.category === "desks",
           canPlaceOnWalls: manifest.canPlaceOnWalls,
           canPlaceOnSurfaces: manifest.canPlaceOnSurfaces,
           backgroundTiles: manifest.backgroundTiles,
@@ -74,11 +80,13 @@ export function buildFurnitureCatalog(assetsDir: string): CatalogEntry[] {
           canPlaceOnWalls: manifest.canPlaceOnWalls,
           canPlaceOnSurfaces: manifest.canPlaceOnSurfaces,
           backgroundTiles: manifest.backgroundTiles,
-          ...(manifest.rotationScheme ? { rotationScheme: manifest.rotationScheme } : {}),
+          ...(manifest.rotationScheme
+            ? { rotationScheme: manifest.rotationScheme }
+            : {}),
         };
         const rootGroup: ManifestGroup = {
-          type: 'group',
-          groupType: manifest.groupType as 'rotation' | 'state' | 'animation',
+          type: "group",
+          groupType: manifest.groupType as "rotation" | "state" | "animation",
           rotationScheme: manifest.rotationScheme,
           members: manifest.members,
         };
@@ -107,8 +115,8 @@ export function buildAssetIndex(assetsDir: string) {
       .readdirSync(dir)
       .filter((f) => pattern.test(f))
       .sort((a, b) => {
-        const na = parseInt(/(\d+)/.exec(a)?.[1] ?? '0', 10);
-        const nb = parseInt(/(\d+)/.exec(b)?.[1] ?? '0', 10);
+        const na = parseInt(/(\d+)/.exec(a)?.[1] ?? "0", 10);
+        const nb = parseInt(/(\d+)/.exec(b)?.[1] ?? "0", 10);
         return na - nb;
       });
   }
@@ -126,15 +134,18 @@ export function buildAssetIndex(assetsDir: string) {
         }
       }
     }
-    if (!defaultLayout && fs.existsSync(path.join(assetsDir, 'default-layout.json'))) {
-      defaultLayout = 'default-layout.json';
+    if (
+      !defaultLayout &&
+      fs.existsSync(path.join(assetsDir, "default-layout.json"))
+    ) {
+      defaultLayout = "default-layout.json";
     }
   }
 
   return {
-    floors: listSorted('floors', /^floor_\d+\.png$/i),
-    walls: listSorted('walls', /^wall_\d+\.png$/i),
-    characters: listSorted('characters', /^char_\d+\.png$/i),
+    floors: listSorted("floors", /^floor_\d+\.png$/i),
+    walls: listSorted("walls", /^wall_\d+\.png$/i),
+    characters: listSorted("characters", /^char_\d+\.png$/i),
     defaultLayout,
   };
 }

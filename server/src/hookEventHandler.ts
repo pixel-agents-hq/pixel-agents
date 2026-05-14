@@ -1,15 +1,18 @@
 // TODO(Standalone version): Replace vscode.Webview with MessageSender interface from core/src/messages.ts
 // TODO(Standalone version): Move timerManager and types to server/src/ to eliminate cross-boundary imports
-import * as path from 'path';
-import type * as vscode from 'vscode';
+import * as path from "path";
+import type * as vscode from "vscode";
 
-import { cancelPermissionTimer, cancelWaitingTimer } from '../../src/timerManager.js';
-import type { AgentState } from '../../src/types.js';
-import { HOOK_EVENT_BUFFER_MS, SESSION_END_GRACE_MS } from './constants.js';
-import type { AgentEvent, HookProvider } from './provider.js';
-import { getInlineTeammates, hasInlineTeammates } from './teamUtils.js';
+import {
+  cancelPermissionTimer,
+  cancelWaitingTimer,
+} from "../../src/timerManager.js";
+import type { AgentState } from "../../src/types.js";
+import { HOOK_EVENT_BUFFER_MS, SESSION_END_GRACE_MS } from "./constants.js";
+import type { AgentEvent, HookProvider } from "./provider.js";
+import { getInlineTeammates, hasInlineTeammates } from "./teamUtils.js";
 
-const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
+const debug = process.env.PIXEL_AGENTS_DEBUG !== "0";
 
 /** Normalized hook event received from any provider's hook script via the HTTP server. */
 export interface HookEvent {
@@ -59,7 +62,11 @@ interface SessionLifecycleCallbacks {
   onSessionEnd?: (agentId: number, reason: string) => void;
   /** Called when an Agent Teams teammate is detected via SubagentStart hook.
    *  Triggers scanning of the session's subagents/ directory for the teammate's JSONL. */
-  onTeammateDetected?: (parentAgentId: number, sessionId: string, agentType: string) => void;
+  onTeammateDetected?: (
+    parentAgentId: number,
+    sessionId: string,
+    agentType: string,
+  ) => void;
   /** Called when a teammate should be removed (e.g. no longer in team config members).
    *  Removes the teammate agent from the office. */
   onTeammateRemoved?: (teammateAgentId: number) => void;
@@ -108,7 +115,9 @@ export class HookEventHandler {
     const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
     if (!projectDir) return false;
     return [...this.agents.values()].some(
-      (a) => path.resolve(a.projectDir).toLowerCase() === path.resolve(projectDir).toLowerCase(),
+      (a) =>
+        path.resolve(a.projectDir).toLowerCase() ===
+        path.resolve(projectDir).toLowerCase(),
     );
   }
 
@@ -152,16 +161,18 @@ export class HookEventHandler {
     // For now, only use SessionStart for:
     //   1. Confirming known agents (set hookDelivered)
     //   2. /clear reassignment (source=clear + pendingClear agent)
-    if (normEvent.kind === 'sessionStart') {
+    if (normEvent.kind === "sessionStart") {
       const sid = event.session_id.slice(0, 8);
-      const source = normEvent.source ?? 'unknown';
+      const source = normEvent.source ?? "unknown";
       // transcript_path and cwd are not yet on the normalized sessionStart event;
       // provider carries them in the raw payload until they're promoted.
       const transcriptPath = event.transcript_path as string | undefined;
       const cwd = event.cwd as string | undefined;
       const tracked = this.isTrackedSession(transcriptPath, cwd);
       if (debug && tracked)
-        console.log(`[Pixel Agents] Hook: SessionStart(source=${source}, session=${sid}...)`);
+        console.log(
+          `[Pixel Agents] Hook: SessionStart(source=${source}, session=${sid}...)`,
+        );
 
       // Check registered mapping
       const existingAgentId = this.sessionToAgentId.get(event.session_id);
@@ -189,7 +200,7 @@ export class HookEventHandler {
         }
       }
       // /clear or /resume: reassign existing agent to new session
-      if (normEvent.source === 'clear' || normEvent.source === 'resume') {
+      if (normEvent.source === "clear" || normEvent.source === "resume") {
         const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
         if (projectDir) {
           for (const [id, agent] of this.agents) {
@@ -208,7 +219,11 @@ export class HookEventHandler {
               );
               this.sessionToAgentId.delete(agent.sessionId);
               this.registerAgent(event.session_id, id);
-              this.lifecycleCallbacks.onSessionClear?.(id, event.session_id, transcriptPath);
+              this.lifecycleCallbacks.onSessionClear?.(
+                id,
+                event.session_id,
+                transcriptPath,
+              );
               return;
             }
           }
@@ -219,7 +234,7 @@ export class HookEventHandler {
       // from Claude Code Extension which fire SessionStart + SessionEnd without any activity.
       if (transcriptPath || cwd) {
         // For --resume, clear dismissals so the file can be re-adopted
-        if (normEvent.source === 'resume' && transcriptPath) {
+        if (normEvent.source === "resume" && transcriptPath) {
           this.lifecycleCallbacks.onSessionResume?.(transcriptPath);
         }
         if (debug && tracked)
@@ -229,7 +244,7 @@ export class HookEventHandler {
         this.pendingExternalSessions.set(event.session_id, {
           sessionId: event.session_id,
           transcriptPath,
-          cwd: cwd ?? '',
+          cwd: cwd ?? "",
         });
       } else {
         if (debug && tracked)
@@ -242,7 +257,10 @@ export class HookEventHandler {
 
     // --- All other events: standard agent lookup ---
     // If SessionEnd arrives for a pending external session, discard it (transient session)
-    if (normEvent.kind === 'sessionEnd' && this.pendingExternalSessions.has(event.session_id)) {
+    if (
+      normEvent.kind === "sessionEnd" &&
+      this.pendingExternalSessions.has(event.session_id)
+    ) {
       this.pendingExternalSessions.delete(event.session_id);
       if (debug)
         console.log(
@@ -286,7 +304,9 @@ export class HookEventHandler {
       // Silently drop events for sessions we have no record of
       // (e.g. other projects with Watch All OFF).
       const isPending = this.pendingExternalSessions.has(event.session_id);
-      const hasBuffered = this.bufferedEvents.some((b) => b.event.session_id === event.session_id);
+      const hasBuffered = this.bufferedEvents.some(
+        (b) => b.event.session_id === event.session_id,
+      );
       const hasUnregisteredAgents = [...this.agents.values()].some(
         (a) => a.sessionId && !this.sessionToAgentId.has(a.sessionId),
       );
@@ -315,39 +335,41 @@ export class HookEventHandler {
     // The TeammateIdle / TaskCompleted hooks normalize to `subagentTurnEnd` -- both
     // carry `agent_type` in the raw payload, which we pass to the team-routing handler.
     switch (normEvent.kind) {
-      case 'sessionEnd':
+      case "sessionEnd":
         return this.handleSessionEnd(normEvent, agent, agentId, webview);
-      case 'toolStart':
+      case "toolStart":
         return this.handlePreToolUse(normEvent, agent, agentId, webview);
-      case 'toolEnd':
+      case "toolEnd":
         // Both PostToolUse and PostToolUseFailure normalize to toolEnd. Distinguishing
         // them inside handlers would require extra info; the existing behavior was
         // identical for both (agentToolDone + clear currentHookToolId), so one branch suffices.
         return this.handlePostToolUse(agent, agentId, webview);
-      case 'subagentStart':
+      case "subagentStart":
         return this.provider.team
           ? this.handleSubagentStart(event, agent, agentId, webview)
           : undefined;
-      case 'subagentEnd':
-        return this.provider.team ? this.handleSubagentStop(agent, agentId, webview) : undefined;
-      case 'permissionRequest':
+      case "subagentEnd":
+        return this.provider.team
+          ? this.handleSubagentStop(agent, agentId, webview)
+          : undefined;
+      case "permissionRequest":
         // Handles BOTH the PermissionRequest hook AND the Notification(permission_prompt)
         // hook -- normalizeHookEvent collapses them into one event kind.
         return this.handlePermissionRequest(agent, agentId, webview);
-      case 'turnEnd':
+      case "turnEnd":
         // Handles Stop AND Notification(idle_prompt) -- both normalize to turnEnd.
         return this.handleStop(agent, agentId, webview);
-      case 'subagentTurnEnd':
+      case "subagentTurnEnd":
         // Handles TeammateIdle AND TaskCompleted -- both normalize here. The team-
         // provider's extractTeammateNameFromEvent(raw) routes to the specific teammate.
         // (TaskCreated would have normalized to null already in the provider.)
         if (!this.provider.team) return;
-        if (eventName === 'TaskCompleted') {
+        if (eventName === "TaskCompleted") {
           return this.handleTaskCompleted(event, agentId);
         }
         return this.handleTeammateIdle(event, agent, agentId, webview);
-      case 'userTurn':
-      case 'progress':
+      case "userTurn":
+      case "progress":
         // Not yet consumed by the office visualization. Silently drop.
         return;
     }
@@ -358,7 +380,7 @@ export class HookEventHandler {
    * exit/logout marks agent waiting or triggers cleanup.
    */
   private handleSessionEnd(
-    normEvent: Extract<AgentEvent, { kind: 'sessionEnd' }>,
+    normEvent: Extract<AgentEvent, { kind: "sessionEnd" }>,
     agent: AgentState,
     agentId: number,
     webview: vscode.Webview | undefined,
@@ -366,12 +388,12 @@ export class HookEventHandler {
     const reason = normEvent.reason;
     if (debug)
       console.log(
-        `[Pixel Agents] Hook: Agent ${agentId} - SessionEnd(reason=${reason ?? 'unknown'})`,
+        `[Pixel Agents] Hook: Agent ${agentId} - SessionEnd(reason=${reason ?? "unknown"})`,
       );
 
     // /clear and /resume send SessionEnd then SessionStart. Wait briefly for the follow-up.
     // All other reasons (exit, logout, prompt_input_exit) are final -- despawn immediately.
-    const expectsFollowUp = reason === 'clear' || reason === 'resume';
+    const expectsFollowUp = reason === "clear" || reason === "resume";
 
     if (expectsFollowUp) {
       agent.pendingClear = true;
@@ -391,7 +413,7 @@ export class HookEventHandler {
       // Immediate cleanup for exit/logout. onSessionEnd → removeTeammates in the
       // ViewProvider cleans up all teammates of this lead at once.
       this.markAgentWaiting(agent, agentId, webview);
-      this.lifecycleCallbacks.onSessionEnd?.(agentId, reason ?? 'unknown');
+      this.lifecycleCallbacks.onSessionEnd?.(agentId, reason ?? "unknown");
     }
   }
 
@@ -401,13 +423,14 @@ export class HookEventHandler {
    * This just ensures the character starts animating without waiting for the 500ms JSONL poll.
    */
   private handlePreToolUse(
-    normEvent: Extract<AgentEvent, { kind: 'toolStart' }>,
+    normEvent: Extract<AgentEvent, { kind: "toolStart" }>,
     agent: AgentState,
     agentId: number,
     webview: vscode.Webview | undefined,
   ): void {
     const toolName = normEvent.toolName;
-    const toolInput = (normEvent.input as Record<string, unknown> | undefined) ?? {};
+    const toolInput =
+      (normEvent.input as Record<string, unknown> | undefined) ?? {};
     const status = this.provider.formatToolStatus(toolName, toolInput);
     const hookToolId = `hook-${Date.now()}`;
 
@@ -435,9 +458,9 @@ export class HookEventHandler {
     // tool ID (not the transient hook ID) so that SubagentStop/tool_result cleanup
     // can find and remove them. JSONL handles agentToolStart (with runInBackground)
     // for these tools.
-    if (toolName !== 'Task' && toolName !== 'Agent') {
+    if (toolName !== "Task" && toolName !== "Agent") {
       webview?.postMessage({
-        type: 'agentToolStart',
+        type: "agentToolStart",
         id: agentId,
         toolId: hookToolId,
         status,
@@ -445,9 +468,9 @@ export class HookEventHandler {
       });
     }
     webview?.postMessage({
-      type: 'agentStatus',
+      type: "agentStatus",
       id: agentId,
-      status: 'active',
+      status: "active",
     });
   }
 
@@ -465,7 +488,7 @@ export class HookEventHandler {
       // Suppress tool display when lead has inline teammates (see handlePreToolUse)
       if (!hasInlineTeammates(agentId, this.agents)) {
         webview?.postMessage({
-          type: 'agentToolDone',
+          type: "agentToolDone",
           id: agentId,
           toolId: agent.currentHookToolId,
         });
@@ -495,7 +518,8 @@ export class HookEventHandler {
     agentId: number,
     webview: vscode.Webview | undefined,
   ): void {
-    const agentType = this.provider.team?.extractTeammateNameFromEvent(event) ?? 'unknown';
+    const agentType =
+      this.provider.team?.extractTeammateNameFromEvent(event) ?? "unknown";
 
     // Decide path: teammate spawn vs basic within-turn subagent.
     // Two conditions must BOTH hold for the teammate path:
@@ -505,12 +529,20 @@ export class HookEventHandler {
     //      Without this guard, external sessions firing run_in_background=true
     //      for parallel basic subagents would be mis-routed to teammate discovery.
     // Mirrors the same gate used by the periodic scanAllTeammateFiles fallback.
-    if (this.provider.team && agent.currentHookIsTeammateSpawn === true && agent.teamName) {
+    if (
+      this.provider.team &&
+      agent.currentHookIsTeammateSpawn === true &&
+      agent.teamName
+    ) {
       if (debug)
         console.log(
           `[Pixel Agents] Hook: Agent ${agentId} - SubagentStart: teammate "${agentType}" detected, triggering discovery`,
         );
-      this.lifecycleCallbacks.onTeammateDetected?.(agentId, event.session_id, agentType);
+      this.lifecycleCallbacks.onTeammateDetected?.(
+        agentId,
+        event.session_id,
+        agentType,
+      );
       return;
     }
 
@@ -547,7 +579,7 @@ export class HookEventHandler {
     subNames.set(subToolId, agentType);
 
     webview?.postMessage({
-      type: 'subagentToolStart',
+      type: "subagentToolStart",
       id: agentId,
       parentToolId,
       toolId: subToolId,
@@ -594,7 +626,10 @@ export class HookEventHandler {
     const subagentParentTools = this.getSubagentToolSet();
     let parentToolId: string | undefined;
     for (const [toolId, toolName] of agent.activeToolNames) {
-      if (subagentParentTools.has(toolName) && agent.activeSubagentToolIds.has(toolId)) {
+      if (
+        subagentParentTools.has(toolName) &&
+        agent.activeSubagentToolIds.has(toolId)
+      ) {
         parentToolId = toolId;
         break;
       }
@@ -604,7 +639,7 @@ export class HookEventHandler {
     agent.activeSubagentToolIds.delete(parentToolId);
     agent.activeSubagentToolNames.delete(parentToolId);
     webview?.postMessage({
-      type: 'subagentClear',
+      type: "subagentClear",
       id: agentId,
       parentToolId,
     });
@@ -623,7 +658,7 @@ export class HookEventHandler {
       for (const [id, a] of inlineTeammates) {
         cancelPermissionTimer(id, this.permissionTimers);
         a.permissionSent = true;
-        webview?.postMessage({ type: 'agentToolPermission', id });
+        webview?.postMessage({ type: "agentToolPermission", id });
       }
       return;
     }
@@ -631,13 +666,13 @@ export class HookEventHandler {
     cancelPermissionTimer(agentId, this.permissionTimers);
     agent.permissionSent = true;
     webview?.postMessage({
-      type: 'agentToolPermission',
+      type: "agentToolPermission",
       id: agentId,
     });
     // Also notify any sub-agents with active tools
     for (const parentToolId of agent.activeSubagentToolNames.keys()) {
       webview?.postMessage({
-        type: 'subagentToolPermission',
+        type: "subagentToolPermission",
         id: agentId,
         parentToolId,
       });
@@ -680,7 +715,9 @@ export class HookEventHandler {
       if (match) {
         const [id, a] = match;
         if (debug)
-          console.log(`[Pixel Agents] Hook: TeammateIdle "${agentType}" -> teammate Agent ${id}`);
+          console.log(
+            `[Pixel Agents] Hook: TeammateIdle "${agentType}" -> teammate Agent ${id}`,
+          );
         this.markAgentWaiting(a, id, webview);
         return;
       }
@@ -701,11 +738,11 @@ export class HookEventHandler {
    * Routes to the specific teammate when identifiable, marking it waiting instantly.
    */
   private handleTaskCompleted(event: HookEvent, agentId: number): void {
-    const subject = (event.subject as string) ?? '';
+    const subject = (event.subject as string) ?? "";
     const agentType = this.provider.team?.extractTeammateNameFromEvent(event);
     if (debug)
       console.log(
-        `[Pixel Agents] Hook: Agent ${agentId} - TaskCompleted: ${subject}${agentType ? ` (agent_type=${agentType})` : ''}`,
+        `[Pixel Agents] Hook: Agent ${agentId} - TaskCompleted: ${subject}${agentType ? ` (agent_type=${agentType})` : ""}`,
       );
 
     const inlineTeammates = getInlineTeammates(agentId, this.agents);
@@ -756,13 +793,13 @@ export class HookEventHandler {
         agent.activeSubagentToolNames.delete(toolId);
       }
     }
-    webview?.postMessage({ type: 'agentToolsClear', id: agentId });
+    webview?.postMessage({ type: "agentToolsClear", id: agentId });
     // Re-send background agent tools to restore them after the clear
     for (const toolId of agent.backgroundAgentToolIds) {
       const status = agent.activeToolStatuses.get(toolId);
       if (status) {
         webview?.postMessage({
-          type: 'agentToolStart',
+          type: "agentToolStart",
           id: agentId,
           toolId,
           status,
@@ -774,9 +811,9 @@ export class HookEventHandler {
     agent.permissionSent = false;
     agent.hadToolsInTurn = false;
     webview?.postMessage({
-      type: 'agentStatus',
+      type: "agentStatus",
       id: agentId,
-      status: 'waiting',
+      status: "waiting",
     });
   }
 
@@ -792,8 +829,12 @@ export class HookEventHandler {
 
   /** Deliver all buffered events for a session that just registered. */
   private flushBufferedEvents(sessionId: string): void {
-    const toFlush = this.bufferedEvents.filter((b) => b.event.session_id === sessionId);
-    this.bufferedEvents = this.bufferedEvents.filter((b) => b.event.session_id !== sessionId);
+    const toFlush = this.bufferedEvents.filter(
+      (b) => b.event.session_id === sessionId,
+    );
+    this.bufferedEvents = this.bufferedEvents.filter(
+      (b) => b.event.session_id !== sessionId,
+    );
     if (debug && toFlush.length > 0) {
       if (debug)
         console.log(
@@ -809,7 +850,9 @@ export class HookEventHandler {
   /** Remove buffered events older than HOOK_EVENT_BUFFER_MS. */
   private pruneExpiredBufferedEvents(): void {
     const cutoff = Date.now() - HOOK_EVENT_BUFFER_MS;
-    this.bufferedEvents = this.bufferedEvents.filter((b) => b.timestamp > cutoff);
+    this.bufferedEvents = this.bufferedEvents.filter(
+      (b) => b.timestamp > cutoff,
+    );
     this.cleanupBufferTimer();
   }
 

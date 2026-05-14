@@ -1,11 +1,11 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 @font-face {
-  font-family: 'FS Pixel Sans';
+  font-family: "FS Pixel Sans";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('/fonts/FSPixelSansUnicode-Regular.ttf') format('truetype');
+  src: url("/fonts/FSPixelSansUnicode-Regular.ttf") format("truetype");
 }
 
 :root {
@@ -41,7 +41,11 @@
   --shadow-pixel: 2px 2px 0px #0a0a14;
 
   /* Non-utility values */
-  --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
+  --vignette: radial-gradient(
+    ellipse at center,
+    transparent 50%,
+    rgba(0, 0, 0, 0.6) 100%
+  );
   --btn-disabled-opacity: 0.35;
 }
 
@@ -49,7 +53,7 @@
   /* 1px base so Tailwind spacing maps directly to pixels (pixel-art project) */
   --spacing: 1px;
 
-  --font-pixel: 'FS Pixel Sans', sans-serif;
+  --font-pixel: "FS Pixel Sans", sans-serif;
 
   /* Text sizes (pixel-art scale, base = 22px) */
   --text-*: initial;

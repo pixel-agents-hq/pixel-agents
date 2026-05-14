@@ -1,4 +1,4 @@
-import type { ColorValue } from './types.js';
+import type { ColorValue } from "./types.js";
 
 function ColorSlider({
   label,
@@ -15,7 +15,9 @@ function ColorSlider({
 }) {
   return (
     <div className="flex items-center gap-4">
-      <span className="text-sm text-text-muted w-28 text-right shrink-0">{label}</span>
+      <span className="text-sm text-text-muted w-28 text-right shrink-0">
+        {label}
+      </span>
       <input
         type="range"
         min={min}
@@ -24,7 +26,9 @@ function ColorSlider({
         onChange={(e) => onChange(Number(e.target.value))}
         className="flex-1 h-12 accent-accent"
       />
-      <span className="text-sm text-text-muted w-48 text-right shrink-0">{value}</span>
+      <span className="text-sm text-text-muted w-48 text-right shrink-0">
+        {value}
+      </span>
     </div>
   );
 }
@@ -38,7 +42,12 @@ interface ColorPickerProps {
   showColorizeToggle?: boolean;
 }
 
-export function ColorPicker({ value, onChange, colorize, showColorizeToggle }: ColorPickerProps) {
+export function ColorPicker({
+  value,
+  onChange,
+  colorize,
+  showColorizeToggle,
+}: ColorPickerProps) {
   const handleChange = (key: keyof ColorValue, v: number) => {
     onChange({ ...value, [key]: v });
   };
@@ -52,35 +61,37 @@ export function ColorPicker({ value, onChange, colorize, showColorizeToggle }: C
         value={value.h}
         min={isColorize ? 0 : -180}
         max={isColorize ? 360 : 180}
-        onChange={(v) => handleChange('h', v)}
+        onChange={(v) => handleChange("h", v)}
       />
       <ColorSlider
         label="S"
         value={value.s}
         min={isColorize ? 0 : -100}
         max={100}
-        onChange={(v) => handleChange('s', v)}
+        onChange={(v) => handleChange("s", v)}
       />
       <ColorSlider
         label="B"
         value={value.b}
         min={-100}
         max={100}
-        onChange={(v) => handleChange('b', v)}
+        onChange={(v) => handleChange("b", v)}
       />
       <ColorSlider
         label="C"
         value={value.c}
         min={-100}
         max={100}
-        onChange={(v) => handleChange('c', v)}
+        onChange={(v) => handleChange("c", v)}
       />
       {showColorizeToggle && (
         <label className="flex items-center gap-4 text-sm text-text-muted cursor-pointer">
           <input
             type="checkbox"
             checked={!!value.colorize}
-            onChange={(e) => onChange({ ...value, colorize: e.target.checked || undefined })}
+            onChange={(e) =>
+              onChange({ ...value, colorize: e.target.checked || undefined })
+            }
             className="accent-accent"
           />
           Colorize
