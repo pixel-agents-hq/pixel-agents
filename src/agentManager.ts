@@ -100,6 +100,7 @@ export function launchNewTerminal(
 export function removeAgent(
 	agentId: number,
 	agents: Map<number, AgentState>,
+	knownJsonlFiles: Set<string>,
 	fileWatchers: Map<number, fs.FSWatcher>,
 	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
 	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
@@ -126,7 +127,8 @@ export function removeAgent(
 	cancelWaitingTimer(agentId, waitingTimers);
 	cancelPermissionTimer(agentId, permissionTimers);
 
-	// Remove from maps
+	// Remove from tracking
+	knownJsonlFiles.delete(agent.jsonlFile);
 	agents.delete(agentId);
 	persistAgents();
 }

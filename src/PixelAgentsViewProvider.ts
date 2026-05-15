@@ -275,7 +275,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 						this.activeAgentId.current = null;
 					}
 					removeAgent(
-						id, this.agents,
+						id, this.agents, this.knownJsonlFiles,
 						this.fileWatchers, this.pollingTimers, this.waitingTimers, this.permissionTimers,
 						this.jsonlPollTimers, this.persistAgents,
 					);
@@ -316,7 +316,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 		this.layoutWatcher = null;
 		for (const id of [...this.agents.keys()]) {
 			removeAgent(
-				id, this.agents,
+				id, this.agents, this.knownJsonlFiles,
 				this.fileWatchers, this.pollingTimers, this.waitingTimers, this.permissionTimers,
 				this.jsonlPollTimers, this.persistAgents,
 			);

@@ -139,7 +139,8 @@ function scanForNewJsonlFiles(
 				console.log(`[Pixel Agents] New JSONL detected: ${path.basename(file)}, reassigning to agent ${activeAgentIdRef.current}`);
 				reassignAgentToFile(
 					activeAgentIdRef.current, file,
-					agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers,
+					agents, knownJsonlFiles,
+					fileWatchers, pollingTimers, waitingTimers, permissionTimers,
 					webview, persistAgents,
 				);
 			} else {
@@ -156,7 +157,7 @@ function scanForNewJsonlFiles(
 					if (!owned) {
 						adoptTerminalForFile(
 							activeTerminal, file, projectDir,
-							nextAgentIdRef, agents, activeAgentIdRef,
+							nextAgentIdRef, agents, activeAgentIdRef, knownJsonlFiles,
 							fileWatchers, pollingTimers, waitingTimers, permissionTimers,
 							webview, persistAgents,
 						);
@@ -174,6 +175,7 @@ function adoptTerminalForFile(
 	nextAgentIdRef: { current: number },
 	agents: Map<number, AgentState>,
 	activeAgentIdRef: { current: number | null },
+	knownJsonlFiles: Set<string>,
 	fileWatchers: Map<number, fs.FSWatcher>,
 	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
 	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
@@ -200,6 +202,7 @@ function adoptTerminalForFile(
 	};
 
 	agents.set(id, agent);
+	knownJsonlFiles.add(jsonlFile);
 	activeAgentIdRef.current = id;
 	persistAgents();
 
@@ -214,6 +217,7 @@ export function reassignAgentToFile(
 	agentId: number,
 	newFilePath: string,
 	agents: Map<number, AgentState>,
+	knownJsonlFiles: Set<string>,
 	fileWatchers: Map<number, fs.FSWatcher>,
 	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
 	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
@@ -236,8 +240,10 @@ export function reassignAgentToFile(
 	cancelPermissionTimer(agentId, permissionTimers);
 	clearAgentActivity(agent, agentId, permissionTimers, webview);
 
-	// Swap to new file
+	// Remove old file from known set, swap to new file
+	knownJsonlFiles.delete(agent.jsonlFile);
 	agent.jsonlFile = newFilePath;
+	knownJsonlFiles.add(newFilePath);
 	agent.fileOffset = 0;
 	agent.lineBuffer = '';
 	persistAgents();
