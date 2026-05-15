@@ -87,7 +87,7 @@ export function watchLayoutFile(
 	onExternalChange: (layout: Record<string, unknown>) => void,
 ): LayoutWatcher {
 	const filePath = getLayoutFilePath();
-	let skipNextChange = false;
+	let expectedOwnMtime: number | null = null;
 	let lastMtime = 0;
 	let fsWatcher: fs.FSWatcher | null = null;
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -108,8 +108,9 @@ export function watchLayoutFile(
 			if (stat.mtimeMs <= lastMtime) return;
 			lastMtime = stat.mtimeMs;
 
-			if (skipNextChange) {
-				skipNextChange = false;
+			// Skip only if this exact mtime matches our own write
+			if (expectedOwnMtime !== null && stat.mtimeMs === expectedOwnMtime) {
+				expectedOwnMtime = null;
 				return;
 			}
 
@@ -153,11 +154,10 @@ export function watchLayoutFile(
 
 	return {
 		markOwnWrite(): void {
-			skipNextChange = true;
-			// Update lastMtime preemptively so a near-instant poll doesn't miss the flag
+			// Called AFTER writeLayoutToFile — record the actual mtime of our write
 			try {
 				if (fs.existsSync(filePath)) {
-					lastMtime = fs.statSync(filePath).mtimeMs;
+					expectedOwnMtime = fs.statSync(filePath).mtimeMs;
 				}
 			} catch { /* ignore */ }
 		},

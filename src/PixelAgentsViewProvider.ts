@@ -85,8 +85,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 				console.log(`[Pixel Agents] saveAgentSeats:`, JSON.stringify(message.seats));
 				this.context.workspaceState.update(WORKSPACE_KEY_AGENT_SEATS, message.seats);
 			} else if (message.type === 'saveLayout') {
-				this.layoutWatcher?.markOwnWrite();
 				writeLayoutToFile(message.layout as Record<string, unknown>);
+				this.layoutWatcher?.markOwnWrite();
 			} else if (message.type === 'setSoundEnabled') {
 				this.context.globalState.update(GLOBAL_KEY_SOUND_ENABLED, message.enabled);
 			} else if (message.type === 'webviewReady') {
@@ -247,8 +247,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 						vscode.window.showErrorMessage('Pixel Agents: Invalid layout file.');
 						return;
 					}
-					this.layoutWatcher?.markOwnWrite();
 					writeLayoutToFile(imported);
+					this.layoutWatcher?.markOwnWrite();
 					this.webview?.postMessage({ type: 'layoutLoaded', layout: imported });
 					vscode.window.showInformationMessage('Pixel Agents: Layout imported successfully.');
 				} catch {
