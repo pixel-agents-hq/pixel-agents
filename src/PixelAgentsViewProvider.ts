@@ -98,6 +98,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 					this.jsonlPollTimers, this.projectScanTimer, this.activeAgentId,
 					this.webview, this.persistAgents,
 				);
+				// Send restored agents to webview now that the message handler is ready
+				sendExistingAgents(this.agents, this.context, this.webview);
 				// Send persisted settings to webview
 				const soundEnabled = this.context.globalState.get<boolean>(GLOBAL_KEY_SOUND_ENABLED, true);
 				this.webview?.postMessage({ type: 'settingsLoaded', soundEnabled });
@@ -213,7 +215,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 						}
 					})();
 				}
-				sendExistingAgents(this.agents, this.context, this.webview);
 			} else if (message.type === 'openSessionsFolder') {
 				const projectDir = getProjectDirPath();
 				if (projectDir && fs.existsSync(projectDir)) {
