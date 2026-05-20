@@ -1,0 +1,899 @@
+# NOTE: pinned to 3.0.0 deliberately. @asyncapi/modelina v5.10.1 hardcodes
+# `supportedVersions: ['3.0.0']` in its AsyncAPIInputProcessor. Bumping to
+# 3.1.0 makes Modelina fall through to a generic JSON-schema parser that emits
+# only `export type Root = any` instead of our 52 named interfaces. Bump when
+# Modelina adds 3.1.0 support; the upgrade is `npx asyncapi convert` + a regen.
+# `npm run asyncapi:validate` will keep emitting an info note recommending 3.1.0;
+# that's expected and harmless until Modelina catches up.
+asyncapi: 3.0.0
+info:
+  title: Pixel Agents Protocol
+  version: 1.0.0
+  description: |
+    Bidirectional WebSocket protocol between the Pixel Agents server and any UI client
+    (the bundled VS Code webview, the standalone browser SPA, or future third-party
+    clients). The server watches AI-coding-agent transcripts, parses tool activity, 
+    owns office layout, and streams events to all connected clients. 
+    Clients send commands to launch agents, save layout, and toggle settings.
+
+    The protocol is provider-agnostic: a HookProvider implementation defines how raw
+    CLI events are normalized to the AgentEvent shape, which the server translates
+    into ServerMessage broadcasts.
+  license:
+    name: MIT
+  contact:
+    name: Pixel Agents
+    url: https://github.com/pablodelucca/pixel-agents
+
+servers:
+  local:
+    host: 127.0.0.1:3100
+    protocol: ws
+    description: Local Pixel Agents server (default port 3100)
+    pathname: /ws
+
+channels:
+  ws:
+    address: /ws
+    description: |
+      Single bidirectional channel. The server pushes ServerMessage events on agent
+      lifecycle, tool activity, asset loading, and settings. Clients send
+      ClientMessage commands.
+    messages:
+      ServerMessage:
+        $ref: '#/components/messages/ServerMessage'
+      ClientMessage:
+        $ref: '#/components/messages/ClientMessage'
+
+operations:
+  receiveServerMessage:
+    action: receive
+    channel:
+      $ref: '#/channels/ws'
+    messages:
+      - $ref: '#/channels/ws/messages/ServerMessage'
+  sendClientMessage:
+    action: send
+    channel:
+      $ref: '#/channels/ws'
+    messages:
+      - $ref: '#/channels/ws/messages/ClientMessage'
+
+components:
+  messages:
+    ServerMessage:
+      title: Server-to-client message
+      summary: Any message broadcast by the server to connected clients.
+      payload:
+        $ref: '#/components/schemas/ServerMessage'
+    ClientMessage:
+      title: Client-to-server message
+      summary: Any command sent by a client to the server.
+      payload:
+        $ref: '#/components/schemas/ClientMessage'
+
+  schemas:
+    # ── Top-level discriminated unions ────────────────────────────
+
+    ServerMessage:
+      oneOf:
+        # Provider capabilities
+        - $ref: '#/components/schemas/ProviderCapabilities'
+        # Agent lifecycle
+        - $ref: '#/components/schemas/AgentCreated'
+        - $ref: '#/components/schemas/AgentClosed'
+        - $ref: '#/components/schemas/AgentSelected'
+        - $ref: '#/components/schemas/ExistingAgents'
+        # Agent status / tool activity
+        - $ref: '#/components/schemas/AgentStatus'
+        - $ref: '#/components/schemas/AgentToolStart'
+        - $ref: '#/components/schemas/AgentToolDone'
+        - $ref: '#/components/schemas/AgentToolsClear'
+        - $ref: '#/components/schemas/AgentToolPermission'
+        - $ref: '#/components/schemas/AgentToolPermissionClear'
+        # Sub-agent activity
+        - $ref: '#/components/schemas/SubagentToolStart'
+        - $ref: '#/components/schemas/SubagentToolDone'
+        - $ref: '#/components/schemas/SubagentClear'
+        - $ref: '#/components/schemas/SubagentToolPermission'
+        # Agent Teams
+        - $ref: '#/components/schemas/AgentTeamInfo'
+        - $ref: '#/components/schemas/AgentTokenUsage'
+        # Layout
+        - $ref: '#/components/schemas/LayoutLoaded'
+        # Assets
+        - $ref: '#/components/schemas/FurnitureAssetsLoaded'
+        - $ref: '#/components/schemas/CharacterSpritesLoaded'
+        - $ref: '#/components/schemas/FloorTilesLoaded'
+        - $ref: '#/components/schemas/WallTilesLoaded'
+        # Settings & config
+        - $ref: '#/components/schemas/SettingsLoaded'
+        - $ref: '#/components/schemas/ExternalAssetDirectoriesUpdated'
+        - $ref: '#/components/schemas/WorkspaceFolders'
+        # Diagnostics
+        - $ref: '#/components/schemas/AgentDiagnostics'
+      discriminator: type
+
+    ClientMessage:
+      oneOf:
+        - $ref: '#/components/schemas/WebviewReady'
+        - $ref: '#/components/schemas/LaunchAgent'
+        - $ref: '#/components/schemas/FocusAgent'
+        - $ref: '#/components/schemas/CloseAgent'
+        - $ref: '#/components/schemas/SaveAgentSeats'
+        - $ref: '#/components/schemas/SaveLayout'
+        - $ref: '#/components/schemas/SetSoundEnabled'
+        - $ref: '#/components/schemas/SetLastSeenVersion'
+        - $ref: '#/components/schemas/SetAlwaysShowLabels'
+        - $ref: '#/components/schemas/SetHooksEnabled'
+        - $ref: '#/components/schemas/SetHooksInfoShown'
+        - $ref: '#/components/schemas/SetWatchAllSessions'
+        - $ref: '#/components/schemas/ExportLayout'
+        - $ref: '#/components/schemas/ImportLayout'
+        - $ref: '#/components/schemas/OpenSessionsFolder'
+        - $ref: '#/components/schemas/AddExternalAssetDirectory'
+        - $ref: '#/components/schemas/RemoveExternalAssetDirectory'
+        - $ref: '#/components/schemas/RequestDiagnostics'
+      discriminator: type
+
+    # ── Server message variants ────────────────────────────────────
+
+    ProviderCapabilities:
+      description: |
+        Sent once after `webviewReady`, before any agent messages. Tells the client
+        which tool names should render with the "reading" animation and which spawn
+        sub-agent characters.
+      type: object
+      additionalProperties: false
+      required: [type, readingTools, subagentToolNames]
+      properties:
+        type:
+          const: providerCapabilities
+        readingTools:
+          type: array
+          items:
+            type: string
+          description: Tool names that should render the reading animation (vs typing).
+        subagentToolNames:
+          type: array
+          items:
+            type: string
+          description: Tool names that spawn sub-agent characters (e.g. Task, Agent).
+
+    AgentCreated:
+      description: A new agent has appeared in the office.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentCreated
+        id:
+          type: integer
+        folderName:
+          type: string
+        isExternal:
+          type: boolean
+
+    AgentClosed:
+      description: An agent has been removed from the office.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentClosed
+        id:
+          type: integer
+
+    AgentSelected:
+      description: An agent's terminal was focused (VS Code only). UI should highlight it.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentSelected
+        id:
+          type: integer
+
+    ExistingAgents:
+      description: |
+        Snapshot of all current agents. Sent on initial connect and after agent set
+        changes that the client missed. Includes seat/palette assignments.
+      type: object
+      additionalProperties: false
+      required: [type, agents, agentMeta, folderNames, externalAgents]
+      properties:
+        type:
+          const: existingAgents
+        agents:
+          type: array
+          items:
+            type: integer
+        agentMeta:
+          type: object
+          description: Map of agent ID (string) to seat metadata.
+          additionalProperties:
+            $ref: '#/components/schemas/AgentSeatMeta'
+        folderNames:
+          type: object
+          description: Map of agent ID (string) to workspace folder name.
+          additionalProperties:
+            type: string
+        externalAgents:
+          type: object
+          description: Map of agent ID (string) to external flag.
+          additionalProperties:
+            type: boolean
+
+    AgentStatus:
+      description: Active vs waiting state for an agent (drives character animation).
+      type: object
+      additionalProperties: false
+      required: [type, id, status]
+      properties:
+        type:
+          const: agentStatus
+        id:
+          type: integer
+        status:
+          $ref: '#/components/schemas/AgentActivityStatus'
+
+    AgentActivityStatus:
+      description: Activity state of an agent.
+      type: string
+      enum: [active, waiting]
+
+    AgentToolStart:
+      description: Agent began executing a tool.
+      type: object
+      additionalProperties: false
+      required: [type, id, toolId, status]
+      properties:
+        type:
+          const: agentToolStart
+        id:
+          type: integer
+        toolId:
+          type: string
+        status:
+          type: string
+          description: Human-readable status to display (e.g. "Reading foo.ts").
+        toolName:
+          type: string
+        permissionActive:
+          type: boolean
+        runInBackground:
+          type: boolean
+
+    AgentToolDone:
+      description: Agent finished executing a tool.
+      type: object
+      additionalProperties: false
+      required: [type, id, toolId]
+      properties:
+        type:
+          const: agentToolDone
+        id:
+          type: integer
+        toolId:
+          type: string
+
+    AgentToolsClear:
+      description: All foreground tools cleared (turn end). Background agents preserved.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentToolsClear
+        id:
+          type: integer
+
+    AgentToolPermission:
+      description: Permission prompt detected for the agent's current tool.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentToolPermission
+        id:
+          type: integer
+
+    AgentToolPermissionClear:
+      description: Permission prompt resolved.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentToolPermissionClear
+        id:
+          type: integer
+
+    SubagentToolStart:
+      description: Sub-agent (e.g. Task) started a tool.
+      type: object
+      additionalProperties: false
+      required: [type, id, parentToolId, toolId, status]
+      properties:
+        type:
+          const: subagentToolStart
+        id:
+          type: integer
+        parentToolId:
+          type: string
+        toolId:
+          type: string
+        status:
+          type: string
+
+    SubagentToolDone:
+      description: Sub-agent finished a tool.
+      type: object
+      additionalProperties: false
+      required: [type, id, parentToolId, toolId]
+      properties:
+        type:
+          const: subagentToolDone
+        id:
+          type: integer
+        parentToolId:
+          type: string
+        toolId:
+          type: string
+
+    SubagentClear:
+      description: A sub-agent task completed.
+      type: object
+      additionalProperties: false
+      required: [type, id, parentToolId]
+      properties:
+        type:
+          const: subagentClear
+        id:
+          type: integer
+        parentToolId:
+          type: string
+
+    SubagentToolPermission:
+      description: Permission prompt for a sub-agent's tool.
+      type: object
+      additionalProperties: false
+      required: [type, id, parentToolId]
+      properties:
+        type:
+          const: subagentToolPermission
+        id:
+          type: integer
+        parentToolId:
+          type: string
+
+    AgentTeamInfo:
+      description: Agent Teams metadata (lead, teammate, tmux usage).
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentTeamInfo
+        id:
+          type: integer
+        teamName:
+          type: string
+        agentName:
+          type: string
+        isTeamLead:
+          type: boolean
+        leadAgentId:
+          type: integer
+        teamUsesTmux:
+          type: boolean
+
+    AgentTokenUsage:
+      description: Cumulative token usage for the agent's session.
+      type: object
+      additionalProperties: false
+      required: [type, id, inputTokens, outputTokens]
+      properties:
+        type:
+          const: agentTokenUsage
+        id:
+          type: integer
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+
+    LayoutLoaded:
+      description: |
+        Office layout (tiles, furniture, colors). `null` when no layout file or
+        bundled default exists. `wasReset` is true when the bundled default
+        replaced an outdated user layout.
+      type: object
+      additionalProperties: false
+      required: [type, layout]
+      properties:
+        type:
+          const: layoutLoaded
+        layout:
+          oneOf:
+            - type: object
+              description: |
+                Opaque layout object (cols, rows, tiles, furniture, tileColors).
+                Format defined by the OfficeLayout schema in webview-ui; not
+                modeled here because it's owned by the rendering layer.
+            - type: 'null'
+        wasReset:
+          type: boolean
+
+    FurnitureAssetsLoaded:
+      description: Furniture catalog and sprite data, sent once after webviewReady.
+      type: object
+      additionalProperties: false
+      required: [type, catalog, sprites]
+      properties:
+        type:
+          const: furnitureAssetsLoaded
+        catalog:
+          type: array
+          items:
+            $ref: '#/components/schemas/FurnitureAssetMessage'
+        sprites:
+          type: object
+          description: Map of furniture asset ID to its sprite (2D hex string array).
+          additionalProperties:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+
+    CharacterSpritesLoaded:
+      description: Pre-colored character sprite sets (6 palettes), sent once at startup.
+      type: object
+      additionalProperties: false
+      required: [type, characters]
+      properties:
+        type:
+          const: characterSpritesLoaded
+        characters:
+          type: array
+          items:
+            $ref: '#/components/schemas/CharacterSpriteSet'
+
+    FloorTilesLoaded:
+      description: Floor tile sprites (7 patterns).
+      type: object
+      additionalProperties: false
+      required: [type, sprites]
+      properties:
+        type:
+          const: floorTilesLoaded
+        sprites:
+          type: array
+          description: Array of 2D hex string arrays (one per pattern).
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+
+    WallTilesLoaded:
+      description: Wall auto-tile sprite sets (16 bitmask pieces).
+      type: object
+      additionalProperties: false
+      required: [type, sets]
+      properties:
+        type:
+          const: wallTilesLoaded
+        sets:
+          type: array
+          description: Array of wall tile sets; each set is an array of 2D hex string arrays.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: array
+                items:
+                  type: string
+
+    SettingsLoaded:
+      description: All persisted user-level settings, sent once on connect.
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - soundEnabled
+        - lastSeenVersion
+        - extensionVersion
+        - watchAllSessions
+        - alwaysShowLabels
+        - hooksEnabled
+        - hooksInfoShown
+        - externalAssetDirectories
+      properties:
+        type:
+          const: settingsLoaded
+        soundEnabled:
+          type: boolean
+        lastSeenVersion:
+          type: string
+        extensionVersion:
+          type: string
+        watchAllSessions:
+          type: boolean
+        alwaysShowLabels:
+          type: boolean
+        hooksEnabled:
+          type: boolean
+        hooksInfoShown:
+          type: boolean
+        externalAssetDirectories:
+          type: array
+          items:
+            type: string
+
+    ExternalAssetDirectoriesUpdated:
+      description: External asset directory list changed (after add/remove).
+      type: object
+      additionalProperties: false
+      required: [type, dirs]
+      properties:
+        type:
+          const: externalAssetDirectoriesUpdated
+        dirs:
+          type: array
+          items:
+            type: string
+
+    WorkspaceFolders:
+      description: Multi-root workspace folders (VS Code only).
+      type: object
+      additionalProperties: false
+      required: [type, folders]
+      properties:
+        type:
+          const: workspaceFolders
+        folders:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceFolder'
+
+    AgentDiagnostics:
+      description: Connection diagnostics for all agents (response to requestDiagnostics).
+      type: object
+      additionalProperties: false
+      required: [type, agents]
+      properties:
+        type:
+          const: agentDiagnostics
+        agents:
+          type: array
+          description: Per-agent diagnostic info; shape opaque to the protocol.
+          items:
+            type: object
+
+    # ── Client message variants ────────────────────────────────────
+
+    WebviewReady:
+      description: Client signals it's ready to receive state.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: webviewReady
+
+    LaunchAgent:
+      description: Launch a new Claude agent in a new terminal.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: launchAgent
+        folderPath:
+          type: string
+          description: Workspace folder path (for multi-root workspaces).
+        bypassPermissions:
+          type: boolean
+
+    FocusAgent:
+      description: Focus an agent's terminal.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: focusAgent
+        id:
+          type: integer
+
+    CloseAgent:
+      description: Close (dismiss) an agent.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: closeAgent
+        id:
+          type: integer
+
+    SaveAgentSeats:
+      description: Persist seat assignments for current agents.
+      type: object
+      additionalProperties: false
+      required: [type, seats]
+      properties:
+        type:
+          const: saveAgentSeats
+        seats:
+          type: object
+          description: Map of agent ID (string) to seat assignment.
+          additionalProperties:
+            $ref: '#/components/schemas/SeatAssignment'
+
+    SaveLayout:
+      description: Save the office layout to ~/.pixel-agents/layout.json.
+      type: object
+      additionalProperties: false
+      required: [type, layout]
+      properties:
+        type:
+          const: saveLayout
+        layout:
+          type: object
+          description: Opaque layout object; format owned by the rendering layer.
+
+    SetSoundEnabled:
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setSoundEnabled
+        enabled:
+          type: boolean
+
+    SetLastSeenVersion:
+      type: object
+      additionalProperties: false
+      required: [type, version]
+      properties:
+        type:
+          const: setLastSeenVersion
+        version:
+          type: string
+
+    SetAlwaysShowLabels:
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setAlwaysShowLabels
+        enabled:
+          type: boolean
+
+    SetHooksEnabled:
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setHooksEnabled
+        enabled:
+          type: boolean
+
+    SetHooksInfoShown:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: setHooksInfoShown
+
+    SetWatchAllSessions:
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setWatchAllSessions
+        enabled:
+          type: boolean
+
+    ExportLayout:
+      description: Trigger layout export via host-native save dialog.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: exportLayout
+
+    ImportLayout:
+      description: Trigger layout import via host-native open dialog.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: importLayout
+
+    OpenSessionsFolder:
+      description: Open ~/.claude/projects in the OS file manager.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: openSessionsFolder
+
+    AddExternalAssetDirectory:
+      description: Add an external asset directory (host shows a directory picker).
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: addExternalAssetDirectory
+
+    RemoveExternalAssetDirectory:
+      description: Remove an external asset directory by path.
+      type: object
+      additionalProperties: false
+      required: [type, path]
+      properties:
+        type:
+          const: removeExternalAssetDirectory
+        path:
+          type: string
+
+    RequestDiagnostics:
+      description: Request agent connection diagnostics (server responds with agentDiagnostics).
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: requestDiagnostics
+
+    # ── Supporting schemas ─────────────────────────────────────────
+
+    AgentSeatMeta:
+      description: |
+        Seat metadata associated with an agent (palette index, hue shift, seat ID).
+        Used in `existingAgents.agentMeta`. All fields optional because some agents
+        may not have a seat assignment yet.
+      type: object
+      additionalProperties: false
+      properties:
+        palette:
+          type: integer
+        hueShift:
+          type: integer
+        seatId:
+          type: string
+
+    SeatAssignment:
+      description: |
+        Required seat assignment payload sent in `saveAgentSeats`. `seatId` may be
+        null when the agent is unseated (left their chair). All other fields required.
+      type: object
+      additionalProperties: false
+      required: [palette, hueShift, seatId]
+      properties:
+        palette:
+          type: integer
+        hueShift:
+          type: integer
+        seatId:
+          type: [string, 'null']
+
+    WorkspaceFolder:
+      type: object
+      additionalProperties: false
+      required: [name, path]
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+
+    CharacterSpriteSet:
+      description: |
+        One palette's character sprites as 3D hex-string arrays (frames × rows × pixels).
+        Three direction sets per palette: down, up, right (left is rendered as flipped right).
+      type: object
+      additionalProperties: false
+      required: [down, up, right]
+      properties:
+        down:
+          type: array
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        up:
+          type: array
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        right:
+          type: array
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+
+    FurnitureAssetMessage:
+      description: One entry in the furniture catalog (sent in `furnitureAssetsLoaded`).
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - label
+        - category
+        - file
+        - width
+        - height
+        - footprintW
+        - footprintH
+        - isDesk
+        - canPlaceOnWalls
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        label:
+          type: string
+        category:
+          type: string
+        file:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        footprintW:
+          type: integer
+        footprintH:
+          type: integer
+        isDesk:
+          type: boolean
+        canPlaceOnWalls:
+          type: boolean
+        groupId:
+          type: string
+        canPlaceOnSurfaces:
+          type: boolean
+        backgroundTiles:
+          type: integer
+        orientation:
+          type: string
+        state:
+          type: string
+        mirrorSide:
+          type: boolean
+        rotationScheme:
+          type: string
+        animationGroup:
+          type: string
+        frame:
+          type: integer

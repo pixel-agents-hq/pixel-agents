@@ -71,12 +71,15 @@
   "scripts": {
     "vscode:prepublish": "npm run package",
     "build:webview": "cd webview-ui && npm run build",
-    "compile": "npm run check-types && npm run lint && node esbuild.js && npm run build:webview",
+    "compile": "npm run asyncapi:generate && npm run check-types && npm run lint && node esbuild.js && npm run build:webview",
     "build": "npm run compile",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "npm run check-types && npm run lint && node esbuild.js --production && npm run build:webview",
+    "package": "npm run asyncapi:generate && npm run check-types && npm run lint && node esbuild.js --production && npm run build:webview",
+    "asyncapi:generate": "tsx scripts/generate-messages.ts",
+    "asyncapi:validate": "asyncapi validate core/asyncapi.yaml",
+    "asyncapi:docs": "asyncapi start studio --file core/asyncapi.yaml",
     "check-types": "tsc --noEmit && tsc --noEmit -p server/tsconfig.test.json",
     "prepare": "husky",
     "lint": "eslint adapters/vscode server core && cd webview-ui && eslint .",
@@ -92,6 +95,9 @@
     "knip": "knip"
   },
   "devDependencies": {
+    "@asyncapi/cli": "^6.0.0",
+    "@asyncapi/html-template": "^3.5.6",
+    "@asyncapi/modelina": "^5.10.1",
     "@playwright/test": "^1.58.2",
     "@types/node": "25.x",
     "@types/pngjs": "^6.0.5",
