@@ -7,5 +7,11 @@
   },
   "devDependencies": {
     "vitest": "^3.2.1"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/static": "^9.1.1",
+    "@fastify/websocket": "^11.2.0",
+    "fastify": "^5.8.5"
   }
 }

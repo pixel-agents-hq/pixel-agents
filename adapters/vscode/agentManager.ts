@@ -12,7 +12,7 @@ import {
   reassignAgentToFile,
   startFileWatching,
 } from '../../server/src/fileWatcher.js';
-import { migrateAndLoadLayout } from '../../server/src/layoutPersistence.js';
+import { loadLayout } from '../../server/src/layoutPersistence.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
@@ -569,12 +569,11 @@ export function sendCurrentAgentStatuses(
 }
 
 export function sendLayout(
-  adapter: StateAdapter,
   webview: vscode.Webview | undefined,
   defaultLayout?: Record<string, unknown> | null,
 ): void {
   if (!webview) return;
-  const result = migrateAndLoadLayout(adapter, defaultLayout);
+  const result = loadLayout(defaultLayout);
   webview.postMessage({
     type: 'layoutLoaded',
     layout: result?.layout ?? null,

@@ -1,18 +1,18 @@
 import { isBrowserRuntime } from '../runtime.js';
 import { PostMessageTransport } from './postMessageTransport.js';
 import type { MessageTransport } from './types.js';
+import { WebSocketTransport } from './webSocketTransport.js';
 
 function createTransport(): MessageTransport {
   if (!isBrowserRuntime) {
     return new PostMessageTransport();
   }
-  // Future: return new WebSocketTransport(wsUrl);
-  // For now, fall back to console logging (dev/browser mode)
-  return {
-    send: (msg) => console.log('[Transport] send:', msg),
-    onMessage: () => () => {},
-    dispose: () => {},
-  };
+  // Standalone browser: connect via WebSocket to the same host serving the SPA
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}/ws`;
+  const ws = new WebSocketTransport(wsUrl);
+  ws.connect();
+  return ws;
 }
 
 /** Singleton transport instance. Import this everywhere instead of vscodeApi. */

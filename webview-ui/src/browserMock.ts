@@ -236,8 +236,11 @@ export async function initBrowserMock(): Promise<void> {
 }
 
 /**
- * Call inside a useEffect in App.tsx — after the window message listener
+ * Call inside a useEffect in App.tsx -- after the window message listener
  * in useExtensionMessages has been registered.
+ *
+ * Only used in Vite dev mode (npm run dev). In standalone server mode and
+ * VS Code mode, the server/extension sends all state over the transport.
  */
 export function dispatchMockMessages(): void {
   if (!mockPayload) return;
@@ -250,7 +253,7 @@ export function dispatchMockMessages(): void {
   }
 
   // Must match the load order defined in CLAUDE.md:
-  // characterSpritesLoaded → floorTilesLoaded → wallTilesLoaded → furnitureAssetsLoaded → layoutLoaded
+  // characterSpritesLoaded -> floorTilesLoaded -> wallTilesLoaded -> furnitureAssetsLoaded -> layoutLoaded
   dispatch({ type: 'characterSpritesLoaded', characters });
   dispatch({ type: 'floorTilesLoaded', sprites: floorSprites });
   dispatch({ type: 'wallTilesLoaded', sets: wallSets });
