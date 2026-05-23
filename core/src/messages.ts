@@ -66,6 +66,11 @@ export interface AgentCreated {
   id: number;
   folderName?: string;
   isExternal?: boolean;
+  name?: string;
+  role?: string;
+  department?: string;
+  palette?: number;
+  hueShift?: number;
 }
 
 export interface AgentClosed {

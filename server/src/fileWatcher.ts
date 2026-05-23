@@ -39,6 +39,7 @@ import {
   PROJECT_SCAN_INTERVAL_MS,
 } from './constants.js';
 import type { DismissalTracker } from './dismissalTracker.js';
+import { mainSessionProfile, teammateProfile } from './profiles.js';
 import { cancelPermissionTimer, cancelWaitingTimer, clearAgentActivity } from './timerManager.js';
 import { processTranscriptLine } from './transcriptParser.js';
 import type { AgentState } from './types.js';
@@ -514,6 +515,8 @@ function adoptTerminalForFile(
     hookDelivered: false,
     inputTokens: 0,
     outputTokens: 0,
+    // Main session (the user themself) -> boss profile: Sakura / 社長 / 役員室.
+    ...mainSessionProfile(),
   };
 
   agents.set(id, agent);
@@ -682,6 +685,8 @@ export function scanForTeammateFiles(
       agentName: teammateName,
       leadAgentId: parentAgentId,
       teamName: parentAgent?.teamName,
+      // Teammate -> a random SNS marketing department + 部員 role.
+      ...teammateProfile(teammateName),
     };
 
     agents.set(id, agent);
@@ -880,6 +885,8 @@ export function adoptExternalSessionFromHook(
       folderName,
       inputTokens: 0,
       outputTokens: 0,
+      // Primary external session (the user themself) -> boss profile.
+      ...mainSessionProfile(),
     };
     agents.set(id, agent);
     persistAgents();
@@ -939,6 +946,8 @@ function adoptExternalSession(
     folderName,
     inputTokens: 0,
     outputTokens: 0,
+    // Primary external session (the user themself) -> boss profile.
+    ...mainSessionProfile(),
   };
 
   agents.set(id, agent);

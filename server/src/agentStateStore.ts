@@ -138,6 +138,9 @@ export class AgentStateStore {
         isTeamLead: agent.isTeamLead,
         leadAgentId: agent.leadAgentId,
         teamUsesTmux: agent.teamUsesTmux,
+        name: agent.name,
+        role: agent.role,
+        department: agent.department,
       });
     }
     this.adapter.saveAgents(persisted);

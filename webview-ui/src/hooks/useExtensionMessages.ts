@@ -168,6 +168,11 @@ export function useExtensionMessages(
         const teammateName = msg.teammateName as string | undefined;
         const teammateParentId = msg.parentAgentId as number | undefined;
         const teamName = msg.teamName as string | undefined;
+        const profileName = msg.name as string | undefined;
+        const profileRole = msg.role as string | undefined;
+        const profileDepartment = msg.department as string | undefined;
+        const profilePalette = msg.palette as number | undefined;
+        const profileHueShift = msg.hueShift as number | undefined;
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]));
         // Don't auto-select teammates (keep focus on lead)
         if (!isTeammate) {
@@ -186,9 +191,20 @@ export function useExtensionMessages(
             ch.leadAgentId = teammateParentId;
             ch.teamName = teamName ?? parentCh?.teamName;
             ch.agentName = teammateName;
+            ch.name = profileName;
+            ch.role = profileRole;
+            ch.department = profileDepartment;
           }
         } else {
-          os.addAgent(id, undefined, undefined, undefined, undefined, folderName);
+          // Main session: honor a fixed profile look (e.g. Sakura = char_3 + pink
+          // hueShift) when provided; otherwise fall back to auto-assignment.
+          os.addAgent(id, profilePalette, profileHueShift, undefined, undefined, folderName);
+          const ch = os.characters.get(id);
+          if (ch) {
+            ch.name = profileName;
+            ch.role = profileRole;
+            ch.department = profileDepartment;
+          }
         }
         saveAgentSeats(os);
       } else if (msg.type === 'agentClosed') {

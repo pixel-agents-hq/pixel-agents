@@ -67,7 +67,9 @@ const spriteCache = new Map<string, CharacterSprites>();
 /** Apply hue shift to every sprite in a CharacterSprites set */
 function hueShiftSprites(sprites: CharacterSprites, hueShift: number): CharacterSprites {
   const color: ColorValue = { h: hueShift, s: 0, b: 0, c: 0 };
-  const shift = (s: SpriteData) => adjustSprite(s, color);
+  // preserveSkin=true: skin-tone pixels keep their natural color (so e.g. a
+  // pink-haired persona doesn't get pink skin); hair/clothes still shift.
+  const shift = (s: SpriteData) => adjustSprite(s, color, true);
   const shiftWalk = (
     arr: [SpriteData, SpriteData, SpriteData, SpriteData],
   ): [SpriteData, SpriteData, SpriteData, SpriteData] => [

@@ -19,6 +19,11 @@ export interface PersistedAgent {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
+
+  // -- Org profile (name / role / department) --
+  name?: string;
+  role?: string;
+  department?: string;
 }
 
 /** Agent seat assignment with visual identity */
