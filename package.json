@@ -1,7 +1,7 @@
 {
   "name": "pixel-agents",
   "displayName": "Pixel Agents",
-  "description": "Pixel art office where your Claude Code agents come to life as animated characters",
+  "description": "Pixel art office where your coding agents come to life as animated characters",
   "version": "1.3.0",
   "publisher": "pablodelucca",
   "repository": {
@@ -63,7 +63,16 @@
         "pixel-agents.autoSpawnAgent": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically spawn a Claude Code agent when VS Code starts, if no agents are currently running."
+          "description": "Automatically spawn an agent for the selected provider when VS Code starts, if no agents are currently running."
+        },
+        "pixel-agents.agentProvider": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "copilot"
+          ],
+          "default": "claude",
+          "description": "Select which CLI provider Pixel Agents should launch and track."
         }
       }
     }

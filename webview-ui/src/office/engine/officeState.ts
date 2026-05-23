@@ -267,6 +267,7 @@ export class OfficeState {
     preferredSeatId?: string,
     skipSpawnEffect?: boolean,
     folderName?: string,
+    modelName?: string,
   ): void {
     if (this.characters.has(id)) return;
 
@@ -313,6 +314,9 @@ export class OfficeState {
 
     if (folderName) {
       ch.folderName = folderName;
+    }
+    if (modelName) {
+      ch.modelName = modelName;
     }
     if (!skipSpawnEffect) {
       ch.matrixEffect = 'spawn';
@@ -709,6 +713,12 @@ export class OfficeState {
     if (!ch) return;
     ch.inputTokens = inputTokens;
     ch.outputTokens = outputTokens;
+  }
+
+  setAgentModel(id: number, modelName?: string): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    ch.modelName = modelName;
   }
 
   update(dt: number): void {

@@ -22,6 +22,8 @@ export interface AgentState {
   hadToolsInTurn: boolean;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+  /** Last known model name for this agent/session */
+  modelName?: string;
   /** Timestamp of last JSONL data received (ms since epoch) */
   lastDataAt: number;
   /** Total JSONL lines processed for this agent */
@@ -71,6 +73,8 @@ export interface PersistedAgent {
   projectDir: string;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+  /** Last known model name for this agent/session */
+  modelName?: string;
 
   // -- Agent Teams --
   teamName?: string;
@@ -78,4 +82,6 @@ export interface PersistedAgent {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
+  hooksOnly?: boolean;
+  providerId?: string;
 }

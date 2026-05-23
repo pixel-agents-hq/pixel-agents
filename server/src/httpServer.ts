@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 
+import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { AssetCache, SetHooksEnabledSideEffect } from './clientMessageHandler.js';
@@ -30,6 +31,8 @@ export interface HttpServerOptions {
   staticDir?: string;
   /** Cached assets loaded at startup (standalone only) */
   assetCache?: AssetCache;
+  /** Active CLI provider used for capabilities and message handling. */
+  provider: HookProvider;
   /** Callback when a hook event is received */
   onHookEvent?: (providerId: string, event: Record<string, unknown>) => void;
   /** Invoked when setHooksEnabled is toggled via WebSocket. Standalone installs/uninstalls hooks here. */
@@ -155,6 +158,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
         type: 'agentCreated',
         id,
         folderName: agent.folderName,
+        modelName: agent.modelName,
         isExternal: agent.isExternal || undefined,
         isTeammate: agent.leadAgentId !== undefined || undefined,
         teammateName: agent.agentName,
@@ -187,6 +191,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
           store,
           runtime: options.runtime,
           cache: options.assetCache ?? null,
+          provider: options.provider,
           onSetHooksEnabled: options.onSetHooksEnabled,
         });
       } catch {

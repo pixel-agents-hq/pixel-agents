@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { HookProvider } from '../../core/src/provider.js';
 import { AgentRuntime } from '../../server/src/agentRuntime.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites } from '../../server/src/assetLoader.js';
@@ -29,7 +30,7 @@ import {
   watchLayoutFile,
   writeLayoutToFile,
 } from '../../server/src/layoutPersistence.js';
-import { claudeProvider, copyHookScript } from '../../server/src/providers/index.js';
+import { copyHookScript, getHookProvider } from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
   getProjectDirPath,
@@ -40,6 +41,7 @@ import {
   sendLayout,
 } from './agentManager.js';
 import {
+  CONFIG_KEY_AGENT_PROVIDER,
   CONFIG_KEY_AUTO_SHOW_PANEL,
   CONFIG_KEY_AUTO_SPAWN_AGENT,
   GLOBAL_KEY_ALWAYS_SHOW_LABELS,
@@ -74,6 +76,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   // Pixel Agents Server (hook event reception)
   private pixelAgentsServer: PixelAgentsServer | null = null;
   private adapter: StateAdapter;
+  private provider: HookProvider;
 
   // Auto-spawn guard: ensures the startup spawn fires at most once per VS Code
   // session, even though webviewReady fires on every panel focus.
@@ -84,12 +87,17 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     adapter: StateAdapter,
   ) {
     this.adapter = adapter;
+    const providerId = vscode.workspace
+      .getConfiguration()
+      .get<string>(CONFIG_KEY_AGENT_PROVIDER, 'claude');
+    this.provider = getHookProvider(providerId);
     this.store.setAdapter(this.adapter);
     this.store.on('agentAdded', (id, agent) => {
       this.webview?.postMessage({
         type: 'agentCreated',
         id,
         folderName: agent.folderName,
+        modelName: agent.modelName,
         isExternal: agent.isExternal || undefined,
         isTeammate: agent.leadAgentId !== undefined || undefined,
         teammateName: agent.agentName,
@@ -108,7 +116,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     setTerminalAdapter(new VscodeTerminalAdapter());
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
-    this.runtime = new AgentRuntime(this.store, claudeProvider);
+    this.runtime = new AgentRuntime(this.store, this.provider);
 
     this.initServer();
   }
@@ -128,7 +136,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     this.pixelAgentsServer
-      .start({ store: this.store, embedded: true })
+      .start({ store: this.store, embedded: true, provider: this.provider })
       .then((config) => {
         // Server always starts regardless of hooks-enabled state.
         // It's the foundation for WebSocket transport and health monitoring.
@@ -136,8 +144,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
         this.runtime.hooksEnabled.current = hooksEnabled;
         if (hooksEnabled) {
-          void claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
-          copyHookScript(this.context.extensionPath);
+          void this.provider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+          if (this.provider.id === 'claude') {
+            copyHookScript(this.context.extensionPath);
+          }
         }
         console.log(`[Pixel Agents] Server: ready on port ${config.port}`);
       })
@@ -167,6 +177,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.runtime.jsonlPollTimers,
           this.runtime.projectScanTimer,
           () => this.store.persist(),
+          this.provider,
           message.folderPath as string | undefined,
           message.bypassPermissions as boolean | undefined,
         );
@@ -220,14 +231,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.runtime.hooksEnabled.current = enabled;
         if (enabled) {
           const serverConfig = this.pixelAgentsServer?.getConfig();
-          void claudeProvider.installHooks(
+          void this.provider.installHooks(
             serverConfig ? `http://127.0.0.1:${serverConfig.port}` : '',
             serverConfig?.token ?? '',
           );
-          copyHookScript(this.context.extensionPath);
+          if (this.provider.id === 'claude') {
+            copyHookScript(this.context.extensionPath);
+          }
           console.log('[Pixel Agents] Hooks enabled by user');
         } else {
-          void claudeProvider.uninstallHooks();
+          void this.provider.uninstallHooks();
           console.log('[Pixel Agents] Hooks disabled by user');
         }
       } else if (message.type === 'setHooksInfoShown') {
@@ -271,8 +284,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // from the first frame.
         this.webview?.postMessage({
           type: 'providerCapabilities',
-          readingTools: [...claudeProvider.readingTools],
-          subagentToolNames: [...claudeProvider.subagentToolNames],
+          readingTools: [...this.provider.readingTools],
+          subagentToolNames: [...this.provider.subagentToolNames],
         });
         restoreAgents(
           this.adapter,
@@ -287,6 +300,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.runtime.jsonlPollTimers,
           this.runtime.projectScanTimer,
           this.runtime.activeAgentId,
+          this.provider,
         );
         // Register all restored agents with hook handler
         for (const agent of this.store.values()) {
@@ -322,6 +336,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             this.runtime.jsonlPollTimers,
             this.runtime.projectScanTimer,
             () => this.store.persist(),
+            this.provider,
             undefined,
             undefined,
             autoShowPanel,

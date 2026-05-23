@@ -26,7 +26,7 @@
 
 Pixel Agents turns multi-agent AI systems into something you can actually see and manage. Each agent becomes a character in a pixel art office. They walk around, sit at their desk, and visually reflect what they are doing — typing when writing code, reading when searching files, waiting when it needs your attention.
 
-Right now it works as a VS Code extension with Claude Code. The vision though, is a fully agent-agnostic, platform-agnostic interface for orchestrating any AI agents, deployable anywhere.
+Right now it works as a VS Code extension with Claude Code and experimental GitHub Copilot support. The vision though, is a fully agent-agnostic, platform-agnostic interface for orchestrating any AI agents, deployable anywhere.
 
 This is the source code for the free Pixel Agents extension for VS Code — install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) or [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents) with the full furniture catalog included.
 
@@ -34,7 +34,7 @@ This is the source code for the free Pixel Agents extension for VS Code — inst
 
 ## Features
 
-- **One agent, one character** — every Claude Code terminal gets its own animated character
+- **One agent, one character** — every supported CLI terminal gets its own animated character
 - **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
 - **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
 - **Speech bubbles** — visual indicators when an agent is waiting for input or needs permission
@@ -51,7 +51,9 @@ This is the source code for the free Pixel Agents extension for VS Code — inst
 ## Requirements
 
 - VS Code 1.105.0 or later
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
+- A supported CLI installed and configured:
+  - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
+  - GitHub Copilot CLI (experimental)
 - **Platform**: Windows, Linux, and macOS are supported
 
 ## Getting Started
@@ -73,10 +75,11 @@ Then press **F5** in VS Code to launch the Extension Development Host.
 ### Usage
 
 1. Open the **Pixel Agents** panel (it appears in the bottom panel area alongside your terminal)
-2. Click **+ Agent** to spawn a new Claude Code terminal and its character. Right-click for the option to launch with `--dangerously-skip-permissions` (bypasses all tool approval prompts)
-3. Start coding with Claude — watch the character react in real time
-4. Click a character to select it, then click a seat to reassign it
-5. Click **Layout** to open the office editor and customize your space
+2. Set `pixel-agents.agentProvider` in VS Code settings (`claude` or `copilot`)
+3. Click **+ Agent** to spawn a new terminal and its character. Right-click for the option to launch with `--dangerously-skip-permissions` (currently applies to Claude)
+4. Start coding with your selected provider — watch the character react in real time
+5. Click a character to select it, then click a seat to reassign it
+6. Click **Layout** to open the office editor and customize your space
 
 ## Layout Editor
 

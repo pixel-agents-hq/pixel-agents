@@ -14,11 +14,14 @@ export interface PersistedAgent {
   jsonlFile: string;
   projectDir: string;
   folderName?: string;
+  modelName?: string;
   teamName?: string;
   agentName?: string;
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
+  hooksOnly?: boolean;
+  providerId?: string;
 }
 
 /** Agent seat assignment with visual identity */

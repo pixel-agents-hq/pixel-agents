@@ -19,6 +19,50 @@ const EMPTY_EXEMPT_TOOLS: ReadonlySet<string> = new Set();
  *  Registered once at startup via setHookProvider(). Functions below assume it's set. */
 let hookProvider: HookProvider | null = null;
 
+function normalizeModelName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length > 80 ? trimmed.slice(0, 80) : trimmed;
+}
+
+function extractModelName(record: Record<string, unknown>): string | null {
+  const direct = normalizeModelName(record.model);
+  if (direct) return direct;
+
+  const message = record.message;
+  if (typeof message === 'object' && message !== null) {
+    const fromMessage = normalizeModelName((message as Record<string, unknown>).model);
+    if (fromMessage) return fromMessage;
+  }
+
+  const data = record.data;
+  if (typeof data === 'object' && data !== null) {
+    const fromData = normalizeModelName((data as Record<string, unknown>).model);
+    if (fromData) return fromData;
+  }
+
+  return null;
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function parseCopilotToolInput(value: unknown): Record<string, unknown> {
+  const obj = asObject(value);
+  if (obj) return obj;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return asObject(parsed) ?? {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
 /** Permission-exempt tools come from the active provider. Fail-open if unset. */
 function exemptTools(): ReadonlySet<string> {
   return hookProvider?.permissionExemptTools ?? EMPTY_EXEMPT_TOOLS;
@@ -54,6 +98,116 @@ export function processTranscriptLine(
   agent.linesProcessed++;
   try {
     const record = JSON.parse(line);
+    const recordType = typeof record.type === 'string' ? record.type : '';
+
+    const modelName = extractModelName(record as Record<string, unknown>);
+    if (modelName && modelName !== agent.modelName) {
+      agent.modelName = modelName;
+      agents.broadcast({
+        type: 'agentModel',
+        id: agentId,
+        modelName,
+      });
+    }
+
+    // -- Copilot JSONL compatibility path --
+    // Copilot sessions emit event envelopes like assistant.message / tool.execution_complete
+    // instead of Claude's assistant/user block arrays.
+    if (recordType === 'assistant.message') {
+      const data = asObject((record as Record<string, unknown>).data);
+      const toolRequestsRaw = data?.toolRequests;
+      const toolRequests = Array.isArray(toolRequestsRaw)
+        ? (toolRequestsRaw as Array<Record<string, unknown>>)
+        : [];
+
+      if (toolRequests.length > 0) {
+        cancelWaitingTimer(agentId, waitingTimers);
+        agent.isWaiting = false;
+        agent.hadToolsInTurn = true;
+        agents.broadcast({ type: 'agentStatus', id: agentId, status: 'active' });
+
+        let hasNonExemptTool = false;
+        for (const request of toolRequests) {
+          const toolId = typeof request.toolCallId === 'string' ? request.toolCallId : '';
+          const toolName = typeof request.name === 'string' ? request.name : '';
+          if (!toolId || !toolName) continue;
+
+          const input = parseCopilotToolInput(request.arguments);
+          const status = formatToolStatus(toolName, input);
+
+          agent.activeToolIds.add(toolId);
+          agent.activeToolStatuses.set(toolId, status);
+          agent.activeToolNames.set(toolId, toolName);
+          if (!exemptTools().has(toolName)) {
+            hasNonExemptTool = true;
+          }
+
+          agents.broadcast({
+            type: 'agentToolStart',
+            id: agentId,
+            toolId,
+            status,
+            toolName,
+            permissionActive: agent.permissionSent,
+          });
+        }
+
+        if (hasNonExemptTool && !agent.hookDelivered && !agent.leadAgentId) {
+          startPermissionTimer(agentId, agents, permissionTimers, exemptTools());
+        }
+
+        return;
+      }
+
+      if (!agent.hadToolsInTurn && !agent.hookDelivered) {
+        startWaitingTimer(agentId, TEXT_IDLE_DELAY_MS, agents, waitingTimers);
+      }
+      return;
+    }
+
+    if (recordType === 'tool.execution_complete' || recordType === 'tool.execution_failed') {
+      const data = asObject((record as Record<string, unknown>).data);
+      const completedToolId = typeof data?.toolCallId === 'string' ? data.toolCallId : '';
+      if (!completedToolId) return;
+
+      const completedToolName = agent.activeToolNames.get(completedToolId);
+      if (isSubagentTool(completedToolName)) {
+        agent.activeSubagentToolIds.delete(completedToolId);
+        agent.activeSubagentToolNames.delete(completedToolId);
+        agents.broadcast({
+          type: 'subagentClear',
+          id: agentId,
+          parentToolId: completedToolId,
+        });
+      }
+
+      agent.activeToolIds.delete(completedToolId);
+      agent.activeToolStatuses.delete(completedToolId);
+      agent.activeToolNames.delete(completedToolId);
+
+      const toolId = completedToolId;
+      setTimeout(() => {
+        agents.broadcast({
+          type: 'agentToolDone',
+          id: agentId,
+          toolId,
+        });
+      }, TOOL_DONE_DELAY_MS);
+
+      if (agent.activeToolIds.size === 0) {
+        agent.hadToolsInTurn = false;
+        cancelPermissionTimer(agentId, permissionTimers);
+        if (!agent.hookDelivered) {
+          agents.broadcast({
+            type: 'agentStatus',
+            id: agentId,
+            status: 'waiting',
+          });
+        }
+      }
+
+      return;
+    }
 
     // -- Agent Teams: extract team metadata via the active provider --
     // The provider reads its CLI's own field names (Claude: record.teamName + record.agentName).

@@ -1,9 +1,9 @@
+import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites } from './assetLoader.js';
 import { readConfig, writeConfig } from './configPersistence.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
-import { claudeProvider } from './providers/index.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -23,6 +23,7 @@ export interface ClientMessageContext {
   store: AgentStateStore;
   runtime?: AgentRuntime;
   cache: AssetCache | null;
+  provider: HookProvider;
   /** Install/uninstall hooks side effect. Needs server url+token known only to cli.ts. */
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
 }
@@ -136,8 +137,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // 1. Provider capabilities (must arrive before any agent messages)
   send({
     type: 'providerCapabilities',
-    readingTools: [...claudeProvider.readingTools],
-    subagentToolNames: [...claudeProvider.subagentToolNames],
+    readingTools: [...ctx.provider.readingTools],
+    subagentToolNames: [...ctx.provider.subagentToolNames],
   });
 
   // 2. Assets (from server cache, loaded at startup via pngjs)
@@ -193,11 +194,15 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // 6. Existing agents (either just restored, or from VS Code adapter if present)
   const agentIds: number[] = [];
   const folderNames: Record<number, string> = {};
+  const modelNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   for (const [id, agent] of store) {
     agentIds.push(id);
     if (agent.folderName) {
       folderNames[id] = agent.folderName;
+    }
+    if (agent.modelName) {
+      modelNames[id] = agent.modelName;
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
@@ -209,6 +214,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     agents: agentIds,
     agentMeta: seats,
     folderNames,
+    modelNames,
     externalAgents,
   });
 }
