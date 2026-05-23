@@ -27,6 +27,7 @@ interface ToolOverlayProps {
   officeState: OfficeState;
   agents: number[];
   agentTools: Record<number, ToolActivity[]>;
+  agentStatuses: Record<number, string>;
   subagentCharacters: SubagentCharacter[];
   containerRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
@@ -70,6 +71,7 @@ export function ToolOverlay({
   officeState,
   agents,
   agentTools,
+  agentStatuses,
   subagentCharacters,
   containerRef,
   zoom,
@@ -144,6 +146,11 @@ export function ToolOverlay({
         const hasPermission = subHasPermission || tools?.some((t) => t.permissionWait && !t.done);
         const hasActiveTools = tools?.some((t) => !t.done);
         const isActive = ch.isActive;
+        const backendStatus = agentStatuses[id];
+        const isRunning =
+          backendStatus === 'active' || backendStatus === 'busy' || isActive || !!hasActiveTools;
+        const stateLabel = isRunning ? 'ACTIVO' : 'IDLE';
+        const stateColor = isRunning ? 'var(--color-status-active)' : 'var(--color-status-idle)';
 
         let dotColor: string | null = null;
         if (hasPermission) {
@@ -157,7 +164,7 @@ export function ToolOverlay({
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
         const totalTokens = ch.inputTokens + ch.outputTokens;
         const tokenRatio = totalTokens / MAX_CONTEXT_TOKENS;
-        const hasExtraLines = !!(ch.folderName || teamRoleLabel);
+        const hasExtraLines = !!(ch.folderName || teamRoleLabel || ch.modelName);
 
         return (
           <div
@@ -191,6 +198,14 @@ export function ToolOverlay({
                     {teamRoleLabel}
                   </span>
                 )}
+                {!isSub && (
+                  <span
+                    className="text-2xs leading-none overflow-hidden text-ellipsis block"
+                    style={{ color: stateColor, fontWeight: 'bold' }}
+                  >
+                    {stateLabel}
+                  </span>
+                )}
                 <span
                   className="overflow-hidden text-ellipsis block leading-none"
                   style={{
@@ -200,6 +215,11 @@ export function ToolOverlay({
                 >
                   {activityText}
                 </span>
+                {ch.modelName && (
+                  <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
+                    {ch.modelName}
+                  </span>
+                )}
                 {ch.folderName && (
                   <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
                     {ch.folderName}

@@ -13,7 +13,10 @@ function getSessionDirs(workspacePath: string): string[] {
 }
 
 function getAllSessionRoots(): string[] {
-  return [path.join(os.homedir(), '.copilot', 'projects')];
+  return [
+    path.join(os.homedir(), '.copilot', 'projects'),
+    path.join(os.homedir(), '.copilot', 'session-state'),
+  ];
 }
 
 function buildLaunchCommand(

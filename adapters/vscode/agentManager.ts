@@ -362,6 +362,7 @@ export function restoreAgents(
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
       folderName: p.folderName,
+      modelName: p.modelName,
       hookDelivered: false,
       hooksOnly: p.hooksOnly,
       providerId: p.providerId,
@@ -518,10 +519,14 @@ export function sendExistingAgents(
 
   // Include folderName and isExternal per agent
   const folderNames: Record<number, string> = {};
+  const modelNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   for (const [id, agent] of agents) {
     if (agent.folderName) {
       folderNames[id] = agent.folderName;
+    }
+    if (agent.modelName) {
+      modelNames[id] = agent.modelName;
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
@@ -536,6 +541,7 @@ export function sendExistingAgents(
     agents: agentIds,
     agentMeta,
     folderNames,
+    modelNames,
     externalAgents,
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
@@ -565,6 +571,14 @@ export function sendCurrentAgentStatuses(
         type: 'agentStatus',
         id: agentId,
         status: 'waiting',
+      });
+    }
+    // Re-send model label (if known)
+    if (agent.modelName) {
+      webview.postMessage({
+        type: 'agentModel',
+        id: agentId,
+        modelName: agent.modelName,
       });
     }
     // Re-send team metadata

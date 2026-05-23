@@ -17,6 +17,20 @@
 			],
 			"envFile": "${workspaceFolder}/.env",
 			"preLaunchTask": "${defaultBuildTask}"
+		},
+		{
+			"name": "Run Extension (No Dev Containers)",
+			"type": "extensionHost",
+			"request": "launch",
+			"args": [
+				"--disable-extension=ms-vscode-remote.remote-containers",
+				"--extensionDevelopmentPath=${workspaceFolder}"
+			],
+			"outFiles": [
+				"${workspaceFolder}/dist/**/*.js"
+			],
+			"envFile": "${workspaceFolder}/.env",
+			"preLaunchTask": "${defaultBuildTask}"
 		}
 	]
 }
