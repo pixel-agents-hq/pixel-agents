@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { AssetCache, SetHooksEnabledSideEffect } from './clientMessageHandler.js';
@@ -56,6 +57,7 @@ export class PixelAgentsServer {
   async start(options?: {
     store?: AgentStateStore;
     runtime?: AgentRuntime;
+    provider: HookProvider;
     embedded?: boolean;
     host?: string;
     port?: number;
@@ -63,6 +65,10 @@ export class PixelAgentsServer {
     assetCache?: AssetCache;
     onSetHooksEnabled?: SetHooksEnabledSideEffect;
   }): Promise<ServerConfig> {
+    if (!options?.provider) {
+      throw new Error('PixelAgentsServer.start requires a provider');
+    }
+
     // Check if another instance already has a server running
     const existing = this.readServerJson();
     if (existing && isProcessRunning(existing.pid)) {
@@ -85,6 +91,7 @@ export class PixelAgentsServer {
       token,
       store: store!,
       runtime: options?.runtime,
+      provider: options.provider,
       staticDir: options?.staticDir,
       assetCache: options?.assetCache,
       onHookEvent: (providerId, event) => this.callback?.(providerId, event),

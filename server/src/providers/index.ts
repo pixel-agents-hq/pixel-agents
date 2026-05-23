@@ -11,5 +11,21 @@
  * than reaching into each provider directory directly.
  */
 
-export { claudeProvider } from './hook/claude/claude.js';
-export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+import type { HookProvider } from '../../../core/src/provider.js';
+import { claudeProvider } from './hook/claude/claude.js';
+import { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+import { copilotProvider } from './hook/copilot/copilot.js';
+
+export { claudeProvider, copilotProvider, copyHookScript };
+
+const PROVIDERS: Readonly<Record<string, HookProvider>> = {
+  [claudeProvider.id]: claudeProvider,
+  [copilotProvider.id]: copilotProvider,
+};
+
+export function getHookProvider(providerId: string | undefined): HookProvider {
+  if (providerId && PROVIDERS[providerId]) {
+    return PROVIDERS[providerId];
+  }
+  return claudeProvider;
+}

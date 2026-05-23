@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { HookProvider } from '../../core/src/provider.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
 import {
@@ -13,19 +14,18 @@ import {
   startFileWatching,
 } from '../../server/src/fileWatcher.js';
 import { loadLayout } from '../../server/src/layoutPersistence.js';
-import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
 import type { AgentState, PersistedAgent } from '../../server/src/types.js';
 
-export function getProjectDirPath(cwd?: string): string {
+export function getProjectDirPath(cwd?: string, provider: HookProvider = claudeProvider): string {
   // Fall back to home directory when no workspace folder is open (common on Linux/macOS
   // when VS Code is launched without a folder). The provider's getSessionDirs already
   // implements the Windows case-insensitive fallback for drive-letter casing.
   const workspacePath = cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
-  const dirs = claudeProvider.getSessionDirs?.(workspacePath) ?? [];
+  const dirs = provider.getSessionDirs?.(workspacePath) ?? [];
   if (dirs.length === 0) {
-    throw new Error('claudeProvider.getSessionDirs returned no directories');
+    return workspacePath;
   }
   const projectDir = dirs[0];
   console.log(`[Pixel Agents] Terminal: Project dir: ${workspacePath} → ${projectDir}`);
@@ -45,6 +45,7 @@ export async function launchNewTerminal(
   jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
   projectScanTimerRef: { current: ReturnType<typeof setInterval> | null },
   persistAgents: () => void,
+  provider: HookProvider = claudeProvider,
   folderPath?: string,
   bypassPermissions?: boolean,
   suppressShow?: boolean,
@@ -56,8 +57,9 @@ export async function launchNewTerminal(
   const cwd = folderPath || folders?.[0]?.uri.fsPath || os.homedir();
   const isMultiRoot = !!(folders && folders.length > 1);
   const idx = nextTerminalIndexRef.current++;
+  const terminalPrefix = provider.terminalNamePrefix ?? provider.displayName;
   const terminal = vscode.window.createTerminal({
-    name: `${CLAUDE_TERMINAL_NAME_PREFIX} #${idx}`,
+    name: `${terminalPrefix} #${idx}`,
     cwd,
   });
   // When suppressShow is set (auto-spawn + autoShowPanel), keep the panel view
@@ -69,17 +71,25 @@ export async function launchNewTerminal(
   }
 
   const sessionId = crypto.randomUUID();
-  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
+  const launch = provider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
   if (!launch) {
-    throw new Error('claudeProvider.buildLaunchCommand is not implemented');
+    throw new Error(`Provider "${provider.id}" does not implement buildLaunchCommand`);
   }
   terminal.sendText([launch.command, ...launch.args].join(' '));
 
-  const projectDir = getProjectDirPath(cwd);
+  const projectDir = getProjectDirPath(cwd, provider);
+  const supportsTranscriptFallback =
+    typeof provider.getSessionDirs === 'function' &&
+    typeof provider.sessionFilePattern === 'string' &&
+    provider.sessionFilePattern.length > 0;
 
   // Pre-register expected JSONL file so project scan won't treat it as a /clear file
-  const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
-  knownJsonlFiles.add(expectedFile);
+  const expectedFile = supportsTranscriptFallback
+    ? path.join(projectDir, `${sessionId}.jsonl`)
+    : path.join(projectDir, `${sessionId}.hook-session`);
+  if (supportsTranscriptFallback) {
+    knownJsonlFiles.add(expectedFile);
+  }
 
   // Create agent immediately (before JSONL file exists)
   const id = nextAgentIdRef.current++;
@@ -107,6 +117,8 @@ export async function launchNewTerminal(
     seenUnknownRecordTypes: new Set(),
     folderName,
     hookDelivered: false,
+    hooksOnly: !supportsTranscriptFallback,
+    providerId: provider.id,
     inputTokens: 0,
     outputTokens: 0,
   };
@@ -129,6 +141,10 @@ export async function launchNewTerminal(
     permissionTimers,
     persistAgents,
   );
+
+  if (!supportsTranscriptFallback) {
+    return;
+  }
 
   // Poll for the specific JSONL file to appear
   const createdAt = Date.now();
@@ -270,6 +286,8 @@ export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): v
       isTeamLead: agent.isTeamLead,
       leadAgentId: agent.leadAgentId,
       teamUsesTmux: agent.teamUsesTmux,
+      hooksOnly: agent.hooksOnly,
+      providerId: agent.providerId,
     });
   }
   adapter.saveAgents(persisted);
@@ -288,6 +306,7 @@ export function restoreAgents(
   jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
   projectScanTimerRef: { current: ReturnType<typeof setInterval> | null },
   activeAgentIdRef: { current: number | null },
+  provider: HookProvider = claudeProvider,
 ): void {
   const persisted = adapter.loadAgents();
   if (persisted.length === 0) return;
@@ -344,6 +363,8 @@ export function restoreAgents(
       seenUnknownRecordTypes: new Set(),
       folderName: p.folderName,
       hookDelivered: false,
+      hooksOnly: p.hooksOnly,
+      providerId: p.providerId,
       inputTokens: 0,
       outputTokens: 0,
       teamName: p.teamName,
@@ -377,7 +398,9 @@ export function restoreAgents(
 
     // Start file watching if JSONL exists, skipping to end of file
     try {
-      if (fs.existsSync(p.jsonlFile)) {
+      if (agent.hooksOnly) {
+        // Hooks-only provider: no transcript polling/watching.
+      } else if (fs.existsSync(p.jsonlFile)) {
         const stat = fs.statSync(p.jsonlFile);
         agent.fileOffset = stat.size;
         startFileWatching(
@@ -461,7 +484,7 @@ export function restoreAgents(
   store.persist();
 
   // Start project scan for /clear detection
-  if (restoredProjectDir) {
+  if (restoredProjectDir && provider.sessionFilePattern) {
     ensureProjectScan(
       restoredProjectDir,
       knownJsonlFiles,
