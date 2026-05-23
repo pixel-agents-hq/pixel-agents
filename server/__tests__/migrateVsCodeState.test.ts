@@ -10,6 +10,16 @@ vi.mock('vscode', () => ({
   window: { showWarningMessage },
 }));
 
+// Mock os.homedir() so all ~/.pixel-agents I/O is sandboxed. Setting
+// process.env.HOME is insufficient on Windows, where os.homedir() reads
+// USERPROFILE and ignores HOME, causing tests to escape the sandbox and
+// read/write the real ~/.pixel-agents dir.
+let tempHome: string;
+vi.mock('os', async () => {
+  const actual = await vi.importActual<typeof import('os')>('os');
+  return { ...actual, homedir: () => tempHome };
+});
+
 import { migrateVsCodeState } from '../../adapters/vscode/migrateVsCodeState.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../src/layoutPersistence.js';
@@ -50,19 +60,12 @@ function makeContext(globalSeed = {}, workspaceSeed = {}) {
 }
 
 describe('migrateVsCodeState', () => {
-  let tempHome: string;
-  let originalHome: string | undefined;
-
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-migrate-test-'));
-    originalHome = process.env.HOME;
-    process.env.HOME = tempHome;
     showWarningMessage.mockReset();
   });
 
   afterEach(() => {
-    if (originalHome === undefined) delete process.env.HOME;
-    else process.env.HOME = originalHome;
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
@@ -172,7 +175,9 @@ describe('migrateVsCodeState', () => {
     // Simulate by replacing with a file (so mkdirSync fails on subpath).
     const blocker = path.join(tempHome, 'blocker');
     fs.writeFileSync(blocker, 'x');
-    process.env.HOME = blocker; // HOME is now a file; can't mkdir inside
+    // Point homedir at a file (the mock reads tempHome at call time); mkdir of
+    // ~/.pixel-agents inside it will fail, simulating an unwritable home.
+    tempHome = blocker;
 
     const { context, globalStore } = makeContext({
       'pixel-agents.soundEnabled': false,
