@@ -157,7 +157,14 @@ export function ToolOverlay({
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
         const totalTokens = ch.inputTokens + ch.outputTokens;
         const tokenRatio = totalTokens / MAX_CONTEXT_TOKENS;
-        const hasExtraLines = !!(ch.folderName || teamRoleLabel);
+        // Org profile: "名前 ・ 役割" headline + department subline.
+        const profileNameRole = [ch.name, ch.role].filter(Boolean).join(' ・ ') || null;
+        const hasExtraLines = !!(
+          ch.folderName ||
+          teamRoleLabel ||
+          profileNameRole ||
+          ch.department
+        );
 
         return (
           <div
@@ -179,6 +186,22 @@ export function ToolOverlay({
                 />
               )}
               <div className="flex flex-col gap-0 overflow-hidden">
+                {profileNameRole && (
+                  <span
+                    className="overflow-hidden text-ellipsis block leading-none"
+                    style={{ fontSize: '18px', fontWeight: 'bold' }}
+                  >
+                    {profileNameRole}
+                  </span>
+                )}
+                {ch.department && (
+                  <span
+                    className="text-2xs leading-none overflow-hidden text-ellipsis block"
+                    style={{ color: TEAM_ROLE_COLOR }}
+                  >
+                    {ch.department}
+                  </span>
+                )}
                 {teamRoleLabel && (
                   <span
                     className="overflow-hidden text-ellipsis block leading-none"

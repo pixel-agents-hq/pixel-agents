@@ -161,6 +161,11 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
         parentAgentId: agent.leadAgentId,
         teamName: agent.teamName,
         hooksOnly: agent.hooksOnly || undefined,
+        name: agent.name,
+        role: agent.role,
+        department: agent.department,
+        palette: agent.palette,
+        hueShift: agent.hueShift,
       });
     };
 

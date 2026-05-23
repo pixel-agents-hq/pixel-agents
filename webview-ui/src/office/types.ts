@@ -192,6 +192,14 @@ export interface Character {
   leadAgentId?: number;
   /** True when lead spawns teammates via tmux (run_in_background Agent calls) */
   teamUsesTmux?: boolean;
+
+  // -- Org profile (name / role / department) --
+  /** Persona display name (e.g. "Sakura") */
+  name?: string;
+  /** Org role (e.g. "社長", "部員") */
+  role?: string;
+  /** Department (e.g. "役員室", "SNSマーケティング部-Instagram課") */
+  department?: string;
   /** Cumulative input tokens consumed */
   inputTokens: number;
   /** Cumulative output tokens consumed */

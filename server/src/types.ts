@@ -58,6 +58,18 @@ export interface AgentState {
   leadAgentId?: number;
   /** True when lead spawns teammates via tmux (run_in_background Agent calls) */
   teamUsesTmux?: boolean;
+
+  // -- Org profile (name / role / department) --
+  /** Persona display name (e.g. "Sakura"). */
+  name?: string;
+  /** Org role (e.g. "社長" for the main session, "部員" for teammates). */
+  role?: string;
+  /** Department (e.g. "役員室", "SNSマーケティング部-Instagram課"). */
+  department?: string;
+  /** Fixed base character sprite index (0-5). Undefined = auto-assigned. */
+  palette?: number;
+  /** Hue rotation in degrees for the sprite (e.g. 320 ≈ pink). */
+  hueShift?: number;
 }
 
 export interface PersistedAgent {
@@ -78,4 +90,9 @@ export interface PersistedAgent {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
+
+  // -- Org profile (name / role / department) --
+  name?: string;
+  role?: string;
+  department?: string;
 }

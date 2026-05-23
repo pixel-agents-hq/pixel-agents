@@ -168,14 +168,33 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
 }
 
 /**
+ * Heuristic: is this HSL color a human skin tone?
+ *
+ * Skin (light/Japanese complexion included) sits in the warm orange-peach hue
+ * band with moderate saturation and high lightness. Used to exclude skin pixels
+ * from character hue shifts so e.g. a pink-haired persona keeps a natural skin
+ * color instead of turning fully pink.
+ */
+export function isSkinTone(h: number, s: number, l: number): boolean {
+  return h >= 10 && h <= 55 && s >= 0.1 && s <= 0.8 && l >= 0.35 && l <= 0.95;
+}
+
+/**
  * Adjust a sprite's colors by shifting HSL values (default mode for furniture).
  *
  * H slider (-180 to +180): rotates hue
  * S slider (-100 to +100): shifts saturation
  * B slider (-100 to 100): shifts lightness
  * C slider (-100 to 100): adjusts contrast around midpoint
+ *
+ * When `preserveSkin` is true, pixels detected as skin tones are left unchanged
+ * (used for character hue shifts so skin keeps its natural color).
  */
-export function adjustSprite(sprite: SpriteData, color: ColorValue): SpriteData {
+export function adjustSprite(
+  sprite: SpriteData,
+  color: ColorValue,
+  preserveSkin = false,
+): SpriteData {
   const { h: hShift, s: sShift, b, c } = color;
   const result: SpriteData = [];
 
@@ -192,6 +211,12 @@ export function adjustSprite(sprite: SpriteData, color: ColorValue): SpriteData 
       const bv = parseInt(pixel.slice(5, 7), 16);
       const alpha = extractAlpha(pixel);
       const [origH, origS, origL] = rgbToHsl(r, g, bv);
+
+      // Keep skin tones as-is so they don't get tinted by the hue shift.
+      if (preserveSkin && isSkinTone(origH, origS, origL)) {
+        newRow.push(pixel);
+        continue;
+      }
 
       // Shift hue
       const newH = (((origH + hShift) % 360) + 360) % 360;
