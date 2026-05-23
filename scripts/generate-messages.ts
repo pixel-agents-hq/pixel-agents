@@ -137,7 +137,9 @@ function exportify(decl: string): string {
 }
 
 function quote(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
+  // Use double quotes so the command works on both Windows (cmd.exe, which does
+  // not treat single quotes as quoting characters) and POSIX shells.
+  return `"${s.replace(/"/g, '\\"')}"`;
 }
 
 main().catch((err) => {
