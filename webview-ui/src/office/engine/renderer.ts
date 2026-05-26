@@ -51,6 +51,7 @@ import { CharacterState, TILE_SIZE, TileType } from '../types.js';
 import { getWallInstances, hasWallSprites, wallColorToHex } from '../wallTiles.js';
 import { getCharacterSprite } from './characters.js';
 import { renderMatrixEffect } from './matrixEffect.js';
+import { renderToolBadges } from './toolBadges.js';
 
 // ── Render functions ────────────────────────────────────────────
 
@@ -621,6 +622,9 @@ export function renderFrame(
   const selectedId = selection?.selectedAgentId ?? null;
   const hoveredId = selection?.hoveredAgentId ?? null;
   renderScene(ctx, allFurniture, characters, offsetX, offsetY, zoom, selectedId, hoveredId);
+
+  // Tool badges (below bubbles, above characters)
+  renderToolBadges(ctx, characters, offsetX, offsetY, zoom);
 
   // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom);

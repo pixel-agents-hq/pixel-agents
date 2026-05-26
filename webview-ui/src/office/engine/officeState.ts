@@ -568,6 +568,7 @@ export class OfficeState {
         ch.seatTimer = -1;
         ch.path = [];
         ch.moveProgress = 0;
+        ch.currentTool = null;
       }
       this.rebuildFurnitureInstances();
     }

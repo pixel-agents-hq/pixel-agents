@@ -74,6 +74,25 @@ export const CANVAS_FALLBACK_TILE_COLOR = '#444';
 export const CANVAS_ERROR_TILE_COLOR = '#FF00FF';
 export const WALL_COLOR = '#3A3A5C';
 
+// ── Tool badges ─────────────────────────────────────────────
+export const TOOL_BADGE_OUTLINE_COLOR = '#1a1a1a';
+export const TOOL_BADGE_FALLBACK_COLOR = '#CBD5E1';
+export const TOOL_BADGE_READ_COLOR = '#60A5FA';
+export const TOOL_BADGE_GREP_COLOR = '#22D3EE';
+export const TOOL_BADGE_GLOB_COLOR = '#2DD4BF';
+export const TOOL_BADGE_BASH_COLOR = '#34D399';
+export const TOOL_BADGE_EDIT_COLOR = '#FBBF24';
+export const TOOL_BADGE_WRITE_COLOR = '#F87171';
+export const TOOL_BADGE_NOTEBOOK_COLOR = '#F472B6';
+export const TOOL_BADGE_WEB_FETCH_COLOR = '#A78BFA';
+export const TOOL_BADGE_WEB_SEARCH_COLOR = '#C084FC';
+export const TOOL_BADGE_TASK_COLOR = '#FACC15';
+export const TOOL_BADGE_TODO_COLOR = '#94A3B8';
+export const TOOL_BADGE_SKILL_COLOR = '#FB923C';
+export const TOOL_BADGE_ASK_COLOR = '#F0ABFC';
+export const TOOL_BADGE_SIZE_PX = 9;
+export const TOOL_BADGE_VERTICAL_OFFSET_PX = 4;
+
 // ── Camera ───────────────────────────────────────────────────
 export const CAMERA_FOLLOW_LERP = 0.1;
 export const CAMERA_FOLLOW_SNAP_THRESHOLD = 0.5;
