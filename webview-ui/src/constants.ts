@@ -95,6 +95,76 @@ export const DEFAULT_FLOOR_COLOR: ColorValue = { h: 35, s: 30, b: 15, c: 0 };
 export const DEFAULT_WALL_COLOR: ColorValue = { h: 240, s: 25, b: 0, c: 0 };
 export const DEFAULT_NEUTRAL_COLOR: ColorValue = { h: 0, s: 0, b: 0, c: 0 };
 
+// ── Carpets ──────────────────────────────────────────────────
+/** Main (lowest-luminance) color applied to carpets when no per-tile override is set. */
+export const CARPET_DEFAULT_COLOR: ColorValue = { h: 0, s: 71, b: -32, c: 0, colorize: true };
+/** Accent (highest-luminance) color applied to carpets when no per-tile override is set. */
+export const CARPET_DEFAULT_ACCENT_COLOR: ColorValue = {
+  h: 34,
+  s: 64,
+  b: 21,
+  c: 0,
+  colorize: true,
+};
+/** Pixel size of the carpet variant thumbnail rendered in the editor palette. */
+export const CARPET_PREVIEW_SIZE_PX = 64;
+/** Marching-squares mask index used for the carpet preview thumbnail (all neighbors = interior). */
+export const CARPET_PREVIEW_MASK_INDEX = 15;
+/** Keyboard key that switches from CARPET_PAINT to CARPET_PICK while editing. */
+export const KEY_CARPET_PICK = 'p';
+
+// ── Areas (named, colored workspace-folder zones) ────────────
+/** Color palette assigned to new Areas in rotation (cycles when more areas exist). */
+export const AREA_DEFAULT_COLORS: readonly string[] = [
+  '#ff6b6b',
+  '#feca57',
+  '#48dbfb',
+  '#1dd1a1',
+  '#5f27cd',
+  '#ff9ff3',
+  '#54a0ff',
+  '#ffa502',
+] as const;
+/** Translucent overlay alpha for area tile fills. */
+export const AREA_OVERLAY_ALPHA = 0.25;
+/** Alpha multiplier applied to the actively-selected area's overlay. */
+export const AREA_ACTIVE_ALPHA_MULTIPLIER = 1.6;
+/** Base font size (pixel-pre-zoom) for area centroid labels. */
+export const AREA_LABEL_FONT_SIZE_PX = 14;
+/** Minimum on-screen label size to keep labels legible at low zoom. */
+export const AREA_LABEL_MIN_FONT_SIZE_PX = 12;
+/** Alpha of the area label text. */
+export const AREA_LABEL_ALPHA = 1.0;
+/** Fallback label color when an area has no color set (shouldn't happen in practice). */
+export const AREA_LABEL_FALLBACK_COLOR = '#ffffff';
+/** Drop-shadow color behind area labels for legibility on light backgrounds. */
+export const AREA_LABEL_SHADOW_COLOR = '#000000';
+/** Drop-shadow alpha behind area labels. */
+export const AREA_LABEL_SHADOW_ALPHA = 0.6;
+
+// ── VisualColorPicker (HSV wheel + brightness for carpets) ───
+export const VISUAL_COLOR_PICKER_WIDTH_PX = 240;
+export const VISUAL_COLOR_PICKER_SV_SIZE_PX = 180;
+export const VISUAL_COLOR_PICKER_HUE_WIDTH_PX = 20;
+export const VISUAL_COLOR_PICKER_MARKER_RADIUS_PX = 6;
+/**
+ * HSV picker gradients are intrinsic to the color-picking interaction, not
+ * theme colors — they must span the full SRGB cube. Centralized here so the
+ * component body stays free of inline color literals.
+ */
+export const VISUAL_COLOR_PICKER_SV_BLACK_GRADIENT =
+  'linear-gradient(to top, #000 0%, transparent 100%)';
+export const VISUAL_COLOR_PICKER_SV_WHITE_GRADIENT =
+  'linear-gradient(to right, #fff 0%, transparent 100%)';
+export const VISUAL_COLOR_PICKER_HUE_GRADIENT =
+  'linear-gradient(to bottom, ' +
+  '#ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, ' +
+  '#00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%)';
+export const VISUAL_COLOR_PICKER_MARKER_BORDER = '2px solid #fff';
+export const VISUAL_COLOR_PICKER_MARKER_SHADOW = '0 0 0 1px rgba(0,0,0,0.6)';
+/** Build the SV-square base color from the picker's current hue (0..360). */
+export const visualColorPickerSvBaseColor = (hue: number): string => `hsl(${hue}, 100%, 50%)`;
+
 // ── Notification Sound (done: ascending chime) ─────────────
 export const NOTIFICATION_NOTE_1_HZ = 659.25; // E5
 export const NOTIFICATION_NOTE_2_HZ = 1318.51; // E6 (octave up)

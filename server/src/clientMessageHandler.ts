@@ -16,6 +16,7 @@ export interface AssetCache {
   pets: LoadedPetSprites | null;
   floorTiles: string[][][] | null;
   wallTiles: string[][][][] | null;
+  carpetTiles: string[][][][] | null;
   furniture: LoadedAssets | null;
   defaultLayout: Record<string, unknown> | null;
 }
@@ -35,6 +36,7 @@ const KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
+const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
 
 /**
  * Handle incoming ClientMessage from a WebSocket client.
@@ -123,6 +125,23 @@ export function handleClientMessage(
       break;
     }
 
+    case 'saveAreaMappings': {
+      const rawMappings = msg.mappings;
+      if (!rawMappings || typeof rawMappings !== 'object') {
+        break;
+      }
+      const cfg = readConfig();
+      cfg.standalone.areaMappings = rawMappings as Record<string, string[]>;
+      writeConfig(cfg);
+      break;
+    }
+
+    case 'setShowAreas': {
+      const enabled = msg.enabled as boolean;
+      adapter?.setSetting(KEY_SHOW_AREAS, enabled);
+      break;
+    }
+
     default:
       // focusAgent, exportLayout, importLayout
       // require IDE-specific handling (not yet implemented for standalone)
@@ -159,6 +178,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     if (cache.wallTiles) {
       send({ type: 'wallTilesLoaded', sets: cache.wallTiles });
     }
+    if (cache.carpetTiles) {
+      send({ type: 'carpetTilesLoaded', sets: cache.carpetTiles });
+    }
     if (cache.furniture) {
       send({
         type: 'furnitureAssetsLoaded',
@@ -176,6 +198,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const cfg = readConfig();
   const watchAllSessions = adapter?.getSetting(KEY_WATCH_ALL_SESSIONS, false) ?? false;
   const hooksEnabled = adapter?.getSetting(KEY_HOOKS_ENABLED, true) ?? true;
+  const showAreas = adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false;
   send({
     type: 'settingsLoaded',
     soundEnabled: adapter?.getSetting(KEY_SOUND_ENABLED, true) ?? true,
@@ -186,6 +209,14 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     hooksEnabled,
     hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
     externalAssetDirectories: cfg.externalAssetDirectories,
+    showAreas,
+  });
+
+  // 4b. Folder→Area mappings (must arrive before existingAgents so the
+  // webview seat-preference logic has the dict when characters are created).
+  send({
+    type: 'areaMappingsLoaded',
+    mappings: cfg.standalone.areaMappings ?? {},
   });
 
   // Sync runtime refs with the persisted settings so scanners behave correctly

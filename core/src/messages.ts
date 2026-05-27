@@ -31,8 +31,10 @@ export type ServerMessage =
   | PetSpritesLoaded
   | FloorTilesLoaded
   | WallTilesLoaded
+  | CarpetTilesLoaded
   | SettingsLoaded
   | ExternalAssetDirectoriesUpdated
+  | AreaMappingsLoaded
   | WorkspaceFolders
   | AgentDiagnostics;
 
@@ -54,6 +56,8 @@ export type ClientMessage =
   | OpenSessionsFolder
   | AddExternalAssetDirectory
   | RemoveExternalAssetDirectory
+  | SaveAreaMappings
+  | SetShowAreas
   | RequestDiagnostics;
 
 export interface ProviderCapabilities {
@@ -247,6 +251,11 @@ export interface WallTilesLoaded {
   sets: string[][][][];
 }
 
+export interface CarpetTilesLoaded {
+  type: 'carpetTilesLoaded';
+  sets: string[][][][];
+}
+
 export interface SettingsLoaded {
   type: 'settingsLoaded';
   soundEnabled: boolean;
@@ -257,11 +266,17 @@ export interface SettingsLoaded {
   hooksEnabled: boolean;
   hooksInfoShown: boolean;
   externalAssetDirectories: string[];
+  showAreas: boolean;
 }
 
 export interface ExternalAssetDirectoriesUpdated {
   type: 'externalAssetDirectoriesUpdated';
   dirs: string[];
+}
+
+export interface AreaMappingsLoaded {
+  type: 'areaMappingsLoaded';
+  mappings: Record<string, string[]>;
 }
 
 export interface WorkspaceFolders {
@@ -363,6 +378,16 @@ export interface AddExternalAssetDirectory {
 export interface RemoveExternalAssetDirectory {
   type: 'removeExternalAssetDirectory';
   path: string;
+}
+
+export interface SaveAreaMappings {
+  type: 'saveAreaMappings';
+  mappings: Record<string, string[]>;
+}
+
+export interface SetShowAreas {
+  type: 'setShowAreas';
+  enabled: boolean;
 }
 
 export interface RequestDiagnostics {

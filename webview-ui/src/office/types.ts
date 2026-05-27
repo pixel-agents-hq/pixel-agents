@@ -84,6 +84,9 @@ export const EditTool = {
   EYEDROPPER: 'eyedropper',
   ERASE: 'erase',
   PETS: 'pets',
+  CARPET_PAINT: 'carpet_paint',
+  CARPET_PICK: 'carpet_pick',
+  AREA_PAINT: 'area_paint',
 } as const;
 export type EditTool = (typeof EditTool)[keyof typeof EditTool];
 
@@ -116,6 +119,32 @@ export interface PlacedFurniture {
   color?: ColorValue;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CARPETS — visual layer between floor and furniture. Walkable, decorative.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CarpetTile {
+  /** Variant index into the loaded carpet sprite sets (0 .. getCarpetSetCount()-1). */
+  variant: number;
+  /** Main colorization (lowest-luminance pixels). Defaults to CARPET_DEFAULT_COLOR when omitted. */
+  color?: ColorValue;
+  /** Accent colorization (highest-luminance pixels). Defaults to CARPET_DEFAULT_ACCENT_COLOR when omitted. */
+  accentColor?: ColorValue;
+  /** Stacking order at overlapping junctions. Higher draws on top. Defaults to 0. */
+  order?: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AREAS — translucent named overlays for workspace folder ↔ seat preference.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AreaDefinition {
+  /** Stable label used as the FK in `areaTiles` and `OfficeState.areaMappings`. */
+  label: string;
+  /** Hex color (e.g. "#ff6b6b"). RGB only — alpha applied at render time. */
+  color: string;
+}
+
 export interface OfficeLayout {
   version: 1;
   cols: number;
@@ -128,6 +157,12 @@ export interface OfficeLayout {
   layoutRevision?: number;
   /** Pets placed in the office. Optional for backward-compat; migrateLayout coerces to []. */
   pets?: PlacedPet[];
+  /** Per-tile carpet data, parallel to tiles array. null/undefined = no carpet on tile. */
+  carpetTiles?: Array<CarpetTile | null>;
+  /** Area definitions referenced by `areaTiles` labels. Distinct labels required. */
+  areas?: AreaDefinition[];
+  /** Per-tile Area label, parallel to tiles array. null = no area assignment. */
+  areaTiles?: Array<string | null>;
 }
 
 export interface Character {

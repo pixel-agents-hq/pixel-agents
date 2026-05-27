@@ -47,6 +47,14 @@ import { createCharacter, updateCharacter } from './characters.js';
 import { matrixEffectSeeds } from './matrixEffect.js';
 import { createPet, updatePet } from './petEntity.js';
 
+/** Internal helper: facing-tile coords for a seat. Returns null for invalid direction. */
+function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } {
+  if (direction === Direction.RIGHT) return { dCol: 1, dRow: 0 };
+  if (direction === Direction.LEFT) return { dCol: -1, dRow: 0 };
+  if (direction === Direction.DOWN) return { dCol: 0, dRow: 1 };
+  return { dCol: 0, dRow: -1 };
+}
+
 export class OfficeState {
   layout: OfficeLayout;
   tileMap: TileTypeVal[][];
@@ -67,6 +75,17 @@ export class OfficeState {
   /** Reverse lookup: sub-agent character ID → parent info */
   subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }> = new Map();
   private nextSubagentId = -1;
+
+  /**
+   * folderName → list of Area labels that workspace folder belongs to.
+   * Populated by useExtensionMessages on `areaMappingsLoaded`. Consulted by
+   * `findFreeSeat()` to bias new agents toward seats inside their folder's Area.
+   */
+  areaMappings: Record<string, string[]> = {};
+
+  setAreaMappings(mappings: Record<string, string[]>): void {
+    this.areaMappings = mappings;
+  }
 
   constructor(layout?: OfficeLayout) {
     this.layout = layout || createDefaultLayout();
@@ -142,7 +161,7 @@ export class OfficeState {
     // Second pass: assign remaining characters to free seats
     for (const ch of this.characters.values()) {
       if (ch.seatId) continue;
-      const seatId = this.findFreeSeat();
+      const seatId = this.findFreeSeat(ch.folderName);
       if (seatId) {
         this.seats.get(seatId)!.assigned = true;
         ch.seatId = seatId;
@@ -230,62 +249,123 @@ export class OfficeState {
     return result;
   }
 
-  private findFreeSeat(): string | null {
-    // Build set of tiles occupied by electronics (PCs, monitors, etc.)
-    const electronicsTiles = new Set<string>();
+  /** Collect every tile occupied by electronics furniture (PCs, monitors, etc.). */
+  private buildElectronicsTileSet(): Set<string> {
+    const out = new Set<string>();
     for (const item of this.layout.furniture) {
       const entry = getCatalogEntry(item.type);
       if (!entry || entry.category !== 'electronics') continue;
       for (let dr = 0; dr < entry.footprintH; dr++) {
         for (let dc = 0; dc < entry.footprintW; dc++) {
-          electronicsTiles.add(`${item.col + dc},${item.row + dr}`);
+          out.add(`${item.col + dc},${item.row + dr}`);
         }
       }
     }
+    return out;
+  }
 
-    // Collect free seats, split into those facing electronics and the rest
+  /** Find the area label assigned to a seat's tile, or null. */
+  private seatZone(uid: string): string | null {
+    const seat = this.seats.get(uid);
+    if (!seat) return null;
+    const tiles = this.layout.areaTiles;
+    if (!tiles || tiles.length === 0) return null;
+    const idx = seat.seatRow * this.layout.cols + seat.seatCol;
+    if (idx < 0 || idx >= tiles.length) return null;
+    return tiles[idx] ?? null;
+  }
+
+  /**
+   * Does this seat face an electronics tile (PC, monitor)? Mirrors the
+   * forward-and-flanking scan used by furniture auto-state.
+   */
+  private isSeatFacingElectronics(seat: Seat, electronicsTiles: Set<string>): boolean {
+    const { dCol, dRow } = seatFacingOffset(seat.facingDir);
+    for (let d = 1; d <= AUTO_ON_FACING_DEPTH; d++) {
+      const tileCol = seat.seatCol + dCol * d;
+      const tileRow = seat.seatRow + dRow * d;
+      if (electronicsTiles.has(`${tileCol},${tileRow}`)) return true;
+      if (dCol !== 0) {
+        if (
+          electronicsTiles.has(`${tileCol},${tileRow - 1}`) ||
+          electronicsTiles.has(`${tileCol},${tileRow + 1}`)
+        ) {
+          return true;
+        }
+      } else if (
+        electronicsTiles.has(`${tileCol - 1},${tileRow}`) ||
+        electronicsTiles.has(`${tileCol + 1},${tileRow}`)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Random-pick a seat from a candidate list, biased toward seats that face an
+   * electronics tile. Returns null when the candidate list is empty.
+   */
+  private pickFromSeats(seatUids: string[], electronicsTiles: Set<string>): string | null {
+    if (seatUids.length === 0) return null;
     const pcSeats: string[] = [];
     const otherSeats: string[] = [];
-    for (const [uid, seat] of this.seats) {
-      if (seat.assigned) continue;
-
-      // Check if this seat faces electronics (same logic as auto-state detection)
-      let facesPC = false;
-      const dCol =
-        seat.facingDir === Direction.RIGHT ? 1 : seat.facingDir === Direction.LEFT ? -1 : 0;
-      const dRow = seat.facingDir === Direction.DOWN ? 1 : seat.facingDir === Direction.UP ? -1 : 0;
-      for (let d = 1; d <= AUTO_ON_FACING_DEPTH && !facesPC; d++) {
-        const tileCol = seat.seatCol + dCol * d;
-        const tileRow = seat.seatRow + dRow * d;
-        if (electronicsTiles.has(`${tileCol},${tileRow}`)) {
-          facesPC = true;
-          break;
-        }
-        if (dCol !== 0) {
-          if (
-            electronicsTiles.has(`${tileCol},${tileRow - 1}`) ||
-            electronicsTiles.has(`${tileCol},${tileRow + 1}`)
-          ) {
-            facesPC = true;
-            break;
-          }
-        } else {
-          if (
-            electronicsTiles.has(`${tileCol - 1},${tileRow}`) ||
-            electronicsTiles.has(`${tileCol + 1},${tileRow}`)
-          ) {
-            facesPC = true;
-            break;
-          }
-        }
+    for (const uid of seatUids) {
+      const seat = this.seats.get(uid);
+      if (!seat) continue;
+      if (this.isSeatFacingElectronics(seat, electronicsTiles)) {
+        pcSeats.push(uid);
+      } else {
+        otherSeats.push(uid);
       }
-      (facesPC ? pcSeats : otherSeats).push(uid);
     }
-
-    // Pick randomly: prefer PC seats, then any seat
     if (pcSeats.length > 0) return pcSeats[Math.floor(Math.random() * pcSeats.length)];
     if (otherSeats.length > 0) return otherSeats[Math.floor(Math.random() * otherSeats.length)];
     return null;
+  }
+
+  /**
+   * 3-stage seat picker for top-level agents.
+   *
+   *   Stage 1: If `folderName` is given and `areaMappings[folderName]` lists
+   *            Area labels, prefer free seats whose tile is labeled with one
+   *            of those areas.
+   *   Stage 2: Prefer free seats whose tile has NO area label (unzoned).
+   *   Stage 3: Any free seat.
+   *
+   * Each stage routes through `pickFromSeats` for the PC-bias rule. Returns
+   * null only when every seat is already occupied. Passing `undefined`
+   * preserves pre-Areas single-stage behavior (skips Stage 1; Stage 2 picks
+   * unzoned seats from a layout without `areaTiles`, which is every seat).
+   */
+  private findFreeSeat(folderName?: string): string | null {
+    const electronicsTiles = this.buildElectronicsTileSet();
+    const freeSeats: string[] = [];
+    for (const [uid, seat] of this.seats) {
+      if (!seat.assigned) freeSeats.push(uid);
+    }
+    if (freeSeats.length === 0) return null;
+
+    const areaLabels = folderName ? this.areaMappings[folderName] : undefined;
+
+    // Stage 1 — in-area seats for the folder's mapped Area labels.
+    if (areaLabels && areaLabels.length > 0) {
+      const wanted = new Set(areaLabels);
+      const inArea = freeSeats.filter((uid) => {
+        const label = this.seatZone(uid);
+        return label !== null && wanted.has(label);
+      });
+      const pick = this.pickFromSeats(inArea, electronicsTiles);
+      if (pick) return pick;
+    }
+
+    // Stage 2 — unzoned seats (no area label, or layout has no areas at all).
+    const unzoned = freeSeats.filter((uid) => this.seatZone(uid) === null);
+    const pick2 = this.pickFromSeats(unzoned, electronicsTiles);
+    if (pick2) return pick2;
+
+    // Stage 3 — any free seat.
+    return this.pickFromSeats(freeSeats, electronicsTiles);
   }
 
   /**
@@ -346,7 +426,7 @@ export class OfficeState {
       }
     }
     if (!seatId) {
-      seatId = this.findFreeSeat();
+      seatId = this.findFreeSeat(folderName);
     }
 
     let ch: Character;

@@ -81,6 +81,10 @@ function App() {
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    areaMappings,
+    setAreaMappings,
+    showAreas,
+    setShowAreas,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -122,6 +126,46 @@ function App() {
   const handleSelectAgent = useCallback((id: number) => {
     transport.send({ type: 'focusAgent', id });
   }, []);
+
+  // Mutate folder→Area mappings locally + send to server. Updates OfficeState in
+  // the same tick so a follow-up agentCreated picks up the new mapping.
+  const handleAreaMappingChange = useCallback(
+    (folderName: string, areaLabel: string, action: 'add' | 'remove') => {
+      const current = areaMappings[folderName] ?? [];
+      let nextLabels: string[];
+      if (action === 'add') {
+        if (current.includes(areaLabel)) return;
+        nextLabels = [...current, areaLabel];
+      } else {
+        nextLabels = current.filter((l) => l !== areaLabel);
+      }
+      const next = { ...areaMappings };
+      if (nextLabels.length === 0) {
+        delete next[folderName];
+      } else {
+        next[folderName] = nextLabels;
+      }
+      setAreaMappings(next);
+      getOfficeState().setAreaMappings(next);
+      transport.send({ type: 'saveAreaMappings', mappings: next });
+    },
+    [areaMappings, setAreaMappings],
+  );
+
+  // Toggle global Show Areas — persisted via setShowAreas message; runs server-
+  // side through configPersistence.
+  const onToggleShowAreas = useCallback(() => {
+    const next = !showAreas;
+    setShowAreas(next);
+    transport.send({ type: 'setShowAreas', enabled: next });
+  }, [showAreas, setShowAreas]);
+
+  // When AREA_PAINT is active in the editor, force the overlay on even if the
+  // user has toggled Show Areas off globally — they need to see what they're
+  // editing. The selected area's overlay is alpha-bumped via activeAreaLabel.
+  const isEditingAreas = editor.isEditMode && editorState.activeTool === EditTool.AREA_PAINT;
+  const effectiveShowAreas = isEditingAreas || showAreas;
+  const activeAreaLabel = isEditingAreas ? editor.selectedAreaLabel : null;
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -195,6 +239,8 @@ function App() {
         zoom={editor.zoom}
         onZoomChange={editor.handleZoomChange}
         panRef={editor.panRef}
+        showAreas={effectiveShowAreas}
+        activeAreaLabel={activeAreaLabel}
       />
 
       {!isDebugMode ? (
@@ -247,6 +293,24 @@ function App() {
                   activePetTypes={officeState.getActivePetTypes()}
                   petCount={getPetCount()}
                   onPetToggle={editor.handlePetToggle}
+                  carpetVariant={editor.carpetVariant}
+                  carpetColor={editor.carpetColor}
+                  carpetAccentColor={editor.carpetAccentColor}
+                  onCarpetVariantChange={editor.handleCarpetVariantChange}
+                  onCarpetColorChange={editor.handleCarpetColorChange}
+                  onCarpetAccentColorChange={editor.handleCarpetAccentColorChange}
+                  onResetCarpetColor={editor.handleResetCarpetColor}
+                  onResetCarpetAccentColor={editor.handleResetCarpetAccentColor}
+                  areas={officeState.getLayout().areas ?? []}
+                  selectedAreaLabel={editor.selectedAreaLabel}
+                  workspaceFolders={workspaceFolders}
+                  areaMappings={areaMappings}
+                  onSelectArea={editor.handleSelectArea}
+                  onAddArea={editor.handleAddArea}
+                  onRemoveArea={editor.handleRemoveArea}
+                  onRenameArea={editor.handleRenameArea}
+                  onAreaColorChange={editor.handleAreaColorChange}
+                  onAreaMappingChange={handleAreaMappingChange}
                 />
               );
             })()}
@@ -375,6 +439,9 @@ function App() {
           setHooksEnabled(newVal);
           transport.send({ type: 'setHooksEnabled', enabled: newVal });
         }}
+        showAreas={showAreas}
+        onToggleShowAreas={onToggleShowAreas}
+        showAreasAvailable={workspaceFolders.length > 0}
       />
 
       {showMigrationNotice && (

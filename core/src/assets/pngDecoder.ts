@@ -9,6 +9,9 @@ import { PNG } from 'pngjs';
 
 import { rgbaToHex } from './colorUtils.js';
 import {
+  CARPET_GRID_COLS,
+  CARPET_MARCHING_SQUARES_COUNT,
+  CARPET_TILE_SIZE,
   CHAR_FRAME_H,
   CHAR_FRAME_W,
   CHAR_FRAMES_PER_ROW,
@@ -109,6 +112,40 @@ export function parseWallPng(pngBuffer: Buffer): string[][][] {
     for (let r = 0; r < WALL_PIECE_HEIGHT; r++) {
       const row: string[] = [];
       for (let c = 0; c < WALL_PIECE_WIDTH; c++) {
+        const idx = ((oy + r) * png.width + (ox + c)) * 4;
+        const rv = png.data[idx];
+        const gv = png.data[idx + 1];
+        const bv = png.data[idx + 2];
+        const av = png.data[idx + 3];
+        row.push(rgbaToHex(rv, gv, bv, av));
+      }
+      sprite.push(row);
+    }
+    sprites.push(sprite);
+  }
+  return sprites;
+}
+
+/**
+ * Parse a single carpet PNG (64×64, 4×4 grid of 16×16 pieces) into 16
+ * marching-squares sprites. The piece at case N is located at
+ * col = N % 4, row = floor(N / 4); piece 0 (empty junction) is included
+ * but the renderer skips it.
+ *
+ * Returns sprites[msCase][row][col] of hex strings. Pixel encoding matches
+ * the floor and wall convention: '' = transparent, '#RRGGBB' = opaque,
+ * '#RRGGBBAA' = semi-transparent.
+ */
+export function parseCarpetPng(pngBuffer: Buffer): string[][][] {
+  const png = PNG.sync.read(pngBuffer);
+  const sprites: string[][][] = [];
+  for (let msCase = 0; msCase < CARPET_MARCHING_SQUARES_COUNT; msCase++) {
+    const ox = (msCase % CARPET_GRID_COLS) * CARPET_TILE_SIZE;
+    const oy = Math.floor(msCase / CARPET_GRID_COLS) * CARPET_TILE_SIZE;
+    const sprite: string[][] = [];
+    for (let r = 0; r < CARPET_TILE_SIZE; r++) {
+      const row: string[] = [];
+      for (let c = 0; c < CARPET_TILE_SIZE; c++) {
         const idx = ((oy + r) * png.width + (ox + c)) * 4;
         const rv = png.data[idx];
         const gv = png.data[idx + 1];

@@ -26,6 +26,7 @@ import {
   decodeCharacterPng,
   decodeFloorPng,
   decodePetPng,
+  parseCarpetPng,
   parseWallPng,
   pngToSpriteData,
 } from '../../core/src/assets/pngDecoder.js';
@@ -318,6 +319,83 @@ export function sendWallTilesToWebview(webview: vscode.Webview, wallTiles: Loade
     sets: wallTiles.sets,
   });
   console.log(`📤 Sent ${wallTiles.sets.length} wall tile set(s) to webview`);
+}
+
+// ── Carpet tile loading ─────────────────────────────────────
+
+export interface LoadedCarpetTiles {
+  /**
+   * Carpet sprite sets indexed [variant][msCase][row][col].
+   *   variant: PNG file index (sorted numerically by carpet_N.png suffix)
+   *   msCase:  marching-squares case 0..15
+   *   row/col: pixel coordinates within the 16×16 sprite
+   */
+  sets: string[][][][];
+}
+
+/**
+ * Load all carpet auto-tile PNGs from <assetsRoot>/assets/carpets/.
+ * Scans for files named `carpet_N.png`, sorts numerically by N, parses each
+ * via parseCarpetPng. Returns null if the directory is missing or contains
+ * no matching files. Mirrors loadWallTiles structurally.
+ */
+export async function loadCarpetTiles(assetsRoot: string): Promise<LoadedCarpetTiles | null> {
+  try {
+    const carpetsDir = path.join(assetsRoot, 'assets', 'carpets');
+    if (!fs.existsSync(carpetsDir)) {
+      console.log('[AssetLoader] No carpets/ directory found at:', carpetsDir);
+      return null;
+    }
+
+    console.log('[AssetLoader] Loading carpet tiles from:', carpetsDir);
+
+    const entries = fs.readdirSync(carpetsDir);
+    const carpetFiles: { index: number; filename: string }[] = [];
+    for (const entry of entries) {
+      const match = /^carpet_(\d+)\.png$/i.exec(entry);
+      if (match) {
+        carpetFiles.push({ index: parseInt(match[1], 10), filename: entry });
+      }
+    }
+
+    if (carpetFiles.length === 0) {
+      console.log('[AssetLoader] No carpet_N.png files found in carpets/');
+      return null;
+    }
+
+    carpetFiles.sort((a, b) => a.index - b.index);
+
+    const sets: string[][][][] = [];
+    for (const { filename } of carpetFiles) {
+      const filePath = path.join(carpetsDir, filename);
+      const pngBuffer = fs.readFileSync(filePath);
+      const sprites = parseCarpetPng(pngBuffer);
+      sets.push(sprites);
+    }
+
+    console.log(`[AssetLoader] ✅ Loaded ${sets.length} carpet tile variant(s)`);
+    return { sets };
+  } catch (err) {
+    console.error(
+      `[AssetLoader] ❌ Error loading carpet tiles: ${err instanceof Error ? err.message : err}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Send carpet tiles to webview (VS Code adapter convenience). The standalone
+ * WebSocket path sends from clientMessageHandler.ts using AssetCache.carpetTiles.
+ */
+export function sendCarpetTilesToWebview(
+  webview: vscode.Webview,
+  carpetTiles: LoadedCarpetTiles,
+): void {
+  webview.postMessage({
+    type: 'carpetTilesLoaded',
+    sets: carpetTiles.sets,
+  });
+  console.log(`📤 Sent ${carpetTiles.sets.length} carpet tile variant(s) to webview`);
 }
 
 interface LoadedFloorTiles {

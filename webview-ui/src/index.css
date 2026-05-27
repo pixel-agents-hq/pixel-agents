@@ -115,6 +115,28 @@
   .pixel-pulse {
     animation: pixel-pulse 1.5s ease-in-out infinite;
   }
+
+  /* Pixel-style thin scrollbar utility — used by the Area card folder list
+     where the mapped-folder count can exceed the card height. */
+  .pixel-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .pixel-scrollbar::-webkit-scrollbar-track {
+    background: var(--color-bg-dark);
+  }
+  .pixel-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 0;
+  }
+  .pixel-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--color-accent);
+  }
+  /* Firefox fallback */
+  .pixel-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) var(--color-bg-dark);
+  }
 }
 
 @keyframes pixel-pulse {

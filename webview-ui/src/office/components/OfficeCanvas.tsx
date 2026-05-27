@@ -40,6 +40,10 @@ interface OfficeCanvasProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
   panRef: React.MutableRefObject<{ x: number; y: number }>;
+  /** Whether the area overlay + labels should render (settings toggle OR active edit). */
+  showAreas: boolean;
+  /** Currently-selected area label in the editor (alpha-bumped overlay). null otherwise. */
+  activeAreaLabel: string | null;
 }
 
 export function OfficeCanvas({
@@ -57,6 +61,8 @@ export function OfficeCanvas({
   zoom,
   onZoomChange,
   panRef,
+  showAreas,
+  activeAreaLabel,
 }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -253,6 +259,7 @@ export function OfficeCanvas({
           characters: officeState.characters,
         };
 
+        const layout = officeState.getLayout();
         const { offsetX, offsetY } = renderFrame(
           ctx,
           w,
@@ -265,9 +272,14 @@ export function OfficeCanvas({
           panRef.current.y,
           selectionRender,
           editorRender,
-          officeState.getLayout().tileColors,
-          officeState.getLayout().cols,
-          officeState.getLayout().rows,
+          layout.tileColors,
+          layout.cols,
+          layout.rows,
+          layout.carpetTiles,
+          layout.areas,
+          layout.areaTiles,
+          showAreas,
+          activeAreaLabel,
           officeState.pets,
         );
         offsetRef.current = { x: offsetX, y: offsetY };
@@ -282,7 +294,17 @@ export function OfficeCanvas({
       stop();
       observer.disconnect();
     };
-  }, [officeState, resizeCanvas, isEditMode, editorState, _editorTick, zoom, panRef]);
+  }, [
+    officeState,
+    resizeCanvas,
+    isEditMode,
+    editorState,
+    _editorTick,
+    zoom,
+    panRef,
+    showAreas,
+    activeAreaLabel,
+  ]);
 
   // Convert CSS mouse coords to world (sprite pixel) coords
   const screenToWorld = useCallback(
@@ -370,22 +392,30 @@ export function OfficeCanvas({
             }
           }
 
-          // Paint on drag (tile/wall/erase paint tool only, not during furniture drag)
+          // Paint on drag (paint-style tools only, not during furniture drag).
+          // Carpet + Area paint join the drag set so a single click-drag stamps
+          // every tile under the cursor — stroke-based undo lives in
+          // useEditorActions for carpet, per-tile undo for area.
           if (
             editorState.isDragging &&
             (editorState.activeTool === EditTool.TILE_PAINT ||
               editorState.activeTool === EditTool.WALL_PAINT ||
-              editorState.activeTool === EditTool.ERASE) &&
+              editorState.activeTool === EditTool.ERASE ||
+              editorState.activeTool === EditTool.CARPET_PAINT ||
+              editorState.activeTool === EditTool.AREA_PAINT) &&
             !editorState.dragUid
           ) {
             onEditorTileAction(tile.col, tile.row);
           }
-          // Right-click erase drag
+          // Right-click erase drag — also extends over carpets/areas so right-
+          // drag wipes them just like floor/wall.
           if (
             isEraseDraggingRef.current &&
             (editorState.activeTool === EditTool.TILE_PAINT ||
               editorState.activeTool === EditTool.WALL_PAINT ||
-              editorState.activeTool === EditTool.ERASE)
+              editorState.activeTool === EditTool.ERASE ||
+              editorState.activeTool === EditTool.CARPET_PAINT ||
+              editorState.activeTool === EditTool.AREA_PAINT)
           ) {
             const layout = officeState.getLayout();
             if (
@@ -519,7 +549,9 @@ export function OfficeCanvas({
           tile &&
           (editorState.activeTool === EditTool.TILE_PAINT ||
             editorState.activeTool === EditTool.WALL_PAINT ||
-            editorState.activeTool === EditTool.ERASE)
+            editorState.activeTool === EditTool.ERASE ||
+            editorState.activeTool === EditTool.CARPET_PAINT ||
+            editorState.activeTool === EditTool.AREA_PAINT)
         ) {
           const layout = officeState.getLayout();
           if (tile.col >= 0 && tile.col < layout.cols && tile.row >= 0 && tile.row < layout.rows) {
@@ -658,6 +690,10 @@ export function OfficeCanvas({
 
       editorState.isDragging = false;
       editorState.wallDragAdding = null;
+      // Close the current carpet stroke so the next click starts a fresh undo entry.
+      editorState.carpetStrokeInitialLayout = null;
+      editorState.carpetDragErasing = null;
+      editorState.areaDragErasing = null;
     },
     [editorState, isEditMode, officeState, onDragMove, onEditorSelectionChange],
   );
@@ -751,6 +787,9 @@ export function OfficeCanvas({
     isEraseDraggingRef.current = false;
     editorState.isDragging = false;
     editorState.wallDragAdding = null;
+    editorState.carpetStrokeInitialLayout = null;
+    editorState.carpetDragErasing = null;
+    editorState.areaDragErasing = null;
     editorState.clearDrag();
     editorState.ghostCol = -1;
     editorState.ghostRow = -1;

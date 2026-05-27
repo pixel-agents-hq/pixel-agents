@@ -28,3 +28,9 @@ export const PET_WALK_FRAMES_VERT = 3;
 export const PET_IDLE_FRAMES_VERT = 3;
 export const PET_WALK_FRAMES_HORIZ = 3;
 export const MAX_PET_PNG_SIZE = 512 * 1024; // 512 KB cap per pet PNG
+
+// ── Carpet auto-tile parsing ────────────────────────────────
+export const CARPET_TILE_SIZE = 16;
+export const CARPET_GRID_COLS = 4;
+export const CARPET_MARCHING_SQUARES_COUNT = 16;
+export const CARPET_VARIANT_COUNT = 3;

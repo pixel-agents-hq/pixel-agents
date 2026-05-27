@@ -13,6 +13,7 @@ import * as path from 'path';
 import { AgentRuntime } from './agentRuntime.js';
 import { AgentStateStore } from './agentStateStore.js';
 import {
+  loadCarpetTiles,
   loadCharacterSprites,
   loadDefaultLayout,
   loadFloorTiles,
@@ -70,6 +71,7 @@ async function main(): Promise<void> {
     pets: await loadPetSprites(distRoot),
     floorTiles: await loadFloorTiles(distRoot).then((t) => t?.sprites ?? null),
     wallTiles: await loadWallTiles(distRoot).then((t) => t?.sets ?? null),
+    carpetTiles: await loadCarpetTiles(distRoot).then((t) => t?.sets ?? null),
     furniture: await loadFurnitureAssets(distRoot),
     defaultLayout: loadDefaultLayout(distRoot),
   };

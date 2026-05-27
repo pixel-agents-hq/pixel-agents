@@ -5,6 +5,7 @@ import type { OfficeState } from '../office/engine/officeState.js';
 import { setFloorSprites } from '../office/floorTiles.js';
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js';
 import { migrateLayoutColors } from '../office/layout/layoutSerializer.js';
+import { setCarpetSprites } from '../office/sprites/carpetTiles.js';
 import { setPetTemplates } from '../office/sprites/petSpriteData.js';
 import { setCharacterTemplates } from '../office/sprites/spriteData.js';
 import {
@@ -72,6 +73,11 @@ interface ExtensionMessageState {
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
   hooksInfoShown: boolean;
+  // Areas
+  areaMappings: Record<string, string[]>;
+  setAreaMappings: (m: Record<string, string[]>) => void;
+  showAreas: boolean;
+  setShowAreas: (v: boolean) => void;
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -109,6 +115,8 @@ export function useExtensionMessages(
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
+  const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
+  const [showAreas, setShowAreas] = useState(false);
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
@@ -498,6 +506,14 @@ export function useExtensionMessages(
         const sets = msg.sets as string[][][][];
         console.log(`[Webview] Received ${sets.length} wall tile set(s)`);
         setWallSprites(sets);
+      } else if (msg.type === 'carpetTilesLoaded') {
+        const sets = msg.sets as string[][][][];
+        console.log(`[Webview] Received ${sets.length} carpet variant(s)`);
+        setCarpetSprites(sets);
+      } else if (msg.type === 'areaMappingsLoaded') {
+        const mappings = (msg.mappings ?? {}) as Record<string, string[]>;
+        setAreaMappings(mappings);
+        os.setAreaMappings(mappings);
       } else if (msg.type === 'workspaceFolders') {
         const folders = msg.folders as WorkspaceFolder[];
         setWorkspaceFolders(folders);
@@ -515,6 +531,9 @@ export function useExtensionMessages(
         }
         if (typeof msg.hooksInfoShown === 'boolean') {
           setHooksInfoShown(msg.hooksInfoShown as boolean);
+        }
+        if (typeof msg.showAreas === 'boolean') {
+          setShowAreas(msg.showAreas as boolean);
         }
         if (Array.isArray(msg.externalAssetDirectories)) {
           setExternalAssetDirectories(msg.externalAssetDirectories as string[]);
@@ -581,5 +600,9 @@ export function useExtensionMessages(
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    areaMappings,
+    setAreaMappings,
+    showAreas,
+    setShowAreas,
   };
 }

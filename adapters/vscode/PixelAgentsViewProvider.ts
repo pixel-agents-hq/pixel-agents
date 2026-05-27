@@ -12,6 +12,7 @@ import type {
   LoadedPetSprites,
 } from '../../server/src/assetLoader.js';
 import {
+  loadCarpetTiles,
   loadCharacterSprites,
   loadDefaultLayout,
   loadExternalCharacterSprites,
@@ -24,6 +25,7 @@ import {
   mergeLoadedAssets,
   mergePetSprites,
   sendAssetsToWebview,
+  sendCarpetTilesToWebview,
   sendCharacterSpritesToWebview,
   sendFloorTilesToWebview,
   sendPetSpritesToWebview,
@@ -54,6 +56,7 @@ import {
   GLOBAL_KEY_HOOKS_ENABLED,
   GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
+  GLOBAL_KEY_SHOW_AREAS,
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
@@ -277,6 +280,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
       } else if (message.type === 'setHooksInfoShown') {
         this.adapter.setSetting(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
+      } else if (message.type === 'setShowAreas') {
+        const enabled = message.enabled as boolean;
+        this.adapter.setSetting(GLOBAL_KEY_SHOW_AREAS, enabled);
+      } else if (message.type === 'saveAreaMappings') {
+        const mappings = message.mappings as Record<string, string[]>;
+        const cfg = readConfig();
+        cfg.vscode.areaMappings = mappings;
+        writeConfig(cfg);
       } else if (message.type === 'setWatchAllSessions') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_WATCH_ALL_SESSIONS, enabled);
@@ -407,6 +418,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.runtime.watchAllSessions.current = watchAllSessions;
         const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
         const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
+        const showAreas = this.adapter.getSetting<boolean>(GLOBAL_KEY_SHOW_AREAS, false);
         const config = readConfig();
         this.webview?.postMessage({
           type: 'settingsLoaded',
@@ -418,6 +430,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           hooksEnabled,
           hooksInfoShown,
           externalAssetDirectories: config.externalAssetDirectories,
+          showAreas,
+        });
+
+        // Folder→Area mappings (must arrive before any agentCreated/existingAgents
+        // so OfficeState.findFreeSeat has the dict when characters are placed).
+        this.webview?.postMessage({
+          type: 'areaMappingsLoaded',
+          mappings: config.vscode.areaMappings ?? {},
         });
 
         // Send workspace folders to webview (only when multi-root)
@@ -520,6 +540,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             if (wallTiles && this.webview) {
               console.log('[Extension] Wall tiles loaded, sending to webview');
               sendWallTilesToWebview(this.webview, wallTiles);
+            }
+
+            // Load carpet tiles (auto-tile sprite sets, 3 demo variants by default)
+            const carpetTiles = await loadCarpetTiles(assetsRoot);
+            if (carpetTiles && this.webview) {
+              console.log('[Extension] Carpet tiles loaded, sending to webview');
+              sendCarpetTilesToWebview(this.webview, carpetTiles);
             }
 
             const assets = await this.loadAllFurnitureAssets();
