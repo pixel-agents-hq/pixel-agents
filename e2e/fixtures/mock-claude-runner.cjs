@@ -251,16 +251,34 @@ function buildContext(homeDir, scenario, sessionId, cwd) {
 }
 
 function runHookCommand(command, payload, env, cwd) {
+  // The hook command in settings.json is `node "<script>"` (bare `node`). On
+  // macOS the VS Code integrated-terminal e2e profile sets a hardcoded PATH
+  // (mockBin:/usr/local/bin:/usr/bin:/bin) with inheritEnv:false, which on CI
+  // runners does NOT include the toolcache node dir — so bare `node` exits 127
+  // and the hook never POSTs. The mock itself survives because its wrapper uses
+  // the absolute PIXEL_AGENTS_NODE_BIN, but the spawned hook uses bare `node`.
+  // Prepend the running node's bin dir to PATH so the hook resolves it, on any
+  // spawn path. (Real Claude Code spawns hooks with the user's real PATH, so
+  // this is purely a test-harness fix.)
+  const nodeDir = path.dirname(process.execPath);
+  const sep = process.platform === 'win32' ? ';' : ':';
+  const hookEnv = {
+    ...env,
+    PATH: `${nodeDir}${sep}${env.PATH ?? ''}`,
+    Path: `${nodeDir}${sep}${env.Path ?? env.PATH ?? ''}`,
+  };
+  // Resolves with diagnostic info so emitHook can log whether the spawned
+  // hook script actually ran and how it exited (CI macOS investigation).
   return new Promise((resolve) => {
     const child = spawn(command, {
       cwd,
-      env,
+      env: hookEnv,
       shell: true,
       stdio: ['pipe', 'ignore', 'ignore'],
     });
 
-    child.on('error', () => resolve());
-    child.on('close', () => resolve());
+    child.on('error', (err) => resolve({ spawned: false, error: err.message }));
+    child.on('close', (code) => resolve({ spawned: true, code }));
     child.stdin.end(JSON.stringify(payload));
   });
 }
@@ -274,6 +292,7 @@ async function emitHook(homeDir, context, payload) {
   const settings = readSettings(homeDir);
   const entries = Array.isArray(settings.hooks?.[eventName]) ? settings.hooks[eventName] : [];
 
+  let matched = 0;
   for (const entry of entries) {
     const hooks = Array.isArray(entry?.hooks) ? entry.hooks : [];
     for (const hook of hooks) {
@@ -283,8 +302,27 @@ async function emitHook(homeDir, context, payload) {
       if (!isPixelAgentsHookCommand(homeDir, hook.command)) {
         continue;
       }
-      await runHookCommand(hook.command, payload, process.env, context.cwd);
+      matched += 1;
+      const result = await runHookCommand(hook.command, payload, process.env, context.cwd);
+      // Diagnostic: did the hook script run and exit cleanly? (CI macOS investigation)
+      logAction(
+        homeDir,
+        `hookRun event=${eventName} spawned=${result.spawned} code=${result.code ?? ''} error=${result.error ?? ''}`,
+      );
     }
+  }
+  // Diagnostic: if no registered command matched the pixel-agents hook, the
+  // hook script was never spawned — log the computed path + the commands we
+  // saw so a CI failure shows the mismatch instead of failing silently.
+  if (matched === 0) {
+    const sawCommands = entries
+      .flatMap((e) => (Array.isArray(e?.hooks) ? e.hooks : []))
+      .map((h) => h?.command)
+      .filter(Boolean);
+    logAction(
+      homeDir,
+      `hookNoMatch event=${eventName} home=${homeDir} commandsSeen=${JSON.stringify(sawCommands)}`,
+    );
   }
 }
 

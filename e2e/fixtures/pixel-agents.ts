@@ -81,35 +81,78 @@ export const test = base.extend<{
         mockLogFile,
       });
     } finally {
-      await attachTextFileIfExists(testInfo, 'mock-claude-invocations', mockLogFile, 'text/plain');
-      await attachTextFileIfExists(
-        testInfo,
-        'mock-claude-actions',
-        path.join(tmpHome, '.claude-mock', 'actions.log'),
-        'text/plain',
-      );
-      await attachTextFileIfExists(
-        testInfo,
-        'launch-log',
-        path.join(tmpHome, '.claude-mock', 'launch.log'),
-        'text/plain',
-      );
-      await attachTextFileIfExists(
-        testInfo,
-        'server-json',
-        path.join(tmpHome, '.pixel-agents', 'server.json'),
-        'application/json',
-      );
+      // Only attach debug artifacts (logs, screenshot, video) for failing tests
+      // — or when --attach-videos-on-success is set. On a green run these are
+      // pure noise and bloat the hosted Allure report (a per-test screenshot
+      // alone is ~85 KB × 48 tests × 3 platforms). `shouldAttachRunVideo` is the
+      // single shared predicate so all artifacts travel together.
+      const keepArtifacts = shouldAttachRunVideo(testInfo);
 
-      try {
-        const screenshotPath = testInfo.outputPath('final-screenshot.png');
-        await window.screenshot({ path: screenshotPath });
-        await testInfo.attach('final-screenshot', {
-          path: screenshotPath,
-          contentType: 'image/png',
-        });
-      } catch {
-        // Screenshot failures are non-fatal in teardown.
+      if (keepArtifacts) {
+        await attachTextFileIfExists(
+          testInfo,
+          'mock-claude-invocations',
+          mockLogFile,
+          'text/plain',
+        );
+        await attachTextFileIfExists(
+          testInfo,
+          'mock-claude-actions',
+          path.join(tmpHome, '.claude-mock', 'actions.log'),
+          'text/plain',
+        );
+        await attachTextFileIfExists(
+          testInfo,
+          'launch-log',
+          path.join(tmpHome, '.claude-mock', 'launch.log'),
+          'text/plain',
+        );
+        await attachTextFileIfExists(
+          testInfo,
+          'server-json',
+          path.join(tmpHome, '.pixel-agents', 'server.json'),
+          'application/json',
+        );
+        // Diagnostic: server-side hook/broadcast log (gated by PIXEL_AGENTS_DEBUG_LOG
+        // env var set in launchVSCode). Lets CI failure analysis see the exact
+        // server-side event timeline without local repro.
+        await attachTextFileIfExists(
+          testInfo,
+          'pixel-agents-debug-log',
+          path.join(tmpHome, '.pixel-agents', 'debug.log'),
+          'text/plain',
+        );
+        // Webview-side counterpart: every transport message the webview's
+        // useExtensionMessages handler actually processed. Pair with the
+        // server log above to see whether the failure is server (event not
+        // broadcast) or webview (broadcast not received / out-of-order).
+        try {
+          const wvFrames = window.frames();
+          for (const f of wvFrames) {
+            if (!f.url().startsWith('vscode-webview://')) continue;
+            const log = await f.evaluate(() => window.__pixelAgentsTestHooks?.messageLog ?? null);
+            if (log) {
+              await testInfo.attach('webview-message-log', {
+                body: JSON.stringify(log, null, 2),
+                contentType: 'application/json',
+              });
+              break;
+            }
+          }
+        } catch {
+          // Webview already disposed during cleanup or window unreachable — non-fatal.
+        }
+
+        try {
+          const screenshotPath = testInfo.outputPath('final-screenshot.png');
+          await window.screenshot({ path: screenshotPath });
+          await testInfo.attach('final-screenshot', {
+            path: screenshotPath,
+            contentType: 'image/png',
+          });
+        } catch {
+          // Screenshot failures are non-fatal in teardown.
+        }
       }
 
       const attachRunVideo = runVideo !== null && shouldAttachRunVideo(testInfo);

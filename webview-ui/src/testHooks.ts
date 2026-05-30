@@ -10,6 +10,15 @@ declare global {
         skipSpawnEffect: boolean | undefined;
         matrixEffectAtCreation: 'spawn' | 'despawn' | null;
       }>;
+      messageLog?: Array<{
+        at: number;
+        type: string;
+        id?: number;
+        toolName?: string;
+        status?: string;
+        toolId?: string;
+        parentToolId?: string;
+      }>;
     };
   }
 }

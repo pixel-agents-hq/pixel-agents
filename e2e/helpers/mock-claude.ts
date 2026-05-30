@@ -289,6 +289,27 @@ function getMockClaudeBinaryPath(tmpHome: string): string {
   return path.join(binDir, process.platform === 'win32' ? 'claude.cmd' : 'claude');
 }
 
+/**
+ * Point a child process's home at the isolated test home on every platform.
+ *
+ * macOS/Linux: Node's os.homedir() honors $HOME, so setting HOME is enough.
+ * Windows: os.homedir() reads USERPROFILE and IGNORES $HOME. The mock claude
+ * runner (and the extension) resolve ~/.claude via os.homedir(), so without
+ * USERPROFILE they read/write the REAL user profile while the test asserts on
+ * tmpHome — every external-spawn test times out on Windows only. Set both, and
+ * clear the legacy HOMEDRIVE/HOMEPATH fallbacks libuv consults when USERPROFILE
+ * is unset so a stale host value can't win.
+ */
+export function applyMockHomeEnv(base: NodeJS.ProcessEnv, tmpHome: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, HOME: tmpHome };
+  if (process.platform === 'win32') {
+    env.USERPROFILE = tmpHome;
+    delete env.HOMEDRIVE;
+    delete env.HOMEPATH;
+  }
+  return env;
+}
+
 export interface ExternalClaudeSpawn {
   process: ChildProcess;
   sessionId: string;
@@ -325,8 +346,7 @@ export async function spawnExternalClaudeScenario(options: {
 
   const claudeBinary = getMockClaudeBinaryPath(options.tmpHome);
   const env = {
-    ...process.env,
-    HOME: options.tmpHome,
+    ...applyMockHomeEnv(process.env, options.tmpHome),
     PATH: `${path.dirname(claudeBinary)}${path.delimiter}${process.env['PATH'] ?? ''}`,
     PIXEL_AGENTS_NODE_BIN: process.execPath,
   };

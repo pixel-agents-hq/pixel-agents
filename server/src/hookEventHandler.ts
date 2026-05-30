@@ -142,6 +142,23 @@ export class HookEventHandler {
     if (!normalized) return; // unknown / uninteresting event -- silently drop
     const normEvent = normalized.event;
     const eventName = event.hook_event_name; // retained for logs only
+    // CI / e2e diagnostic: see agentStateStore.ts debugLogBroadcast comment.
+    if (process.env['PIXEL_AGENTS_DEBUG_LOG']) {
+      try {
+        const fs = require('fs') as typeof import('fs');
+        const sid = (event.session_id as string | undefined)?.slice(0, 8) ?? '?';
+        const extras =
+          normEvent.kind === 'toolStart'
+            ? ` toolName=${(normEvent as { toolName?: string }).toolName}`
+            : '';
+        fs.appendFileSync(
+          process.env['PIXEL_AGENTS_DEBUG_LOG']!,
+          `${new Date().toISOString()} HOOK kind=${normEvent.kind} sid=${sid} src=${(normEvent as { source?: string }).source ?? ''}${extras}\n`,
+        );
+      } catch {
+        /* never crash on diagnostic failure */
+      }
+    }
 
     // --- SessionStart: handle /clear for known agents, ignore unknown sessions ---
     // External session detection via SessionStart is deferred to Phase C.

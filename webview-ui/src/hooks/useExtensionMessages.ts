@@ -124,6 +124,25 @@ export function useExtensionMessages(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = (msg: any) => {
       const os = getOfficeState();
+      // CI / e2e diagnostic: record every received transport message on the
+      // window-side log. The fixture reads window.__pixelAgentsTestHooks.
+      // messageLog and attaches as JSON so CI failures can see the exact
+      // sequence of messages the webview actually processed.
+      if (typeof window !== 'undefined') {
+        if (!window.__pixelAgentsTestHooks) window.__pixelAgentsTestHooks = {};
+        if (!window.__pixelAgentsTestHooks.messageLog) {
+          window.__pixelAgentsTestHooks.messageLog = [];
+        }
+        window.__pixelAgentsTestHooks.messageLog.push({
+          at: Date.now(),
+          type: msg.type,
+          id: msg.id,
+          toolName: msg.toolName,
+          status: msg.status,
+          toolId: msg.toolId,
+          parentToolId: msg.parentToolId,
+        });
+      }
 
       if (msg.type === 'providerCapabilities') {
         setProviderCapabilities({
@@ -271,11 +290,15 @@ export function useExtensionMessages(
         // Create sub-agent character for Task/Agent tool subtasks.
         // agentToolStart for Task/Agent is always emitted via JSONL (with the stable
         // toolu_* id), never from the hook path — handlePreToolUse skips these tools.
-        // In tmux / inline teams mode, Agent tool has run_in_background=true -- those
-        // are handled via the independent teammate path (onTeammateDetected), not here.
-        // runInBackground gates them out so we don't create ghost sub-agents for them.
+        // runInBackground routing:
+        //   - parent HAS teamName: teammate path (onTeammateDetected) creates the
+        //     teammate; we skip here so we don't spawn a ghost sub-agent alongside.
+        //   - parent has NO teamName: no teammate path exists, so we must still
+        //     create the Subtask sub-character or the background task is invisible.
         const runInBackground = msg.runInBackground as boolean | undefined;
-        if (isSubagentToolName(toolName) && !runInBackground) {
+        const parentChar = os.characters.get(id);
+        const parentHasTeam = !!parentChar?.teamName;
+        if (isSubagentToolName(toolName) && (!runInBackground || !parentHasTeam)) {
           const label = status.startsWith('Subtask:') ? status.slice('Subtask:'.length).trim() : '';
           const subId = os.addSubagent(id, toolId);
           setSubagentCharacters((prev) => {

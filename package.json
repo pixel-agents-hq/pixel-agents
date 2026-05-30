@@ -100,7 +100,7 @@
     "test:report": "node scripts/build-allure-report.mjs",
     "test:report:open": "allure open allure-report/allure",
     "e2e:report": "npm run test:report",
-    "vercel:prepare": "npm run build:webview:preview && npm run test:report && node scripts/assemble-vercel-output.mjs",
+    "vercel:prepare": "npm run test:report && node scripts/assemble-vercel-output.mjs",
     "knip": "knip"
   },
   "devDependencies": {

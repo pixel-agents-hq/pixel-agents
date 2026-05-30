@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const resultsRootDir = path.join(repoRoot, 'allure-results');
 const reportDir = path.join(repoRoot, 'allure-report', 'allure');
-const reportName = 'Pixel Agents Linux Test Report';
+const reportName = 'Pixel Agents Cross-Platform Test Report';
 const metadataFileNames = new Set([
   'categories.json',
   'environment.json',

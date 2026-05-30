@@ -105,11 +105,18 @@ function browserMockAssetsPlugin(): Plugin {
   };
 }
 
+// Honor env vars set by scripts/build-webview-preview.mjs so the same build
+// can produce either the bundled-extension webview (default ../dist/webview,
+// base './') or the standalone-preview build that ships to Vercel (e.g.
+// ../dist/webview-preview, base '/webview/').
+const previewOutDir = process.env['WEBVIEW_OUT_DIR'];
+const previewBase = process.env['WEBVIEW_BASE'];
+
 export default defineConfig({
   plugins: [tailwindcss(), react(), browserMockAssetsPlugin()],
   build: {
-    outDir: '../dist/webview',
+    outDir: previewOutDir ?? '../dist/webview',
     emptyOutDir: true,
   },
-  base: './',
+  base: previewBase ?? './',
 });

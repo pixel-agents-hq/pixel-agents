@@ -37,6 +37,13 @@ export default defineConfig({
   // manually in the fixture teardown (e2e/fixtures/pixel-agents.ts).
   // Default to one worker locally; CI can override this with --workers.
   workers: 1,
+  // Shard distribution at test level (not file level). Without this, Playwright
+  // shards by file: hooks-on/lifecycle.spec.ts alone has 22 tests (47% of the
+  // suite), so one shard does all the work while another does 2 tests. With
+  // fullyParallel, tests are distributed individually → balanced shards.
+  // workers=1 still keeps tests sequential within a shard; only the shard
+  // assignment strategy changes.
+  fullyParallel: true,
   // Retry once for tests that are sensitive to ordering / load (timing-driven
   // assertions about hook + file-watcher races). Tests that pass in isolation
   // but flake under serial load see this; the retry hides true flakes while

@@ -71,13 +71,20 @@ Vite will print a local URL (typically `http://localhost:5173`) where the mocked
 
 ### Project Structure
 
-| Directory     | Description                                                     |
-| ------------- | --------------------------------------------------------------- |
-| `src/`        | Extension backend -- Node.js, VS Code API                       |
-| `server/`     | Standalone HTTP server, hook installer, and test suite (Vitest) |
-| `webview-ui/` | React + TypeScript frontend (separate Vite project)             |
-| `scripts/`    | Asset extraction and generation tooling                         |
-| `assets/`     | Bundled sprites, catalog, and default layout                    |
+Pixel Agents is a four-package monorepo with strict layering. `core/` depends on nothing; `server/` and `webview-ui/` depend only on `core/`; `adapters/vscode/` depends on `core/` and `server/`.
+
+| Directory                   | Description                                                                                                                                                                                                                                           |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core/`                     | Protocol + interface definitions (AsyncAPI 3.0 contract, HookProvider, MessageTransport, StateAdapter). Zero runtime side effects.                                                                                                                    |
+| `server/`                   | Lifecycle runtime: `AgentRuntime`, `AgentStateStore`, `SessionRouter`, `DismissalTracker`, Fastify HTTP/WS server, file watching, transcript parsing, hook installer, providers, Vitest test suite. Also ships the `npx pixel-agents` standalone CLI. |
+| `adapters/vscode/`          | VS Code surface — `extension.ts`, `WebviewViewProvider`, terminal lifecycle, one-time state migration. Composes `core/` and `server/`.                                                                                                                |
+| `webview-ui/`               | React 19 + Canvas UI. Transport abstraction (`PostMessageTransport` + `WebSocketTransport`). Depends only on `core/`.                                                                                                                                 |
+| `webview-ui/public/assets/` | Bundled sprites, furniture catalog, default layout, fonts.                                                                                                                                                                                            |
+| `scripts/`                  | Build/CI tooling: `generate-messages.ts` (AsyncAPI → TS), `run-e2e.mjs`, `build-allure-report.mjs`, `assemble-vercel-output.mjs`, and the asset extraction pipeline.                                                                                  |
+| `e2e/`                      | Playwright suite — fixtures, helpers, specs for `claude/hooks-on/`, `claude/hooks-off/`, and `standalone/`.                                                                                                                                           |
+| `eslint-rules/`             | Custom rules (`no-inline-colors`, `pixel-shadow`, `pixel-font`) enforced project-wide.                                                                                                                                                                |
+
+The repo uses **npm workspaces** (`server`, `webview-ui` declared in the root `package.json`). A single `npm install` at the root installs dependencies for all workspaces; no nested `cd ... && npm install` is needed.
 
 ## Manual Hook Testing
 
@@ -98,9 +105,11 @@ Before using it, copy `port` and `token` from `~/.pixel-agents/server.json` into
 
 **No unused locals or parameters** (`noUnusedLocals` and `noUnusedParameters` are enabled). All magic numbers and strings are centralized — don't add inline constants to source files:
 
-- **Extension backend:** `src/constants.ts`
-- **Webview:** `webview-ui/src/constants.ts`
-- **CSS variables:** `webview-ui/src/index.css` `:root` block (`--pixel-*` properties)
+- **Shared backend timing/scanning constants:** `server/src/constants.ts` (imported by `adapters/vscode/` too)
+- **VS Code-only IDs / command names:** `adapters/vscode/constants.ts`
+- **Protocol-level constants:** `core/src/constants.ts`
+- **Webview:** `webview-ui/src/constants.ts` (grid, animation, rendering, camera, zoom, editor, canvas overlay rgba strings)
+- **CSS variables:** `webview-ui/src/index.css` `:root` block (`--pixel-*` properties for React inline styles and CSS)
 
 ### UI Styling
 
@@ -134,7 +143,9 @@ npm run test:server
 npm run test:webview
 ```
 
-Server tests cover the HTTP server, hook event routing, hook installer, and the hook script (integration test spawning a real Node process). They run after build since `claude-hook.test.ts` needs the compiled hook script at `dist/hooks/claude-hook.js`.
+Server tests (~200 tests across 13 files) cover `AgentStateStore` (typed mutations + events), `HookEventHandler` (routing, buffering, team gating), `SessionRouter` and `DismissalTracker`, `FileStateAdapter` (namespaced persistence), `migrateVsCodeState` (verify-before-clear), `teamUtils`, the Claude provider and its team extension, the hook installer, the HTTP server (lifecycle, auth, `/ws`, broadcast), and the hook script via a spawned-process integration test.
+
+`claude-hook.test.ts` requires the bundled hook at `dist/hooks/claude-hook.js`, so build before running it (or use `npm test` which builds first).
 
 ## End-to-End Tests
 
@@ -175,16 +186,33 @@ By default, successful tests discard their videos after teardown. Pass `--attach
 
 ### Mock claude
 
-Tests never invoke the real `claude` CLI. Instead, a bash script at `e2e/fixtures/mock-claude` is copied into an isolated `bin/` directory and prepended to `PATH` before VS Code starts.
+Tests never invoke the real `claude` CLI. A wrapper script (`e2e/fixtures/mock-claude` on POSIX, `mock-claude.cmd` on Windows) is copied into an isolated `bin/` directory and prepended to `PATH` before VS Code starts. The wrapper delegates to `e2e/fixtures/mock-claude-runner.cjs`, which honors a scenario blob set by the test via the `MOCK_CLAUDE_SCENARIO` env var.
 
-The mock:
+Tests build scenarios with the fluent `claudeScenario(...)` helper in `e2e/helpers/mock-claude.ts`:
 
-1. Parses `--session-id <uuid>` from its arguments.
-2. Appends a line to `$HOME/.claude-mock/invocations.log` so tests can assert it was called.
-3. Creates `$HOME/.claude/projects/<project-hash>/<session-id>.jsonl` with a minimal init line so the extension's file-watcher can detect the session.
-4. Sleeps for 30 s (keeps the terminal alive) then exits.
+```typescript
+claudeScenario('my-scenario')
+  .at(2_000)
+  .appendJsonl(buildAssistantToolUseRecord('toolu-1', 'Read', { file_path: '/x' }))
+  .at(3_000)
+  .emitHook(preToolUseRead('sessionId', '/x'))
+  .holdOpenFor(10_000)
+  .build();
+```
 
-Each test runs with an isolated `HOME` and `--user-data-dir`, so no test state leaks between runs or into your real VS Code profile.
+`appendJsonl` writes a record to `$HOME/.claude/projects/<project-hash>/<session-id>.jsonl` at the given offset. `emitHook` POSTs a hook event to the running server's `/api/hooks/:providerId`. `holdOpenFor` keeps the wrapper process alive (and the terminal "busy") for that many ms after the last action, then exits.
+
+Each test runs with an isolated `HOME`, workspace directory, VS Code `--user-data-dir`, and mock log file — no state leaks between runs or into your real VS Code profile.
+
+### E2E test naming
+
+Tests use behavioral sentences with `@area:<tag>` suffixes for grouping. Areas: `spawn`, `lifecycle`, `cross-cutting`, `teams`, `matrix`, `standalone`. Example:
+
+```typescript
+test('rapid /clear then new tool within 500ms lands on the reassigned agent @area:lifecycle', ...);
+```
+
+The auto-generated test inventory in `e2e/README.md` groups tests by `@area:` tag. After adding or removing tests, run `npm run e2e:inventory` to regenerate — CI fails if it drifts.
 
 ## Submitting a Pull Request
 
@@ -192,11 +220,16 @@ Each test runs with an isolated `HOME` and `--user-data-dir`, so no test state l
 2. Make your changes
 3. Verify everything passes locally:
    ```bash
-   npm run lint                         # Extension + server + webview lint
-   npm run build                        # Type check + esbuild + Vite
-   npm test                             # Unit + integration tests
+   npm run lint                         # core + server + adapters + webview lint
+   npm run check-types                  # TypeScript strict check across all packages
+   npm run asyncapi:validate            # AsyncAPI spec validation
+   npm run asyncapi:generate            # Regen core/src/messages.ts (must produce no git diff)
+   npm run e2e:inventory                # Regen e2e/README.md (must produce no git diff)
+   npm run build                        # esbuild (extension + CLI + hooks) + Vite (webview)
+   npm test                             # Server vitest + webview vitest
+   npm run e2e                          # Playwright (~48 tests, ~10 min)
    ```
-   CI runs these same checks automatically on every PR.
+   CI runs these same checks automatically on every PR. The AsyncAPI and e2e inventory drift checks fail the build on any diff — always regen + commit the result.
 4. Open a pull request against `main` with:
    - A **conventional commit PR title** (e.g. `feat: add zoom controls`, `fix: character freezing on terminal close`, `refactor: extract pathfinding module`). CI enforces this format — see [Conventional Commits](https://www.conventionalcommits.org/).
    - A clear description of what changed and why

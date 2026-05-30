@@ -4,6 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { applyMockHomeEnv } from './mock-claude';
 import { namespaceE2EPath } from '../run-config';
 
 const REPO_ROOT = path.join(__dirname, '../..');
@@ -149,6 +150,11 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
                 PIXEL_AGENTS_NODE_BIN: process.execPath,
                 ZDOTDIR: tmpHome,
                 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+                // inheritEnv is false for this profile, so the diagnostic log
+                // path must be set explicitly here or the mock-spawned
+                // claude-hook.js (which runs in this terminal) can't write to
+                // it. Path matches the `debugLogFile` const below.
+                PIXEL_AGENTS_DEBUG_LOG: path.join(tmpHome, '.pixel-agents', 'debug.log'),
               },
             },
           },
@@ -172,14 +178,24 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
   }
 
   // --- Environment for VS Code process ---
+  // applyMockHomeEnv sets HOME on all platforms and additionally pins
+  // USERPROFILE (and clears HOMEDRIVE/HOMEPATH) on Windows, where os.homedir()
+  // ignores $HOME — see its doc comment for why this is load-bearing.
+  // Diagnostic log: server-side broadcasts + hook events go here. Fixture
+  // attaches it as `pixel-agents-debug-log` so CI failure analysis can read
+  // the exact event timeline. Per-test isolated under tmpHome so parallel
+  // workers don't interleave (though e2e uses workers=1 anyway).
+  const debugLogFile = path.join(tmpHome, '.pixel-agents', 'debug.log');
+  fs.mkdirSync(path.dirname(debugLogFile), { recursive: true });
+
   const env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    HOME: tmpHome,
+    ...(applyMockHomeEnv(process.env, tmpHome) as Record<string, string>),
     // Prepend mock bin so 'claude' resolves to our mock
     PATH: `${mockBinDir}${PATH_SEP}${process.env['PATH'] ?? '/usr/local/bin:/usr/bin:/bin'}`,
     PIXEL_AGENTS_E2E_CLAUDE_BIN: mockClaudeBinaryPath,
     PIXEL_AGENTS_E2E_LAUNCH_LOG: launchLogFile,
     PIXEL_AGENTS_NODE_BIN: process.execPath,
+    PIXEL_AGENTS_DEBUG_LOG: debugLogFile,
     // Prevent VS Code from trying to talk to real accounts / telemetry
     VSCODE_TELEMETRY_DISABLED: '1',
     // Enable Claude Agent Teams feature (see workspace settings.local.json above)

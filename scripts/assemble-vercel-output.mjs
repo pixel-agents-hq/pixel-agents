@@ -2,8 +2,15 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Assembles the Vercel Build Output (.vercel/output/) for the hosted preview.
+//
+// Currently this deploys ONLY the combined Allure test report. The standalone
+// webview preview (formerly served at /webview/) was removed — it needs a mock
+// data layer to be useful on a static host and we don't need it for now. To
+// bring it back: restore the `dist/webview-preview` copy + the `/webview/`
+// override and re-add `build:webview:preview` to the `vercel:prepare` script.
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const previewDir = path.join(repoRoot, 'dist', 'webview-preview');
 const reportDir = path.join(repoRoot, 'allure-report', 'allure');
 const vercelOutputDir = path.join(repoRoot, '.vercel', 'output');
 const staticDir = path.join(vercelOutputDir, 'static');
@@ -32,10 +39,6 @@ function writeRedirectPage(filePath, title, destination) {
   );
 }
 
-if (!existsSync(previewDir)) {
-  throw new Error(`Expected preview build at ${previewDir}`);
-}
-
 if (!existsSync(reportDir)) {
   throw new Error(`Expected report build at ${reportDir}`);
 }
@@ -43,10 +46,10 @@ if (!existsSync(reportDir)) {
 rmSync(vercelOutputDir, { recursive: true, force: true });
 mkdirSync(staticDir, { recursive: true });
 
-cpSync(previewDir, path.join(staticDir, 'webview'), { recursive: true });
 cpSync(reportDir, path.join(staticDir, 'reports', 'allure'), { recursive: true });
 
-writeRedirectPage(path.join(staticDir, 'index.html'), 'Pixel Agents Preview', '/webview/');
+// Root lands directly on the Allure dashboard (no webview to choose between).
+writeRedirectPage(path.join(staticDir, 'index.html'), 'Pixel Agents Reports', '/reports/allure/');
 writeRedirectPage(
   path.join(staticDir, 'reports', 'index.html'),
   'Pixel Agents Reports',
@@ -69,9 +72,6 @@ writeFileSync(
       overrides: {
         'index.html': {
           path: '',
-        },
-        'webview/index.html': {
-          path: 'webview',
         },
         'reports/index.html': {
           path: 'reports',

@@ -783,9 +783,12 @@ test.describe('Hooks OFF / lifecycle', () => {
     await expectOverlayCount(panelFrame, 2, 12_000);
     await expectOverlayVisible(panelFrame, 'Subtask: permission subtask');
 
-    // Within ~7s (5s heuristic timer + cushion) the permission bubble must
-    // appear. The bubble manifests as the "Needs approval" overlay text on
-    // at least one of the two characters.
-    await expectOverlayVisible(panelFrame, 'Needs approval', 8_000);
+    // The "Subtask: permission subtask" overlay above already resolves the
+    // moment the Task tool_use is parsed (scenario t=2s), but the heuristic
+    // permission timer only starts when the sub-tool tool_use lands in the
+    // progress record (scenario t=3s). The timer is PERMISSION_TIMER_DELAY_MS
+    // (7s), and broadcast-to-DOM takes another ~300ms (transport + React
+    // render). So this wait must cover: 1s scenario gap + 7s timer + slop.
+    await expectOverlayVisible(panelFrame, 'Needs approval', 10_000);
   });
 });
