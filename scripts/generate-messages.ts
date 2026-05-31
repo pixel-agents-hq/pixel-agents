@@ -137,6 +137,13 @@ function exportify(decl: string): string {
 }
 
 function quote(s: string): string {
+  // cmd.exe (Windows) does not treat single quotes as string delimiters, so a
+  // single-quoted path is passed through literally and the tool can't find it.
+  // Windows paths cannot contain `"`, so double-quoting is safe there. POSIX
+  // shells keep single-quote escaping for paths that may contain quotes/spaces.
+  if (process.platform === 'win32') {
+    return `"${s}"`;
+  }
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
