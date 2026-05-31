@@ -23,6 +23,8 @@ import type { OfficeState } from '../engine/officeState.js';
 import type { ToolActivity } from '../types.js';
 import { CharacterState, TILE_SIZE } from '../types.js';
 
+const WAITING_ACTIVITY_TEXT = 'Might be waiting for input';
+
 interface ToolOverlayProps {
   officeState: OfficeState;
   agents: number[];
@@ -40,7 +42,11 @@ function getActivityText(
   agentId: number,
   agentTools: Record<number, ToolActivity[]>,
   isActive: boolean,
+  bubbleType: 'permission' | 'waiting' | null,
 ): string {
+  if (bubbleType === 'permission') return 'Needs approval';
+  if (bubbleType === 'waiting') return WAITING_ACTIVITY_TEXT;
+
   const tools = agentTools[agentId];
   if (tools && tools.length > 0) {
     // Find the latest non-done tool
@@ -126,9 +132,12 @@ export function ToolOverlay({
           (deviceOffsetY + (ch.y + sittingOffset - TOOL_OVERLAY_VERTICAL_OFFSET) * zoom) / dpr;
 
         // Get activity text
+        const hasWaitingBubble = ch.bubbleType === 'waiting';
         const subHasPermission = isSub && ch.bubbleType === 'permission';
         let activityText: string;
-        if (isSub) {
+        if (hasWaitingBubble) {
+          activityText = WAITING_ACTIVITY_TEXT;
+        } else if (isSub) {
           if (subHasPermission) {
             activityText = 'Needs approval';
           } else {
@@ -136,7 +145,7 @@ export function ToolOverlay({
             activityText = sub ? sub.label : 'Subtask';
           }
         } else {
-          activityText = getActivityText(id, agentTools, ch.isActive);
+          activityText = getActivityText(id, agentTools, ch.isActive, ch.bubbleType);
         }
 
         // Determine dot color
@@ -144,9 +153,10 @@ export function ToolOverlay({
         const hasPermission = subHasPermission || tools?.some((t) => t.permissionWait && !t.done);
         const hasActiveTools = tools?.some((t) => !t.done);
         const isActive = ch.isActive;
+        const hasWaiting = ch.bubbleType === 'waiting';
 
         let dotColor: string | null = null;
-        if (hasPermission) {
+        if (hasPermission || hasWaiting) {
           dotColor = 'var(--color-status-permission)';
         } else if (isActive && hasActiveTools) {
           dotColor = 'var(--color-status-active)';
@@ -170,11 +180,13 @@ export function ToolOverlay({
               opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
               zIndex: isSelected ? 42 : 41,
             }}
+            data-testid="agent-overlay"
+            data-agent-id={id}
           >
             <div className="flex items-center border-border px-8 pt-2 pb-4 gap-5 pixel-panel whitespace-nowrap max-w-2xs">
               {dotColor && (
                 <span
-                  className={`w-6 h-6 rounded-full shrink-0 ${isActive && !hasPermission ? 'pixel-pulse' : ''}`}
+                  className={`w-6 h-6 rounded-full shrink-0 ${isActive && !hasPermission && !hasWaiting ? 'pixel-pulse' : ''}`}
                   style={{ background: dotColor }}
                 />
               )}

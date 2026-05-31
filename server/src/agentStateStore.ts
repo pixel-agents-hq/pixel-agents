@@ -1,7 +1,33 @@
 import { EventEmitter } from 'node:events';
+import { appendFileSync } from 'node:fs';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
 import type { AgentState, PersistedAgent } from './types.js';
+
+/**
+ * CI / e2e diagnostics: when PIXEL_AGENTS_DEBUG_LOG points to a writable
+ * path, every broadcast is appended there with a timestamp. The test fixture
+ * attaches the resulting file to Allure so failures can be analyzed without
+ * local repro. Zero cost when the env var is unset.
+ */
+const DEBUG_LOG_PATH = process.env['PIXEL_AGENTS_DEBUG_LOG'];
+
+function debugLogBroadcast(message: Record<string, unknown>): void {
+  if (!DEBUG_LOG_PATH) return;
+  try {
+    const t = message.type as string;
+    const id = message.id;
+    const extras: string[] = [];
+    if (id !== undefined) extras.push(`id=${id}`);
+    if ('toolName' in message) extras.push(`toolName=${message.toolName}`);
+    if ('status' in message) extras.push(`status=${message.status}`);
+    if ('parentToolId' in message) extras.push(`parentToolId=${message.parentToolId}`);
+    if ('toolId' in message) extras.push(`toolId=${message.toolId}`);
+    appendFileSync(DEBUG_LOG_PATH, `${new Date().toISOString()} BCAST ${t} ${extras.join(' ')}\n`);
+  } catch {
+    /* never crash on diagnostic failure */
+  }
+}
 
 /** Typed event map for AgentStateStore. */
 export interface StoreEvents {
@@ -108,6 +134,7 @@ export class AgentStateStore {
   // ── Broadcast (replaces direct webview.postMessage in server/) ─
 
   broadcast(message: Record<string, unknown>): void {
+    debugLogBroadcast(message);
     this.emitter.emit('broadcast', message);
   }
 

@@ -29,21 +29,10 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            webview-ui/package-lock.json
-            server/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Install webview dependencies
-        run: npm ci
-        working-directory: webview-ui
-
-      - name: Install server dependencies
-        run: npm ci
-        working-directory: server
 
       - name: Check types and lint
         run: npm run check-types && npm run lint

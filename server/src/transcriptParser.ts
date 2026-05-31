@@ -3,6 +3,7 @@ const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
+import { hasInlineTeammates } from './teamUtils.js';
 import {
   cancelPermissionTimer,
   cancelWaitingTimer,
@@ -149,13 +150,29 @@ export function processTranscriptLine(
                 leadAgentId: agent.leadAgentId,
                 teamUsesTmux: true,
               });
+              for (const [id, teammate] of agents) {
+                if (id === agentId || teammate.leadAgentId !== agentId) continue;
+                teammate.teamUsesTmux = true;
+                agents.broadcast({
+                  type: 'agentTeamInfo',
+                  id,
+                  teamName: teammate.teamName,
+                  agentName: teammate.agentName,
+                  isTeamLead: teammate.isTeamLead,
+                  leadAgentId: teammate.leadAgentId,
+                  teamUsesTmux: true,
+                });
+              }
             }
             // Skip webview message when hooks handle tool visuals (PreToolUse sent it instantly).
             // EXCEPTION: subagent-spawn tools (Task/Agent) ALWAYS use JSONL so the sub-agent
             // character is created with the REAL tool id. SubagentStop and subagentClear use
             // the real id -- a synthetic-id sub-agent from PreToolUse could never be matched.
+            // EXCEPTION: inline teammates need JSONL tool events even in hooks mode so their
+            // tool activity is displayed correctly.
             const isSubagentSpawn = isSubagentTool(toolName);
-            if (!agent.hookDelivered || isSubagentSpawn) {
+            const useJsonlToolEvents = agent.hookDelivered && hasInlineTeammates(agentId, agents);
+            if (!agent.hookDelivered || useJsonlToolEvents || isSubagentSpawn) {
               const runInBackground = isSubagentSpawn && block.input?.run_in_background === true;
               agents.broadcast({
                 type: 'agentToolStart',
@@ -238,7 +255,8 @@ export function processTranscriptLine(
               // (which always use JSONL path for consistent sub-agent lifecycle).
               const isCompletedAgentTool =
                 completedToolName === 'Task' || completedToolName === 'Agent';
-              if (!agent.hookDelivered || isCompletedAgentTool) {
+              const useJsonlToolEvents = agent.hookDelivered && hasInlineTeammates(agentId, agents);
+              if (!agent.hookDelivered || useJsonlToolEvents || isCompletedAgentTool) {
                 const toolId = completedToolId;
                 setTimeout(() => {
                   agents.broadcast({

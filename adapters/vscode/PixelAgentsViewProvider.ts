@@ -52,9 +52,22 @@ import {
 } from './constants.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
 
+/** Cap on the pending-broadcast queue. If we exceed this, something has gone
+ *  wrong (webviewReady never arriving) — log and drop the oldest. */
+const MAX_PENDING_BROADCASTS = 1_000;
+
 export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   store = new AgentStateStore();
   webviewView: vscode.WebviewView | undefined;
+
+  // Webview iframe takes ~hundreds of ms to load the React app and attach
+  // message handlers. Broadcasts that fire in this window are otherwise lost
+  // (webview.postMessage delivers to a window without an active listener).
+  // Buffer them here and flush on `webviewReady`. Without this, on slow CI
+  // runners hook events that arrive during iframe init (mock-claude scenarios
+  // start writing within ~3 s of agent spawn) silently never reach the UI.
+  private isWebviewReady = false;
+  private pendingBroadcasts: Array<Record<string, unknown>> = [];
 
   // Shared agent lifecycle core (timer Maps, scanners, hook handler, dismissal tracker)
   private runtime: AgentRuntime;
@@ -86,7 +99,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.adapter = adapter;
     this.store.setAdapter(this.adapter);
     this.store.on('agentAdded', (id, agent) => {
-      this.webview?.postMessage({
+      this.sendOrBuffer({
         type: 'agentCreated',
         id,
         folderName: agent.folderName,
@@ -99,10 +112,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       });
     });
     this.store.on('agentRemoved', (id) => {
-      this.webview?.postMessage({ type: 'agentClosed', id });
+      this.sendOrBuffer({ type: 'agentClosed', id });
     });
     this.store.on('broadcast', (message) => {
-      this.webview?.postMessage(message);
+      this.sendOrBuffer(message);
     });
 
     setTerminalAdapter(new VscodeTerminalAdapter());
@@ -119,6 +132,25 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
   private get webview(): vscode.Webview | undefined {
     return this.webviewView?.webview;
+  }
+
+  /** Post a message to the webview, or buffer it if the iframe isn't ready
+   *  yet. Drops silently when no view exists at all (matches prior behavior).
+   *  Flushed by the `webviewReady` handler in resolveWebviewView. */
+  private sendOrBuffer(message: Record<string, unknown>): void {
+    const wv = this.webview;
+    if (!wv) return;
+    if (this.isWebviewReady) {
+      wv.postMessage(message);
+      return;
+    }
+    if (this.pendingBroadcasts.length >= MAX_PENDING_BROADCASTS) {
+      console.warn(
+        `[Pixel Agents] Webview buffer overflow (${MAX_PENDING_BROADCASTS}). webviewReady never arrived — dropping oldest message.`,
+      );
+      this.pendingBroadcasts.shift();
+    }
+    this.pendingBroadcasts.push(message);
   }
 
   private initServer(): void {
@@ -148,6 +180,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
   resolveWebviewView(webviewView: vscode.WebviewView) {
     this.webviewView = webviewView;
+    // Fresh iframe; any prior buffer is for the destroyed iframe and obsolete
+    // (the `webviewReady` handler resends current state via restoreAgents +
+    // sendCurrentAgentStatuses + asset loaders).
+    this.isWebviewReady = false;
+    this.pendingBroadcasts = [];
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = getWebviewContent(webviewView.webview, this.extensionUri);
 
@@ -266,6 +303,15 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           }
         }
       } else if (message.type === 'webviewReady') {
+        // Flush any messages buffered while the iframe was loading. Mark
+        // ready BEFORE flush so re-entrant broadcasts (triggered by handlers
+        // below) go directly. Order is preserved: buffered first, new second.
+        this.isWebviewReady = true;
+        const buffered = this.pendingBroadcasts;
+        this.pendingBroadcasts = [];
+        for (const msg of buffered) {
+          this.webview?.postMessage(msg);
+        }
         // Provider capabilities: tool taxonomy for webview animation + subagent rendering.
         // Sent once before restoreAgents so characters render with correct animations
         // from the first frame.

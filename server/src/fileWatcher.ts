@@ -636,6 +636,7 @@ export function scanForTeammateFiles(
       existingTeammate.lastDataAt = Date.now();
       existingTeammate.linesProcessed = 0;
       existingTeammate.isWaiting = false;
+      existingTeammate.teamUsesTmux = parentAgent?.teamUsesTmux;
       startFileWatching(
         existingTeammate.id,
         file,
@@ -682,6 +683,7 @@ export function scanForTeammateFiles(
       agentName: teammateName,
       leadAgentId: parentAgentId,
       teamName: parentAgent?.teamName,
+      teamUsesTmux: parentAgent?.teamUsesTmux,
     };
 
     agents.set(id, agent);
@@ -906,11 +908,32 @@ function adoptExternalSession(
   folderName?: string,
 ): void {
   const id = nextAgentIdRef.current++;
-  // Skip to end of file -- only show live activity going forward, not replay history
+  // Decide whether to replay the existing file content or skip to its end.
+  //
+  // The external scanner runs every EXTERNAL_SCAN_INTERVAL_MS. A freshly-created
+  // session writes its first records in the gap between scanner ticks (typical
+  // mock-claude scenarios: tool_use at t=1s, scanner ticks at t=3s). If we
+  // unconditionally skip to the end of the file, those pre-adoption records
+  // are silently discarded — the agent character appears but its tool history
+  // and active tools never surface, producing a "stuck on Idle" UI and flaky
+  // e2e failures whose mode depends entirely on scanner-tick alignment.
+  //
+  // Heuristic: a file whose birthtime is inside the scan window (2× the
+  // interval, for one missed tick of margin) is "a session we just watched
+  // come to life" — replay it from the start so no records are lost. Older
+  // files are ongoing sessions the user already had running before adoption;
+  // for those we keep the original skip-to-end behavior so an hours-long
+  // session doesn't flash hundreds of past tool overlays through the UI.
+  //
+  // birthtimeMs is reliable on macOS APFS, Windows NTFS, and modern Linux
+  // ext4. On filesystems that don't track it, Node returns the epoch (0) —
+  // we treat that as "very old" and skip to end, matching prior behavior.
   let fileOffset = 0;
   try {
     const stat = fs.statSync(jsonlFile);
-    fileOffset = stat.size;
+    const ageMs = stat.birthtimeMs > 0 ? Date.now() - stat.birthtimeMs : Number.POSITIVE_INFINITY;
+    const freshnessWindowMs = EXTERNAL_SCAN_INTERVAL_MS * 2;
+    fileOffset = ageMs <= freshnessWindowMs ? 0 : stat.size;
   } catch {
     /* start from beginning if stat fails */
   }

@@ -26,9 +26,12 @@
 
 Pixel Agents turns multi-agent AI systems into something you can actually see and manage. Each agent becomes a character in a pixel art office. They walk around, sit at their desk, and visually reflect what they are doing — typing when writing code, reading when searching files, waiting when it needs your attention.
 
-Right now it works as a VS Code extension with Claude Code. The vision though, is a fully agent-agnostic, platform-agnostic interface for orchestrating any AI agents, deployable anywhere.
+It ships in **two flavors from the same source tree**:
 
-This is the source code for the free Pixel Agents extension for VS Code — install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) or [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents) with the full furniture catalog included.
+- **VS Code extension** — `pablodelucca.pixel-agents` on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) and [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents). Agents spawn into VS Code terminals; characters render in the panel area.
+- **Standalone CLI** — `npx pixel-agents` runs a local Fastify server and serves the office as a browser SPA. Useful in tmux workflows, remote sessions, or any environment without a desktop VS Code.
+
+Internally, the architecture is fully agent-agnostic and platform-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation today; Codex, Gemini, Cursor, and others are on the roadmap.
 
 ![Pixel Agents screenshot](webview-ui/public/Screenshot.jpg)
 
@@ -63,12 +66,34 @@ If you just want to use Pixel Agents, the easiest way is to download the [VS Cod
 ```bash
 git clone https://github.com/pixel-agents-hq/pixel-agents.git
 cd pixel-agents
-npm install
-cd webview-ui && npm install && cd ..
+npm install      # npm workspaces installs root + server + webview-ui in one shot
 npm run build
 ```
 
 Then press **F5** in VS Code to launch the Extension Development Host.
+
+To try the **standalone CLI** locally:
+
+```bash
+node dist/cli.js                 # or npx pixel-agents [--port 3100] after publish
+```
+
+It starts the Fastify server, opens the webview SPA at `http://localhost:3100`, and (in the same `~/.pixel-agents/` namespace) shares your hooks and layout with the VS Code extension if both are running.
+
+### Browser Preview & Hosted Reports
+
+The browser-preview version of the webview can be built and staged for Vercel separately from the VS Code extension build.
+
+```bash
+npm run test
+npm run e2e
+npm run e2e -- --attach-videos-on-success
+npm run vercel:prepare
+```
+
+Run `npm run test:report` separately when you want the combined Allure report locally without preparing the full Vercel output.
+
+The staged Vercel output serves the standalone webview at `/webview/` and the Linux Allure report at `/reports/allure/`, combining the `e2e`, `server`, and `webview` suites. The GitHub Actions deploy job expects `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID` secrets.
 
 ### Usage
 
@@ -104,14 +129,27 @@ Characters are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-
 
 ## How It Works
 
-Pixel Agents watches Claude Code's JSONL transcript files to track what each agent is doing. When an agent uses a tool (like writing a file or running a command), the extension detects it and updates the character's animation accordingly. No modifications to Claude Code are needed — it's purely observational.
+Pixel Agents has two parallel detection paths:
 
-The webview runs a lightweight game loop with canvas rendering, BFS pathfinding, and a character state machine (idle → walk → type/read). Everything is pixel-perfect at integer zoom levels.
+- **Hooks mode** (preferred) — Claude Code's official Hooks API POSTs events (`SessionStart`, `PreToolUse`, `Notification`, `Stop`, etc.) to a local Fastify server (`POST /api/hooks/:providerId`). Instant, reliable. Server discovery via `~/.pixel-agents/server.json`.
+- **Heuristic mode** (fallback) — Polls JSONL transcript files at `~/.claude/projects/<project-hash>/<session-id>.jsonl`. Used when hooks aren't installed.
+
+A single `HookProvider.normalizeHookEvent(raw)` translates each CLI's hook payload into a canonical `AgentEvent`. The shared `AgentRuntime` dispatches on `AgentEvent.kind`, mutates `AgentStateStore`, and the broadcast layer translates state events into typed `ServerMessage` over the active transport.
+
+The webview runs a lightweight game loop with canvas rendering, BFS pathfinding, and a character state machine (idle → walk → type/read). Everything is pixel-perfect at integer zoom levels. Game state lives in an imperative `OfficeState` class outside React; React components read from it during render but don't own the state.
+
+No modifications to Claude Code are needed — Pixel Agents is purely observational.
 
 ## Tech Stack
 
-- **Extension**: TypeScript, VS Code Webview API, esbuild
-- **Webview**: React 19, TypeScript, Vite, Canvas 2D
+Four-package monorepo, npm workspaces:
+
+- **`core/`** — TypeScript-only protocol + interfaces (AsyncAPI 3.0 contract, `HookProvider`, `MessageTransport`, `StateAdapter`). Zero runtime side effects.
+- **`server/`** — Fastify v5 (HTTP + WebSocket), Vitest. Owns `AgentRuntime`, `AgentStateStore`, `SessionRouter`, `DismissalTracker`, file watching, transcript parsing, providers. Ships the `npx pixel-agents` CLI.
+- **`adapters/vscode/`** — VS Code Extension API. Composes `core/` + `server/` for the desktop surface.
+- **`webview-ui/`** — React 19, Vite, Canvas 2D. Transport-agnostic (`PostMessageTransport` in VS Code, `WebSocketTransport` in the browser).
+
+Builds: esbuild (extension + CLI + hook scripts), Vite (webview SPA). Tests: Vitest (server + webview unit), Playwright (e2e against real VS Code + standalone Fastify).
 
 ## Known Limitations
 

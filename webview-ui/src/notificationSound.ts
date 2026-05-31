@@ -16,6 +16,20 @@ import {
 let soundEnabled = true;
 let audioCtx: AudioContext | null = null;
 
+/** E2E test hook: append every (attempted) sound invocation to a window-side log
+ *  under window.__pixelAgentsTestHooks.playedSounds (namespace and type
+ *  declared by testHooks.ts). Records BEFORE the soundEnabled gate so tests
+ *  verify dispatch independent of user audio prefs.
+ *  Read-only marker; no production behavior change. */
+function recordSoundForTests(kind: 'done' | 'permission'): void {
+  if (typeof window === 'undefined') return;
+  if (!window.__pixelAgentsTestHooks) window.__pixelAgentsTestHooks = {};
+  if (!window.__pixelAgentsTestHooks.playedSounds) {
+    window.__pixelAgentsTestHooks.playedSounds = [];
+  }
+  window.__pixelAgentsTestHooks.playedSounds.push({ kind, at: Date.now() });
+}
+
 export function setSoundEnabled(enabled: boolean): void {
   soundEnabled = enabled;
 }
@@ -49,6 +63,7 @@ function playNote(
 }
 
 export async function playDoneSound(): Promise<void> {
+  recordSoundForTests('done');
   if (!soundEnabled) return;
   try {
     if (!audioCtx) {
@@ -67,6 +82,7 @@ export async function playDoneSound(): Promise<void> {
 }
 
 export async function playPermissionSound(): Promise<void> {
+  recordSoundForTests('permission');
   if (!soundEnabled) return;
   try {
     if (!audioCtx) {

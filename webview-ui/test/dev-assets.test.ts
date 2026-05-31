@@ -10,11 +10,11 @@
 
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
+import { test } from 'vitest';
 
 import type { AssetIndex, CatalogEntry } from '../../core/src/assets/types.ts';
 

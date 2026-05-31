@@ -154,7 +154,9 @@ export class AgentRuntime {
           this.waitingTimers,
           this.permissionTimers,
           () => this.store.persist(),
-          (agent) => this.registerAgent(agent.sessionId, agent.id),
+          // Don't register inline teammates: they share the lead's sessionId
+          // and registering them would overwrite the lead in the session router.
+          undefined,
         );
       },
       onTeammateRemoved: (teammateAgentId) => {

@@ -22,11 +22,14 @@ import { OfficeState } from './office/engine/officeState.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { EditTool } from './office/types.js';
 import { isBrowserRuntime } from './runtime.js';
+import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
 const editorState = new EditorState();
+
+installTestHooks(officeStateRef);
 
 function getOfficeState(): OfficeState {
   if (!officeStateRef.current) {
