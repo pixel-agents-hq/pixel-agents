@@ -137,6 +137,10 @@ function exportify(decl: string): string {
 }
 
 function quote(s: string): string {
+  // Windows cmd.exe does not understand single quotes; use double quotes there.
+  if (process.platform === 'win32') {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 

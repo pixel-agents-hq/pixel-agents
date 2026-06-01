@@ -23,7 +23,9 @@ function writeServerJson(port: number, token: string): void {
 function runHookScript(stdin: string): Promise<{ code: number | null; stdout: string }> {
   return new Promise((resolve) => {
     const child = spawn('node', [HOOK_SCRIPT], {
-      env: { ...process.env, HOME: tmpBase },
+      // Set both HOME (POSIX) and USERPROFILE (Windows) so the child's
+      // os.homedir() resolves to the isolated temp dir on every platform.
+      env: { ...process.env, HOME: tmpBase, USERPROFILE: tmpBase },
       stdio: ['pipe', 'pipe', 'pipe'],
       timeout: 5000,
     });
