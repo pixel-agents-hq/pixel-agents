@@ -10,6 +10,17 @@ vi.mock('vscode', () => ({
   window: { showWarningMessage },
 }));
 
+// Mock os.homedir() for cross-platform temp-home isolation. Overriding
+// process.env.HOME is not portable: os.homedir() reads USERPROFILE on Windows.
+// `tempHome` is the temp dir we always clean up; `homeOverride` is what
+// homedir() returns (usually tempHome, but a bogus path in the write-failure test).
+let tempHome: string;
+let homeOverride: string;
+vi.mock('os', async () => {
+  const actual = await vi.importActual<typeof import('os')>('os');
+  return { ...actual, homedir: () => homeOverride };
+});
+
 import { migrateVsCodeState } from '../../adapters/vscode/migrateVsCodeState.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../src/layoutPersistence.js';
@@ -50,19 +61,13 @@ function makeContext(globalSeed = {}, workspaceSeed = {}) {
 }
 
 describe('migrateVsCodeState', () => {
-  let tempHome: string;
-  let originalHome: string | undefined;
-
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-migrate-test-'));
-    originalHome = process.env.HOME;
-    process.env.HOME = tempHome;
+    homeOverride = tempHome;
     showWarningMessage.mockReset();
   });
 
   afterEach(() => {
-    if (originalHome === undefined) delete process.env.HOME;
-    else process.env.HOME = originalHome;
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
@@ -172,7 +177,7 @@ describe('migrateVsCodeState', () => {
     // Simulate by replacing with a file (so mkdirSync fails on subpath).
     const blocker = path.join(tempHome, 'blocker');
     fs.writeFileSync(blocker, 'x');
-    process.env.HOME = blocker; // HOME is now a file; can't mkdir inside
+    homeOverride = blocker; // home is now a file; can't mkdir inside
 
     const { context, globalStore } = makeContext({
       'pixel-agents.soundEnabled': false,
