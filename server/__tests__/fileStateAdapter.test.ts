@@ -1,27 +1,29 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PersistedAgent } from '../../core/src/schemas.js';
-import { FileStateAdapter } from '../src/fileStateAdapter.js';
+
+// Mock os.homedir() so the adapter resolves to an isolated temp dir on every
+// platform. Overriding process.env.HOME is not portable: os.homedir() reads
+// USERPROFILE on Windows, so a HOME-only override would still hit the real
+// home directory.
+let tempHome: string;
+vi.mock('os', async () => {
+  const actual = await vi.importActual<typeof import('os')>('os');
+  return { ...actual, homedir: () => tempHome };
+});
+
+// Must import AFTER mock setup.
+const { FileStateAdapter } = await import('../src/fileStateAdapter.js');
 
 describe('FileStateAdapter', () => {
-  let tempHome: string;
-  let originalHome: string | undefined;
-
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-adapter-test-'));
-    originalHome = process.env.HOME;
-    process.env.HOME = tempHome;
   });
 
   afterEach(() => {
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
