@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { HookProvider } from '../../core/src/provider.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
 import {
@@ -13,19 +14,18 @@ import {
   startFileWatching,
 } from '../../server/src/fileWatcher.js';
 import { loadLayout } from '../../server/src/layoutPersistence.js';
-import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
-import { claudeProvider } from '../../server/src/providers/index.js';
+import { findNewestCodexSessionFile } from '../../server/src/providers/index.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
 import type { AgentState, PersistedAgent } from '../../server/src/types.js';
 
-export function getProjectDirPath(cwd?: string): string {
+export function getProjectDirPath(provider: HookProvider, cwd?: string): string {
   // Fall back to home directory when no workspace folder is open (common on Linux/macOS
   // when VS Code is launched without a folder). The provider's getSessionDirs already
   // implements the Windows case-insensitive fallback for drive-letter casing.
   const workspacePath = cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
-  const dirs = claudeProvider.getSessionDirs?.(workspacePath) ?? [];
+  const dirs = provider.getSessionDirs?.(workspacePath) ?? [];
   if (dirs.length === 0) {
-    throw new Error('claudeProvider.getSessionDirs returned no directories');
+    throw new Error(`${provider.id}.getSessionDirs returned no directories`);
   }
   const projectDir = dirs[0];
   console.log(`[Pixel Agents] Terminal: Project dir: ${workspacePath} → ${projectDir}`);
@@ -45,6 +45,7 @@ export async function launchNewTerminal(
   jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
   projectScanTimerRef: { current: ReturnType<typeof setInterval> | null },
   persistAgents: () => void,
+  provider: HookProvider,
   folderPath?: string,
   bypassPermissions?: boolean,
   suppressShow?: boolean,
@@ -57,7 +58,7 @@ export async function launchNewTerminal(
   const isMultiRoot = !!(folders && folders.length > 1);
   const idx = nextTerminalIndexRef.current++;
   const terminal = vscode.window.createTerminal({
-    name: `${CLAUDE_TERMINAL_NAME_PREFIX} #${idx}`,
+    name: `${provider.terminalNamePrefix ?? provider.displayName} #${idx}`,
     cwd,
   });
   // When suppressShow is set (auto-spawn + autoShowPanel), keep the panel view
@@ -69,16 +70,19 @@ export async function launchNewTerminal(
   }
 
   const sessionId = crypto.randomUUID();
-  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
+  const launch = provider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
   if (!launch) {
-    throw new Error('claudeProvider.buildLaunchCommand is not implemented');
+    throw new Error(`${provider.id}.buildLaunchCommand is not implemented`);
   }
   terminal.sendText([launch.command, ...launch.args].join(' '));
 
-  const projectDir = getProjectDirPath(cwd);
+  const projectDir = getProjectDirPath(provider, cwd);
 
   // Pre-register expected JSONL file so project scan won't treat it as a /clear file
-  const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
+  const expectedFile =
+    provider.id === 'codex'
+      ? path.join(projectDir, `${sessionId}.pending.jsonl`)
+      : path.join(projectDir, `${sessionId}.jsonl`);
   knownJsonlFiles.add(expectedFile);
 
   // Create agent immediately (before JSONL file exists)
@@ -107,6 +111,7 @@ export async function launchNewTerminal(
     seenUnknownRecordTypes: new Set(),
     folderName,
     hookDelivered: false,
+    providerId: provider.id,
     inputTokens: 0,
     outputTokens: 0,
   };
@@ -179,17 +184,21 @@ export async function launchNewTerminal(
         // Check every tick for a file modified after the agent was created.
         try {
           const trackedFiles = new Set([...agents.values()].map((a) => path.resolve(a.jsonlFile)));
-          const candidates = fs
-            .readdirSync(projectDir)
-            .filter((f) => f.endsWith('.jsonl'))
-            .map((f) => {
-              const full = path.join(projectDir, f);
-              return { file: full, mtime: fs.statSync(full).mtimeMs };
-            })
-            .filter((c) => !trackedFiles.has(path.resolve(c.file)) && c.mtime > createdAt)
-            .sort((a, b) => b.mtime - a.mtime); // newest first
+          const codexFile =
+            provider.id === 'codex' ? findNewestCodexSessionFile(createdAt, cwd) : null;
+          const candidates = codexFile
+            ? [{ file: codexFile, mtime: fs.statSync(codexFile).mtimeMs }]
+            : fs
+                .readdirSync(projectDir)
+                .filter((f) => f.endsWith('.jsonl'))
+                .map((f) => {
+                  const full = path.join(projectDir, f);
+                  return { file: full, mtime: fs.statSync(full).mtimeMs };
+                })
+                .filter((c) => !trackedFiles.has(path.resolve(c.file)) && c.mtime > createdAt)
+                .sort((a, b) => b.mtime - a.mtime); // newest first
 
-          if (candidates.length > 0) {
+          if (candidates.length > 0 && !trackedFiles.has(path.resolve(candidates[0].file))) {
             console.log(
               `[Pixel Agents] Terminal: Agent ${id} - /resume detected, reassigning to ${path.basename(candidates[0].file)}`,
             );
@@ -270,6 +279,7 @@ export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): v
       isTeamLead: agent.isTeamLead,
       leadAgentId: agent.leadAgentId,
       teamUsesTmux: agent.teamUsesTmux,
+      providerId: agent.providerId,
     });
   }
   adapter.saveAgents(persisted);
@@ -351,6 +361,7 @@ export function restoreAgents(
       isTeamLead: p.isTeamLead,
       leadAgentId: p.leadAgentId,
       teamUsesTmux: p.teamUsesTmux,
+      providerId: p.providerId,
     };
 
     store.set(p.id, agent);

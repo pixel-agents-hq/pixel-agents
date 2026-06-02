@@ -132,6 +132,7 @@ export class AgentStateStore {
         isExternal: agent.isExternal || undefined,
         jsonlFile: agent.jsonlFile,
         projectDir: agent.projectDir,
+        providerId: agent.providerId,
         folderName: agent.folderName,
         teamName: agent.teamName,
         agentName: agent.agentName,

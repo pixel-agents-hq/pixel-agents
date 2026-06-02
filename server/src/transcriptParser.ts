@@ -1,6 +1,6 @@
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
-import type { HookProvider } from '../../core/src/provider.js';
+import type { AgentEvent, HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
 import {
@@ -54,6 +54,11 @@ export function processTranscriptLine(
   agent.linesProcessed++;
   try {
     const record = JSON.parse(line);
+    const providerEvent = hookProvider?.parseTranscriptLine?.(line);
+    if (providerEvent) {
+      processProviderEvent(agentId, providerEvent, agents, waitingTimers, permissionTimers);
+      return;
+    }
 
     // -- Agent Teams: extract team metadata via the active provider --
     // The provider reads its CLI's own field names (Claude: record.teamName + record.agentName).
@@ -377,6 +382,86 @@ export function processTranscriptLine(
     }
   } catch {
     // Ignore malformed lines
+  }
+}
+
+function processProviderEvent(
+  agentId: number,
+  event: AgentEvent,
+  agents: AgentStateStore,
+  waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
+  permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
+): void {
+  const agent = agents.get(agentId);
+  if (!agent) return;
+
+  switch (event.kind) {
+    case 'toolStart': {
+      cancelWaitingTimer(agentId, waitingTimers);
+      agent.isWaiting = false;
+      agent.hadToolsInTurn = true;
+      agents.broadcast({ type: 'agentStatus', id: agentId, status: 'active' });
+
+      const input = (event.input ?? {}) as Record<string, unknown>;
+      const status = formatToolStatus(event.toolName, input);
+      agent.activeToolIds.add(event.toolId);
+      agent.activeToolStatuses.set(event.toolId, status);
+      agent.activeToolNames.set(event.toolId, event.toolName);
+      agents.broadcast({
+        type: 'agentToolStart',
+        id: agentId,
+        toolId: event.toolId,
+        status,
+        toolName: event.toolName,
+        permissionActive: agent.permissionSent,
+        runInBackground: event.runInBackground,
+      });
+
+      if (!exemptTools().has(event.toolName) && !agent.hookDelivered && !agent.leadAgentId) {
+        startPermissionTimer(agentId, agents, permissionTimers, exemptTools());
+      }
+      break;
+    }
+
+    case 'toolEnd': {
+      agent.activeToolIds.delete(event.toolId);
+      agent.activeToolStatuses.delete(event.toolId);
+      agent.activeToolNames.delete(event.toolId);
+      setTimeout(() => {
+        agents.broadcast({
+          type: 'agentToolDone',
+          id: agentId,
+          toolId: event.toolId,
+        });
+      }, TOOL_DONE_DELAY_MS);
+      if (agent.activeToolIds.size === 0) {
+        agent.hadToolsInTurn = false;
+      }
+      break;
+    }
+
+    case 'turnEnd': {
+      cancelWaitingTimer(agentId, waitingTimers);
+      cancelPermissionTimer(agentId, permissionTimers);
+      agent.activeToolIds.clear();
+      agent.activeToolStatuses.clear();
+      agent.activeToolNames.clear();
+      agent.activeSubagentToolIds.clear();
+      agent.activeSubagentToolNames.clear();
+      agent.isWaiting = true;
+      agent.permissionSent = false;
+      agent.hadToolsInTurn = false;
+      agents.broadcast({ type: 'agentToolsClear', id: agentId });
+      agents.broadcast({ type: 'agentStatus', id: agentId, status: 'waiting' });
+      break;
+    }
+
+    case 'permissionRequest':
+      startPermissionTimer(agentId, agents, permissionTimers, exemptTools());
+      break;
+
+    default:
+      break;
   }
 }
 

@@ -13,3 +13,4 @@
 
 export { claudeProvider } from './hook/claude/claude.js';
 export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+export { codexProvider, findNewestCodexSessionFile } from './hook/codex/codex.js';

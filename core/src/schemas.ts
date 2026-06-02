@@ -13,6 +13,7 @@ export interface PersistedAgent {
   isExternal?: boolean;
   jsonlFile: string;
   projectDir: string;
+  providerId?: string;
   folderName?: string;
   teamName?: string;
   agentName?: string;

@@ -69,6 +69,8 @@ export interface PersistedAgent {
   isExternal?: boolean;
   jsonlFile: string;
   projectDir: string;
+  /** Provider that created this agent (defaults to 'claude' for old persisted data) */
+  providerId?: string;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
 

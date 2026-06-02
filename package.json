@@ -63,7 +63,16 @@
         "pixel-agents.autoSpawnAgent": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically spawn a Claude Code agent when VS Code starts, if no agents are currently running."
+          "description": "Automatically spawn an agent when VS Code starts, if no agents are currently running."
+        },
+        "pixel-agents.provider": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ],
+          "default": "claude",
+          "description": "AI coding CLI provider used by the + Agent button and session parser."
         }
       }
     }
