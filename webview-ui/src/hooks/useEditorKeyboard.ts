@@ -27,6 +27,7 @@ export function useEditorKeyboard(
           editorState.selectedFurnitureType !== ''
         ) {
           editorState.selectedFurnitureType = '';
+          editorState.clearPickedItem();
           editorState.clearGhost();
         } else if (editorState.activeTool !== EditTool.SELECT) {
           editorState.activeTool = EditTool.SELECT;
