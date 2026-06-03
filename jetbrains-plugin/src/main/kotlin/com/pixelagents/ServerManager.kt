@@ -30,9 +30,9 @@ class ServerManager(
     },
     private val processLauncher: (String) -> Process = { dir ->
         val cmd = if (System.getProperty("os.name").startsWith("Windows"))
-            listOf("cmd", "/c", "npx", "it-crowd-pixel-agents")
+            listOf("cmd", "/c", "npx", "-y", "it-crowd-pixel-agents")
         else
-            listOf("npx", "it-crowd-pixel-agents")
+            listOf("npx", "-y", "it-crowd-pixel-agents")
         ProcessBuilder(cmd)
             .directory(File(dir))
             .redirectErrorStream(true)
