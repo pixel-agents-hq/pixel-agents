@@ -58,6 +58,17 @@ export function processTranscriptLine(
     // -- Agent Teams: extract team metadata via the active provider --
     // The provider reads its CLI's own field names (Claude: record.teamName + record.agentName).
     // Other CLIs would implement this differently or not at all.
+    // -- Session name: user-set title (e.g. Claude's /rename writes a
+    // custom-title record). Shown in the webview's agent label. --
+    if (record.type === 'custom-title' && typeof record.customTitle === 'string') {
+      const name = record.customTitle.trim();
+      if (name && name !== agent.sessionName) {
+        agent.sessionName = name;
+        agents.broadcast({ type: 'agentSessionName', id: agentId, name });
+      }
+      return;
+    }
+
     const teamMeta = hookProvider?.team?.extractTeamMetadataFromRecord(record);
     if (teamMeta?.teamName && teamMeta.teamName !== agent.teamName) {
       agent.teamName = teamMeta.teamName;

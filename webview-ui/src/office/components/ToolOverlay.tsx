@@ -33,6 +33,7 @@ interface ToolOverlayProps {
   panRef: React.RefObject<{ x: number; y: number }>;
   onCloseAgent: (id: number) => void;
   alwaysShowOverlay: boolean;
+  showSessionNames: boolean;
 }
 
 /** Derive a short human-readable activity string from tools/status */
@@ -76,6 +77,7 @@ export function ToolOverlay({
   panRef,
   onCloseAgent,
   alwaysShowOverlay,
+  showSessionNames,
 }: ToolOverlayProps) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -157,7 +159,9 @@ export function ToolOverlay({
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
         const totalTokens = ch.inputTokens + ch.outputTokens;
         const tokenRatio = totalTokens / MAX_CONTEXT_TOKENS;
-        const hasExtraLines = !!(ch.folderName || teamRoleLabel);
+        // Prefer the user-set session name (e.g. /rename) over the folder name
+        const contextLabel = showSessionNames && ch.sessionName ? ch.sessionName : ch.folderName;
+        const hasExtraLines = !!(contextLabel || teamRoleLabel);
 
         return (
           <div
@@ -200,9 +204,9 @@ export function ToolOverlay({
                 >
                   {activityText}
                 </span>
-                {ch.folderName && (
+                {contextLabel && (
                   <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
-                    {ch.folderName}
+                    {contextLabel}
                   </span>
                 )}
               </div>
