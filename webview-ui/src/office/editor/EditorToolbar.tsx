@@ -34,6 +34,7 @@ interface EditorToolbarProps {
   onWallSetChange: (setIndex: number) => void;
   onSelectedFurnitureColorChange: (color: ColorValue | null) => void;
   onFurnitureTypeChange: (type: string) => void;
+  onDeleteSelected: () => void;
   loadedAssets?: LoadedAssetData;
 }
 
@@ -57,6 +58,7 @@ export function EditorToolbar({
   onWallSetChange,
   onSelectedFurnitureColorChange,
   onFurnitureTypeChange,
+  onDeleteSelected,
   loadedAssets,
 }: EditorToolbarProps) {
   const [activeCategory, setActiveCategory] = useState<FurnitureCategory>('desks');
@@ -318,6 +320,14 @@ export function EditorToolbar({
                 Clear
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onDeleteSelected}
+              title="Delete selected furniture (Del)"
+            >
+              Delete
+            </Button>
           </div>
           {showFurnitureColor && (
             <ColorPicker

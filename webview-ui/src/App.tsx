@@ -236,6 +236,7 @@ function App() {
                   onWallSetChange={editor.handleWallSetChange}
                   onSelectedFurnitureColorChange={editor.handleSelectedFurnitureColorChange}
                   onFurnitureTypeChange={editor.handleFurnitureTypeChange}
+                  onDeleteSelected={editor.handleDeleteSelected}
                   loadedAssets={loadedAssets}
                 />
               );
