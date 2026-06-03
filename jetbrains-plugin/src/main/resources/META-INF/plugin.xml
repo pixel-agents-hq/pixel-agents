@@ -1,13 +1,15 @@
 <idea-plugin>
-    <id>com.pixelagents.jetbrains</id>
-    <name>Pixel Agents</name>
-    <vendor url="https://github.com/pixel-agents-hq/pixel-agents">pixel-agents-hq</vendor>
+    <id>io.github.rlarin.pixelagents</id>
+    <name>IT Crowd Pixel Agents</name>
+    <vendor url="https://github.com/rlarin/it-crowd-pixel-agents">rlarin</vendor>
     <description>
         JetBrains edition of Pixel Agents — a pixel art office where AI agents (Claude Code terminals)
         are animated characters you can watch work in real time.
 
         Compatible with PyCharm, WebStorm, and all JetBrains IDEs based on IntelliJ Platform 2025.1+.
         Requires Node.js to be installed.
+
+        Based on Pixel Agents by Pablo De Lucca (https://github.com/pixel-agents-hq/pixel-agents), MIT licensed.
     </description>
 
     <depends>com.intellij.modules.platform</depends>

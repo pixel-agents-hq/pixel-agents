@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Standalone CLI entry point: `npx pixel-agents`
+ * Standalone CLI entry point: `npx it-crowd-pixel-agents`
  *
  * Starts the Fastify server in standalone mode with SPA serving and WebSocket.
  * Loads all assets (PNGs -> SpriteData) on startup and caches in memory.
@@ -41,7 +41,7 @@ function parseArgs(argv: string[]): CliArgs {
       args.host = argv[i + 1];
       i++;
     } else if (argv[i] === '--help') {
-      console.log(`Usage: pixel-agents [options]
+      console.log(`Usage: it-crowd-pixel-agents [options]
 
 Options:
   --port, -p <number>   Port to listen on (default: 3100)

@@ -4,6 +4,9 @@
     </a>
 </h1>
 
+> **IT Crowd Pixel Agents** is a fork that adds JetBrains IDE support (PyCharm/WebStorm) and publishes under its own namespace.
+> Based on [Pixel Agents](https://github.com/pixel-agents-hq/pixel-agents) by **Pablo De Lucca**, MIT licensed. All upstream credit goes to the original author.
+
 <h2 align="center" style="padding-bottom: 20px;">
   The game interface where AI agents build real things
 </h2>
