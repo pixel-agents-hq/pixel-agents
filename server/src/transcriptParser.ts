@@ -65,6 +65,7 @@ export function processTranscriptLine(
       if (name && name !== agent.sessionName) {
         agent.sessionName = name;
         agents.broadcast({ type: 'agentSessionName', id: agentId, name });
+        agents.persist();
       }
       return;
     }

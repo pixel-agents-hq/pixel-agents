@@ -81,4 +81,7 @@ export interface PersistedAgent {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
+
+  /** User-set session name from the transcript (e.g. Claude's /rename) */
+  sessionName?: string;
 }
