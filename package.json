@@ -92,7 +92,9 @@
     "test": "npm run test:webview && npm run test:server",
     "e2e": "playwright test --config e2e/playwright.config.ts",
     "e2e:debug": "playwright test --config e2e/playwright.config.ts --debug",
-    "knip": "knip"
+    "knip": "knip",
+    "build:jetbrains": "cd jetbrains-plugin && gradlew.bat buildPlugin",
+    "build:jetbrains:unix": "cd jetbrains-plugin && ./gradlew buildPlugin"
   },
   "devDependencies": {
     "@asyncapi/cli": "^6.0.0",
