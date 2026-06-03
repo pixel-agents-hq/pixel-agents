@@ -40,7 +40,7 @@ import {
 } from './constants.js';
 import type { DismissalTracker } from './dismissalTracker.js';
 import { cancelPermissionTimer, cancelWaitingTimer, clearAgentActivity } from './timerManager.js';
-import { processTranscriptLine } from './transcriptParser.js';
+import { processTranscriptLine, readSessionNameFromTranscriptTail } from './transcriptParser.js';
 import type { AgentState } from './types.js';
 
 /** Dismissal tracker instance. Set once at startup via setDismissalTracker().
@@ -941,8 +941,15 @@ function adoptExternalSession(
     outputTokens: 0,
   };
 
+  // History is skipped (fileOffset starts at the end), so read any user-set
+  // session name from the transcript tail at adoption time.
+  agent.sessionName = readSessionNameFromTranscriptTail(jsonlFile);
+
   agents.set(id, agent);
   persistAgents();
+  if (agent.sessionName) {
+    agents.broadcast({ type: 'agentSessionName', id, name: agent.sessionName });
+  }
 
   // Log is emitted by the caller (adoptExternalSessionFromHook or scanExternalDir)
   // to use the correct prefix (Hook: vs Watcher:).

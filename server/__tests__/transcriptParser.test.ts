@@ -1,7 +1,13 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { AgentStateStore } from '../src/agentStateStore.js';
-import { processTranscriptLine } from '../src/transcriptParser.js';
+import {
+  processTranscriptLine,
+  readSessionNameFromTranscriptTail,
+} from '../src/transcriptParser.js';
 import type { AgentState } from '../src/types.js';
 
 function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
@@ -97,5 +103,46 @@ describe('transcriptParser: session name (custom-title records)', () => {
       ),
     ).not.toThrow();
     expect(broadcasts.filter((m) => m.type === 'agentSessionName')).toHaveLength(0);
+  });
+});
+
+describe('readSessionNameFromTranscriptTail', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-tail-test-'));
+  });
+
+  function write(lines: string[]): string {
+    const f = path.join(dir, 'session.jsonl');
+    fs.writeFileSync(f, lines.join('\n') + '\n');
+    return f;
+  }
+
+  it('returns the most recent custom-title in the file', () => {
+    const f = write([
+      JSON.stringify({ type: 'custom-title', customTitle: 'Old Name' }),
+      JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }),
+      JSON.stringify({ type: 'custom-title', customTitle: 'New Name' }),
+    ]);
+    expect(readSessionNameFromTranscriptTail(f)).toBe('New Name');
+  });
+
+  it('returns undefined when no title exists', () => {
+    const f = write([JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } })]);
+    expect(readSessionNameFromTranscriptTail(f)).toBeUndefined();
+  });
+
+  it('returns undefined for a missing file', () => {
+    expect(readSessionNameFromTranscriptTail(path.join(dir, 'nope.jsonl'))).toBeUndefined();
+  });
+
+  it('skips malformed lines and empty titles', () => {
+    const f = write([
+      JSON.stringify({ type: 'custom-title', customTitle: 'Good' }),
+      '{"type":"custom-title", broken json',
+      JSON.stringify({ type: 'custom-title', customTitle: '   ' }),
+    ]);
+    expect(readSessionNameFromTranscriptTail(f)).toBe('Good');
   });
 });

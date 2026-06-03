@@ -1,5 +1,7 @@
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
+import * as fs from 'fs';
+
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
@@ -39,6 +41,43 @@ export function setHookProvider(provider: HookProvider): void {
  *  Invariant: a provider is registered before any transcript lines are parsed. */
 export function formatToolStatus(toolName: string, input: Record<string, unknown>): string {
   return hookProvider?.formatToolStatus(toolName, input) ?? `Using ${toolName}`;
+}
+
+/** Max bytes read from the end of a transcript when looking for a session name. */
+const SESSION_NAME_TAIL_BYTES = 256 * 1024;
+
+/**
+ * Read the most recent user-set session name (custom-title record) from the
+ * tail of a transcript file. Used at adoption/restore time, when reading
+ * starts at the file end and historical records would otherwise be skipped.
+ * The CLI re-appends the record periodically, so a tail scan is sufficient.
+ */
+export function readSessionNameFromTranscriptTail(jsonlFile: string): string | undefined {
+  try {
+    const stat = fs.statSync(jsonlFile);
+    const start = Math.max(0, stat.size - SESSION_NAME_TAIL_BYTES);
+    const fd = fs.openSync(jsonlFile, 'r');
+    const buf = Buffer.alloc(stat.size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    fs.closeSync(fd);
+    const lines = buf.toString('utf-8').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (!line.includes('"custom-title"')) continue;
+      try {
+        const record = JSON.parse(line) as { type?: string; customTitle?: unknown };
+        if (record.type === 'custom-title' && typeof record.customTitle === 'string') {
+          const name = record.customTitle.trim();
+          if (name) return name;
+        }
+      } catch {
+        /* partial or malformed line — keep scanning */
+      }
+    }
+  } catch {
+    /* unreadable file — no name */
+  }
+  return undefined;
 }
 
 export function processTranscriptLine(
