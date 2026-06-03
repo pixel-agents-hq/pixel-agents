@@ -167,9 +167,20 @@ export function uninstallHooks(): void {
   }
 }
 
-/** Copy the shipped hook script from the extension to ~/.pixel-agents/hooks/ */
-export function copyHookScript(extensionPath: string): void {
-  const src = path.join(extensionPath, 'dist', 'hooks', CLAUDE_HOOK_SCRIPT_NAME);
+/**
+ * Copy the shipped hook script to ~/.pixel-agents/hooks/.
+ *
+ * `rootPath` is either the extension root with the hook script at
+ * `<root>/dist/hooks/` (VS Code mode), or the built output directory itself
+ * with the hook script at `<root>/hooks/` (standalone CLI mode, where the
+ * caller passes its own directory inside `dist/`).
+ */
+export function copyHookScript(rootPath: string): void {
+  const candidates = [
+    path.join(rootPath, 'dist', 'hooks', CLAUDE_HOOK_SCRIPT_NAME),
+    path.join(rootPath, 'hooks', CLAUDE_HOOK_SCRIPT_NAME),
+  ];
+  const src = candidates.find((p) => fs.existsSync(p));
   const dst = getHookScriptPath();
   const dstDir = path.dirname(dst);
 
@@ -177,8 +188,8 @@ export function copyHookScript(extensionPath: string): void {
     if (!fs.existsSync(dstDir)) {
       fs.mkdirSync(dstDir, { recursive: true, mode: 0o700 });
     }
-    if (!fs.existsSync(src)) {
-      console.warn(`[Pixel Agents] Hook script not found at ${src}`);
+    if (!src) {
+      console.warn(`[Pixel Agents] Hook script not found at ${candidates.join(' or ')}`);
       return;
     }
     fs.copyFileSync(src, dst);
