@@ -124,4 +124,47 @@ describe('claudeHookInstaller', () => {
     // Check owner execute bit
     expect(stat.mode & 0o100).toBeTruthy();
   });
+
+  // 11. copyHookScript supports the standalone CLI layout (hooks/ next to the bundle).
+  // The CLI passes its own directory inside dist/, where the script lives at
+  // <root>/hooks/ rather than <root>/dist/hooks/.
+  it('copyHookScript falls back to <root>/hooks/ (standalone CLI layout)', () => {
+    const mockDistPath = path.join(tmpBase, 'mock-dist');
+    const hookSrc = path.join(mockDistPath, 'hooks');
+    fs.mkdirSync(hookSrc, { recursive: true });
+    fs.writeFileSync(path.join(hookSrc, 'claude-hook.js'), '// cli hook script');
+
+    copyHookScript(mockDistPath);
+
+    const dst = path.join(tmpBase, '.pixel-agents', 'hooks', 'claude-hook.js');
+    expect(fs.existsSync(dst)).toBe(true);
+    expect(fs.readFileSync(dst, 'utf-8')).toBe('// cli hook script');
+  });
+
+  // 12. <root>/dist/hooks/ wins when both layouts exist
+  it('copyHookScript prefers <root>/dist/hooks/ over <root>/hooks/', () => {
+    const mockExtPath = path.join(tmpBase, 'mock-ext');
+    const distSrc = path.join(mockExtPath, 'dist', 'hooks');
+    const flatSrc = path.join(mockExtPath, 'hooks');
+    fs.mkdirSync(distSrc, { recursive: true });
+    fs.mkdirSync(flatSrc, { recursive: true });
+    fs.writeFileSync(path.join(distSrc, 'claude-hook.js'), '// dist hook');
+    fs.writeFileSync(path.join(flatSrc, 'claude-hook.js'), '// flat hook');
+
+    copyHookScript(mockExtPath);
+
+    const dst = path.join(tmpBase, '.pixel-agents', 'hooks', 'claude-hook.js');
+    expect(fs.readFileSync(dst, 'utf-8')).toBe('// dist hook');
+  });
+
+  // 13. copyHookScript warns without throwing when no layout matches
+  it('copyHookScript handles a missing hook script gracefully', () => {
+    const mockExtPath = path.join(tmpBase, 'mock-empty');
+    fs.mkdirSync(mockExtPath, { recursive: true });
+
+    expect(() => copyHookScript(mockExtPath)).not.toThrow();
+
+    const dst = path.join(tmpBase, '.pixel-agents', 'hooks', 'claude-hook.js');
+    expect(fs.existsSync(dst)).toBe(false);
+  });
 });
