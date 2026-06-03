@@ -224,16 +224,31 @@ export function useExtensionMessages(
           { palette?: number; hueShift?: number; seatId?: string }
         >;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
-        // Buffer agents — they'll be added in layoutLoaded after seats are built
+        // If the layout (and its seats) is already built, add agents right away;
+        // otherwise buffer them — they'll be added in layoutLoaded. Handles both
+        // message orders: VS Code sends existingAgents before layoutLoaded, the
+        // standalone server sends it after.
+        let addedDirectly = false;
         for (const id of incoming) {
           const m = meta[id];
-          pendingAgents.push({
+          const p = {
             id,
             palette: m?.palette,
             hueShift: m?.hueShift,
             seatId: m?.seatId,
             folderName: folderNames[id],
-          });
+          };
+          if (layoutReadyRef.current) {
+            if (!os.characters.has(p.id)) {
+              os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
+              addedDirectly = true;
+            }
+          } else {
+            pendingAgents.push(p);
+          }
+        }
+        if (addedDirectly) {
+          saveAgentSeats(os);
         }
         setAgents((prev) => {
           const ids = new Set(prev);
