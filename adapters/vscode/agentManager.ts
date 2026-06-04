@@ -496,12 +496,16 @@ export function sendExistingAgents(
   // Include folderName and isExternal per agent
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
+  const sessionNames: Record<number, string> = {};
   for (const [id, agent] of agents) {
     if (agent.folderName) {
       folderNames[id] = agent.folderName;
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
+    }
+    if (agent.sessionName) {
+      sessionNames[id] = agent.sessionName;
     }
   }
   console.log(
@@ -514,6 +518,7 @@ export function sendExistingAgents(
     agentMeta,
     folderNames,
     externalAgents,
+    sessionNames,
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
   // so that agentStatus/agentToolStart messages arrive after characters are created.

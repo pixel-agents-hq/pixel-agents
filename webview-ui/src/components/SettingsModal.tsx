@@ -14,6 +14,8 @@ interface SettingsModalProps {
   onToggleDebugMode: () => void;
   alwaysShowOverlay: boolean;
   onToggleAlwaysShowOverlay: () => void;
+  showSessionNames: boolean;
+  onToggleShowSessionNames: () => void;
   externalAssetDirectories: string[];
   watchAllSessions: boolean;
   onToggleWatchAllSessions: () => void;
@@ -28,6 +30,8 @@ export function SettingsModal({
   onToggleDebugMode,
   alwaysShowOverlay,
   onToggleAlwaysShowOverlay,
+  showSessionNames,
+  onToggleShowSessionNames,
   externalAssetDirectories,
   watchAllSessions,
   onToggleWatchAllSessions,
@@ -112,6 +116,11 @@ export function SettingsModal({
         label="Always Show Labels"
         checked={alwaysShowOverlay}
         onChange={onToggleAlwaysShowOverlay}
+      />
+      <Checkbox
+        label="Session Names in Labels"
+        checked={showSessionNames}
+        onChange={onToggleShowSessionNames}
       />
       <Checkbox label="Debug View" checked={isDebugMode} onChange={onToggleDebugMode} />
     </Modal>

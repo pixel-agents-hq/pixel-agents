@@ -1,5 +1,7 @@
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
+import * as fs from 'fs';
+
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
@@ -41,6 +43,43 @@ export function formatToolStatus(toolName: string, input: Record<string, unknown
   return hookProvider?.formatToolStatus(toolName, input) ?? `Using ${toolName}`;
 }
 
+/** Max bytes read from the end of a transcript when looking for a session name. */
+const SESSION_NAME_TAIL_BYTES = 256 * 1024;
+
+/**
+ * Read the most recent user-set session name (custom-title record) from the
+ * tail of a transcript file. Used at adoption/restore time, when reading
+ * starts at the file end and historical records would otherwise be skipped.
+ * The CLI re-appends the record periodically, so a tail scan is sufficient.
+ */
+export function readSessionNameFromTranscriptTail(jsonlFile: string): string | undefined {
+  try {
+    const stat = fs.statSync(jsonlFile);
+    const start = Math.max(0, stat.size - SESSION_NAME_TAIL_BYTES);
+    const fd = fs.openSync(jsonlFile, 'r');
+    const buf = Buffer.alloc(stat.size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    fs.closeSync(fd);
+    const lines = buf.toString('utf-8').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (!line.includes('"custom-title"')) continue;
+      try {
+        const record = JSON.parse(line) as { type?: string; customTitle?: unknown };
+        if (record.type === 'custom-title' && typeof record.customTitle === 'string') {
+          const name = record.customTitle.trim();
+          if (name) return name;
+        }
+      } catch {
+        /* partial or malformed line — keep scanning */
+      }
+    }
+  } catch {
+    /* unreadable file — no name */
+  }
+  return undefined;
+}
+
 export function processTranscriptLine(
   agentId: number,
   line: string,
@@ -58,6 +97,18 @@ export function processTranscriptLine(
     // -- Agent Teams: extract team metadata via the active provider --
     // The provider reads its CLI's own field names (Claude: record.teamName + record.agentName).
     // Other CLIs would implement this differently or not at all.
+    // -- Session name: user-set title (e.g. Claude's /rename writes a
+    // custom-title record). Shown in the webview's agent label. --
+    if (record.type === 'custom-title' && typeof record.customTitle === 'string') {
+      const name = record.customTitle.trim();
+      if (name && name !== agent.sessionName) {
+        agent.sessionName = name;
+        agents.broadcast({ type: 'agentSessionName', id: agentId, name });
+        agents.persist();
+      }
+      return;
+    }
+
     const teamMeta = hookProvider?.team?.extractTeamMetadataFromRecord(record);
     if (teamMeta?.teamName && teamMeta.teamName !== agent.teamName) {
       agent.teamName = teamMeta.teamName;

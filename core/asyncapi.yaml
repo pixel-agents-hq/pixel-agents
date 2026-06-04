@@ -99,6 +99,8 @@ components:
         # Agent Teams
         - $ref: '#/components/schemas/AgentTeamInfo'
         - $ref: '#/components/schemas/AgentTokenUsage'
+        # Session metadata
+        - $ref: '#/components/schemas/AgentSessionName'
         # Layout
         - $ref: '#/components/schemas/LayoutLoaded'
         # Assets
@@ -125,6 +127,7 @@ components:
         - $ref: '#/components/schemas/SetSoundEnabled'
         - $ref: '#/components/schemas/SetLastSeenVersion'
         - $ref: '#/components/schemas/SetAlwaysShowLabels'
+        - $ref: '#/components/schemas/SetShowSessionNames'
         - $ref: '#/components/schemas/SetHooksEnabled'
         - $ref: '#/components/schemas/SetHooksInfoShown'
         - $ref: '#/components/schemas/SetWatchAllSessions'
@@ -226,6 +229,13 @@ components:
           description: Map of agent ID (string) to external flag.
           additionalProperties:
             type: boolean
+        sessionNames:
+          type: object
+          description: |
+            Map of agent ID (string) to user-set session name (e.g. the title set
+            with Claude Code's /rename). Optional; absent for unnamed sessions.
+          additionalProperties:
+            type: string
 
     AgentStatus:
       description: Active vs waiting state for an agent (drives character animation).
@@ -407,6 +417,22 @@ components:
         outputTokens:
           type: integer
 
+    AgentSessionName:
+      description: |
+        User-set session name changed (e.g. the title set with Claude Code's
+        /rename, persisted as a custom-title transcript record). Clients show it
+        in the agent's label in place of the folder name.
+      type: object
+      additionalProperties: false
+      required: [type, id, name]
+      properties:
+        type:
+          const: agentSessionName
+        id:
+          type: integer
+        name:
+          type: string
+
     LayoutLoaded:
       description: |
         Office layout (tiles, furniture, colors). `null` when no layout file or
@@ -529,6 +555,9 @@ components:
           type: boolean
         alwaysShowLabels:
           type: boolean
+        showSessionNames:
+          type: boolean
+          description: Prefer user-set session names over folder names in labels.
         hooksEnabled:
           type: boolean
         hooksInfoShown:
@@ -678,6 +707,16 @@ components:
       properties:
         type:
           const: setAlwaysShowLabels
+        enabled:
+          type: boolean
+
+    SetShowSessionNames:
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setShowSessionNames
         enabled:
           type: boolean
 

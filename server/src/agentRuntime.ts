@@ -366,6 +366,7 @@ export class AgentRuntime {
         linesProcessed: 0,
         seenUnknownRecordTypes: new Set(),
         folderName: p.folderName,
+        sessionName: p.sessionName,
         hookDelivered: false,
         inputTokens: 0,
         outputTokens: 0,

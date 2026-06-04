@@ -46,6 +46,7 @@ import {
   GLOBAL_KEY_HOOKS_ENABLED,
   GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
+  GLOBAL_KEY_SHOW_SESSION_NAMES,
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
@@ -214,6 +215,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.adapter.setSetting(GLOBAL_KEY_LAST_SEEN_VERSION, message.version as string);
       } else if (message.type === 'setAlwaysShowLabels') {
         this.adapter.setSetting(GLOBAL_KEY_ALWAYS_SHOW_LABELS, message.enabled);
+      } else if (message.type === 'setShowSessionNames') {
+        this.adapter.setSetting(GLOBAL_KEY_SHOW_SESSION_NAMES, message.enabled);
       } else if (message.type === 'setHooksEnabled') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_HOOKS_ENABLED, enabled);
@@ -350,6 +353,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           GLOBAL_KEY_ALWAYS_SHOW_LABELS,
           false,
         );
+        const showSessionNames = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_SHOW_SESSION_NAMES,
+          true,
+        );
         this.runtime.watchAllSessions.current = watchAllSessions;
         const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
         const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
@@ -361,6 +368,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           extensionVersion,
           watchAllSessions,
           alwaysShowLabels,
+          showSessionNames,
           hooksEnabled,
           hooksInfoShown,
           externalAssetDirectories: config.externalAssetDirectories,
