@@ -1,0 +1,28 @@
+<idea-plugin>
+    <id>com.pixelagents.jetbrains</id>
+    <name>Pixel Agents</name>
+    <vendor url="https://github.com/pixel-agents-hq/pixel-agents">pixel-agents-hq</vendor>
+    <description>
+        JetBrains edition of Pixel Agents — a pixel art office where AI agents (Claude Code terminals)
+        are animated characters you can watch work in real time.
+
+        Compatible with PyCharm, WebStorm, and all JetBrains IDEs based on IntelliJ Platform 2025.1+.
+        Requires Node.js to be installed.
+    </description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.terminal</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow
+            id="Pixel Agents"
+            anchor="bottom"
+            factoryClass="com.pixelagents.PixelAgentsToolWindowFactory"/>
+        <projectService
+            serviceImplementation="com.pixelagents.PixelAgentsService"/>
+        <notificationGroup
+            id="Pixel Agents"
+            displayType="BALLOON"
+            isLogByDefault="true"/>
+    </extensions>
+</idea-plugin>

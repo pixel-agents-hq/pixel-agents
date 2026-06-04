@@ -1,6 +1,11 @@
 import type { ClientMessage, ServerMessage } from '../../../core/src/messages.js';
 import type { MessageTransport } from './types.js';
 
+export function buildWebSocketUrl(): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws`;
+}
+
 /**
  * WebSocket transport for standalone browser mode.
  * Connects to the Pixel Agents server via WebSocket for bidirectional messaging.

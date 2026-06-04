@@ -1,16 +1,18 @@
-import { isBrowserRuntime } from '../runtime.js';
+import { isBrowserRuntime, isJetBrainsRuntime } from '../runtime.js';
+import { JetBrainsTransport } from './jetbrainsTransport.js';
 import { PostMessageTransport } from './postMessageTransport.js';
 import type { MessageTransport } from './types.js';
-import { WebSocketTransport } from './webSocketTransport.js';
+import { buildWebSocketUrl, WebSocketTransport } from './webSocketTransport.js';
 
 function createTransport(): MessageTransport {
+  if (isJetBrainsRuntime) {
+    return new JetBrainsTransport();
+  }
   if (!isBrowserRuntime) {
     return new PostMessageTransport();
   }
   // Standalone browser: connect via WebSocket to the same host serving the SPA
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/ws`;
-  const ws = new WebSocketTransport(wsUrl);
+  const ws = new WebSocketTransport(buildWebSocketUrl());
   ws.connect();
   return ws;
 }

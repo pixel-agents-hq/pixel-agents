@@ -137,6 +137,11 @@ function exportify(decl: string): string {
 }
 
 function quote(s: string): string {
+  // cmd.exe does not strip single quotes, so POSIX-style quoting breaks the
+  // path on Windows. Use double quotes there, single quotes on POSIX shells.
+  if (process.platform === 'win32') {
+    return `"${s.replace(/"/g, '\\"')}"`;
+  }
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 

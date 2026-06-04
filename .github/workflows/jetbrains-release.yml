@@ -1,0 +1,35 @@
+name: JetBrains Plugin Release
+
+on:
+  push:
+    tags:
+      - 'jetbrains-v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run tests
+        working-directory: jetbrains-plugin
+        run: ./gradlew test
+
+      - name: Build plugin
+        working-directory: jetbrains-plugin
+        run: ./gradlew buildPlugin
+
+      - name: Upload to GitHub Releases
+        uses: softprops/action-gh-release@v3
+        with:
+          files: jetbrains-plugin/build/distributions/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
