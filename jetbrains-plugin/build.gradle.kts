@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "com.pixelagents"
-version = "0.2.0"
+version = "0.3.0"
 
 repositories {
     mavenCentral()
@@ -38,7 +38,7 @@ intellijPlatform {
     pluginConfiguration {
         id = "io.github.rlarin.pixelagents"
         name = "IT Crowd Pixel Agents"
-        version = "0.2.0"
+        version = "0.3.0"
         description = """
             JetBrains edition of Pixel Agents — a pixel art office where AI agents (Claude Code terminals)
             are animated characters you can watch work in real time.

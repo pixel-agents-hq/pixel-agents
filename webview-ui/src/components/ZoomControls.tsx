@@ -7,6 +7,7 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
 } from '../constants.js';
+import { transport } from '../transport/index.js';
 import { Button } from './ui/Button.js';
 
 interface ZoomControlsProps {
@@ -114,6 +115,28 @@ export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
               stroke="currentColor"
               strokeWidth="2"
               strokeLinecap="round"
+            />
+          </svg>
+        </Button>
+        <Button
+          size="icon_lg"
+          onClick={() => transport.send({ type: 'webviewReady' })}
+          className="border-border! shadow-pixel"
+          title="Refresh agents"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M14.5 9a5.5 5.5 0 1 1-1.6-3.9"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+            <path
+              d="M14.5 3v3h-3"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
           </svg>
         </Button>

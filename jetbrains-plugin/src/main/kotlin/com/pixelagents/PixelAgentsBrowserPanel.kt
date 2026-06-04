@@ -86,6 +86,16 @@ class PixelAgentsBrowserPanel(
     val component: JComponent
         get() = browser?.component ?: fallbackComponent!!
 
+    /** Hard reload: re-navigates the embedded browser, re-initializing the webview. */
+    fun reload() {
+        val b = browser ?: return
+        if (portFuture.isDone && !portFuture.isCompletedExceptionally) {
+            b.loadURL("http://localhost:${portFuture.get()}?ide=jetbrains")
+        } else {
+            b.cefBrowser.reload()
+        }
+    }
+
     override fun dispose() {
         val b = browser
         if (b != null && loadHandler != null) {
