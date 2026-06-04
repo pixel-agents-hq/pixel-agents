@@ -2,7 +2,7 @@
   "name": "it-crowd-pixel-agents",
   "displayName": "IT Crowd Pixel Agents",
   "description": "Pixel art office where your Claude Code agents come to life as animated characters",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "publisher": "rlarin",
   "repository": {
     "type": "git",
