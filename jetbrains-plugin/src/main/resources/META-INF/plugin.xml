@@ -17,8 +17,9 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow
-            id="Pixel Agents"
+            id="IT Crowd"
             anchor="bottom"
+            icon="/icons/toolwindow.png"
             factoryClass="com.pixelagents.PixelAgentsToolWindowFactory"/>
         <projectService
             serviceImplementation="com.pixelagents.PixelAgentsService"/>
