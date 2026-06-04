@@ -50,6 +50,7 @@ intellijPlatform {
         """.trimIndent()
         ideaVersion {
             sinceBuild = "251"
+            untilBuild = "261.*"
         }
     }
     publishing {
