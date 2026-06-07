@@ -2,13 +2,22 @@ import * as path from 'path';
 
 import type { AgentEvent, HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import { SESSION_END_GRACE_MS } from './constants.js';
+import { APPROVAL_TIMEOUT_MS, SESSION_END_GRACE_MS } from './constants.js';
 import type { SessionRouter } from './sessionRouter.js';
 import { getInlineTeammates, hasInlineTeammates } from './teamUtils.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
 import type { AgentState } from './types.js';
 
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
+
+/** A tool-approval decision returned to the Claude PreToolUse hook. */
+export type ApprovalDecision = 'allow' | 'deny';
+
+/** A pending approval awaiting a decision from the office window. */
+interface PendingApproval {
+  resolve: (decision: ApprovalDecision | null) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
 
 /** Normalized hook event received from any provider's hook script via the HTTP server. */
 export interface HookEvent {
@@ -68,6 +77,7 @@ export class HookEventHandler {
     private provider: HookProvider,
     private sessionRouter: SessionRouter,
     private watchAllSessionsRef?: { current: boolean },
+    private approvalsFromWindowRef?: { current: boolean },
   ) {
     if (provider.protocolVersion !== HookEventHandler.SUPPORTED_PROTOCOL_VERSION) {
       console.warn(
@@ -103,6 +113,82 @@ export class HookEventHandler {
   /** Set callbacks for session lifecycle events (SessionStart/SessionEnd). */
   setLifecycleCallbacks(callbacks: SessionLifecycleCallbacks): void {
     this.lifecycleCallbacks = callbacks;
+  }
+
+  // ── Window approvals (opt-in) ──────────────────────────────────────────────
+  // When "Approvals from window" is on, a PreToolUse for a non-exempt tool blocks
+  // the hook HTTP response until the user clicks Allow/Deny in the office window
+  // (or the timeout elapses, in which case Claude falls back to its terminal prompt).
+
+  private readonly pendingApprovals = new Map<string, PendingApproval>();
+  private approvalCounter = 0;
+
+  /** Whether window-approval mode is currently enabled. */
+  isApprovalMode(): boolean {
+    return this.approvalsFromWindowRef?.current === true;
+  }
+
+  /**
+   * If approval mode applies to this PreToolUse event, broadcast an approval
+   * request to the window and return a promise that resolves with the user's
+   * decision (or null to fall back to Claude's own prompt). Returns null
+   * synchronously when approval does not apply (mode off, exempt tool, or no
+   * known agent for the session).
+   */
+  maybeRequestApproval(event: HookEvent): Promise<ApprovalDecision | null> | null {
+    if (!this.isApprovalMode()) return null;
+    const toolName = typeof event.tool_name === 'string' ? event.tool_name : '';
+    if (!toolName || this.provider.permissionExemptTools.has(toolName)) return null;
+
+    // Resolve the agent so we can show the request on its character.
+    let agentId = this.sessionRouter.resolve(event.session_id);
+    if (agentId === undefined) {
+      for (const [id, agent] of this.agents) {
+        if (agent.sessionId === event.session_id) {
+          agentId = id;
+          break;
+        }
+      }
+    }
+    if (agentId === undefined) return null;
+
+    const toolInput = (event.tool_input as Record<string, unknown> | undefined) ?? {};
+    const status = this.provider.formatToolStatus(toolName, toolInput);
+    const approvalId = `appr-${agentId}-${++this.approvalCounter}`;
+
+    this.agents.broadcast({
+      type: 'agentApprovalRequest',
+      id: agentId,
+      approvalId,
+      toolName,
+      status,
+    });
+    if (debug)
+      console.log(
+        `[Pixel Agents] Approval: requested ${approvalId} (agent ${agentId}, ${toolName})`,
+      );
+
+    return new Promise<ApprovalDecision | null>((resolve) => {
+      const settle = (decision: ApprovalDecision | null) => {
+        const pending = this.pendingApprovals.get(approvalId);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.pendingApprovals.delete(approvalId);
+        this.agents.broadcast({ type: 'agentApprovalResolved', id: agentId, approvalId });
+        resolve(decision);
+      };
+      const timer = setTimeout(() => settle(null), APPROVAL_TIMEOUT_MS);
+      this.pendingApprovals.set(approvalId, { resolve: settle, timer });
+    });
+  }
+
+  /** Resolve a pending approval with the user's decision (from the window). */
+  resolveApproval(approvalId: string, decision: ApprovalDecision): void {
+    const pending = this.pendingApprovals.get(approvalId);
+    if (pending) {
+      if (debug) console.log(`[Pixel Agents] Approval: ${approvalId} -> ${decision}`);
+      pending.resolve(decision);
+    }
   }
 
   /** Register an agent for hook event routing. Flushes any buffered events for this session. */

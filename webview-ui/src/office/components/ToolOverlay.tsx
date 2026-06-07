@@ -18,7 +18,7 @@ import {
   TOKEN_WARN_THRESHOLD,
   TOOL_OVERLAY_VERTICAL_OFFSET,
 } from '../../constants.js';
-import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
+import type { ApprovalRequest, SubagentCharacter } from '../../hooks/useExtensionMessages.js';
 import type { OfficeState } from '../engine/officeState.js';
 import type { ToolActivity } from '../types.js';
 import { CharacterState, TILE_SIZE } from '../types.js';
@@ -33,6 +33,8 @@ interface ToolOverlayProps {
   panRef: React.RefObject<{ x: number; y: number }>;
   onCloseAgent: (id: number) => void;
   onSendMessage: (id: number, text: string) => void;
+  pendingApprovals: Record<number, ApprovalRequest>;
+  onRespondApproval: (agentId: number, approvalId: string, decision: 'allow' | 'deny') => void;
   alwaysShowOverlay: boolean;
 }
 
@@ -134,6 +136,8 @@ export function ToolOverlay({
   panRef,
   onCloseAgent,
   onSendMessage,
+  pendingApprovals,
+  onRespondApproval,
   alwaysShowOverlay,
 }: ToolOverlayProps) {
   const [, setTick] = useState(0);
@@ -174,9 +178,11 @@ export function ToolOverlay({
         const isSelected = selectedId === id;
         const isHovered = hoveredId === id;
         const isSub = ch.isSubagent;
+        const approval = isSub ? undefined : pendingApprovals[id];
 
-        // Only show for hovered or selected agents (unless always-show is on)
-        if (!alwaysShowOverlay && !isSelected && !isHovered) return null;
+        // Show for hovered/selected agents (unless always-show is on), and always
+        // when an approval is pending so the user can act on it without hovering.
+        if (!alwaysShowOverlay && !isSelected && !isHovered && !approval) return null;
 
         // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
@@ -225,9 +231,14 @@ export function ToolOverlay({
             style={{
               left: screenX,
               top: screenY - (hasExtraLines ? 34 : 28),
-              pointerEvents: isSelected ? 'auto' : 'none',
-              opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
-              zIndex: isSelected ? 42 : 41,
+              pointerEvents: isSelected || approval ? 'auto' : 'none',
+              opacity:
+                alwaysShowOverlay && !isSelected && !isHovered && !approval
+                  ? isSub
+                    ? 0.5
+                    : 0.75
+                  : 1,
+              zIndex: isSelected || approval ? 42 : 41,
             }}
           >
             <div className="flex items-center border-border px-8 pt-2 pb-4 gap-5 pixel-panel whitespace-nowrap max-w-2xs">
@@ -280,6 +291,44 @@ export function ToolOverlay({
                 </Button>
               )}
             </div>
+            {approval && (
+              <div
+                className="flex flex-col items-stretch gap-2 mt-2 px-6 py-3 pixel-panel"
+                style={{ pointerEvents: 'auto' }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <span className="leading-none" style={{ fontSize: '18px' }}>
+                  Approve {approval.toolName}?
+                </span>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRespondApproval(id, approval.approvalId, 'allow');
+                    }}
+                    title={`Allow ${approval.status}`}
+                    className="leading-none"
+                  >
+                    ✓ Allow
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRespondApproval(id, approval.approvalId, 'deny');
+                    }}
+                    title={`Deny ${approval.status}`}
+                    className="leading-none"
+                  >
+                    ✗ Deny
+                  </Button>
+                </div>
+              </div>
+            )}
             {isSelected && !isSub && <AgentMessageBar agentId={id} onSendMessage={onSendMessage} />}
             {isTeamAgent && totalTokens > 0 && (
               <div

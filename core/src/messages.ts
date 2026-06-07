@@ -19,6 +19,8 @@ export type ServerMessage =
   | AgentToolsClear
   | AgentToolPermission
   | AgentToolPermissionClear
+  | AgentApprovalRequest
+  | AgentApprovalResolved
   | SubagentToolStart
   | SubagentToolDone
   | SubagentClear
@@ -49,6 +51,8 @@ export type ClientMessage =
   | SetHooksEnabled
   | SetHooksInfoShown
   | SetWatchAllSessions
+  | SetApprovalsFromWindow
+  | RespondApproval
   | ExportLayout
   | ImportLayout
   | OpenSessionsFolder
@@ -130,6 +134,20 @@ export interface AgentToolPermission {
 export interface AgentToolPermissionClear {
   type: 'agentToolPermissionClear';
   id: number;
+}
+
+export interface AgentApprovalRequest {
+  type: 'agentApprovalRequest';
+  id: number;
+  approvalId: string;
+  toolName: string;
+  status: string;
+}
+
+export interface AgentApprovalResolved {
+  type: 'agentApprovalResolved';
+  id: number;
+  approvalId: string;
 }
 
 export interface SubagentToolStart {
@@ -241,6 +259,7 @@ export interface SettingsLoaded {
   alwaysShowLabels: boolean;
   hooksEnabled: boolean;
   hooksInfoShown: boolean;
+  approvalsFromWindow: boolean;
   externalAssetDirectories: string[];
 }
 
@@ -334,6 +353,19 @@ export interface SetWatchAllSessions {
   type: 'setWatchAllSessions';
   enabled: boolean;
 }
+
+export interface SetApprovalsFromWindow {
+  type: 'setApprovalsFromWindow';
+  enabled: boolean;
+}
+
+export interface RespondApproval {
+  type: 'respondApproval';
+  approvalId: string;
+  decision: AnonymousSchema_187;
+}
+
+export type AnonymousSchema_187 = 'allow' | 'deny';
 
 export interface ExportLayout {
   type: 'exportLayout';

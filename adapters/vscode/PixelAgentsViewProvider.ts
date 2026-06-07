@@ -43,6 +43,7 @@ import {
   CONFIG_KEY_AUTO_SHOW_PANEL,
   CONFIG_KEY_AUTO_SPAWN_AGENT,
   GLOBAL_KEY_ALWAYS_SHOW_LABELS,
+  GLOBAL_KEY_APPROVALS_FROM_WINDOW,
   GLOBAL_KEY_HOOKS_ENABLED,
   GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
@@ -285,6 +286,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             this.runtime.removeAgent(id);
           }
         }
+      } else if (message.type === 'setApprovalsFromWindow') {
+        const enabled = message.enabled as boolean;
+        this.adapter.setSetting(GLOBAL_KEY_APPROVALS_FROM_WINDOW, enabled);
+        this.runtime.approvalsFromWindow.current = enabled;
+      } else if (message.type === 'respondApproval') {
+        const approvalId = message.approvalId as string | undefined;
+        const decision = message.decision as 'allow' | 'deny' | undefined;
+        if (approvalId && (decision === 'allow' || decision === 'deny')) {
+          this.runtime.resolveApproval(approvalId, decision);
+        }
       } else if (message.type === 'webviewReady') {
         // Provider capabilities: tool taxonomy for webview animation + subagent rendering.
         // Sent once before restoreAgents so characters render with correct animations
@@ -373,6 +384,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.runtime.watchAllSessions.current = watchAllSessions;
         const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
         const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
+        const approvalsFromWindow = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_APPROVALS_FROM_WINDOW,
+          false,
+        );
+        this.runtime.approvalsFromWindow.current = approvalsFromWindow;
         const config = readConfig();
         this.webview?.postMessage({
           type: 'settingsLoaded',
@@ -383,6 +399,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           alwaysShowLabels,
           hooksEnabled,
           hooksInfoShown,
+          approvalsFromWindow,
           externalAssetDirectories: config.externalAssetDirectories,
         });
 

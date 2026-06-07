@@ -19,6 +19,8 @@ interface SettingsModalProps {
   onToggleWatchAllSessions: () => void;
   hooksEnabled: boolean;
   onToggleHooksEnabled: () => void;
+  approvalsFromWindow: boolean;
+  onToggleApprovalsFromWindow: () => void;
 }
 
 export function SettingsModal({
@@ -33,6 +35,8 @@ export function SettingsModal({
   onToggleWatchAllSessions,
   hooksEnabled,
   onToggleHooksEnabled,
+  approvalsFromWindow,
+  onToggleApprovalsFromWindow,
 }: SettingsModalProps) {
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
 
@@ -107,6 +111,11 @@ export function SettingsModal({
         label="Instant Detection (Hooks)"
         checked={hooksEnabled}
         onChange={onToggleHooksEnabled}
+      />
+      <Checkbox
+        label="Approve Tools from Window"
+        checked={approvalsFromWindow}
+        onChange={onToggleApprovalsFromWindow}
       />
       <Checkbox
         label="Always Show Labels"

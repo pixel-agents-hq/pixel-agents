@@ -50,6 +50,13 @@ export interface WorkspaceFolder {
   path: string;
 }
 
+/** A tool-use awaiting the user's Allow/Deny decision in the window. */
+export interface ApprovalRequest {
+  approvalId: string;
+  toolName: string;
+  status: string;
+}
+
 interface ExtensionMessageState {
   agents: number[];
   selectedAgent: number | null;
@@ -70,6 +77,10 @@ interface ExtensionMessageState {
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
   hooksInfoShown: boolean;
+  approvalsFromWindow: boolean;
+  setApprovalsFromWindow: (v: boolean) => void;
+  pendingApprovals: Record<number, ApprovalRequest>;
+  respondApproval: (agentId: number, approvalId: string, decision: 'allow' | 'deny') => void;
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -107,6 +118,8 @@ export function useExtensionMessages(
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
+  const [approvalsFromWindow, setApprovalsFromWindow] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState<Record<number, ApprovalRequest>>({});
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
@@ -473,6 +486,9 @@ export function useExtensionMessages(
         if (typeof msg.hooksInfoShown === 'boolean') {
           setHooksInfoShown(msg.hooksInfoShown as boolean);
         }
+        if (typeof msg.approvalsFromWindow === 'boolean') {
+          setApprovalsFromWindow(msg.approvalsFromWindow as boolean);
+        }
         if (Array.isArray(msg.externalAssetDirectories)) {
           setExternalAssetDirectories(msg.externalAssetDirectories as string[]);
         }
@@ -510,6 +526,25 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentTokenUsage') {
         const id = msg.id as number;
         os.setAgentTokens(id, msg.inputTokens as number, msg.outputTokens as number);
+      } else if (msg.type === 'agentApprovalRequest') {
+        const id = msg.id as number;
+        setPendingApprovals((prev) => ({
+          ...prev,
+          [id]: {
+            approvalId: msg.approvalId as string,
+            toolName: msg.toolName as string,
+            status: msg.status as string,
+          },
+        }));
+      } else if (msg.type === 'agentApprovalResolved') {
+        const id = msg.id as number;
+        const approvalId = msg.approvalId as string;
+        setPendingApprovals((prev) => {
+          if (prev[id]?.approvalId !== approvalId) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
       }
     };
     const unsubscribe = transport.onMessage(handler);
@@ -538,5 +573,17 @@ export function useExtensionMessages(
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    approvalsFromWindow,
+    setApprovalsFromWindow,
+    pendingApprovals,
+    respondApproval: (agentId: number, approvalId: string, decision: 'allow' | 'deny') => {
+      transport.send({ type: 'respondApproval', approvalId, decision });
+      setPendingApprovals((prev) => {
+        if (prev[agentId]?.approvalId !== approvalId) return prev;
+        const next = { ...prev };
+        delete next[agentId];
+        return next;
+      });
+    },
   };
 }
