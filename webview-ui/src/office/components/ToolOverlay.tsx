@@ -32,7 +32,65 @@ interface ToolOverlayProps {
   zoom: number;
   panRef: React.RefObject<{ x: number; y: number }>;
   onCloseAgent: (id: number) => void;
+  onSendMessage: (id: number, text: string) => void;
   alwaysShowOverlay: boolean;
+}
+
+/**
+ * Text input shown under the selected agent's overlay. Sends a message/prompt
+ * to the agent's terminal (VS Code mode). Kept as its own component so its
+ * input state survives the parent's rAF re-renders.
+ */
+function AgentMessageBar({
+  agentId,
+  onSendMessage,
+}: {
+  agentId: number;
+  onSendMessage: (id: number, text: string) => void;
+}) {
+  const [text, setText] = useState('');
+  const submit = () => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    onSendMessage(agentId, trimmed);
+    setText('');
+  };
+  return (
+    <div
+      className="flex items-center gap-3 mt-2 px-6 py-3 pixel-panel"
+      style={{ pointerEvents: 'auto' }}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        placeholder="Message agent…"
+        className="bg-transparent outline-none text-white placeholder:opacity-50"
+        style={{ fontSize: '20px', width: 170 }}
+        autoFocus
+      />
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={(e) => {
+          e.stopPropagation();
+          submit();
+        }}
+        title="Send message"
+        className="shrink-0 leading-none"
+      >
+        ➤
+      </Button>
+    </div>
+  );
 }
 
 /** Derive a short human-readable activity string from tools/status */
@@ -75,6 +133,7 @@ export function ToolOverlay({
   zoom,
   panRef,
   onCloseAgent,
+  onSendMessage,
   alwaysShowOverlay,
 }: ToolOverlayProps) {
   const [, setTick] = useState(0);
@@ -221,6 +280,7 @@ export function ToolOverlay({
                 </Button>
               )}
             </div>
+            {isSelected && !isSub && <AgentMessageBar agentId={id} onSendMessage={onSendMessage} />}
             {isTeamAgent && totalTokens > 0 && (
               <div
                 style={{

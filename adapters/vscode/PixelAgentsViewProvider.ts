@@ -201,6 +201,26 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             this.runtime.removeAgent(message.id);
           }
         }
+      } else if (message.type === 'sendAgentMessage') {
+        const agent = this.store.get(message.id);
+        const text = ((message.text as string) ?? '').trim();
+        if (agent && text) {
+          // Resolve the terminal: own terminal, or the lead's for tmux teammates.
+          const terminal =
+            agent.terminalRef ??
+            (agent.leadAgentId !== undefined
+              ? this.store.get(agent.leadAgentId)?.terminalRef
+              : undefined);
+          if (terminal) {
+            terminal.show();
+            // addNewLine defaults to true, which submits the prompt to Claude.
+            terminal.sendText(text);
+          } else {
+            console.log(
+              `[Pixel Agents] sendAgentMessage: agent ${message.id} has no terminal (external/standalone), ignoring`,
+            );
+          }
+        }
       } else if (message.type === 'saveAgentSeats') {
         // Store seat assignments in a separate key (never touched by persistAgents)
         console.log(`[Pixel Agents] State: saveAgentSeats:`, JSON.stringify(message.seats));

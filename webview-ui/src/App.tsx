@@ -135,6 +135,10 @@ function App() {
     transport.send({ type: 'closeAgent', id });
   }, []);
 
+  const handleSendMessage = useCallback((id: number, text: string) => {
+    transport.send({ type: 'sendAgentMessage', id, text });
+  }, []);
+
   const handleClick = useCallback((agentId: number) => {
     // If clicked agent is a sub-agent, focus the parent's terminal instead
     const os = getOfficeState();
@@ -250,6 +254,7 @@ function App() {
             zoom={editor.zoom}
             panRef={editor.panRef}
             onCloseAgent={handleCloseAgent}
+            onSendMessage={handleSendMessage}
             alwaysShowOverlay={alwaysShowOverlay}
           />
         </>

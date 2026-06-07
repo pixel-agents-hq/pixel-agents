@@ -40,6 +40,7 @@ export type ClientMessage =
   | LaunchAgent
   | FocusAgent
   | CloseAgent
+  | SendAgentMessage
   | SaveAgentSeats
   | SaveLayout
   | SetSoundEnabled
@@ -281,6 +282,12 @@ export interface FocusAgent {
 export interface CloseAgent {
   type: 'closeAgent';
   id: number;
+}
+
+export interface SendAgentMessage {
+  type: 'sendAgentMessage';
+  id: number;
+  text: string;
 }
 
 export interface SaveAgentSeats {

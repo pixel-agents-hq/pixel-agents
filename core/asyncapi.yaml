@@ -120,6 +120,7 @@ components:
         - $ref: '#/components/schemas/LaunchAgent'
         - $ref: '#/components/schemas/FocusAgent'
         - $ref: '#/components/schemas/CloseAgent'
+        - $ref: '#/components/schemas/SendAgentMessage'
         - $ref: '#/components/schemas/SaveAgentSeats'
         - $ref: '#/components/schemas/SaveLayout'
         - $ref: '#/components/schemas/SetSoundEnabled'
@@ -624,6 +625,23 @@ components:
           const: closeAgent
         id:
           type: integer
+
+    SendAgentMessage:
+      description: >-
+        Send a text message/prompt to an agent's terminal. The extension writes
+        the text to the agent's terminal as if typed and submits it (newline).
+        Only works for agents the extension owns a terminal for (VS Code mode);
+        ignored for external/standalone agents with no terminal.
+      type: object
+      additionalProperties: false
+      required: [type, id, text]
+      properties:
+        type:
+          const: sendAgentMessage
+        id:
+          type: integer
+        text:
+          type: string
 
     SaveAgentSeats:
       description: Persist seat assignments for current agents.
