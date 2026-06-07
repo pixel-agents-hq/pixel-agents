@@ -53,6 +53,10 @@ export const HOOK_EVENT_BUFFER_MS = 5_000;
  *  the agent is cleaned up instead of staying as a zombie with pendingClear forever. */
 export const SESSION_END_GRACE_MS = 2000;
 export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
+// How long the server blocks a PreToolUse hook waiting for a window approval
+// decision before giving up and letting Claude prompt in the terminal. Must stay
+// safely under Claude's 10-minute command-hook timeout.
+export const APPROVAL_TIMEOUT_MS = 540_000; // 9 minutes
 
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';

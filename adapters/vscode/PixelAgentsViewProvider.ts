@@ -43,6 +43,7 @@ import {
   CONFIG_KEY_AUTO_SHOW_PANEL,
   CONFIG_KEY_AUTO_SPAWN_AGENT,
   GLOBAL_KEY_ALWAYS_SHOW_LABELS,
+  GLOBAL_KEY_APPROVALS_FROM_WINDOW,
   GLOBAL_KEY_HOOKS_ENABLED,
   GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
@@ -201,6 +202,26 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             this.runtime.removeAgent(message.id);
           }
         }
+      } else if (message.type === 'sendAgentMessage') {
+        const agent = this.store.get(message.id);
+        const text = ((message.text as string) ?? '').trim();
+        if (agent && text) {
+          // Resolve the terminal: own terminal, or the lead's for tmux teammates.
+          const terminal =
+            agent.terminalRef ??
+            (agent.leadAgentId !== undefined
+              ? this.store.get(agent.leadAgentId)?.terminalRef
+              : undefined);
+          if (terminal) {
+            terminal.show();
+            // addNewLine defaults to true, which submits the prompt to Claude.
+            terminal.sendText(text);
+          } else {
+            console.log(
+              `[Pixel Agents] sendAgentMessage: agent ${message.id} has no terminal (external/standalone), ignoring`,
+            );
+          }
+        }
       } else if (message.type === 'saveAgentSeats') {
         // Store seat assignments in a separate key (never touched by persistAgents)
         console.log(`[Pixel Agents] State: saveAgentSeats:`, JSON.stringify(message.seats));
@@ -264,6 +285,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             }
             this.runtime.removeAgent(id);
           }
+        }
+      } else if (message.type === 'setApprovalsFromWindow') {
+        const enabled = message.enabled as boolean;
+        this.adapter.setSetting(GLOBAL_KEY_APPROVALS_FROM_WINDOW, enabled);
+        this.runtime.approvalsFromWindow.current = enabled;
+      } else if (message.type === 'respondApproval') {
+        const approvalId = message.approvalId as string | undefined;
+        const decision = message.decision as 'allow' | 'deny' | undefined;
+        if (approvalId && (decision === 'allow' || decision === 'deny')) {
+          this.runtime.resolveApproval(approvalId, decision);
         }
       } else if (message.type === 'webviewReady') {
         // Provider capabilities: tool taxonomy for webview animation + subagent rendering.
@@ -353,6 +384,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.runtime.watchAllSessions.current = watchAllSessions;
         const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
         const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
+        const approvalsFromWindow = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_APPROVALS_FROM_WINDOW,
+          false,
+        );
+        this.runtime.approvalsFromWindow.current = approvalsFromWindow;
         const config = readConfig();
         this.webview?.postMessage({
           type: 'settingsLoaded',
@@ -363,6 +399,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           alwaysShowLabels,
           hooksEnabled,
           hooksInfoShown,
+          approvalsFromWindow,
           externalAssetDirectories: config.externalAssetDirectories,
         });
 

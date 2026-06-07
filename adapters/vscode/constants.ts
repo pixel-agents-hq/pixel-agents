@@ -14,6 +14,7 @@ export const GLOBAL_KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
 export const GLOBAL_KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 export const GLOBAL_KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 export const GLOBAL_KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
+export const GLOBAL_KEY_APPROVALS_FROM_WINDOW = 'pixel-agents.approvalsFromWindow';
 
 // ── VS Code Settings (contributes.configuration keys) ───────
 export const CONFIG_KEY_AUTO_SHOW_PANEL = 'pixel-agents.autoShowPanel';

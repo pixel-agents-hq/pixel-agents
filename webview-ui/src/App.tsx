@@ -74,6 +74,10 @@ function App() {
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    approvalsFromWindow,
+    setApprovalsFromWindow,
+    pendingApprovals,
+    respondApproval,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -133,6 +137,10 @@ function App() {
 
   const handleCloseAgent = useCallback((id: number) => {
     transport.send({ type: 'closeAgent', id });
+  }, []);
+
+  const handleSendMessage = useCallback((id: number, text: string) => {
+    transport.send({ type: 'sendAgentMessage', id, text });
   }, []);
 
   const handleClick = useCallback((agentId: number) => {
@@ -250,6 +258,9 @@ function App() {
             zoom={editor.zoom}
             panRef={editor.panRef}
             onCloseAgent={handleCloseAgent}
+            onSendMessage={handleSendMessage}
+            pendingApprovals={pendingApprovals}
+            onRespondApproval={respondApproval}
             alwaysShowOverlay={alwaysShowOverlay}
           />
         </>
@@ -363,6 +374,12 @@ function App() {
           const newVal = !hooksEnabled;
           setHooksEnabled(newVal);
           transport.send({ type: 'setHooksEnabled', enabled: newVal });
+        }}
+        approvalsFromWindow={approvalsFromWindow}
+        onToggleApprovalsFromWindow={() => {
+          const newVal = !approvalsFromWindow;
+          setApprovalsFromWindow(newVal);
+          transport.send({ type: 'setApprovalsFromWindow', enabled: newVal });
         }}
       />
 

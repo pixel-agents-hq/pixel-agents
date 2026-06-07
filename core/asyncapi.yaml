@@ -91,6 +91,9 @@ components:
         - $ref: '#/components/schemas/AgentToolsClear'
         - $ref: '#/components/schemas/AgentToolPermission'
         - $ref: '#/components/schemas/AgentToolPermissionClear'
+        # Window approvals (opt-in)
+        - $ref: '#/components/schemas/AgentApprovalRequest'
+        - $ref: '#/components/schemas/AgentApprovalResolved'
         # Sub-agent activity
         - $ref: '#/components/schemas/SubagentToolStart'
         - $ref: '#/components/schemas/SubagentToolDone'
@@ -120,6 +123,7 @@ components:
         - $ref: '#/components/schemas/LaunchAgent'
         - $ref: '#/components/schemas/FocusAgent'
         - $ref: '#/components/schemas/CloseAgent'
+        - $ref: '#/components/schemas/SendAgentMessage'
         - $ref: '#/components/schemas/SaveAgentSeats'
         - $ref: '#/components/schemas/SaveLayout'
         - $ref: '#/components/schemas/SetSoundEnabled'
@@ -128,6 +132,8 @@ components:
         - $ref: '#/components/schemas/SetHooksEnabled'
         - $ref: '#/components/schemas/SetHooksInfoShown'
         - $ref: '#/components/schemas/SetWatchAllSessions'
+        - $ref: '#/components/schemas/SetApprovalsFromWindow'
+        - $ref: '#/components/schemas/RespondApproval'
         - $ref: '#/components/schemas/ExportLayout'
         - $ref: '#/components/schemas/ImportLayout'
         - $ref: '#/components/schemas/OpenSessionsFolder'
@@ -312,6 +318,39 @@ components:
           const: agentToolPermissionClear
         id:
           type: integer
+
+    AgentApprovalRequest:
+      description: >-
+        A tool-use is awaiting the user's Allow/Deny decision in the window
+        (sent only when "Approvals from window" is enabled). The hook HTTP
+        response is held open until a RespondApproval arrives or it times out.
+      type: object
+      additionalProperties: false
+      required: [type, id, approvalId, toolName, status]
+      properties:
+        type:
+          const: agentApprovalRequest
+        id:
+          type: integer
+        approvalId:
+          type: string
+        toolName:
+          type: string
+        status:
+          type: string
+
+    AgentApprovalResolved:
+      description: A pending window approval was resolved (decided or timed out); clear its UI.
+      type: object
+      additionalProperties: false
+      required: [type, id, approvalId]
+      properties:
+        type:
+          const: agentApprovalResolved
+        id:
+          type: integer
+        approvalId:
+          type: string
 
     SubagentToolStart:
       description: Sub-agent (e.g. Task) started a tool.
@@ -515,6 +554,7 @@ components:
         - alwaysShowLabels
         - hooksEnabled
         - hooksInfoShown
+        - approvalsFromWindow
         - externalAssetDirectories
       properties:
         type:
@@ -532,6 +572,8 @@ components:
         hooksEnabled:
           type: boolean
         hooksInfoShown:
+          type: boolean
+        approvalsFromWindow:
           type: boolean
         externalAssetDirectories:
           type: array
@@ -625,6 +667,23 @@ components:
         id:
           type: integer
 
+    SendAgentMessage:
+      description: >-
+        Send a text message/prompt to an agent's terminal. The extension writes
+        the text to the agent's terminal as if typed and submits it (newline).
+        Only works for agents the extension owns a terminal for (VS Code mode);
+        ignored for external/standalone agents with no terminal.
+      type: object
+      additionalProperties: false
+      required: [type, id, text]
+      properties:
+        type:
+          const: sendAgentMessage
+        id:
+          type: integer
+        text:
+          type: string
+
     SaveAgentSeats:
       description: Persist seat assignments for current agents.
       type: object
@@ -708,6 +767,31 @@ components:
           const: setWatchAllSessions
         enabled:
           type: boolean
+
+    SetApprovalsFromWindow:
+      description: Toggle the opt-in "approve tool use from the window" mode.
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setApprovalsFromWindow
+        enabled:
+          type: boolean
+
+    RespondApproval:
+      description: The user's Allow/Deny decision for a pending window approval.
+      type: object
+      additionalProperties: false
+      required: [type, approvalId, decision]
+      properties:
+        type:
+          const: respondApproval
+        approvalId:
+          type: string
+        decision:
+          type: string
+          enum: [allow, deny]
 
     ExportLayout:
       description: Trigger layout export via host-native save dialog.

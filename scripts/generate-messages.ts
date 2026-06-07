@@ -137,7 +137,9 @@ function exportify(decl: string): string {
 }
 
 function quote(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
+  // Use double quotes so the path survives both POSIX shells and Windows cmd.exe
+  // (cmd.exe does not strip single quotes, which breaks the spawned prettier/eslint).
+  return `"${s.replace(/"/g, '\\"')}"`;
 }
 
 main().catch((err) => {

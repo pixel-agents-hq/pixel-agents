@@ -121,7 +121,20 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
       const event = request.body;
 
       if (event.session_id && event.hook_event_name) {
-        options.onHookEvent?.(providerId, event);
+        // Window-approval path: a PreToolUse for a non-exempt tool blocks here
+        // until the user clicks Allow/Deny in the office window (or it times out).
+        // The decision is returned to the hook script, which forwards it to Claude.
+        if (event.hook_event_name === 'PreToolUse' && options.runtime?.isApprovalMode()) {
+          options.onHookEvent?.(providerId, event);
+          const pending = options.runtime.maybeRequestApproval(event);
+          if (pending) {
+            const decision = await pending;
+            reply.send(decision ? { decision } : 'ok');
+            return;
+          }
+        } else {
+          options.onHookEvent?.(providerId, event);
+        }
       }
 
       reply.send('ok');

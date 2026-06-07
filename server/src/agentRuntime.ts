@@ -30,7 +30,7 @@ import {
   startFileWatching,
   startStaleExternalAgentCheck,
 } from './fileWatcher.js';
-import type { HookEvent } from './hookEventHandler.js';
+import type { ApprovalDecision, HookEvent } from './hookEventHandler.js';
 import { HookEventHandler } from './hookEventHandler.js';
 import { SessionRouter } from './sessionRouter.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -63,6 +63,7 @@ export class AgentRuntime {
   // Configuration refs (mutable, shared with scanners)
   readonly watchAllSessions = { current: false };
   readonly hooksEnabled = { current: true };
+  readonly approvalsFromWindow = { current: false };
 
   // Dependencies
   readonly dismissalTracker = new DismissalTracker();
@@ -90,6 +91,7 @@ export class AgentRuntime {
       provider,
       new SessionRouter(),
       this.watchAllSessions,
+      this.approvalsFromWindow,
     );
 
     // Wire hook lifecycle callbacks to shared agent operations
@@ -186,6 +188,25 @@ export class AgentRuntime {
   /** Route an incoming hook event to the appropriate agent. */
   handleHookEvent(providerId: string, event: Record<string, unknown>): void {
     this.hookEventHandler.handleEvent(providerId, event as HookEvent);
+  }
+
+  /** True when "Approvals from window" is on. */
+  isApprovalMode(): boolean {
+    return this.hookEventHandler.isApprovalMode();
+  }
+
+  /**
+   * If window-approval applies to this PreToolUse event, returns a promise that
+   * resolves with the user's decision (or null to fall back to Claude's prompt);
+   * returns null synchronously when approval does not apply.
+   */
+  maybeRequestApproval(event: Record<string, unknown>): Promise<ApprovalDecision | null> | null {
+    return this.hookEventHandler.maybeRequestApproval(event as HookEvent);
+  }
+
+  /** Resolve a pending approval with the user's decision (from the window). */
+  resolveApproval(approvalId: string, decision: ApprovalDecision): void {
+    this.hookEventHandler.resolveApproval(approvalId, decision);
   }
 
   /** Register an agent with the hook event handler for session->agent mapping. */

@@ -11,6 +11,7 @@ export interface AdapterSettings {
   watchAllSessions: boolean;
   hooksEnabled: boolean;
   hooksInfoShown: boolean;
+  approvalsFromWindow: boolean;
 }
 
 /** All keys in AdapterSettings. Used by adapters to map `pixel-agents.foo` → `foo`. */
@@ -21,6 +22,7 @@ export const ADAPTER_SETTING_KEYS = [
   'watchAllSessions',
   'hooksEnabled',
   'hooksInfoShown',
+  'approvalsFromWindow',
 ] as const;
 
 export type AdapterSettingKey = (typeof ADAPTER_SETTING_KEYS)[number];
@@ -41,6 +43,7 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   watchAllSessions: false,
   hooksEnabled: true,
   hooksInfoShown: false,
+  approvalsFromWindow: false,
 };
 
 function getConfigFilePath(): string {
@@ -75,6 +78,10 @@ function parseAdapterSettings(raw: unknown): AdapterSettings {
       typeof obj.hooksInfoShown === 'boolean'
         ? obj.hooksInfoShown
         : DEFAULT_ADAPTER_SETTINGS.hooksInfoShown,
+    approvalsFromWindow:
+      typeof obj.approvalsFromWindow === 'boolean'
+        ? obj.approvalsFromWindow
+        : DEFAULT_ADAPTER_SETTINGS.approvalsFromWindow,
   };
 }
 

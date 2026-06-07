@@ -27,6 +27,10 @@ async function main(): Promise<void> {
   }
 
   const body = JSON.stringify(data);
+  // For PreToolUse, the server may hold the response while it waits for a window
+  // approval, so allow a long socket timeout (kept under Claude's 10-min hook cap).
+  // If the server replies with {"decision":"allow"|"deny"}, forward it to Claude.
+  const isPreToolUse = data.hook_event_name === 'PreToolUse';
   return new Promise((resolve) => {
     const req = http.request(
       {
@@ -39,9 +43,37 @@ async function main(): Promise<void> {
           'Content-Length': Buffer.byteLength(body),
           Authorization: `Bearer ${server.token}`,
         },
-        timeout: 2000,
+        timeout: isPreToolUse ? 595_000 : 2000,
       },
-      () => resolve(),
+      (res) => {
+        if (!isPreToolUse) {
+          // Drain and ignore the response for non-PreToolUse events.
+          res.resume();
+          res.on('end', () => resolve());
+          return;
+        }
+        let respBody = '';
+        res.on('data', (chunk) => (respBody += chunk));
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(respBody) as { decision?: string };
+            if (parsed.decision === 'allow' || parsed.decision === 'deny') {
+              process.stdout.write(
+                JSON.stringify({
+                  hookSpecificOutput: {
+                    hookEventName: 'PreToolUse',
+                    permissionDecision: parsed.decision,
+                    permissionDecisionReason: 'Decided from the Pixel Agents window',
+                  },
+                }),
+              );
+            }
+          } catch {
+            // Plain "ok" (no decision): let Claude handle permissions normally.
+          }
+          resolve();
+        });
+      },
     );
     req.on('error', () => resolve());
     req.on('timeout', () => {
