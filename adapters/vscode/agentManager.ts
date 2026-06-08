@@ -82,9 +82,15 @@ export async function launchNewTerminal(
 
   const projectDir = getProjectDirPath(cwd, provider);
 
-  // Pre-register expected JSONL file so project scan won't treat it as a /clear file
-  const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
-  knownJsonlFiles.add(expectedFile);
+  // Claude uses --session-id so the JSONL filename is predictable. Codex assigns
+  // rollout-*.jsonl at runtime; SessionStart hook rebinds the launched agent.
+  const usesSyntheticSessionFile = provider.id !== 'codex';
+  const expectedFile = usesSyntheticSessionFile
+    ? path.join(projectDir, `${sessionId}.jsonl`)
+    : path.join(projectDir, '__pending__.jsonl');
+  if (usesSyntheticSessionFile) {
+    knownJsonlFiles.add(expectedFile);
+  }
 
   // Create agent immediately (before JSONL file exists)
   const id = nextAgentIdRef.current++;

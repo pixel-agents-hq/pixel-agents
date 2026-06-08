@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Mock 'codex' executable for Pixel Agents e2e tests.
+#
+# Behaviour:
+#   1. Appends an invocation record to $HOME/.codex-mock/invocations.log.
+#   2. Creates a rollout JSONL under $HOME/.codex/sessions/YYYY/MM/DD/.
+#   3. Stays alive for up to 30 s.
+
+set -euo pipefail
+
+LOG_DIR="${HOME}/.codex-mock"
+mkdir -p "$LOG_DIR"
+echo "$(date -Iseconds) cwd=$(pwd) args=$*" >> "${LOG_DIR}/invocations.log"
+
+YEAR=$(date +%Y)
+MONTH=$(date +%m)
+DAY=$(date +%d)
+SESSION_DIR="${HOME}/.codex/sessions/${YEAR}/${MONTH}/${DAY}"
+mkdir -p "$SESSION_DIR"
+JSONL_FILE="${SESSION_DIR}/rollout-mock-e2e.jsonl"
+printf '{"type":"session_meta","payload":{"cwd":"%s","source":"startup"}}\n' "$(pwd)" >> "$JSONL_FILE"
+
+sleep 30 &
+SLEEP_PID=$!
+trap 'kill $SLEEP_PID 2>/dev/null; exit 0' SIGTERM SIGINT
+wait $SLEEP_PID || true

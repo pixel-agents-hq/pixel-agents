@@ -20,6 +20,7 @@ import {
   ensureProjectScan,
   isTrackedProjectDir,
   reassignAgentToFile,
+  rebindLaunchedSessionFromHook,
   resetProviderScanState,
   scanForTeammateFiles,
   setAgentRemovalCallback,
@@ -101,8 +102,34 @@ export class AgentRuntime {
       this.watchAllSessions,
     );
 
+    const onAgentRebound = (agent: AgentState, previousSessionId: string): void => {
+      if (previousSessionId !== agent.sessionId) {
+        this.unregisterAgent(previousSessionId);
+      }
+      this.registerAgent(agent.sessionId, agent.id);
+    };
+
     // Wire hook lifecycle callbacks to shared agent operations
     handler.setLifecycleCallbacks({
+      onLaunchedSessionStart: (sessionId, transcriptPath, cwd) => {
+        const projectDir = path.dirname(transcriptPath);
+        if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
+          return false;
+        }
+        return rebindLaunchedSessionFromHook(
+          sessionId,
+          transcriptPath,
+          cwd,
+          this.knownJsonlFiles,
+          this.store,
+          this.fileWatchers,
+          this.pollingTimers,
+          this.waitingTimers,
+          this.permissionTimers,
+          () => this.store.persist(),
+          onAgentRebound,
+        );
+      },
       onExternalSessionDetected: (sessionId, transcriptPath, cwd) => {
         const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
         if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
@@ -121,6 +148,7 @@ export class AgentRuntime {
           this.permissionTimers,
           () => this.store.persist(),
           (agent) => this.registerAgent(agent.sessionId, agent.id),
+          onAgentRebound,
         );
       },
       onSessionClear: (agentId, newSessionId, newTranscriptPath) => {

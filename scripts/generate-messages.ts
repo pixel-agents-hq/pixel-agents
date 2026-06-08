@@ -19,7 +19,7 @@
  */
 
 import { TypeScriptGenerator } from '@asyncapi/modelina';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -106,7 +106,7 @@ async function main(): Promise<void> {
 
   // Format + lint --fix the generated file so the committed file passes CI.
   try {
-    execSync(`npx prettier --write ${quote(OUTPUT_PATH)}`, {
+    execFileSync(bin('prettier'), ['--write', OUTPUT_PATH], {
       cwd: REPO_ROOT,
       stdio: 'inherit',
     });
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   try {
-    execSync(`npx eslint --fix ${quote(path.relative(REPO_ROOT, OUTPUT_PATH))}`, {
+    execFileSync(bin('eslint'), ['--fix', path.relative(REPO_ROOT, OUTPUT_PATH)], {
       cwd: REPO_ROOT,
       stdio: 'inherit',
     });
@@ -136,8 +136,9 @@ function exportify(decl: string): string {
   return `export ${trimmed}`;
 }
 
-function quote(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
+function bin(name: string): string {
+  const executable = process.platform === 'win32' ? `${name}.cmd` : name;
+  return path.join(REPO_ROOT, 'node_modules', '.bin', executable);
 }
 
 main().catch((err) => {

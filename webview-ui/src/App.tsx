@@ -74,6 +74,8 @@ function App() {
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    agentEngine,
+    setAgentEngine,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -305,8 +307,8 @@ function App() {
             <li className="text-sm mb-2">Sound notifications play immediately</li>
           </ul>
           <p className="mb-12 text-text-muted">
-            This works through Claude Code Hooks, small event listeners that notify Pixel Agents
-            whenever something happens in your Claude sessions.
+            This works through agent hooks, small event listeners that notify Pixel Agents whenever
+            something happens in your coding sessions.
           </p>
           <div className="text-center">
             <button
@@ -363,6 +365,11 @@ function App() {
           const newVal = !hooksEnabled;
           setHooksEnabled(newVal);
           transport.send({ type: 'setHooksEnabled', enabled: newVal });
+        }}
+        agentEngine={agentEngine}
+        onAgentEngineChange={(engine) => {
+          setAgentEngine(engine);
+          transport.send({ type: 'setAgentEngine', engine });
         }}
       />
 

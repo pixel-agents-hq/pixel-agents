@@ -798,6 +798,51 @@ export function scanAllTeammateFiles(
 
 // ── External session support (VS Code extension panel, etc.) ──
 
+/** Rebind a launched terminal to its real transcript on SessionStart (Codex, etc.). */
+export function rebindLaunchedSessionFromHook(
+  sessionId: string,
+  transcriptPath: string,
+  cwd: string,
+  knownJsonlFiles: Set<string>,
+  agents: AgentStateStore,
+  fileWatchers: Map<number, fs.FSWatcher>,
+  pollingTimers: Map<number, ReturnType<typeof setInterval>>,
+  waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
+  permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
+  persistAgents: () => void,
+  onAgentRebound: (agent: AgentState, previousSessionId: string) => void,
+): boolean {
+  const projectDir = path.dirname(transcriptPath);
+  const pendingAgent = findPendingInternalAgentForSession(projectDir, agents);
+  if (!pendingAgent) return false;
+
+  const previousSessionId = pendingAgent.sessionId;
+  knownJsonlFiles.add(transcriptPath);
+  reassignAgentToFile(
+    pendingAgent.id,
+    transcriptPath,
+    agents,
+    fileWatchers,
+    pollingTimers,
+    waitingTimers,
+    permissionTimers,
+    persistAgents,
+  );
+  pendingAgent.sessionId = sessionId;
+  pendingAgent.folderName = cwd
+    ? path.basename(cwd)
+    : folderNameFromSessionFile(transcriptPath, projectDir);
+  pendingAgent.hookDelivered = true;
+  persistAgents();
+  onAgentRebound(pendingAgent, previousSessionId);
+  if (debug) {
+    console.log(
+      `[Pixel Agents] Hook: Agent ${pendingAgent.id} - rebound launched terminal to ${path.basename(transcriptPath)}`,
+    );
+  }
+  return true;
+}
+
 /**
  * Adopt an external session detected via hooks (SessionStart for unknown session_id).
  * Thinner wrapper than filesystem-based adoptExternalSession: hooks provide
@@ -817,6 +862,7 @@ export function adoptExternalSessionFromHook(
 
   persistAgents: () => void,
   onAgentCreated?: (agent: AgentState) => void,
+  onAgentRebound?: (agent: AgentState, previousSessionId: string) => void,
 ): void {
   if (transcriptPath) {
     // File-based provider (Claude, Codex): adopt with JSONL file watching
@@ -837,6 +883,7 @@ export function adoptExternalSessionFromHook(
 
     const pendingAgent = findPendingInternalAgentForSession(projectDir, agents);
     if (pendingAgent) {
+      const previousSessionId = pendingAgent.sessionId;
       reassignAgentToFile(
         pendingAgent.id,
         transcriptPath,
@@ -851,7 +898,11 @@ export function adoptExternalSessionFromHook(
       pendingAgent.folderName = folderName;
       pendingAgent.hookDelivered = true;
       persistAgents();
-      onAgentCreated?.(pendingAgent);
+      if (onAgentRebound) {
+        onAgentRebound(pendingAgent, previousSessionId);
+      } else {
+        onAgentCreated?.(pendingAgent);
+      }
       if (debug) {
         console.log(
           `[Pixel Agents] Hook: Agent ${pendingAgent.id} - rebound launched terminal to ${path.basename(transcriptPath)}${folderName ? ` (${folderName})` : ''}`,

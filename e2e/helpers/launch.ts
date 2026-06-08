@@ -8,6 +8,10 @@ const REPO_ROOT = path.join(__dirname, '../..');
 const VSCODE_PATH_FILE = path.join(REPO_ROOT, '.vscode-test/vscode-executable.txt');
 const MOCK_CLAUDE_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude');
 const MOCK_CLAUDE_CMD_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude.cmd');
+const MOCK_CODEX_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-codex');
+export interface LaunchOptions {
+  agentEngine?: 'claude-code' | 'codex';
+}
 const ARTIFACTS_DIR = path.join(REPO_ROOT, 'test-results/e2e');
 const IS_WINDOWS = process.platform === 'win32';
 const PATH_SEP = IS_WINDOWS ? ';' : ':';
@@ -30,7 +34,11 @@ export interface VSCodeSession {
  * Uses an isolated temp HOME and injects the mock `claude` binary at the
  * front of PATH so no real Claude CLI is needed.
  */
-export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
+export async function launchVSCode(
+  testTitle: string,
+  options: LaunchOptions = {},
+): Promise<VSCodeSession> {
+  const agentEngine = options.agentEngine ?? 'claude-code';
   const vscodePath = fs.readFileSync(VSCODE_PATH_FILE, 'utf8').trim();
 
   // --- Isolated temp directories ---
@@ -70,48 +78,53 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
     }
   }
 
-  // Copy mock-claude into an isolated bin dir
+  // Copy mock CLI into an isolated bin dir
   if (IS_WINDOWS) {
-    // Windows: copy the .cmd batch file as 'claude.cmd'
     fs.copyFileSync(MOCK_CLAUDE_CMD_PATH, path.join(mockBinDir, 'claude.cmd'));
+    if (agentEngine === 'codex') {
+      fs.copyFileSync(MOCK_CLAUDE_CMD_PATH, path.join(mockBinDir, 'codex.cmd'));
+    }
   } else {
-    const mockDest = path.join(mockBinDir, 'claude');
-    fs.copyFileSync(MOCK_CLAUDE_PATH, mockDest);
+    const mockDest = path.join(mockBinDir, agentEngine === 'codex' ? 'codex' : 'claude');
+    fs.copyFileSync(agentEngine === 'codex' ? MOCK_CODEX_PATH : MOCK_CLAUDE_PATH, mockDest);
     fs.chmodSync(mockDest, 0o755);
   }
+
+  const userSettingsDir = path.join(userDataDir, 'User');
+  fs.mkdirSync(userSettingsDir, { recursive: true });
+  const userSettings: Record<string, unknown> = {
+    'pixel-agents.agentEngine': agentEngine,
+  };
 
   // macOS: VS Code's integrated terminal resolves PATH from the login shell,
   // ignoring the process env. Define a custom terminal profile that uses a
   // non-login shell with our mock bin dir in PATH. On Linux the process env
   // propagates directly, so no custom profile is needed.
   if (process.platform === 'darwin') {
-    const userSettingsDir = path.join(userDataDir, 'User');
-    fs.mkdirSync(userSettingsDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(userSettingsDir, 'settings.json'),
-      JSON.stringify(
-        {
-          'terminal.integrated.profiles.osx': {
-            e2e: {
-              path: '/bin/zsh',
-              args: ['--no-globalrcs'],
-              env: {
-                PATH: `${mockBinDir}:/usr/local/bin:/usr/bin:/bin`,
-                HOME: tmpHome,
-                ZDOTDIR: tmpHome,
-              },
-            },
-          },
-          'terminal.integrated.defaultProfile.osx': 'e2e',
-          'terminal.integrated.inheritEnv': false,
+    userSettings['terminal.integrated.profiles.osx'] = {
+      e2e: {
+        path: '/bin/zsh',
+        args: ['--no-globalrcs'],
+        env: {
+          PATH: `${mockBinDir}:/usr/local/bin:/usr/bin:/bin`,
+          HOME: tmpHome,
+          ZDOTDIR: tmpHome,
         },
-        null,
-        2,
-      ),
-    );
+      },
+    };
+    userSettings['terminal.integrated.defaultProfile.osx'] = 'e2e';
+    userSettings['terminal.integrated.inheritEnv'] = false;
   }
 
-  const mockLogFile = path.join(tmpHome, '.claude-mock', 'invocations.log');
+  fs.writeFileSync(
+    path.join(userSettingsDir, 'settings.json'),
+    JSON.stringify(userSettings, null, 2),
+  );
+
+  const mockLogFile =
+    agentEngine === 'codex'
+      ? path.join(tmpHome, '.codex-mock', 'invocations.log')
+      : path.join(tmpHome, '.claude-mock', 'invocations.log');
 
   // --- Video output dir ---
   const safeTitle = testTitle.replace(/[^a-z0-9]+/gi, '-').toLowerCase();

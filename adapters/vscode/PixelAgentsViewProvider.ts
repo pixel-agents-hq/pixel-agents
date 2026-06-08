@@ -308,6 +308,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
       } else if (message.type === 'setHooksInfoShown') {
         this.adapter.setSetting(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
+      } else if (message.type === 'setAgentEngine') {
+        const engine = message.engine as string;
+        await vscode.workspace
+          .getConfiguration()
+          .update(CONFIG_KEY_AGENT_ENGINE, engine, vscode.ConfigurationTarget.Global);
       } else if (message.type === 'setWatchAllSessions') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_WATCH_ALL_SESSIONS, enabled);
@@ -427,6 +432,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
         const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
         const config = readConfig();
+        const agentEngine = vscode.workspace
+          .getConfiguration()
+          .get<string>(CONFIG_KEY_AGENT_ENGINE, 'claude-code');
         this.webview?.postMessage({
           type: 'settingsLoaded',
           soundEnabled,
@@ -437,6 +445,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           hooksEnabled,
           hooksInfoShown,
           externalAssetDirectories: config.externalAssetDirectories,
+          agentEngine,
         });
 
         // Send workspace folders to webview (only when multi-root)

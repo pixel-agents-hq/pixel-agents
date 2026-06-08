@@ -179,6 +179,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     hooksEnabled,
     hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
     externalAssetDirectories: cfg.externalAssetDirectories,
+    agentEngine: ctx.provider.id === 'codex' ? 'codex' : 'claude-code',
   });
 
   // Sync runtime refs with the persisted settings so scanners behave correctly

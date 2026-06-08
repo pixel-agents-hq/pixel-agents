@@ -48,6 +48,7 @@ export type ClientMessage =
   | SetHooksEnabled
   | SetHooksInfoShown
   | SetWatchAllSessions
+  | SetAgentEngine
   | ExportLayout
   | ImportLayout
   | OpenSessionsFolder
@@ -241,6 +242,7 @@ export interface SettingsLoaded {
   hooksEnabled: boolean;
   hooksInfoShown: boolean;
   externalAssetDirectories: string[];
+  agentEngine: 'claude-code' | 'codex';
 }
 
 export interface ExternalAssetDirectoriesUpdated {
@@ -326,6 +328,11 @@ export interface SetHooksInfoShown {
 export interface SetWatchAllSessions {
   type: 'setWatchAllSessions';
   enabled: boolean;
+}
+
+export interface SetAgentEngine {
+  type: 'setAgentEngine';
+  engine: 'claude-code' | 'codex';
 }
 
 export interface ExportLayout {

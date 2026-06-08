@@ -19,6 +19,8 @@ interface SettingsModalProps {
   onToggleWatchAllSessions: () => void;
   hooksEnabled: boolean;
   onToggleHooksEnabled: () => void;
+  agentEngine: 'claude-code' | 'codex';
+  onAgentEngineChange: (engine: 'claude-code' | 'codex') => void;
 }
 
 export function SettingsModal({
@@ -33,6 +35,8 @@ export function SettingsModal({
   onToggleWatchAllSessions,
   hooksEnabled,
   onToggleHooksEnabled,
+  agentEngine,
+  onAgentEngineChange,
 }: SettingsModalProps) {
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
 
@@ -88,6 +92,17 @@ export function SettingsModal({
           </Button>
         </div>
       ))}
+      <div className="flex items-center justify-between py-4 px-10 gap-8">
+        <span className="text-xs text-text-muted">Agent Engine</span>
+        <select
+          value={agentEngine}
+          onChange={(e) => onAgentEngineChange(e.target.value as 'claude-code' | 'codex')}
+          className="text-xs bg-bg text-text border-2 border-border rounded-none px-8 py-4 cursor-pointer"
+        >
+          <option value="claude-code">Claude Code</option>
+          <option value="codex">Codex</option>
+        </select>
+      </div>
       <Checkbox
         label="Sound Notifications"
         checked={soundLocal}

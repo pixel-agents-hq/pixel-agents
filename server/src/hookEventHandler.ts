@@ -53,6 +53,9 @@ interface SessionLifecycleCallbacks {
   /** Called when a teammate should be removed (e.g. no longer in team config members).
    *  Removes the teammate agent from the office. */
   onTeammateRemoved?: (teammateAgentId: number) => void;
+  /** Called on SessionStart when a launched terminal awaits its real transcript file
+   *  (e.g. Codex without --session-id). Return true when bound to an existing agent. */
+  onLaunchedSessionStart?: (sessionId: string, transcriptPath: string, cwd: string) => boolean;
 }
 
 export class HookEventHandler {
@@ -208,6 +211,18 @@ export class HookEventHandler {
           }
         }
       }
+      // Bind launched terminal waiting for real transcript (Codex rollout files, etc.)
+      if (
+        transcriptPath &&
+        this.lifecycleCallbacks.onLaunchedSessionStart?.(
+          event.session_id,
+          transcriptPath,
+          cwd ?? '',
+        )
+      ) {
+        return;
+      }
+
       // Unknown session -- store as pending, create only when a confirmation event
       // arrives (Stop, Notification, PermissionRequest). This filters transient sessions
       // from Claude Code Extension which fire SessionStart + SessionEnd without any activity.

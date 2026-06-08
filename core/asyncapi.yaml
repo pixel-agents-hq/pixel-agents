@@ -128,6 +128,7 @@ components:
         - $ref: '#/components/schemas/SetHooksEnabled'
         - $ref: '#/components/schemas/SetHooksInfoShown'
         - $ref: '#/components/schemas/SetWatchAllSessions'
+        - $ref: '#/components/schemas/SetAgentEngine'
         - $ref: '#/components/schemas/ExportLayout'
         - $ref: '#/components/schemas/ImportLayout'
         - $ref: '#/components/schemas/OpenSessionsFolder'
@@ -516,6 +517,7 @@ components:
         - hooksEnabled
         - hooksInfoShown
         - externalAssetDirectories
+        - agentEngine
       properties:
         type:
           const: settingsLoaded
@@ -537,6 +539,10 @@ components:
           type: array
           items:
             type: string
+        agentEngine:
+          type: string
+          enum: [claude-code, codex]
+          description: Active AI coding assistant engine.
 
     ExternalAssetDirectoriesUpdated:
       description: External asset directory list changed (after add/remove).
@@ -709,6 +715,18 @@ components:
         enabled:
           type: boolean
 
+    SetAgentEngine:
+      description: Switch the active AI coding assistant engine (Claude Code or Codex).
+      type: object
+      additionalProperties: false
+      required: [type, engine]
+      properties:
+        type:
+          const: setAgentEngine
+        engine:
+          type: string
+          enum: [claude-code, codex]
+
     ExportLayout:
       description: Trigger layout export via host-native save dialog.
       type: object
@@ -728,7 +746,7 @@ components:
           const: importLayout
 
     OpenSessionsFolder:
-      description: Open ~/.claude/projects in the OS file manager.
+      description: Open the active provider's session transcript folder in the OS file manager.
       type: object
       additionalProperties: false
       required: [type]

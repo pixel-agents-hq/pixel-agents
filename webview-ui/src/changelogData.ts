@@ -25,6 +25,23 @@ export const CHANGELOG_REPO_URL = 'https://github.com/pixel-agents-hq/pixel-agen
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '1.4',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'OpenAI Codex CLI support as a second agent engine',
+          'Agent engine picker in Settings modal (Claude Code or Codex)',
+        ],
+      },
+      {
+        title: 'Fixes',
+        items: ['Codex session binding on SessionStart hook events'],
+      },
+    ],
+    contributors: [],
+  },
+  {
     version: '1.3',
     sections: [
       {

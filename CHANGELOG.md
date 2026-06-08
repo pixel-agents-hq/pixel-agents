@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.4.0
+
+### Features
+
+- **OpenAI Codex CLI support** — Adds Codex as a second `HookProvider` alongside Claude Code. Select the active engine via `pixel-agents.agentEngine` (`claude-code` or `codex`) in VS Code settings or the Settings modal. Includes Codex hook installer (`~/.codex/hooks.json`), transcript parsing for Codex JSONL format, and hot-swap when the setting changes without reloading the extension.
+- **Agent engine picker in Settings modal** — Switch between Claude Code and Codex from the in-panel Settings UI.
+
+### Fixes
+
+- **Codex session binding** — Launched Codex terminals rebind to real `rollout-*.jsonl` transcript files on `SessionStart` hook events, with correct hook session routing when the CLI-assigned session ID differs from the placeholder used at spawn time.
+
 ## v1.3.0
 
 ### Features

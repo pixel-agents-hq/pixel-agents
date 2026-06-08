@@ -1,6 +1,6 @@
 # Pixel Agents — Compressed Reference
 
-VS Code extension with embedded React webview: pixel art office where AI agents (Claude Code terminals) are animated characters.
+VS Code extension with embedded React webview: pixel art office where AI coding agents (Claude Code or Codex CLI terminals) are animated characters.
 
 ## Architecture
 
@@ -23,9 +23,9 @@ server/                       — Standalone server (Node.js, no VS Code deps ex
     server.ts                 — HTTP server: hook endpoint, health check, server.json discovery
     hookEventHandler.ts       — Routes hook events to agents, buffers pre-registration events
     constants.ts              — All timing/scanning constants (shared by extension + server)
-    providers/file/
-      claudeHookInstaller.ts  — Install/uninstall hooks in ~/.claude/settings.json
-      hooks/claude-hook.ts    — Hook script: reads stdin, POSTs to server (bundled to CJS by esbuild)
+    providers/hook/
+      claude/                 — Claude Code HookProvider + claudeHookInstaller + claude-hook.ts
+      codex/                  — Codex CLI HookProvider + codexHookInstaller + codex-hook.ts
   __tests__/                  — Vitest test suite
     server.test.ts            — HTTP server lifecycle, auth, hooks, server.json
     hookEventHandler.test.ts  — Event routing, buffering, timer cancellation
