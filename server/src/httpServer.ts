@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 
+import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { AssetCache, SetHooksEnabledSideEffect } from './clientMessageHandler.js';
@@ -24,6 +25,8 @@ export interface HttpServerOptions {
   token: string;
   /** AgentStateStore for WebSocket broadcast piping */
   store: AgentStateStore;
+  /** Active provider for standalone WebSocket capability messages. */
+  provider: HookProvider;
   /** Shared agent lifecycle core (for toggle side effects + standalone restore). Optional in embedded mode. */
   runtime?: AgentRuntime;
   /** Path to SPA dist directory for static serving (standalone only) */
@@ -186,6 +189,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
         handleClientMessage(msg, (m) => safeSend(socket, m), {
           store,
           runtime: options.runtime,
+          provider: options.provider,
           cache: options.assetCache ?? null,
           onSetHooksEnabled: options.onSetHooksEnabled,
         });

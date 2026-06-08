@@ -21,7 +21,7 @@ import {
 } from './assetLoader.js';
 import type { AssetCache } from './clientMessageHandler.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript } from './providers/index.js';
+import { copyProviderHookScript, resolveProvider } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -29,6 +29,7 @@ import { PixelAgentsServer } from './server.js';
 interface CliArgs {
   port: number;
   host: string;
+  agentEngine?: string;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -40,12 +41,16 @@ function parseArgs(argv: string[]): CliArgs {
     } else if (argv[i] === '--host' && argv[i + 1]) {
       args.host = argv[i + 1];
       i++;
+    } else if (argv[i] === '--agent-engine' && argv[i + 1]) {
+      args.agentEngine = argv[i + 1];
+      i++;
     } else if (argv[i] === '--help') {
       console.log(`Usage: pixel-agents [options]
 
 Options:
   --port, -p <number>   Port to listen on (default: 3100)
   --host <string>       Host to bind to (default: 127.0.0.1)
+  --agent-engine <id>   Agent engine to observe: claude-code or codex
   --help                Show this help message`);
       process.exit(0);
     }
@@ -57,6 +62,7 @@ Options:
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  const provider = resolveProvider(args.agentEngine ?? process.env.PIXEL_AGENTS_AGENT_ENGINE);
 
   // dist/ contains both the CLI bundle and the assets/ + webview/ directories
   const distRoot = __dirname;
@@ -87,7 +93,7 @@ async function main(): Promise<void> {
 
   try {
     // Create runtime first (before server.start, so we can pass it in)
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const runtime = new AgentRuntime(store, provider);
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
@@ -100,14 +106,11 @@ async function main(): Promise<void> {
     const onSetHooksEnabled = async (enabled: boolean): Promise<void> => {
       if (!currentConfig) return;
       if (enabled) {
-        await claudeProvider.installHooks(
-          `http://127.0.0.1:${currentConfig.port}`,
-          currentConfig.token,
-        );
-        copyHookScript(distRoot);
+        await provider.installHooks(`http://127.0.0.1:${currentConfig.port}`, currentConfig.token);
+        copyProviderHookScript(provider.id, distRoot);
         console.log('[Pixel Agents] Hooks installed (user toggle)');
       } else {
-        await claudeProvider.uninstallHooks();
+        await provider.uninstallHooks();
         console.log('[Pixel Agents] Hooks uninstalled (user toggle)');
       }
     };
@@ -115,6 +118,7 @@ async function main(): Promise<void> {
     const config = await server.start({
       store,
       runtime,
+      provider,
       embedded: false,
       host: args.host,
       port: args.port,
@@ -131,17 +135,17 @@ async function main(): Promise<void> {
     // Install hooks on startup if the persisted setting says so
     if (runtime.hooksEnabled.current) {
       try {
-        await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
-        copyHookScript(distRoot);
+        await provider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+        copyProviderHookScript(provider.id, distRoot);
         console.log('[Pixel Agents] Hooks installed');
       } catch (err) {
         console.error('[Pixel Agents] Failed to install hooks:', err);
       }
     }
 
-    // Start scanning for external sessions (Claude running in user's terminal)
+    // Start scanning for external sessions (selected agent running in user's terminal)
     const cwd = process.cwd();
-    const dirs = claudeProvider.getSessionDirs?.(cwd);
+    const dirs = provider.getSessionDirs?.(cwd);
     if (dirs && dirs[0]) {
       const projectDir = dirs[0];
       console.log(`[Pixel Agents] Scanning project dir: ${projectDir}`);

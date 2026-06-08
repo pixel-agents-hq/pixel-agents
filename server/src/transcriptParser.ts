@@ -1,6 +1,6 @@
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
-import type { HookProvider } from '../../core/src/provider.js';
+import type { AgentEvent, HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
 import {
@@ -54,6 +54,14 @@ export function processTranscriptLine(
   agent.linesProcessed++;
   try {
     const record = JSON.parse(line);
+
+    if (hookProvider?.parseTranscriptLine) {
+      const event = hookProvider.parseTranscriptLine(line);
+      if (event) {
+        processProviderTranscriptEvent(agentId, event, agents, waitingTimers, permissionTimers);
+      }
+      return;
+    }
 
     // -- Agent Teams: extract team metadata via the active provider --
     // The provider reads its CLI's own field names (Claude: record.teamName + record.agentName).
@@ -377,6 +385,128 @@ export function processTranscriptLine(
     }
   } catch {
     // Ignore malformed lines
+  }
+}
+
+function processProviderTranscriptEvent(
+  agentId: number,
+  event: AgentEvent,
+  agents: AgentStateStore,
+  waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
+  permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
+): void {
+  const agent = agents.get(agentId);
+  if (!agent) return;
+
+  switch (event.kind) {
+    case 'sessionStart':
+      if (event.cwd && !agent.folderName) {
+        agent.folderName = event.cwd.split(/[\\/]/).filter(Boolean).pop();
+      }
+      return;
+
+    case 'toolStart': {
+      const toolName = event.toolName;
+      const input =
+        typeof event.input === 'object' && event.input !== null
+          ? (event.input as Record<string, unknown>)
+          : {};
+      const status = formatToolStatus(toolName, input);
+
+      cancelWaitingTimer(agentId, waitingTimers);
+      agent.isWaiting = false;
+      agent.hadToolsInTurn = true;
+      agent.activeToolIds.add(event.toolId);
+      agent.activeToolStatuses.set(event.toolId, status);
+      agent.activeToolNames.set(event.toolId, toolName);
+      agents.broadcast({ type: 'agentStatus', id: agentId, status: 'active' });
+
+      const isSubagentSpawn = isSubagentTool(toolName);
+      if (!agent.hookDelivered || isSubagentSpawn) {
+        agents.broadcast({
+          type: 'agentToolStart',
+          id: agentId,
+          toolId: event.toolId,
+          status,
+          toolName,
+          permissionActive: agent.permissionSent,
+          runInBackground: event.runInBackground,
+        });
+      }
+
+      if (!exemptTools().has(toolName) && !agent.hookDelivered && !agent.leadAgentId) {
+        startPermissionTimer(agentId, agents, permissionTimers, exemptTools());
+      }
+      return;
+    }
+
+    case 'toolEnd': {
+      const completedToolId = event.toolId;
+      const completedToolName = agent.activeToolNames.get(completedToolId);
+      if (!completedToolName && completedToolId !== 'current') return;
+
+      const toolId =
+        completedToolId === 'current'
+          ? [...agent.activeToolIds][agent.activeToolIds.size - 1]
+          : completedToolId;
+      if (!toolId) return;
+
+      if (isSubagentTool(agent.activeToolNames.get(toolId))) {
+        agent.activeSubagentToolIds.delete(toolId);
+        agent.activeSubagentToolNames.delete(toolId);
+        agents.broadcast({
+          type: 'subagentClear',
+          id: agentId,
+          parentToolId: toolId,
+        });
+      }
+      agent.activeToolIds.delete(toolId);
+      agent.activeToolStatuses.delete(toolId);
+      agent.activeToolNames.delete(toolId);
+
+      if (!agent.hookDelivered || isSubagentTool(completedToolName)) {
+        setTimeout(() => {
+          agents.broadcast({
+            type: 'agentToolDone',
+            id: agentId,
+            toolId,
+          });
+        }, TOOL_DONE_DELAY_MS);
+      }
+
+      if (agent.activeToolIds.size === 0) {
+        agent.hadToolsInTurn = false;
+      }
+      return;
+    }
+
+    case 'turnEnd':
+      cancelWaitingTimer(agentId, waitingTimers);
+      cancelPermissionTimer(agentId, permissionTimers);
+      clearAgentActivity(agent, agentId, agents, permissionTimers);
+      agent.isWaiting = true;
+      agent.permissionSent = false;
+      agent.hadToolsInTurn = false;
+      if (!agent.hookDelivered) {
+        agents.broadcast({
+          type: 'agentStatus',
+          id: agentId,
+          status: 'waiting',
+        });
+      }
+      return;
+
+    case 'permissionRequest':
+      agent.permissionSent = true;
+      agents.broadcast({ type: 'agentToolPermission', id: agentId });
+      return;
+
+    case 'sessionEnd':
+    case 'subagentStart':
+    case 'subagentEnd':
+    case 'subagentTurnEnd':
+    case 'progress':
+      return;
   }
 }
 

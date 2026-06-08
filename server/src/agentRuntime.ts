@@ -20,6 +20,7 @@ import {
   ensureProjectScan,
   isTrackedProjectDir,
   reassignAgentToFile,
+  resetProviderScanState,
   scanForTeammateFiles,
   setAgentRemovalCallback,
   setDismissalTracker,
@@ -66,6 +67,7 @@ export class AgentRuntime {
 
   // Dependencies
   readonly dismissalTracker = new DismissalTracker();
+  private provider: HookProvider;
   private hookEventHandler: HookEventHandler;
   private lifecycleCallbacks: RuntimeLifecycleCallbacks = {};
 
@@ -73,18 +75,25 @@ export class AgentRuntime {
     private readonly store: AgentStateStore,
     provider: HookProvider,
   ) {
+    this.provider = provider;
     // Wire module-level dependencies
     setDismissalTracker(this.dismissalTracker);
-    setHookProvider(provider);
-    setFileWatcherHookProvider(provider);
-    if (provider.team) {
-      setTeamProvider(provider.team);
-    }
+    this.configureProvider(provider);
     setAgentRemovalCallback((id) => this.removeAgent(id));
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
 
-    this.hookEventHandler = new HookEventHandler(
-      store,
+    this.hookEventHandler = this.createHookEventHandler(provider);
+  }
+
+  private configureProvider(provider: HookProvider): void {
+    setHookProvider(provider);
+    setFileWatcherHookProvider(provider);
+    setTeamProvider(provider.team ?? null);
+  }
+
+  private createHookEventHandler(provider: HookProvider): HookEventHandler {
+    const handler = new HookEventHandler(
+      this.store,
       this.waitingTimers,
       this.permissionTimers,
       provider,
@@ -93,7 +102,7 @@ export class AgentRuntime {
     );
 
     // Wire hook lifecycle callbacks to shared agent operations
-    this.hookEventHandler.setLifecycleCallbacks({
+    handler.setLifecycleCallbacks({
       onExternalSessionDetected: (sessionId, transcriptPath, cwd) => {
         const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
         if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
@@ -174,11 +183,26 @@ export class AgentRuntime {
         }
       },
     });
+
+    return handler;
   }
 
   /** Register adapter-specific lifecycle callbacks. */
   setLifecycleCallbacks(callbacks: RuntimeLifecycleCallbacks): void {
     this.lifecycleCallbacks = callbacks;
+  }
+
+  /** Switch the active provider while keeping existing agent state. */
+  setProvider(provider: HookProvider): void {
+    if (provider.id === this.provider.id) return;
+    this.hookEventHandler.dispose();
+    resetProviderScanState();
+    this.provider = provider;
+    this.configureProvider(provider);
+    this.hookEventHandler = this.createHookEventHandler(provider);
+    for (const [id, agent] of this.store) {
+      this.registerAgent(agent.sessionId, id);
+    }
   }
 
   // ── Hook event routing ──

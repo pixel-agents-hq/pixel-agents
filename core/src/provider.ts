@@ -1,10 +1,9 @@
 /**
  * Provider abstraction for AI agent tools.
  *
- * Only HookProvider ships today (Claude Code). Transcript-polling and push-based
- * provider types will be added when a real second provider (Codex, Goose,
- * Discord, etc.) actually lands, derived from that provider's needs rather than
- * speculation.
+ * HookProvider covers local CLIs that can emit hook events and/or transcript
+ * files. Transcript-polling and push-based provider types can be added later
+ * when a provider needs a genuinely different transport.
  */
 
 import type { TeamProvider } from './teamProvider.js';

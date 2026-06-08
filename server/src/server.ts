@@ -4,11 +4,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { AssetCache, SetHooksEnabledSideEffect } from './clientMessageHandler.js';
 import { SERVER_JSON_DIR, SERVER_JSON_NAME } from './constants.js';
 import { createHttpServer } from './httpServer.js';
+import { resolveProvider } from './providers/index.js';
 
 /** Discovery file written to ~/.pixel-agents/server.json so hook scripts can find the server. */
 export interface ServerConfig {
@@ -56,6 +58,7 @@ export class PixelAgentsServer {
   async start(options?: {
     store?: AgentStateStore;
     runtime?: AgentRuntime;
+    provider?: HookProvider;
     embedded?: boolean;
     host?: string;
     port?: number;
@@ -84,6 +87,7 @@ export class PixelAgentsServer {
       port: options?.port,
       token,
       store: store!,
+      provider: options?.provider ?? resolveProvider(),
       runtime: options?.runtime,
       staticDir: options?.staticDir,
       assetCache: options?.assetCache,

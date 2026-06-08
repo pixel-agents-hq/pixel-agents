@@ -63,7 +63,16 @@
         "pixel-agents.autoSpawnAgent": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically spawn a Claude Code agent when VS Code starts, if no agents are currently running."
+          "description": "Automatically spawn the selected agent engine when VS Code starts, if no agents are currently running."
+        },
+        "pixel-agents.agentEngine": {
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex"
+          ],
+          "default": "claude-code",
+          "description": "Agent engine to launch and observe in Pixel Agents."
         }
       }
     }

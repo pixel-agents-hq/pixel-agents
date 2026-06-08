@@ -560,13 +560,20 @@ export function setTeammateRemovalCallback(cb: (teammateAgentId: number) => void
 }
 
 /** Register the TeamProvider that describes the active CLI's Lead+Teammates pattern. */
-export function setTeamProvider(provider: TeamProvider): void {
+export function setTeamProvider(provider: TeamProvider | null): void {
   teamProvider = provider;
 }
 
 /** Register the active HookProvider for non-team capabilities (session roots, etc.). */
 export function setHookProvider(provider: HookProvider): void {
   hookProvider = provider;
+}
+
+/** Clear provider-scoped scan state when the active provider changes. */
+export function resetProviderScanState(): void {
+  trackedProjectDirs.clear();
+  clearDetectionDeps = null;
+  knownTeammateFiles.clear();
 }
 
 /**
@@ -824,7 +831,34 @@ export function adoptExternalSessionFromHook(
 
     knownJsonlFiles.add(transcriptPath);
     const projectDir = path.dirname(transcriptPath);
-    const folderName = folderNameFromProjectDir(path.basename(projectDir));
+    const folderName = cwd
+      ? path.basename(cwd)
+      : folderNameFromSessionFile(transcriptPath, projectDir);
+
+    const pendingAgent = findPendingInternalAgentForSession(projectDir, agents);
+    if (pendingAgent) {
+      reassignAgentToFile(
+        pendingAgent.id,
+        transcriptPath,
+        agents,
+        fileWatchers,
+        pollingTimers,
+        waitingTimers,
+        permissionTimers,
+        persistAgents,
+      );
+      pendingAgent.sessionId = sessionId;
+      pendingAgent.folderName = folderName;
+      pendingAgent.hookDelivered = true;
+      persistAgents();
+      onAgentCreated?.(pendingAgent);
+      if (debug) {
+        console.log(
+          `[Pixel Agents] Hook: Agent ${pendingAgent.id} - rebound launched terminal to ${path.basename(transcriptPath)}${folderName ? ` (${folderName})` : ''}`,
+        );
+      }
+      return;
+    }
 
     adoptExternalSession(
       transcriptPath,
@@ -1129,7 +1163,10 @@ export function scanExternalDir(
     }
 
     knownJsonlFiles.add(file);
-    console.log(`[Pixel Agents] Watcher: detected external session ${path.basename(file)}`);
+    const folderName = folderNameFromSessionFile(file, projectDir);
+    console.log(
+      `[Pixel Agents] Watcher: detected external session ${path.basename(file)}${folderName ? ` (${folderName})` : ''}`,
+    );
     adoptExternalSession(
       file,
       projectDir,
@@ -1140,6 +1177,7 @@ export function scanExternalDir(
       waitingTimers,
       permissionTimers,
       persistAgents,
+      folderName,
     );
   }
 }
@@ -1148,6 +1186,43 @@ export function scanExternalDir(
 function folderNameFromProjectDir(dirName: string): string {
   const parts = dirName.replace(/^-+/, '').split('-');
   return parts[parts.length - 1] || dirName;
+}
+
+function folderNameFromSessionFile(jsonlFile: string, projectDir: string): string {
+  try {
+    const fd = fs.openSync(jsonlFile, 'r');
+    const buf = Buffer.alloc(16384);
+    const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    const lines = buf.toString('utf-8', 0, bytesRead).split('\n');
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const record = JSON.parse(line) as Record<string, unknown>;
+      const payload = record.payload as Record<string, unknown> | undefined;
+      const cwd = payload?.cwd;
+      if (record.type === 'session_meta' && typeof cwd === 'string') {
+        return path.basename(cwd);
+      }
+    }
+  } catch {
+    /* fall back to provider directory name */
+  }
+  return folderNameFromProjectDir(path.basename(projectDir));
+}
+
+function findPendingInternalAgentForSession(
+  projectDir: string,
+  agents: AgentStateStore,
+): AgentState | undefined {
+  for (const agent of agents.values()) {
+    if (agent.isExternal || agent.projectDir !== projectDir) continue;
+    try {
+      fs.statSync(agent.jsonlFile);
+    } catch {
+      return agent;
+    }
+  }
+  return undefined;
 }
 
 /** Scan every session root the active provider exposes for active sessions
@@ -1168,14 +1243,7 @@ function scanGlobalProjectDirs(
 
   const projectDirs: string[] = [];
   for (const root of roots) {
-    try {
-      const entries = fs.readdirSync(root, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory()) projectDirs.push(path.join(root, entry.name));
-      }
-    } catch {
-      // root missing / unreadable -> skip
-    }
+    projectDirs.push(...collectSessionDirs(root));
   }
 
   const now = Date.now();
@@ -1212,7 +1280,7 @@ function scanGlobalProjectDirs(
         continue;
       }
 
-      const folderName = folderNameFromProjectDir(path.basename(dirPath));
+      const folderName = folderNameFromSessionFile(file, dirPath);
       knownJsonlFiles.add(file);
       console.log(
         `[Pixel Agents] Watcher: detected global session ${path.basename(file)} (${folderName})`,
@@ -1231,6 +1299,27 @@ function scanGlobalProjectDirs(
       );
     }
   }
+}
+
+function collectSessionDirs(root: string, maxDepth = 4): string[] {
+  const dirs: string[] = [];
+  function visit(dir: string, depth: number): void {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    if (entries.some((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))) {
+      dirs.push(dir);
+    }
+    if (depth >= maxDepth) return;
+    for (const entry of entries) {
+      if (entry.isDirectory()) visit(path.join(dir, entry.name), depth + 1);
+    }
+  }
+  visit(root, 0);
+  return dirs;
 }
 
 /**

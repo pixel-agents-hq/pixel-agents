@@ -1,9 +1,9 @@
+import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites } from './assetLoader.js';
 import { readConfig, writeConfig } from './configPersistence.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
-import { claudeProvider } from './providers/index.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -22,6 +22,7 @@ export interface AssetCache {
 export interface ClientMessageContext {
   store: AgentStateStore;
   runtime?: AgentRuntime;
+  provider: HookProvider;
   cache: AssetCache | null;
   /** Install/uninstall hooks side effect. Needs server url+token known only to cli.ts. */
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
@@ -130,14 +131,14 @@ export function handleClientMessage(
 }
 
 function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
-  const { store, runtime, cache } = ctx;
+  const { store, runtime, provider, cache } = ctx;
   const adapter = store.getAdapter();
 
   // 1. Provider capabilities (must arrive before any agent messages)
   send({
     type: 'providerCapabilities',
-    readingTools: [...claudeProvider.readingTools],
-    subagentToolNames: [...claudeProvider.subagentToolNames],
+    readingTools: [...provider.readingTools],
+    subagentToolNames: [...provider.subagentToolNames],
   });
 
   // 2. Assets (from server cache, loaded at startup via pngjs)
