@@ -6,14 +6,14 @@ This plan covers the remaining implementation work for the Codex agent support f
 
 ## Tasks
 
-- [ ] 1. Install fast-check and set up property test infrastructure
-  - [ ] 1.1 Add fast-check dependency to server/package.json
+- [x] 1. Install fast-check and set up property test infrastructure
+  - [x] 1.1 Add fast-check dependency to server/package.json
     - Run `npm install --save-dev fast-check` in the `server/` directory
     - Verify that `fast-check` is added to `devDependencies` in `server/package.json`
     - _Requirements: Design Testing Strategy_
 
-- [ ] 2. Write property-based tests for Codex provider
-  - [ ] 2.1 Create property test file and implement Property 1: Hook event normalization
+- [x] 2. Write property-based tests for Codex provider
+  - [x] 2.1 Create property test file and implement Property 1: Hook event normalization
     - Create `server/__tests__/codex.property.test.ts`
     - Generate random payloads with varying field presence/types using fast-check arbitraries
     - Verify: valid payloads with recognized event names produce correct AgentEvent kinds; payloads missing `session_id` or `hook_event_name` return null; unrecognized event names return null; no exceptions thrown
@@ -21,47 +21,47 @@ This plan covers the remaining implementation work for the Codex agent support f
     - **Property 1: Hook event normalization produces correct event kinds or null**
     - **Validates: Requirements 1.2, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6**
 
-  - [ ]* 2.2 Write property test for Property 2: formatToolStatus length invariant
+  - [x]\* 2.2 Write property test for Property 2: formatToolStatus length invariant
     - Generate random tool name strings (including very long strings) and input objects with arbitrarily long string values
     - Verify: output length is always ≤ 80 characters; when truncation occurs, result ends with '…' (ellipsis character)
     - **Property 2: formatToolStatus output never exceeds 80 characters**
     - **Validates: Requirements 1.3**
 
-  - [ ]* 2.3 Write property test for Property 3: Transcript line parsing
+  - [x]\* 2.3 Write property test for Property 3: Transcript line parsing
     - Generate random valid Codex transcript JSON lines (function_call, function_call_output, session_meta, event_msg records) and invalid lines (malformed JSON, unrecognized types)
     - Verify: function_call records produce toolStart with correct toolId/toolName; function_call_output records produce toolEnd; invalid lines return null without throwing
     - **Property 3: Transcript line parsing round-trip correctness**
     - **Validates: Requirements 1.7, 5.1, 5.2, 5.6, 5.7, 5.8**
 
-  - [ ]* 2.4 Write property test for Property 4: Provider resolution always returns valid HookProvider
+  - [x]\* 2.4 Write property test for Property 4: Provider resolution always returns valid HookProvider
     - Generate random strings as engine identifiers
     - Verify: always returns a valid HookProvider (never null/undefined); "codex" → codexProvider; "claude-code" → claudeProvider; any other value → claudeProvider
     - **Property 4: Provider resolution always returns a valid HookProvider**
     - **Validates: Requirements 3.4, 3.5, 3.7, 4.4**
 
-  - [ ]* 2.5 Write property test for Property 5: buildLaunchCommand structure
+  - [x]\* 2.5 Write property test for Property 5: buildLaunchCommand structure
     - Generate random sessionId strings, cwd strings, and boolean bypassPermissions values
     - Verify: always returns an object with non-empty `command` string; when bypassPermissions is true, args contains the bypass flag; when false/undefined, bypass flag is absent
     - **Property 5: buildLaunchCommand structure correctness**
     - **Validates: Requirements 1.6**
 
-  - [ ]* 2.6 Write property test for Property 6: getSessionDirs returns well-formed paths
+  - [x]\* 2.6 Write property test for Property 6: getSessionDirs returns well-formed paths
     - Generate random workspace path strings (including empty, special characters, non-existent paths)
     - Verify: always returns a non-empty array; each element is a string; paths are under the home directory; no exceptions thrown
     - **Property 6: getSessionDirs returns a well-formed path for any workspace**
     - **Validates: Requirements 1.5, 2.1, 2.5**
 
-- [ ] 3. Checkpoint - Ensure all tests pass
+- [x] 3. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Verify dynamic provider injection and hot-swap integration
-  - [ ] 4.1 Add integration test for provider hot-swap via configuration change
+- [x] 4. Verify dynamic provider injection and hot-swap integration
+  - [x] 4.1 Add integration test for provider hot-swap via configuration change
     - Create or extend `server/__tests__/codex.test.ts` with a test that verifies calling `resolveProvider` with different engine values correctly swaps providers
     - Verify that the `AgentRuntime.configureProvider` method calls `setHookProvider` on both `transcriptParser` and `fileWatcher` modules
     - Verify fallback behavior: invalid engine values resolve to claudeProvider with a console warning
     - _Requirements: 3.6, 3.7, 4.1, 4.2, 4.4, 4.5_
 
-  - [ ]* 4.2 Write integration test for end-to-end hook event flow
+  - [x]\* 4.2 Write integration test for end-to-end hook event flow
     - Simulate posting a Codex hook event payload and verify it normalizes correctly through the provider into the expected AgentEvent
     - Verify that the file watcher's `sessionFilePattern` matches Codex JSONL files
     - _Requirements: 2.2, 2.4, 6.1_

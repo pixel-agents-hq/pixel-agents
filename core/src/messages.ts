@@ -242,8 +242,10 @@ export interface SettingsLoaded {
   hooksEnabled: boolean;
   hooksInfoShown: boolean;
   externalAssetDirectories: string[];
-  agentEngine: 'claude-code' | 'codex';
+  agentEngine: AgentEngine;
 }
+
+export type AgentEngine = 'claude-code' | 'codex';
 
 export interface ExternalAssetDirectoriesUpdated {
   type: 'externalAssetDirectoriesUpdated';
@@ -332,7 +334,7 @@ export interface SetWatchAllSessions {
 
 export interface SetAgentEngine {
   type: 'setAgentEngine';
-  engine: 'claude-code' | 'codex';
+  engine: AgentEngine;
 }
 
 export interface ExportLayout {

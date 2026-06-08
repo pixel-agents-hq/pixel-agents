@@ -23,6 +23,10 @@ function truncate(value: string, maxLength: number): string {
   return value.length > maxLength ? value.slice(0, maxLength) + '\u2026' : value;
 }
 
+function displayStatus(value: string): string {
+  return truncate(value, 80);
+}
+
 function safeJsonParse(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   try {
@@ -39,7 +43,7 @@ export function formatToolStatus(toolName: string, input?: unknown): string {
     case 'exec_command':
     case 'Bash': {
       const cmd = stringField(inp, 'cmd') ?? stringField(inp, 'command') ?? '';
-      return `Running: ${truncate(cmd, BASH_COMMAND_DISPLAY_MAX_LENGTH)}`;
+      return displayStatus(`Running: ${truncate(cmd, BASH_COMMAND_DISPLAY_MAX_LENGTH)}`);
     }
     case 'apply_patch':
       return 'Editing files';
@@ -55,15 +59,15 @@ export function formatToolStatus(toolName: string, input?: unknown): string {
     case 'web_search':
       return 'Searching the web';
     case 'view_image':
-      return `Viewing ${base(inp.path)}`;
+      return displayStatus(`Viewing ${base(inp.path)}`);
     case 'open':
       return 'Opening page';
     case 'spawn_agent': {
       const name = stringField(inp, 'name') ?? stringField(inp, 'agent_type');
-      return name ? `Subtask: ${name}` : 'Running subtask';
+      return name ? displayStatus(`Subtask: ${name}`) : 'Running subtask';
     }
     default:
-      return `Using ${toolName}`;
+      return displayStatus(`Using ${toolName}`);
   }
 }
 

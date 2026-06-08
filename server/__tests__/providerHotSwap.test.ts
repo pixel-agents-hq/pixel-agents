@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { setHookProvider as setWatcherProvider } from '../src/fileWatcher.js';
 import { claudeProvider, codexProvider, resolveProvider } from '../src/providers/index.js';
 import { setHookProvider as setTranscriptProvider } from '../src/transcriptParser.js';
-import { setHookProvider as setWatcherProvider } from '../src/fileWatcher.js';
 
 describe('provider hot-swap', () => {
   it('re-injects provider into transcript parser and file watcher', () => {

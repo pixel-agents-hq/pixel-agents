@@ -6,6 +6,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "fast-check": "^4.8.0",
     "vitest": "^3.2.1"
   },
   "dependencies": {

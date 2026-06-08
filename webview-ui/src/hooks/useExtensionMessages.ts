@@ -70,6 +70,8 @@ interface ExtensionMessageState {
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
   hooksInfoShown: boolean;
+  agentEngine: 'claude-code' | 'codex';
+  setAgentEngine: (v: 'claude-code' | 'codex') => void;
 }
 
 function saveAgentSeats(os: OfficeState): void {

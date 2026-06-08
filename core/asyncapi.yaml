@@ -503,6 +503,11 @@ components:
                 items:
                   type: string
 
+    AgentEngine:
+      description: Active AI coding assistant engine.
+      type: string
+      enum: [claude-code, codex]
+
     SettingsLoaded:
       description: All persisted user-level settings, sent once on connect.
       type: object
@@ -540,9 +545,7 @@ components:
           items:
             type: string
         agentEngine:
-          type: string
-          enum: [claude-code, codex]
-          description: Active AI coding assistant engine.
+          $ref: '#/components/schemas/AgentEngine'
 
     ExternalAssetDirectoriesUpdated:
       description: External asset directory list changed (after add/remove).
@@ -724,8 +727,7 @@ components:
         type:
           const: setAgentEngine
         engine:
-          type: string
-          enum: [claude-code, codex]
+          $ref: '#/components/schemas/AgentEngine'
 
     ExportLayout:
       description: Trigger layout export via host-native save dialog.
