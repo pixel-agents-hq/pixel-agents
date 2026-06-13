@@ -137,7 +137,10 @@ function exportify(decl: string): string {
 }
 
 function quote(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`;
+  // Cross-platform shell quoting: cmd.exe (Windows) doesn't honor POSIX
+  // single-quote escaping, so prettier/eslint receive the literal quotes and
+  // fail to match the path. Use double quotes on Windows, single on POSIX.
+  return process.platform === 'win32' ? `"${s}"` : `'${s.replace(/'/g, "'\\''")}'`;
 }
 
 main().catch((err) => {

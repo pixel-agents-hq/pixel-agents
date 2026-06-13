@@ -169,7 +169,14 @@ export function uninstallHooks(): void {
 
 /** Copy the shipped hook script from the extension to ~/.pixel-agents/hooks/ */
 export function copyHookScript(extensionPath: string): void {
-  const src = path.join(extensionPath, 'dist', 'hooks', CLAUDE_HOOK_SCRIPT_NAME);
+  // The VS Code adapter passes the extension root (hook lives at dist/hooks/),
+  // while the standalone CLI passes the dist/ dir itself (hook at hooks/). Try
+  // both so the hook installs correctly in either mode.
+  const candidates = [
+    path.join(extensionPath, 'dist', 'hooks', CLAUDE_HOOK_SCRIPT_NAME),
+    path.join(extensionPath, 'hooks', CLAUDE_HOOK_SCRIPT_NAME),
+  ];
+  const src = candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
   const dst = getHookScriptPath();
   const dstDir = path.dirname(dst);
 
