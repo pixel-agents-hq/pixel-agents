@@ -4,6 +4,11 @@ import {
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
   CHARACTER_SITTING_OFFSET_PX,
+  CHAT_COOLDOWN_SEC,
+  CHAT_DISTANCE_TILES,
+  CHAT_DURATION_SEC,
+  CHAT_IDLE_MIN_SEC,
+  CHAT_RETRY_COOLDOWN_SEC,
   DISMISS_BUBBLE_FAST_FADE_SEC,
   FURNITURE_ANIM_INTERVAL_SEC,
   HUE_SHIFT_MIN_DEG,
@@ -32,6 +37,7 @@ import type {
 } from '../types.js';
 import { CharacterState, Direction, MATRIX_EFFECT_DURATION, TILE_SIZE } from '../types.js';
 import { createCharacter, updateCharacter } from './characters.js';
+import { getRandomPhrase } from './chatter.js';
 import { matrixEffectSeeds } from './matrixEffect.js';
 
 export class OfficeState {
@@ -685,6 +691,15 @@ export class OfficeState {
     }
   }
 
+  /** Display a custom text chat bubble above the character */
+  showChatMessage(id: number, message: string | null, durationSec: number = 5): void {
+    const ch = this.characters.get(id);
+    if (ch && ch.chat) {
+      ch.chat.message = message;
+      ch.chat.timerSec = durationSec;
+    }
+  }
+
   setTeamInfo(
     id: number,
     teamName?: string,
@@ -750,6 +765,74 @@ export class OfficeState {
         if (ch.bubbleTimer <= 0) {
           ch.bubbleType = null;
           ch.bubbleTimer = 0;
+        }
+      }
+
+      if (ch.chat && ch.chat.message) {
+        ch.chat.timerSec -= dt;
+        if (ch.chat.timerSec <= 0) {
+          ch.chat.message = null;
+          ch.chat.timerSec = 0;
+        }
+      }
+
+      if (ch.chat && ch.chat.cooldownSec > 0) ch.chat.cooldownSec -= dt;
+
+      if (!ch.isActive && ch.chat) {
+        ch.chat.idleTimeSec += dt;
+
+        if (
+          ch.state === CharacterState.IDLE &&
+          !ch.bubbleType &&
+          ch.chat.idleTimeSec >= CHAT_IDLE_MIN_SEC &&
+          ch.chat.cooldownSec <= 0 &&
+          !ch.chat.message
+        ) {
+          for (const other of this.characters.values()) {
+            if (other.id === ch.id) continue;
+            if (other.isActive || other.state !== CharacterState.IDLE || other.bubbleType) continue;
+            if (!other.chat || other.chat.cooldownSec > CHAT_RETRY_COOLDOWN_SEC) continue; // Allow targeting if only on retry cooldown
+
+            const dist =
+              Math.abs(ch.tileCol - other.tileCol) + Math.abs(ch.tileRow - other.tileRow);
+
+            if (dist <= CHAT_DISTANCE_TILES) {
+              this.showChatMessage(ch.id, getRandomPhrase(), CHAT_DURATION_SEC);
+              ch.chat.cooldownSec = CHAT_COOLDOWN_SEC;
+              ch.chat.idleTimeSec = 0;
+
+              // Face each other
+              if (other.tileCol > ch.tileCol) {
+                ch.dir = Direction.RIGHT;
+                other.dir = Direction.LEFT;
+              } else if (other.tileCol < ch.tileCol) {
+                ch.dir = Direction.LEFT;
+                other.dir = Direction.RIGHT;
+              } else if (other.tileRow > ch.tileRow) {
+                ch.dir = Direction.DOWN;
+                other.dir = Direction.UP;
+              } else if (other.tileRow < ch.tileRow) {
+                ch.dir = Direction.UP;
+                other.dir = Direction.DOWN;
+              }
+
+              // Prevent the other from talking at exactly the same time
+              other.chat.cooldownSec = CHAT_COOLDOWN_SEC;
+              other.chat.idleTimeSec = 0;
+              break;
+            }
+          }
+
+          // Optimization: If no one was found, wait 2 seconds before checking again
+          if (ch.chat.cooldownSec <= 0) {
+            ch.chat.cooldownSec = CHAT_RETRY_COOLDOWN_SEC;
+          }
+        }
+      } else if (ch.chat) {
+        ch.chat.idleTimeSec = 0;
+        if (ch.chat.message) {
+          ch.chat.message = null;
+          ch.chat.timerSec = 0;
         }
       }
     }

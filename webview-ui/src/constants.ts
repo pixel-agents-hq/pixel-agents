@@ -134,6 +134,23 @@ export const CHARACTER_HIT_HALF_WIDTH = 8;
 export const CHARACTER_HIT_HEIGHT = 24;
 export const TOOL_OVERLAY_VERTICAL_OFFSET = 32;
 
+// ── Agent Chat ──────────────────────────────────────────────
+export const CHAT_IDLE_MIN_SEC = 20;
+export const CHAT_DISTANCE_TILES = 2;
+export const CHAT_DURATION_SEC = 5;
+export const CHAT_COOLDOWN_SEC = 10;
+export const CHAT_BUBBLE_BG = '#fff';
+export const CHAT_BUBBLE_BORDER = '#333';
+export const CHAT_BUBBLE_TEXT = '#000';
+export const CHAT_BUBBLE_SHADOW_COLOR = '#0a0a14';
+export const CHAT_RETRY_COOLDOWN_SEC = 2;
+export const CHAT_BUBBLE_FONT_SIZE_PX = 5;
+export const CHAT_BUBBLE_PADDING_PX = 3;
+export const CHAT_BUBBLE_HEIGHT_PX = 12;
+export const CHAT_BUBBLE_Y_OFFSET_PX = 20;
+export const CHAT_BUBBLE_SHADOW_OFFSET_PX = 2;
+export const CHAT_BUBBLE_BORDER_WIDTH_PX = 2;
+
 // ── Agent Teams ─────────────────────────────────────────────
 export const MAX_CONTEXT_TOKENS = 200_000;
 export const TOKEN_WARN_THRESHOLD = 0.6;
