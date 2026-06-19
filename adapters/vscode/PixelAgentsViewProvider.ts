@@ -30,7 +30,12 @@ import {
   watchLayoutFile,
   writeLayoutToFile,
 } from '../../server/src/layoutPersistence.js';
-import { claudeProvider, copyHookScript } from '../../server/src/providers/index.js';
+import {
+  claudeProvider,
+  copyHermesHookScript,
+  copyHookScript,
+  hermesProvider,
+} from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
   getProjectDirPath,
@@ -117,7 +122,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     setTerminalAdapter(new VscodeTerminalAdapter());
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
-    this.runtime = new AgentRuntime(this.store, claudeProvider);
+    this.runtime = new AgentRuntime(this.store, [claudeProvider, hermesProvider]);
 
     this.initServer();
   }
@@ -147,6 +152,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         if (hooksEnabled) {
           void claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
           copyHookScript(this.context.extensionPath);
+          void hermesProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+          copyHermesHookScript(this.context.extensionPath);
         }
         console.log(`[Pixel Agents] Server: ready on port ${config.port}`);
       })
@@ -229,14 +236,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.runtime.hooksEnabled.current = enabled;
         if (enabled) {
           const serverConfig = this.pixelAgentsServer?.getConfig();
-          void claudeProvider.installHooks(
-            serverConfig ? `http://127.0.0.1:${serverConfig.port}` : '',
-            serverConfig?.token ?? '',
-          );
+          const url = serverConfig ? `http://127.0.0.1:${serverConfig.port}` : '';
+          const token = serverConfig?.token ?? '';
+          void claudeProvider.installHooks(url, token);
           copyHookScript(this.context.extensionPath);
+          void hermesProvider.installHooks(url, token);
+          copyHermesHookScript(this.context.extensionPath);
           console.log('[Pixel Agents] Hooks enabled by user');
         } else {
           void claudeProvider.uninstallHooks();
+          void hermesProvider.uninstallHooks();
           console.log('[Pixel Agents] Hooks disabled by user');
         }
       } else if (message.type === 'setHooksInfoShown') {
@@ -280,8 +289,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // from the first frame.
         this.webview?.postMessage({
           type: 'providerCapabilities',
-          readingTools: [...claudeProvider.readingTools],
-          subagentToolNames: [...claudeProvider.subagentToolNames],
+          readingTools: [
+            ...new Set([...claudeProvider.readingTools, ...hermesProvider.readingTools]),
+          ],
+          subagentToolNames: [
+            ...new Set([...claudeProvider.subagentToolNames, ...hermesProvider.subagentToolNames]),
+          ],
         });
         restoreAgents(
           this.adapter,

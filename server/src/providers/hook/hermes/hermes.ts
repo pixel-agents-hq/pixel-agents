@@ -2,12 +2,7 @@ import * as path from 'path';
 
 import type { AgentEvent, HookProvider } from '../../../../../core/src/provider.js';
 import { HERMES_TERMINAL_NAME_PREFIX } from './constants.js';
-import {
-  areHooksInstalled,
-  copyHookScript,
-  installHooks,
-  uninstallHooks,
-} from './hermesHookInstaller.js';
+import { areHooksInstalled, installHooks, uninstallHooks } from './hermesHookInstaller.js';
 
 function base(p: unknown): string {
   return typeof p === 'string' ? path.basename(p) : '';

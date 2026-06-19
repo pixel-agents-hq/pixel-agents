@@ -317,7 +317,7 @@ export class OfficeState {
       const seatId = this.findFreeSeat();
       let x = TILE_SIZE;
       let y = TILE_SIZE;
-      let dir = Direction.DOWN;
+      let dir: Direction = Direction.DOWN;
       if (seatId) {
         const seat = this.seats.get(seatId)!;
         x = seat.seatCol * TILE_SIZE + TILE_SIZE / 2;
