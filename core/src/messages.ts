@@ -266,6 +266,11 @@ export interface AgentDiagnostics {
   agents: Record<string, any>[];
 }
 
+export interface DormantProjectsLoaded {
+  type: 'dormantProjectsLoaded';
+  projects: DormantProjectEntry[];
+}
+
 export interface DormantProjectEntry {
   projectDir: string;
   displayName: string;
@@ -273,11 +278,6 @@ export interface DormantProjectEntry {
   skills: string[];
   hidden?: boolean;
   lastSeenAt?: number;
-}
-
-export interface DormantProjectsLoaded {
-  type: 'dormantProjectsLoaded';
-  projects: DormantProjectEntry[];
 }
 
 export interface AvailableSkills {
