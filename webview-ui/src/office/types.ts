@@ -197,3 +197,26 @@ export interface Character {
   /** Cumulative output tokens consumed */
   outputTokens: number;
 }
+
+export interface DormantCharacter {
+  /** Matches DormantProject.projectDir — used as Map key */
+  projectDir: string;
+  displayName: string;
+  workspacePath: string;
+  skills: string[];
+  /** Palette 0–5 derived deterministically from projectDir */
+  palette: number;
+  hueShift: number;
+  seatId: string | null;
+  /** Pixel center X (same coord system as Character) */
+  x: number;
+  /** Pixel center Y */
+  y: number;
+  dir: Direction;
+  /** 0 = standing (walk2 frame), 1 = slightly leaning (walk1 frame) */
+  frame: number;
+  /** Time accumulator for breathing cycle */
+  frameTimer: number;
+  /** Mtime of most recent JSONL (ms since epoch) */
+  lastSeenAt?: number;
+}
