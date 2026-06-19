@@ -74,6 +74,7 @@ function App() {
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    dormantProjects,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -86,6 +87,7 @@ function App() {
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
+  const [configDormantProjectDir, setConfigDormantProjectDir] = useState<string | null>(null);
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -147,6 +149,8 @@ function App() {
 
   // Force dependency on editorTickForKeyboard to propagate keyboard-triggered re-renders
   void editorTickForKeyboard;
+  // configDormantProjectDir will be consumed by ProjectModal in Task 8
+  void configDormantProjectDir;
 
   // Show "Press R to rotate" hint when a rotatable item is selected or being placed
   const showRotateHint =
@@ -251,6 +255,10 @@ function App() {
             panRef={editor.panRef}
             onCloseAgent={handleCloseAgent}
             alwaysShowOverlay={alwaysShowOverlay}
+            hoveredDormantProjectDir={officeState.hoveredDormantProjectDir}
+            dormantCharacters={officeState.dormantCharacters}
+            dormantProjects={dormantProjects}
+            onConfigureDormantProject={setConfigDormantProjectDir}
           />
         </>
       ) : (

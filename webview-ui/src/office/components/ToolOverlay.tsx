@@ -18,9 +18,9 @@ import {
   TOKEN_WARN_THRESHOLD,
   TOOL_OVERLAY_VERTICAL_OFFSET,
 } from '../../constants.js';
-import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
+import type { DormantProjectEntry, SubagentCharacter } from '../../hooks/useExtensionMessages.js';
 import type { OfficeState } from '../engine/officeState.js';
-import type { ToolActivity } from '../types.js';
+import type { DormantCharacter, ToolActivity } from '../types.js';
 import { CharacterState, TILE_SIZE } from '../types.js';
 
 interface ToolOverlayProps {
@@ -33,6 +33,10 @@ interface ToolOverlayProps {
   panRef: React.RefObject<{ x: number; y: number }>;
   onCloseAgent: (id: number) => void;
   alwaysShowOverlay: boolean;
+  hoveredDormantProjectDir: string | null;
+  dormantCharacters: Map<string, DormantCharacter>;
+  dormantProjects: DormantProjectEntry[];
+  onConfigureDormantProject: (projectDir: string) => void;
 }
 
 /** Derive a short human-readable activity string from tools/status */
@@ -59,6 +63,15 @@ function getActivityText(
   return 'Idle';
 }
 
+function formatRelativeTime(ms?: number): string {
+  if (!ms) return 'never';
+  const diffSec = Math.floor((Date.now() - ms) / 1000);
+  if (diffSec < 60) return 'just now';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  return `${Math.floor(diffSec / 86400)}d ago`;
+}
+
 function getFuelColor(ratio: number): string {
   if (ratio >= TOKEN_CRITICAL_THRESHOLD) return FUEL_COLOR_CRITICAL;
   if (ratio >= TOKEN_DANGER_THRESHOLD) return FUEL_COLOR_DANGER;
@@ -76,6 +89,10 @@ export function ToolOverlay({
   panRef,
   onCloseAgent,
   alwaysShowOverlay,
+  hoveredDormantProjectDir,
+  dormantCharacters,
+  dormantProjects,
+  onConfigureDormantProject,
 }: ToolOverlayProps) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -243,6 +260,54 @@ export function ToolOverlay({
           </div>
         );
       })}
+      {(() => {
+        if (!hoveredDormantProjectDir) return null;
+        const dc = dormantCharacters.get(hoveredDormantProjectDir);
+        if (!dc) return null;
+
+        const entry = dormantProjects.find((p) => p.projectDir === hoveredDormantProjectDir);
+        const lastSeenAt = entry?.lastSeenAt ?? dc.lastSeenAt;
+
+        const screenX = (deviceOffsetX + dc.x * zoom) / dpr;
+        const screenY =
+          (deviceOffsetY +
+            (dc.y + CHARACTER_SITTING_OFFSET_PX - TOOL_OVERLAY_VERTICAL_OFFSET) * zoom) /
+          dpr;
+
+        return (
+          <div
+            className="absolute flex flex-col items-center -translate-x-1/2"
+            style={{ left: screenX, top: screenY - 28, pointerEvents: 'auto', zIndex: 41 }}
+          >
+            <div className="flex flex-col border-border px-8 pt-2 pb-4 gap-2 pixel-panel whitespace-nowrap max-w-2xs">
+              <span style={{ fontSize: '22px', opacity: 0.6 }}>💤 {dc.displayName}</span>
+              <span className="text-2xs leading-none overflow-hidden text-ellipsis block opacity-50">
+                {dc.workspacePath}
+              </span>
+              <span className="text-2xs leading-none opacity-40">
+                Last active: {formatRelativeTime(lastSeenAt)}
+              </span>
+              {dc.skills.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {dc.skills.map((s) => (
+                    <span key={s} className="text-2xs px-4 py-1 pixel-panel opacity-70">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onConfigureDormantProject(hoveredDormantProjectDir)}
+                className="mt-1 self-start text-2xs"
+              >
+                Configure
+              </Button>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }
