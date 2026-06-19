@@ -64,7 +64,7 @@ function getActivityText(
 }
 
 function formatRelativeTime(ms?: number): string {
-  if (!ms) return 'never';
+  if (!ms) return 'Unknown';
   const diffSec = Math.floor((Date.now() - ms) / 1000);
   if (diffSec < 60) return 'just now';
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
@@ -280,22 +280,24 @@ export function ToolOverlay({
             style={{ left: screenX, top: screenY - 28, pointerEvents: 'auto', zIndex: 41 }}
           >
             <div className="flex flex-col border-border px-8 pt-2 pb-4 gap-2 pixel-panel whitespace-nowrap max-w-2xs">
-              <span style={{ fontSize: '22px', opacity: 0.6 }}>💤 {dc.displayName}</span>
+              <span style={{ fontSize: '22px', opacity: 0.6 }}>📁 {dc.displayName}</span>
               <span className="text-2xs leading-none overflow-hidden text-ellipsis block opacity-50">
                 {dc.workspacePath}
               </span>
               <span className="text-2xs leading-none opacity-40">
                 Last active: {formatRelativeTime(lastSeenAt)}
               </span>
-              {dc.skills.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {dc.skills.map((s) => (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {dc.skills.length > 0 ? (
+                  dc.skills.map((s) => (
                     <span key={s} className="text-2xs px-4 py-1 pixel-panel opacity-70">
                       {s}
                     </span>
-                  ))}
-                </div>
-              )}
+                  ))
+                ) : (
+                  <span className="opacity-50">(none)</span>
+                )}
+              </div>
               <Button
                 variant="ghost"
                 size="sm"
