@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { HookEventHandler } from '../src/hookEventHandler.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import { hermesProvider } from '../src/providers/hook/hermes/hermes.js';
 import { SessionRouter } from '../src/sessionRouter.js';
 import type { AgentState } from '../src/types.js';
 
@@ -852,5 +853,59 @@ describe('HookEventHandler', () => {
         }
       }
     });
+  });
+});
+
+describe('HookEventHandler — Hermes provider routing', () => {
+  let agents: AgentStateStore;
+  let waitingTimers: Map<number, ReturnType<typeof setTimeout>>;
+  let permissionTimers: Map<number, ReturnType<typeof setTimeout>>;
+  let handler: HookEventHandler;
+
+  beforeEach(() => {
+    agents = new AgentStateStore();
+    waitingTimers = new Map();
+    permissionTimers = new Map();
+    agents.on('broadcast', () => {});
+    const extraProviders = new Map([[hermesProvider.id, hermesProvider]]);
+    handler = new HookEventHandler(
+      agents,
+      waitingTimers,
+      permissionTimers,
+      claudeProvider,
+      new SessionRouter(),
+      undefined,
+      extraProviders,
+    );
+  });
+
+  it('routes Hermes on_session_start without crashing', () => {
+    const agent = createTestAgent({ sessionId: 'hermes-sess-1' });
+    agents.set(1, agent);
+    handler.registerAgent('hermes-sess-1', 1);
+
+    expect(() =>
+      handler.handleEvent('hermes', {
+        hook_event_name: 'on_session_start',
+        session_id: 'hermes-sess-1',
+        model: 'claude-sonnet-4-6',
+      }),
+    ).not.toThrow();
+  });
+
+  it('routes Hermes pre_tool_call to toolStart without crashing', () => {
+    const agent = createTestAgent({ sessionId: 'hermes-sess-2' });
+    agents.set(2, agent);
+    handler.registerAgent('hermes-sess-2', 2);
+
+    expect(() =>
+      handler.handleEvent('hermes', {
+        hook_event_name: 'pre_tool_call',
+        session_id: 'hermes-sess-2',
+        tool_name: 'terminal',
+        tool_call_id: 'call-xyz',
+        args: { command: 'ls' },
+      }),
+    ).not.toThrow();
   });
 });
