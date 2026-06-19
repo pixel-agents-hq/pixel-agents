@@ -39,27 +39,27 @@ function copyAssets() {
  * Produces a self-contained CJS file with shebang for Claude Code to execute.
  */
 function buildHooks() {
-  const entry = path.join(
-    __dirname,
-    'server',
-    'src',
-    'providers',
-    'hook',
-    'claude',
-    'hooks',
-    'claude-hook.ts',
-  );
-  if (!fs.existsSync(entry)) return;
-  require('esbuild').buildSync({
-    entryPoints: [entry],
-    bundle: true,
-    platform: 'node',
-    target: 'node18',
-    format: 'cjs',
-    outdir: path.join(__dirname, 'dist', 'hooks'),
-    banner: { js: '#!/usr/bin/env node' },
-  });
-  console.log('✓ Built hooks/ → dist/hooks/');
+  const hookEntries = [
+    path.join(__dirname, 'server', 'src', 'providers', 'hook', 'claude', 'hooks', 'claude-hook.ts'),
+    path.join(__dirname, 'server', 'src', 'providers', 'hook', 'hermes', 'hooks', 'hermes-hook.ts'),
+  ];
+
+  const outdir = path.join(__dirname, 'dist', 'hooks');
+  let built = 0;
+  for (const entry of hookEntries) {
+    if (!fs.existsSync(entry)) continue;
+    require('esbuild').buildSync({
+      entryPoints: [entry],
+      bundle: true,
+      platform: 'node',
+      target: 'node18',
+      format: 'cjs',
+      outdir,
+      banner: { js: '#!/usr/bin/env node' },
+    });
+    built++;
+  }
+  if (built > 0) console.log('✓ Built hooks/ → dist/hooks/');
 }
 
 /**
