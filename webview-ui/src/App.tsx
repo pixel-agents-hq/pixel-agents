@@ -6,6 +6,7 @@ import { ChangelogModal } from './components/ChangelogModal.js';
 import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
+import { ProjectModal } from './components/ProjectModal.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
@@ -75,6 +76,7 @@ function App() {
     setHooksEnabled,
     hooksInfoShown,
     dormantProjects,
+    availableSkills,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -149,8 +151,6 @@ function App() {
 
   // Force dependency on editorTickForKeyboard to propagate keyboard-triggered re-renders
   void editorTickForKeyboard;
-  // configDormantProjectDir will be consumed by ProjectModal in Task 8
-  void configDormantProjectDir;
 
   // Show "Press R to rotate" hint when a rotatable item is selected or being placed
   const showRotateHint =
@@ -373,6 +373,24 @@ function App() {
           transport.send({ type: 'setHooksEnabled', enabled: newVal });
         }}
       />
+
+      {configDormantProjectDir &&
+        (() => {
+          const dc = officeState.dormantCharacters.get(configDormantProjectDir);
+          if (!dc) return null;
+          return (
+            <ProjectModal
+              isOpen
+              onClose={() => setConfigDormantProjectDir(null)}
+              projectDir={configDormantProjectDir}
+              displayName={dc.displayName}
+              workspacePath={dc.workspacePath}
+              skills={dc.skills}
+              lastSeenAt={dc.lastSeenAt}
+              availableSkills={availableSkills}
+            />
+          );
+        })()}
 
       {showMigrationNotice && (
         <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />
