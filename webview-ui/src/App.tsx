@@ -372,6 +372,12 @@ function App() {
           setHooksEnabled(newVal);
           transport.send({ type: 'setHooksEnabled', enabled: newVal });
         }}
+        hiddenProjects={dormantProjects
+          .filter((p) => p.hidden)
+          .map((p) => ({ projectDir: p.projectDir, displayName: p.displayName }))}
+        onShowProject={(projectDir) => {
+          transport.send({ type: 'updateDormantProject', projectDir, hidden: false });
+        }}
       />
 
       {configDormantProjectDir &&
