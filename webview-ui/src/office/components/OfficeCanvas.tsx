@@ -481,6 +481,13 @@ export function OfficeCanvas({
         canvas.style.cursor = cursor;
       }
       officeState.hoveredAgentId = hitId;
+      // Also hit-test dormant characters
+      const dormantHitDir =
+        hitId === null ? officeState.getDormantCharacterAt(pos.worldX, pos.worldY) : null;
+      officeState.hoveredDormantProjectDir = dormantHitDir;
+      if (dormantHitDir !== null && canvas) {
+        canvas.style.cursor = 'pointer';
+      }
     },
     [
       officeState,

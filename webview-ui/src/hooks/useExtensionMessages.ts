@@ -50,6 +50,15 @@ export interface WorkspaceFolder {
   path: string;
 }
 
+export interface DormantProjectEntry {
+  projectDir: string;
+  displayName: string;
+  workspacePath: string;
+  skills: string[];
+  hidden?: boolean;
+  lastSeenAt?: number;
+}
+
 interface ExtensionMessageState {
   agents: number[];
   selectedAgent: number | null;
@@ -70,6 +79,8 @@ interface ExtensionMessageState {
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
   hooksInfoShown: boolean;
+  dormantProjects: DormantProjectEntry[];
+  availableSkills: string[];
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -107,6 +118,8 @@ export function useExtensionMessages(
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
+  const [dormantProjects, setDormantProjects] = useState<DormantProjectEntry[]>([]);
+  const [availableSkills, setAvailableSkills] = useState<string[]>([]);
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
@@ -510,6 +523,12 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentTokenUsage') {
         const id = msg.id as number;
         os.setAgentTokens(id, msg.inputTokens as number, msg.outputTokens as number);
+      } else if (msg.type === 'dormantProjectsLoaded') {
+        const projects = (msg.projects ?? []) as DormantProjectEntry[];
+        setDormantProjects(projects);
+        os.setDormantProjects(projects.filter((p) => !p.hidden));
+      } else if (msg.type === 'availableSkills') {
+        setAvailableSkills((msg.skills as string[]) ?? []);
       }
     };
     const unsubscribe = transport.onMessage(handler);
@@ -538,5 +557,7 @@ export function useExtensionMessages(
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    dormantProjects,
+    availableSkills,
   };
 }
