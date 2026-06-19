@@ -6,9 +6,9 @@ import { DORMANT_PROJECTS_MAX } from './constants.js';
 import type { DormantProject } from './types.js';
 
 /** Read up to 8 KB of a JSONL file and extract the `cwd` field from the first SessionStart line. */
-function extractCwdFromJsonl(jsonlPath: string): string | null {
+export async function extractCwdFromJsonl(jsonlPath: string): Promise<string | null> {
   try {
-    const content = fs.readFileSync(jsonlPath, 'utf-8').slice(0, 8192);
+    const content = (await fs.promises.readFile(jsonlPath, 'utf-8')).slice(0, 8192);
     for (const line of content.split('\n')) {
       if (!line.trim()) continue;
       try {
@@ -32,7 +32,7 @@ function extractCwdFromJsonl(jsonlPath: string): string | null {
  * This is lossy (dots/hyphens in path components collapse), but serves as a
  * fallback when no JSONL is available.
  */
-function decodeDirname(dirname: string): string {
+export function decodeDirname(dirname: string): string {
   return dirname.replace(/^-/, '/').replace(/-/g, '/');
 }
 
@@ -47,8 +47,7 @@ export async function scanDormantProjects(
 ): Promise<DormantProject[]> {
   const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
   if (!fs.existsSync(projectsRoot)) {
-    // Keep only entries whose projectDir still exists
-    return existingProjects.filter((p) => fs.existsSync(p.projectDir));
+    return [];
   }
 
   let subdirNames: string[];
@@ -61,7 +60,7 @@ export async function scanDormantProjects(
       }
     });
   } catch {
-    return existingProjects;
+    return [];
   }
 
   const existingMap = new Map(existingProjects.map((p) => [p.projectDir, p]));
@@ -92,7 +91,7 @@ export async function scanDormantProjects(
 
     // Prefer cwd from JSONL; fall back to dirname decode
     const workspacePath =
-      (latestJsonl ? extractCwdFromJsonl(latestJsonl.file) : null) ?? decodeDirname(dirname);
+      (latestJsonl ? await extractCwdFromJsonl(latestJsonl.file) : null) ?? decodeDirname(dirname);
     const displayName = path.basename(workspacePath);
 
     discovered.push({
