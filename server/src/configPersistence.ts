@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { CONFIG_FILE_NAME, LAYOUT_FILE_DIR } from './constants.js';
+import type { DormantProject } from './types.js';
 
 export interface AdapterSettings {
   soundEnabled: boolean;
@@ -32,6 +33,7 @@ export interface PixelAgentsConfig {
   vscode: AdapterSettings;
   standalone: AdapterSettings;
   externalAssetDirectories: string[];
+  dormantProjects: DormantProject[];
 }
 
 const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
@@ -45,6 +47,27 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
 
 function getConfigFilePath(): string {
   return path.join(os.homedir(), LAYOUT_FILE_DIR, CONFIG_FILE_NAME);
+}
+
+function parseDormantProject(raw: unknown): DormantProject | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  if (
+    typeof obj.projectDir !== 'string' ||
+    typeof obj.workspacePath !== 'string' ||
+    typeof obj.displayName !== 'string'
+  )
+    return null;
+  return {
+    projectDir: obj.projectDir,
+    workspacePath: obj.workspacePath,
+    displayName: obj.displayName,
+    skills: Array.isArray(obj.skills)
+      ? obj.skills.filter((s): s is string => typeof s === 'string')
+      : [],
+    hidden: typeof obj.hidden === 'boolean' ? obj.hidden : false,
+    lastSeenAt: typeof obj.lastSeenAt === 'number' ? obj.lastSeenAt : undefined,
+  };
 }
 
 /** Coerce a loose object into a valid AdapterSettings with defaults for missing/wrong-typed fields. */
@@ -86,6 +109,7 @@ export function readConfig(): PixelAgentsConfig {
         vscode: { ...DEFAULT_ADAPTER_SETTINGS },
         standalone: { ...DEFAULT_ADAPTER_SETTINGS },
         externalAssetDirectories: [],
+        dormantProjects: [],
       };
     }
     const raw = fs.readFileSync(filePath, 'utf-8');
@@ -96,6 +120,12 @@ export function readConfig(): PixelAgentsConfig {
       externalAssetDirectories: Array.isArray(parsed.externalAssetDirectories)
         ? parsed.externalAssetDirectories.filter((d): d is string => typeof d === 'string')
         : [],
+      dormantProjects: Array.isArray(parsed.dormantProjects)
+        ? parsed.dormantProjects.flatMap((p) => {
+            const parsed = parseDormantProject(p);
+            return parsed ? [parsed] : [];
+          })
+        : [],
     };
   } catch (err) {
     console.error('[Pixel Agents] Failed to read config file:', err);
@@ -103,6 +133,7 @@ export function readConfig(): PixelAgentsConfig {
       vscode: { ...DEFAULT_ADAPTER_SETTINGS },
       standalone: { ...DEFAULT_ADAPTER_SETTINGS },
       externalAssetDirectories: [],
+      dormantProjects: [],
     };
   }
 }

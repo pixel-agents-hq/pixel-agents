@@ -79,3 +79,19 @@ export interface PersistedAgent {
   leadAgentId?: number;
   teamUsesTmux?: boolean;
 }
+
+/** A Claude project discovered from ~/.claude/projects/ that has no active agent. */
+export interface DormantProject {
+  /** Absolute path to the project dir, e.g. ~/.claude/projects/-Users-fdiaz-foo */
+  projectDir: string;
+  /** Decoded workspace path, e.g. /Users/fdiaz/foo (best-effort when JSONL unavailable) */
+  workspacePath: string;
+  /** Last segment of workspacePath — used as display label */
+  displayName: string;
+  /** Skill names assigned by the user in the UI */
+  skills: string[];
+  /** Whether the user hid this project from the office */
+  hidden: boolean;
+  /** Mtime (ms) of the most recent JSONL in projectDir */
+  lastSeenAt?: number;
+}
