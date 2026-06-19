@@ -122,8 +122,8 @@ export function readConfig(): PixelAgentsConfig {
         : [],
       dormantProjects: Array.isArray(parsed.dormantProjects)
         ? parsed.dormantProjects.flatMap((p) => {
-            const parsed = parseDormantProject(p);
-            return parsed ? [parsed] : [];
+            const result = parseDormantProject(p);
+            return result ? [result] : [];
           })
         : [],
     };
