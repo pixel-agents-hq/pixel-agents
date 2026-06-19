@@ -274,13 +274,15 @@ export class OfficeState {
     return { palette: idx % paletteCount, hueShift: 0 };
   }
 
-  setDormantProjects(projects: Array<{
-    projectDir: string;
-    displayName: string;
-    workspacePath: string;
-    skills: string[];
-    lastSeenAt?: number;
-  }>): void {
+  setDormantProjects(
+    projects: Array<{
+      projectDir: string;
+      displayName: string;
+      workspacePath: string;
+      skills: string[];
+      lastSeenAt?: number;
+    }>,
+  ): void {
     // Remove dormant chars for projects no longer in the list;
     // free their seats first.
     const incomingDirs = new Set(projects.map((p) => p.projectDir));

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { hermesProvider } from '../src/providers/hook/hermes/hermes.js';
 
 describe('hermesProvider.normalizeHookEvent', () => {
