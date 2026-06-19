@@ -137,12 +137,10 @@ export function handleClientMessage(
         cfg.dormantProjects[idx].hidden = msg.hidden;
       }
       writeConfig(cfg);
-      // Re-send dormant projects (standalone doesn't have an active agent store to filter against)
+      // Re-send dormant projects (webview does the hidden filtering)
       const activeProjectDirs = new Set([...store.values()].map((a) => a.projectDir));
-      const visible = cfg.dormantProjects.filter(
-        (p) => !p.hidden && !activeProjectDirs.has(p.projectDir),
-      );
-      send({ type: 'dormantProjectsLoaded', projects: visible });
+      const projects = cfg.dormantProjects.filter((p) => !activeProjectDirs.has(p.projectDir));
+      send({ type: 'dormantProjectsLoaded', projects });
       break;
     }
 

@@ -83,6 +83,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   // Watcher for ~/.claude/projects/ to detect new dormant projects
   private _projectsWatcher: fs.FSWatcher | null = null;
 
+  // Debounce timer for projects watcher
+  private _projectsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     adapter: StateAdapter,
@@ -786,11 +789,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   private _startProjectsWatcher(): void {
     if (this._projectsWatcher) return;
     const projectsDir = path.join(os.homedir(), '.claude', 'projects');
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     try {
       this._projectsWatcher = fs.watch(projectsDir, () => {
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => void this.sendDormantProjects(), 500);
+        if (this._projectsDebounceTimer) clearTimeout(this._projectsDebounceTimer);
+        this._projectsDebounceTimer = setTimeout(() => void this.sendDormantProjects(), 500);
       });
     } catch {
       // ~/.claude/projects/ doesn't exist yet — watcher not started, no error
@@ -803,6 +805,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.runtime.dispose();
     this.layoutWatcher?.dispose();
     this.layoutWatcher = null;
+    if (this._projectsDebounceTimer) {
+      clearTimeout(this._projectsDebounceTimer);
+      this._projectsDebounceTimer = null;
+    }
     this._projectsWatcher?.close();
     this._projectsWatcher = null;
     this.store.dispose();
