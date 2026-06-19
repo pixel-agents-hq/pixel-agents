@@ -122,6 +122,30 @@ export function handleClientMessage(
       break;
     }
 
+    case 'updateDormantProject': {
+      const projectDir = msg.projectDir as string | undefined;
+      if (!projectDir) break;
+      const cfg = readConfig();
+      const idx = cfg.dormantProjects.findIndex((p) => p.projectDir === projectDir);
+      if (idx === -1) break;
+      if (Array.isArray(msg.skills)) {
+        cfg.dormantProjects[idx].skills = (msg.skills as unknown[]).filter(
+          (s): s is string => typeof s === 'string',
+        );
+      }
+      if (typeof msg.hidden === 'boolean') {
+        cfg.dormantProjects[idx].hidden = msg.hidden;
+      }
+      writeConfig(cfg);
+      // Re-send dormant projects (standalone doesn't have an active agent store to filter against)
+      const activeProjectDirs = new Set([...store.values()].map((a) => a.projectDir));
+      const visible = cfg.dormantProjects.filter(
+        (p) => !p.hidden && !activeProjectDirs.has(p.projectDir),
+      );
+      send({ type: 'dormantProjectsLoaded', projects: visible });
+      break;
+    }
+
     default:
       // focusAgent, exportLayout, importLayout
       // require IDE-specific handling (not yet implemented for standalone)
