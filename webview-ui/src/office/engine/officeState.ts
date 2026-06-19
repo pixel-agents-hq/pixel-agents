@@ -290,7 +290,10 @@ export class OfficeState {
       if (!incomingDirs.has(dir)) {
         if (dc.seatId) {
           const seat = this.seats.get(dc.seatId);
-          if (seat) seat.assigned = false;
+          if (seat) {
+            const activeHolder = [...this.characters.values()].find((c) => c.seatId === dc.seatId);
+            if (!activeHolder) seat.assigned = false;
+          }
         }
         this.dormantCharacters.delete(dir);
       }
