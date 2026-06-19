@@ -13,3 +13,5 @@
 
 export { claudeProvider } from './hook/claude/claude.js';
 export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+export { hermesProvider } from './hook/hermes/hermes.js';
+export { copyHookScript as copyHermesHookScript } from './hook/hermes/hermesHookInstaller.js';

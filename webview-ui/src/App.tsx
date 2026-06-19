@@ -6,6 +6,7 @@ import { ChangelogModal } from './components/ChangelogModal.js';
 import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
+import { ProjectModal } from './components/ProjectModal.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
@@ -74,6 +75,8 @@ function App() {
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    dormantProjects,
+    availableSkills,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -86,6 +89,7 @@ function App() {
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
+  const [configDormantProjectDir, setConfigDormantProjectDir] = useState<string | null>(null);
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -251,6 +255,10 @@ function App() {
             panRef={editor.panRef}
             onCloseAgent={handleCloseAgent}
             alwaysShowOverlay={alwaysShowOverlay}
+            hoveredDormantProjectDir={officeState.hoveredDormantProjectDir}
+            dormantCharacters={officeState.dormantCharacters}
+            dormantProjects={dormantProjects}
+            onConfigureDormantProject={setConfigDormantProjectDir}
           />
         </>
       ) : (
@@ -364,7 +372,31 @@ function App() {
           setHooksEnabled(newVal);
           transport.send({ type: 'setHooksEnabled', enabled: newVal });
         }}
+        hiddenProjects={dormantProjects
+          .filter((p) => p.hidden)
+          .map((p) => ({ projectDir: p.projectDir, displayName: p.displayName }))}
+        onShowProject={(projectDir) => {
+          transport.send({ type: 'updateDormantProject', projectDir, hidden: false });
+        }}
       />
+
+      {configDormantProjectDir &&
+        (() => {
+          const dc = officeState.dormantCharacters.get(configDormantProjectDir);
+          if (!dc) return null;
+          return (
+            <ProjectModal
+              isOpen
+              onClose={() => setConfigDormantProjectDir(null)}
+              projectDir={configDormantProjectDir}
+              displayName={dc.displayName}
+              workspacePath={dc.workspacePath}
+              skills={dc.skills}
+              lastSeenAt={dc.lastSeenAt}
+              availableSkills={availableSkills}
+            />
+          );
+        })()}
 
       {showMigrationNotice && (
         <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />

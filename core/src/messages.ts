@@ -33,7 +33,9 @@ export type ServerMessage =
   | SettingsLoaded
   | ExternalAssetDirectoriesUpdated
   | WorkspaceFolders
-  | AgentDiagnostics;
+  | AgentDiagnostics
+  | DormantProjectsLoaded
+  | AvailableSkills;
 
 export type ClientMessage =
   | WebviewReady
@@ -53,7 +55,8 @@ export type ClientMessage =
   | OpenSessionsFolder
   | AddExternalAssetDirectory
   | RemoveExternalAssetDirectory
-  | RequestDiagnostics;
+  | RequestDiagnostics
+  | UpdateDormantProject;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -263,6 +266,25 @@ export interface AgentDiagnostics {
   agents: Record<string, any>[];
 }
 
+export interface DormantProjectsLoaded {
+  type: 'dormantProjectsLoaded';
+  projects: DormantProjectEntry[];
+}
+
+export interface DormantProjectEntry {
+  projectDir: string;
+  displayName: string;
+  workspacePath: string;
+  skills: string[];
+  hidden?: boolean;
+  lastSeenAt?: number;
+}
+
+export interface AvailableSkills {
+  type: 'availableSkills';
+  skills: string[];
+}
+
 export interface WebviewReady {
   type: 'webviewReady';
 }
@@ -351,4 +373,11 @@ export interface RemoveExternalAssetDirectory {
 
 export interface RequestDiagnostics {
   type: 'requestDiagnostics';
+}
+
+export interface UpdateDormantProject {
+  type: 'updateDormantProject';
+  projectDir: string;
+  skills?: string[];
+  hidden?: boolean;
 }

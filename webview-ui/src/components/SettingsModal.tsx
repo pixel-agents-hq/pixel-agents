@@ -19,6 +19,8 @@ interface SettingsModalProps {
   onToggleWatchAllSessions: () => void;
   hooksEnabled: boolean;
   onToggleHooksEnabled: () => void;
+  hiddenProjects: Array<{ projectDir: string; displayName: string }>;
+  onShowProject: (projectDir: string) => void;
 }
 
 export function SettingsModal({
@@ -33,6 +35,8 @@ export function SettingsModal({
   onToggleWatchAllSessions,
   hooksEnabled,
   onToggleHooksEnabled,
+  hiddenProjects,
+  onShowProject,
 }: SettingsModalProps) {
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
 
@@ -114,6 +118,37 @@ export function SettingsModal({
         onChange={onToggleAlwaysShowOverlay}
       />
       <Checkbox label="Debug View" checked={isDebugMode} onChange={onToggleDebugMode} />
+      {hiddenProjects.length > 0 && (
+        <div style={{ borderTop: '2px solid var(--pixel-border)', marginTop: 8, paddingTop: 8 }}>
+          <div style={{ fontSize: 18, opacity: 0.6, paddingLeft: 8, paddingBottom: 4 }}>
+            Offline Projects (hidden)
+          </div>
+          {hiddenProjects.map((p) => (
+            <div
+              key={p.projectDir}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '4px 8px',
+              }}
+            >
+              <span style={{ fontSize: 18, opacity: 0.7 }}>{p.displayName}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  onShowProject(p.projectDir);
+                  onClose();
+                }}
+                className="text-2xs"
+              >
+                Show
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
     </Modal>
   );
 }

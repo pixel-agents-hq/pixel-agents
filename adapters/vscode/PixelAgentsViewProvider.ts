@@ -22,6 +22,7 @@ import {
   sendWallTilesToWebview,
 } from '../../server/src/assetLoader.js';
 import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
+import { scanDormantProjects } from '../../server/src/dormantProjectScanner.js';
 import { setTerminalAdapter } from '../../server/src/fileWatcher.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
 import {
@@ -29,7 +30,12 @@ import {
   watchLayoutFile,
   writeLayoutToFile,
 } from '../../server/src/layoutPersistence.js';
-import { claudeProvider, copyHookScript } from '../../server/src/providers/index.js';
+import {
+  claudeProvider,
+  copyHermesHookScript,
+  copyHookScript,
+  hermesProvider,
+} from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
   getProjectDirPath,
@@ -79,6 +85,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   // session, even though webviewReady fires on every panel focus.
   private autoSpawnAttempted = false;
 
+  // Watcher for ~/.claude/projects/ to detect new dormant projects
+  private _projectsWatcher: fs.FSWatcher | null = null;
+
+  // Debounce timer for projects watcher
+  private _projectsDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     adapter: StateAdapter,
@@ -97,9 +109,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         teamName: agent.teamName,
         hooksOnly: agent.hooksOnly || undefined,
       });
+      void this.sendDormantProjects();
     });
     this.store.on('agentRemoved', (id) => {
       this.webview?.postMessage({ type: 'agentClosed', id });
+      void this.sendDormantProjects();
     });
     this.store.on('broadcast', (message) => {
       this.webview?.postMessage(message);
@@ -108,7 +122,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     setTerminalAdapter(new VscodeTerminalAdapter());
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
-    this.runtime = new AgentRuntime(this.store, claudeProvider);
+    this.runtime = new AgentRuntime(this.store, [claudeProvider, hermesProvider]);
 
     this.initServer();
   }
@@ -138,6 +152,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         if (hooksEnabled) {
           void claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
           copyHookScript(this.context.extensionPath);
+          void hermesProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+          copyHermesHookScript(this.context.extensionPath);
         }
         console.log(`[Pixel Agents] Server: ready on port ${config.port}`);
       })
@@ -220,14 +236,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.runtime.hooksEnabled.current = enabled;
         if (enabled) {
           const serverConfig = this.pixelAgentsServer?.getConfig();
-          void claudeProvider.installHooks(
-            serverConfig ? `http://127.0.0.1:${serverConfig.port}` : '',
-            serverConfig?.token ?? '',
-          );
+          const url = serverConfig ? `http://127.0.0.1:${serverConfig.port}` : '';
+          const token = serverConfig?.token ?? '';
+          void claudeProvider.installHooks(url, token);
           copyHookScript(this.context.extensionPath);
+          void hermesProvider.installHooks(url, token);
+          copyHermesHookScript(this.context.extensionPath);
           console.log('[Pixel Agents] Hooks enabled by user');
         } else {
           void claudeProvider.uninstallHooks();
+          void hermesProvider.uninstallHooks();
           console.log('[Pixel Agents] Hooks disabled by user');
         }
       } else if (message.type === 'setHooksInfoShown') {
@@ -271,8 +289,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // from the first frame.
         this.webview?.postMessage({
           type: 'providerCapabilities',
-          readingTools: [...claudeProvider.readingTools],
-          subagentToolNames: [...claudeProvider.subagentToolNames],
+          readingTools: [
+            ...new Set([...claudeProvider.readingTools, ...hermesProvider.readingTools]),
+          ],
+          subagentToolNames: [
+            ...new Set([...claudeProvider.subagentToolNames, ...hermesProvider.subagentToolNames]),
+          ],
         });
         restoreAgents(
           this.adapter,
@@ -425,6 +447,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
                 sendLayout(this.webview, this.defaultLayout);
                 // Send agent statuses AFTER layoutLoaded so characters exist when messages arrive
                 sendCurrentAgentStatuses(this.store, this.webview);
+                void this.sendDormantProjects();
+                this.sendAvailableSkills();
+                this._startProjectsWatcher();
                 this.startLayoutWatcher();
               }
               return;
@@ -473,6 +498,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             sendLayout(this.webview, this.defaultLayout);
             // Send agent statuses AFTER layoutLoaded so characters exist when messages arrive
             sendCurrentAgentStatuses(this.store, this.webview);
+            void this.sendDormantProjects();
+            this.sendAvailableSkills();
+            this._startProjectsWatcher();
             this.startLayoutWatcher();
           }
         })();
@@ -554,6 +582,24 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           type: 'externalAssetDirectoriesUpdated',
           dirs: cfg.externalAssetDirectories,
         });
+      } else if (message.type === 'updateDormantProject') {
+        const projectDir = message.projectDir as string | undefined;
+        if (projectDir) {
+          const cfg = readConfig();
+          const idx = cfg.dormantProjects.findIndex((p) => p.projectDir === projectDir);
+          if (idx !== -1) {
+            if (Array.isArray(message.skills)) {
+              cfg.dormantProjects[idx].skills = (message.skills as unknown[]).filter(
+                (s): s is string => typeof s === 'string',
+              );
+            }
+            if (typeof message.hidden === 'boolean') {
+              cfg.dormantProjects[idx].hidden = message.hidden;
+            }
+            writeConfig(cfg);
+            void this.sendDormantProjects();
+          }
+        }
       } else if (message.type === 'importLayout') {
         const uris = await vscode.window.showOpenDialog({
           filters: { 'JSON Files': ['json'] },
@@ -703,12 +749,83 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  private async sendDormantProjects(): Promise<void> {
+    if (!this.webview) return;
+    const config = readConfig();
+    const merged = await scanDormantProjects(config.dormantProjects);
+    config.dormantProjects = merged;
+    writeConfig(config);
+
+    // Filter out projects that have an active agent; send ALL (including hidden) so the
+    // webview can filter based on context (office view hides hidden; SettingsModal shows all)
+    const activeProjectDirs = new Set([...this.store.values()].map((a) => a.projectDir));
+    const projects = merged.filter((p) => !activeProjectDirs.has(p.projectDir));
+    this.webview.postMessage({ type: 'dormantProjectsLoaded', projects });
+  }
+
+  private sendAvailableSkills(): void {
+    if (!this.webview) return;
+    const skillDirs: string[] = [];
+    const home = os.homedir();
+    // Built-in skills
+    const builtinSkills = path.join(home, '.claude', 'skills');
+    try {
+      if (fs.existsSync(builtinSkills)) {
+        for (const d of fs.readdirSync(builtinSkills)) {
+          if (fs.statSync(path.join(builtinSkills, d)).isDirectory()) skillDirs.push(d);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    // Plugin skills
+    const plugins = path.join(home, '.claude', 'plugins');
+    try {
+      if (fs.existsSync(plugins)) {
+        for (const pluginDir of fs.readdirSync(plugins)) {
+          const skillsDir = path.join(plugins, pluginDir, 'skills');
+          if (fs.existsSync(skillsDir)) {
+            for (const d of fs.readdirSync(skillsDir)) {
+              if (fs.statSync(path.join(skillsDir, d)).isDirectory() && !skillDirs.includes(d)) {
+                skillDirs.push(d);
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    this.webview.postMessage({ type: 'availableSkills', skills: skillDirs });
+  }
+
+  private _startProjectsWatcher(): void {
+    if (this._projectsWatcher) return; // already watching
+    const projectsDir = path.join(os.homedir(), '.claude', 'projects');
+    let debounceTimer = this._projectsDebounceTimer;
+    try {
+      this._projectsWatcher = fs.watch(projectsDir, () => {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => void this.sendDormantProjects(), 500);
+        this._projectsDebounceTimer = debounceTimer;
+      });
+    } catch {
+      // dir doesn't exist yet; _projectsWatcher stays null so next webviewReady will retry
+    }
+  }
+
   dispose() {
     this.pixelAgentsServer?.stop();
     this.pixelAgentsServer = null;
     this.runtime.dispose();
     this.layoutWatcher?.dispose();
     this.layoutWatcher = null;
+    if (this._projectsDebounceTimer) {
+      clearTimeout(this._projectsDebounceTimer);
+      this._projectsDebounceTimer = null;
+    }
+    this._projectsWatcher?.close();
+    this._projectsWatcher = null;
     this.store.dispose();
   }
 }

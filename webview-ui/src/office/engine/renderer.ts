@@ -12,6 +12,8 @@ import {
   CHARACTER_SITTING_OFFSET_PX,
   CHARACTER_Z_SORT_OFFSET,
   DELETE_BUTTON_BG,
+  DORMANT_CHAR_ALPHA,
+  DORMANT_CHAR_GRAYSCALE_PCT,
   FALLBACK_FLOOR_COLOR,
   GHOST_BORDER_HOVER_FILL,
   GHOST_BORDER_HOVER_STROKE,
@@ -42,6 +44,7 @@ import {
 } from '../sprites/spriteData.js';
 import type {
   Character,
+  DormantCharacter,
   FurnitureInstance,
   Seat,
   SpriteData,
@@ -116,6 +119,7 @@ export function renderScene(
   zoom: number,
   selectedAgentId: number | null,
   hoveredAgentId: number | null,
+  dormantCharacters?: DormantCharacter[],
 ): void {
   const drawables: ZDrawable[] = [];
 
@@ -202,6 +206,41 @@ export function renderScene(
         c.drawImage(cached, drawX, drawY);
       },
     });
+  }
+
+  // Dormant characters (dim + grayscale, always seated)
+  if (dormantCharacters) {
+    for (const dc of dormantCharacters) {
+      const sprites = getCharacterSprites(dc.palette, dc.hueShift);
+      // Dormant chars use frame 0 = walk2 (standing still), frame 1 = walk1 (slight lean)
+      // getCharacterSprite needs a Character-like object; we build a minimal one.
+      const fakeChar: Pick<Character, 'state' | 'dir' | 'frame' | 'currentTool' | 'isActive'> = {
+        state: CharacterState.TYPE,
+        dir: dc.dir,
+        frame: dc.frame,
+        currentTool: null,
+        isActive: false,
+      };
+      const spriteData = getCharacterSprite(fakeChar as Character, sprites);
+      const cached = getCachedSprite(spriteData, zoom);
+      const drawX = Math.round(offsetX + dc.x * zoom - cached.width / 2);
+      const drawY = Math.round(
+        offsetY + (dc.y + CHARACTER_SITTING_OFFSET_PX) * zoom - cached.height,
+      );
+      const dcZY = dc.y + TILE_SIZE / 2 + CHARACTER_Z_SORT_OFFSET;
+      const dcX = drawX;
+      const dcY = drawY;
+      drawables.push({
+        zY: dcZY,
+        draw: (c) => {
+          c.save();
+          c.globalAlpha = DORMANT_CHAR_ALPHA;
+          c.filter = `grayscale(${DORMANT_CHAR_GRAYSCALE_PCT}%)`;
+          c.drawImage(cached, dcX, dcY);
+          c.restore();
+        },
+      });
+    }
   }
 
   // Sort by Y (lower = in front = drawn later)
@@ -582,6 +621,7 @@ export function renderFrame(
   tileColors?: Array<ColorValue | null>,
   layoutCols?: number,
   layoutRows?: number,
+  dormantCharacters?: DormantCharacter[],
 ): { offsetX: number; offsetY: number } {
   // Clear
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -620,7 +660,17 @@ export function renderFrame(
   // Draw walls + furniture + characters (z-sorted)
   const selectedId = selection?.selectedAgentId ?? null;
   const hoveredId = selection?.hoveredAgentId ?? null;
-  renderScene(ctx, allFurniture, characters, offsetX, offsetY, zoom, selectedId, hoveredId);
+  renderScene(
+    ctx,
+    allFurniture,
+    characters,
+    offsetX,
+    offsetY,
+    zoom,
+    selectedId,
+    hoveredId,
+    dormantCharacters,
+  );
 
   // Speech bubbles (always on top of characters)
   renderBubbles(ctx, characters, offsetX, offsetY, zoom);

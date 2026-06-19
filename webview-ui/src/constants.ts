@@ -134,6 +134,11 @@ export const CHARACTER_HIT_HALF_WIDTH = 8;
 export const CHARACTER_HIT_HEIGHT = 24;
 export const TOOL_OVERLAY_VERTICAL_OFFSET = 32;
 
+// ── Dormant Characters ───────────────────────────────────────
+export const DORMANT_CHAR_ALPHA = 0.45;
+export const DORMANT_CHAR_GRAYSCALE_PCT = 80;
+export const DORMANT_BREATHING_PERIOD_SEC = 3.0;
+
 // ── Agent Teams ─────────────────────────────────────────────
 export const MAX_CONTEXT_TOKENS = 200_000;
 export const TOKEN_WARN_THRESHOLD = 0.6;

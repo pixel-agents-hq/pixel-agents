@@ -5,6 +5,7 @@ import {
   CHARACTER_HIT_HEIGHT,
   CHARACTER_SITTING_OFFSET_PX,
   DISMISS_BUBBLE_FAST_FADE_SEC,
+  DORMANT_BREATHING_PERIOD_SEC,
   FURNITURE_ANIM_INTERVAL_SEC,
   HUE_SHIFT_MIN_DEG,
   HUE_SHIFT_RANGE_DEG,
@@ -24,6 +25,7 @@ import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
 import { getLoadedCharacterCount } from '../sprites/spriteData.js';
 import type {
   Character,
+  DormantCharacter,
   FurnitureInstance,
   OfficeLayout,
   PlacedFurniture,
@@ -48,6 +50,8 @@ export class OfficeState {
   cameraFollowId: number | null = null;
   hoveredAgentId: number | null = null;
   hoveredTile: { col: number; row: number } | null = null;
+  dormantCharacters: Map<string, DormantCharacter> = new Map();
+  hoveredDormantProjectDir: string | null = null;
   /** Maps "parentId:toolId" → sub-agent character ID (negative) */
   subagentIdMap: Map<string, number> = new Map();
   /** Reverse lookup: sub-agent character ID → parent info */
@@ -174,6 +178,63 @@ export class OfficeState {
     return result;
   }
 
+  private findFreeUnusedSeat(usedSeatIds: Set<string>): string | null {
+    // Build set of tiles occupied by electronics (PCs, monitors, etc.)
+    const electronicsTiles = new Set<string>();
+    for (const item of this.layout.furniture) {
+      const entry = getCatalogEntry(item.type);
+      if (!entry || entry.category !== 'electronics') continue;
+      for (let dr = 0; dr < entry.footprintH; dr++) {
+        for (let dc = 0; dc < entry.footprintW; dc++) {
+          electronicsTiles.add(`${item.col + dc},${item.row + dr}`);
+        }
+      }
+    }
+
+    // Collect free seats not already in usedSeatIds, split into those facing electronics and the rest
+    const pcSeats: string[] = [];
+    const otherSeats: string[] = [];
+    for (const [uid, seat] of this.seats) {
+      if (seat.assigned) continue;
+      if (usedSeatIds.has(uid)) continue;
+
+      let facesPC = false;
+      const dCol =
+        seat.facingDir === Direction.RIGHT ? 1 : seat.facingDir === Direction.LEFT ? -1 : 0;
+      const dRow = seat.facingDir === Direction.DOWN ? 1 : seat.facingDir === Direction.UP ? -1 : 0;
+      for (let d = 1; d <= AUTO_ON_FACING_DEPTH && !facesPC; d++) {
+        const tileCol = seat.seatCol + dCol * d;
+        const tileRow = seat.seatRow + dRow * d;
+        if (electronicsTiles.has(`${tileCol},${tileRow}`)) {
+          facesPC = true;
+          break;
+        }
+        if (dCol !== 0) {
+          if (
+            electronicsTiles.has(`${tileCol},${tileRow - 1}`) ||
+            electronicsTiles.has(`${tileCol},${tileRow + 1}`)
+          ) {
+            facesPC = true;
+            break;
+          }
+        } else {
+          if (
+            electronicsTiles.has(`${tileCol - 1},${tileRow}`) ||
+            electronicsTiles.has(`${tileCol + 1},${tileRow}`)
+          ) {
+            facesPC = true;
+            break;
+          }
+        }
+      }
+      (facesPC ? pcSeats : otherSeats).push(uid);
+    }
+
+    if (pcSeats.length > 0) return pcSeats[Math.floor(Math.random() * pcSeats.length)];
+    if (otherSeats.length > 0) return otherSeats[Math.floor(Math.random() * otherSeats.length)];
+    return null;
+  }
+
   private findFreeSeat(): string | null {
     // Build set of tiles occupied by electronics (PCs, monitors, etc.)
     const electronicsTiles = new Set<string>();
@@ -258,6 +319,110 @@ export class OfficeState {
       hueShift = HUE_SHIFT_MIN_DEG + Math.floor(Math.random() * HUE_SHIFT_RANGE_DEG);
     }
     return { palette, hueShift };
+  }
+
+  private dormantPaletteFor(projectDir: string): { palette: number; hueShift: number } {
+    let hash = 0;
+    for (let i = 0; i < projectDir.length; i++) {
+      hash = (Math.imul(hash, 31) + projectDir.charCodeAt(i)) | 0;
+    }
+    const idx = Math.abs(hash);
+    const paletteCount = getLoadedCharacterCount() || 6;
+    return { palette: idx % paletteCount, hueShift: 0 };
+  }
+
+  setDormantProjects(
+    projects: Array<{
+      projectDir: string;
+      displayName: string;
+      workspacePath: string;
+      skills: string[];
+      lastSeenAt?: number;
+    }>,
+  ): void {
+    // Remove dormant chars for projects no longer in the list;
+    // free their seats first.
+    const incomingDirs = new Set(projects.map((p) => p.projectDir));
+    for (const [dir, dc] of this.dormantCharacters) {
+      if (!incomingDirs.has(dir)) {
+        if (dc.seatId) {
+          const seat = this.seats.get(dc.seatId);
+          if (seat) {
+            const activeHolder = [...this.characters.values()].find((c) => c.seatId === dc.seatId);
+            if (!activeHolder) seat.assigned = false;
+          }
+        }
+        this.dormantCharacters.delete(dir);
+      }
+    }
+
+    // Track seats already claimed by dormant chars in this batch to prevent double-booking
+    const usedSeatIds = new Set<string>(
+      [...this.dormantCharacters.values()]
+        .map((dc) => dc.seatId)
+        .filter((id): id is string => id !== null),
+    );
+
+    for (const project of projects) {
+      const existing = this.dormantCharacters.get(project.projectDir);
+      if (existing) {
+        // Update mutable fields in place (skills may have changed)
+        existing.skills = project.skills;
+        existing.displayName = project.displayName;
+        existing.workspacePath = project.workspacePath;
+        existing.lastSeenAt = project.lastSeenAt;
+        continue;
+      }
+
+      const { palette, hueShift } = this.dormantPaletteFor(project.projectDir);
+
+      // Assign a seat (dormant chars DON'T mark seat.assigned = true so active
+      // agents can still take them; they just use the seat's position visually).
+      // Use usedSeatIds to prevent multiple dormant chars stacking on the same seat.
+      const seatId = this.findFreeUnusedSeat(usedSeatIds);
+      let x = TILE_SIZE;
+      let y = TILE_SIZE;
+      let dir: Direction = Direction.DOWN;
+      if (seatId) {
+        const seat = this.seats.get(seatId)!;
+        x = seat.seatCol * TILE_SIZE + TILE_SIZE / 2;
+        y = seat.seatRow * TILE_SIZE + TILE_SIZE / 2;
+        dir = seat.facingDir;
+      }
+
+      if (seatId) usedSeatIds.add(seatId);
+
+      this.dormantCharacters.set(project.projectDir, {
+        projectDir: project.projectDir,
+        displayName: project.displayName,
+        workspacePath: project.workspacePath,
+        skills: project.skills,
+        palette,
+        hueShift,
+        seatId,
+        x,
+        y,
+        dir,
+        frame: 0,
+        frameTimer: 0,
+        lastSeenAt: project.lastSeenAt,
+      });
+    }
+  }
+
+  getDormantCharacterAt(worldX: number, worldY: number): string | null {
+    for (const dc of this.dormantCharacters.values()) {
+      const left = dc.x - CHARACTER_HIT_HALF_WIDTH;
+      const right = dc.x + CHARACTER_HIT_HALF_WIDTH;
+      // Dormant chars are always seated (TYPE-like position), apply sitting offset
+      const anchorY = dc.y + CHARACTER_SITTING_OFFSET_PX;
+      const top = anchorY - CHARACTER_HIT_HEIGHT;
+      const bottom = anchorY;
+      if (worldX >= left && worldX <= right && worldY >= top && worldY <= bottom) {
+        return dc.projectDir;
+      }
+    }
+    return null;
   }
 
   addAgent(
@@ -756,6 +921,15 @@ export class OfficeState {
     // Remove characters that finished despawn
     for (const id of toDelete) {
       this.characters.delete(id);
+    }
+
+    // Tick dormant character breathing animation
+    for (const dc of this.dormantCharacters.values()) {
+      dc.frameTimer += dt;
+      if (dc.frameTimer >= DORMANT_BREATHING_PERIOD_SEC / 2) {
+        dc.frameTimer -= DORMANT_BREATHING_PERIOD_SEC / 2;
+        dc.frame = dc.frame === 0 ? 1 : 0;
+      }
     }
   }
 

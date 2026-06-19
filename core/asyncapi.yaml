@@ -112,6 +112,9 @@ components:
         - $ref: '#/components/schemas/WorkspaceFolders'
         # Diagnostics
         - $ref: '#/components/schemas/AgentDiagnostics'
+        # Dormant projects & skills
+        - $ref: '#/components/schemas/DormantProjectsLoaded'
+        - $ref: '#/components/schemas/AvailableSkills'
       discriminator: type
 
     ClientMessage:
@@ -134,6 +137,7 @@ components:
         - $ref: '#/components/schemas/AddExternalAssetDirectory'
         - $ref: '#/components/schemas/RemoveExternalAssetDirectory'
         - $ref: '#/components/schemas/RequestDiagnostics'
+        - $ref: '#/components/schemas/UpdateDormantProject'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -578,6 +582,36 @@ components:
           items:
             type: object
 
+    DormantProjectsLoaded:
+      description: |
+        Snapshot of all dormant (watched but currently inactive) project entries,
+        sent after webviewReady and whenever the list changes.
+      type: object
+      additionalProperties: false
+      required: [type, projects]
+      properties:
+        type:
+          const: dormantProjectsLoaded
+        projects:
+          type: array
+          items:
+            $ref: '#/components/schemas/DormantProjectEntry'
+
+    AvailableSkills:
+      description: |
+        List of skill names available in the current workspace, sent after
+        webviewReady and whenever the skill set changes.
+      type: object
+      additionalProperties: false
+      required: [type, skills]
+      properties:
+        type:
+          const: availableSkills
+        skills:
+          type: array
+          items:
+            type: string
+
     # ── Client message variants ────────────────────────────────────
 
     WebviewReady:
@@ -765,6 +799,27 @@ components:
         type:
           const: requestDiagnostics
 
+    UpdateDormantProject:
+      description: |
+        Update metadata for a dormant project entry (e.g. toggle hidden, set skills).
+      type: object
+      additionalProperties: false
+      required: [type, projectDir]
+      properties:
+        type:
+          const: updateDormantProject
+        projectDir:
+          type: string
+          description: Absolute path that identifies the dormant project.
+        skills:
+          type: array
+          items:
+            type: string
+          description: Updated skill list for the project.
+        hidden:
+          type: boolean
+          description: Whether to hide this project from the UI.
+
     # ── Supporting schemas ─────────────────────────────────────────
 
     AgentSeatMeta:
@@ -897,3 +952,32 @@ components:
           type: string
         frame:
           type: integer
+
+    DormantProjectEntry:
+      description: |
+        Metadata for a project that Pixel Agents is watching but whose agent is
+        not currently running (dormant). Used in `dormantProjectsLoaded.projects`.
+      type: object
+      additionalProperties: false
+      required: [projectDir, displayName, workspacePath, skills]
+      properties:
+        projectDir:
+          type: string
+          description: Absolute path to the project directory.
+        displayName:
+          type: string
+          description: Human-readable project name shown in the UI.
+        workspacePath:
+          type: string
+          description: Workspace path associated with this project.
+        skills:
+          type: array
+          items:
+            type: string
+          description: Skill names available for this project.
+        hidden:
+          type: boolean
+          description: Whether this project is hidden from the UI.
+        lastSeenAt:
+          type: integer
+          description: Unix timestamp (ms) of the last agent activity for this project.

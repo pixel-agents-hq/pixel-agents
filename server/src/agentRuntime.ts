@@ -71,14 +71,20 @@ export class AgentRuntime {
 
   constructor(
     private readonly store: AgentStateStore,
-    provider: HookProvider,
+    providers: HookProvider | HookProvider[],
   ) {
+    const providerList = Array.isArray(providers) ? providers : [providers];
+    const primary = providerList[0];
+    const extraProviders = new Map(
+      providerList.slice(1).map((p) => [p.id, p] as [string, HookProvider]),
+    );
+
     // Wire module-level dependencies
     setDismissalTracker(this.dismissalTracker);
-    setHookProvider(provider);
-    setFileWatcherHookProvider(provider);
-    if (provider.team) {
-      setTeamProvider(provider.team);
+    setHookProvider(primary);
+    setFileWatcherHookProvider(primary);
+    if (primary.team) {
+      setTeamProvider(primary.team);
     }
     setAgentRemovalCallback((id) => this.removeAgent(id));
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
@@ -87,9 +93,10 @@ export class AgentRuntime {
       store,
       this.waitingTimers,
       this.permissionTimers,
-      provider,
+      primary,
       new SessionRouter(),
       this.watchAllSessions,
+      extraProviders,
     );
 
     // Wire hook lifecycle callbacks to shared agent operations
