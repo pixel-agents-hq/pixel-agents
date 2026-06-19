@@ -43,12 +43,11 @@ describe('scanDormantProjects', () => {
     expect(result[0].hidden).toBe(false);
   });
 
-  it('extracts cwd from JSONL SessionStart event', async () => {
+  it('extracts cwd from JSONL record with a cwd field', async () => {
     makeProjectDir(
       '-Users-alice-myrepo',
       JSON.stringify({
-        hook_event_name: 'SessionStart',
-        session_id: 'abc',
+        type: 'attachment',
         cwd: '/Users/alice/myrepo',
       }),
     );

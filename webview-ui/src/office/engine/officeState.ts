@@ -178,6 +178,63 @@ export class OfficeState {
     return result;
   }
 
+  private findFreeUnusedSeat(usedSeatIds: Set<string>): string | null {
+    // Build set of tiles occupied by electronics (PCs, monitors, etc.)
+    const electronicsTiles = new Set<string>();
+    for (const item of this.layout.furniture) {
+      const entry = getCatalogEntry(item.type);
+      if (!entry || entry.category !== 'electronics') continue;
+      for (let dr = 0; dr < entry.footprintH; dr++) {
+        for (let dc = 0; dc < entry.footprintW; dc++) {
+          electronicsTiles.add(`${item.col + dc},${item.row + dr}`);
+        }
+      }
+    }
+
+    // Collect free seats not already in usedSeatIds, split into those facing electronics and the rest
+    const pcSeats: string[] = [];
+    const otherSeats: string[] = [];
+    for (const [uid, seat] of this.seats) {
+      if (seat.assigned) continue;
+      if (usedSeatIds.has(uid)) continue;
+
+      let facesPC = false;
+      const dCol =
+        seat.facingDir === Direction.RIGHT ? 1 : seat.facingDir === Direction.LEFT ? -1 : 0;
+      const dRow = seat.facingDir === Direction.DOWN ? 1 : seat.facingDir === Direction.UP ? -1 : 0;
+      for (let d = 1; d <= AUTO_ON_FACING_DEPTH && !facesPC; d++) {
+        const tileCol = seat.seatCol + dCol * d;
+        const tileRow = seat.seatRow + dRow * d;
+        if (electronicsTiles.has(`${tileCol},${tileRow}`)) {
+          facesPC = true;
+          break;
+        }
+        if (dCol !== 0) {
+          if (
+            electronicsTiles.has(`${tileCol},${tileRow - 1}`) ||
+            electronicsTiles.has(`${tileCol},${tileRow + 1}`)
+          ) {
+            facesPC = true;
+            break;
+          }
+        } else {
+          if (
+            electronicsTiles.has(`${tileCol - 1},${tileRow}`) ||
+            electronicsTiles.has(`${tileCol + 1},${tileRow}`)
+          ) {
+            facesPC = true;
+            break;
+          }
+        }
+      }
+      (facesPC ? pcSeats : otherSeats).push(uid);
+    }
+
+    if (pcSeats.length > 0) return pcSeats[Math.floor(Math.random() * pcSeats.length)];
+    if (otherSeats.length > 0) return otherSeats[Math.floor(Math.random() * otherSeats.length)];
+    return null;
+  }
+
   private findFreeSeat(): string | null {
     // Build set of tiles occupied by electronics (PCs, monitors, etc.)
     const electronicsTiles = new Set<string>();
@@ -299,6 +356,13 @@ export class OfficeState {
       }
     }
 
+    // Track seats already claimed by dormant chars in this batch to prevent double-booking
+    const usedSeatIds = new Set<string>(
+      [...this.dormantCharacters.values()]
+        .map((dc) => dc.seatId)
+        .filter((id): id is string => id !== null),
+    );
+
     for (const project of projects) {
       const existing = this.dormantCharacters.get(project.projectDir);
       if (existing) {
@@ -313,8 +377,9 @@ export class OfficeState {
       const { palette, hueShift } = this.dormantPaletteFor(project.projectDir);
 
       // Assign a seat (dormant chars DON'T mark seat.assigned = true so active
-      // agents can still take them; they just use the seat's position visually)
-      const seatId = this.findFreeSeat();
+      // agents can still take them; they just use the seat's position visually).
+      // Use usedSeatIds to prevent multiple dormant chars stacking on the same seat.
+      const seatId = this.findFreeUnusedSeat(usedSeatIds);
       let x = TILE_SIZE;
       let y = TILE_SIZE;
       let dir: Direction = Direction.DOWN;
@@ -324,6 +389,8 @@ export class OfficeState {
         y = seat.seatRow * TILE_SIZE + TILE_SIZE / 2;
         dir = seat.facingDir;
       }
+
+      if (seatId) usedSeatIds.add(seatId);
 
       this.dormantCharacters.set(project.projectDir, {
         projectDir: project.projectDir,

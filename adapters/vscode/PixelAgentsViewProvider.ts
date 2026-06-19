@@ -800,15 +800,17 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   }
 
   private _startProjectsWatcher(): void {
-    if (this._projectsWatcher) return;
+    if (this._projectsWatcher) return; // already watching
     const projectsDir = path.join(os.homedir(), '.claude', 'projects');
+    let debounceTimer = this._projectsDebounceTimer;
     try {
       this._projectsWatcher = fs.watch(projectsDir, () => {
-        if (this._projectsDebounceTimer) clearTimeout(this._projectsDebounceTimer);
-        this._projectsDebounceTimer = setTimeout(() => void this.sendDormantProjects(), 500);
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => void this.sendDormantProjects(), 500);
+        this._projectsDebounceTimer = debounceTimer;
       });
     } catch {
-      // ~/.claude/projects/ doesn't exist yet — watcher not started, no error
+      // dir doesn't exist yet; _projectsWatcher stays null so next webviewReady will retry
     }
   }
 

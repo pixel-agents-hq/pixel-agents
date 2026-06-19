@@ -5,25 +5,23 @@ import * as path from 'path';
 import { DORMANT_PROJECTS_MAX } from './constants.js';
 import type { DormantProject } from './types.js';
 
-/** Read up to 8 KB of a JSONL file and extract the `cwd` field from the first SessionStart line. */
-export async function extractCwdFromJsonl(jsonlPath: string): Promise<string | null> {
+/** Read up to 8 KB of a JSONL file and extract the `cwd` field from the first record that has one. */
+export async function extractCwdFromJsonl(filePath: string): Promise<string | null> {
   try {
-    const content = (await fs.promises.readFile(jsonlPath, 'utf-8')).slice(0, 8192);
-    for (const line of content.split('\n')) {
+    const raw = await fs.promises.readFile(filePath, 'utf8');
+    for (const line of raw.slice(0, 8192).split('\n')) {
       if (!line.trim()) continue;
       try {
-        const record = JSON.parse(line) as Record<string, unknown>;
-        if (record.hook_event_name === 'SessionStart' && typeof record.cwd === 'string') {
-          return record.cwd;
-        }
+        const obj = JSON.parse(line) as Record<string, unknown>;
+        if (typeof obj.cwd === 'string' && obj.cwd.length > 0) return obj.cwd;
       } catch {
-        continue;
+        /* skip malformed lines */
       }
     }
+    return null;
   } catch {
-    /* file unreadable */
+    return null;
   }
-  return null;
 }
 
 /**
