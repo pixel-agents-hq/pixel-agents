@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import type { ViteDevServer } from 'vite';
 import { createServer } from 'vite';
 
-import type { AssetIndex, CatalogEntry } from '../../shared/assets/types.ts';
+import type { AssetIndex, CatalogEntry } from '../../core/src/assets/types.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 

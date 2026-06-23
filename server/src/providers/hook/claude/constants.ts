@@ -29,3 +29,7 @@ export const CLAUDE_HOOK_EVENTS = [
   'TaskCreated',
   'TaskCompleted',
 ] as const;
+
+/** Terminal name prefix used when launching Claude Code in VS Code.
+ *  Used by the extension to match terminals to agents for adoption. */
+export const CLAUDE_TERMINAL_NAME_PREFIX = 'Claude Code';

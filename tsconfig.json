@@ -15,9 +15,9 @@
 		"noFallthroughCasesInSwitch": true
 	},
 	"include": [
-		"src",
+		"adapters/vscode",
 		"server/src",
-		"shared"
+		"core/src"
 	],
 	"exclude": [
 		"node_modules",

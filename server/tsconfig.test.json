@@ -6,5 +6,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["__tests__/**/*.ts", "src/**/*.ts", "../src/types.ts", "../src/timerManager.ts"]
+  "include": ["__tests__/**/*.ts", "src/**/*.ts"]
 }

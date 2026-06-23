@@ -2,17 +2,19 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { normalizeProjectPath } from '../../../../../core/src/normalizeProjectPath.js';
+import type { AgentEvent, HookProvider } from '../../../../../core/src/provider.js';
 import {
   BASH_COMMAND_DISPLAY_MAX_LENGTH,
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
 } from '../../../constants.js';
-import type { AgentEvent, HookProvider } from '../../../provider.js';
 import {
   areHooksInstalled as installerAreHooksInstalled,
   installHooks as installerInstallHooks,
   uninstallHooks as installerUninstallHooks,
 } from './claudeHookInstaller.js';
 import { claudeTeamProvider } from './claudeTeamProvider.js';
+import { CLAUDE_TERMINAL_NAME_PREFIX } from './constants.js';
 
 // ── formatToolStatus: moved from src/transcriptParser.ts ──
 
@@ -68,9 +70,7 @@ export function formatToolStatus(toolName: string, input?: unknown): string {
 
 function getSessionDirs(workspacePath: string): string[] {
   // Claude stores sessions at ~/.claude/projects/<workspace-path-with-dashes>/.
-  // Normalize every non-alphanumeric char (except '-') to '-' to match Claude's
-  // directory naming convention across platforms.
-  const dirName = workspacePath.replace(/[^a-zA-Z0-9-]/g, '-');
+  const dirName = normalizeProjectPath(workspacePath);
   const projectDir = path.join(os.homedir(), '.claude', 'projects', dirName);
 
   // Try exact match first.
@@ -96,8 +96,17 @@ function getSessionDirs(workspacePath: string): string[] {
 function buildLaunchCommand(
   sessionId: string,
   cwd: string,
+  opts?: { bypassPermissions?: boolean },
 ): { command: string; args: string[]; env?: Record<string, string> } {
-  return { command: 'claude', args: ['--session-id', sessionId], env: { PWD: cwd } };
+  const args = ['--session-id', sessionId];
+  if (opts?.bypassPermissions) args.push('--dangerously-skip-permissions');
+  return { command: 'claude', args, env: { PWD: cwd } };
+}
+
+/** Root that holds every Claude session across all workspaces. Used by the
+ *  global session scanner ("Watch All Sessions"). */
+function getAllSessionRoots(): string[] {
+  return [path.join(os.homedir(), '.claude', 'projects')];
 }
 
 // ── normalizeHookEvent: the single Claude-specific normalization boundary ──
@@ -132,6 +141,7 @@ function normalizeHookEvent(
           toolId: `hook-${Date.now()}`,
           toolName,
           input: toolInput,
+          runInBackground: toolInput.run_in_background === true,
         },
       };
     }
@@ -144,7 +154,8 @@ function normalizeHookEvent(
       return { sessionId, event: { kind: 'turnEnd' } };
 
     case 'UserPromptSubmit':
-      return { sessionId, event: { kind: 'userTurn' } };
+      // No normalized kind for user prompts yet; silently ignore.
+      return null;
 
     case 'SubagentStart': {
       const agentType = typeof raw.agent_type === 'string' ? raw.agent_type : 'unknown';
@@ -156,6 +167,7 @@ function normalizeHookEvent(
           toolId: `hook-sub-${agentType}-${Date.now()}`,
           toolName: agentType,
           input: raw,
+          runInBackground: raw.run_in_background === true,
         },
       };
     }
@@ -187,6 +199,8 @@ function normalizeHookEvent(
         event: {
           kind: 'sessionStart',
           source: typeof raw.source === 'string' ? raw.source : undefined,
+          transcriptPath: typeof raw.transcript_path === 'string' ? raw.transcript_path : undefined,
+          cwd: typeof raw.cwd === 'string' ? raw.cwd : undefined,
         },
       };
 
@@ -201,11 +215,16 @@ function normalizeHookEvent(
 
     // Agent Teams: a teammate went idle / marked a task complete. Normalize as
     // `subagentTurnEnd` so the team handler can route by agent_type to the teammate.
+    // `reason` discriminates the two so handlers don't read raw eventName.
     case 'TeammateIdle':
+      return {
+        sessionId,
+        event: { kind: 'subagentTurnEnd', parentToolId: 'current', reason: 'idle' },
+      };
     case 'TaskCompleted':
       return {
         sessionId,
-        event: { kind: 'subagentTurnEnd', parentToolId: 'current' },
+        event: { kind: 'subagentTurnEnd', parentToolId: 'current', reason: 'completed' },
       };
 
     // TaskCreated is informational; no AgentEvent shape fits it. Drop.
@@ -237,6 +256,7 @@ export const claudeProvider: HookProvider = {
   kind: 'hook',
   id: 'claude',
   displayName: 'Claude Code',
+  protocolVersion: 1,
 
   normalizeHookEvent,
 
@@ -247,8 +267,11 @@ export const claudeProvider: HookProvider = {
   formatToolStatus,
   permissionExemptTools: new Set(['Task', 'Agent', 'AskUserQuestion']),
   subagentToolNames: new Set(['Task', 'Agent']),
+  readingTools: new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']),
+  terminalNamePrefix: CLAUDE_TERMINAL_NAME_PREFIX,
 
   getSessionDirs,
+  getAllSessionRoots,
   sessionFilePattern: '*.jsonl',
   buildLaunchCommand,
 

@@ -3,7 +3,7 @@
   "tags": ["-internal"],
   "ignoreDependencies": ["tailwindcss", "pngjs", "@types/pngjs"],
   "ignore": [
-    "server/src/providers/file/hooks/claude-hook.ts",
+    "server/src/providers/hook/claude/hooks/claude-hook.ts",
     "webview-ui/src/office/components/index.ts",
     "webview-ui/src/office/editor/index.ts",
     "webview-ui/src/office/engine/index.ts",
@@ -18,7 +18,7 @@
       ],
       "project": [
         "src/**/*.ts",
-        "shared/**/*.ts",
+        "core/src/**/*.ts",
         "e2e/**/*.ts"
       ]
     },

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
-import { vscode } from '../vscodeApi.js';
+import { transport } from '../transport/index.js';
 import { Button } from './ui/Button.js';
 import { Checkbox } from './ui/Checkbox.js';
 import { MenuItem } from './ui/MenuItem.js';
@@ -40,7 +40,7 @@ export function SettingsModal({
     <Modal isOpen={isOpen} onClose={onClose} title="Settings">
       <MenuItem
         onClick={() => {
-          vscode.postMessage({ type: 'openSessionsFolder' });
+          transport.send({ type: 'openSessionsFolder' });
           onClose();
         }}
       >
@@ -48,7 +48,7 @@ export function SettingsModal({
       </MenuItem>
       <MenuItem
         onClick={() => {
-          vscode.postMessage({ type: 'exportLayout' });
+          transport.send({ type: 'exportLayout' });
           onClose();
         }}
       >
@@ -56,7 +56,7 @@ export function SettingsModal({
       </MenuItem>
       <MenuItem
         onClick={() => {
-          vscode.postMessage({ type: 'importLayout' });
+          transport.send({ type: 'importLayout' });
           onClose();
         }}
       >
@@ -64,7 +64,7 @@ export function SettingsModal({
       </MenuItem>
       <MenuItem
         onClick={() => {
-          vscode.postMessage({ type: 'addExternalAssetDirectory' });
+          transport.send({ type: 'addExternalAssetDirectory' });
           onClose();
         }}
       >
@@ -81,7 +81,7 @@ export function SettingsModal({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => vscode.postMessage({ type: 'removeExternalAssetDirectory', path: dir })}
+            onClick={() => transport.send({ type: 'removeExternalAssetDirectory', path: dir })}
             className="shrink-0"
           >
             x
@@ -95,7 +95,7 @@ export function SettingsModal({
           const newVal = !isSoundEnabled();
           setSoundEnabled(newVal);
           setSoundLocal(newVal);
-          vscode.postMessage({ type: 'setSoundEnabled', enabled: newVal });
+          transport.send({ type: 'setSoundEnabled', enabled: newVal });
         }}
       />
       <Checkbox

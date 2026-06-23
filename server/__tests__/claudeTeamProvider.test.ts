@@ -53,47 +53,100 @@ describe('claudeTeamProvider', () => {
     });
   });
 
-  describe('resolveTeammateMetadataPath', () => {
-    it('replaces .jsonl extension with .meta.json', () => {
-      expect(claudeTeamProvider.resolveTeammateMetadataPath('/a/b/c.jsonl')).toBe(
-        '/a/b/c.meta.json',
-      );
+  describe('discoverTeammates', () => {
+    const fsMod = require('fs') as typeof import('fs');
+    const tmpRoot = path.join(os.tmpdir(), 'pixel-agents-discover-' + Date.now());
+
+    afterEach(() => {
+      try {
+        fsMod.rmSync(tmpRoot, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
     });
 
-    it('only replaces trailing .jsonl', () => {
-      expect(claudeTeamProvider.resolveTeammateMetadataPath('/a/b.jsonl/c.jsonl')).toBe(
-        '/a/b.jsonl/c.meta.json',
+    it('returns empty array when teammate directory does not exist', () => {
+      const result = claudeTeamProvider.discoverTeammates(tmpRoot, 'nonexistent-sess');
+      expect(result).toEqual([]);
+    });
+
+    it('skips jsonl files without a valid sidecar', () => {
+      const sessDir = path.join(tmpRoot, 'sess-1', 'subagents');
+      fsMod.mkdirSync(sessDir, { recursive: true });
+      fsMod.writeFileSync(path.join(sessDir, 'orphan.jsonl'), '{}');
+      expect(claudeTeamProvider.discoverTeammates(tmpRoot, 'sess-1')).toEqual([]);
+    });
+
+    it('returns jsonlPath + teammateName for each valid teammate', () => {
+      const sessDir = path.join(tmpRoot, 'sess-1', 'subagents');
+      fsMod.mkdirSync(sessDir, { recursive: true });
+      const agentA = path.join(sessDir, 'agent-a.jsonl');
+      const agentB = path.join(sessDir, 'agent-b.jsonl');
+      fsMod.writeFileSync(agentA, '');
+      fsMod.writeFileSync(
+        agentA.replace(/\.jsonl$/, '.meta.json'),
+        '{"agentType":"web-researcher"}',
       );
+      fsMod.writeFileSync(agentB, '');
+      fsMod.writeFileSync(
+        agentB.replace(/\.jsonl$/, '.meta.json'),
+        '{"agentType":"code-reviewer"}',
+      );
+      const result = claudeTeamProvider.discoverTeammates(tmpRoot, 'sess-1');
+      expect(result.map((t) => t.teammateName).sort()).toEqual(['code-reviewer', 'web-researcher']);
+      expect(result.every((t) => t.jsonlPath.endsWith('.jsonl'))).toBe(true);
     });
   });
 
-  describe('parseTeammateMetadata', () => {
-    it('extracts agentType string field', () => {
-      expect(claudeTeamProvider.parseTeammateMetadata('{"agentType":"web-researcher"}')).toBe(
-        'web-researcher',
+  describe('getTeamMetadataForSession', () => {
+    const fsMod = require('fs') as typeof import('fs');
+    const tmpRoot = path.join(os.tmpdir(), 'pixel-agents-meta-' + Date.now());
+
+    afterEach(() => {
+      try {
+        fsMod.rmSync(tmpRoot, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+    });
+
+    it('returns null when file does not exist', () => {
+      expect(
+        claudeTeamProvider.getTeamMetadataForSession(path.join(tmpRoot, 'missing.jsonl')),
+      ).toBeNull();
+    });
+
+    it('returns null when first line has no teamName', () => {
+      fsMod.mkdirSync(tmpRoot, { recursive: true });
+      const p = path.join(tmpRoot, 'no-team.jsonl');
+      fsMod.writeFileSync(p, JSON.stringify({ other: 'value' }) + '\n');
+      expect(claudeTeamProvider.getTeamMetadataForSession(p)).toBeNull();
+    });
+
+    it('extracts teamName + agentName from the first JSONL line', () => {
+      fsMod.mkdirSync(tmpRoot, { recursive: true });
+      const p = path.join(tmpRoot, 'teammate.jsonl');
+      fsMod.writeFileSync(
+        p,
+        JSON.stringify({ teamName: 'research', agentName: 'web-researcher' }) +
+          '\n' +
+          JSON.stringify({ other: 'should-be-ignored' }) +
+          '\n',
       );
+      expect(claudeTeamProvider.getTeamMetadataForSession(p)).toEqual({
+        teamName: 'research',
+        agentName: 'web-researcher',
+      });
     });
 
-    it('returns null for invalid JSON', () => {
-      expect(claudeTeamProvider.parseTeammateMetadata('not json')).toBeNull();
-      expect(claudeTeamProvider.parseTeammateMetadata('')).toBeNull();
-    });
-
-    it('returns null when agentType is missing', () => {
-      expect(claudeTeamProvider.parseTeammateMetadata('{}')).toBeNull();
-      expect(claudeTeamProvider.parseTeammateMetadata('{"other":"value"}')).toBeNull();
-    });
-
-    it('returns null when agentType is not a string', () => {
-      expect(claudeTeamProvider.parseTeammateMetadata('{"agentType":42}')).toBeNull();
-      expect(claudeTeamProvider.parseTeammateMetadata('{"agentType":null}')).toBeNull();
-    });
-  });
-
-  describe('resolveTeammateJsonlDir', () => {
-    it('builds <projectDir>/<sessionId>/subagents path', () => {
-      const result = claudeTeamProvider.resolveTeammateJsonlDir('/p', 'sess');
-      expect(result).toBe(path.join('/p', 'sess', 'subagents'));
+    it('agentName is undefined for the lead (no agentName field)', () => {
+      fsMod.mkdirSync(tmpRoot, { recursive: true });
+      const p = path.join(tmpRoot, 'lead.jsonl');
+      fsMod.writeFileSync(p, JSON.stringify({ teamName: 'research' }) + '\n');
+      expect(claudeTeamProvider.getTeamMetadataForSession(p)).toEqual({
+        teamName: 'research',
+        agentName: undefined,
+      });
     });
   });
 

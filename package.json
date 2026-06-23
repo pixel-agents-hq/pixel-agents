@@ -1,12 +1,12 @@
 {
   "name": "pixel-agents",
   "displayName": "Pixel Agents",
-  "description": "Pixel art office where your Claude Code agents come to life as animated characters",
+  "description": "Pixel art office where your AI agents (Claude Code and GitHub Copilot) come to life as animated characters",
   "version": "1.3.0",
   "publisher": "pablodelucca",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pablodelucca/pixel-agents"
+    "url": "https://github.com/pixel-agents-hq/pixel-agents"
   },
   "icon": "icon.png",
   "license": "MIT",
@@ -24,8 +24,13 @@
     "ai agents",
     "pixel art"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
+  "bin": {
+    "pixel-agents": "./dist/cli.js"
+  },
   "contributes": {
     "commands": [
       {
@@ -54,24 +59,42 @@
           "name": "Pixel Agents"
         }
       ]
+    },
+    "configuration": {
+      "title": "Pixel Agents",
+      "properties": {
+        "pixel-agents.autoShowPanel": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically open and focus the Pixel Agents panel when VS Code starts."
+        },
+        "pixel-agents.autoSpawnAgent": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically spawn a Claude Code agent when VS Code starts, if no agents are currently running."
+        }
+      }
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
     "build:webview": "cd webview-ui && npm run build",
-    "compile": "npm run check-types && npm run lint && node esbuild.js && npm run build:webview",
+    "compile": "npm run asyncapi:generate && npm run check-types && npm run lint && node esbuild.js && npm run build:webview",
     "build": "npm run compile",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "npm run check-types && npm run lint && node esbuild.js --production && npm run build:webview",
+    "package": "npm run asyncapi:generate && npm run check-types && npm run lint && node esbuild.js --production && npm run build:webview",
+    "asyncapi:generate": "tsx scripts/generate-messages.ts",
+    "asyncapi:validate": "asyncapi validate core/asyncapi.yaml",
+    "asyncapi:docs": "asyncapi start studio --file core/asyncapi.yaml",
     "check-types": "tsc --noEmit && tsc --noEmit -p server/tsconfig.test.json",
     "prepare": "husky",
-    "lint": "eslint src server shared && cd webview-ui && eslint .",
-    "lint:fix": "eslint src server shared --fix && cd webview-ui && eslint . --fix",
+    "lint": "eslint adapters/vscode server core && cd webview-ui && eslint .",
+    "lint:fix": "eslint adapters/vscode server core --fix && cd webview-ui && eslint . --fix",
     "import-tileset": "tsx scripts/import-tileset-cli.ts",
-    "format": "prettier --write \"src/**/*.ts\" \"server/**/*.ts\" \"shared/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx,css}\" \"*.{js,mjs}\" \"webview-ui/*.{js,ts}\"",
-    "format:check": "prettier --check \"src/**/*.ts\" \"server/**/*.ts\" \"shared/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx,css}\" \"*.{js,mjs}\" \"webview-ui/*.{js,ts}\"",
+    "format": "prettier --write \"adapters/vscode/**/*.ts\" \"server/**/*.ts\" \"core/src/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx,css}\" \"*.{js,mjs}\" \"webview-ui/*.{js,ts}\"",
+    "format:check": "prettier --check \"adapters/vscode/**/*.ts\" \"server/**/*.ts\" \"core/src/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx,css}\" \"*.{js,mjs}\" \"webview-ui/*.{js,ts}\"",
     "test:webview": "cd webview-ui && npm test",
     "test:server": "cd server && npm test",
     "test": "npm run test:webview && npm run test:server",
@@ -80,6 +103,9 @@
     "knip": "knip"
   },
   "devDependencies": {
+    "@asyncapi/cli": "^6.0.0",
+    "@asyncapi/html-template": "^3.5.6",
+    "@asyncapi/modelina": "^5.10.1",
     "@playwright/test": "^1.58.2",
     "@types/node": "25.x",
     "@types/pngjs": "^6.0.5",
@@ -88,7 +114,7 @@
     "esbuild": "^0.28.0",
     "eslint": "^10.0.3",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "eslint-plugin-simple-import-sort": "^13.0.0",
     "husky": "^9.1.7",
     "knip": "^6.3.0",
     "lint-staged": "^16.3.2",
@@ -100,11 +126,17 @@
     "typescript-eslint": "^8.54.0"
   },
   "lint-staged": {
-    "src/**/*.ts": "eslint --fix",
+    "adapters/vscode/**/*.ts": "eslint --fix",
     "server/**/*.ts": "eslint --fix",
-    "shared/**/*.ts": "eslint --fix",
+    "core/src/**/*.ts": "eslint --fix",
     "webview-ui/src/**/*.{ts,tsx}": "eslint --fix",
     "*.{ts,tsx,js,mjs,css,json,md}": "prettier --write",
     "webview-ui/**/*.{ts,tsx,js,css,json}": "prettier --write"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/static": "^9.1.1",
+    "@fastify/websocket": "^11.2.0",
+    "fastify": "^5.8.5"
   }
 }

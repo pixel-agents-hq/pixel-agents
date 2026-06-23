@@ -3,67 +3,40 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-import { JSONL_POLL_INTERVAL_MS } from '../server/src/constants.js';
-import {
-  TERMINAL_NAME_PREFIX,
-  WORKSPACE_KEY_AGENT_SEATS,
-  WORKSPACE_KEY_AGENTS,
-} from './constants.js';
+import type { StateAdapter } from '../../core/src/adapter.js';
+import { AgentStateStore } from '../../server/src/agentStateStore.js';
+import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
 import {
   ensureProjectScan,
   readNewLines,
   reassignAgentToFile,
   startFileWatching,
-} from './fileWatcher.js';
-import { migrateAndLoadLayout } from './layoutPersistence.js';
-import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
-import type { AgentSource, AgentState, PersistedAgent } from './types.js';
+} from '../../server/src/fileWatcher.js';
+import { loadLayout } from '../../server/src/layoutPersistence.js';
+import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
+import { claudeProvider } from '../../server/src/providers/index.js';
+import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
+import type { AgentSource, AgentState, PersistedAgent } from '../../server/src/types.js';
+import { COPILOT_CLI_TERMINAL_NAME_PREFIX } from './constants.js';
 
 export function getProjectDirPath(cwd?: string): string {
-  // Fall back to home directory when no workspace folder is open.
-  // This is the common case on Linux/macOS when VS Code is launched without a folder
-  // (e.g. `code` with no arguments). Claude Code writes JSONL files to
-  // ~/.claude/projects/<hash>/ where <hash> is derived from the process cwd, so we
-  // must use the same directory as the terminal's working directory.
+  // Fall back to home directory when no workspace folder is open (common on Linux/macOS
+  // when VS Code is launched without a folder). The provider's getSessionDirs already
+  // implements the Windows case-insensitive fallback for drive-letter casing.
   const workspacePath = cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
-  const dirName = workspacePath.replace(/[^a-zA-Z0-9-]/g, '-');
-  const projectDir = path.join(os.homedir(), '.claude', 'projects', dirName);
-  console.log(`[Pixel Agents] Terminal: Project dir: ${workspacePath} → ${dirName}`);
-
-  // Verify the directory exists; if not, try fuzzy matching against existing dirs
-  if (!fs.existsSync(projectDir)) {
-    const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
-    try {
-      if (fs.existsSync(projectsRoot)) {
-        const candidates = fs.readdirSync(projectsRoot);
-        // Try case-insensitive match (handles Windows drive letter casing)
-        const lowerDirName = dirName.toLowerCase();
-        const match = candidates.find((c) => c.toLowerCase() === lowerDirName);
-        if (match && match !== dirName) {
-          const matchedDir = path.join(projectsRoot, match);
-          console.log(
-            `[Pixel Agents] Project dir not found, using case-insensitive match: ${dirName} → ${match}`,
-          );
-          return matchedDir;
-        }
-        if (!match) {
-          console.warn(
-            `[Pixel Agents] Project dir does not exist: ${projectDir}. ` +
-              `Available dirs (${candidates.length}): ${candidates.slice(0, 5).join(', ')}${candidates.length > 5 ? '...' : ''}`,
-          );
-        }
-      }
-    } catch {
-      // Ignore scan errors
-    }
+  const dirs = claudeProvider.getSessionDirs?.(workspacePath) ?? [];
+  if (dirs.length === 0) {
+    throw new Error('claudeProvider.getSessionDirs returned no directories');
   }
+  const projectDir = dirs[0];
+  console.log(`[Pixel Agents] Terminal: Project dir: ${workspacePath} → ${projectDir}`);
   return projectDir;
 }
 
 export async function launchNewTerminal(
   nextAgentIdRef: { current: number },
   nextTerminalIndexRef: { current: number },
-  agents: Map<number, AgentState>,
+  agents: AgentStateStore,
   activeAgentIdRef: { current: number | null },
   knownJsonlFiles: Set<string>,
   fileWatchers: Map<number, fs.FSWatcher>,
@@ -72,15 +45,15 @@ export async function launchNewTerminal(
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
   jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
   projectScanTimerRef: { current: ReturnType<typeof setInterval> | null },
-  webview: vscode.Webview | undefined,
   persistAgents: () => void,
   folderPath?: string,
   bypassPermissions?: boolean,
+  suppressShow?: boolean,
   agentType?: AgentSource,
 ): Promise<void> {
   const source: AgentSource = agentType === 'copilot-cli' ? 'copilot-cli' : 'claude-code';
   const isCopilotCli = source === 'copilot-cli';
-  const namePrefix = isCopilotCli ? COPILOT_CLI_TERMINAL_NAME_PREFIX : TERMINAL_NAME_PREFIX;
+  const namePrefix = isCopilotCli ? COPILOT_CLI_TERMINAL_NAME_PREFIX : CLAUDE_TERMINAL_NAME_PREFIX;
 
   const folders = vscode.workspace.workspaceFolders;
   // Use home directory as fallback cwd when no workspace is open (common on Linux/macOS).
@@ -93,33 +66,28 @@ export async function launchNewTerminal(
     name: `${namePrefix} #${idx}`,
     cwd,
   });
-  terminal.show();
+  // When suppressShow is set (auto-spawn + autoShowPanel), keep the panel view
+  // on Pixel Agents instead of switching to Terminal. Claude Code still runs
+  // via sendText below; user can click the character to focus the terminal via
+  // the existing focusAgent message handler.
+  if (!suppressShow) {
+    terminal.show();
+  }
 
   if (isCopilotCli) {
+    // Copilot CLI agents run the `copilot` command and have no JSONL transcript,
+    // so we create a character but don't set up file watching or activity tracking.
     terminal.sendText('copilot');
-  } else {
-    const sessionId = crypto.randomUUID();
-    const claudeCmd = bypassPermissions
-      ? `claude --session-id ${sessionId} --dangerously-skip-permissions`
-      : `claude --session-id ${sessionId}`;
-    terminal.sendText(claudeCmd);
-
-    const projectDir = getProjectDirPath(cwd);
-
-    // Pre-register expected JSONL file so project scan won't treat it as a /clear file
-    const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
-    knownJsonlFiles.add(expectedFile);
-
-    // Create agent immediately (before JSONL file exists)
     const id = nextAgentIdRef.current++;
     const folderName = isMultiRoot && cwd ? path.basename(cwd) : undefined;
     const agent: AgentState = {
       id,
-      source: 'claude-code',
+      source: 'copilot-cli',
+      sessionId: crypto.randomUUID(),
       terminalRef: terminal,
       isExternal: false,
-      projectDir,
-      jsonlFile: expectedFile,
+      projectDir: '',
+      jsonlFile: '',
       fileOffset: 0,
       lineBuffer: '',
       activeToolIds: new Set(),
@@ -134,94 +102,42 @@ export async function launchNewTerminal(
       lastDataAt: 0,
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
+      hookDelivered: false,
+      inputTokens: 0,
+      outputTokens: 0,
       folderName,
     };
-
     agents.set(id, agent);
     activeAgentIdRef.current = id;
     persistAgents();
-    console.log(`[Pixel Agents] Agent ${id}: created for terminal ${terminal.name}`);
-    webview?.postMessage({ type: 'agentCreated', id, folderName });
-
-    ensureProjectScan(
-      projectDir,
-      knownJsonlFiles,
-      projectScanTimerRef,
-      activeAgentIdRef,
-      nextAgentIdRef,
-      agents,
-      fileWatchers,
-      pollingTimers,
-      waitingTimers,
-      permissionTimers,
-      webview,
-      persistAgents,
-    );
-
-    // Poll for the specific JSONL file to appear
-    let pollCount = 0;
-    console.log(`[Pixel Agents] Agent ${id}: waiting for JSONL at ${agent.jsonlFile}`);
-    const pollTimer = setInterval(() => {
-      pollCount++;
-      try {
-        if (fs.existsSync(agent.jsonlFile)) {
-          console.log(
-            `[Pixel Agents] Agent ${id}: found JSONL file ${path.basename(agent.jsonlFile)} (after ${pollCount}s)`,
-          );
-          clearInterval(pollTimer);
-          jsonlPollTimers.delete(id);
-          startFileWatching(
-            id,
-            agent.jsonlFile,
-            agents,
-            fileWatchers,
-            pollingTimers,
-            waitingTimers,
-            permissionTimers,
-            webview,
-          );
-          readNewLines(id, agents, waitingTimers, permissionTimers, webview);
-        } else if (pollCount === 10) {
-          // After 10s of polling, warn with path details to help diagnose path encoding mismatches
-          const dirExists = fs.existsSync(projectDir);
-          let dirContents = '';
-          if (dirExists) {
-            try {
-              const files = fs.readdirSync(projectDir).filter((f) => f.endsWith('.jsonl'));
-              dirContents =
-                files.length > 0
-                  ? `Dir has ${files.length} JSONL file(s): ${files.slice(0, 3).join(', ')}${files.length > 3 ? '...' : ''}`
-                  : 'Dir exists but has no JSONL files';
-            } catch {
-              dirContents = 'Dir exists but unreadable';
-            }
-          } else {
-            dirContents = 'Dir does not exist';
-          }
-          console.warn(
-            `[Pixel Agents] Agent ${id}: JSONL file not found after 10s. ` +
-              `Expected: ${agent.jsonlFile}. ${dirContents}`,
-          );
-        }
-      } catch {
-        /* file may not exist yet */
-      }
-    }, JSONL_POLL_INTERVAL_MS);
-    jsonlPollTimers.set(id, pollTimer);
+    console.log(`[Pixel Agents] Copilot CLI Agent ${id}: created for terminal ${terminal.name}`);
     return;
   }
 
-  // Copilot CLI agent — no JSONL file tracking
+  const sessionId = crypto.randomUUID();
+  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
+  if (!launch) {
+    throw new Error('claudeProvider.buildLaunchCommand is not implemented');
+  }
+  terminal.sendText([launch.command, ...launch.args].join(' '));
+
+  const projectDir = getProjectDirPath(cwd);
+
+  // Pre-register expected JSONL file so project scan won't treat it as a /clear file
+  const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
+  knownJsonlFiles.add(expectedFile);
+
+  // Create agent immediately (before JSONL file exists)
   const id = nextAgentIdRef.current++;
   const folderName = isMultiRoot && cwd ? path.basename(cwd) : undefined;
   const agent: AgentState = {
     id,
-    source: 'copilot-cli',
+    source: 'claude-code',
     sessionId,
     terminalRef: terminal,
     isExternal: false,
-    projectDir: '',
-    jsonlFile: '',
+    projectDir,
+    jsonlFile: expectedFile,
     fileOffset: 0,
     lineBuffer: '',
     activeToolIds: new Set(),
@@ -245,10 +161,7 @@ export async function launchNewTerminal(
   agents.set(id, agent);
   activeAgentIdRef.current = id;
   persistAgents();
-  console.log(`[Pixel Agents] Copilot CLI Agent ${id}: created for terminal ${terminal.name}`);
-  webview?.postMessage({ type: 'agentCreated', id, folderName });
   console.log(`[Pixel Agents] Terminal: Agent ${id} - created for terminal ${terminal.name}`);
-  webview?.postMessage({ type: 'agentCreated', id, folderName });
 
   ensureProjectScan(
     projectDir,
@@ -261,7 +174,6 @@ export async function launchNewTerminal(
     pollingTimers,
     waitingTimers,
     permissionTimers,
-    webview,
     persistAgents,
   );
 
@@ -286,9 +198,8 @@ export async function launchNewTerminal(
           pollingTimers,
           waitingTimers,
           permissionTimers,
-          webview,
         );
-        readNewLines(id, agents, waitingTimers, permissionTimers, webview);
+        readNewLines(id, agents, waitingTimers, permissionTimers);
       } else if (pollCount === 10) {
         // After 10s of polling, warn with path details to help diagnose path encoding mismatches
         const dirExists = fs.existsSync(projectDir);
@@ -339,7 +250,6 @@ export async function launchNewTerminal(
               pollingTimers,
               waitingTimers,
               permissionTimers,
-              webview,
               persistAgents,
             );
           }
@@ -356,15 +266,14 @@ export async function launchNewTerminal(
 
 export function removeAgent(
   agentId: number,
-  agents: Map<number, AgentState>,
+  store: AgentStateStore,
   fileWatchers: Map<number, fs.FSWatcher>,
   pollingTimers: Map<number, ReturnType<typeof setInterval>>,
   waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
   jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
-  persistAgents: () => void,
 ): void {
-  const agent = agents.get(agentId);
+  const agent = store.get(agentId);
   if (!agent) return;
 
   // Stop JSONL poll timer
@@ -387,20 +296,16 @@ export function removeAgent(
   cancelWaitingTimer(agentId, waitingTimers);
   cancelPermissionTimer(agentId, permissionTimers);
 
-  // Remove from maps
-  agents.delete(agentId);
-  persistAgents();
+  // Remove from store (fires agentRemoved event) and persist
+  store.delete(agentId);
+  store.persist();
 }
 
-export function persistAgents(
-  agents: Map<number, AgentState>,
-  context: vscode.ExtensionContext,
-): void {
+export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): void {
   const persisted: PersistedAgent[] = [];
   for (const agent of agents.values()) {
     persisted.push({
       id: agent.id,
-      source: agent.source,
       sessionId: agent.sessionId,
       terminalName: agent.terminalRef?.name ?? '',
       isExternal: agent.isExternal || undefined,
@@ -414,14 +319,14 @@ export function persistAgents(
       teamUsesTmux: agent.teamUsesTmux,
     });
   }
-  context.workspaceState.update(WORKSPACE_KEY_AGENTS, persisted);
+  adapter.saveAgents(persisted);
 }
 
 export function restoreAgents(
-  context: vscode.ExtensionContext,
+  adapter: StateAdapter,
   nextAgentIdRef: { current: number },
   nextTerminalIndexRef: { current: number },
-  agents: Map<number, AgentState>,
+  store: AgentStateStore,
   knownJsonlFiles: Set<string>,
   fileWatchers: Map<number, fs.FSWatcher>,
   pollingTimers: Map<number, ReturnType<typeof setInterval>>,
@@ -430,10 +335,8 @@ export function restoreAgents(
   jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
   projectScanTimerRef: { current: ReturnType<typeof setInterval> | null },
   activeAgentIdRef: { current: number | null },
-  webview: vscode.Webview | undefined,
-  doPersist: () => void,
 ): void {
-  const persisted = context.workspaceState.get<PersistedAgent[]>(WORKSPACE_KEY_AGENTS, []);
+  const persisted = adapter.loadAgents();
   if (persisted.length === 0) return;
 
   const liveTerminals = vscode.window.terminals;
@@ -444,7 +347,7 @@ export function restoreAgents(
   for (const p of persisted) {
     // Skip agents already in the map — prevents duplicate file watchers on re-entry
     // (webviewReady fires on every panel focus, re-calling restoreAgents each time)
-    if (agents.has(p.id)) {
+    if (store.has(p.id)) {
       knownJsonlFiles.add(p.jsonlFile);
       continue;
     }
@@ -453,8 +356,7 @@ export function restoreAgents(
     const isExternal = p.isExternal ?? false;
     const source = p.source ?? 'claude-code';
 
-    // Copilot agents are re-created by CopilotAdapter on every startup — skip restoring them.
-    // Copilot CLI agents have no JSONL tracking — skip restoring them too.
+    // Copilot CLI agents have no JSONL tracking and are re-launched manually — skip restoring them.
     if (source === 'copilot' || source === 'copilot-cli') continue;
 
     if (isExternal) {
@@ -503,7 +405,7 @@ export function restoreAgents(
       teamUsesTmux: p.teamUsesTmux,
     };
 
-    agents.set(p.id, agent);
+    store.set(p.id, agent);
     knownJsonlFiles.add(p.jsonlFile);
     if (isExternal) {
       console.log(
@@ -533,12 +435,11 @@ export function restoreAgents(
         startFileWatching(
           p.id,
           p.jsonlFile,
-          agents,
+          store,
           fileWatchers,
           pollingTimers,
           waitingTimers,
           permissionTimers,
-          webview,
         );
       } else {
         // Poll for the file to appear
@@ -553,12 +454,11 @@ export function restoreAgents(
               startFileWatching(
                 p.id,
                 agent.jsonlFile,
-                agents,
+                store,
                 fileWatchers,
                 pollingTimers,
                 waitingTimers,
                 permissionTimers,
-                webview,
               );
             }
           } catch {
@@ -575,13 +475,13 @@ export function restoreAgents(
   // After a short delay, remove restored terminal agents that never received data.
   // These are dead terminals restored by VS Code (e.g., after /clear or restart)
   // where Claude is no longer running.
-  const restoredTerminalIds = [...agents.entries()]
+  const restoredTerminalIds = [...store.entries()]
     .filter(([, a]) => !a.isExternal && a.terminalRef)
     .map(([id]) => id);
   if (restoredTerminalIds.length > 0) {
     setTimeout(() => {
       for (const id of restoredTerminalIds) {
-        const agent = agents.get(id);
+        const agent = store.get(id);
         if (agent && !agent.isExternal && agent.linesProcessed === 0) {
           console.log(
             `[Pixel Agents] Terminal: Agent ${id} - removing restored agent, no data received`,
@@ -589,15 +489,13 @@ export function restoreAgents(
           agent.terminalRef?.dispose();
           removeAgent(
             id,
-            agents,
+            store,
             fileWatchers,
             pollingTimers,
             waitingTimers,
             permissionTimers,
             jsonlPollTimers,
-            doPersist,
           );
-          webview?.postMessage({ type: 'agentClosed', id });
         }
       }
     }, 10_000); // 10 seconds grace period
@@ -612,7 +510,7 @@ export function restoreAgents(
   }
 
   // Re-persist cleaned-up list (removes entries whose terminals are gone)
-  doPersist();
+  store.persist();
 
   // Start project scan for /clear detection
   if (restoredProjectDir) {
@@ -622,20 +520,19 @@ export function restoreAgents(
       projectScanTimerRef,
       activeAgentIdRef,
       nextAgentIdRef,
-      agents,
+      store,
       fileWatchers,
       pollingTimers,
       waitingTimers,
       permissionTimers,
-      webview,
-      doPersist,
+      () => store.persist(),
     );
   }
 }
 
 export function sendExistingAgents(
-  agents: Map<number, AgentState>,
-  context: vscode.ExtensionContext,
+  agents: AgentStateStore,
+  adapter: StateAdapter,
   webview: vscode.Webview | undefined,
 ): void {
   if (!webview) return;
@@ -646,9 +543,7 @@ export function sendExistingAgents(
   agentIds.sort((a, b) => a - b);
 
   // Include persisted palette/seatId from separate key
-  const agentMeta = context.workspaceState.get<
-    Record<string, { palette?: number; seatId?: string }>
-  >(WORKSPACE_KEY_AGENT_SEATS, {});
+  const agentMeta = adapter.loadSeats();
 
   // Include folderName and isExternal per agent
   const folderNames: Record<number, string> = {};
@@ -677,7 +572,7 @@ export function sendExistingAgents(
 }
 
 export function sendCurrentAgentStatuses(
-  agents: Map<number, AgentState>,
+  agents: AgentStateStore,
   webview: vscode.Webview | undefined,
 ): void {
   if (!webview) return;
@@ -726,12 +621,11 @@ export function sendCurrentAgentStatuses(
 }
 
 export function sendLayout(
-  context: vscode.ExtensionContext,
   webview: vscode.Webview | undefined,
   defaultLayout?: Record<string, unknown> | null,
 ): void {
   if (!webview) return;
-  const result = migrateAndLoadLayout(context, defaultLayout);
+  const result = loadLayout(defaultLayout);
   webview.postMessage({
     type: 'layoutLoaded',
     layout: result?.layout ?? null,

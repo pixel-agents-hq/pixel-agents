@@ -22,7 +22,7 @@ import { OfficeState } from './office/engine/officeState.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { EditTool } from './office/types.js';
 import { isBrowserRuntime } from './runtime.js';
-import { vscode } from './vscodeApi.js';
+import { transport } from './transport/index.js';
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
@@ -39,7 +39,10 @@ function App() {
   // Browser runtime (dev or static dist): dispatch mock messages after the
   // useExtensionMessages listener has been registered.
   useEffect(() => {
-    if (isBrowserRuntime) {
+    // browserMock is for Vite dev mode only (UI prototyping without a server).
+    // In standalone server mode, the server sends all state over WebSocket.
+    // In VS Code mode, the extension sends all state via postMessage.
+    if (isBrowserRuntime && import.meta.env.DEV) {
       void import('./browserMock.js').then(({ dispatchMockMessages }) => dispatchMockMessages());
     }
   }, []);
@@ -87,12 +90,12 @@ function App() {
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
   const handleWhatsNewDismiss = useCallback(() => {
-    vscode.postMessage({ type: 'setLastSeenVersion', version: currentMajorMinor });
+    transport.send({ type: 'setLastSeenVersion', version: currentMajorMinor });
   }, [currentMajorMinor]);
 
   const handleOpenChangelog = useCallback(() => {
     setIsChangelogOpen(true);
-    vscode.postMessage({ type: 'setLastSeenVersion', version: currentMajorMinor });
+    transport.send({ type: 'setLastSeenVersion', version: currentMajorMinor });
   }, [currentMajorMinor]);
 
   // Sync alwaysShowOverlay from persisted settings
@@ -104,13 +107,13 @@ function App() {
   const handleToggleAlwaysShowOverlay = useCallback(() => {
     setAlwaysShowOverlay((prev) => {
       const newVal = !prev;
-      vscode.postMessage({ type: 'setAlwaysShowLabels', enabled: newVal });
+      transport.send({ type: 'setAlwaysShowLabels', enabled: newVal });
       return newVal;
     });
   }, []);
 
   const handleSelectAgent = useCallback((id: number) => {
-    vscode.postMessage({ type: 'focusAgent', id });
+    transport.send({ type: 'focusAgent', id });
   }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -129,7 +132,7 @@ function App() {
   );
 
   const handleCloseAgent = useCallback((id: number) => {
-    vscode.postMessage({ type: 'closeAgent', id });
+    transport.send({ type: 'closeAgent', id });
   }, []);
 
   const handleClick = useCallback((agentId: number) => {
@@ -137,7 +140,7 @@ function App() {
     const os = getOfficeState();
     const meta = os.subagentMeta.get(agentId);
     const focusId = meta ? meta.parentAgentId : agentId;
-    vscode.postMessage({ type: 'focusAgent', id: focusId });
+    transport.send({ type: 'focusAgent', id: focusId });
   }, []);
 
   const officeState = getOfficeState();
@@ -268,7 +271,7 @@ function App() {
           position="top-right"
           onDismiss={() => {
             setHooksTooltipDismissed(true);
-            vscode.postMessage({ type: 'setHooksInfoShown' });
+            transport.send({ type: 'setHooksInfoShown' });
           }}
         >
           <span className="text-sm text-text leading-none">
@@ -278,7 +281,7 @@ function App() {
               onClick={() => {
                 setIsHooksInfoOpen(true);
                 setHooksTooltipDismissed(true);
-                vscode.postMessage({ type: 'setHooksInfoShown' });
+                transport.send({ type: 'setHooksInfoShown' });
               }}
             >
               View more
@@ -352,13 +355,13 @@ function App() {
         onToggleWatchAllSessions={() => {
           const newVal = !watchAllSessions;
           setWatchAllSessions(newVal);
-          vscode.postMessage({ type: 'setWatchAllSessions', enabled: newVal });
+          transport.send({ type: 'setWatchAllSessions', enabled: newVal });
         }}
         hooksEnabled={hooksEnabled}
         onToggleHooksEnabled={() => {
           const newVal = !hooksEnabled;
           setHooksEnabled(newVal);
-          vscode.postMessage({ type: 'setHooksEnabled', enabled: newVal });
+          transport.send({ type: 'setHooksEnabled', enabled: newVal });
         }}
       />
 

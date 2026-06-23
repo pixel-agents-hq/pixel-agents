@@ -11,16 +11,15 @@ import {
 } from '../../constants.js';
 import { findPath } from '../layout/tileMap.js';
 import type { CharacterSprites } from '../sprites/spriteData.js';
+import { isReadingToolName } from '../toolUtils.js';
 import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../types.js';
 import { CharacterState, Direction, TILE_SIZE } from '../types.js';
 
-/** Tools that show reading animation instead of typing */
-const READING_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']);
-
-/** @internal */
+/** Whether a tool should show the reading animation (vs typing). Taxonomy comes
+ *  from the active HookProvider via the `providerCapabilities` message. */
 export function isReadingTool(tool: string | null): boolean {
   if (!tool) return false;
-  return READING_TOOLS.has(tool);
+  return isReadingToolName(tool);
 }
 
 /** Pixel center of a tile */

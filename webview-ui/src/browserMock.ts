@@ -8,7 +8,7 @@
  * Only imported in browser runtime; tree-shaken from VS Code webview runtime.
  */
 
-import { rgbaToHex } from '../../shared/assets/colorUtils.ts';
+import { rgbaToHex } from '../../core/src/assets/colorUtils.ts';
 import {
   CHAR_FRAME_H,
   CHAR_FRAME_W,
@@ -19,12 +19,12 @@ import {
   WALL_GRID_COLS,
   WALL_PIECE_HEIGHT,
   WALL_PIECE_WIDTH,
-} from '../../shared/assets/constants.ts';
+} from '../../core/src/assets/constants.ts';
 import type {
   AssetIndex,
   CatalogEntry,
   CharacterDirectionSprites,
-} from '../../shared/assets/types.ts';
+} from '../../core/src/assets/types.ts';
 
 interface MockPayload {
   characters: CharacterDirectionSprites[];
@@ -236,8 +236,11 @@ export async function initBrowserMock(): Promise<void> {
 }
 
 /**
- * Call inside a useEffect in App.tsx — after the window message listener
+ * Call inside a useEffect in App.tsx -- after the window message listener
  * in useExtensionMessages has been registered.
+ *
+ * Only used in Vite dev mode (npm run dev). In standalone server mode and
+ * VS Code mode, the server/extension sends all state over the transport.
  */
 export function dispatchMockMessages(): void {
   if (!mockPayload) return;
@@ -250,7 +253,7 @@ export function dispatchMockMessages(): void {
   }
 
   // Must match the load order defined in CLAUDE.md:
-  // characterSpritesLoaded → floorTilesLoaded → wallTilesLoaded → furnitureAssetsLoaded → layoutLoaded
+  // characterSpritesLoaded -> floorTilesLoaded -> wallTilesLoaded -> furnitureAssetsLoaded -> layoutLoaded
   dispatch({ type: 'characterSpritesLoaded', characters });
   dispatch({ type: 'floorTilesLoaded', sprites: floorSprites });
   dispatch({ type: 'wallTilesLoaded', sets: wallSets });

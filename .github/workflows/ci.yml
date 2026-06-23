@@ -60,6 +60,25 @@ jobs:
         working-directory: server
         run: npm ci
 
+      # --- Protocol spec checks (blocking) ---
+
+      - name: Validate AsyncAPI spec
+        id: validate_spec
+        if: always() && steps.install_root.outcome == 'success'
+        run: npm run asyncapi:validate
+        continue-on-error: true
+
+      - name: Generated messages drift check
+        id: messages_drift
+        if: always() && steps.install_root.outcome == 'success'
+        run: |
+          npm run asyncapi:generate
+          if ! git diff --exit-code core/src/messages.ts; then
+            echo "::error::core/src/messages.ts is out of sync with core/asyncapi.yaml. Run 'npm run asyncapi:generate' locally and commit the result."
+            exit 1
+          fi
+        continue-on-error: true
+
       # --- Quality Checks (blocking) ---
 
       - name: Type Check
@@ -143,6 +162,8 @@ jobs:
           SETUP_NODE: ${{ steps.setup_node.outcome }}
           INSTALL_ROOT: ${{ steps.install_root.outcome }}
           INSTALL_WEBVIEW: ${{ steps.install_webview.outcome }}
+          VALIDATE_SPEC: ${{ steps.validate_spec.outcome }}
+          MESSAGES_DRIFT: ${{ steps.messages_drift.outcome }}
           TYPE_CHECK: ${{ steps.type_check.outcome }}
           LINT: ${{ steps.lint.outcome }}
           WEBVIEW_TEST: ${{ steps.webview_test.outcome }}
@@ -169,6 +190,8 @@ jobs:
             echo "| Setup Node | $(status "$SETUP_NODE") |"
             echo "| Install root deps | $(status "$INSTALL_ROOT") |"
             echo "| Install webview deps | $(status "$INSTALL_WEBVIEW") |"
+            echo "| **Validate AsyncAPI spec** | $(status "$VALIDATE_SPEC") |"
+            echo "| **Generated messages in sync** | $(status "$MESSAGES_DRIFT") |"
             echo "| **Type check** | $(status "$TYPE_CHECK") |"
             echo "| **Lint** | $(status "$LINT") |"
             echo "| **Webview tests** | $(status "$WEBVIEW_TEST") |"
@@ -190,6 +213,8 @@ jobs:
           SETUP_NODE: ${{ steps.setup_node.outcome }}
           INSTALL_ROOT: ${{ steps.install_root.outcome }}
           INSTALL_WEBVIEW: ${{ steps.install_webview.outcome }}
+          VALIDATE_SPEC: ${{ steps.validate_spec.outcome }}
+          MESSAGES_DRIFT: ${{ steps.messages_drift.outcome }}
           TYPE_CHECK: ${{ steps.type_check.outcome }}
           LINT: ${{ steps.lint.outcome }}
           WEBVIEW_TEST: ${{ steps.webview_test.outcome }}
@@ -199,6 +224,7 @@ jobs:
         run: |
           failed=0
           for step in CHECKOUT SETUP_NODE INSTALL_ROOT INSTALL_WEBVIEW \
+                      VALIDATE_SPEC MESSAGES_DRIFT \
                       TYPE_CHECK LINT \
                       WEBVIEW_TEST FORMAT_CHECK BUILD SERVER_TEST; do
             val=$(printenv "$step" 2>/dev/null || echo "skipped")

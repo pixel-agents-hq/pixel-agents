@@ -1,15 +1,8 @@
-import * as path from 'path';
-import type * as vscode from 'vscode';
-
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
-import {
-  BASH_COMMAND_DISPLAY_MAX_LENGTH,
-  TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
-  TEXT_IDLE_DELAY_MS,
-  TOOL_DONE_DELAY_MS,
-} from '../server/src/constants.js';
-import type { HookProvider } from '../server/src/provider.js';
+import type { HookProvider } from '../../core/src/provider.js';
+import type { AgentStateStore } from './agentStateStore.js';
+import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
 import {
   cancelPermissionTimer,
   cancelWaitingTimer,
@@ -19,80 +12,41 @@ import {
 } from './timerManager.js';
 import type { AgentState } from './types.js';
 
-const PERMISSION_EXEMPT_TOOLS = new Set(['Task', 'Agent', 'AskUserQuestion']);
+/** Empty set used as safe fallback when no HookProvider is registered. */
+const EMPTY_EXEMPT_TOOLS: ReadonlySet<string> = new Set();
 
 /** Hook provider: supplies formatToolStatus + team.extractTeamMetadataFromRecord.
  *  Registered once at startup via setHookProvider(). Functions below assume it's set. */
 let hookProvider: HookProvider | null = null;
+
+/** Permission-exempt tools come from the active provider. Fail-open if unset. */
+function exemptTools(): ReadonlySet<string> {
+  return hookProvider?.permissionExemptTools ?? EMPTY_EXEMPT_TOOLS;
+}
+
+/** Whether the given tool name spawns a sub-agent according to the active provider. */
+function isSubagentTool(toolName: string | null | undefined): boolean {
+  if (!toolName || !hookProvider) return false;
+  return hookProvider.subagentToolNames.has(toolName);
+}
 
 /** Register the HookProvider that owns CLI-specific formatting and team metadata extraction. */
 export function setHookProvider(provider: HookProvider): void {
   hookProvider = provider;
 }
 
-/** Format a tool status line. Delegates to the active HookProvider's formatToolStatus. */
+/** Format a tool status line. Delegates to the active HookProvider's formatToolStatus.
+ *  Invariant: a provider is registered before any transcript lines are parsed. */
 export function formatToolStatus(toolName: string, input: Record<string, unknown>): string {
-  if (hookProvider) return hookProvider.formatToolStatus(toolName, input);
-  // Fallback for bootstrapping / tests without a provider set.
-  return defaultFormatToolStatus(toolName, input);
-}
-
-/** Fallback formatter for edge cases (tests, provider not yet registered).
- *  Mirrors Claude's formatting; most code paths use the provider's implementation. */
-function defaultFormatToolStatus(toolName: string, input: Record<string, unknown>): string {
-  const base = (p: unknown) => (typeof p === 'string' ? path.basename(p) : '');
-  switch (toolName) {
-    case 'Read':
-      return `Reading ${base(input.file_path)}`;
-    case 'Edit':
-      return `Editing ${base(input.file_path)}`;
-    case 'Write':
-      return `Writing ${base(input.file_path)}`;
-    case 'Bash': {
-      const cmd = (input.command as string) || '';
-      return `Running: ${cmd.length > BASH_COMMAND_DISPLAY_MAX_LENGTH ? cmd.slice(0, BASH_COMMAND_DISPLAY_MAX_LENGTH) + '\u2026' : cmd}`;
-    }
-    case 'Glob':
-      return 'Searching files';
-    case 'Grep':
-      return 'Searching code';
-    case 'WebFetch':
-      return 'Fetching web content';
-    case 'WebSearch':
-      return 'Searching the web';
-    case 'Task':
-    case 'Agent': {
-      const desc = typeof input.description === 'string' ? input.description : '';
-      return desc
-        ? `Subtask: ${desc.length > TASK_DESCRIPTION_DISPLAY_MAX_LENGTH ? desc.slice(0, TASK_DESCRIPTION_DISPLAY_MAX_LENGTH) + '\u2026' : desc}`
-        : 'Running subtask';
-    }
-    case 'AskUserQuestion':
-      return 'Waiting for your answer';
-    case 'EnterPlanMode':
-      return 'Planning';
-    case 'NotebookEdit':
-      return `Editing notebook`;
-    case 'TeamCreate': {
-      const teamName = typeof input.team_name === 'string' ? input.team_name : '';
-      return teamName ? `Creating team: ${teamName}` : 'Creating team';
-    }
-    case 'SendMessage': {
-      const recipient = typeof input.recipient === 'string' ? input.recipient : '';
-      return recipient ? `-> ${recipient}` : 'Sending message';
-    }
-    default:
-      return `Using ${toolName}`;
-  }
+  return hookProvider?.formatToolStatus(toolName, input) ?? `Using ${toolName}`;
 }
 
 export function processTranscriptLine(
   agentId: number,
   line: string,
-  agents: Map<number, AgentState>,
+  agents: AgentStateStore,
   waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-  webview: vscode.Webview | undefined,
 ): void {
   const agent = agents.get(agentId);
   if (!agent) return;
@@ -118,7 +72,7 @@ export function processTranscriptLine(
       // Link teammates to leads within the same team
       linkTeammates(agentId, agent, agents);
 
-      webview?.postMessage({
+      agents.broadcast({
         type: 'agentTeamInfo',
         id: agentId,
         teamName: agent.teamName,
@@ -139,7 +93,7 @@ export function processTranscriptLine(
       if (typeof usage.output_tokens === 'number') {
         agent.outputTokens += usage.output_tokens;
       }
-      webview?.postMessage({
+      agents.broadcast({
         type: 'agentTokenUsage',
         id: agentId,
         inputTokens: agent.inputTokens,
@@ -164,7 +118,7 @@ export function processTranscriptLine(
         cancelWaitingTimer(agentId, waitingTimers);
         agent.isWaiting = false;
         agent.hadToolsInTurn = true;
-        webview?.postMessage({ type: 'agentStatus', id: agentId, status: 'active' });
+        agents.broadcast({ type: 'agentStatus', id: agentId, status: 'active' });
         let hasNonExemptTool = false;
         for (const block of blocks) {
           if (block.type === 'tool_use' && block.id) {
@@ -176,18 +130,17 @@ export function processTranscriptLine(
             agent.activeToolIds.add(block.id);
             agent.activeToolStatuses.set(block.id, status);
             agent.activeToolNames.set(block.id, toolName);
-            if (!PERMISSION_EXEMPT_TOOLS.has(toolName)) {
+            if (!exemptTools().has(toolName)) {
               hasNonExemptTool = true;
             }
-            // Detect tmux vs inline team mode from Agent tool's run_in_background flag
+            // Detect tmux vs inline team mode from the team provider's spawn predicate.
             if (
               agent.teamName &&
-              toolName === 'Agent' &&
-              block.input?.run_in_background === true &&
+              hookProvider?.team?.isTeammateSpawnCall(toolName, block.input ?? {}) &&
               !agent.teamUsesTmux
             ) {
               agent.teamUsesTmux = true;
-              webview?.postMessage({
+              agents.broadcast({
                 type: 'agentTeamInfo',
                 id: agentId,
                 teamName: agent.teamName,
@@ -201,10 +154,10 @@ export function processTranscriptLine(
             // EXCEPTION: subagent-spawn tools (Task/Agent) ALWAYS use JSONL so the sub-agent
             // character is created with the REAL tool id. SubagentStop and subagentClear use
             // the real id -- a synthetic-id sub-agent from PreToolUse could never be matched.
-            const isSubagentSpawn = toolName === 'Agent' || toolName === 'Task';
+            const isSubagentSpawn = isSubagentTool(toolName);
             if (!agent.hookDelivered || isSubagentSpawn) {
               const runInBackground = isSubagentSpawn && block.input?.run_in_background === true;
-              webview?.postMessage({
+              agents.broadcast({
                 type: 'agentToolStart',
                 id: agentId,
                 toolId: block.id,
@@ -221,7 +174,7 @@ export function processTranscriptLine(
         // produces false positives. Permission on teammates comes from the lead's
         // routed Notification(permission_prompt) hook — slower but accurate.
         if (hasNonExemptTool && !agent.hookDelivered && !agent.leadAgentId) {
-          startPermissionTimer(agentId, agents, permissionTimers, PERMISSION_EXEMPT_TOOLS, webview);
+          startPermissionTimer(agentId, agents, permissionTimers, exemptTools());
         }
       } else if (blocks.some((b) => b.type === 'text') && !agent.hadToolsInTurn) {
         // Text-only response in a turn that hasn't used any tools.
@@ -230,13 +183,13 @@ export function processTranscriptLine(
         // if no new JSONL data arrives within TEXT_IDLE_DELAY_MS, mark as waiting.
         // Skip when hooks are active — Stop hook handles this exactly.
         if (!agent.hookDelivered) {
-          startWaitingTimer(agentId, TEXT_IDLE_DELAY_MS, agents, waitingTimers, webview);
+          startWaitingTimer(agentId, TEXT_IDLE_DELAY_MS, agents, waitingTimers);
         }
       }
     } else if (record.type === 'assistant' && typeof assistantContent === 'string') {
       // Text-only assistant response (content is a string, not an array)
       if (!agent.hadToolsInTurn && !agent.hookDelivered) {
-        startWaitingTimer(agentId, TEXT_IDLE_DELAY_MS, agents, waitingTimers, webview);
+        startWaitingTimer(agentId, TEXT_IDLE_DELAY_MS, agents, waitingTimers);
       }
     } else if (record.type === 'assistant' && assistantContent === undefined) {
       // Assistant record with no recognizable content structure
@@ -244,7 +197,7 @@ export function processTranscriptLine(
         `[Pixel Agents] Agent ${agentId}: assistant record has no content. Keys: ${Object.keys(record).join(', ')}`,
       );
     } else if (record.type === 'progress') {
-      processProgressRecord(agentId, record, agents, waitingTimers, permissionTimers, webview);
+      processProgressRecord(agentId, record, agents, waitingTimers, permissionTimers);
     } else if (record.type === 'user') {
       const content = record.message?.content ?? record.content;
       if (Array.isArray(content)) {
@@ -257,10 +210,7 @@ export function processTranscriptLine(
               const completedToolName = agent.activeToolNames.get(completedToolId);
 
               // Detect background agent launches — keep the tool alive until queue-operation
-              if (
-                (completedToolName === 'Task' || completedToolName === 'Agent') &&
-                isAsyncAgentResult(block)
-              ) {
+              if (isSubagentTool(completedToolName) && isAsyncAgentResult(block)) {
                 console.log(
                   `[Pixel Agents] Agent ${agentId} background agent launched: ${completedToolId}`,
                 );
@@ -271,11 +221,11 @@ export function processTranscriptLine(
               console.log(
                 `[Pixel Agents] JSONL: Agent ${agentId} - tool done: ${block.tool_use_id}`,
               );
-              // If the completed tool was a Task/Agent, clear its subagent tools
-              if (completedToolName === 'Task' || completedToolName === 'Agent') {
+              // If the completed tool spawned a subagent, clear its subagent tools
+              if (isSubagentTool(completedToolName)) {
                 agent.activeSubagentToolIds.delete(completedToolId);
                 agent.activeSubagentToolNames.delete(completedToolId);
-                webview?.postMessage({
+                agents.broadcast({
                   type: 'subagentClear',
                   id: agentId,
                   parentToolId: completedToolId,
@@ -291,7 +241,7 @@ export function processTranscriptLine(
               if (!agent.hookDelivered || isCompletedAgentTool) {
                 const toolId = completedToolId;
                 setTimeout(() => {
-                  webview?.postMessage({
+                  agents.broadcast({
                     type: 'agentToolDone',
                     id: agentId,
                     toolId,
@@ -308,13 +258,13 @@ export function processTranscriptLine(
         } else {
           // New user text prompt — new turn starting
           cancelWaitingTimer(agentId, waitingTimers);
-          clearAgentActivity(agent, agentId, permissionTimers, webview);
+          clearAgentActivity(agent, agentId, agents, permissionTimers);
           agent.hadToolsInTurn = false;
         }
       } else if (typeof content === 'string' && content.trim()) {
         // New user text prompt — new turn starting
         cancelWaitingTimer(agentId, waitingTimers);
-        clearAgentActivity(agent, agentId, permissionTimers, webview);
+        clearAgentActivity(agent, agentId, agents, permissionTimers);
         agent.hadToolsInTurn = false;
       }
     } else if (record.type === 'queue-operation' && record.operation === 'enqueue') {
@@ -331,7 +281,7 @@ export function processTranscriptLine(
             agent.backgroundAgentToolIds.delete(completedToolId);
             agent.activeSubagentToolIds.delete(completedToolId);
             agent.activeSubagentToolNames.delete(completedToolId);
-            webview?.postMessage({
+            agents.broadcast({
               type: 'subagentClear',
               id: agentId,
               parentToolId: completedToolId,
@@ -342,7 +292,7 @@ export function processTranscriptLine(
             if (!agent.hookDelivered) {
               const toolId = completedToolId;
               setTimeout(() => {
-                webview?.postMessage({
+                agents.broadcast({
                   type: 'agentToolDone',
                   id: agentId,
                   toolId,
@@ -368,19 +318,19 @@ export function processTranscriptLine(
           agent.activeToolStatuses.delete(toolId);
           const toolName = agent.activeToolNames.get(toolId);
           agent.activeToolNames.delete(toolId);
-          if (toolName === 'Task' || toolName === 'Agent') {
+          if (isSubagentTool(toolName)) {
             agent.activeSubagentToolIds.delete(toolId);
             agent.activeSubagentToolNames.delete(toolId);
           }
         }
         if (!agent.hookDelivered) {
-          webview?.postMessage({ type: 'agentToolsClear', id: agentId });
+          agents.broadcast({ type: 'agentToolsClear', id: agentId });
         }
         // Re-send background agent tools so webview keeps their sub-agents alive
         for (const toolId of agent.backgroundAgentToolIds) {
           const status = agent.activeToolStatuses.get(toolId);
           if (status) {
-            webview?.postMessage({
+            agents.broadcast({
               type: 'agentToolStart',
               id: agentId,
               toolId,
@@ -395,7 +345,7 @@ export function processTranscriptLine(
         agent.activeSubagentToolIds.clear();
         agent.activeSubagentToolNames.clear();
         if (!agent.hookDelivered) {
-          webview?.postMessage({ type: 'agentToolsClear', id: agentId });
+          agents.broadcast({ type: 'agentToolsClear', id: agentId });
         }
       }
 
@@ -404,7 +354,7 @@ export function processTranscriptLine(
       agent.hadToolsInTurn = false;
       // Skip status post when hooks already handled it
       if (!agent.hookDelivered) {
-        webview?.postMessage({
+        agents.broadcast({
           type: 'agentStatus',
           id: agentId,
           status: 'waiting',
@@ -433,10 +383,9 @@ export function processTranscriptLine(
 function processProgressRecord(
   agentId: number,
   record: Record<string, unknown>,
-  agents: Map<number, AgentState>,
+  agents: AgentStateStore,
   _waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-  webview: vscode.Webview | undefined,
 ): void {
   const agent = agents.get(agentId);
   if (!agent) return;
@@ -453,14 +402,14 @@ function processProgressRecord(
   const dataType = data.type as string | undefined;
   if (dataType === 'bash_progress' || dataType === 'mcp_progress') {
     if (agent.activeToolIds.has(parentToolId) && !agent.hookDelivered && !agent.leadAgentId) {
-      startPermissionTimer(agentId, agents, permissionTimers, PERMISSION_EXEMPT_TOOLS, webview);
+      startPermissionTimer(agentId, agents, permissionTimers, exemptTools());
     }
     return;
   }
 
-  // Verify parent is an active Task/Agent tool (agent_progress handling)
+  // Verify parent is an active subagent-spawning tool (agent_progress handling)
   const parentToolName = agent.activeToolNames.get(parentToolId);
-  if (parentToolName !== 'Task' && parentToolName !== 'Agent') return;
+  if (!isSubagentTool(parentToolName)) return;
 
   const msg = data.message as Record<string, unknown> | undefined;
   if (!msg) return;
@@ -496,11 +445,11 @@ function processProgressRecord(
         }
         subNames.set(block.id, toolName);
 
-        if (!PERMISSION_EXEMPT_TOOLS.has(toolName)) {
+        if (!exemptTools().has(toolName)) {
           hasNonExemptSubTool = true;
         }
 
-        webview?.postMessage({
+        agents.broadcast({
           type: 'subagentToolStart',
           id: agentId,
           parentToolId,
@@ -510,7 +459,7 @@ function processProgressRecord(
       }
     }
     if (hasNonExemptSubTool && !agent.hookDelivered) {
-      startPermissionTimer(agentId, agents, permissionTimers, PERMISSION_EXEMPT_TOOLS, webview);
+      startPermissionTimer(agentId, agents, permissionTimers, exemptTools());
     }
   } else if (msgType === 'user') {
     for (const block of content) {
@@ -531,7 +480,7 @@ function processProgressRecord(
 
         const toolId = block.tool_use_id;
         setTimeout(() => {
-          webview?.postMessage({
+          agents.broadcast({
             type: 'subagentToolDone',
             id: agentId,
             parentToolId,
@@ -545,7 +494,7 @@ function processProgressRecord(
     let stillHasNonExempt = false;
     for (const [, subNames] of agent.activeSubagentToolNames) {
       for (const [, toolName] of subNames) {
-        if (!PERMISSION_EXEMPT_TOOLS.has(toolName)) {
+        if (!exemptTools().has(toolName)) {
           stillHasNonExempt = true;
           break;
         }
@@ -553,7 +502,7 @@ function processProgressRecord(
       if (stillHasNonExempt) break;
     }
     if (stillHasNonExempt && !agent.hookDelivered) {
-      startPermissionTimer(agentId, agents, permissionTimers, PERMISSION_EXEMPT_TOOLS, webview);
+      startPermissionTimer(agentId, agents, permissionTimers, exemptTools());
     }
   }
 }
@@ -563,7 +512,7 @@ function processProgressRecord(
  * The lead is the agent with no agentName (or the first one detected in the team).
  * Teammates get leadAgentId pointing to the lead.
  */
-function linkTeammates(_agentId: number, agent: AgentState, agents: Map<number, AgentState>): void {
+function linkTeammates(_agentId: number, agent: AgentState, agents: AgentStateStore): void {
   const teamName = agent.teamName;
   if (!teamName) return;
 

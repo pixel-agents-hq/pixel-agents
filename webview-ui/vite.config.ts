@@ -5,13 +5,13 @@ import * as path from 'path';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vite';
 
-import { buildAssetIndex, buildFurnitureCatalog } from '../shared/assets/build.ts';
+import { buildAssetIndex, buildFurnitureCatalog } from '../core/src/assets/build.ts';
 import {
   decodeAllCharacters,
   decodeAllFloors,
   decodeAllFurniture,
   decodeAllWalls,
-} from '../shared/assets/loader.ts';
+} from '../core/src/assets/loader.ts';
 
 // ── Decoded asset cache (invalidated on file change) ─────────────────────────
 

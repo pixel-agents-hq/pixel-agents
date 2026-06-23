@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AgentState } from '../../src/types.js';
+import { AgentStateStore } from '../src/agentStateStore.js';
 import { getInlineTeammates, hasInlineTeammates, isInlineTeammateOf } from '../src/teamUtils.js';
+import type { AgentState } from '../src/types.js';
 
 /** Minimal AgentState for testing -- only the fields teamUtils actually reads. */
 function agent(overrides: Partial<AgentState> = {}): AgentState {
@@ -11,6 +12,13 @@ function agent(overrides: Partial<AgentState> = {}): AgentState {
     teamUsesTmux: false,
     ...overrides,
   } as AgentState;
+}
+
+/** Create an AgentStateStore from [id, agent] entries. */
+function storeFrom(entries: Array<[number, AgentState]>): AgentStateStore {
+  const s = new AgentStateStore();
+  for (const [id, a] of entries) s.set(id, a);
+  return s;
 }
 
 describe('teamUtils', () => {
@@ -38,7 +46,7 @@ describe('teamUtils', () => {
 
   describe('getInlineTeammates', () => {
     it('returns only inline teammates of the given lead', () => {
-      const agents = new Map<number, AgentState>([
+      const agents = storeFrom([
         [1, agent({ id: 1 })], // lead
         [2, agent({ id: 2, leadAgentId: 1 })], // inline teammate of lead 1
         [3, agent({ id: 3, leadAgentId: 1, teamUsesTmux: true })], // tmux teammate
@@ -50,13 +58,13 @@ describe('teamUtils', () => {
     });
 
     it('returns empty array when no teammates exist', () => {
-      const agents = new Map([[1, agent({ id: 1 })]]);
+      const agents = storeFrom([[1, agent({ id: 1 })]]);
       expect(getInlineTeammates(1, agents)).toEqual([]);
     });
 
     it('returns [id, agent] pairs preserving agent references', () => {
       const teammate = agent({ id: 2, leadAgentId: 1 });
-      const agents = new Map([[2, teammate]]);
+      const agents = storeFrom([[2, teammate]]);
       const result = getInlineTeammates(1, agents);
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual([2, teammate]);
@@ -66,7 +74,7 @@ describe('teamUtils', () => {
 
   describe('hasInlineTeammates', () => {
     it('returns true when at least one inline teammate exists', () => {
-      const agents = new Map([
+      const agents = storeFrom([
         [1, agent({ id: 1 })],
         [2, agent({ id: 2, leadAgentId: 1 })],
       ]);
@@ -74,7 +82,7 @@ describe('teamUtils', () => {
     });
 
     it('returns false when only tmux teammates exist', () => {
-      const agents = new Map([
+      const agents = storeFrom([
         [1, agent({ id: 1 })],
         [2, agent({ id: 2, leadAgentId: 1, teamUsesTmux: true })],
       ]);
@@ -82,12 +90,12 @@ describe('teamUtils', () => {
     });
 
     it('returns false when lead has no teammates', () => {
-      const agents = new Map([[1, agent({ id: 1 })]]);
+      const agents = storeFrom([[1, agent({ id: 1 })]]);
       expect(hasInlineTeammates(1, agents)).toBe(false);
     });
 
     it('short-circuits on first match (performance, not behavioral)', () => {
-      const agents = new Map([
+      const agents = storeFrom([
         [1, agent({ id: 1 })],
         [2, agent({ id: 2, leadAgentId: 1 })],
         [3, agent({ id: 3, leadAgentId: 1 })],

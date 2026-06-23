@@ -12,22 +12,47 @@ import type { TeamProvider } from './teamProvider.js';
 // ── Normalized Events (all provider types produce these) ──────
 
 export type AgentEvent =
-  | { kind: 'toolStart'; toolId: string; toolName: string; input?: unknown }
+  | {
+      kind: 'toolStart';
+      toolId: string;
+      toolName: string;
+      input?: unknown;
+      /** True when the tool was spawned to run in the background (e.g. Claude's
+       *  `run_in_background` on Agent/Task). Handlers use this to suppress ghost
+       *  sub-agent characters for teammate spawns. */
+      runInBackground?: boolean;
+    }
   | { kind: 'toolEnd'; toolId: string }
   | { kind: 'turnEnd' }
-  | { kind: 'userTurn' }
   | {
       kind: 'subagentStart';
       parentToolId: string;
       toolId: string;
       toolName: string;
       input?: unknown;
+      runInBackground?: boolean;
     }
   | { kind: 'subagentEnd'; parentToolId: string; toolId: string }
-  | { kind: 'subagentTurnEnd'; parentToolId: string }
+  | {
+      kind: 'subagentTurnEnd';
+      parentToolId: string;
+      /** 'idle' = subagent is idle and ready for more work; 'completed' = subagent
+       *  reported its task done. Some providers emit only one; both route to the
+       *  same handler but with different downstream cleanup. */
+      reason: 'idle' | 'completed';
+    }
   | { kind: 'progress'; toolId: string; data: unknown }
   | { kind: 'permissionRequest' }
-  | { kind: 'sessionStart'; source?: string }
+  | {
+      kind: 'sessionStart';
+      source?: string;
+      /** For external-session adoption: path to the session's transcript file
+       *  (if the provider uses one). Undefined for providers without transcripts. */
+      transcriptPath?: string;
+      /** Working directory the session was started in. Used to match pending
+       *  external sessions against known workspace folders. */
+      cwd?: string;
+    }
   | { kind: 'sessionEnd'; reason?: string };
 
 // ── Hook-based Provider (CLIs with hooks APIs) ────────────────
@@ -36,6 +61,10 @@ export interface HookProvider {
   readonly kind: 'hook';
   readonly id: string;
   readonly displayName: string;
+  /** Protocol version. Server refuses to dispatch events from a provider whose
+   *  version it doesn't understand. Bump on every breaking change to AgentEvent
+   *  / TeamProvider / HookProvider. Start at 1. */
+  readonly protocolVersion: number;
 
   /** Normalize a raw hook event payload into an AgentEvent.
    *  Each CLI sends different JSON (Claude: snake_case, Copilot: camelCase, etc.)
@@ -59,11 +88,23 @@ export interface HookProvider {
   readonly permissionExemptTools: ReadonlySet<string>;
   /** Tools that spawn sub-agent characters */
   readonly subagentToolNames: ReadonlySet<string>;
+  /** Tools that should show the "reading" character animation instead of "typing".
+   *  The provider classifies tools as read-like or write-like; the webview renders
+   *  the animation. Allows new providers to override without webview edits. */
+  readonly readingTools: ReadonlySet<string>;
+  /** Terminal name prefix used when launching this CLI. Used by the extension to
+   *  match VS Code terminals to agents for heuristic adoption. */
+  readonly terminalNamePrefix?: string;
 
   // ── Optional file fallback (heuristic mode) ──
 
   /** Session directories to scan. Undefined = no file fallback. */
   getSessionDirs?(workspacePath: string): string[];
+  /** Root directories containing every session this provider may have started
+   *  (across all workspaces). Used by global session discovery / "Watch All
+   *  Sessions". Each returned dir contains subdirs whose entries are session
+   *  transcript files. Undefined = this provider doesn't support global scan. */
+  getAllSessionRoots?(): string[];
   /** Glob pattern for session files (e.g., '*.jsonl'). */
   readonly sessionFilePattern?: string;
   /** Parse one line of a transcript file into an AgentEvent. */
@@ -72,6 +113,7 @@ export interface HookProvider {
   buildLaunchCommand?(
     sessionId: string,
     cwd: string,
+    opts?: { bypassPermissions?: boolean },
   ): {
     command: string;
     args: string[];

@@ -2,7 +2,7 @@
 .vscode-test/**
 out/**
 **/node_modules/**
-src/**
+adapters/**
 webview-ui/**
 scripts/**
 sprites-export/**

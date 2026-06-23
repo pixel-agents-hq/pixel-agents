@@ -1,28 +1,26 @@
-import type * as vscode from 'vscode';
-
-import { PERMISSION_TIMER_DELAY_MS } from '../server/src/constants.js';
+import type { AgentStateStore } from './agentStateStore.js';
+import { PERMISSION_TIMER_DELAY_MS } from './constants.js';
 import type { AgentState } from './types.js';
 
 export function clearAgentActivity(
   agent: AgentState | undefined,
   agentId: number,
+  agents: AgentStateStore,
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-  webview: vscode.Webview | undefined,
 ): void {
   if (!agent) return;
 
-  // Preserve background agent tools — only clear foreground state
+  // Preserve background agent tools — only clear foreground state.
+  // The subagent maps are keyed by parentToolId; deleting a non-parent key is a
+  // safe no-op, so no tool-name check is needed here.
   if (agent.backgroundAgentToolIds.size > 0) {
     for (const toolId of agent.activeToolIds) {
       if (agent.backgroundAgentToolIds.has(toolId)) continue;
       agent.activeToolIds.delete(toolId);
       agent.activeToolStatuses.delete(toolId);
-      const toolName = agent.activeToolNames.get(toolId);
       agent.activeToolNames.delete(toolId);
-      if (toolName === 'Task' || toolName === 'Agent') {
-        agent.activeSubagentToolIds.delete(toolId);
-        agent.activeSubagentToolNames.delete(toolId);
-      }
+      agent.activeSubagentToolIds.delete(toolId);
+      agent.activeSubagentToolNames.delete(toolId);
     }
   } else {
     agent.activeToolIds.clear();
@@ -35,12 +33,12 @@ export function clearAgentActivity(
   agent.isWaiting = false;
   agent.permissionSent = false;
   cancelPermissionTimer(agentId, permissionTimers);
-  webview?.postMessage({ type: 'agentToolsClear', id: agentId });
+  agents.broadcast({ type: 'agentToolsClear', id: agentId });
   // Re-send background agent tools so webview re-creates their sub-agents
   for (const toolId of agent.backgroundAgentToolIds) {
     const status = agent.activeToolStatuses.get(toolId);
     if (status) {
-      webview?.postMessage({
+      agents.broadcast({
         type: 'agentToolStart',
         id: agentId,
         toolId,
@@ -48,7 +46,7 @@ export function clearAgentActivity(
       });
     }
   }
-  webview?.postMessage({ type: 'agentStatus', id: agentId, status: 'active' });
+  agents.broadcast({ type: 'agentStatus', id: agentId, status: 'active' });
 }
 
 export function cancelWaitingTimer(
@@ -65,9 +63,8 @@ export function cancelWaitingTimer(
 export function startWaitingTimer(
   agentId: number,
   delayMs: number,
-  agents: Map<number, AgentState>,
+  agents: AgentStateStore,
   waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-  webview: vscode.Webview | undefined,
 ): void {
   cancelWaitingTimer(agentId, waitingTimers);
   const timer = setTimeout(() => {
@@ -76,7 +73,7 @@ export function startWaitingTimer(
     if (agent) {
       agent.isWaiting = true;
     }
-    webview?.postMessage({
+    agents.broadcast({
       type: 'agentStatus',
       id: agentId,
       status: 'waiting',
@@ -98,10 +95,9 @@ export function cancelPermissionTimer(
 
 export function startPermissionTimer(
   agentId: number,
-  agents: Map<number, AgentState>,
+  agents: AgentStateStore,
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-  permissionExemptTools: Set<string>,
-  webview: vscode.Webview | undefined,
+  permissionExemptTools: ReadonlySet<string>,
 ): void {
   cancelPermissionTimer(agentId, permissionTimers);
   const timer = setTimeout(() => {
@@ -134,13 +130,13 @@ export function startPermissionTimer(
     if (hasNonExempt) {
       agent.permissionSent = true;
       console.log(`[Pixel Agents] Timer: Agent ${agentId} - possible permission wait detected`);
-      webview?.postMessage({
+      agents.broadcast({
         type: 'agentToolPermission',
         id: agentId,
       });
       // Also notify stuck sub-agents
       for (const parentToolId of stuckSubagentParentToolIds) {
-        webview?.postMessage({
+        agents.broadcast({
           type: 'subagentToolPermission',
           id: agentId,
           parentToolId,

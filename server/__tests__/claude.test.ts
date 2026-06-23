@@ -17,6 +17,15 @@ describe('claudeProvider', () => {
       expect(claudeProvider.subagentToolNames.has('Task')).toBe(true);
       expect(claudeProvider.subagentToolNames.has('Agent')).toBe(true);
     });
+    it('has reading tools Read/Grep/Glob/WebFetch/WebSearch', () => {
+      for (const tool of ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']) {
+        expect(claudeProvider.readingTools.has(tool)).toBe(true);
+      }
+      expect(claudeProvider.readingTools.has('Edit')).toBe(false);
+    });
+    it('has protocolVersion 1', () => {
+      expect(claudeProvider.protocolVersion).toBe(1);
+    });
     it('has a linked TeamProvider', () => {
       expect(claudeProvider.team).toBeDefined();
       expect(claudeProvider.team?.providerId).toBe('claude');
@@ -52,6 +61,21 @@ describe('claudeProvider', () => {
         expect(result.event.toolName).toBe('Read');
         expect(result.event.toolId.startsWith('hook-')).toBe(true);
         expect(result.event.input).toEqual({ file_path: '/foo.ts' });
+        expect(result.event.runInBackground).toBe(false);
+      }
+    });
+
+    it('PreToolUse sets runInBackground when tool_input.run_in_background=true', () => {
+      const result = claudeProvider.normalizeHookEvent({
+        hook_event_name: 'PreToolUse',
+        session_id: 'sess-1',
+        tool_name: 'Agent',
+        tool_input: { run_in_background: true },
+      });
+      if (result?.event.kind === 'toolStart') {
+        expect(result.event.runInBackground).toBe(true);
+      } else {
+        expect.fail('expected toolStart');
       }
     });
 
@@ -79,12 +103,12 @@ describe('claudeProvider', () => {
       expect(result?.event.kind).toBe('turnEnd');
     });
 
-    it('normalizes UserPromptSubmit to userTurn', () => {
+    it('ignores UserPromptSubmit (no normalized kind yet)', () => {
       const result = claudeProvider.normalizeHookEvent({
         hook_event_name: 'UserPromptSubmit',
         session_id: 'sess-1',
       });
-      expect(result?.event.kind).toBe('userTurn');
+      expect(result).toBeNull();
     });
 
     it('normalizes SubagentStart with agent_type as toolName', () => {
@@ -144,15 +168,19 @@ describe('claudeProvider', () => {
       ).toBeNull();
     });
 
-    it('normalizes SessionStart with source', () => {
+    it('normalizes SessionStart with source + transcript_path + cwd', () => {
       const result = claudeProvider.normalizeHookEvent({
         hook_event_name: 'SessionStart',
         session_id: 'sess-1',
         source: 'startup',
+        transcript_path: '/Users/x/.claude/projects/foo/sess-1.jsonl',
+        cwd: '/Users/x/work',
       });
       expect(result?.event.kind).toBe('sessionStart');
       if (result?.event.kind === 'sessionStart') {
         expect(result.event.source).toBe('startup');
+        expect(result.event.transcriptPath).toBe('/Users/x/.claude/projects/foo/sess-1.jsonl');
+        expect(result.event.cwd).toBe('/Users/x/work');
       }
     });
 
@@ -168,22 +196,28 @@ describe('claudeProvider', () => {
       }
     });
 
-    it('normalizes TeammateIdle to subagentTurnEnd', () => {
+    it('normalizes TeammateIdle to subagentTurnEnd with reason=idle', () => {
       const result = claudeProvider.normalizeHookEvent({
         hook_event_name: 'TeammateIdle',
         session_id: 'sess-1',
         agent_type: 'web-researcher',
       });
       expect(result?.event.kind).toBe('subagentTurnEnd');
+      if (result?.event.kind === 'subagentTurnEnd') {
+        expect(result.event.reason).toBe('idle');
+      }
     });
 
-    it('normalizes TaskCompleted to subagentTurnEnd', () => {
+    it('normalizes TaskCompleted to subagentTurnEnd with reason=completed', () => {
       const result = claudeProvider.normalizeHookEvent({
         hook_event_name: 'TaskCompleted',
         session_id: 'sess-1',
         subject: 'Code review',
       });
       expect(result?.event.kind).toBe('subagentTurnEnd');
+      if (result?.event.kind === 'subagentTurnEnd') {
+        expect(result.event.reason).toBe('completed');
+      }
     });
 
     it('returns null for TaskCreated (informational only)', () => {

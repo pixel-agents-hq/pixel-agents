@@ -7,24 +7,28 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
+import type * as vscode from 'vscode';
 
-import { CHAR_COUNT, CHAR_FRAMES_PER_ROW, WALL_BITMASK_COUNT } from '../shared/assets/constants.js';
+import {
+  CHAR_COUNT,
+  CHAR_FRAMES_PER_ROW,
+  WALL_BITMASK_COUNT,
+} from '../../core/src/assets/constants.js';
 import type {
   FurnitureAsset,
   FurnitureManifest,
   InheritedProps,
   ManifestGroup,
-} from '../shared/assets/manifestUtils.js';
-import { flattenManifest } from '../shared/assets/manifestUtils.js';
+} from '../../core/src/assets/manifestUtils.js';
+import { flattenManifest } from '../../core/src/assets/manifestUtils.js';
 import {
   decodeCharacterPng,
   decodeFloorPng,
   parseWallPng,
   pngToSpriteData,
-} from '../shared/assets/pngDecoder.js';
-import type { CharacterDirectionSprites } from '../shared/assets/types.js';
-export type { CharacterDirectionSprites } from '../shared/assets/types.js';
+} from '../../core/src/assets/pngDecoder.js';
+import type { CharacterDirectionSprites } from '../../core/src/assets/types.js';
+export type { CharacterDirectionSprites } from '../../core/src/assets/types.js';
 
 import { LAYOUT_REVISION_KEY } from './constants.js';
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import type { ToolActivity } from '../office/types.js';
-import { vscode } from '../vscodeApi.js';
+import { transport } from '../transport/index.js';
 import { Button } from './ui/Button.js';
 
 interface AgentDiagnostics {
@@ -70,9 +70,9 @@ export function DebugView({
 
   // Request diagnostics from extension periodically
   useEffect(() => {
-    vscode.postMessage({ type: 'requestDiagnostics' });
+    transport.send({ type: 'requestDiagnostics' });
     const interval = setInterval(() => {
-      vscode.postMessage({ type: 'requestDiagnostics' });
+      transport.send({ type: 'requestDiagnostics' });
     }, 2000);
     return () => clearInterval(interval);
   }, []);
@@ -117,7 +117,7 @@ export function DebugView({
             size="sm"
             onClick={(e) => {
               e.stopPropagation();
-              vscode.postMessage({ type: 'closeAgent', id });
+              transport.send({ type: 'closeAgent', id });
             }}
             className={`opacity-70 ${isSelected ? 'text-white' : ''}`}
             title="Close agent"
