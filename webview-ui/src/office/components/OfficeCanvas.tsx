@@ -648,6 +648,11 @@ export function OfficeCanvas({
       }
       if (e.button === 2) {
         isEraseDraggingRef.current = false;
+        // Close any in-progress carpet / area stroke so the next stroke
+        // starts a fresh undo entry instead of bundling into this one.
+        editorState.carpetStrokeInitialLayout = null;
+        editorState.carpetDragErasing = null;
+        editorState.areaDragErasing = null;
         return;
       }
 

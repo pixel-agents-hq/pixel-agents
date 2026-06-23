@@ -30,13 +30,32 @@ export interface VSCodeSession {
   cleanup: () => Promise<void>;
 }
 
+/** Optional launch knobs for tests that need a seeded HOME or a multi-root window. */
+export interface LaunchOptions {
+  /**
+   * Folder basenames to open as a multi-root workspace. When length > 1, a
+   * `.code-workspace` listing these (as subdirs of the workspace) is opened
+   * instead of a single folder, so `vscode.workspace.workspaceFolders.length > 1`
+   * and agents launched per-folder get a `folderName`. Length <= 1 is ignored
+   * (single-folder default is unchanged).
+   */
+  workspaceFolders?: string[];
+  /** Pre-seed `~/.pixel-agents/config.json` (written before the server reads it). */
+  seedConfig?: unknown;
+  /** Pre-seed `~/.pixel-agents/layout.json` (written before the panel loads). */
+  seedLayout?: unknown;
+}
+
 /**
  * Launch VS Code with the Pixel Agents extension loaded in development mode.
  *
  * Uses an isolated temp HOME and injects the mock `claude` binary at the
  * front of PATH so no real Claude CLI is needed.
  */
-export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
+export async function launchVSCode(
+  testTitle: string,
+  opts: LaunchOptions = {},
+): Promise<VSCodeSession> {
   const vscodePath = fs.readFileSync(VSCODE_PATH_FILE, 'utf8').trim();
 
   // --- Isolated temp directories ---
@@ -50,6 +69,22 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
   fs.mkdirSync(workspaceDir, { recursive: true });
   fs.mkdirSync(userDataDir, { recursive: true });
   fs.mkdirSync(mockBinDir, { recursive: true });
+
+  // Pre-seed user-level config/layout under the isolated HOME, BEFORE VS Code
+  // launches — the server reads ~/.pixel-agents/{config,layout}.json on startup,
+  // so a test that needs specific areaMappings / showAreas / a known layout must
+  // write them now. layout.json must carry a high layoutRevision to survive the
+  // bundled-default reset gate (server/src/layoutPersistence.ts).
+  if (opts.seedConfig !== undefined || opts.seedLayout !== undefined) {
+    const paDir = path.join(tmpHome, '.pixel-agents');
+    fs.mkdirSync(paDir, { recursive: true });
+    if (opts.seedConfig !== undefined) {
+      fs.writeFileSync(path.join(paDir, 'config.json'), JSON.stringify(opts.seedConfig, null, 2));
+    }
+    if (opts.seedLayout !== undefined) {
+      fs.writeFileSync(path.join(paDir, 'layout.json'), JSON.stringify(opts.seedLayout, null, 2));
+    }
+  }
 
   // Enable Claude Agent Teams in the test workspace. Real Claude Code reads this
   // env from .claude/settings.local.json on startup; without it, team mode is gated
@@ -87,6 +122,28 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
     IS_WINDOWS || process.platform === 'darwin'
       ? fs.realpathSync.native(workspaceDir)
       : workspaceDir;
+
+  // Multi-root: create the requested folders as subdirs and open a generated
+  // `.code-workspace` listing them, so the extension sees >1 workspace folder.
+  // Each folder is realpath-normalized (same rationale as resolvedWorkspaceDir)
+  // so the agent terminal's cwd hashes to the same project dir the extension uses.
+  const multiRootFolders = opts.workspaceFolders ?? [];
+  let openTarget = resolvedWorkspaceDir;
+  if (multiRootFolders.length > 1) {
+    const folderEntries = multiRootFolders.map((name) => {
+      const folderDir = path.join(workspaceDir, name);
+      fs.mkdirSync(folderDir, { recursive: true });
+      const resolved =
+        IS_WINDOWS || process.platform === 'darwin' ? fs.realpathSync.native(folderDir) : folderDir;
+      return { path: resolved };
+    });
+    const workspaceFile = path.join(tmpBase, 'pa.code-workspace');
+    fs.writeFileSync(workspaceFile, JSON.stringify({ folders: folderEntries }, null, 2));
+    openTarget =
+      IS_WINDOWS || process.platform === 'darwin'
+        ? fs.realpathSync.native(workspaceFile)
+        : workspaceFile;
+  }
 
   // macOS: create a temporary keychain so the OS doesn't show "Keychain Not Found" dialog.
   // The isolated HOME has no keychain, and VS Code/Electron's safeStorage triggers a system prompt.
@@ -224,8 +281,8 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
     // On Linux, use the Ozone headless platform so Electron runs without a
     // display server (equivalent to what --disable-gpu achieves on macOS/Windows).
     ...(process.platform === 'linux' ? ['--ozone-platform=headless'] : []),
-    // Open the workspace folder
-    resolvedWorkspaceDir,
+    // Open the workspace folder (single dir) or the generated multi-root file.
+    openTarget,
   ];
 
   const cleanup = async (): Promise<void> => {

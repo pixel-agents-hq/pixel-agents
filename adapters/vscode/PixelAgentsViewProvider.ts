@@ -339,6 +339,50 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           readingTools: [...claudeProvider.readingTools],
           subagentToolNames: [...claudeProvider.subagentToolNames],
         });
+
+        // Settings + folder→Area mappings MUST be dispatched BEFORE restoreAgents
+        // and the auto-spawn path. Both paths emit `agentCreated` postMessages via
+        // AgentStateStore events; the webview's handler routes each agent through
+        // OfficeState.findFreeSeat(folderName), which depends on `areaMappings`.
+        // If we restore agents first, Stage-1 (in-Area) is silently skipped for
+        // restored / auto-spawned agents and their preferred Area placement is lost.
+        const soundEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_SOUND_ENABLED, true);
+        const lastSeenVersion = this.adapter.getSetting<string>(GLOBAL_KEY_LAST_SEEN_VERSION, '');
+        const extensionVersion =
+          (this.context.extension.packageJSON as { version?: string }).version ?? '';
+        const watchAllSessions = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_WATCH_ALL_SESSIONS,
+          false,
+        );
+        const alwaysShowLabels = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_ALWAYS_SHOW_LABELS,
+          false,
+        );
+        this.runtime.watchAllSessions.current = watchAllSessions;
+        const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
+        const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
+        const showAreas = this.adapter.getSetting<boolean>(GLOBAL_KEY_SHOW_AREAS, false);
+        const config = readConfig();
+        this.webview?.postMessage({
+          type: 'settingsLoaded',
+          soundEnabled,
+          lastSeenVersion,
+          extensionVersion,
+          watchAllSessions,
+          alwaysShowLabels,
+          hooksEnabled,
+          hooksInfoShown,
+          externalAssetDirectories: config.externalAssetDirectories,
+          showAreas,
+        });
+
+        // Folder→Area mappings (must arrive before any agentCreated/existingAgents
+        // so OfficeState.findFreeSeat has the dict when characters are placed).
+        this.webview?.postMessage({
+          type: 'areaMappingsLoaded',
+          mappings: config.vscode.areaMappings ?? {},
+        });
+
         restoreAgents(
           this.adapter,
           this.store.nextAgentId,
@@ -401,44 +445,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           // (which retrigger webviewReady) never auto-spawn unexpectedly.
           this.autoSpawnAttempted = true;
         }
-
-        // Send persisted settings to webview
-        const soundEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_SOUND_ENABLED, true);
-        const lastSeenVersion = this.adapter.getSetting<string>(GLOBAL_KEY_LAST_SEEN_VERSION, '');
-        const extensionVersion =
-          (this.context.extension.packageJSON as { version?: string }).version ?? '';
-        const watchAllSessions = this.adapter.getSetting<boolean>(
-          GLOBAL_KEY_WATCH_ALL_SESSIONS,
-          false,
-        );
-        const alwaysShowLabels = this.adapter.getSetting<boolean>(
-          GLOBAL_KEY_ALWAYS_SHOW_LABELS,
-          false,
-        );
-        this.runtime.watchAllSessions.current = watchAllSessions;
-        const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
-        const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
-        const showAreas = this.adapter.getSetting<boolean>(GLOBAL_KEY_SHOW_AREAS, false);
-        const config = readConfig();
-        this.webview?.postMessage({
-          type: 'settingsLoaded',
-          soundEnabled,
-          lastSeenVersion,
-          extensionVersion,
-          watchAllSessions,
-          alwaysShowLabels,
-          hooksEnabled,
-          hooksInfoShown,
-          externalAssetDirectories: config.externalAssetDirectories,
-          showAreas,
-        });
-
-        // Folder→Area mappings (must arrive before any agentCreated/existingAgents
-        // so OfficeState.findFreeSeat has the dict when characters are placed).
-        this.webview?.postMessage({
-          type: 'areaMappingsLoaded',
-          mappings: config.vscode.areaMappings ?? {},
-        });
 
         // Send workspace folders to webview (only when multi-root)
         const wsFolders = vscode.workspace.workspaceFolders;

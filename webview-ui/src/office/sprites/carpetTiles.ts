@@ -91,13 +91,7 @@ export function getCarpetJunctionSprite(
 ): SpriteData | null {
   if (variant < 0 || variant >= carpetSets.length) return null;
 
-  // Build the 4-bit marching-squares case from the four tiles around the junction.
-  // NW=1, NE=2, SE=4, SW=8.
-  let msCase = 0;
-  if (tileHasVariant(jx - 1, jy - 1, variant, carpetTiles, cols, rows, paletteKey)) msCase |= 1;
-  if (tileHasVariant(jx, jy - 1, variant, carpetTiles, cols, rows, paletteKey)) msCase |= 2;
-  if (tileHasVariant(jx, jy, variant, carpetTiles, cols, rows, paletteKey)) msCase |= 4;
-  if (tileHasVariant(jx - 1, jy, variant, carpetTiles, cols, rows, paletteKey)) msCase |= 8;
+  const msCase = carpetJunctionCase(jx, jy, variant, carpetTiles, cols, rows, paletteKey);
 
   if (msCase === 0) return null;
 
@@ -110,6 +104,30 @@ export function getCarpetJunctionSprite(
 
   const cacheKey = `${variant}:${msCase}:${paletteKey}`;
   return getDualColorizedCarpetSprite(cacheKey, baseSprite, palette, color, accentColor);
+}
+
+/**
+ * Compute the 4-bit marching-squares case for a junction at `(jx, jy)` from the
+ * four tiles around it: NW=1, NE=2, SE=4, SW=8. Shared by the renderer
+ * (`getCarpetJunctionSprite`) and the e2e observability hook so a test asserts
+ * the real autotiling logic, not a copy. When `paletteKey` is omitted the
+ * neighbor check ignores per-tile colors (matches any carpet of `variant`).
+ */
+export function carpetJunctionCase(
+  jx: number,
+  jy: number,
+  variant: number,
+  carpetTiles: Array<CarpetTile | null>,
+  cols: number,
+  rows: number,
+  paletteKey?: string,
+): number {
+  let msCase = 0;
+  if (tileHasVariant(jx - 1, jy - 1, variant, carpetTiles, cols, rows, paletteKey)) msCase |= 1;
+  if (tileHasVariant(jx, jy - 1, variant, carpetTiles, cols, rows, paletteKey)) msCase |= 2;
+  if (tileHasVariant(jx, jy, variant, carpetTiles, cols, rows, paletteKey)) msCase |= 4;
+  if (tileHasVariant(jx - 1, jy, variant, carpetTiles, cols, rows, paletteKey)) msCase |= 8;
+  return msCase;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

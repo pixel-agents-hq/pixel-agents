@@ -124,6 +124,59 @@ export async function spawnInternalAgentAndWaitForInvocation(
   };
 }
 
+/**
+ * Spawn an agent bound to a specific workspace FOLDER in a multi-root window.
+ * The plain "+ Agent" click opens a folder picker (BottomToolbar.tsx); we click
+ * the named folder entry, which sends `launchAgent { folderPath }` so the agent
+ * gets `folderName = <folder basename>` (adapters/vscode/agentManager.ts). Then
+ * we wait for the spawn exactly like spawnInternalAgentAndWait. The seated
+ * character surfaces via the getAgentSeats / getSeats test hooks (filter by
+ * folderName), so callers correlate without an agent id here.
+ */
+export async function addAgentForFolder(
+  frame: Frame,
+  folderName: string,
+  tmpHome: string,
+  mockLogFile: string,
+): Promise<InternalAgentSpawn> {
+  await frame.locator('button', { hasText: '+ Agent' }).click();
+  // The folder-picker entries are <button> DropdownItems; scope to the button
+  // role so we don't collide with the same folder name shown as a <span> in an
+  // Area card's mapped-folders list (when the folder is already area-mapped).
+  const folderItem = frame.getByRole('button', { name: folderName, exact: true });
+  await expect(folderItem).toBeVisible({ timeout: INTERNAL_AGENT_TIMEOUT_MS });
+  await folderItem.click();
+
+  await expect
+    .poll(() => extractLatestSessionId(readInvocationLog(mockLogFile)) ?? '', {
+      message: `Expected mock invocation log at ${mockLogFile} to contain a session id`,
+      timeout: INTERNAL_AGENT_TIMEOUT_MS,
+      intervals: [250, 500, 1000],
+    })
+    .not.toBe('');
+
+  const invocationLog = readInvocationLog(mockLogFile);
+  const sessionId = extractLatestSessionId(invocationLog);
+  if (!sessionId) {
+    throw new Error(`No session id found in mock invocation log at ${mockLogFile}`);
+  }
+
+  await expect
+    .poll(() => findJsonlFileForSession(tmpHome, sessionId) ?? '', {
+      message: `Expected a JSONL file for session ${sessionId} under ${tmpHome}`,
+      timeout: INTERNAL_AGENT_TIMEOUT_MS,
+      intervals: [250, 500, 1000],
+    })
+    .not.toBe('');
+
+  const jsonlFile = findJsonlFileForSession(tmpHome, sessionId);
+  if (!jsonlFile) {
+    throw new Error(`No JSONL file found for session ${sessionId}`);
+  }
+
+  return { sessionId, projectDir: path.dirname(jsonlFile), jsonlFile, invocationLog };
+}
+
 export function createTranscriptStub(projectDir: string, sessionId: string): string {
   fs.mkdirSync(projectDir, { recursive: true });
   const transcriptPath = path.join(projectDir, `${sessionId}.jsonl`);

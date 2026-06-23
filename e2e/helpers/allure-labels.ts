@@ -13,6 +13,8 @@ const AREA_TO_EPIC: Record<string, string> = {
   matrix: 'Hooks-off matrix',
   standalone: 'Standalone server',
   pets: 'Pet system',
+  carpet: 'Carpet system',
+  areas: 'Areas (zoning) system',
 };
 
 /**

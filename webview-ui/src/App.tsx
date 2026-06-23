@@ -167,6 +167,18 @@ function App() {
   const effectiveShowAreas = isEditingAreas || showAreas;
   const activeAreaLabel = isEditingAreas ? editor.selectedAreaLabel : null;
 
+  // e2e: register the component-scoped editor-action drivers + the effective
+  // show-areas gate on the test-hooks namespace (module-load installTestHooks
+  // can't reach these React callbacks). Bypasses only canvas pixel→tile
+  // geometry — the handlers still own undo/dirty/rebuild. Guarded on isE2E.
+  useEffect(() => {
+    if (!isE2E || typeof window === 'undefined') return;
+    const hooks = (window.__pixelAgentsTestHooks ??= {});
+    hooks.editorTileAction = (col, row) => editor.handleEditorTileAction(col, row);
+    hooks.editorEraseAction = (col, row) => editor.handleEditorEraseAction(col, row);
+    hooks.getShowAreas = () => effectiveShowAreas;
+  }, [editor.handleEditorTileAction, editor.handleEditorEraseAction, effectiveShowAreas]);
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [editorTickForKeyboard, setEditorTickForKeyboard] = useState(0);

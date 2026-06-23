@@ -264,8 +264,9 @@ export class OfficeState {
     return out;
   }
 
-  /** Find the area label assigned to a seat's tile, or null. */
-  private seatZone(uid: string): string | null {
+  /** Find the area label assigned to a seat's tile, or null. Public for e2e
+   *  observability (getAgentSeats hook reads a seated agent's area). */
+  seatZone(uid: string): string | null {
     const seat = this.seats.get(uid);
     if (!seat) return null;
     const tiles = this.layout.areaTiles;

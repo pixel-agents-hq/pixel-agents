@@ -52,7 +52,16 @@ function removeDirIfExists(dirPath: string | undefined): void {
 export const test = base.extend<{
   pixelAgents: PixelAgentsContext;
   _allureLabels: void;
+  /** Pre-seed `~/.pixel-agents/config.json` (e.g. areaMappings, showAreas). */
+  seedConfig: unknown;
+  /** Pre-seed `~/.pixel-agents/layout.json` (must carry a high layoutRevision). */
+  seedLayout: unknown;
+  /** Folder basenames for a multi-root workspace (>1 → multi-root). */
+  workspaceFolders: string[];
 }>({
+  seedConfig: [undefined, { option: true }],
+  seedLayout: [undefined, { option: true }],
+  workspaceFolders: [[], { option: true }],
   // Auto-fixture: tag every test with Allure epic + feature derived from its
   // @area: annotation and enclosing describe path. Runs before pixelAgents.
   _allureLabels: [
@@ -62,8 +71,12 @@ export const test = base.extend<{
     },
     { auto: true },
   ],
-  pixelAgents: async ({}, use, testInfo) => {
-    const session = await launchVSCode(testInfo.title);
+  pixelAgents: async ({ seedConfig, seedLayout, workspaceFolders }, use, testInfo) => {
+    const session = await launchVSCode(testInfo.title, {
+      seedConfig,
+      seedLayout,
+      workspaceFolders,
+    });
     const { window, tmpHome, workspaceDir, mockLogFile } = session;
     const runVideo = window.video();
 
