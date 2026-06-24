@@ -949,7 +949,7 @@ test.describe('Hooks ON / lifecycle', () => {
 
   // verify playDoneSound() fires on agentStatus: 'waiting'.
   // The webview's notificationSound.ts records every invocation into
-  // window.__pixelAgentsSoundsPlayed (a test-only marker that runs BEFORE the
+  // window.__pixelAgentsTestHooks.playedSounds (a test-only marker that runs BEFORE the
   // soundEnabled gate). We trigger waiting state by sending an idle_prompt
   // notification hook (the same hook path the spawn-paths test uses to surface "Might be waiting for
   // input") and assert the sound was dispatched.

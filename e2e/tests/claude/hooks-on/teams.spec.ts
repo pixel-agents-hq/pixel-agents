@@ -11,6 +11,7 @@ import {
   waitForHookServer,
 } from '../../../helpers/hooks';
 import { spawnInternalAgentAndWait } from '../../../helpers/internal-agent';
+import { uniqueTeamName } from '../../../helpers/lifecycle';
 import {
   expectNoOverlayWithTexts,
   expectOverlayCount,
@@ -26,10 +27,6 @@ import {
 import { getPixelAgentsFrame, openPixelAgentsPanel, setSettings } from '../../../helpers/webview';
 
 const TEAMMATE_ROLE = 'web-researcher';
-
-function uniqueTeamName(prefix: string): string {
-  return `${prefix}-${Date.now()}`;
-}
 
 async function expectLeadActivity(frame: Frame, text: string): Promise<void> {
   await expectOverlayVisibleWithTexts(frame, ['LEAD', text]);

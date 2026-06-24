@@ -642,7 +642,7 @@ test.describe('Hooks OFF / lifecycle', () => {
   // playPermissionSound() / playDoneSound() (see
   // webview-ui/src/hooks/useExtensionMessages.ts:354 and 341), which our
   // notificationSound.ts instrumentation records in
-  // window.__pixelAgentsSoundsPlayed.
+  // window.__pixelAgentsTestHooks.playedSounds.
   //
   // Uses EXTERNAL agent (no VS Code terminal) so the Pixel Agents panel
   // stays at full size, dodging the layout race that breaks

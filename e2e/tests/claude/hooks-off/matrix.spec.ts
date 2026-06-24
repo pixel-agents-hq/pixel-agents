@@ -2,6 +2,7 @@ import type { Frame } from '@playwright/test';
 
 import { expect, test } from '../../../fixtures/pixel-agents';
 import { spawnInternalAgentAndWait } from '../../../helpers/internal-agent';
+import { uniqueTeamName } from '../../../helpers/lifecycle';
 import {
   arrangeNextClaudeInvocation,
   type ClaudeMockScenarioBuilder,
@@ -27,10 +28,6 @@ import { getPixelAgentsFrame, openPixelAgentsPanel, setSettings } from '../../..
 const TEAMMATE_ROLE = 'web-researcher';
 const TEAMMATE_ALIAS = 'teammate';
 const TEAMMATE_SLUG = `agent-${TEAMMATE_ROLE}`;
-
-function uniqueTeamName(prefix: string): string {
-  return `${prefix}-${Date.now()}`;
-}
 
 function withTeammateSession(builder: ClaudeMockScenarioBuilder): ClaudeMockScenarioBuilder {
   return builder.defineSession(TEAMMATE_ALIAS, TEAMMATE_SLUG, {
