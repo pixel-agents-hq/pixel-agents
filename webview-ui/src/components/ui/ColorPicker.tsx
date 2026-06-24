@@ -1,3 +1,7 @@
+import type { CSSProperties } from 'react';
+
+import { VisualColorPicker } from '../VisualColorPicker.js';
+import { Button } from './Button.js';
 import type { ColorValue } from './types.js';
 
 function ColorSlider({
@@ -13,18 +17,20 @@ function ColorSlider({
   max: number;
   onChange: (v: number) => void;
 }) {
+  const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
   return (
-    <div className="flex items-center gap-4">
-      <span className="text-sm text-text-muted w-28 text-right shrink-0">{label}</span>
+    <div className="flex items-center gap-8">
+      <span className="text-sm text-text-muted w-64 shrink-0">{label}</span>
       <input
         type="range"
         min={min}
         max={max}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="flex-1 h-12 accent-accent"
+        className="pixel-range flex-1 min-w-0"
+        style={{ '--range-fill': `${pct}%` } as CSSProperties}
       />
-      <span className="text-sm text-text-muted w-48 text-right shrink-0">{value}</span>
+      <span className="text-sm text-text w-44 text-right shrink-0 tabular-nums">{value}</span>
     </div>
   );
 }
@@ -54,54 +60,77 @@ export function ColorPicker({
   const isColorize = colorize || !!value.colorize;
 
   return (
-    <div className="flex flex-col gap-3 py-4 px-6 bg-bg-dark border-2 border-border rounded-none">
+    <div className="flex flex-col py-8 px-10 bg-bg-dark border-2 border-border rounded-none">
       <ColorSlider
-        label="H"
+        label="Hue"
         value={value.h}
         min={isColorize ? 0 : -180}
         max={isColorize ? 360 : 180}
         onChange={(v) => handleChange('h', v)}
       />
       <ColorSlider
-        label="S"
+        label="Saturation"
         value={value.s}
         min={isColorize ? 0 : -100}
         max={100}
         onChange={(v) => handleChange('s', v)}
       />
       <ColorSlider
-        label="B"
+        label="Brightness"
         value={value.b}
         min={-100}
         max={100}
         onChange={(v) => handleChange('b', v)}
       />
       <ColorSlider
-        label="C"
+        label="Contrast"
         value={value.c}
         min={-100}
         max={100}
         onChange={(v) => handleChange('c', v)}
       />
-      {showColorizeToggle && (
-        <label className="flex items-center gap-4 text-sm text-text-muted cursor-pointer">
-          <input
-            type="checkbox"
-            checked={!!value.colorize}
-            onChange={(e) => onChange({ ...value, colorize: e.target.checked || undefined })}
-            className="accent-accent"
-          />
-          Colorize
-        </label>
-      )}
-      {onReset && (
-        <button
-          type="button"
-          onClick={onReset}
-          className="self-start text-xs py-2 px-8 bg-btn-bg border-2 border-border rounded-none cursor-pointer hover:bg-btn-hover"
-        >
-          Reset
-        </button>
+
+      {/* Colorize row: a toggle, then (when on) the carpet-style swatch + hex
+          control that opens a visual picker on click. */}
+      {(showColorizeToggle || onReset) && (
+        <div className="flex items-center gap-8 -mt-4">
+          {showColorizeToggle && (
+            <button
+              type="button"
+              onClick={() => onChange({ ...value, colorize: !value.colorize || undefined })}
+              className="flex items-center gap-8 shrink-0 bg-transparent border-0 p-0 cursor-pointer text-left"
+              title="Toggle colorize mode"
+            >
+              <span className="text-sm text-text-muted w-64 shrink-0">Colorize</span>
+              <span
+                className={`w-18 h-18 border-2 border-border inline-flex items-center justify-center text-2xs leading-none text-text shrink-0 ${
+                  value.colorize ? 'bg-accent' : 'bg-bg'
+                }`}
+              >
+                {value.colorize ? 'x' : ''}
+              </span>
+            </button>
+          )}
+          {showColorizeToggle && value.colorize ? (
+            <>
+              <VisualColorPicker value={value} onChange={onChange} />
+              <span className="flex-1" />
+            </>
+          ) : (
+            <span className="flex-1" />
+          )}
+          {onReset && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={onReset}
+              title="Reset to default"
+              className="mt-6"
+            >
+              Reset
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );

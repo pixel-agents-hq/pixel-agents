@@ -111,6 +111,55 @@
     @apply flex gap-8 overflow-x-auto flex-nowrap pb-2;
   }
 
+  /* Pixel-art range slider (HSBC ColorPicker). The accent fill up to the thumb
+     is driven by the --range-fill custom property set inline per slider. */
+  .pixel-range {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 16px;
+    cursor: pointer;
+    border: 2px solid var(--color-border);
+    background: linear-gradient(
+      to right,
+      var(--color-accent) var(--range-fill, 50%),
+      var(--color-bg-dark) var(--range-fill, 50%)
+    );
+  }
+  .pixel-range::-webkit-slider-runnable-track {
+    -webkit-appearance: none;
+    height: 12px;
+    background: transparent;
+  }
+  .pixel-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 10px;
+    height: 18px;
+    margin-top: -5px;
+    background: var(--color-text);
+    border: 2px solid var(--color-border);
+    border-radius: 0;
+    box-shadow: var(--shadow-pixel);
+  }
+  .pixel-range:hover::-webkit-slider-thumb {
+    background: var(--color-accent-bright);
+  }
+  .pixel-range::-moz-range-track {
+    height: 12px;
+    background: transparent;
+  }
+  .pixel-range::-moz-range-thumb {
+    width: 10px;
+    height: 18px;
+    background: var(--color-text);
+    border: 2px solid var(--color-border);
+    border-radius: 0;
+    box-shadow: var(--shadow-pixel);
+  }
+  .pixel-range:hover::-moz-range-thumb {
+    background: var(--color-accent-bright);
+  }
+
   /* Pulsing dot animation (DebugView, ToolOverlay) */
   .pixel-pulse {
     animation: pixel-pulse 1.5s ease-in-out infinite;

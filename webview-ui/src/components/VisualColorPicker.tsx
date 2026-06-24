@@ -155,9 +155,9 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
       const y = clamp((clientY - rect.top) / rect.height, 0, 1);
       const s = Math.round(x * 100);
       const b = Math.round(100 - y * 200);
-      onChange({ h: value.h, s, b, c: 0, colorize: true });
+      onChange({ h: value.h, s, b, c: value.c, colorize: true });
     },
-    [onChange, value.h],
+    [onChange, value.h, value.c],
   );
 
   const pickFromHue = useCallback(
@@ -166,9 +166,9 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const y = clamp((clientY - rect.top) / rect.height, 0, 1);
-      onChange({ h: Math.round(y * 360), s: value.s, b: value.b, c: 0, colorize: true });
+      onChange({ h: Math.round(y * 360), s: value.s, b: value.b, c: value.c, colorize: true });
     },
-    [onChange, value.s, value.b],
+    [onChange, value.s, value.b, value.c],
   );
 
   const onSvMouseDown = useCallback(
@@ -223,9 +223,9 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
     (hex: string) => {
       setInputHex(hex);
       const parsed = hexToColorValue(hex);
-      if (parsed) onChange(parsed);
+      if (parsed) onChange({ ...parsed, c: value.c });
     },
-    [onChange],
+    [onChange, value.c],
   );
 
   const previewHex = colorValueToHex(value);
