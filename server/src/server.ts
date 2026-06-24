@@ -71,15 +71,26 @@ export class PixelAgentsServer {
     assetCache?: AssetCache;
     onSetHooksEnabled?: SetHooksEnabledSideEffect;
   }): Promise<ServerConfig> {
-    // Check if another instance already has a server running
+    // Reuse a running server only when no specific port was requested (unset
+    // or 0 — e.g. VS Code multi-window) or the requested port matches it. An
+    // explicit, different port (`--port 3101`) means the caller wants its own.
     const existing = this.readServerJson();
     if (existing && isProcessRunning(existing.pid)) {
-      this.config = existing;
-      this.ownsServer = false;
+      const requestedPort = options?.port;
+      const portMatches =
+        requestedPort === undefined || requestedPort === 0 || requestedPort === existing.port;
+      if (portMatches) {
+        this.config = existing;
+        this.ownsServer = false;
+        console.log(
+          `[Pixel Agents] Reusing existing server on port ${existing.port} (PID ${existing.pid})`,
+        );
+        return existing;
+      }
       console.log(
-        `[Pixel Agents] Reusing existing server on port ${existing.port} (PID ${existing.pid})`,
+        `[Pixel Agents] Existing server on port ${existing.port} (PID ${existing.pid}) ` +
+          `does not match requested port ${requestedPort}; starting an independent server.`,
       );
-      return existing;
     }
 
     // Start our own server
