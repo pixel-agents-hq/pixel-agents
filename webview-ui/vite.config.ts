@@ -26,7 +26,10 @@ interface DecodedCache {
 
 function browserMockAssetsPlugin(): Plugin {
   const assetsDir = path.resolve(__dirname, 'public/assets');
-  const distAssetsDir = path.resolve(__dirname, '../dist/webview/assets');
+  // Default for production builds; configResolved below rewrites this to
+  // track the actual build.outDir, so vite build calls that override outDir
+  // (e.g. the build-subpath integration test) still receive the JSON sidecars.
+  let distAssetsDir = path.resolve(__dirname, '../dist/webview/assets');
 
   const cache: DecodedCache = { characters: null, floors: null, walls: null, furniture: null };
 
@@ -39,6 +42,9 @@ function browserMockAssetsPlugin(): Plugin {
 
   return {
     name: 'browser-mock-assets',
+    configResolved(config) {
+      distAssetsDir = path.resolve(config.root, config.build.outDir, 'assets');
+    },
     configureServer(server) {
       // Strip trailing slash: '/' → '', '/sub/' → '/sub'
       const base = server.config.base.replace(/\/$/, '');

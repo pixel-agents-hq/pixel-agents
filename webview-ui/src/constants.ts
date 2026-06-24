@@ -95,6 +95,76 @@ export const DEFAULT_FLOOR_COLOR: ColorValue = { h: 35, s: 30, b: 15, c: 0 };
 export const DEFAULT_WALL_COLOR: ColorValue = { h: 240, s: 25, b: 0, c: 0 };
 export const DEFAULT_NEUTRAL_COLOR: ColorValue = { h: 0, s: 0, b: 0, c: 0 };
 
+// ── Carpets ──────────────────────────────────────────────────
+/** Main (lowest-luminance) color applied to carpets when no per-tile override is set. */
+export const CARPET_DEFAULT_COLOR: ColorValue = { h: 0, s: 71, b: -32, c: 0, colorize: true };
+/** Accent (highest-luminance) color applied to carpets when no per-tile override is set. */
+export const CARPET_DEFAULT_ACCENT_COLOR: ColorValue = {
+  h: 34,
+  s: 64,
+  b: 21,
+  c: 0,
+  colorize: true,
+};
+/** Pixel size of the carpet variant thumbnail rendered in the editor palette. */
+export const CARPET_PREVIEW_SIZE_PX = 64;
+/** Marching-squares mask index used for the carpet preview thumbnail (all neighbors = interior). */
+export const CARPET_PREVIEW_MASK_INDEX = 15;
+/** Keyboard key that switches from CARPET_PAINT to CARPET_PICK while editing. */
+export const KEY_CARPET_PICK = 'p';
+
+// ── Areas (named, colored workspace-folder zones) ────────────
+/** Color palette assigned to new Areas in rotation (cycles when more areas exist). */
+export const AREA_DEFAULT_COLORS: readonly string[] = [
+  '#ff6b6b',
+  '#feca57',
+  '#48dbfb',
+  '#1dd1a1',
+  '#5f27cd',
+  '#ff9ff3',
+  '#54a0ff',
+  '#ffa502',
+] as const;
+/** Translucent overlay alpha for area tile fills. */
+export const AREA_OVERLAY_ALPHA = 0.25;
+/** Alpha multiplier applied to the actively-selected area's overlay. */
+export const AREA_ACTIVE_ALPHA_MULTIPLIER = 1.6;
+/** Base font size (pixel-pre-zoom) for area centroid labels. */
+export const AREA_LABEL_FONT_SIZE_PX = 14;
+/** Minimum on-screen label size to keep labels legible at low zoom. */
+export const AREA_LABEL_MIN_FONT_SIZE_PX = 12;
+/** Alpha of the area label text. */
+export const AREA_LABEL_ALPHA = 1.0;
+/** Fallback label color when an area has no color set (shouldn't happen in practice). */
+export const AREA_LABEL_FALLBACK_COLOR = '#ffffff';
+/** Drop-shadow color behind area labels for legibility on light backgrounds. */
+export const AREA_LABEL_SHADOW_COLOR = '#000000';
+/** Drop-shadow alpha behind area labels. */
+export const AREA_LABEL_SHADOW_ALPHA = 0.6;
+
+// ── VisualColorPicker (HSV wheel + brightness for carpets) ───
+export const VISUAL_COLOR_PICKER_WIDTH_PX = 240;
+export const VISUAL_COLOR_PICKER_SV_SIZE_PX = 180;
+export const VISUAL_COLOR_PICKER_HUE_WIDTH_PX = 20;
+export const VISUAL_COLOR_PICKER_MARKER_RADIUS_PX = 6;
+/**
+ * HSV picker gradients are intrinsic to the color-picking interaction, not
+ * theme colors — they must span the full SRGB cube. Centralized here so the
+ * component body stays free of inline color literals.
+ */
+export const VISUAL_COLOR_PICKER_SV_BLACK_GRADIENT =
+  'linear-gradient(to top, #000 0%, transparent 100%)';
+export const VISUAL_COLOR_PICKER_SV_WHITE_GRADIENT =
+  'linear-gradient(to right, #fff 0%, transparent 100%)';
+export const VISUAL_COLOR_PICKER_HUE_GRADIENT =
+  'linear-gradient(to bottom, ' +
+  '#ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, ' +
+  '#00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%)';
+export const VISUAL_COLOR_PICKER_MARKER_BORDER = '2px solid #fff';
+export const VISUAL_COLOR_PICKER_MARKER_SHADOW = '0 0 0 1px rgba(0,0,0,0.6)';
+/** Build the SV-square base color from the picker's current hue (0..360). */
+export const visualColorPickerSvBaseColor = (hue: number): string => `hsl(${hue}, 100%, 50%)`;
+
 // ── Notification Sound (done: ascending chime) ─────────────
 export const NOTIFICATION_NOTE_1_HZ = 659.25; // E5
 export const NOTIFICATION_NOTE_2_HZ = 1318.51; // E6 (octave up)
@@ -148,3 +218,41 @@ export const FUEL_COLOR_CRITICAL = '#ff2222';
 export const FUEL_GAUGE_BG = '#222';
 export const TEAM_LEAD_COLOR = '#ffd700';
 export const TEAM_ROLE_COLOR = '#66aaff';
+
+// ── Pets ────────────────────────────────────────────────────────
+/** Walking speed in world pixels per second (matches character walk speed visually but slower). */
+export const PET_WALK_SPEED_PX_PER_SEC = 32;
+/** Time per WALK animation cycle step (4 cycle steps × 0.15s = 0.6s per loop). */
+export const PET_WALK_FRAME_DURATION_SEC = 0.15;
+/** Time per IDLE animation cycle step (4 cycle steps × 0.3s = 1.2s per loop). */
+export const PET_IDLE_FRAME_DURATION_SEC = 0.3;
+/** Walk cycle: 4-step lookup into the 3-frame walkDown/walkUp/walkRight arrays. */
+export const PET_WALK_SEQUENCE = [0, 1, 0, 2] as const;
+/** Idle cycle: 4-step lookup into the 3-frame idleDown/idleUp arrays. */
+export const PET_IDLE_SEQUENCE = [0, 1, 2, 1] as const;
+/** Minimum seconds the pet stays in IDLE before making a new decision. */
+export const PET_WANDER_PAUSE_MIN_SEC = 3.0;
+/** Maximum seconds the pet stays in IDLE before making a new decision. */
+export const PET_WANDER_PAUSE_MAX_SEC = 15.0;
+/** Seconds between FOLLOW path re-computations. */
+export const PET_FOLLOW_RECALC_INTERVAL_SEC = 1.0;
+/** Probability that a pet enters FOLLOW (instead of WALK) when wanderTimer expires. */
+export const PET_FOLLOW_CHANCE = 0.3;
+/** Maximum Manhattan distance (tiles) at which a character can become a follow target. */
+export const PET_FOLLOW_RADIUS_TILES = 3;
+/** Minimum seconds a FOLLOW episode lasts before timing out. */
+export const PET_FOLLOW_DURATION_MIN_SEC = 5.0;
+/** Maximum seconds a FOLLOW episode lasts before timing out. */
+export const PET_FOLLOW_DURATION_MAX_SEC = 15.0;
+/** Hit-box half-width (world px) for pet click detection. */
+export const PET_HIT_HALF_WIDTH = 8;
+/** Hit-box height (world px) measured upward from the bottom-center anchor. */
+export const PET_HIT_HEIGHT = 16;
+/** Zoom factor used to draw pet thumbnails in the EditorToolbar Pets tab. */
+export const PET_THUMB_ZOOM = 2;
+/** Scale margin so the pet thumbnail fills the ItemSelect cell without touching the edges. */
+export const PET_THUMB_SCALE_MARGIN = 0.85;
+/** Fallback background fill for sprite-less thumbnail (used while pet sprites are loading). */
+export const EMPTY_SPRITE_THUMBNAIL_BG = '#333';
+/** Maximum string length for a PlacedPet.id (defends against pathologically-long layout entries). */
+export const MAX_PET_ID_LENGTH = 128;

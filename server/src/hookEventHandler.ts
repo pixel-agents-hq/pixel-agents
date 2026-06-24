@@ -142,6 +142,23 @@ export class HookEventHandler {
     if (!normalized) return; // unknown / uninteresting event -- silently drop
     const normEvent = normalized.event;
     const eventName = event.hook_event_name; // retained for logs only
+    // CI / e2e diagnostic: see agentStateStore.ts debugLogBroadcast comment.
+    if (process.env['PIXEL_AGENTS_DEBUG_LOG']) {
+      try {
+        const fs = require('fs') as typeof import('fs');
+        const sid = (event.session_id as string | undefined)?.slice(0, 8) ?? '?';
+        const extras =
+          normEvent.kind === 'toolStart'
+            ? ` toolName=${(normEvent as { toolName?: string }).toolName}`
+            : '';
+        fs.appendFileSync(
+          process.env['PIXEL_AGENTS_DEBUG_LOG']!,
+          `${new Date().toISOString()} HOOK kind=${normEvent.kind} sid=${sid} src=${(normEvent as { source?: string }).source ?? ''}${extras}\n`,
+        );
+      } catch {
+        /* never crash on diagnostic failure */
+      }
+    }
 
     // --- SessionStart: handle /clear for known agents, ignore unknown sessions ---
     // External session detection via SessionStart is deferred to Phase C.
@@ -325,7 +342,9 @@ export class HookEventHandler {
         return this.handlePermissionRequest(agent, agentId);
       case 'turnEnd':
         // Handles Stop AND Notification(idle_prompt) -- both normalize to turnEnd.
-        return this.handleStop(agent, agentId);
+        // awaitingInput discriminates them: idle_prompt sets it (-> "Waiting for
+        // input"), Stop leaves it absent (-> "Done").
+        return this.handleStop(agent, agentId, normEvent.awaitingInput === true);
       case 'subagentTurnEnd':
         // Handles TeammateIdle AND TaskCompleted -- both normalize here. The normalized
         // `reason` field discriminates; the team-provider's extractTeammateNameFromEvent(raw)
@@ -614,8 +633,8 @@ export class HookEventHandler {
   }
 
   /** Handle Stop: Claude finished responding, mark agent as waiting. */
-  private handleStop(agent: AgentState, agentId: number): void {
-    this.markAgentWaiting(agent, agentId);
+  private handleStop(agent: AgentState, agentId: number, awaitingInput = false): void {
+    this.markAgentWaiting(agent, agentId, awaitingInput);
   }
 
   /**
@@ -629,8 +648,9 @@ export class HookEventHandler {
     const inlineTeammates = getInlineTeammates(agentId, this.agents);
 
     if (inlineTeammates.length === 0) {
-      // No inline teammates — treat as a regular idle signal for this agent
-      this.markAgentWaiting(agent, agentId);
+      // No inline teammates — treat as a regular idle signal for this agent.
+      // TeammateIdle is idle-semantics, so it surfaces "Waiting for input".
+      this.markAgentWaiting(agent, agentId, true);
       return;
     }
 
@@ -641,7 +661,7 @@ export class HookEventHandler {
         const [id, a] = match;
         if (debug)
           console.log(`[Pixel Agents] Hook: TeammateIdle "${agentType}" -> teammate Agent ${id}`);
-        this.markAgentWaiting(a, id);
+        this.markAgentWaiting(a, id, true);
         return;
       }
     }
@@ -652,7 +672,7 @@ export class HookEventHandler {
         `[Pixel Agents] Hook: TeammateIdle (no agent_type match) -> marking ${inlineTeammates.length} teammate(s) waiting`,
       );
     for (const [id, a] of inlineTeammates) {
-      this.markAgentWaiting(a, id);
+      this.markAgentWaiting(a, id, true);
     }
   }
 
@@ -690,7 +710,7 @@ export class HookEventHandler {
    * agents), cancels timers, and notifies the webview. Same logic as the turn_duration
    * handler in transcriptParser.ts.
    */
-  private markAgentWaiting(agent: AgentState, agentId: number): void {
+  private markAgentWaiting(agent: AgentState, agentId: number, awaitingInput = false): void {
     cancelWaitingTimer(agentId, this.waitingTimers);
     cancelPermissionTimer(agentId, this.permissionTimers);
 
@@ -727,10 +747,12 @@ export class HookEventHandler {
     agent.isWaiting = true;
     agent.permissionSent = false;
     agent.hadToolsInTurn = false;
+    agent.currentHookToolId = undefined;
     this.agents.broadcast({
       type: 'agentStatus',
       id: agentId,
       status: 'waiting',
+      awaitingInput,
     });
   }
 

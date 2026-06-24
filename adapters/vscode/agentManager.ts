@@ -297,6 +297,13 @@ export function restoreAgents(
   let maxIdx = 0;
   let restoredProjectDir: string | null = null;
 
+  // IDs of agents we ACTUALLY restored in this call (newly added to the store).
+  // The cleanup pass below targets only these; pre-existing agents (e.g., a
+  // freshly launched one whose webview just remounted and re-fired
+  // webviewReady) must not be culled by this restore-time grace period, since
+  // their JSONL may still be on its way (heuristic /resume path waits ~11s).
+  const justRestoredTerminalIds: number[] = [];
+
   for (const p of persisted) {
     // Skip agents already in the map — prevents duplicate file watchers on re-entry
     // (webviewReady fires on every panel focus, re-calling restoreAgents each time)
@@ -363,6 +370,7 @@ export function restoreAgents(
       console.log(
         `[Pixel Agents] Terminal: Agent ${p.id} - restored → terminal "${p.terminalName}"`,
       );
+      justRestoredTerminalIds.push(p.id);
     }
 
     if (p.id > maxId) maxId = p.id;
@@ -420,15 +428,15 @@ export function restoreAgents(
     }
   }
 
-  // After a short delay, remove restored terminal agents that never received data.
-  // These are dead terminals restored by VS Code (e.g., after /clear or restart)
-  // where Claude is no longer running.
-  const restoredTerminalIds = [...store.entries()]
-    .filter(([, a]) => !a.isExternal && a.terminalRef)
-    .map(([id]) => id);
-  if (restoredTerminalIds.length > 0) {
+  // After a short delay, remove terminal agents that we JUST restored from
+  // workspaceState and which never received data. These are dead terminals
+  // restored by VS Code (e.g., after a window reload) where Claude is no
+  // longer running. Only target the IDs the loop above actually added — never
+  // pre-existing agents from launchNewTerminal in the same session whose
+  // expected JSONL may still be on its way (heuristic /resume waits ~11s).
+  if (justRestoredTerminalIds.length > 0) {
     setTimeout(() => {
-      for (const id of restoredTerminalIds) {
+      for (const id of justRestoredTerminalIds) {
         const agent = store.get(id);
         if (agent && !agent.isExternal && agent.linesProcessed === 0) {
           console.log(

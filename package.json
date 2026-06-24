@@ -8,11 +8,13 @@
     "type": "git",
     "url": "https://github.com/pixel-agents-hq/pixel-agents"
   },
+  "workspaces": ["server", "webview-ui"],
   "icon": "icon.png",
   "license": "MIT",
   "engines": {
     "vscode": "^1.105.0"
   },
+  "extensionKind": ["workspace"],
   "categories": [
     "Other"
   ],
@@ -70,6 +72,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
+    "build:extension": "node esbuild.js --production",
     "build:webview": "cd webview-ui && npm run build",
     "compile": "npm run asyncapi:generate && npm run check-types && npm run lint && node esbuild.js && npm run build:webview",
     "build": "npm run compile",
@@ -90,8 +93,13 @@
     "test:webview": "cd webview-ui && npm test",
     "test:server": "cd server && npm test",
     "test": "npm run test:webview && npm run test:server",
-    "e2e": "playwright test --config e2e/playwright.config.ts",
-    "e2e:debug": "playwright test --config e2e/playwright.config.ts --debug",
+    "e2e": "node scripts/run-e2e.mjs",
+    "e2e:debug": "node scripts/run-e2e.mjs --debug",
+    "e2e:inventory": "node scripts/generate-e2e-inventory.mjs",
+    "test:report": "node scripts/build-allure-report.mjs",
+    "test:report:open": "allure open allure-report/allure",
+    "e2e:report": "npm run test:report",
+    "vercel:prepare": "npm run test:report && node scripts/assemble-vercel-output.mjs",
     "knip": "knip"
   },
   "devDependencies": {
@@ -103,6 +111,8 @@
     "@types/pngjs": "^6.0.5",
     "@types/vscode": "^1.105.0",
     "@vscode/test-electron": "^2.5.2",
+    "allure-commandline": "^2.38.1",
+    "allure-playwright": "^3.7.1",
     "esbuild": "^0.28.0",
     "eslint": "^10.0.3",
     "eslint-config-prettier": "^10.1.8",
@@ -122,6 +132,7 @@
     "server/**/*.ts": "eslint --fix",
     "core/src/**/*.ts": "eslint --fix",
     "webview-ui/src/**/*.{ts,tsx}": "eslint --fix",
+    "scripts/**/*.{js,mjs}": "prettier --write",
     "*.{ts,tsx,js,mjs,css,json,md}": "prettier --write",
     "webview-ui/**/*.{ts,tsx,js,css,json}": "prettier --write"
   },

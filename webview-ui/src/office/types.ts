@@ -83,6 +83,10 @@ export const EditTool = {
   SELECT: 'select',
   EYEDROPPER: 'eyedropper',
   ERASE: 'erase',
+  PETS: 'pets',
+  CARPET_PAINT: 'carpet_paint',
+  CARPET_PICK: 'carpet_pick',
+  AREA_PAINT: 'area_paint',
 } as const;
 export type EditTool = (typeof EditTool)[keyof typeof EditTool];
 
@@ -115,6 +119,32 @@ export interface PlacedFurniture {
   color?: ColorValue;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CARPETS — visual layer between floor and furniture. Walkable, decorative.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CarpetTile {
+  /** Variant index into the loaded carpet sprite sets (0 .. getCarpetSetCount()-1). */
+  variant: number;
+  /** Main colorization (lowest-luminance pixels). Defaults to CARPET_DEFAULT_COLOR when omitted. */
+  color?: ColorValue;
+  /** Accent colorization (highest-luminance pixels). Defaults to CARPET_DEFAULT_ACCENT_COLOR when omitted. */
+  accentColor?: ColorValue;
+  /** Stacking order at overlapping junctions. Higher draws on top. Defaults to 0. */
+  order?: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AREAS — translucent named overlays for workspace folder ↔ seat preference.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AreaDefinition {
+  /** Stable label used as the FK in `areaTiles` and `OfficeState.areaMappings`. */
+  label: string;
+  /** Hex color (e.g. "#ff6b6b"). RGB only — alpha applied at render time. */
+  color: string;
+}
+
 export interface OfficeLayout {
   version: 1;
   cols: number;
@@ -125,6 +155,14 @@ export interface OfficeLayout {
   tileColors?: Array<ColorValue | null>;
   /** Bumped when the bundled default layout changes; forces a reset on existing installs */
   layoutRevision?: number;
+  /** Pets placed in the office. Optional for backward-compat; migrateLayout coerces to []. */
+  pets?: PlacedPet[];
+  /** Per-tile carpet data, parallel to tiles array. null/undefined = no carpet on tile. */
+  carpetTiles?: Array<CarpetTile | null>;
+  /** Area definitions referenced by `areaTiles` labels. Distinct labels required. */
+  areas?: AreaDefinition[];
+  /** Per-tile Area label, parallel to tiles array. null = no area assignment. */
+  areaTiles?: Array<string | null>;
 }
 
 export interface Character {
@@ -164,6 +202,11 @@ export interface Character {
   seatId: string | null;
   /** Active speech bubble type, or null if none showing */
   bubbleType: 'permission' | 'waiting' | null;
+  /** Only meaningful while bubbleType === 'waiting': true when the agent went
+   *  idle waiting on the user (surfaces the "Waiting for input" label);
+   *  false/undefined when the agent simply finished its turn (checkmark only,
+   *  label falls through to idle). */
+  waitingAwaitingInput?: boolean;
   /** Countdown timer for bubble (waiting: 2→0, permission: unused) */
   bubbleTimer: number;
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */
@@ -196,4 +239,54 @@ export interface Character {
   inputTokens: number;
   /** Cumulative output tokens consumed */
   outputTokens: number;
+}
+
+export const PetState = { IDLE: 'idle', WALK: 'walk', FOLLOW: 'follow' } as const;
+export type PetState = (typeof PetState)[keyof typeof PetState];
+
+/** Runtime pet (mutated by FSM tick). */
+export interface Pet {
+  /** Stable identifier; matches PlacedPet.id in the layout. */
+  id: string;
+  /** Display name from sprite manifest (e.g. "Claudio", "Gitcat"). */
+  name: string;
+  /** Index into the loaded PetSpriteFrames[] array. */
+  petType: number;
+  state: PetState;
+  dir: Direction;
+  /** Pixel position (bottom-center anchor). */
+  x: number;
+  y: number;
+  /** Current tile column / row (integer). */
+  tileCol: number;
+  tileRow: number;
+  /** Remaining path steps (tile coords). */
+  path: Array<{ col: number; row: number }>;
+  /** 0..1 lerp progress between current tile and next tile. */
+  moveProgress: number;
+  /** Animation cycle index 0..3. */
+  frame: number;
+  frameTimer: number;
+  /** Countdown for next IDLE→WALK/FOLLOW decision. */
+  wanderTimer: number;
+  /** ID of the character being followed, or null. */
+  followTargetId: number | null;
+  /** Countdown until next path re-computation while following. */
+  followRecalcTimer: number;
+  /** Time spent in current FOLLOW episode. */
+  followDuration: number;
+  /** Random [5, 15] limit; FOLLOW exits when followDuration >= this. */
+  followDurationLimit: number;
+  /** Pet's heart-bubble overlay (set on click), or null. */
+  bubbleType: 'heart' | null;
+  /** Countdown timer for the heart bubble (mirrors character waiting bubble). */
+  bubbleTimer: number;
+}
+
+/** Persisted record (lives on OfficeLayout). */
+export interface PlacedPet {
+  /** crypto.randomUUID() generated when first toggled on. */
+  id: string;
+  /** Index into the loaded pet sprite array. */
+  petType: number;
 }

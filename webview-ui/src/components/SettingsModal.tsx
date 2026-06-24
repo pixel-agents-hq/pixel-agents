@@ -19,6 +19,11 @@ interface SettingsModalProps {
   onToggleWatchAllSessions: () => void;
   hooksEnabled: boolean;
   onToggleHooksEnabled: () => void;
+  /** Whether the areas overlay is rendered outside of the Areas edit tool. */
+  showAreas: boolean;
+  onToggleShowAreas: () => void;
+  /** Hide the Show Areas checkbox entirely when no workspace folders exist. */
+  showAreasAvailable: boolean;
 }
 
 export function SettingsModal({
@@ -33,6 +38,9 @@ export function SettingsModal({
   onToggleWatchAllSessions,
   hooksEnabled,
   onToggleHooksEnabled,
+  showAreas,
+  onToggleShowAreas,
+  showAreasAvailable,
 }: SettingsModalProps) {
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
 
@@ -113,6 +121,9 @@ export function SettingsModal({
         checked={alwaysShowOverlay}
         onChange={onToggleAlwaysShowOverlay}
       />
+      {showAreasAvailable && (
+        <Checkbox label="Show Areas" checked={showAreas} onChange={onToggleShowAreas} />
+      )}
       <Checkbox label="Debug View" checked={isDebugMode} onChange={onToggleDebugMode} />
     </Modal>
   );

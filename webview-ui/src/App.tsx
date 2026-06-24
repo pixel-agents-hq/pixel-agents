@@ -20,13 +20,20 @@ import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { OfficeState } from './office/engine/officeState.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
+import { getPetCount } from './office/sprites/petSpriteData.js';
 import { EditTool } from './office/types.js';
-import { isBrowserRuntime } from './runtime.js';
+import { isBrowserRuntime, isE2E } from './runtime.js';
+import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
 const editorState = new EditorState();
+
+// Test-only observability hooks (message/sound logs, addAgent wrapper, selectAgent).
+// Installed only under the e2e harness so they never patch prototypes or grow
+// unbounded logs in a real user's session.
+if (isE2E) installTestHooks(officeStateRef);
 
 function getOfficeState(): OfficeState {
   if (!officeStateRef.current) {
@@ -74,6 +81,10 @@ function App() {
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    areaMappings,
+    setAreaMappings,
+    showAreas,
+    setShowAreas,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -115,6 +126,58 @@ function App() {
   const handleSelectAgent = useCallback((id: number) => {
     transport.send({ type: 'focusAgent', id });
   }, []);
+
+  // Mutate folder→Area mappings locally + send to server. Updates OfficeState in
+  // the same tick so a follow-up agentCreated picks up the new mapping.
+  const handleAreaMappingChange = useCallback(
+    (folderName: string, areaLabel: string, action: 'add' | 'remove') => {
+      const current = areaMappings[folderName] ?? [];
+      let nextLabels: string[];
+      if (action === 'add') {
+        if (current.includes(areaLabel)) return;
+        nextLabels = [...current, areaLabel];
+      } else {
+        nextLabels = current.filter((l) => l !== areaLabel);
+      }
+      const next = { ...areaMappings };
+      if (nextLabels.length === 0) {
+        delete next[folderName];
+      } else {
+        next[folderName] = nextLabels;
+      }
+      setAreaMappings(next);
+      getOfficeState().setAreaMappings(next);
+      transport.send({ type: 'saveAreaMappings', mappings: next });
+    },
+    [areaMappings, setAreaMappings],
+  );
+
+  // Toggle global Show Areas — persisted via setShowAreas message; runs server-
+  // side through configPersistence.
+  const onToggleShowAreas = useCallback(() => {
+    const next = !showAreas;
+    setShowAreas(next);
+    transport.send({ type: 'setShowAreas', enabled: next });
+  }, [showAreas, setShowAreas]);
+
+  // When AREA_PAINT is active in the editor, force the overlay on even if the
+  // user has toggled Show Areas off globally — they need to see what they're
+  // editing. The selected area's overlay is alpha-bumped via activeAreaLabel.
+  const isEditingAreas = editor.isEditMode && editorState.activeTool === EditTool.AREA_PAINT;
+  const effectiveShowAreas = isEditingAreas || showAreas;
+  const activeAreaLabel = isEditingAreas ? editor.selectedAreaLabel : null;
+
+  // e2e: register the component-scoped editor-action drivers + the effective
+  // show-areas gate on the test-hooks namespace (module-load installTestHooks
+  // can't reach these React callbacks). Bypasses only canvas pixel→tile
+  // geometry — the handlers still own undo/dirty/rebuild. Guarded on isE2E.
+  useEffect(() => {
+    if (!isE2E || typeof window === 'undefined') return;
+    const hooks = (window.__pixelAgentsTestHooks ??= {});
+    hooks.editorTileAction = (col, row) => editor.handleEditorTileAction(col, row);
+    hooks.editorEraseAction = (col, row) => editor.handleEditorEraseAction(col, row);
+    hooks.getShowAreas = () => effectiveShowAreas;
+  }, [editor.handleEditorTileAction, editor.handleEditorEraseAction, effectiveShowAreas]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -188,6 +251,8 @@ function App() {
         zoom={editor.zoom}
         onZoomChange={editor.handleZoomChange}
         panRef={editor.panRef}
+        showAreas={effectiveShowAreas}
+        activeAreaLabel={activeAreaLabel}
       />
 
       {!isDebugMode ? (
@@ -237,6 +302,27 @@ function App() {
                   onSelectedFurnitureColorChange={editor.handleSelectedFurnitureColorChange}
                   onFurnitureTypeChange={editor.handleFurnitureTypeChange}
                   loadedAssets={loadedAssets}
+                  activePetTypes={officeState.getActivePetTypes()}
+                  petCount={getPetCount()}
+                  onPetToggle={editor.handlePetToggle}
+                  carpetVariant={editor.carpetVariant}
+                  carpetColor={editor.carpetColor}
+                  carpetAccentColor={editor.carpetAccentColor}
+                  onCarpetVariantChange={editor.handleCarpetVariantChange}
+                  onCarpetColorChange={editor.handleCarpetColorChange}
+                  onCarpetAccentColorChange={editor.handleCarpetAccentColorChange}
+                  onResetCarpetColor={editor.handleResetCarpetColor}
+                  onResetCarpetAccentColor={editor.handleResetCarpetAccentColor}
+                  areas={officeState.getLayout().areas ?? []}
+                  selectedAreaLabel={editor.selectedAreaLabel}
+                  workspaceFolders={workspaceFolders}
+                  areaMappings={areaMappings}
+                  onSelectArea={editor.handleSelectArea}
+                  onAddArea={editor.handleAddArea}
+                  onRemoveArea={editor.handleRemoveArea}
+                  onRenameArea={editor.handleRenameArea}
+                  onAreaColorChange={editor.handleAreaColorChange}
+                  onAreaMappingChange={handleAreaMappingChange}
                 />
               );
             })()}
@@ -260,6 +346,7 @@ function App() {
           agentTools={agentTools}
           agentStatuses={agentStatuses}
           subagentTools={subagentTools}
+          officeState={officeState}
           onSelectAgent={handleSelectAgent}
         />
       )}
@@ -364,6 +451,9 @@ function App() {
           setHooksEnabled(newVal);
           transport.send({ type: 'setHooksEnabled', enabled: newVal });
         }}
+        showAreas={showAreas}
+        onToggleShowAreas={onToggleShowAreas}
+        showAreasAvailable={workspaceFolders.length > 0}
       />
 
       {showMigrationNotice && (

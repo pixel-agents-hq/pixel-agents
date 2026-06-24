@@ -20,6 +20,14 @@ export interface ServerConfig {
   token: string;
   /** Timestamp (ms) when the server started */
   startedAt: number;
+  /**
+   * CI / e2e diagnostic ONLY. When the server is started with
+   * PIXEL_AGENTS_DEBUG_LOG set, that path is propagated here so the hook
+   * script (which reads server.json anyway) can log its delivery outcome to
+   * the same file — env vars don't reliably reach the spawned hook process
+   * across platforms. Absent in production, so real hook runs never log.
+   */
+  debugLog?: string;
 }
 
 /** Callback invoked when a hook event is received from a provider's hook script. */
@@ -97,6 +105,11 @@ export class PixelAgentsServer {
       pid: process.pid,
       token,
       startedAt: Date.now(),
+      // Diagnostic-only: forward the debug-log path to the hook script via
+      // server.json (env vars don't reach the spawned hook reliably).
+      ...(process.env['PIXEL_AGENTS_DEBUG_LOG']
+        ? { debugLog: process.env['PIXEL_AGENTS_DEBUG_LOG'] }
+        : {}),
     };
     this.ownsServer = true;
     this.writeServerJson(this.config);

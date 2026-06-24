@@ -12,6 +12,7 @@ import type * as vscode from 'vscode';
 import {
   CHAR_COUNT,
   CHAR_FRAMES_PER_ROW,
+  MAX_PET_PNG_SIZE,
   WALL_BITMASK_COUNT,
 } from '../../core/src/assets/constants.js';
 import type {
@@ -24,11 +25,18 @@ import { flattenManifest } from '../../core/src/assets/manifestUtils.js';
 import {
   decodeCharacterPng,
   decodeFloorPng,
+  decodePetPng,
+  parseCarpetPng,
   parseWallPng,
   pngToSpriteData,
 } from '../../core/src/assets/pngDecoder.js';
-import type { CharacterDirectionSprites } from '../../core/src/assets/types.js';
+import type {
+  CharacterDirectionSprites,
+  PetManifest,
+  PetSpriteFrames,
+} from '../../core/src/assets/types.js';
 export type { CharacterDirectionSprites } from '../../core/src/assets/types.js';
+export type { PetManifest, PetSpriteFrames } from '../../core/src/assets/types.js';
 
 import { LAYOUT_REVISION_KEY } from './constants.js';
 
@@ -313,6 +321,83 @@ export function sendWallTilesToWebview(webview: vscode.Webview, wallTiles: Loade
   console.log(`📤 Sent ${wallTiles.sets.length} wall tile set(s) to webview`);
 }
 
+// ── Carpet tile loading ─────────────────────────────────────
+
+export interface LoadedCarpetTiles {
+  /**
+   * Carpet sprite sets indexed [variant][msCase][row][col].
+   *   variant: PNG file index (sorted numerically by carpet_N.png suffix)
+   *   msCase:  marching-squares case 0..15
+   *   row/col: pixel coordinates within the 16×16 sprite
+   */
+  sets: string[][][][];
+}
+
+/**
+ * Load all carpet auto-tile PNGs from <assetsRoot>/assets/carpets/.
+ * Scans for files named `carpet_N.png`, sorts numerically by N, parses each
+ * via parseCarpetPng. Returns null if the directory is missing or contains
+ * no matching files. Mirrors loadWallTiles structurally.
+ */
+export async function loadCarpetTiles(assetsRoot: string): Promise<LoadedCarpetTiles | null> {
+  try {
+    const carpetsDir = path.join(assetsRoot, 'assets', 'carpets');
+    if (!fs.existsSync(carpetsDir)) {
+      console.log('[AssetLoader] No carpets/ directory found at:', carpetsDir);
+      return null;
+    }
+
+    console.log('[AssetLoader] Loading carpet tiles from:', carpetsDir);
+
+    const entries = fs.readdirSync(carpetsDir);
+    const carpetFiles: { index: number; filename: string }[] = [];
+    for (const entry of entries) {
+      const match = /^carpet_(\d+)\.png$/i.exec(entry);
+      if (match) {
+        carpetFiles.push({ index: parseInt(match[1], 10), filename: entry });
+      }
+    }
+
+    if (carpetFiles.length === 0) {
+      console.log('[AssetLoader] No carpet_N.png files found in carpets/');
+      return null;
+    }
+
+    carpetFiles.sort((a, b) => a.index - b.index);
+
+    const sets: string[][][][] = [];
+    for (const { filename } of carpetFiles) {
+      const filePath = path.join(carpetsDir, filename);
+      const pngBuffer = fs.readFileSync(filePath);
+      const sprites = parseCarpetPng(pngBuffer);
+      sets.push(sprites);
+    }
+
+    console.log(`[AssetLoader] ✅ Loaded ${sets.length} carpet tile variant(s)`);
+    return { sets };
+  } catch (err) {
+    console.error(
+      `[AssetLoader] ❌ Error loading carpet tiles: ${err instanceof Error ? err.message : err}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Send carpet tiles to webview (VS Code adapter convenience). The standalone
+ * WebSocket path sends from clientMessageHandler.ts using AssetCache.carpetTiles.
+ */
+export function sendCarpetTilesToWebview(
+  webview: vscode.Webview,
+  carpetTiles: LoadedCarpetTiles,
+): void {
+  webview.postMessage({
+    type: 'carpetTilesLoaded',
+    sets: carpetTiles.sets,
+  });
+  console.log(`📤 Sent ${carpetTiles.sets.length} carpet tile variant(s) to webview`);
+}
+
 interface LoadedFloorTiles {
   sprites: string[][][]; // N sprites (one per floor_N.png), each 16x16 SpriteData
 }
@@ -533,4 +618,230 @@ export function sendAssetsToWebview(webview: vscode.Webview, assets: LoadedAsset
   });
 
   console.log(`📤 Sent ${assets.catalog.length} furniture assets to webview`);
+}
+
+// ── Pet sprite loading ──────────────────────────────────────
+
+export interface LoadedPetSprites {
+  /** Decoded pet spritesheets, one per pet, sorted by manifest directory name. */
+  pets: PetSpriteFrames[];
+  /** Manifest data parallel-indexed to `pets`. Names are broadcast to the webview. */
+  manifests: PetManifest[];
+}
+
+/**
+ * Merge two sets of loaded pet sprites (e.g., bundled + external).
+ * External pets are appended after bundled; webview maps by `petType` (array index).
+ */
+export function mergePetSprites(a: LoadedPetSprites, b: LoadedPetSprites): LoadedPetSprites {
+  return {
+    pets: [...a.pets, ...b.pets],
+    manifests: [...a.manifests, ...b.manifests],
+  };
+}
+
+/**
+ * Load bundled pet sprites from `<assetsRoot>/assets/pets/<id>/{manifest.json,pet.png}`.
+ *
+ * Each subdirectory MUST contain BOTH `manifest.json` and `pet.png`. Subdirectories
+ * are sorted alphabetically for deterministic broadcast order. Returns `null` when
+ * the directory is missing or no valid pets were loaded.
+ */
+export async function loadPetSprites(assetsRoot: string): Promise<LoadedPetSprites | null> {
+  try {
+    const petDir = path.join(assetsRoot, 'assets', 'pets');
+    if (!fs.existsSync(petDir)) {
+      return null;
+    }
+
+    const entries = fs.readdirSync(petDir);
+    const petDirs: string[] = [];
+    for (const entry of entries) {
+      const entryPath = path.join(petDir, entry);
+      try {
+        if (fs.statSync(entryPath).isDirectory()) {
+          petDirs.push(entry);
+        }
+      } catch {
+        // unreadable entry — skip silently
+      }
+    }
+    petDirs.sort();
+    if (petDirs.length === 0) {
+      return null;
+    }
+
+    const pets: PetSpriteFrames[] = [];
+    const manifests: PetManifest[] = [];
+    const resolvedDir = path.resolve(petDir);
+
+    for (const dirName of petDirs) {
+      const subDir = path.join(petDir, dirName);
+      const resolvedSub = path.resolve(subDir);
+      if (!resolvedSub.startsWith(resolvedDir + path.sep)) {
+        console.warn(`  [AssetLoader] Skipping pet with path outside directory: ${dirName}`);
+        continue;
+      }
+
+      const manifestPath = path.join(subDir, 'manifest.json');
+      const pngPath = path.join(subDir, 'pet.png');
+      if (!fs.existsSync(manifestPath) || !fs.existsSync(pngPath)) {
+        console.warn(`  [AssetLoader] Skipping pet ${dirName}: missing manifest.json or pet.png`);
+        continue;
+      }
+
+      try {
+        const manifestRaw = fs.readFileSync(manifestPath, 'utf-8');
+        const manifestData = JSON.parse(manifestRaw) as Partial<PetManifest>;
+        if (!manifestData.id || !manifestData.name) {
+          console.warn(`  [AssetLoader] Skipping pet ${dirName}: manifest missing id or name`);
+          continue;
+        }
+
+        const stat = fs.statSync(pngPath);
+        if (stat.size > MAX_PET_PNG_SIZE) {
+          console.warn(
+            `[AssetLoader] ⚠️  Skipping oversized pet ${dirName}: ${stat.size} bytes (max ${MAX_PET_PNG_SIZE})`,
+          );
+          continue;
+        }
+
+        const pngBuffer = fs.readFileSync(pngPath);
+        pets.push(decodePetPng(pngBuffer));
+        manifests.push({ id: manifestData.id, name: manifestData.name });
+      } catch (err) {
+        console.warn(
+          `[AssetLoader] ⚠️  Error loading pet ${dirName}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
+    if (pets.length === 0) {
+      return null;
+    }
+
+    console.log(`[AssetLoader] ✅ Loaded ${pets.length} pet sprites`);
+    return { pets, manifests };
+  } catch (err) {
+    console.error(
+      `[AssetLoader] ❌ Error loading pet sprites: ${err instanceof Error ? err.message : err}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Load pet sprites from an external asset directory.
+ *
+ * Same scanning rules as {@link loadPetSprites}, against `<externalRoot>/assets/pets/`.
+ * Returns `null` when the directory is missing or no valid pets were loaded.
+ */
+export async function loadExternalPetSprites(
+  externalRoot: string,
+): Promise<LoadedPetSprites | null> {
+  try {
+    const petDir = path.join(externalRoot, 'assets', 'pets');
+    if (!fs.existsSync(petDir)) {
+      return null;
+    }
+
+    const entries = fs.readdirSync(petDir);
+    const petDirs: string[] = [];
+    for (const entry of entries) {
+      const entryPath = path.join(petDir, entry);
+      try {
+        if (fs.statSync(entryPath).isDirectory()) {
+          petDirs.push(entry);
+        }
+      } catch {
+        // unreadable entry — skip silently
+      }
+    }
+    petDirs.sort();
+    if (petDirs.length === 0) {
+      return null;
+    }
+
+    const pets: PetSpriteFrames[] = [];
+    const manifests: PetManifest[] = [];
+    const resolvedDir = path.resolve(petDir);
+
+    for (const dirName of petDirs) {
+      const subDir = path.join(petDir, dirName);
+      const resolvedSub = path.resolve(subDir);
+      if (!resolvedSub.startsWith(resolvedDir + path.sep)) {
+        console.warn(
+          `  [AssetLoader] Skipping external pet with path outside directory: ${dirName}`,
+        );
+        continue;
+      }
+
+      const manifestPath = path.join(subDir, 'manifest.json');
+      const pngPath = path.join(subDir, 'pet.png');
+      if (!fs.existsSync(manifestPath) || !fs.existsSync(pngPath)) {
+        console.warn(
+          `  [AssetLoader] Skipping external pet ${dirName}: missing manifest.json or pet.png`,
+        );
+        continue;
+      }
+
+      try {
+        const manifestRaw = fs.readFileSync(manifestPath, 'utf-8');
+        const manifestData = JSON.parse(manifestRaw) as Partial<PetManifest>;
+        if (!manifestData.id || !manifestData.name) {
+          console.warn(
+            `  [AssetLoader] Skipping external pet ${dirName}: manifest missing id or name`,
+          );
+          continue;
+        }
+
+        const stat = fs.statSync(pngPath);
+        if (stat.size > MAX_PET_PNG_SIZE) {
+          console.warn(
+            `[AssetLoader] ⚠️  Skipping oversized external pet ${dirName}: ${stat.size} bytes (max ${MAX_PET_PNG_SIZE})`,
+          );
+          continue;
+        }
+
+        const pngBuffer = fs.readFileSync(pngPath);
+        pets.push(decodePetPng(pngBuffer));
+        manifests.push({ id: manifestData.id, name: manifestData.name });
+      } catch (err) {
+        console.warn(
+          `[AssetLoader] ⚠️  Error loading external pet ${dirName}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
+    if (pets.length === 0) {
+      return null;
+    }
+
+    console.log(`[AssetLoader] ✅ Loaded ${pets.length} external pet sprites from ${externalRoot}`);
+    return { pets, manifests };
+  } catch (err) {
+    console.error(
+      `[AssetLoader] ❌ Error loading external pet sprites: ${err instanceof Error ? err.message : err}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Send pet sprites to webview.
+ *
+ * Wire format: parallel arrays `pets[i]` (frame data) and `petNames[i]` (display
+ * names from manifest.json). Manifest IDs are dropped — the webview indexes by
+ * `petType: number`.
+ */
+export function sendPetSpritesToWebview(
+  webview: vscode.Webview,
+  petSprites: LoadedPetSprites,
+): void {
+  webview.postMessage({
+    type: 'petSpritesLoaded',
+    pets: petSprites.pets,
+    petNames: petSprites.manifests.map((m) => m.name),
+  });
+  console.log(`📤 Sent ${petSprites.pets.length} pet sprites to webview`);
 }

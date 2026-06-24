@@ -1,21 +1,65 @@
+# Exclude contributor tooling, source, and test artifacts from the published VSIX.
+# Keep only the installed extension runtime (`dist/**`), extension metadata, and user-facing docs.
 .vscode/**
 .vscode-test/**
-out/**
 **/node_modules/**
-adapters/**
-webview-ui/**
-scripts/**
+out/**
 sprites-export/**
 logs/**
 .github/**
 .claude/**
-.env
-.gitignore
+.husky/**
+
+# Source and dev-time build inputs already bundled into dist/
+src/**
+adapters/**
+shared/**
+server/**
+webview-ui/**
+scripts/**
 esbuild.js
-**/tsconfig.json
-**/eslint.config.mjs
-**/*.map
+eslint-rules/**
+knip.json
 **/*.ts
+**/*.map
+**/tsconfig*.json
+**/eslint.config.*
 **/.vscode-test.*
+
+# Repo metadata and local environment files
+.env*
+.editorconfig
+.gitattributes
+.gitignore
+.git-blame-ignore-revs
+.gitleaks.toml
+.nvmrc
+.prettierignore
+.prettierrc.json
+package-lock.json
 CLAUDE.md
 **/*.jsonl
+
+# Test and report outputs
+e2e/**
+playwright-report/**
+test-results/**
+
+# Generated docs site output; keep the source markdown in docs/
+docs/.vitepress/**
+
+# Browser-only webview build artifacts not used by the VS Code extension runtime
+dist/webview/assets/asset-index.json
+dist/webview/assets/furniture-catalog.json
+dist/webview/assets/default-layout-*.json
+dist/webview/assets/browserMock-*.js
+dist/webview/assets/characters/**
+dist/webview/assets/floors/**
+dist/webview/assets/furniture/**
+dist/webview/assets/walls/**
+dist/webview/Screenshot*.jpg
+dist/webview/banner.png
+dist/webview/characters.png
+
+# TODO: reevaluate if this new structure makes sense, locally my vsix size dropped drastically since it doesn't bundle playwright and test results
+# maybe it makes more sense to ignore all and do !exceptions to include

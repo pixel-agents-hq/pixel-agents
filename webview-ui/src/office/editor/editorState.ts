@@ -1,5 +1,11 @@
 import type { ColorValue } from '../../components/ui/types.js';
-import { DEFAULT_FLOOR_COLOR, DEFAULT_WALL_COLOR, UNDO_STACK_MAX_SIZE } from '../../constants.js';
+import {
+  CARPET_DEFAULT_ACCENT_COLOR,
+  CARPET_DEFAULT_COLOR,
+  DEFAULT_FLOOR_COLOR,
+  DEFAULT_WALL_COLOR,
+  UNDO_STACK_MAX_SIZE,
+} from '../../constants.js';
 import type { OfficeLayout, TileType as TileTypeVal } from '../types.js';
 import { EditTool, TileType } from '../types.js';
 
@@ -49,6 +55,24 @@ export class EditorState {
   dragOffsetCol = 0;
   dragOffsetRow = 0;
   isDragMoving = false;
+
+  // ── Carpet editor state ──────────────────────────────────────────
+  /** Currently selected carpet variant for paint. */
+  carpetVariant = 0;
+  /** Main color applied by the carpet paint tool. */
+  carpetColor: ColorValue = { ...CARPET_DEFAULT_COLOR };
+  /** Accent color applied by the carpet paint tool. */
+  carpetAccentColor: ColorValue = { ...CARPET_DEFAULT_ACCENT_COLOR };
+  /** Stroke direction: true=erase, false=paint, null=stroke not yet started. */
+  carpetDragErasing: boolean | null = null;
+  /** Layout snapshot at the start of the current carpet stroke (one undo entry per stroke). */
+  carpetStrokeInitialLayout: OfficeLayout | null = null;
+
+  // ── Area editor state ────────────────────────────────────────────
+  /** Which Area label is the AREA_PAINT tool currently painting. */
+  selectedAreaLabel: string | null = null;
+  /** First tile of an area drag sets direction: true=erase same label, false=paint. */
+  areaDragErasing: boolean | null = null;
 
   pushUndo(layout: OfficeLayout): void {
     this.undoStack.push(layout);
@@ -120,5 +144,12 @@ export class EditorState {
     this.isDirty = false;
     this.dragUid = null;
     this.isDragMoving = false;
+    this.carpetVariant = 0;
+    this.carpetColor = { ...CARPET_DEFAULT_COLOR };
+    this.carpetAccentColor = { ...CARPET_DEFAULT_ACCENT_COLOR };
+    this.carpetDragErasing = null;
+    this.carpetStrokeInitialLayout = null;
+    this.selectedAreaLabel = null;
+    this.areaDragErasing = null;
   }
 }

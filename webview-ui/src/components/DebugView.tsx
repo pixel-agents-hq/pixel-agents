@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import type { OfficeState } from '../office/engine/officeState.js';
 import type { ToolActivity } from '../office/types.js';
 import { transport } from '../transport/index.js';
 import { Button } from './ui/Button.js';
@@ -22,6 +23,7 @@ interface DebugViewProps {
   agentTools: Record<number, ToolActivity[]>;
   agentStatuses: Record<number, string>;
   subagentTools: Record<number, Record<string, ToolActivity[]>>;
+  officeState: OfficeState;
   onSelectAgent: (id: number) => void;
 }
 
@@ -64,6 +66,7 @@ export function DebugView({
   agentTools,
   agentStatuses,
   subagentTools,
+  officeState,
   onSelectAgent,
 }: DebugViewProps) {
   const [diagnostics, setDiagnostics] = useState<Record<number, AgentDiagnostics>>({});
@@ -139,12 +142,14 @@ export function DebugView({
                 )}
               </div>
             ))}
-            {status === 'waiting' && !hasActiveTools && (
-              <span className="text-base opacity-85 flex items-center gap-5">
-                <span className="w-6 h-6 rounded-full inline-block shrink-0 bg-status-permission" />
-                Might be waiting for input
-              </span>
-            )}
+            {status === 'waiting' &&
+              !hasActiveTools &&
+              officeState.characters.get(id)?.waitingAwaitingInput && (
+                <span className="text-base opacity-85 flex items-center gap-5">
+                  <span className="w-6 h-6 rounded-full inline-block shrink-0 bg-status-permission" />
+                  Waiting for input
+                </span>
+              )}
           </div>
         )}
         {/* Connection diagnostics */}

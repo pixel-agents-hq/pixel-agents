@@ -77,6 +77,9 @@ export function startWaitingTimer(
       type: 'agentStatus',
       id: agentId,
       status: 'waiting',
+      // Heuristic text-idle timer: the turn ended without a clear idle signal,
+      // so this is "Done", not "Waiting for input".
+      awaitingInput: false,
     });
   }, delayMs);
   waitingTimers.set(agentId, timer);

@@ -104,11 +104,14 @@ components:
         # Assets
         - $ref: '#/components/schemas/FurnitureAssetsLoaded'
         - $ref: '#/components/schemas/CharacterSpritesLoaded'
+        - $ref: '#/components/schemas/PetSpritesLoaded'
         - $ref: '#/components/schemas/FloorTilesLoaded'
         - $ref: '#/components/schemas/WallTilesLoaded'
+        - $ref: '#/components/schemas/CarpetTilesLoaded'
         # Settings & config
         - $ref: '#/components/schemas/SettingsLoaded'
         - $ref: '#/components/schemas/ExternalAssetDirectoriesUpdated'
+        - $ref: '#/components/schemas/AreaMappingsLoaded'
         - $ref: '#/components/schemas/WorkspaceFolders'
         # Diagnostics
         - $ref: '#/components/schemas/AgentDiagnostics'
@@ -133,6 +136,8 @@ components:
         - $ref: '#/components/schemas/OpenSessionsFolder'
         - $ref: '#/components/schemas/AddExternalAssetDirectory'
         - $ref: '#/components/schemas/RemoveExternalAssetDirectory'
+        - $ref: '#/components/schemas/SaveAreaMappings'
+        - $ref: '#/components/schemas/SetShowAreas'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
 
@@ -239,6 +244,12 @@ components:
           type: integer
         status:
           $ref: '#/components/schemas/AgentActivityStatus'
+        awaitingInput:
+          type: boolean
+          description: >-
+            Only meaningful when status is "waiting". True when the agent went
+            idle waiting on the user (drives the "Waiting for input" label);
+            absent/false means the agent finished its turn ("Done").
 
     AgentActivityStatus:
       description: Activity state of an agent.
@@ -464,6 +475,77 @@ components:
           items:
             $ref: '#/components/schemas/CharacterSpriteSet'
 
+    PetSpritesLoaded:
+      description: Pet sprite frame sets and display names, sent once after webviewReady (between characterSpritesLoaded and floorTilesLoaded).
+      type: object
+      additionalProperties: false
+      required: [type, pets, petNames]
+      properties:
+        type:
+          const: petSpritesLoaded
+        pets:
+          type: array
+          description: One frame-set per loaded pet, indexed by petType.
+          items:
+            $ref: '#/components/schemas/PetSpriteFrameSet'
+        petNames:
+          type: array
+          description: Display names parallel-indexed to `pets` (sourced from each pet's manifest.json).
+          items:
+            type: string
+
+    PetSpriteFrameSet:
+      description: One pet's frames keyed by direction + state. All arrays are 3D hex-string arrays (frames × rows × pixels).
+      type: object
+      additionalProperties: false
+      required: [walkDown, idleDown, walkUp, idleUp, walkRight]
+      properties:
+        walkDown:
+          type: array
+          description: 3 frames at 16×32 pixels.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        idleDown:
+          type: array
+          description: 3 frames at 16×32 pixels.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        walkUp:
+          type: array
+          description: 3 frames at 16×32 pixels.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        idleUp:
+          type: array
+          description: 3 frames at 16×32 pixels.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+        walkRight:
+          type: array
+          description: 3 frames at 32×32 pixels.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: string
+
     FloorTilesLoaded:
       description: Floor tile sprites (7 patterns).
       type: object
@@ -502,6 +584,26 @@ components:
                 items:
                   type: string
 
+    CarpetTilesLoaded:
+      description: Carpet auto-tile sprite sets (16 marching-squares pieces per variant).
+      type: object
+      additionalProperties: false
+      required: [type, sets]
+      properties:
+        type:
+          const: carpetTilesLoaded
+        sets:
+          type: array
+          description: Array of carpet variants; each variant is an array of 2D hex string arrays.
+          items:
+            type: array
+            items:
+              type: array
+              items:
+                type: array
+                items:
+                  type: string
+
     SettingsLoaded:
       description: All persisted user-level settings, sent once on connect.
       type: object
@@ -516,6 +618,7 @@ components:
         - hooksEnabled
         - hooksInfoShown
         - externalAssetDirectories
+        - showAreas
       properties:
         type:
           const: settingsLoaded
@@ -537,6 +640,26 @@ components:
           type: array
           items:
             type: string
+        showAreas:
+          type: boolean
+
+    AreaMappingsLoaded:
+      description: |
+        Workspace-folder-to-Area mappings. Folder names map to one or more Area
+        labels; new agents from that folder prefer seats inside those Areas.
+      type: object
+      additionalProperties: false
+      required: [type, mappings]
+      properties:
+        type:
+          const: areaMappingsLoaded
+        mappings:
+          type: object
+          description: Map of folder name (string) to array of Area labels.
+          additionalProperties:
+            type: array
+            items:
+              type: string
 
     ExternalAssetDirectoriesUpdated:
       description: External asset directory list changed (after add/remove).
@@ -755,6 +878,32 @@ components:
           const: removeExternalAssetDirectory
         path:
           type: string
+
+    SaveAreaMappings:
+      description: Persist folder-to-Area mappings for seat assignment.
+      type: object
+      additionalProperties: false
+      required: [type, mappings]
+      properties:
+        type:
+          const: saveAreaMappings
+        mappings:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    SetShowAreas:
+      description: Toggle the Areas overlay (translucent rendering on top of the office).
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setShowAreas
+        enabled:
+          type: boolean
 
     RequestDiagnostics:
       description: Request agent connection diagnostics (server responds with agentDiagnostics).

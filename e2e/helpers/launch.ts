@@ -1,14 +1,18 @@
-import { _electron as electron } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
+import { _electron as electron } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+
+import { applyMockHomeEnv } from './mock-claude';
+import { namespaceE2EPath } from '../run-config';
 
 const REPO_ROOT = path.join(__dirname, '../..');
 const VSCODE_PATH_FILE = path.join(REPO_ROOT, '.vscode-test/vscode-executable.txt');
 const MOCK_CLAUDE_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude');
 const MOCK_CLAUDE_CMD_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude.cmd');
-const ARTIFACTS_DIR = path.join(REPO_ROOT, 'test-results/e2e');
+const MOCK_CLAUDE_RUNNER_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude-runner.cjs');
+const ARTIFACTS_DIR = namespaceE2EPath(path.join(REPO_ROOT, 'test-results/e2e'));
 const IS_WINDOWS = process.platform === 'win32';
 const PATH_SEP = IS_WINDOWS ? ';' : ':';
 
@@ -21,7 +25,25 @@ export interface VSCodeSession {
   workspaceDir: string;
   /** Path to the mock invocations log. */
   mockLogFile: string;
+  /** Raw Playwright video directory for this test run, if recording is enabled. */
+  videoDir?: string;
   cleanup: () => Promise<void>;
+}
+
+/** Optional launch knobs for tests that need a seeded HOME or a multi-root window. */
+export interface LaunchOptions {
+  /**
+   * Folder basenames to open as a multi-root workspace. When length > 1, a
+   * `.code-workspace` listing these (as subdirs of the workspace) is opened
+   * instead of a single folder, so `vscode.workspace.workspaceFolders.length > 1`
+   * and agents launched per-folder get a `folderName`. Length <= 1 is ignored
+   * (single-folder default is unchanged).
+   */
+  workspaceFolders?: string[];
+  /** Pre-seed `~/.pixel-agents/config.json` (written before the server reads it). */
+  seedConfig?: unknown;
+  /** Pre-seed `~/.pixel-agents/layout.json` (written before the panel loads). */
+  seedLayout?: unknown;
 }
 
 /**
@@ -30,7 +52,10 @@ export interface VSCodeSession {
  * Uses an isolated temp HOME and injects the mock `claude` binary at the
  * front of PATH so no real Claude CLI is needed.
  */
-export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
+export async function launchVSCode(
+  testTitle: string,
+  opts: LaunchOptions = {},
+): Promise<VSCodeSession> {
   const vscodePath = fs.readFileSync(VSCODE_PATH_FILE, 'utf8').trim();
 
   // --- Isolated temp directories ---
@@ -45,12 +70,80 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
   fs.mkdirSync(userDataDir, { recursive: true });
   fs.mkdirSync(mockBinDir, { recursive: true });
 
-  // On Windows, os.tmpdir() may return an 8.3 short path (e.g. RUNNER~1) while
-  // child processes see the long path (e.g. runneradmin) via %CD%. Normalize to
-  // the canonical long path so the project hash computed here matches mock-claude.
-  // fs.realpathSync only resolves symlinks; .native uses GetFinalPathNameByHandleW
-  // which also resolves 8.3 short names to their full form.
-  const resolvedWorkspaceDir = IS_WINDOWS ? fs.realpathSync.native(workspaceDir) : workspaceDir;
+  // Pre-seed user-level config/layout under the isolated HOME, BEFORE VS Code
+  // launches — the server reads ~/.pixel-agents/{config,layout}.json on startup,
+  // so a test that needs specific areaMappings / showAreas / a known layout must
+  // write them now. layout.json must carry a high layoutRevision to survive the
+  // bundled-default reset gate (server/src/layoutPersistence.ts).
+  if (opts.seedConfig !== undefined || opts.seedLayout !== undefined) {
+    const paDir = path.join(tmpHome, '.pixel-agents');
+    fs.mkdirSync(paDir, { recursive: true });
+    if (opts.seedConfig !== undefined) {
+      fs.writeFileSync(path.join(paDir, 'config.json'), JSON.stringify(opts.seedConfig, null, 2));
+    }
+    if (opts.seedLayout !== undefined) {
+      fs.writeFileSync(path.join(paDir, 'layout.json'), JSON.stringify(opts.seedLayout, null, 2));
+    }
+  }
+
+  // Enable Claude Agent Teams in the test workspace. Real Claude Code reads this
+  // env from .claude/settings.local.json on startup; without it, team mode is gated
+  // off and the team-related e2e tests can't exercise the
+  // feature. Mirrored in the VS Code process env and the macOS terminal profile env
+  // below so it survives across all spawn paths.
+  const claudeWorkspaceSettingsDir = path.join(workspaceDir, '.claude');
+  fs.mkdirSync(claudeWorkspaceSettingsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(claudeWorkspaceSettingsDir, 'settings.local.json'),
+    JSON.stringify(
+      {
+        env: {
+          CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+        },
+      },
+      null,
+      2,
+    ),
+  );
+
+  // Normalize to the canonical path so the project dir hash the extension computes
+  // matches the one mock-claude computes from process.cwd().
+  //
+  // Windows: os.tmpdir() may return an 8.3 short path (e.g. RUNNER~1) while child
+  // processes see the long path via %CD%. .native uses GetFinalPathNameByHandleW
+  // which resolves 8.3 short names to their full form.
+  //
+  // macOS: os.tmpdir() returns paths under /var/folders/... but /var is a symlink
+  // to /private/var. Zsh-spawned terminals see process.cwd() as /private/var/...
+  // while VS Code's workspaceFolders[0].uri.fsPath returns /var/... unchanged.
+  // Resolving here ensures both sides agree on /private/var/... and the JSONL
+  // project dir resolves to the same path under ~/.claude/projects/.
+  const resolvedWorkspaceDir =
+    IS_WINDOWS || process.platform === 'darwin'
+      ? fs.realpathSync.native(workspaceDir)
+      : workspaceDir;
+
+  // Multi-root: create the requested folders as subdirs and open a generated
+  // `.code-workspace` listing them, so the extension sees >1 workspace folder.
+  // Each folder is realpath-normalized (same rationale as resolvedWorkspaceDir)
+  // so the agent terminal's cwd hashes to the same project dir the extension uses.
+  const multiRootFolders = opts.workspaceFolders ?? [];
+  let openTarget = resolvedWorkspaceDir;
+  if (multiRootFolders.length > 1) {
+    const folderEntries = multiRootFolders.map((name) => {
+      const folderDir = path.join(workspaceDir, name);
+      fs.mkdirSync(folderDir, { recursive: true });
+      const resolved =
+        IS_WINDOWS || process.platform === 'darwin' ? fs.realpathSync.native(folderDir) : folderDir;
+      return { path: resolved };
+    });
+    const workspaceFile = path.join(tmpBase, 'pa.code-workspace');
+    fs.writeFileSync(workspaceFile, JSON.stringify({ folders: folderEntries }, null, 2));
+    openTarget =
+      IS_WINDOWS || process.platform === 'darwin'
+        ? fs.realpathSync.native(workspaceFile)
+        : workspaceFile;
+  }
 
   // macOS: create a temporary keychain so the OS doesn't show "Keychain Not Found" dialog.
   // The isolated HOME has no keychain, and VS Code/Electron's safeStorage triggers a system prompt.
@@ -65,19 +158,31 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
         stdio: 'ignore',
         env: { ...process.env, HOME: tmpHome },
       });
-    } catch {
-      // keychain creation failure is non-fatal, test may still work
+    } catch (error) {
+      // Keychain creation is non-fatal (the safeStorage dialog may or may not block tests),
+      // but we want a breadcrumb when CI starts failing in mysterious ways.
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[e2e] Keychain creation failed for ${keychainPath}: ${message}`);
+      try {
+        const launchLog = path.join(tmpHome, '.claude-mock', 'launch.log');
+        fs.mkdirSync(path.dirname(launchLog), { recursive: true });
+        fs.appendFileSync(launchLog, `${new Date().toISOString()} keychain-error: ${message}\n`);
+      } catch {
+        // launch-log write failure is itself non-fatal
+      }
     }
   }
 
   // Copy mock-claude into an isolated bin dir
+  const mockClaudeBinaryPath = path.join(mockBinDir, IS_WINDOWS ? 'claude.cmd' : 'claude');
   if (IS_WINDOWS) {
     // Windows: copy the .cmd batch file as 'claude.cmd'
-    fs.copyFileSync(MOCK_CLAUDE_CMD_PATH, path.join(mockBinDir, 'claude.cmd'));
+    fs.copyFileSync(MOCK_CLAUDE_CMD_PATH, mockClaudeBinaryPath);
+    fs.copyFileSync(MOCK_CLAUDE_RUNNER_PATH, path.join(mockBinDir, 'mock-claude-runner.cjs'));
   } else {
-    const mockDest = path.join(mockBinDir, 'claude');
-    fs.copyFileSync(MOCK_CLAUDE_PATH, mockDest);
-    fs.chmodSync(mockDest, 0o755);
+    fs.copyFileSync(MOCK_CLAUDE_PATH, mockClaudeBinaryPath);
+    fs.chmodSync(mockClaudeBinaryPath, 0o755);
+    fs.copyFileSync(MOCK_CLAUDE_RUNNER_PATH, path.join(mockBinDir, 'mock-claude-runner.cjs'));
   }
 
   // macOS: VS Code's integrated terminal resolves PATH from the login shell,
@@ -98,7 +203,15 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
               env: {
                 PATH: `${mockBinDir}:/usr/local/bin:/usr/bin:/bin`,
                 HOME: tmpHome,
+                PIXEL_AGENTS_E2E_CLAUDE_BIN: mockClaudeBinaryPath,
+                PIXEL_AGENTS_NODE_BIN: process.execPath,
                 ZDOTDIR: tmpHome,
+                CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+                // inheritEnv is false for this profile, so the diagnostic log
+                // path must be set explicitly here or the mock-spawned
+                // claude-hook.js (which runs in this terminal) can't write to
+                // it. Path matches the `debugLogFile` const below.
+                PIXEL_AGENTS_DEBUG_LOG: path.join(tmpHome, '.pixel-agents', 'debug.log'),
               },
             },
           },
@@ -112,20 +225,38 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
   }
 
   const mockLogFile = path.join(tmpHome, '.claude-mock', 'invocations.log');
+  const launchLogFile = path.join(tmpHome, '.claude-mock', 'launch.log');
 
   // --- Video output dir ---
   const safeTitle = testTitle.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-  const videoDir = path.join(ARTIFACTS_DIR, 'videos', safeTitle);
-  fs.mkdirSync(videoDir, { recursive: true });
+  const videoDir = IS_WINDOWS ? undefined : path.join(ARTIFACTS_DIR, 'videos', safeTitle);
+  if (videoDir) {
+    fs.mkdirSync(videoDir, { recursive: true });
+  }
 
   // --- Environment for VS Code process ---
+  // applyMockHomeEnv sets HOME on all platforms and additionally pins
+  // USERPROFILE (and clears HOMEDRIVE/HOMEPATH) on Windows, where os.homedir()
+  // ignores $HOME — see its doc comment for why this is load-bearing.
+  // Diagnostic log: server-side broadcasts + hook events go here. Fixture
+  // attaches it as `pixel-agents-debug-log` so CI failure analysis can read
+  // the exact event timeline. Per-test isolated under tmpHome so parallel
+  // workers don't interleave (though e2e uses workers=1 anyway).
+  const debugLogFile = path.join(tmpHome, '.pixel-agents', 'debug.log');
+  fs.mkdirSync(path.dirname(debugLogFile), { recursive: true });
+
   const env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    HOME: tmpHome,
+    ...(applyMockHomeEnv(process.env, tmpHome) as Record<string, string>),
     // Prepend mock bin so 'claude' resolves to our mock
     PATH: `${mockBinDir}${PATH_SEP}${process.env['PATH'] ?? '/usr/local/bin:/usr/bin:/bin'}`,
+    PIXEL_AGENTS_E2E_CLAUDE_BIN: mockClaudeBinaryPath,
+    PIXEL_AGENTS_E2E_LAUNCH_LOG: launchLogFile,
+    PIXEL_AGENTS_NODE_BIN: process.execPath,
+    PIXEL_AGENTS_DEBUG_LOG: debugLogFile,
     // Prevent VS Code from trying to talk to real accounts / telemetry
     VSCODE_TELEMETRY_DISABLED: '1',
+    // Enable Claude Agent Teams feature (see workspace settings.local.json above)
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
   };
 
   // --- VS Code launch args ---
@@ -150,8 +281,8 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
     // On Linux, use the Ozone headless platform so Electron runs without a
     // display server (equivalent to what --disable-gpu achieves on macOS/Windows).
     ...(process.platform === 'linux' ? ['--ozone-platform=headless'] : []),
-    // Open the workspace folder
-    resolvedWorkspaceDir,
+    // Open the workspace folder (single dir) or the generated multi-root file.
+    openTarget,
   ];
 
   const cleanup = async (): Promise<void> => {
@@ -193,7 +324,7 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
     };
     if (!IS_WINDOWS) {
       launchOptions.recordVideo = {
-        dir: videoDir,
+        dir: videoDir!,
         size: { width: 1280, height: 800 },
       };
     }
@@ -201,6 +332,16 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
     app = await electron.launch(launchOptions);
 
     const window = await app.firstWindow();
+
+    // Mark this as the e2e harness BEFORE the Pixel Agents webview iframe loads.
+    // addInitScript runs in every frame on attach/navigate (including that
+    // iframe, which opens later when the panel is shown), so the webview reads
+    // __PIXEL_AGENTS_E2E === true and installs its test-only observability hooks
+    // (window.__pixelAgentsTestHooks). In production the flag is absent, so
+    // those hooks (and their unbounded logs) never run.
+    await window.addInitScript(() => {
+      (window as unknown as { __PIXEL_AGENTS_E2E?: boolean }).__PIXEL_AGENTS_E2E = true;
+    });
 
     // The Ozone headless backend ignores --window-size CLI flags, so VS Code
     // opens at a tiny default size on Linux. Resize via the Electron API after
@@ -214,7 +355,15 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
       await window.waitForTimeout(500);
     }
 
-    return { app, window, tmpHome, workspaceDir: resolvedWorkspaceDir, mockLogFile, cleanup };
+    return {
+      app,
+      window,
+      tmpHome,
+      workspaceDir: resolvedWorkspaceDir,
+      mockLogFile,
+      videoDir,
+      cleanup,
+    };
   } catch (error) {
     await cleanup();
     throw error;

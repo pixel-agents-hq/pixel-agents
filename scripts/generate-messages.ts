@@ -137,6 +137,13 @@ function exportify(decl: string): string {
 }
 
 function quote(s: string): string {
+  // execSync runs through cmd.exe on Windows, which does NOT strip single
+  // quotes -- prettier would receive a filename containing literal quote chars
+  // ("No files matching the pattern"). Use double quotes there; POSIX shells
+  // get single-quote escaping.
+  if (process.platform === 'win32') {
+    return `"${s.replace(/"/g, '\\"')}"`;
+  }
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 

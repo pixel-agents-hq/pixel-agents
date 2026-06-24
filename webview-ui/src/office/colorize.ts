@@ -44,7 +44,7 @@ export function clearColorizeCache(): void {
  * 4. Create HSL color with user's hue + saturation
  * 5. Convert HSL -> RGB -> hex
  */
-function colorizeSprite(sprite: SpriteData, color: ColorValue): SpriteData {
+export function colorizeSprite(sprite: SpriteData, color: ColorValue): SpriteData {
   const { h, s, b, c } = color;
   const result: SpriteData = [];
 
@@ -165,6 +165,36 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   else if (max === gf) h = ((bf - rf) / d + 2) * 60;
   else h = ((rf - gf) / d + 4) * 60;
   return [h, s, l];
+}
+
+/**
+ * Single-color fill: every non-empty pixel becomes the computed HSL color,
+ * preserving the original per-pixel alpha. Used by the carpet renderer to
+ * recolor a masked layer (main or accent) before merging.
+ *
+ * Unlike `colorizeSprite`, source pixel luminance is ignored; output lightness
+ * is derived purely from `color.b` (brightness) and `color.c` (contrast around
+ * the 0.5 midpoint). Caller controls hue + saturation via `color.h` and
+ * `color.s`.
+ */
+export function flatColorizeSprite(sprite: SpriteData, color: ColorValue): SpriteData {
+  const { h, s, b, c } = color;
+  let lightness = 0.5;
+  if (c !== 0) {
+    lightness = 0.5 + (lightness - 0.5) * ((100 + c) / 100);
+  }
+  if (b !== 0) {
+    lightness = lightness + b / 200;
+  }
+  lightness = Math.max(0, Math.min(1, lightness));
+  const hex = hslToHex(h, s / 100, lightness);
+  return sprite.map((row) =>
+    row.map((pixel) => {
+      if (pixel === '') return '';
+      const alpha = extractAlpha(pixel);
+      return appendAlpha(hex, alpha);
+    }),
+  );
 }
 
 /**

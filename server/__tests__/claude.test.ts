@@ -95,12 +95,15 @@ describe('claudeProvider', () => {
       expect(result?.event.kind).toBe('toolEnd');
     });
 
-    it('normalizes Stop to turnEnd', () => {
+    it('normalizes Stop to turnEnd without awaitingInput (Done, not waiting)', () => {
       const result = claudeProvider.normalizeHookEvent({
         hook_event_name: 'Stop',
         session_id: 'sess-1',
       });
       expect(result?.event.kind).toBe('turnEnd');
+      if (result?.event.kind === 'turnEnd') {
+        expect(result.event.awaitingInput).toBeFalsy();
+      }
     });
 
     it('ignores UserPromptSubmit (no normalized kind yet)', () => {
@@ -149,13 +152,16 @@ describe('claudeProvider', () => {
       expect(result?.event.kind).toBe('permissionRequest');
     });
 
-    it('normalizes Notification(idle_prompt) to turnEnd', () => {
+    it('normalizes Notification(idle_prompt) to turnEnd with awaitingInput=true', () => {
       const result = claudeProvider.normalizeHookEvent({
         hook_event_name: 'Notification',
         session_id: 'sess-1',
         notification_type: 'idle_prompt',
       });
       expect(result?.event.kind).toBe('turnEnd');
+      if (result?.event.kind === 'turnEnd') {
+        expect(result.event.awaitingInput).toBe(true);
+      }
     });
 
     it('returns null for Notification with unknown type', () => {

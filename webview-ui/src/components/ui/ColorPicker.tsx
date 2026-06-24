@@ -36,9 +36,17 @@ interface ColorPickerProps {
   colorize?: boolean;
   /** Show a colorize checkbox that lets the user toggle the mode */
   showColorizeToggle?: boolean;
+  /** When provided, renders a Reset button below the sliders that calls this handler. */
+  onReset?: () => void;
 }
 
-export function ColorPicker({ value, onChange, colorize, showColorizeToggle }: ColorPickerProps) {
+export function ColorPicker({
+  value,
+  onChange,
+  colorize,
+  showColorizeToggle,
+  onReset,
+}: ColorPickerProps) {
   const handleChange = (key: keyof ColorValue, v: number) => {
     onChange({ ...value, [key]: v });
   };
@@ -85,6 +93,15 @@ export function ColorPicker({ value, onChange, colorize, showColorizeToggle }: C
           />
           Colorize
         </label>
+      )}
+      {onReset && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="self-start text-xs py-2 px-8 bg-btn-bg border-2 border-border rounded-none cursor-pointer hover:bg-btn-hover"
+        >
+          Reset
+        </button>
       )}
     </div>
   );

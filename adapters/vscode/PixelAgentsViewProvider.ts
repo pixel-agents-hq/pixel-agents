@@ -6,19 +6,29 @@ import * as vscode from 'vscode';
 import type { StateAdapter } from '../../core/src/adapter.js';
 import { AgentRuntime } from '../../server/src/agentRuntime.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
-import type { LoadedAssets, LoadedCharacterSprites } from '../../server/src/assetLoader.js';
+import type {
+  LoadedAssets,
+  LoadedCharacterSprites,
+  LoadedPetSprites,
+} from '../../server/src/assetLoader.js';
 import {
+  loadCarpetTiles,
   loadCharacterSprites,
   loadDefaultLayout,
   loadExternalCharacterSprites,
+  loadExternalPetSprites,
   loadFloorTiles,
   loadFurnitureAssets,
+  loadPetSprites,
   loadWallTiles,
   mergeCharacterSprites,
   mergeLoadedAssets,
+  mergePetSprites,
   sendAssetsToWebview,
+  sendCarpetTilesToWebview,
   sendCharacterSpritesToWebview,
   sendFloorTilesToWebview,
+  sendPetSpritesToWebview,
   sendWallTilesToWebview,
 } from '../../server/src/assetLoader.js';
 import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
@@ -46,15 +56,29 @@ import {
   GLOBAL_KEY_HOOKS_ENABLED,
   GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
+  GLOBAL_KEY_SHOW_AREAS,
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
 } from './constants.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
 
+/** Cap on the pending-broadcast queue. If we exceed this, something has gone
+ *  wrong (webviewReady never arriving) — log and drop the oldest. */
+const MAX_PENDING_BROADCASTS = 1_000;
+
 export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   store = new AgentStateStore();
   webviewView: vscode.WebviewView | undefined;
+
+  // Webview iframe takes ~hundreds of ms to load the React app and attach
+  // message handlers. Broadcasts that fire in this window are otherwise lost
+  // (webview.postMessage delivers to a window without an active listener).
+  // Buffer them here and flush on `webviewReady`. Without this, on slow CI
+  // runners hook events that arrive during iframe init (mock-claude scenarios
+  // start writing within ~3 s of agent spawn) silently never reach the UI.
+  private isWebviewReady = false;
+  private pendingBroadcasts: Array<Record<string, unknown>> = [];
 
   // Shared agent lifecycle core (timer Maps, scanners, hook handler, dismissal tracker)
   private runtime: AgentRuntime;
@@ -86,7 +110,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.adapter = adapter;
     this.store.setAdapter(this.adapter);
     this.store.on('agentAdded', (id, agent) => {
-      this.webview?.postMessage({
+      this.sendOrBuffer({
         type: 'agentCreated',
         id,
         folderName: agent.folderName,
@@ -99,10 +123,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       });
     });
     this.store.on('agentRemoved', (id) => {
-      this.webview?.postMessage({ type: 'agentClosed', id });
+      this.sendOrBuffer({ type: 'agentClosed', id });
     });
     this.store.on('broadcast', (message) => {
-      this.webview?.postMessage(message);
+      this.sendOrBuffer(message);
     });
 
     setTerminalAdapter(new VscodeTerminalAdapter());
@@ -119,6 +143,25 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
   private get webview(): vscode.Webview | undefined {
     return this.webviewView?.webview;
+  }
+
+  /** Post a message to the webview, or buffer it if the iframe isn't ready
+   *  yet. Drops silently when no view exists at all (matches prior behavior).
+   *  Flushed by the `webviewReady` handler in resolveWebviewView. */
+  private sendOrBuffer(message: Record<string, unknown>): void {
+    const wv = this.webview;
+    if (!wv) return;
+    if (this.isWebviewReady) {
+      wv.postMessage(message);
+      return;
+    }
+    if (this.pendingBroadcasts.length >= MAX_PENDING_BROADCASTS) {
+      console.warn(
+        `[Pixel Agents] Webview buffer overflow (${MAX_PENDING_BROADCASTS}). webviewReady never arrived — dropping oldest message.`,
+      );
+      this.pendingBroadcasts.shift();
+    }
+    this.pendingBroadcasts.push(message);
   }
 
   private initServer(): void {
@@ -148,6 +191,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
   resolveWebviewView(webviewView: vscode.WebviewView) {
     this.webviewView = webviewView;
+    // Fresh iframe; any prior buffer is for the destroyed iframe and obsolete
+    // (the `webviewReady` handler resends current state via restoreAgents +
+    // sendCurrentAgentStatuses + asset loaders).
+    this.isWebviewReady = false;
+    this.pendingBroadcasts = [];
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = getWebviewContent(webviewView.webview, this.extensionUri);
 
@@ -232,6 +280,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
       } else if (message.type === 'setHooksInfoShown') {
         this.adapter.setSetting(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
+      } else if (message.type === 'setShowAreas') {
+        const enabled = message.enabled as boolean;
+        this.adapter.setSetting(GLOBAL_KEY_SHOW_AREAS, enabled);
+      } else if (message.type === 'saveAreaMappings') {
+        const mappings = message.mappings as Record<string, string[]>;
+        const cfg = readConfig();
+        cfg.vscode.areaMappings = mappings;
+        writeConfig(cfg);
       } else if (message.type === 'setWatchAllSessions') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_WATCH_ALL_SESSIONS, enabled);
@@ -266,6 +322,15 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           }
         }
       } else if (message.type === 'webviewReady') {
+        // Flush any messages buffered while the iframe was loading. Mark
+        // ready BEFORE flush so re-entrant broadcasts (triggered by handlers
+        // below) go directly. Order is preserved: buffered first, new second.
+        this.isWebviewReady = true;
+        const buffered = this.pendingBroadcasts;
+        this.pendingBroadcasts = [];
+        for (const msg of buffered) {
+          this.webview?.postMessage(msg);
+        }
         // Provider capabilities: tool taxonomy for webview animation + subagent rendering.
         // Sent once before restoreAgents so characters render with correct animations
         // from the first frame.
@@ -274,6 +339,50 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           readingTools: [...claudeProvider.readingTools],
           subagentToolNames: [...claudeProvider.subagentToolNames],
         });
+
+        // Settings + folder→Area mappings MUST be dispatched BEFORE restoreAgents
+        // and the auto-spawn path. Both paths emit `agentCreated` postMessages via
+        // AgentStateStore events; the webview's handler routes each agent through
+        // OfficeState.findFreeSeat(folderName), which depends on `areaMappings`.
+        // If we restore agents first, Stage-1 (in-Area) is silently skipped for
+        // restored / auto-spawned agents and their preferred Area placement is lost.
+        const soundEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_SOUND_ENABLED, true);
+        const lastSeenVersion = this.adapter.getSetting<string>(GLOBAL_KEY_LAST_SEEN_VERSION, '');
+        const extensionVersion =
+          (this.context.extension.packageJSON as { version?: string }).version ?? '';
+        const watchAllSessions = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_WATCH_ALL_SESSIONS,
+          false,
+        );
+        const alwaysShowLabels = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_ALWAYS_SHOW_LABELS,
+          false,
+        );
+        this.runtime.watchAllSessions.current = watchAllSessions;
+        const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
+        const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
+        const showAreas = this.adapter.getSetting<boolean>(GLOBAL_KEY_SHOW_AREAS, false);
+        const config = readConfig();
+        this.webview?.postMessage({
+          type: 'settingsLoaded',
+          soundEnabled,
+          lastSeenVersion,
+          extensionVersion,
+          watchAllSessions,
+          alwaysShowLabels,
+          hooksEnabled,
+          hooksInfoShown,
+          externalAssetDirectories: config.externalAssetDirectories,
+          showAreas,
+        });
+
+        // Folder→Area mappings (must arrive before any agentCreated/existingAgents
+        // so OfficeState.findFreeSeat has the dict when characters are placed).
+        this.webview?.postMessage({
+          type: 'areaMappingsLoaded',
+          mappings: config.vscode.areaMappings ?? {},
+        });
+
         restoreAgents(
           this.adapter,
           this.store.nextAgentId,
@@ -336,35 +445,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           // (which retrigger webviewReady) never auto-spawn unexpectedly.
           this.autoSpawnAttempted = true;
         }
-
-        // Send persisted settings to webview
-        const soundEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_SOUND_ENABLED, true);
-        const lastSeenVersion = this.adapter.getSetting<string>(GLOBAL_KEY_LAST_SEEN_VERSION, '');
-        const extensionVersion =
-          (this.context.extension.packageJSON as { version?: string }).version ?? '';
-        const watchAllSessions = this.adapter.getSetting<boolean>(
-          GLOBAL_KEY_WATCH_ALL_SESSIONS,
-          false,
-        );
-        const alwaysShowLabels = this.adapter.getSetting<boolean>(
-          GLOBAL_KEY_ALWAYS_SHOW_LABELS,
-          false,
-        );
-        this.runtime.watchAllSessions.current = watchAllSessions;
-        const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
-        const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
-        const config = readConfig();
-        this.webview?.postMessage({
-          type: 'settingsLoaded',
-          soundEnabled,
-          lastSeenVersion,
-          extensionVersion,
-          watchAllSessions,
-          alwaysShowLabels,
-          hooksEnabled,
-          hooksInfoShown,
-          externalAssetDirectories: config.externalAssetDirectories,
-        });
 
         // Send workspace folders to webview (only when multi-root)
         const wsFolders = vscode.workspace.workspaceFolders;
@@ -445,6 +525,15 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
               sendCharacterSpritesToWebview(this.webview, charSprites);
             }
 
+            // Load pet sprites (bundled + external)
+            const petSprites = await this.loadAllPetSprites();
+            if (petSprites && this.webview) {
+              console.log(
+                `[Extension] ${petSprites.pets.length} pet sprites loaded, sending to webview`,
+              );
+              sendPetSpritesToWebview(this.webview, petSprites);
+            }
+
             // Load floor tiles
             const floorTiles = await loadFloorTiles(assetsRoot);
             if (floorTiles && this.webview) {
@@ -457,6 +546,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             if (wallTiles && this.webview) {
               console.log('[Extension] Wall tiles loaded, sending to webview');
               sendWallTilesToWebview(this.webview, wallTiles);
+            }
+
+            // Load carpet tiles (auto-tile sprite sets, 3 demo variants by default)
+            const carpetTiles = await loadCarpetTiles(assetsRoot);
+            if (carpetTiles && this.webview) {
+              console.log('[Extension] Carpet tiles loaded, sending to webview');
+              sendCarpetTilesToWebview(this.webview, carpetTiles);
             }
 
             const assets = await this.loadAllFurnitureAssets();
@@ -537,6 +633,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           writeConfig(cfg);
         }
         await this.reloadAndSendCharacters();
+        await this.reloadAndSendPets();
         await this.reloadAndSendFurniture();
         this.webview?.postMessage({
           type: 'externalAssetDirectoriesUpdated',
@@ -549,6 +646,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         );
         writeConfig(cfg);
         await this.reloadAndSendCharacters();
+        await this.reloadAndSendPets();
         await this.reloadAndSendFurniture();
         this.webview?.postMessage({
           type: 'externalAssetDirectoriesUpdated',
@@ -671,6 +769,20 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     return chars;
   }
 
+  private async loadAllPetSprites(): Promise<LoadedPetSprites | null> {
+    if (!this.assetsRoot) return null;
+    let pets = await loadPetSprites(this.assetsRoot);
+    const config = readConfig();
+    for (const extraDir of config.externalAssetDirectories) {
+      console.log('[Extension] Loading external pet sprites from:', extraDir);
+      const extra = await loadExternalPetSprites(extraDir);
+      if (extra) {
+        pets = pets ? mergePetSprites(pets, extra) : extra;
+      }
+    }
+    return pets;
+  }
+
   private async reloadAndSendFurniture(): Promise<void> {
     if (!this.assetsRoot || !this.webview) return;
     try {
@@ -692,6 +804,18 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       }
     } catch (err) {
       console.error('[Extension] Error reloading character sprites:', err);
+    }
+  }
+
+  private async reloadAndSendPets(): Promise<void> {
+    if (!this.assetsRoot || !this.webview) return;
+    try {
+      const pets = await this.loadAllPetSprites();
+      if (pets) {
+        sendPetSpritesToWebview(this.webview, pets);
+      }
+    } catch (err) {
+      console.error('[Extension] Error reloading pet sprites:', err);
     }
   }
 

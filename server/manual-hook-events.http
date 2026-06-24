@@ -1,0 +1,140 @@
+# Pixel Agents manual hook server requests
+#
+# Usage:
+# 1. Start the VS Code extension or run `npx pixel-agents` so the local hook server is running.
+# 2. Copy `port` and `token` from `~/.pixel-agents/server.json` into the variables below.
+# 3. Set `cwd` to a workspace folder opened in the Extension Development Host,
+#    or enable "Watch All Sessions" in Pixel Agents.
+# 4. Run the requests in order with a REST client that supports `.http` files.
+#
+# Notes:
+# - `SessionStart` only stages a pending external session. A follow-up event such as
+#   `PreToolUse`, `Stop`, `Notification`, or `PermissionRequest` is what actually
+#   creates the agent in Pixel Agents.
+# - These examples omit `transcript_path` so the agent is created as a hooks-only
+#   external session. That keeps manual testing simple and avoids needing a real JSONL file.
+# - On Windows, use forward slashes in `cwd` or escape backslashes in the JSON string.
+
+@host = 127.0.0.1
+@port = 3100
+@token = paste-token-from-~/.pixel-agents/server.json
+@provider = claude
+@sessionId = manual-session-1
+@replacementSessionId = manual-session-2
+@cwd = /absolute/path/to/your/workspace
+
+###
+# Health check
+GET http://{{host}}:{{port}}/api/health
+
+###
+# Stage a new external session
+POST http://{{host}}:{{port}}/api/hooks/{{provider}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "SessionStart",
+  "source": "startup",
+  "cwd": "{{cwd}}"
+}
+
+###
+# Confirm the pending session and mark the agent active
+POST http://{{host}}:{{port}}/api/hooks/{{provider}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "npm test"
+  }
+}
+
+###
+# Show the permission bubble
+POST http://{{host}}:{{port}}/api/hooks/{{provider}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "PermissionRequest"
+}
+
+###
+# Clear the active hook tool after the tool completes
+POST http://{{host}}:{{port}}/api/hooks/{{provider}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "PostToolUse"
+}
+
+###
+# Mark the agent waiting via notification
+POST http://{{host}}:{{port}}/api/hooks/{{provider}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "Notification",
+  "notification_type": "idle_prompt"
+}
+
+###
+# Alternative waiting signal when Claude finishes its turn
+POST http://{{host}}:{{port}}/api/hooks/{{provider}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "Stop"
+}
+
+###
+# Despawn the agent
+POST http://{{host}}:{{port}}/api/hooks/{{provider}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "SessionEnd",
+  "reason": "exit"
+}
+
+###
+# Optional: simulate `/clear` or `--resume` handoff
+# Run this after the original session exists. Then run the next request to rebind it.
+POST http://{{host}}:{{port}}/api/hooks/{{provider}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "SessionEnd",
+  "reason": "clear"
+}
+
+###
+# Optional: complete the `/clear` or `--resume` handoff
+# Change `source` to `resume` to test the resume path instead.
+POST http://{{host}}:{{port}}/api/hooks/{{provider}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{replacementSessionId}}",
+  "hook_event_name": "SessionStart",
+  "source": "clear",
+  "cwd": "{{cwd}}"
+}

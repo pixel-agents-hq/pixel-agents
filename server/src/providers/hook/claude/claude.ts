@@ -188,7 +188,9 @@ function normalizeHookEvent(
         return { sessionId, event: { kind: 'permissionRequest' } };
       }
       if (notificationType === 'idle_prompt') {
-        return { sessionId, event: { kind: 'turnEnd' } };
+        // idle_prompt = Claude went idle waiting on the user, not just a finished
+        // turn. awaitingInput drives the "Waiting for input" label (vs "Done" for Stop).
+        return { sessionId, event: { kind: 'turnEnd', awaitingInput: true } };
       }
       return null;
     }

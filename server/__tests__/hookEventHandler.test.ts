@@ -153,11 +153,13 @@ describe('HookEventHandler', () => {
       (m) => m.type === 'agentStatus' && m.status === 'waiting',
     );
     expect(msg).toBeTruthy();
+    // idle_prompt = waiting on the user -> awaitingInput true ("Waiting for input")
+    expect(msg?.awaitingInput).toBe(true);
   });
 
   // ── Stop ────────────────────────────────────────────────────
 
-  it('Stop marks agent waiting', () => {
+  it('Stop marks agent waiting without awaitingInput (Done)', () => {
     const agent = createTestAgent({ id: 1 });
     agents.set(1, agent);
     handler.registerAgent('sess-1', 1);
@@ -172,6 +174,8 @@ describe('HookEventHandler', () => {
       (m) => m.type === 'agentStatus' && m.status === 'waiting',
     );
     expect(waitMsg).toBeTruthy();
+    // Stop = finished its turn -> awaitingInput falsy ("Done")
+    expect(waitMsg?.awaitingInput).toBeFalsy();
   });
 
   it('Stop clears foreground tools but preserves background agents', () => {

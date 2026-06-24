@@ -14,6 +14,12 @@ export const GLOBAL_KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
 export const GLOBAL_KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 export const GLOBAL_KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 export const GLOBAL_KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
+export const GLOBAL_KEY_SHOW_AREAS = 'pixel-agents.showAreas';
+
+// Folder→Area mappings live inside the shared ~/.pixel-agents/config.json
+// (vscode.areaMappings), not in VS Code globalState. Kept here as a key
+// constant for callers that need to reference it symbolically.
+export const SETTING_KEY_AREA_MAPPINGS = 'pixel-agents.areaMappings';
 
 // ── VS Code Settings (contributes.configuration keys) ───────
 export const CONFIG_KEY_AUTO_SHOW_PANEL = 'pixel-agents.autoShowPanel';

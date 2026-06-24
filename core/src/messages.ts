@@ -28,10 +28,13 @@ export type ServerMessage =
   | LayoutLoaded
   | FurnitureAssetsLoaded
   | CharacterSpritesLoaded
+  | PetSpritesLoaded
   | FloorTilesLoaded
   | WallTilesLoaded
+  | CarpetTilesLoaded
   | SettingsLoaded
   | ExternalAssetDirectoriesUpdated
+  | AreaMappingsLoaded
   | WorkspaceFolders
   | AgentDiagnostics;
 
@@ -53,6 +56,8 @@ export type ClientMessage =
   | OpenSessionsFolder
   | AddExternalAssetDirectory
   | RemoveExternalAssetDirectory
+  | SaveAreaMappings
+  | SetShowAreas
   | RequestDiagnostics;
 
 export interface ProviderCapabilities {
@@ -96,6 +101,7 @@ export interface AgentStatus {
   type: 'agentStatus';
   id: number;
   status: AgentActivityStatus;
+  awaitingInput?: boolean;
 }
 
 export type AgentActivityStatus = 'active' | 'waiting';
@@ -221,6 +227,20 @@ export interface CharacterSpriteSet {
   right: string[][][];
 }
 
+export interface PetSpritesLoaded {
+  type: 'petSpritesLoaded';
+  pets: PetSpriteFrameSet[];
+  petNames: string[];
+}
+
+export interface PetSpriteFrameSet {
+  walkDown: string[][][];
+  idleDown: string[][][];
+  walkUp: string[][][];
+  idleUp: string[][][];
+  walkRight: string[][][];
+}
+
 export interface FloorTilesLoaded {
   type: 'floorTilesLoaded';
   sprites: string[][][];
@@ -228,6 +248,11 @@ export interface FloorTilesLoaded {
 
 export interface WallTilesLoaded {
   type: 'wallTilesLoaded';
+  sets: string[][][][];
+}
+
+export interface CarpetTilesLoaded {
+  type: 'carpetTilesLoaded';
   sets: string[][][][];
 }
 
@@ -241,11 +266,17 @@ export interface SettingsLoaded {
   hooksEnabled: boolean;
   hooksInfoShown: boolean;
   externalAssetDirectories: string[];
+  showAreas: boolean;
 }
 
 export interface ExternalAssetDirectoriesUpdated {
   type: 'externalAssetDirectoriesUpdated';
   dirs: string[];
+}
+
+export interface AreaMappingsLoaded {
+  type: 'areaMappingsLoaded';
+  mappings: Record<string, string[]>;
 }
 
 export interface WorkspaceFolders {
@@ -347,6 +378,16 @@ export interface AddExternalAssetDirectory {
 export interface RemoveExternalAssetDirectory {
   type: 'removeExternalAssetDirectory';
   path: string;
+}
+
+export interface SaveAreaMappings {
+  type: 'saveAreaMappings';
+  mappings: Record<string, string[]>;
+}
+
+export interface SetShowAreas {
+  type: 'setShowAreas';
+  enabled: boolean;
 }
 
 export interface RequestDiagnostics {
