@@ -52,6 +52,9 @@ interface EditorToolbarProps {
   onWallColorChange: (color: ColorValue) => void;
   onWallSetChange: (setIndex: number) => void;
   onSelectedFurnitureColorChange: (color: ColorValue | null) => void;
+  /** Color applied to newly placed furniture (tints the palette + ghost). */
+  pickedFurnitureColor: ColorValue | null;
+  onPickedFurnitureColorChange: (color: ColorValue | null) => void;
   onFurnitureTypeChange: (type: string) => void;
   loadedAssets?: LoadedAssetData;
   activePetTypes: number[];
@@ -96,6 +99,8 @@ export function EditorToolbar({
   onWallColorChange,
   onWallSetChange,
   onSelectedFurnitureColorChange,
+  pickedFurnitureColor,
+  onPickedFurnitureColorChange,
   onFurnitureTypeChange,
   loadedAssets,
   activePetTypes,
@@ -505,16 +510,28 @@ export function EditorToolbar({
                 Pick
               </Button>
             )}
-            {activeCategory === CARPET_CATEGORY_ID && (
-              <Button
-                variant={showCarpetColor ? 'active' : 'default'}
-                size="sm"
-                onClick={() => setShowCarpetColor((v) => !v)}
-                title="Adjust carpet main + accent colors"
-              >
-                Color
-              </Button>
-            )}
+            {/* Color toggle — available across the whole Furniture tab. Carpet
+                edits main+accent; other categories edit the new-furniture color. */}
+            <Button
+              variant={
+                (activeCategory === CARPET_CATEGORY_ID ? showCarpetColor : showFurnitureColor)
+                  ? 'active'
+                  : 'ghost'
+              }
+              size="sm"
+              onClick={() =>
+                activeCategory === CARPET_CATEGORY_ID
+                  ? setShowCarpetColor((v) => !v)
+                  : setShowFurnitureColor((v) => !v)
+              }
+              title={
+                activeCategory === CARPET_CATEGORY_ID
+                  ? 'Adjust carpet main + accent colors'
+                  : 'Adjust color for new furniture'
+              }
+            >
+              Color
+            </Button>
           </div>
 
           {/* Carpet sub-panel: variant carousel + compact color controls.
@@ -567,7 +584,8 @@ export function EditorToolbar({
             </>
           )}
 
-          {/* Furniture items grid — hidden when carpet category is active */}
+          {/* Furniture items grid — hidden when carpet category is active.
+              Thumbnails preview the new-furniture color so you see what places. */}
           {activeCategory !== CARPET_CATEGORY_ID && (
             <div className="carousel">
               {categoryItems.map((entry) => (
@@ -578,9 +596,16 @@ export function EditorToolbar({
                   selected={selectedFurnitureType === entry.type}
                   onClick={() => onFurnitureTypeChange(entry.type)}
                   title={entry.label}
-                  deps={[entry.type, entry.sprite]}
+                  deps={[entry.type, entry.sprite, pickedFurnitureColor]}
                   draw={(ctx, w, h) => {
-                    const cached = getCachedSprite(entry.sprite, 2);
+                    const sprite = pickedFurnitureColor
+                      ? getColorizedSprite(
+                          `thumb-${entry.type}-${pickedFurnitureColor.h}-${pickedFurnitureColor.s}-${pickedFurnitureColor.b}-${pickedFurnitureColor.c}-${pickedFurnitureColor.colorize ?? ''}`,
+                          entry.sprite,
+                          pickedFurnitureColor,
+                        )
+                      : entry.sprite;
+                    const cached = getCachedSprite(sprite, 2);
                     const scale = Math.min(w / cached.width, h / cached.height) * 0.85;
                     const dw = cached.width * scale;
                     const dh = cached.height * scale;
@@ -589,6 +614,17 @@ export function EditorToolbar({
                 />
               ))}
             </div>
+          )}
+
+          {/* New-furniture color picker — collapsible, above the palette. Editing
+              an already-placed selection is handled by the panel below. */}
+          {activeCategory !== CARPET_CATEGORY_ID && showFurnitureColor && !selectedFurnitureUid && (
+            <ColorPicker
+              value={pickedFurnitureColor ?? DEFAULT_FURNITURE_COLOR}
+              onChange={onPickedFurnitureColorChange}
+              showColorizeToggle
+              onReset={() => onPickedFurnitureColorChange(null)}
+            />
           )}
         </div>
       )}

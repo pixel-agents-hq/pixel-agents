@@ -10,6 +10,7 @@ import {
 } from '../../constants.js';
 import { unlockAudio } from '../../notificationSound.js';
 import { transport } from '../../transport/index.js';
+import { getColorizedSprite } from '../colorize.js';
 import { canPlaceFurniture, getWallPlacementRow } from '../editor/editorActions.js';
 import type { EditorState } from '../editor/editorState.js';
 import { startGameLoop } from '../engine/gameLoop.js';
@@ -167,7 +168,14 @@ export function OfficeCanvas({
                 editorState.selectedFurnitureType,
                 editorState.ghostRow,
               );
-              editorRender.ghostSprite = entry.sprite;
+              const pickedColor = editorState.pickedFurnitureColor;
+              editorRender.ghostSprite = pickedColor
+                ? getColorizedSprite(
+                    `ghost-${editorState.selectedFurnitureType}-${pickedColor.h}-${pickedColor.s}-${pickedColor.b}-${pickedColor.c}-${pickedColor.colorize ?? ''}`,
+                    entry.sprite,
+                    pickedColor,
+                  )
+                : entry.sprite;
               editorRender.ghostRow = placementRow;
               editorRender.ghostMirrored =
                 !!entry.mirrorSide && editorState.selectedFurnitureType.endsWith(':left');

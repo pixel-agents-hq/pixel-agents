@@ -300,6 +300,8 @@ function App() {
                   onWallColorChange={editor.handleWallColorChange}
                   onWallSetChange={editor.handleWallSetChange}
                   onSelectedFurnitureColorChange={editor.handleSelectedFurnitureColorChange}
+                  pickedFurnitureColor={editorState.pickedFurnitureColor}
+                  onPickedFurnitureColorChange={editor.handlePickedFurnitureColorChange}
                   onFurnitureTypeChange={editor.handleFurnitureTypeChange}
                   loadedAssets={loadedAssets}
                   activePetTypes={officeState.getActivePetTypes()}

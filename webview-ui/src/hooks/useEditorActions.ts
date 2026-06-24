@@ -63,6 +63,7 @@ interface EditorActions {
   handleWallColorChange: (color: ColorValue) => void;
   handleWallSetChange: (setIndex: number) => void;
   handleSelectedFurnitureColorChange: (color: ColorValue | null) => void;
+  handlePickedFurnitureColorChange: (color: ColorValue | null) => void;
   handleFurnitureTypeChange: (type: string) => void; // FurnitureType enum or asset ID
   handleDeleteSelected: () => void;
   handleRotateSelected: () => void;
@@ -395,6 +396,16 @@ export function useEditorActions(
       setEditorTick((n) => n + 1);
     },
     [getOfficeState, editorState, saveLayout],
+  );
+
+  // Color applied to NEWLY placed furniture (and the palette/ghost previews).
+  // Stored imperatively on editorState; placement reads it in the click handler.
+  const handlePickedFurnitureColorChange = useCallback(
+    (color: ColorValue | null) => {
+      editorState.pickedFurnitureColor = color;
+      setEditorTick((n) => n + 1);
+    },
+    [editorState],
   );
 
   const handleFurnitureTypeChange = useCallback(
@@ -904,6 +915,7 @@ export function useEditorActions(
     handleWallColorChange,
     handleWallSetChange,
     handleSelectedFurnitureColorChange,
+    handlePickedFurnitureColorChange,
     handleFurnitureTypeChange,
     handleDeleteSelected,
     handleRotateSelected,
