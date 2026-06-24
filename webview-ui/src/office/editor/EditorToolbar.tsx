@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
@@ -254,7 +255,15 @@ export function EditorToolbar({
           onClick={() => onToolChange(EditTool.WALL_PAINT)}
           title="Paint walls (click to toggle)"
         >
-          Wall
+          Walls
+        </Button>
+        <Button
+          variant={isPetsActive ? 'active' : 'default'}
+          size="md"
+          onClick={() => onToolChange(EditTool.PETS)}
+          title="Place pets"
+        >
+          Pets
         </Button>
         {hasWorkspaceFolders && (
           <Button
@@ -274,14 +283,6 @@ export function EditorToolbar({
         >
           Erase
         </Button>
-        <Button
-          variant={isPetsActive ? 'active' : 'default'}
-          size="md"
-          onClick={() => onToolChange(EditTool.PETS)}
-          title="Place pets"
-        >
-          Pets
-        </Button>
       </div>
 
       {/* Sub-panel: Floor tiles — stacked bottom-to-top via column-reverse */}
@@ -290,14 +291,6 @@ export function EditorToolbar({
           {/* Color toggle + Pick — just above tool row */}
           <div className="flex gap-4 items-center">
             <Button
-              variant={showColor ? 'active' : 'default'}
-              size="sm"
-              onClick={() => setShowColor((v) => !v)}
-              title="Adjust floor color"
-            >
-              Color
-            </Button>
-            <Button
               variant={activeTool === EditTool.EYEDROPPER ? 'active' : 'ghost'}
               size="sm"
               onClick={() => onToolChange(EditTool.EYEDROPPER)}
@@ -305,12 +298,17 @@ export function EditorToolbar({
             >
               Pick
             </Button>
+            <Button
+              variant={showColor ? 'active' : 'ghost'}
+              size="sm"
+              onClick={() => setShowColor((v) => !v)}
+              title="Adjust floor color"
+            >
+              Color
+            </Button>
           </div>
 
-          {/* Color controls (collapsible) — above Wall/Color/Pick */}
-          {showColor && <ColorPicker value={floorColor} onChange={onFloorColorChange} colorize />}
-
-          {/* Floor pattern horizontal carousel — at the top */}
+          {/* Floor pattern horizontal carousel — below the color controls */}
           <div className="carousel">
             {floorPatterns.map((patIdx) => (
               <ItemSelect
@@ -333,6 +331,9 @@ export function EditorToolbar({
               />
             ))}
           </div>
+
+          {/* Color controls (collapsible) — at the top, above the previews. */}
+          {showColor && <TileColorBox value={floorColor} onChange={onFloorColorChange} />}
         </div>
       )}
 
@@ -351,10 +352,7 @@ export function EditorToolbar({
             </Button>
           </div>
 
-          {/* Color controls (collapsible) */}
-          {showWallColor && <ColorPicker value={wallColor} onChange={onWallColorChange} colorize />}
-
-          {/* Wall set picker — horizontal carousel at the top */}
+          {/* Wall set picker — horizontal carousel, below the color controls */}
           {getWallSetCount() > 0 && (
             <div className="carousel">
               {Array.from({ length: getWallSetCount() }, (_, i) => (
@@ -384,6 +382,9 @@ export function EditorToolbar({
               ))}
             </div>
           )}
+
+          {/* Color controls (collapsible) — at the top, above the previews. */}
+          {showWallColor && <TileColorBox value={wallColor} onChange={onWallColorChange} />}
         </div>
       )}
 
@@ -661,6 +662,44 @@ export function EditorToolbar({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Floor/wall color control: a boxed panel with a "Color" row (carpet-style
+ * swatch + hex that opens the visual picker) and a "Contrast" row. Floors and
+ * walls always colorize, so there's no colorize toggle — just hue/sat/bright
+ * via the popup, plus contrast (which matters since colorizeSprite uses each
+ * pattern pixel's luminance).
+ */
+function TileColorBox({
+  value,
+  onChange,
+}: {
+  value: ColorValue;
+  onChange: (color: ColorValue) => void;
+}) {
+  const contrastFill = ((value.c + 100) / 200) * 100;
+  return (
+    <div className="flex flex-col gap-4 py-8 px-10 bg-bg-dark border-2 border-border rounded-none">
+      <div className="flex items-center gap-8">
+        <span className="text-sm text-text-muted w-64 shrink-0">Color</span>
+        <VisualColorPicker value={value} onChange={onChange} />
+      </div>
+      <div className="flex items-center gap-8">
+        <span className="text-sm text-text-muted w-64 shrink-0">Contrast</span>
+        <input
+          type="range"
+          min={-100}
+          max={100}
+          value={value.c}
+          onChange={(e) => onChange({ ...value, c: Number(e.target.value) })}
+          className="pixel-range flex-1 min-w-0"
+          style={{ '--range-fill': `${contrastFill}%` } as CSSProperties}
+        />
+        <span className="text-sm text-text w-44 text-right shrink-0 tabular-nums">{value.c}</span>
+      </div>
     </div>
   );
 }
