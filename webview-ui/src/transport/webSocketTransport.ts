@@ -70,6 +70,15 @@ export class WebSocketTransport implements MessageTransport {
     };
   }
 
+  /**
+   * Deliver an externally-sourced message to all handlers, as if it had arrived
+   * over the socket. Used in Vite dev mode to bridge `browserMock`'s injected
+   * `window` messages (there is no real server to connect to in dev).
+   */
+  deliver(message: ServerMessage): void {
+    for (const handler of this.handlers) handler(message);
+  }
+
   dispose(): void {
     this.disposed = true;
     if (this.reconnectTimer) {

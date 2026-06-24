@@ -30,6 +30,7 @@ interface MockPayload {
   characters: CharacterDirectionSprites[];
   floorSprites: string[][][];
   wallSets: string[][][][];
+  carpetSets: string[][][][];
   furnitureCatalog: CatalogEntry[];
   furnitureSprites: Record<string, string[][]>;
   layout: unknown;
@@ -221,17 +222,25 @@ export async function initBrowserMock(): Promise<void> {
     ? await fetch(`${base}assets/${assetIndex.defaultLayout}`).then((r) => r.json())
     : null;
 
+  // Carpets only have a decoded-JSON endpoint (no PNG fallback / asset-index
+  // entry); empty array is fine — the carpet tab just won't render variants.
+  const carpetSets =
+    (shouldTryDecoded
+      ? await fetchJsonOptional<string[][][][]>(`${base}assets/decoded/carpets.json`)
+      : null) ?? [];
+
   mockPayload = {
     characters,
     floorSprites,
     wallSets,
+    carpetSets,
     furnitureCatalog: catalog,
     furnitureSprites,
     layout,
   };
 
   console.log(
-    `[BrowserMock] Ready (${hasDecoded ? 'decoded-json' : 'browser-png-decode'}) — ${characters.length} chars, ${floorSprites.length} floors, ${wallSets.length} wall sets, ${catalog.length} furniture items`,
+    `[BrowserMock] Ready (${hasDecoded ? 'decoded-json' : 'browser-png-decode'}) — ${characters.length} chars, ${floorSprites.length} floors, ${wallSets.length} wall sets, ${carpetSets.length} carpets, ${catalog.length} furniture items`,
   );
 }
 
@@ -245,18 +254,27 @@ export async function initBrowserMock(): Promise<void> {
 export function dispatchMockMessages(): void {
   if (!mockPayload) return;
 
-  const { characters, floorSprites, wallSets, furnitureCatalog, furnitureSprites, layout } =
-    mockPayload;
+  const {
+    characters,
+    floorSprites,
+    wallSets,
+    carpetSets,
+    furnitureCatalog,
+    furnitureSprites,
+    layout,
+  } = mockPayload;
 
   function dispatch(data: unknown): void {
     window.dispatchEvent(new MessageEvent('message', { data }));
   }
 
   // Must match the load order defined in CLAUDE.md:
-  // characterSpritesLoaded -> floorTilesLoaded -> wallTilesLoaded -> furnitureAssetsLoaded -> layoutLoaded
+  // characterSpritesLoaded -> floorTilesLoaded -> wallTilesLoaded -> carpetTilesLoaded
+  //   -> furnitureAssetsLoaded -> layoutLoaded
   dispatch({ type: 'characterSpritesLoaded', characters });
   dispatch({ type: 'floorTilesLoaded', sprites: floorSprites });
   dispatch({ type: 'wallTilesLoaded', sets: wallSets });
+  dispatch({ type: 'carpetTilesLoaded', sets: carpetSets });
   dispatch({ type: 'furnitureAssetsLoaded', catalog: furnitureCatalog, sprites: furnitureSprites });
   dispatch({ type: 'layoutLoaded', layout });
   dispatch({
