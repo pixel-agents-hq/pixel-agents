@@ -311,8 +311,6 @@ function App() {
                   onCarpetVariantChange={editor.handleCarpetVariantChange}
                   onCarpetColorChange={editor.handleCarpetColorChange}
                   onCarpetAccentColorChange={editor.handleCarpetAccentColorChange}
-                  onResetCarpetColor={editor.handleResetCarpetColor}
-                  onResetCarpetAccentColor={editor.handleResetCarpetAccentColor}
                   areas={officeState.getLayout().areas ?? []}
                   selectedAreaLabel={editor.selectedAreaLabel}
                   workspaceFolders={workspaceFolders}

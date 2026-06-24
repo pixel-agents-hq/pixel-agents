@@ -106,10 +106,6 @@ export const CARPET_DEFAULT_ACCENT_COLOR: ColorValue = {
   c: 0,
   colorize: true,
 };
-/** Pixel size of the carpet variant thumbnail rendered in the editor palette. */
-export const CARPET_PREVIEW_SIZE_PX = 64;
-/** Marching-squares mask index used for the carpet preview thumbnail (all neighbors = interior). */
-export const CARPET_PREVIEW_MASK_INDEX = 15;
 /** Keyboard key that switches from CARPET_PAINT to CARPET_PICK while editing. */
 export const KEY_CARPET_PICK = 'p';
 
@@ -143,27 +139,27 @@ export const AREA_LABEL_SHADOW_COLOR = '#000000';
 export const AREA_LABEL_SHADOW_ALPHA = 0.6;
 
 // ── VisualColorPicker (HSV wheel + brightness for carpets) ───
-export const VISUAL_COLOR_PICKER_WIDTH_PX = 240;
 export const VISUAL_COLOR_PICKER_SV_SIZE_PX = 180;
 export const VISUAL_COLOR_PICKER_HUE_WIDTH_PX = 20;
 export const VISUAL_COLOR_PICKER_MARKER_RADIUS_PX = 6;
 /**
- * HSV picker gradients are intrinsic to the color-picking interaction, not
- * theme colors — they must span the full SRGB cube. Centralized here so the
- * component body stays free of inline color literals.
+ * The hue bar gradient is intrinsic to the color-picking interaction, not a
+ * theme color — it must span the full hue circle. Centralized here so the
+ * component body stays free of inline color literals. (The saturation/brightness
+ * square is painted to a canvas from the carpet HSL model, not a CSS gradient.)
  */
-export const VISUAL_COLOR_PICKER_SV_BLACK_GRADIENT =
-  'linear-gradient(to top, #000 0%, transparent 100%)';
-export const VISUAL_COLOR_PICKER_SV_WHITE_GRADIENT =
-  'linear-gradient(to right, #fff 0%, transparent 100%)';
 export const VISUAL_COLOR_PICKER_HUE_GRADIENT =
   'linear-gradient(to bottom, ' +
   '#ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, ' +
   '#00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%)';
 export const VISUAL_COLOR_PICKER_MARKER_BORDER = '2px solid #fff';
 export const VISUAL_COLOR_PICKER_MARKER_SHADOW = '0 0 0 1px rgba(0,0,0,0.6)';
-/** Build the SV-square base color from the picker's current hue (0..360). */
-export const visualColorPickerSvBaseColor = (hue: number): string => `hsl(${hue}, 100%, 50%)`;
+/** Width of the collapsed swatch + hex trigger row (compact mode). */
+export const VISUAL_COLOR_PICKER_COMPACT_WIDTH_PX = 160;
+/** Swatch square size shown in the collapsed trigger. */
+export const VISUAL_COLOR_PICKER_SWATCH_PX = 22;
+/** Gap (px) between the collapsed trigger and the expanded popup panel. */
+export const VISUAL_COLOR_PICKER_POPUP_GAP_PX = 6;
 
 // ── Notification Sound (done: ascending chime) ─────────────
 export const NOTIFICATION_NOTE_1_HZ = 659.25; // E5
