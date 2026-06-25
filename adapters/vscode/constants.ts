@@ -23,3 +23,7 @@ export const CONFIG_KEY_AUTO_SPAWN_AGENT = 'pixel-agents.autoSpawnAgent';
 export const VIEW_ID = 'pixel-agents.panelView';
 export const COMMAND_SHOW_PANEL = 'pixel-agents.showPanel';
 export const COMMAND_EXPORT_DEFAULT_LAYOUT = 'pixel-agents.exportDefaultLayout';
+
+// ── Copilot CLI Integration ─────────────────────────────────
+/** Terminal name prefix for Copilot CLI agents (launched via the `copilot` command) */
+export const COPILOT_CLI_TERMINAL_NAME_PREFIX = 'Copilot CLI';

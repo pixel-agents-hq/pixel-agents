@@ -1,7 +1,12 @@
 import type * as vscode from 'vscode';
 
+/** Identifies how an agent was detected and what drives its activity tracking */
+export type AgentSource = 'claude-code' | 'copilot' | 'copilot-cli';
+
 export interface AgentState {
   id: number;
+  /** Identifies the agent's activity source (determines tracking strategy). Defaults to 'claude-code'. */
+  source?: AgentSource;
   sessionId: string;
   /** Terminal reference — undefined for extension panel sessions */
   terminalRef?: vscode.Terminal;
@@ -62,6 +67,8 @@ export interface AgentState {
 
 export interface PersistedAgent {
   id: number;
+  /** Identifies the agent's activity source */
+  source?: AgentSource;
   sessionId?: string;
   /** Terminal name — empty string for extension panel sessions */
   terminalName: string;

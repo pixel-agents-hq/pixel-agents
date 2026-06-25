@@ -668,7 +668,7 @@ components:
           const: webviewReady
 
     LaunchAgent:
-      description: Launch a new Claude agent in a new terminal.
+      description: Launch a new agent (Claude Code or Copilot CLI) in a new terminal.
       type: object
       additionalProperties: false
       required: [type]
@@ -680,6 +680,13 @@ components:
           description: Workspace folder path (for multi-root workspaces).
         bypassPermissions:
           type: boolean
+        agentType:
+          $ref: '#/components/schemas/AgentType'
+
+    AgentType:
+      description: Which agent runtime to launch. Defaults to claude-code.
+      type: string
+      enum: [claude-code, copilot-cli]
 
     FocusAgent:
       description: Focus an agent's terminal.

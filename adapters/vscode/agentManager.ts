@@ -16,7 +16,8 @@ import { loadLayout } from '../../server/src/layoutPersistence.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
-import type { AgentState, PersistedAgent } from '../../server/src/types.js';
+import type { AgentSource, AgentState, PersistedAgent } from '../../server/src/types.js';
+import { COPILOT_CLI_TERMINAL_NAME_PREFIX } from './constants.js';
 
 export function getProjectDirPath(cwd?: string): string {
   // Fall back to home directory when no workspace folder is open (common on Linux/macOS
@@ -48,7 +49,12 @@ export async function launchNewTerminal(
   folderPath?: string,
   bypassPermissions?: boolean,
   suppressShow?: boolean,
+  agentType?: AgentSource,
 ): Promise<void> {
+  const source: AgentSource = agentType === 'copilot-cli' ? 'copilot-cli' : 'claude-code';
+  const isCopilotCli = source === 'copilot-cli';
+  const namePrefix = isCopilotCli ? COPILOT_CLI_TERMINAL_NAME_PREFIX : CLAUDE_TERMINAL_NAME_PREFIX;
+
   const folders = vscode.workspace.workspaceFolders;
   // Use home directory as fallback cwd when no workspace is open (common on Linux/macOS).
   // This ensures the terminal starts in a predictable location that matches the project
@@ -57,7 +63,7 @@ export async function launchNewTerminal(
   const isMultiRoot = !!(folders && folders.length > 1);
   const idx = nextTerminalIndexRef.current++;
   const terminal = vscode.window.createTerminal({
-    name: `${CLAUDE_TERMINAL_NAME_PREFIX} #${idx}`,
+    name: `${namePrefix} #${idx}`,
     cwd,
   });
   // When suppressShow is set (auto-spawn + autoShowPanel), keep the panel view
@@ -66,6 +72,46 @@ export async function launchNewTerminal(
   // the existing focusAgent message handler.
   if (!suppressShow) {
     terminal.show();
+  }
+
+  if (isCopilotCli) {
+    // Copilot CLI agents run the `copilot` command and have no JSONL transcript,
+    // so we create a character but don't set up file watching or activity tracking.
+    terminal.sendText('copilot');
+    const id = nextAgentIdRef.current++;
+    const folderName = isMultiRoot && cwd ? path.basename(cwd) : undefined;
+    const agent: AgentState = {
+      id,
+      source: 'copilot-cli',
+      sessionId: crypto.randomUUID(),
+      terminalRef: terminal,
+      isExternal: false,
+      projectDir: '',
+      jsonlFile: '',
+      fileOffset: 0,
+      lineBuffer: '',
+      activeToolIds: new Set(),
+      activeToolStatuses: new Map(),
+      activeToolNames: new Map(),
+      activeSubagentToolIds: new Map(),
+      activeSubagentToolNames: new Map(),
+      backgroundAgentToolIds: new Set(),
+      isWaiting: false,
+      permissionSent: false,
+      hadToolsInTurn: false,
+      lastDataAt: 0,
+      linesProcessed: 0,
+      seenUnknownRecordTypes: new Set(),
+      hookDelivered: false,
+      inputTokens: 0,
+      outputTokens: 0,
+      folderName,
+    };
+    agents.set(id, agent);
+    activeAgentIdRef.current = id;
+    persistAgents();
+    console.log(`[Pixel Agents] Copilot CLI Agent ${id}: created for terminal ${terminal.name}`);
+    return;
   }
 
   const sessionId = crypto.randomUUID();
@@ -86,6 +132,7 @@ export async function launchNewTerminal(
   const folderName = isMultiRoot && cwd ? path.basename(cwd) : undefined;
   const agent: AgentState = {
     id,
+    source: 'claude-code',
     sessionId,
     terminalRef: terminal,
     isExternal: false,
@@ -314,6 +361,10 @@ export function restoreAgents(
 
     let terminal: vscode.Terminal | undefined;
     const isExternal = p.isExternal ?? false;
+    const source = p.source ?? 'claude-code';
+
+    // Copilot CLI agents have no JSONL tracking and are re-launched manually — skip restoring them.
+    if (source === 'copilot' || source === 'copilot-cli') continue;
 
     if (isExternal) {
       // External agents — restore if JSONL file still exists on disk
@@ -330,6 +381,7 @@ export function restoreAgents(
 
     const agent: AgentState = {
       id: p.id,
+      source,
       sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
       terminalRef: terminal,
       isExternal,

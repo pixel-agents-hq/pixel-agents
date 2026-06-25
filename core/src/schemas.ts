@@ -8,6 +8,8 @@
 /** Persisted agent data (survives F5 reload / restart) */
 export interface PersistedAgent {
   id: number;
+  /** Identifies the agent's activity source (defaults to 'claude-code') */
+  source?: 'claude-code' | 'copilot' | 'copilot-cli';
   sessionId?: string;
   terminalName: string;
   isExternal?: boolean;

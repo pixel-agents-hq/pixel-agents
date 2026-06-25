@@ -6,9 +6,10 @@ import { transport } from '../transport/index.js';
 import { Button } from './ui/Button.js';
 import { Dropdown, DropdownItem } from './ui/Dropdown.js';
 
+type AgentType = 'claude-code' | 'copilot-cli';
+
 interface BottomToolbarProps {
   isEditMode: boolean;
-  onOpenClaude: () => void;
   onToggleEditMode: () => void;
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
@@ -17,94 +18,84 @@ interface BottomToolbarProps {
 
 export function BottomToolbar({
   isEditMode,
-  onOpenClaude,
   onToggleEditMode,
   isSettingsOpen,
   onToggleSettings,
   workspaceFolders,
 }: BottomToolbarProps) {
+  const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
-  const [isBypassMenuOpen, setIsBypassMenuOpen] = useState(false);
-  const folderPickerRef = useRef<HTMLDivElement>(null);
+  const agentMenuRef = useRef<HTMLDivElement>(null);
+  const pendingAgentTypeRef = useRef<AgentType>('claude-code');
   const pendingBypassRef = useRef(false);
-  // Close folder picker / bypass menu on outside click
+
+  // Close menus on outside click
   useEffect(() => {
-    if (!isFolderPickerOpen && !isBypassMenuOpen) return;
+    if (!isAgentMenuOpen && !isFolderPickerOpen) return;
     const handleClick = (e: MouseEvent) => {
-      if (folderPickerRef.current && !folderPickerRef.current.contains(e.target as Node)) {
+      if (agentMenuRef.current && !agentMenuRef.current.contains(e.target as Node)) {
+        setIsAgentMenuOpen(false);
         setIsFolderPickerOpen(false);
-        setIsBypassMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
-  }, [isFolderPickerOpen, isBypassMenuOpen]);
+  }, [isAgentMenuOpen, isFolderPickerOpen]);
 
   const hasMultipleFolders = workspaceFolders.length > 1;
 
+  const launchAgent = (agentType: AgentType, bypassPermissions: boolean, folderPath?: string) => {
+    transport.send({ type: 'launchAgent', agentType, bypassPermissions, folderPath });
+  };
+
   const handleAgentClick = () => {
-    setIsBypassMenuOpen(false);
-    pendingBypassRef.current = false;
+    setIsFolderPickerOpen(false);
+    setIsAgentMenuOpen((v) => !v);
+  };
+
+  // After choosing an agent type, either launch directly or (in multi-root
+  // workspaces) defer to the folder picker, remembering the selection.
+  const handleAgentTypeSelect = (agentType: AgentType, bypassPermissions: boolean) => {
+    setIsAgentMenuOpen(false);
     if (hasMultipleFolders) {
-      setIsFolderPickerOpen((v) => !v);
+      pendingAgentTypeRef.current = agentType;
+      pendingBypassRef.current = bypassPermissions;
+      setIsFolderPickerOpen(true);
     } else {
-      onOpenClaude();
-    }
-  };
-
-  const handleAgentHover = () => {
-    if (!isFolderPickerOpen) {
-      setIsBypassMenuOpen(true);
-    }
-  };
-
-  const handleAgentLeave = () => {
-    if (!isFolderPickerOpen) {
-      setIsBypassMenuOpen(false);
+      launchAgent(agentType, bypassPermissions);
     }
   };
 
   const handleFolderSelect = (folder: WorkspaceFolder) => {
     setIsFolderPickerOpen(false);
-    const bypassPermissions = pendingBypassRef.current;
-    pendingBypassRef.current = false;
-    transport.send({ type: 'launchAgent', folderPath: folder.path, bypassPermissions });
-  };
-
-  const handleBypassSelect = (bypassPermissions: boolean) => {
-    setIsBypassMenuOpen(false);
-    if (hasMultipleFolders) {
-      pendingBypassRef.current = bypassPermissions;
-      setIsFolderPickerOpen(true);
-    } else {
-      transport.send({ type: 'launchAgent', bypassPermissions });
-    }
+    launchAgent(pendingAgentTypeRef.current, pendingBypassRef.current, folder.path);
   };
 
   return (
     <div className="absolute bottom-10 left-10 z-20 flex items-center gap-4 pixel-panel p-4">
       {/* Hide + Agent in standalone browser mode (no terminal to interact with) */}
       {!isBrowserRuntime && (
-        <div
-          ref={folderPickerRef}
-          className="relative"
-          onMouseEnter={handleAgentHover}
-          onMouseLeave={handleAgentLeave}
-        >
+        <div ref={agentMenuRef} className="relative">
           <Button
             variant="accent"
             onClick={handleAgentClick}
             className={
-              isFolderPickerOpen || isBypassMenuOpen
+              isAgentMenuOpen || isFolderPickerOpen
                 ? 'bg-accent-bright'
                 : 'bg-accent hover:bg-accent-bright'
             }
           >
             + Agent
           </Button>
-          <Dropdown isOpen={isBypassMenuOpen}>
-            <DropdownItem onClick={() => handleBypassSelect(true)}>
-              Skip permissions mode <span className="text-2xs text-warning">⚠</span>
+          <Dropdown isOpen={isAgentMenuOpen} className="min-w-128">
+            <DropdownItem onClick={() => handleAgentTypeSelect('claude-code', false)}>
+              Claude Code
+            </DropdownItem>
+            <DropdownItem onClick={() => handleAgentTypeSelect('claude-code', true)}>
+              Claude Code (Bypass) <span className="text-2xs text-warning">⚠</span>
+            </DropdownItem>
+            <DropdownItem onClick={() => handleAgentTypeSelect('copilot-cli', false)}>
+              Copilot CLI
             </DropdownItem>
           </Dropdown>
           <Dropdown isOpen={isFolderPickerOpen} className="min-w-128">

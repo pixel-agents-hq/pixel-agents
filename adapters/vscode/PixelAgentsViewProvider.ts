@@ -214,6 +214,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           () => this.store.persist(),
           message.folderPath as string | undefined,
           message.bypassPermissions as boolean | undefined,
+          undefined,
+          message.agentType as 'claude-code' | 'copilot-cli' | undefined,
         );
         // Register newly created agent(s) with hook handler
         for (const [id, agent] of this.store) {

@@ -1,7 +1,7 @@
 {
   "name": "pixel-agents",
   "displayName": "Pixel Agents",
-  "description": "Pixel art office where your Claude Code agents come to life as animated characters",
+  "description": "Pixel art office where your AI agents (Claude Code and GitHub Copilot) come to life as animated characters",
   "version": "1.3.0",
   "publisher": "pablodelucca",
   "repository": {
@@ -16,7 +16,15 @@
   },
   "extensionKind": ["workspace"],
   "categories": [
-    "Other"
+    "Other",
+    "AI"
+  ],
+  "keywords": [
+    "claude",
+    "copilot",
+    "github copilot",
+    "ai agents",
+    "pixel art"
   ],
   "activationEvents": [
     "onStartupFinished"

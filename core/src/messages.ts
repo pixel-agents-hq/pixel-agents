@@ -287,7 +287,10 @@ export interface LaunchAgent {
   type: 'launchAgent';
   folderPath?: string;
   bypassPermissions?: boolean;
+  agentType?: AgentType;
 }
+
+export type AgentType = 'claude-code' | 'copilot-cli';
 
 export interface FocusAgent {
   type: 'focusAgent';

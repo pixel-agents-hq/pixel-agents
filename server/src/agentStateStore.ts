@@ -154,6 +154,7 @@ export class AgentStateStore {
     for (const agent of this.agents.values()) {
       persisted.push({
         id: agent.id,
+        source: agent.source,
         sessionId: agent.sessionId,
         terminalName: agent.terminalRef?.name ?? '',
         isExternal: agent.isExternal || undefined,
