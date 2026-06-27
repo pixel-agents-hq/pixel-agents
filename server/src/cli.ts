@@ -61,6 +61,10 @@ async function main(): Promise<void> {
 
   // dist/ contains both the CLI bundle and the assets/ + webview/ directories
   const distRoot = __dirname;
+  // copyHookScript() joins '<root>/dist/hooks', so it expects the EXTENSION ROOT
+  // (the parent of dist/), not dist/ itself. Passing distRoot produced a
+  // dist/dist/hooks path and the hook script was never copied in standalone mode.
+  const extensionRoot = path.dirname(distRoot);
   const staticDir = path.join(distRoot, 'webview');
 
   // ── Load assets on startup (same pipeline as VS Code extension) ──
@@ -107,7 +111,7 @@ async function main(): Promise<void> {
           `http://127.0.0.1:${currentConfig.port}`,
           currentConfig.token,
         );
-        copyHookScript(distRoot);
+        copyHookScript(extensionRoot);
         console.log('[Pixel Agents] Hooks installed (user toggle)');
       } else {
         await claudeProvider.uninstallHooks();
@@ -135,7 +139,7 @@ async function main(): Promise<void> {
     if (runtime.hooksEnabled.current) {
       try {
         await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
-        copyHookScript(distRoot);
+        copyHookScript(extensionRoot);
         console.log('[Pixel Agents] Hooks installed');
       } catch (err) {
         console.error('[Pixel Agents] Failed to install hooks:', err);
