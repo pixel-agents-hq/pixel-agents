@@ -12,30 +12,30 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
-    "@tailwindcss/vite": "^4.2.2",
+    "@tailwindcss/vite": "^4.3.2",
     "@types/node": "^25.6.0",
     "@types/pngjs": "^6.0.5",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "allure-vitest": "^3.9.0",
+    "@vitejs/plugin-react": "^6.0.3",
+    "allure-vitest": "^3.10.2",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
+    "eslint-plugin-react-refresh": "^0.5.3",
     "eslint-plugin-simple-import-sort": "^12.1.1",
-    "globals": "^17.5.0",
+    "globals": "^17.7.0",
     "pngjs": "^7.0.0",
-    "tailwindcss": "^4.2.2",
+    "tailwindcss": "^4.3.2",
     "tsx": "^4.19.3",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.8",
+    "vite": "^8.1.0",
     "vitest": "^3.2.4"
   }
 }
