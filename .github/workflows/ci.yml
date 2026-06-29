@@ -406,7 +406,7 @@ jobs:
 
     steps:
       - name: Download Linux E2E Allure Shards
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           pattern: allure-results-e2e-linux-shard-*
@@ -414,7 +414,7 @@ jobs:
           merge-multiple: true
 
       - name: Download Windows E2E Allure Shards
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           pattern: allure-results-e2e-windows-shard-*
@@ -422,7 +422,7 @@ jobs:
           merge-multiple: true
 
       - name: Download macOS E2E Allure Shards
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           pattern: allure-results-e2e-macos-shard-*
@@ -525,21 +525,21 @@ jobs:
         run: npm ci
 
       - name: Download Cross-Platform E2E Allure Results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: allure-results-e2e
           path: allure-results/e2e
 
       - name: Download Linux Server Allure Results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: allure-results-server-linux
           path: allure-results/server
 
       - name: Download Linux Webview Allure Results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: allure-results-webview-linux
