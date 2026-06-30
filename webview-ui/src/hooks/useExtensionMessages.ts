@@ -246,16 +246,34 @@ export function useExtensionMessages(
           { palette?: number; hueShift?: number; seatId?: string }
         >;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
-        // Buffer agents — they'll be added in layoutLoaded after seats are built
         for (const id of incoming) {
           const m = meta[id];
-          pendingAgents.push({
+          const agent = {
             id,
             palette: m?.palette,
             hueShift: m?.hueShift,
             seatId: m?.seatId,
             folderName: folderNames[id],
-          });
+          };
+          if (layoutReadyRef.current) {
+            // layoutLoaded arrives BEFORE existingAgents on webviewReady, so the
+            // pending buffer was already flushed. Add directly — otherwise an agent
+            // that existed before this client connected would never render.
+            os.addAgent(
+              agent.id,
+              agent.palette,
+              agent.hueShift,
+              agent.seatId,
+              true,
+              agent.folderName,
+            );
+          } else {
+            // Buffer — they'll be added in layoutLoaded after seats are built
+            pendingAgents.push(agent);
+          }
+        }
+        if (layoutReadyRef.current && os.characters.size > 0) {
+          saveAgentSeats(os);
         }
         setAgents((prev) => {
           const ids = new Set(prev);
