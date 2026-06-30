@@ -170,6 +170,7 @@ export function OfficeCanvas({
                 editorState.selectedFurnitureType,
                 editorState.ghostCol,
                 placementRow,
+                editorState.pickedFurnitureUid ?? undefined,
               );
             }
           }
