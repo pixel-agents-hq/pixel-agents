@@ -1,7 +1,7 @@
 # Agent Activity Dashboard — Design
 
 **Date:** 2026-06-30
-**Status:** Approved (design), pending implementation plan
+**Status:** Implemented
 **Surface:** Standalone CLI (`npx pixel-agents`, browser) only for v1
 
 ## Goal
