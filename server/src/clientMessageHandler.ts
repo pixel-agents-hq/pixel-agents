@@ -123,6 +123,17 @@ export function handleClientMessage(
       break;
     }
 
+    case 'requestActivity': {
+      const id = msg.id as number;
+      send({
+        type: 'agentActivityHistory',
+        id,
+        projectDir: store.get(id)?.projectDir,
+        entries: store.getActivity(id),
+      });
+      break;
+    }
+
     default:
       // focusAgent, exportLayout, importLayout
       // require IDE-specific handling (not yet implemented for standalone)
