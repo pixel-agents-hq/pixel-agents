@@ -28,6 +28,7 @@ import { computeNormalModeCursor } from './officeCanvasCursor.js';
 interface OfficeCanvasProps {
   officeState: OfficeState;
   onClick: (agentId: number) => void;
+  onAgentSelectionChange: (id: number | null) => void;
   isEditMode: boolean;
   editorState: EditorState;
   onEditorTileAction: (col: number, row: number) => void;
@@ -45,6 +46,7 @@ interface OfficeCanvasProps {
 export function OfficeCanvas({
   officeState,
   onClick,
+  onAgentSelectionChange,
   isEditMode,
   editorState,
   onEditorTileAction,
@@ -680,6 +682,7 @@ export function OfficeCanvas({
           officeState.selectedAgentId = hitId;
           officeState.cameraFollowId = hitId;
         }
+        onAgentSelectionChange(officeState.selectedAgentId);
         onClick(hitId); // still focus terminal
         return;
       }
@@ -712,12 +715,14 @@ export function OfficeCanvas({
                   officeState.sendToSeat(officeState.selectedAgentId);
                   officeState.selectedAgentId = null;
                   officeState.cameraFollowId = null;
+                  onAgentSelectionChange(null);
                   return;
                 } else if (!seat.assigned) {
                   // Clicked available seat — reassign
                   officeState.reassignSeat(officeState.selectedAgentId, seatId);
                   officeState.selectedAgentId = null;
                   officeState.cameraFollowId = null;
+                  onAgentSelectionChange(null);
                   // Persist seat assignments (exclude sub-agents)
                   const seats: Record<
                     number,
@@ -741,9 +746,10 @@ export function OfficeCanvas({
         // Clicked empty space — deselect
         officeState.selectedAgentId = null;
         officeState.cameraFollowId = null;
+        onAgentSelectionChange(null);
       }
     },
-    [officeState, onClick, screenToWorld, screenToTile, isEditMode],
+    [officeState, onClick, onAgentSelectionChange, screenToWorld, screenToTile, isEditMode],
   );
 
   const handleMouseLeave = useCallback(() => {

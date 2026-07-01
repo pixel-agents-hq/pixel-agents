@@ -150,6 +150,10 @@ function App() {
     transport.send({ type: 'focusAgent', id: focusId });
   }, []);
 
+  const handleAgentSelectionChange = useCallback((id: number | null) => {
+    if (id !== null && id > 0) transport.send({ type: 'requestActivity', id });
+  }, []);
+
   const officeState = getOfficeState();
 
   // Force dependency on editorTickForKeyboard to propagate keyboard-triggered re-renders
@@ -183,6 +187,7 @@ function App() {
       <OfficeCanvas
         officeState={officeState}
         onClick={handleClick}
+        onAgentSelectionChange={handleAgentSelectionChange}
         isEditMode={editor.isEditMode}
         editorState={editorState}
         onEditorTileAction={editor.handleEditorTileAction}
