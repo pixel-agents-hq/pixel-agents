@@ -113,8 +113,6 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
       AgentDetailPanel.tsx           Selected-agent status header + live activity feed (standalone only)
       ResizablePanelDivider.tsx      Drag handle between canvas and detail panel; collapse support
 
-The standalone split layout (office canvas pinned top / agent detail panel below, resizable) is gated behind `isBrowserRuntime`.
-
 e2e/                                 Playwright suite (real VS Code + mock-claude scenarios)
   playwright.config.ts
   global-setup.ts
@@ -154,6 +152,8 @@ core/                                npm workspace (no separate package; root ma
 server/                              npm workspace
 webview-ui/                          npm workspace
 ```
+
+The standalone split layout (office canvas pinned top / agent detail panel below, resizable) is gated behind `isBrowserRuntime`; the VS Code surface renders the canvas full-panel unchanged.
 
 ## Distribution
 
