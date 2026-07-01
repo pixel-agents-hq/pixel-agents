@@ -13,7 +13,12 @@ import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
-import { DETAIL_PANEL_DEFAULT_HEIGHT, DETAIL_PANEL_HEIGHT_STORAGE_KEY } from './constants.js';
+import {
+  DETAIL_PANEL_DEFAULT_HEIGHT,
+  DETAIL_PANEL_HEIGHT_STORAGE_KEY,
+  DETAIL_PANEL_MAX_HEIGHT_RATIO,
+  DETAIL_PANEL_MIN_HEIGHT,
+} from './constants.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
@@ -106,7 +111,13 @@ function App() {
   const [panelHeight, setPanelHeight] = useState<number>(() => {
     try {
       const v = parseInt(localStorage.getItem(DETAIL_PANEL_HEIGHT_STORAGE_KEY) ?? '', 10);
-      return Number.isFinite(v) ? v : DETAIL_PANEL_DEFAULT_HEIGHT;
+      if (Number.isFinite(v)) {
+        return Math.min(
+          window.innerHeight * DETAIL_PANEL_MAX_HEIGHT_RATIO,
+          Math.max(DETAIL_PANEL_MIN_HEIGHT, v),
+        );
+      }
+      return DETAIL_PANEL_DEFAULT_HEIGHT;
     } catch {
       return DETAIL_PANEL_DEFAULT_HEIGHT;
     }
@@ -119,6 +130,13 @@ function App() {
       /* ignore */
     }
   }, [panelHeight]);
+
+  // Clear stale selection when the selected (real, positive-id) agent is removed
+  useEffect(() => {
+    if (selectedAgentId !== null && selectedAgentId > 0 && !agents.includes(selectedAgentId)) {
+      setSelectedAgentId(null);
+    }
+  }, [agents, selectedAgentId]);
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -178,7 +196,7 @@ function App() {
 
   const handleAgentSelectionChange = useCallback((id: number | null) => {
     setSelectedAgentId(id);
-    if (id !== null && id > 0) transport.send({ type: 'requestActivity', id });
+    if (isBrowserRuntime && id !== null && id > 0) transport.send({ type: 'requestActivity', id });
   }, []);
 
   // Selecting an agent from the detail panel's list: mirror a canvas click by
@@ -309,14 +327,16 @@ function App() {
             alwaysShowOverlay={alwaysShowOverlay}
           />
 
-          <ProjectLabels
-            officeState={officeState}
-            agents={agents}
-            subagentCharacters={subagentCharacters}
-            containerRef={containerRef}
-            zoom={editor.zoom}
-            panRef={editor.panRef}
-          />
+          {isBrowserRuntime && (
+            <ProjectLabels
+              officeState={officeState}
+              agents={agents}
+              subagentCharacters={subagentCharacters}
+              containerRef={containerRef}
+              zoom={editor.zoom}
+              panRef={editor.panRef}
+            />
+          )}
         </>
       ) : (
         <DebugView
