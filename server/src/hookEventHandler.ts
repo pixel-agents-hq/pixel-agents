@@ -1,6 +1,7 @@
 import * as path from 'path';
 
 import type { AgentEvent, HookProvider } from '../../core/src/provider.js';
+import { buildActivityEntry } from './activityLog.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { SESSION_END_GRACE_MS } from './constants.js';
 import type { SessionRouter } from './sessionRouter.js';
@@ -180,6 +181,8 @@ export class HookEventHandler {
         const agent = this.agents.get(existingAgentId);
         if (agent) {
           agent.hookDelivered = true;
+          const startEntry = buildActivityEntry(normEvent, this.provider, Date.now());
+          if (startEntry) this.agents.appendActivity(existingAgentId, startEntry);
         }
         if (debug)
           console.log(
@@ -314,6 +317,9 @@ export class HookEventHandler {
     if (!agent) return;
 
     agent.hookDelivered = true;
+    // Tee a feed entry off the same normalized event that drives broadcasts.
+    const activityEntry = buildActivityEntry(normEvent, this.provider, Date.now());
+    if (activityEntry) this.agents.appendActivity(agentId, activityEntry);
     if (debug)
       console.log(
         `[Pixel Agents] Hook: Agent ${agentId} - ${eventName} (session=${event.session_id.slice(0, 8)}...)`,

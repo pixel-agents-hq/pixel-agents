@@ -763,6 +763,23 @@ describe('HookEventHandler', () => {
     expect(onSessionResume).not.toHaveBeenCalled();
   });
 
+  // ── Activity log tee ────────────────────────────────────────────────
+
+  it('records an activity entry on a tool start', () => {
+    agents.set(1, createTestAgent({ id: 1 }));
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'Read',
+      tool_input: { file_path: '/x/foo.ts' },
+    });
+
+    const log = agents.getActivity(1);
+    expect(log.at(-1)).toMatchObject({ kind: 'tool', toolName: 'Read', label: 'Reading foo.ts' });
+  });
+
   // ── Basic subagent regression (Agent Teams feature OFF) ─────────────
   // These tests pin down the behavior that must NOT change for basic subagents.
   // Basic subagents use Agent or Task tool WITHOUT run_in_background=true.
