@@ -34,7 +34,9 @@ export type ServerMessage =
   | SettingsLoaded
   | ExternalAssetDirectoriesUpdated
   | WorkspaceFolders
-  | AgentDiagnostics;
+  | AgentDiagnostics
+  | AgentActivity
+  | AgentActivityHistory;
 
 export type ClientMessage =
   | WebviewReady
@@ -54,7 +56,8 @@ export type ClientMessage =
   | OpenSessionsFolder
   | AddExternalAssetDirectory
   | RemoveExternalAssetDirectory
-  | RequestDiagnostics;
+  | RequestDiagnostics
+  | RequestActivity;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -279,6 +282,27 @@ export interface AgentDiagnostics {
   agents: Record<string, any>[];
 }
 
+export interface AgentActivity {
+  type: 'agentActivity';
+  id: number;
+  entry: ActivityEntry;
+}
+
+export interface ActivityEntry {
+  ts: number;
+  kind: string;
+  label: string;
+  toolName?: string;
+  detail?: string;
+}
+
+export interface AgentActivityHistory {
+  type: 'agentActivityHistory';
+  id: number;
+  projectDir?: string;
+  entries: ActivityEntry[];
+}
+
 export interface WebviewReady {
   type: 'webviewReady';
 }
@@ -367,4 +391,9 @@ export interface RemoveExternalAssetDirectory {
 
 export interface RequestDiagnostics {
   type: 'requestDiagnostics';
+}
+
+export interface RequestActivity {
+  type: 'requestActivity';
+  id: number;
 }

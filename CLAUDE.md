@@ -107,6 +107,11 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
       components/
         OfficeCanvas.tsx             Canvas, resize, DPR, mouse hit-testing, drag-to-move
         ToolOverlay.tsx              Activity label above hovered/selected character
+        ProjectLabels.tsx            Per-character project name label rendered under feet
+        overlayPositioning.ts        Shared canvas-to-DOM coordinate helpers for overlays
+    components/
+      AgentDetailPanel.tsx           Selected-agent status header + live activity feed (standalone only)
+      ResizablePanelDivider.tsx      Drag handle between canvas and detail panel; collapse support
 
 e2e/                                 Playwright suite (real VS Code + mock-claude scenarios)
   playwright.config.ts
@@ -148,6 +153,8 @@ server/                              npm workspace
 webview-ui/                          npm workspace
 ```
 
+The standalone split layout (office canvas pinned top / agent detail panel below, resizable) is gated behind `isBrowserRuntime`; the VS Code surface renders the canvas full-panel unchanged.
+
 ## Distribution
 
 Two artifacts from one source tree:
@@ -186,8 +193,8 @@ Adding a new CLI integration is one subdirectory under `server/src/providers/hoo
 
 `core/asyncapi.yaml` is the contract. Pinned to **3.0.0** because `@asyncapi/modelina@5.10.1` declares `supportedVersions: ['3.0.0']` only; bumping to 3.1.0 produces `export type Root = any`. Revisit when Modelina ships 3.1.0 support.
 
-- **26 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + tokens, assets, settings + workspace, diagnostics.
-- **18 ClientMessage variants** (client → server): lifecycle (`webviewReady`, `launchAgent`, `focusAgent`, `closeAgent`), layout (`saveAgentSeats`, `saveLayout`, `exportLayout`, `importLayout`), settings (`setSoundEnabled`, `setHooksEnabled`, `setWatchAllSessions`, `setAlwaysShowLabels`, `setHooksInfoShown`, `setLastSeenVersion`), discovery + assets, diagnostics.
+- **29 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + tokens, assets, settings + workspace, diagnostics. New in v1 activity dashboard: `agentActivity` (live feed entry broadcast), `agentActivityHistory` (ring-buffer replay on connect).
+- **19 ClientMessage variants** (client → server): lifecycle (`webviewReady`, `launchAgent`, `focusAgent`, `closeAgent`), layout (`saveAgentSeats`, `saveLayout`, `exportLayout`, `importLayout`), settings (`setSoundEnabled`, `setHooksEnabled`, `setWatchAllSessions`, `setAlwaysShowLabels`, `setHooksInfoShown`, `setLastSeenVersion`), discovery + assets, diagnostics. New: `requestActivity` (fetch activity history for selected agent).
 
 Both unions use `oneOf` with `discriminator: type`. Every concrete message sets `additionalProperties: false`.
 

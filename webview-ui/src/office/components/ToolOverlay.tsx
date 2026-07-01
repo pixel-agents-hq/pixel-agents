@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
 import {
-  CHARACTER_SITTING_OFFSET_PX,
   FUEL_COLOR_CRITICAL,
   FUEL_COLOR_DANGER,
   FUEL_COLOR_OK,
@@ -21,7 +20,7 @@ import {
 import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
 import type { OfficeState } from '../engine/officeState.js';
 import type { ToolActivity } from '../types.js';
-import { CharacterState, TILE_SIZE } from '../types.js';
+import { characterToScreen, computeOverlayTransform } from './overlayPositioning.js';
 
 // Both turn-end states show the green checkmark bubble. A finished turn (Stop)
 // shows ONLY the checkmark (the label falls through to its normal idle text);
@@ -104,15 +103,7 @@ export function ToolOverlay({
 
   const el = containerRef.current;
   if (!el) return null;
-  const rect = el.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const canvasW = Math.round(rect.width * dpr);
-  const canvasH = Math.round(rect.height * dpr);
-  const layout = officeState.getLayout();
-  const mapW = layout.cols * TILE_SIZE * zoom;
-  const mapH = layout.rows * TILE_SIZE * zoom;
-  const deviceOffsetX = Math.floor((canvasW - mapW) / 2) + Math.round(panRef.current.x);
-  const deviceOffsetY = Math.floor((canvasH - mapH) / 2) + Math.round(panRef.current.y);
+  const transform = computeOverlayTransform(el, officeState, zoom, panRef);
 
   const selectedId = officeState.selectedAgentId;
   const hoveredId = officeState.hoveredAgentId;
@@ -134,10 +125,11 @@ export function ToolOverlay({
         if (!alwaysShowOverlay && !isSelected && !isHovered) return null;
 
         // Position above character
-        const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
-        const screenX = (deviceOffsetX + ch.x * zoom) / dpr;
-        const screenY =
-          (deviceOffsetY + (ch.y + sittingOffset - TOOL_OVERLAY_VERTICAL_OFFSET) * zoom) / dpr;
+        const { screenX, screenY } = characterToScreen(
+          ch,
+          transform,
+          -TOOL_OVERLAY_VERTICAL_OFFSET,
+        );
 
         // A "Done" agent (finished turn: waiting bubble without awaitingInput)
         // shows ONLY its floating green checkmark bubble, never the label panel

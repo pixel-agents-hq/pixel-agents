@@ -113,6 +113,9 @@ components:
         - $ref: '#/components/schemas/WorkspaceFolders'
         # Diagnostics
         - $ref: '#/components/schemas/AgentDiagnostics'
+        # Activity feed
+        - $ref: '#/components/schemas/AgentActivity'
+        - $ref: '#/components/schemas/AgentActivityHistory'
       discriminator: type
 
     ClientMessage:
@@ -135,6 +138,7 @@ components:
         - $ref: '#/components/schemas/AddExternalAssetDirectory'
         - $ref: '#/components/schemas/RemoveExternalAssetDirectory'
         - $ref: '#/components/schemas/RequestDiagnostics'
+        - $ref: '#/components/schemas/RequestActivity'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -656,6 +660,36 @@ components:
           items:
             type: object
 
+    AgentActivity:
+      description: One live activity entry appended for an agent.
+      type: object
+      additionalProperties: false
+      required: [type, id, entry]
+      properties:
+        type:
+          const: agentActivity
+        id:
+          type: integer
+        entry:
+          $ref: '#/components/schemas/ActivityEntry'
+
+    AgentActivityHistory:
+      description: Recent activity backlog for one agent (response to requestActivity).
+      type: object
+      additionalProperties: false
+      required: [type, id, entries]
+      properties:
+        type:
+          const: agentActivityHistory
+        id:
+          type: integer
+        projectDir:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivityEntry'
+
     # ── Client message variants ────────────────────────────────────
 
     WebviewReady:
@@ -843,6 +877,17 @@ components:
         type:
           const: requestDiagnostics
 
+    RequestActivity:
+      description: Request recent activity backlog for one agent (server responds with agentActivityHistory).
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: requestActivity
+        id:
+          type: integer
+
     # ── Supporting schemas ─────────────────────────────────────────
 
     AgentSeatMeta:
@@ -883,6 +928,26 @@ components:
         name:
           type: string
         path:
+          type: string
+
+    ActivityEntry:
+      description: One entry in an agent's activity feed (a tool call, turn end, etc.).
+      type: object
+      additionalProperties: false
+      required: [ts, kind, label]
+      properties:
+        ts:
+          type: integer
+          description: Server clock timestamp (epoch ms) when the event was recorded.
+        kind:
+          type: string
+          description: Category hint for styling — one of tool, subagent, turnEnd, permission, session.
+        label:
+          type: string
+          description: Human-readable line to display.
+        toolName:
+          type: string
+        detail:
           type: string
 
     CharacterSpriteSet:

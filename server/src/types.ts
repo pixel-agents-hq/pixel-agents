@@ -1,5 +1,7 @@
 import type * as vscode from 'vscode';
 
+import type { ActivityEntry } from '../../core/src/messages.js';
+
 export interface AgentState {
   id: number;
   sessionId: string;
@@ -46,6 +48,9 @@ export interface AgentState {
    *  routing in SubagentStart. Set in PreToolUse, NOT cleared in PostToolUse (survives
    *  the PostToolUse-before-SubagentStart race); overwritten on the next PreToolUse. */
   currentHookIsTeammateSpawn?: boolean;
+
+  /** Recent activity-feed entries (capped at ACTIVITY_LOG_MAX). Lazily initialized. */
+  activityLog?: ActivityEntry[];
 
   // -- Token tracking --
   inputTokens: number;
