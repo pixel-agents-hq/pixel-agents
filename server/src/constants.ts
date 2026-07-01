@@ -54,6 +54,10 @@ export const HOOK_EVENT_BUFFER_MS = 5_000;
 export const SESSION_END_GRACE_MS = 2000;
 export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
 
+// ── Activity Feed ───────────────────────────────────────────
+/** Max activity-feed entries retained per agent (ring buffer, server + client). */
+export const ACTIVITY_LOG_MAX = 50;
+
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';

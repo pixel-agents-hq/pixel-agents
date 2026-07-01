@@ -282,4 +282,34 @@ describe('AgentStateStore', () => {
       expect(cb2).toHaveBeenCalledOnce();
     });
   });
+
+  describe('activity log', () => {
+    const entry = { ts: 1, kind: 'tool', label: 'Reading foo.ts', toolName: 'Read' };
+
+    it('appendActivity records the entry and broadcasts agentActivity', () => {
+      const cb = vi.fn();
+      store.on('broadcast', cb);
+      store.set(1, createTestAgent({ id: 1 }));
+      store.appendActivity(1, entry);
+      expect(store.getActivity(1)).toEqual([entry]);
+      expect(cb).toHaveBeenCalledWith({ type: 'agentActivity', id: 1, entry });
+    });
+
+    it('appendActivity caps the buffer at ACTIVITY_LOG_MAX (drops oldest)', () => {
+      store.set(1, createTestAgent({ id: 1 }));
+      for (let i = 0; i < 60; i++) store.appendActivity(1, { ts: i, kind: 'tool', label: `e${i}` });
+      const log = store.getActivity(1);
+      expect(log.length).toBe(50);
+      expect(log[0].label).toBe('e10'); // first 10 dropped
+      expect(log[log.length - 1].label).toBe('e59');
+    });
+
+    it('appendActivity is a no-op for an unknown agent; getActivity returns []', () => {
+      const cb = vi.fn();
+      store.on('broadcast', cb);
+      store.appendActivity(999, entry);
+      expect(cb).not.toHaveBeenCalled();
+      expect(store.getActivity(999)).toEqual([]);
+    });
+  });
 });

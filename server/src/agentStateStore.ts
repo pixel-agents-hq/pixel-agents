@@ -2,6 +2,8 @@ import { EventEmitter } from 'node:events';
 import { appendFileSync } from 'node:fs';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { ActivityEntry } from '../../core/src/messages.js';
+import { ACTIVITY_LOG_MAX } from './constants.js';
 import type { AgentState, PersistedAgent } from './types.js';
 
 /**
@@ -136,6 +138,25 @@ export class AgentStateStore {
   broadcast(message: Record<string, unknown>): void {
     debugLogBroadcast(message);
     this.emitter.emit('broadcast', message);
+  }
+
+  // ── Activity Feed ────────────────────────────────────────────
+
+  /** Append a feed entry to an agent's ring buffer and broadcast it live. */
+  appendActivity(id: number, entry: ActivityEntry): void {
+    const agent = this.agents.get(id);
+    if (!agent) return;
+    const log = (agent.activityLog ??= []);
+    log.push(entry);
+    if (log.length > ACTIVITY_LOG_MAX) {
+      log.splice(0, log.length - ACTIVITY_LOG_MAX);
+    }
+    this.broadcast({ type: 'agentActivity', id, entry });
+  }
+
+  /** Snapshot of an agent's recent activity (empty if unknown). */
+  getActivity(id: number): ActivityEntry[] {
+    return this.agents.get(id)?.activityLog ?? [];
   }
 
   // ── Lifecycle ───────────────────────────────────────────────
