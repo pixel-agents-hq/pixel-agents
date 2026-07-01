@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
+import { AgentDetailPanel } from './components/AgentDetailPanel.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
+import { ResizablePanelDivider } from './components/ResizablePanelDivider.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
+import { DETAIL_PANEL_DEFAULT_HEIGHT, DETAIL_PANEL_HEIGHT_STORAGE_KEY } from './constants.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
+import { ProjectLabels } from './office/components/ProjectLabels.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
@@ -65,6 +69,7 @@ function App() {
     agents,
     selectedAgent,
     agentTools,
+    agentActivity,
     agentStatuses,
     subagentTools,
     subagentCharacters,
@@ -93,6 +98,27 @@ function App() {
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
+
+  // Standalone dashboard: bottom detail panel (selection, height, collapse).
+  // selectedAgentId drives the AgentDetailPanel and is set from canvas clicks
+  // (via handleAgentSelectionChange) and from the panel's own agent list.
+  const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null);
+  const [panelHeight, setPanelHeight] = useState<number>(() => {
+    try {
+      const v = parseInt(localStorage.getItem(DETAIL_PANEL_HEIGHT_STORAGE_KEY) ?? '', 10);
+      return Number.isFinite(v) ? v : DETAIL_PANEL_DEFAULT_HEIGHT;
+    } catch {
+      return DETAIL_PANEL_DEFAULT_HEIGHT;
+    }
+  });
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      localStorage.setItem(DETAIL_PANEL_HEIGHT_STORAGE_KEY, String(panelHeight));
+    } catch {
+      /* ignore */
+    }
+  }, [panelHeight]);
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -151,8 +177,21 @@ function App() {
   }, []);
 
   const handleAgentSelectionChange = useCallback((id: number | null) => {
+    setSelectedAgentId(id);
     if (id !== null && id > 0) transport.send({ type: 'requestActivity', id });
   }, []);
+
+  // Selecting an agent from the detail panel's list: mirror a canvas click by
+  // selecting + following it in the office, then run the normal selection flow.
+  const handleSelectAgentFromPanel = useCallback(
+    (id: number) => {
+      const os = getOfficeState();
+      os.selectedAgentId = id;
+      os.cameraFollowId = id;
+      handleAgentSelectionChange(id);
+    },
+    [handleAgentSelectionChange],
+  );
 
   const officeState = getOfficeState();
 
@@ -182,8 +221,10 @@ function App() {
     return <div className="w-full h-full flex items-center justify-center ">Loading...</div>;
   }
 
-  return (
-    <div ref={containerRef} className="w-full h-full relative overflow-hidden">
+  // Canvas region + its overlays (or DebugView). Rendered inside the element
+  // that carries `containerRef` so overlay world→screen math stays correct.
+  const canvasInner = (
+    <>
       <OfficeCanvas
         officeState={officeState}
         onClick={handleClick}
@@ -267,6 +308,15 @@ function App() {
             onCloseAgent={handleCloseAgent}
             alwaysShowOverlay={alwaysShowOverlay}
           />
+
+          <ProjectLabels
+            officeState={officeState}
+            agents={agents}
+            subagentCharacters={subagentCharacters}
+            containerRef={containerRef}
+            zoom={editor.zoom}
+            panRef={editor.panRef}
+          />
         </>
       ) : (
         <DebugView
@@ -279,7 +329,12 @@ function App() {
           onSelectAgent={handleSelectAgent}
         />
       )}
+    </>
+  );
 
+  // Floating chrome (toolbars, modals, notices) shared by both layouts.
+  const modals = (
+    <>
       {/* Hooks first-run tooltip */}
       {!hooksInfoShown && !hooksTooltipDismissed && (
         <Tooltip
@@ -385,6 +440,50 @@ function App() {
       {showMigrationNotice && (
         <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />
       )}
+    </>
+  );
+
+  // VS Code surface: unchanged single-container layout (canvas + overlays +
+  // modals all inside the element bounding the canvas).
+  if (!isBrowserRuntime) {
+    return (
+      <div ref={containerRef} className="w-full h-full relative overflow-hidden">
+        {canvasInner}
+        {modals}
+      </div>
+    );
+  }
+
+  // Standalone browser surface: split layout — canvas region on top, a resizable
+  // detail panel docked at the bottom. `containerRef` stays on the canvas-region
+  // wrapper so overlay coordinates track the canvas exactly.
+  return (
+    <div className="w-full h-full relative flex flex-col overflow-hidden">
+      <div
+        ref={containerRef}
+        className="relative overflow-hidden"
+        style={{ flex: '1 1 0', minHeight: 0 }}
+      >
+        {canvasInner}
+      </div>
+      <ResizablePanelDivider
+        height={panelHeight}
+        onHeightChange={setPanelHeight}
+        collapsed={panelCollapsed}
+        onToggleCollapse={() => setPanelCollapsed((c) => !c)}
+      />
+      {!panelCollapsed && (
+        <AgentDetailPanel
+          selectedAgentId={selectedAgentId}
+          agents={agents}
+          agentActivity={agentActivity}
+          agentStatuses={agentStatuses}
+          officeState={officeState}
+          height={panelHeight}
+          onSelectAgent={handleSelectAgentFromPanel}
+        />
+      )}
+      {modals}
     </div>
   );
 }
