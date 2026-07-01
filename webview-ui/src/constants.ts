@@ -149,6 +149,10 @@ export const FUEL_GAUGE_BG = '#222';
 export const TEAM_LEAD_COLOR = '#ffd700';
 export const TEAM_ROLE_COLOR = '#66aaff';
 
+// ── Agent Detail Panel ──────────────────────────────────────
+/** Max activity entries kept per agent client-side (mirror server ACTIVITY_LOG_MAX). */
+export const ACTIVITY_LOG_CLIENT_MAX = 50;
+
 // ── Pets ────────────────────────────────────────────────────────
 /** Walking speed in world pixels per second (matches character walk speed visually but slower). */
 export const PET_WALK_SPEED_PX_PER_SEC = 32;

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
+import type { ActivityEntry } from '../../../core/src/messages.js';
+import { ACTIVITY_LOG_CLIENT_MAX } from '../constants.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { setFloorSprites } from '../office/floorTiles.js';
@@ -56,6 +58,7 @@ interface ExtensionMessageState {
   agents: number[];
   selectedAgent: number | null;
   agentTools: Record<number, ToolActivity[]>;
+  agentActivity: Record<number, ActivityEntry[]>;
   agentStatuses: Record<number, string>;
   subagentTools: Record<number, Record<string, ToolActivity[]>>;
   subagentCharacters: SubagentCharacter[];
@@ -96,6 +99,7 @@ export function useExtensionMessages(
     Record<number, Record<string, ToolActivity[]>>
   >({});
   const [subagentCharacters, setSubagentCharacters] = useState<SubagentCharacter[]>([]);
+  const [agentActivity, setAgentActivity] = useState<Record<number, ActivityEntry[]>>({});
   const [layoutReady, setLayoutReady] = useState(false);
   const [layoutWasReset, setLayoutWasReset] = useState(false);
   const [loadedAssets, setLoadedAssets] = useState<
@@ -571,6 +575,20 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentTokenUsage') {
         const id = msg.id as number;
         os.setAgentTokens(id, msg.inputTokens as number, msg.outputTokens as number);
+      } else if (msg.type === 'agentActivity') {
+        const id = msg.id as number;
+        const entry = msg.entry as ActivityEntry;
+        setAgentActivity((prev) => {
+          const list = prev[id] ?? [];
+          const next = [...list, entry];
+          if (next.length > ACTIVITY_LOG_CLIENT_MAX)
+            next.splice(0, next.length - ACTIVITY_LOG_CLIENT_MAX);
+          return { ...prev, [id]: next };
+        });
+      } else if (msg.type === 'agentActivityHistory') {
+        const id = msg.id as number;
+        const entries = msg.entries as ActivityEntry[];
+        setAgentActivity((prev) => ({ ...prev, [id]: entries }));
       }
     };
     const unsubscribe = transport.onMessage(handler);
@@ -583,6 +601,7 @@ export function useExtensionMessages(
     agents,
     selectedAgent,
     agentTools,
+    agentActivity,
     agentStatuses,
     subagentTools,
     subagentCharacters,
