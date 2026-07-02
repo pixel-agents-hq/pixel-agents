@@ -98,4 +98,47 @@ test.describe('Standalone / hooks', () => {
     const sessionEndMessages = await standalone.drainMessages();
     expect(sessionEndMessages.some((message) => message.type === 'agentClosed')).toBe(true);
   });
+
+  test('restores existing agents after a page reload @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    await setSettings(page, {
+      alwaysShowLabels: true,
+      hooksEnabled: true,
+      watchAllSessions: true,
+      debugView: false,
+    });
+    await standalone.drainMessages();
+
+    const sessionId = 'standalone-reload-test-session';
+    const filePath = path.join(standalone.workspaceDir, 'demo.ts');
+
+    await sendHookEvent(
+      standalone.hookServerConfig,
+      sessionStartStartup(sessionId, standalone.workspaceDir),
+    );
+    await sendHookEvent(standalone.hookServerConfig, {
+      session_id: sessionId,
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: filePath },
+    });
+    await expectOverlayCount(page, 1);
+
+    // Reconnect with the agent still registered on the server. The standalone
+    // boot sequence delivers layoutLoaded before existingAgents, so the webview
+    // must add restored agents immediately rather than buffering them for a
+    // layoutLoaded that already passed.
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible({ timeout: 30_000 });
+
+    // The restored character must come from the existingAgents path — no new
+    // hook events are sent after the reload, so a visible overlay proves the
+    // restore path populated the office.
+    await expectOverlayCount(page, 1);
+    const reloadMessages = await standalone.drainMessages();
+    expect(reloadMessages.some((message) => message.type === 'existingAgents')).toBe(true);
+    expect(reloadMessages.some((message) => message.type === 'agentCreated')).toBe(false);
+  });
 });

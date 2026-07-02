@@ -246,16 +246,30 @@ export function useExtensionMessages(
           { palette?: number; hueShift?: number; seatId?: string }
         >;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
-        // Buffer agents — they'll be added in layoutLoaded after seats are built
+        // Buffer agents — they'll be added in layoutLoaded after seats are built.
+        // If the layout already arrived (standalone sends layoutLoaded before
+        // existingAgents), add them immediately — buffering would strand them.
         for (const id of incoming) {
           const m = meta[id];
-          pendingAgents.push({
+          const pending = {
             id,
             palette: m?.palette,
             hueShift: m?.hueShift,
             seatId: m?.seatId,
             folderName: folderNames[id],
-          });
+          };
+          if (layoutReadyRef.current) {
+            os.addAgent(
+              pending.id,
+              pending.palette,
+              pending.hueShift,
+              pending.seatId,
+              true,
+              pending.folderName,
+            );
+          } else {
+            pendingAgents.push(pending);
+          }
         }
         setAgents((prev) => {
           const ids = new Set(prev);
