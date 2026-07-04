@@ -426,9 +426,14 @@ export function EditorToolbar({
 
       {/* Sub-panel: Areas — Add row + card list */}
       {isAreasActive && (
-        <div className="flex flex-col-reverse gap-4 max-w-[480px]">
+        <div className="flex flex-col-reverse gap-4 pb-2">
           <AreaAddRow areas={areas} onAddArea={onAddArea} />
-          <div className="flex flex-col gap-4 max-h-300 overflow-y-auto pixel-scrollbar">
+          <div className="text-xs text-text-muted px-4 leading-none">
+            Paint areas on the map, then assign workspace folders. Agents will sit in their folder's
+            area.
+          </div>
+          {/* Fixed 4-per-row grid; no overflow clip, or the upward Add-folder dropdown is cut off. */}
+          <div className="grid grid-cols-[repeat(4,130px)] gap-4">
             {areas.length === 0 ? (
               <span className="text-xs text-text-muted italic">No areas yet — add one above</span>
             ) : (
