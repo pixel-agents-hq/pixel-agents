@@ -570,6 +570,20 @@ export function setHookProvider(provider: HookProvider): void {
 }
 
 /**
+ * Resolves an external agent's `cwd`/`projectDir` to its `WorkspaceFolder.name` —
+ * the label the Areas UI keys on. Registered by the VS Code adapter; unset in
+ * standalone, which falls back to basename.
+ */
+export type FolderNameResolver = (ctx: { cwd?: string; projectDir?: string }) => string | undefined;
+
+let folderNameResolver: FolderNameResolver | null = null;
+
+/** Register the host's cwd/projectDir → WorkspaceFolder.name resolver (VS Code only). */
+export function setFolderNameResolver(resolver: FolderNameResolver): void {
+  folderNameResolver = resolver;
+}
+
+/**
  * Scan the provider's teammate transcripts for a given lead session.
  * Each teammate gets its own independent agent (positive ID) with file watching.
  *
@@ -826,7 +840,8 @@ export function adoptExternalSessionFromHook(
 
     knownJsonlFiles.add(transcriptPath);
     const projectDir = path.dirname(transcriptPath);
-    const folderName = folderNameFromProjectDir(path.basename(projectDir));
+    const folderName =
+      folderNameResolver?.({ projectDir }) ?? folderNameFromProjectDir(path.basename(projectDir));
 
     adoptExternalSession(
       transcriptPath,
@@ -855,7 +870,7 @@ export function adoptExternalSessionFromHook(
   } else {
     // Hooks-only provider (OpenCode, Copilot): no transcript file, all state from hooks
     const id = nextAgentIdRef.current++;
-    const folderName = cwd ? path.basename(cwd) : undefined;
+    const folderName = folderNameResolver?.({ cwd }) ?? (cwd ? path.basename(cwd) : undefined);
     const agent: AgentState = {
       id,
       sessionId,
@@ -1235,7 +1250,9 @@ function scanGlobalProjectDirs(
         continue;
       }
 
-      const folderName = folderNameFromProjectDir(path.basename(dirPath));
+      const folderName =
+        folderNameResolver?.({ projectDir: dirPath }) ??
+        folderNameFromProjectDir(path.basename(dirPath));
       knownJsonlFiles.add(file);
       console.log(
         `[Pixel Agents] Watcher: detected global session ${path.basename(file)} (${folderName})`,

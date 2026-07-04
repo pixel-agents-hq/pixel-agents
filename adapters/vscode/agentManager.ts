@@ -83,7 +83,15 @@ export async function launchNewTerminal(
 
   // Create agent immediately (before JSONL file exists)
   const id = nextAgentIdRef.current++;
-  const folderName = isMultiRoot && cwd ? path.basename(cwd) : undefined;
+  // areaMappings is keyed by WorkspaceFolder.name, which can differ from the dir
+  // basename, so seat placement needs that name. Pick the most specific containing
+  // folder (longest path wins for nested folders).
+  const owningFolder = (folders ?? [])
+    .filter((f) => cwd === f.uri.fsPath || cwd.startsWith(f.uri.fsPath + path.sep))
+    .sort((a, b) => b.uri.fsPath.length - a.uri.fsPath.length)[0];
+  const folderName = isMultiRoot
+    ? (owningFolder?.name ?? (cwd ? path.basename(cwd) : undefined))
+    : undefined;
   const agent: AgentState = {
     id,
     sessionId,

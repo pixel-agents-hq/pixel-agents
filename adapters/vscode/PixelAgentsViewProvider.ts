@@ -32,7 +32,7 @@ import {
   sendWallTilesToWebview,
 } from '../../server/src/assetLoader.js';
 import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
-import { setTerminalAdapter } from '../../server/src/fileWatcher.js';
+import { setFolderNameResolver, setTerminalAdapter } from '../../server/src/fileWatcher.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
 import {
   readLayoutFromFile,
@@ -130,6 +130,40 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     setTerminalAdapter(new VscodeTerminalAdapter());
+
+    // Map an external agent's cwd/projectDir to its WorkspaceFolder.name — the
+    // identity areaMappings is keyed on — so in-area seat placement works. Multi-root only.
+    setFolderNameResolver(({ cwd, projectDir }) => {
+      const folders = vscode.workspace.workspaceFolders;
+      if (!folders || folders.length <= 1) return undefined;
+      // Prefer a real cwd: most specific containing folder wins (nested folders).
+      if (cwd) {
+        const owning = folders
+          .filter((f) => cwd === f.uri.fsPath || cwd.startsWith(f.uri.fsPath + path.sep))
+          .sort((a, b) => b.uri.fsPath.length - a.uri.fsPath.length)[0];
+        if (owning) return owning.name;
+      }
+      // External sessions expose only the hashed projectDir. Match a folder's own hash,
+      // allowing a `<hash>-<subpath>` prefix so subdirectory sessions still resolve.
+      if (projectDir) {
+        const target = path.basename(projectDir);
+        const hashOf = (fsPath: string): string => {
+          try {
+            return path.basename(getProjectDirPath(fsPath));
+          } catch {
+            return '';
+          }
+        };
+        const owning = folders
+          .map((f) => ({ f, hash: hashOf(f.uri.fsPath) }))
+          .filter(
+            ({ hash }) => hash.length > 0 && (target === hash || target.startsWith(`${hash}-`)),
+          )
+          .sort((a, b) => b.hash.length - a.hash.length)[0];
+        if (owning) return owning.f.name;
+      }
+      return undefined;
+    });
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
     this.runtime = new AgentRuntime(this.store, claudeProvider);
