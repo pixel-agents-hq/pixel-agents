@@ -32,7 +32,7 @@ export function createCompositeProvider(...providers: HookProvider[]): HookProvi
       return null;
     },
 
-    installHooks: () => primary.installHooks(),
+    installHooks: (serverUrl: string, authToken: string) => primary.installHooks(serverUrl, authToken),
     uninstallHooks: () => primary.uninstallHooks(),
     areHooksInstalled: () => primary.areHooksInstalled(),
 
@@ -42,16 +42,12 @@ export function createCompositeProvider(...providers: HookProvider[]): HookProvi
     readingTools: primary.readingTools,
     terminalNamePrefix: primary.terminalNamePrefix,
 
-    getSessionDirs: (workspacePath: string) => primary.getSessionDirs?.(workspacePath),
-    getAllSessionRoots: () => primary.getAllSessionRoots?.(),
+    getSessionDirs: (workspacePath: string) => primary.getSessionDirs?.(workspacePath) ?? [],
+    getAllSessionRoots: () => primary.getAllSessionRoots?.() ?? [],
     sessionFilePattern: primary.sessionFilePattern,
     parseTranscriptLine: (line: string) => primary.parseTranscriptLine?.(line) ?? null,
     buildLaunchCommand: (sessionId: string, cwd: string, opts?: { bypassPermissions?: boolean }) =>
-      primary.buildLaunchCommand?.(sessionId, cwd, opts) ?? {
-        command: '',
-        args: [],
-        env: { PWD: cwd },
-      },
+      primary.buildLaunchCommand?.(sessionId, cwd, opts) ?? { command: '', args: [], env: { PWD: cwd } },
 
     team: primary.team,
   };
