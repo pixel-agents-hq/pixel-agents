@@ -62,9 +62,9 @@ export function formatToolStatus(toolName: string, _input?: unknown): string {
 export function normalizeOpenCodeHookEvent(
   raw: Record<string, unknown>,
 ): { sessionId: string; event: AgentEvent } | null {
-  const eventType = raw.event_type;
-  const sessionId = raw.session_id;
-  if (typeof eventType !== 'string' || typeof sessionId !== 'string') return null;
+  const eventType = raw.event_type as string | undefined;
+  const sessionId = raw.session_id as string | undefined;
+  if (!eventType || !sessionId) return null;
 
   const payload = (raw.payload ?? {}) as Record<string, unknown>;
 
