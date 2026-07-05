@@ -12,4 +12,5 @@
  */
 
 export { claudeProvider } from './hook/claude/claude.js';
+export { opencodeProvider } from './hook/opencode/opencode.js';
 export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
