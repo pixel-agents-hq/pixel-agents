@@ -22,8 +22,8 @@ import type { AgentEvent } from '../../../../../core/src/provider.js';
 
 const AGENT_PROFILES: Record<string, { source: string; palette: number }> = {
   aiko: { source: 'Aiko', palette: 0 },
-  kobai: { source: 'Kobai', palette: 1 },
-  nairo: { source: 'Nairo', palette: 2 },
+  kobai: { source: 'Kobai', palette: 5 },
+  nairo: { source: 'Nairo', palette: 1 },
 };
 
 function resolveProfile(name?: string): { source: string; palette: number } {
