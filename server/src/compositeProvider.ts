@@ -12,7 +12,7 @@
  * matching provider.
  */
 
-import type { AgentEvent, HookProvider } from '../../../../../core/src/provider.js';
+import type { AgentEvent, HookProvider } from '../../core/src/provider.js';
 
 export function createCompositeProvider(...providers: HookProvider[]): HookProvider {
   if (providers.length === 0) throw new Error('At least one provider required');
@@ -36,17 +36,17 @@ export function createCompositeProvider(...providers: HookProvider[]): HookProvi
     uninstallHooks: () => primary.uninstallHooks(),
     areHooksInstalled: () => primary.areHooksInstalled(),
 
-    formatToolStatus: (toolName, input) => primary.formatToolStatus(toolName, input),
+    formatToolStatus: (toolName: string, input?: unknown) => primary.formatToolStatus(toolName, input),
     permissionExemptTools: primary.permissionExemptTools,
     subagentToolNames: primary.subagentToolNames,
     readingTools: primary.readingTools,
     terminalNamePrefix: primary.terminalNamePrefix,
 
-    getSessionDirs: (workspacePath) => primary.getSessionDirs?.(workspacePath),
+    getSessionDirs: (workspacePath: string) => primary.getSessionDirs?.(workspacePath),
     getAllSessionRoots: () => primary.getAllSessionRoots?.(),
     sessionFilePattern: primary.sessionFilePattern,
-    parseTranscriptLine: (line) => primary.parseTranscriptLine?.(line) ?? null,
-    buildLaunchCommand: (sessionId, cwd, opts) =>
+    parseTranscriptLine: (line: string) => primary.parseTranscriptLine?.(line) ?? null,
+    buildLaunchCommand: (sessionId: string, cwd: string, opts?: { bypassPermissions?: boolean }) =>
       primary.buildLaunchCommand?.(sessionId, cwd, opts) ?? {
         command: '',
         args: [],
