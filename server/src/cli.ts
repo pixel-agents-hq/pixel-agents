@@ -91,7 +91,7 @@ async function main(): Promise<void> {
 
   try {
     // Create runtime with combined provider (Claude + OpenCode)
-    const provider = createCompositeProvider(claudeProvider, opencodeProvider);
+    const provider = createCompositeProvider(opencodeProvider, claudeProvider);
     const runtime = new AgentRuntime(store, provider);
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
