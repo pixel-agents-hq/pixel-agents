@@ -186,6 +186,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentCreated') {
         const id = msg.id as number;
         const folderName = msg.folderName as string | undefined;
+        const palette = msg.palette as number | undefined;
         const isTeammate = msg.isTeammate as boolean | undefined;
         const teammateName = msg.teammateName as string | undefined;
         const teammateParentId = msg.parentAgentId as number | undefined;
@@ -199,9 +200,9 @@ export function useExtensionMessages(
           // Teammate: inherit parent's palette and workspace folderName (teammate runs
           // in the same workspace as the lead). Name shown via agentName (teamRoleLabel).
           const parentCh = os.characters.get(teammateParentId);
-          const palette = parentCh ? parentCh.palette : undefined;
+          const parentPalette = parentCh ? parentCh.palette : undefined;
           const hueShift = parentCh ? parentCh.hueShift : undefined;
-          os.addAgent(id, palette, hueShift, undefined, undefined, parentCh?.folderName);
+          os.addAgent(id, parentPalette, hueShift, undefined, undefined, parentCh?.folderName);
           // Set team metadata on the character
           const ch = os.characters.get(id);
           if (ch) {
@@ -210,7 +211,7 @@ export function useExtensionMessages(
             ch.agentName = teammateName;
           }
         } else {
-          os.addAgent(id, undefined, undefined, undefined, undefined, folderName);
+          os.addAgent(id, palette, undefined, undefined, undefined, folderName);
         }
         saveAgentSeats(os);
       } else if (msg.type === 'agentClosed') {

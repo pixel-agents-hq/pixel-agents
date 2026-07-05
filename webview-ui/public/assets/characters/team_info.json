@@ -1,0 +1,14 @@
+{
+  "aiko": {
+    "description": "Asian woman, dark hair, professional blue/white style",
+    "base_sprite": "char_0.png"
+  },
+  "kobai": {
+    "description": "Creative woman, dark hair with purple/red tones, hoodie style",
+    "base_sprite": "char_5.png"
+  },
+  "nairo": {
+    "description": "Black/afro-descendant man, curly short hair, hoodie, developer style",
+    "base_sprite": "char_1.png"
+  }
+}

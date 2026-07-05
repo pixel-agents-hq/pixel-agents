@@ -18,6 +18,19 @@
 
 import type { AgentEvent } from '../../../../../core/src/provider.js';
 
+// ── Agent identity palette mapping ──
+
+const AGENT_PROFILES: Record<string, { source: string; palette: number }> = {
+  aiko: { source: 'Aiko', palette: 0 },
+  kobai: { source: 'Kobai', palette: 1 },
+  nairo: { source: 'Nairo', palette: 2 },
+};
+
+function resolveProfile(name?: string): { source: string; palette: number } {
+  const key = (name ?? '').toLowerCase();
+  return AGENT_PROFILES[key] ?? { source: 'Aiko', palette: 0 };
+}
+
 // ── formatToolStatus ──
 
 export function formatToolStatus(toolName: string, _input?: unknown): string {
@@ -71,13 +84,16 @@ export function normalizeOpenCodeHookEvent(
   switch (eventType) {
     case 'session.status': {
       const status = payload.status;
+      const agentName = (payload.agent_name as string) ?? 'Aiko';
+      const profile = resolveProfile(agentName);
       if (status === 'busy') {
         return {
           sessionId,
           event: {
             kind: 'sessionStart',
-            source: 'opencode',
-            cwd: (payload.cwd as string) ?? '/home/agent/workspaces',
+            source: profile.source,
+            cwd: (payload.cwd as string) ?? `/home/agent/workspaces/${profile.source}`,
+            palette: profile.palette,
           },
         };
       }

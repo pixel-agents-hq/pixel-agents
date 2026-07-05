@@ -6,6 +6,8 @@ export interface PendingExternalSession {
   /** Transcript file path. Undefined for providers without transcripts (OpenCode, Copilot). */
   transcriptPath: string | undefined;
   cwd: string;
+  /** Character palette index (0-5), undefined = auto-assign. */
+  palette?: number;
 }
 
 /** An event waiting to be dispatched once its agent registers. */

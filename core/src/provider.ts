@@ -59,6 +59,8 @@ export type AgentEvent =
       /** Working directory the session was started in. Used to match pending
        *  external sessions against known workspace folders. */
       cwd?: string;
+      /** Character palette index (0-5). Used by the webview to pick a sprite. */
+      palette?: number;
     }
   | { kind: 'sessionEnd'; reason?: string };
 
