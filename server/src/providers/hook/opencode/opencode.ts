@@ -16,13 +16,13 @@
  */
 
 import type { HookProvider } from '../../../../../core/src/provider.js';
-import { normalizeOpenCodeHookEvent, formatToolStatus } from './opencode.webhook.js';
 import {
-  OPENCODE_TERMINAL_NAME_PREFIX,
+  OPENCODE_PERMISSION_EXEMPT_TOOLS,
   OPENCODE_READING_TOOLS,
   OPENCODE_SUBAGENT_TOOLS,
-  OPENCODE_PERMISSION_EXEMPT_TOOLS,
+  OPENCODE_TERMINAL_NAME_PREFIX,
 } from './opencode-constants.js';
+import { formatToolStatus, normalizeOpenCodeHookEvent } from './opencode.webhook.js';
 
 // ── Provider ──
 
