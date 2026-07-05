@@ -74,7 +74,11 @@ export function normalizeOpenCodeHookEvent(
       if (status === 'busy') {
         return {
           sessionId,
-          event: { kind: 'sessionStart', source: 'opencode' },
+          event: {
+            kind: 'sessionStart',
+            source: 'opencode',
+            cwd: (payload.cwd as string) ?? '/home/agent/workspaces',
+          },
         };
       }
       if (status === 'idle') {
