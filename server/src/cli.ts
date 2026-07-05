@@ -21,8 +21,9 @@ import {
   loadWallTiles,
 } from './assetLoader.js';
 import type { AssetCache } from './clientMessageHandler.js';
+import { createCompositeProvider } from './compositeProvider.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript } from './providers/index.js';
+import { claudeProvider, copyHookScript, opencodeProvider } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -89,8 +90,9 @@ async function main(): Promise<void> {
   const server = new PixelAgentsServer();
 
   try {
-    // Create runtime first (before server.start, so we can pass it in)
-    const runtime = new AgentRuntime(store, claudeProvider);
+    // Create runtime with combined provider (Claude + OpenCode)
+    const provider = createCompositeProvider(opencodeProvider, claudeProvider);
+    const runtime = new AgentRuntime(store, provider);
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
@@ -129,7 +131,7 @@ async function main(): Promise<void> {
 
     // Sync runtime refs with persisted settings BEFORE first scan tick
     runtime.hooksEnabled.current = adapter.getSetting('pixel-agents.hooksEnabled', true);
-    runtime.watchAllSessions.current = adapter.getSetting('pixel-agents.watchAllSessions', false);
+    runtime.watchAllSessions.current = adapter.getSetting('pixel-agents.watchAllSessions', true);
 
     // Install hooks on startup if the persisted setting says so
     if (runtime.hooksEnabled.current) {
