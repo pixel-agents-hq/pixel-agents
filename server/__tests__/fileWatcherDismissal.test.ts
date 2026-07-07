@@ -15,9 +15,19 @@ vi.mock('vscode', () => ({
 }));
 
 import { AgentStateStore } from '../src/agentStateStore.js';
-import { DISMISSED_COOLDOWN_MS, EXTERNAL_ACTIVE_THRESHOLD_MS } from '../src/constants.js';
+import {
+  DISMISSED_COOLDOWN_MS,
+  EXTERNAL_ACTIVE_THRESHOLD_MS,
+  EXTERNAL_SCAN_INTERVAL_MS,
+} from '../src/constants.js';
 import { DismissalTracker } from '../src/dismissalTracker.js';
-import { scanExternalDir, scanForNewJsonlFiles, setDismissalTracker } from '../src/fileWatcher.js';
+import {
+  ensureProjectScan,
+  scanExternalDir,
+  scanForNewJsonlFiles,
+  setDismissalTracker,
+  startExternalSessionScanning,
+} from '../src/fileWatcher.js';
 
 /**
  * Tests for the DismissalTracker integration with fileWatcher's scanner functions.
@@ -273,6 +283,58 @@ describe('fileWatcher dismissal state', () => {
       // No active-terminal agent is present, so adoption shouldn't fire regardless.
       // Primarily: dismissal entry should NOT get erased by this pass.
       expect(tracker.isDismissed(file)).toBe(true);
+    });
+  });
+
+  describe('startExternalSessionScanning: hooks mode workspace discovery', () => {
+    it('adopts workspace JSONL sessions when hooks and Watch All Sessions are both enabled', () => {
+      vi.useFakeTimers();
+      const projectScanTimerRef: { current: ReturnType<typeof setInterval> | null } = {
+        current: null,
+      };
+
+      ensureProjectScan(
+        projectDir,
+        knownJsonlFiles,
+        projectScanTimerRef,
+        { current: null },
+        nextAgentIdRef,
+        agents,
+        fileWatchers,
+        pollingTimers,
+        waitingTimers,
+        permissionTimers,
+        () => {},
+        undefined,
+        { current: true },
+      );
+      writeJsonlFile('workspace-session.jsonl', '{"type":"assistant"}\n');
+
+      const externalScanTimer = startExternalSessionScanning(
+        projectDir,
+        knownJsonlFiles,
+        nextAgentIdRef,
+        agents,
+        fileWatchers,
+        pollingTimers,
+        waitingTimers,
+        permissionTimers,
+        new Map(),
+        () => {},
+        { current: true },
+        { current: true },
+      );
+
+      vi.advanceTimersByTime(EXTERNAL_SCAN_INTERVAL_MS);
+
+      clearInterval(externalScanTimer);
+      if (projectScanTimerRef.current) clearInterval(projectScanTimerRef.current);
+      vi.useRealTimers();
+
+      expect(agents.size).toBe(1);
+      const adopted = [...agents.values()][0];
+      expect(adopted.jsonlFile).toBe(path.join(projectDir, 'workspace-session.jsonl'));
+      expect(adopted.isExternal).toBe(true);
     });
   });
 

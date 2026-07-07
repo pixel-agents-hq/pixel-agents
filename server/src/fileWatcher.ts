@@ -3,16 +3,19 @@
  *
  * HOOKS MODE (preferred): Claude Code Hooks API delivers instant, reliable events
  * for session lifecycle (SessionStart, SessionEnd, Stop, PermissionRequest, etc.).
- * When hooks work, heuristic scanners and timers are suppressed. The hookDelivered
- * flag per agent and hooksEnabledRef globally control the switch.
+ * When hooks work, per-agent heuristic timers and terminal adoption scans are
+ * suppressed. The hookDelivered flag per agent and hooksEnabledRef globally
+ * control the switch.
  *
  * HEURISTIC MODE (fallback): For environments without hooks (other providers,
  * hooks disabled, older Claude versions). Uses:
  * - Per-agent 500ms JSONL polling for tool activity and /clear detection
  * - 1s main scanner for terminal adoption
- * - 3s external scanner for external session detection
  * - 30s stale check for orphaned external agents
  * - Multiple dismissal systems to prevent re-adoption races
+ *
+ * EXTERNAL SESSION DISCOVERY: The 3s external scanner runs in both hooks and
+ * heuristic modes because not every JSONL producer emits Claude Code hooks.
  *
  * JSONL POLLING (always active): readNewLines + processTranscriptLine run in both
  * modes. They provide tool content (status text, animations) that hooks don't carry.
@@ -999,27 +1002,24 @@ export function startExternalSessionScanning(
 
   persistAgents: () => void,
   watchAllSessionsRef?: { current: boolean },
-  hooksEnabledRef?: { current: boolean },
+  _hooksEnabledRef?: { current: boolean },
 ): ReturnType<typeof setInterval> {
   return setInterval(() => {
-    // When hooks are active, SessionStart handles workspace session detection.
-    // Only skip workspace scanning; global scanning (Watch All) still needed
-    // because hooks can't detect already-running sessions from other projects.
-    if (!hooksEnabledRef?.current) {
-      // Scan all tracked project dirs (heuristic fallback)
-      for (const dir of trackedProjectDirs) {
-        scanExternalDir(
-          dir,
-          knownJsonlFiles,
-          nextAgentIdRef,
-          agents,
-          fileWatchers,
-          pollingTimers,
-          waitingTimers,
-          permissionTimers,
-          persistAgents,
-        );
-      }
+    // Scan all tracked project dirs in both hooks and heuristic modes. Hooks are
+    // a fast path for producers that emit hook events; polling remains the
+    // discovery path for workspace JSONL sessions created without hooks.
+    for (const dir of trackedProjectDirs) {
+      scanExternalDir(
+        dir,
+        knownJsonlFiles,
+        nextAgentIdRef,
+        agents,
+        fileWatchers,
+        pollingTimers,
+        waitingTimers,
+        permissionTimers,
+        persistAgents,
+      );
     }
     // If "Watch All Sessions" is ON, also scan all global project dirs
     if (watchAllSessionsRef?.current) {
