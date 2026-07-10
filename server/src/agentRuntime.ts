@@ -72,6 +72,9 @@ export class AgentRuntime {
   constructor(
     private readonly store: AgentStateStore,
     provider: HookProvider,
+    /** Additional hook providers (e.g. Codex) whose events normalize alongside
+     *  the primary provider. See HookEventHandler.resolveProvider. */
+    secondaryProviders: HookProvider[] = [],
   ) {
     // Wire module-level dependencies
     setDismissalTracker(this.dismissalTracker);
@@ -90,6 +93,7 @@ export class AgentRuntime {
       provider,
       new SessionRouter(),
       this.watchAllSessions,
+      secondaryProviders,
     );
 
     // Wire hook lifecycle callbacks to shared agent operations

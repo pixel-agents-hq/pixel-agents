@@ -8,6 +8,8 @@
  * Each connecting WebSocket client receives the full state on webviewReady.
  */
 
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 import { AgentRuntime } from './agentRuntime.js';
@@ -22,8 +24,17 @@ import {
 } from './assetLoader.js';
 import type { AssetCache } from './clientMessageHandler.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript } from './providers/index.js';
+import {
+  claudeProvider,
+  codexProvider,
+  copyCodexHookScript,
+  copyHookScript,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
+
+/** Only wire the Codex provider on machines that actually use Codex, so we
+ *  never create a `~/.codex/` directory or config on machines without it. */
+const codexAvailable = fs.existsSync(path.join(os.homedir(), '.codex'));
 
 // ── Argument parsing ──────────────────────────────────────────
 
@@ -90,7 +101,7 @@ async function main(): Promise<void> {
 
   try {
     // Create runtime first (before server.start, so we can pass it in)
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const runtime = new AgentRuntime(store, claudeProvider, codexAvailable ? [codexProvider] : []);
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
@@ -108,9 +119,19 @@ async function main(): Promise<void> {
           currentConfig.token,
         );
         copyHookScript(distRoot);
+        if (codexAvailable) {
+          await codexProvider.installHooks(
+            `http://127.0.0.1:${currentConfig.port}`,
+            currentConfig.token,
+          );
+          copyCodexHookScript(distRoot);
+        }
         console.log('[Pixel Agents] Hooks installed (user toggle)');
       } else {
         await claudeProvider.uninstallHooks();
+        if (codexAvailable) {
+          await codexProvider.uninstallHooks();
+        }
         console.log('[Pixel Agents] Hooks uninstalled (user toggle)');
       }
     };
@@ -137,6 +158,11 @@ async function main(): Promise<void> {
         await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
         copyHookScript(distRoot);
         console.log('[Pixel Agents] Hooks installed');
+        if (codexAvailable) {
+          await codexProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+          copyCodexHookScript(distRoot);
+          console.log('[Pixel Agents] Codex hooks installed');
+        }
       } catch (err) {
         console.error('[Pixel Agents] Failed to install hooks:', err);
       }

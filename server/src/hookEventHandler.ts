@@ -68,6 +68,11 @@ export class HookEventHandler {
     private provider: HookProvider,
     private sessionRouter: SessionRouter,
     private watchAllSessionsRef?: { current: boolean },
+    /** Additional providers whose events should also normalize (e.g. Codex
+     *  alongside the primary Claude provider). Only `normalizeHookEvent` is
+     *  consulted per-provider; team/tool-display metadata stays on the primary
+     *  provider since secondary providers here have no team/subagent concept. */
+    private secondaryProviders: HookProvider[] = [],
   ) {
     if (provider.protocolVersion !== HookEventHandler.SUPPORTED_PROTOCOL_VERSION) {
       console.warn(
@@ -76,6 +81,12 @@ export class HookEventHandler {
           `Events from this provider will be dropped.`,
       );
     }
+  }
+
+  /** Resolve which provider's normalizeHookEvent should handle this providerId. */
+  private resolveProvider(providerId: string): HookProvider {
+    if (providerId === this.provider.id) return this.provider;
+    return this.secondaryProviders.find((p) => p.id === providerId) ?? this.provider;
   }
 
   /** Merged set of tool names that spawn subagents (teammates + within-turn subagents
@@ -128,17 +139,18 @@ export class HookEventHandler {
    * @param providerId - Provider that sent the event ('claude', 'codex', etc.)
    * @param event - The hook event payload from the CLI tool
    */
-  handleEvent(_providerId: string, event: HookEvent): void {
-    if (this.provider.protocolVersion !== HookEventHandler.SUPPORTED_PROTOCOL_VERSION) {
+  handleEvent(providerId: string, event: HookEvent): void {
+    const provider = this.resolveProvider(providerId);
+    if (provider.protocolVersion !== HookEventHandler.SUPPORTED_PROTOCOL_VERSION) {
       return; // version mismatch already logged in constructor
     }
     // ── Provider normalization boundary ───────────────────────────────────────
-    // All raw Claude-specific fields (tool_name, tool_input, agent_type, notification_type,
+    // All raw CLI-specific fields (tool_name, tool_input, agent_type, notification_type,
     // reason, source) are extracted by provider.normalizeHookEvent. Downstream dispatch
     // uses the normalized AgentEvent.kind. Raw `event.*` reads are still allowed in a few
     // places for provider-specific metadata that AgentEvent doesn't capture (transcript_path,
     // cwd for external-session adoption; agent_type for teammate routing).
-    const normalized = this.provider.normalizeHookEvent(event);
+    const normalized = provider.normalizeHookEvent(event);
     if (!normalized) return; // unknown / uninteresting event -- silently drop
     const normEvent = normalized.event;
     const eventName = event.hook_event_name; // retained for logs only
@@ -275,7 +287,7 @@ export class HookEventHandler {
         pending.cwd,
       );
       // Re-process this event now that the agent exists
-      this.handleEvent(_providerId, event);
+      this.handleEvent(providerId, event);
       return;
     }
 
@@ -305,7 +317,7 @@ export class HookEventHandler {
           console.log(
             `[Pixel Agents] Hook: ${eventName} - unknown session ${event.session_id.slice(0, 8)}..., buffering`,
           );
-        this.sessionRouter.bufferEvent(_providerId, event);
+        this.sessionRouter.bufferEvent(providerId, event);
       }
       return;
     }
