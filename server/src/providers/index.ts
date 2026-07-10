@@ -13,3 +13,5 @@
 
 export { claudeProvider } from './hook/claude/claude.js';
 export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+export { codexProvider } from './hook/codex/codex.js';
+export { copyHookScript as copyCodexHookScript } from './hook/codex/codexHookInstaller.js';
