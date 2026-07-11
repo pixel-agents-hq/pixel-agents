@@ -22,22 +22,42 @@ import {
   loadWallTiles,
 } from './assetLoader.js';
 import type { AssetCache } from './clientMessageHandler.js';
+import { MAX_PORT, MIN_PORT } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { claudeProvider, copyHookScript } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 
 // ── Argument parsing ──────────────────────────────────────────
 
-interface CliArgs {
-  port: number;
+export interface CliArgs {
+  /** Unset -> ephemeral (OS-assigned) port, so multiple standalone instances
+   *  can run at once without a collision. --port picks a fixed one. */
+  port?: number;
   host: string;
 }
 
-function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { port: 3100, host: '127.0.0.1' };
+/** Thrown by parseArgs on an invalid --port. Kept separate from process.exit so
+ *  the parsing logic stays a pure, unit-testable function -- main() is the only
+ *  place that turns a bad argument into an exit code. */
+export class CliArgsError extends Error {}
+
+export function parseArgs(argv: string[]): CliArgs {
+  const args: CliArgs = { host: '127.0.0.1' };
   for (let i = 0; i < argv.length; i++) {
-    if ((argv[i] === '--port' || argv[i] === '-p') && argv[i + 1]) {
-      args.port = parseInt(argv[i + 1], 10);
+    if (argv[i] === '--port' || argv[i] === '-p') {
+      const raw = argv[i + 1];
+      if (raw === undefined) {
+        throw new CliArgsError(
+          `Missing value for ${argv[i]}: expected an integer between ${MIN_PORT} and ${MAX_PORT}.`,
+        );
+      }
+      const parsed = Number(raw);
+      if (!Number.isInteger(parsed) || parsed < MIN_PORT || parsed > MAX_PORT) {
+        throw new CliArgsError(
+          `Invalid --port "${raw}": must be an integer between ${MIN_PORT} and ${MAX_PORT}.`,
+        );
+      }
+      args.port = parsed;
       i++;
     } else if (argv[i] === '--host' && argv[i + 1]) {
       args.host = argv[i + 1];
@@ -46,7 +66,7 @@ function parseArgs(argv: string[]): CliArgs {
       console.log(`Usage: pixel-agents [options]
 
 Options:
-  --port, -p <number>   Port to listen on (default: 3100)
+  --port, -p <number>   Port to listen on (default: OS-assigned ephemeral port)
   --host <string>       Host to bind to (default: 127.0.0.1)
   --help                Show this help message`);
       process.exit(0);
@@ -58,7 +78,13 @@ Options:
 // ── Main ──────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+  let args: CliArgs;
+  try {
+    args = parseArgs(process.argv.slice(2));
+  } catch (err) {
+    console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
 
   // dist/ contains both the CLI bundle and the assets/ + webview/ directories
   const distRoot = __dirname;
@@ -173,7 +199,13 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Only auto-run when this file is executed directly (`node dist/cli.js`), not
+// when it's imported for its exports (e.g. `parseArgs` in tests) -- importing
+// it unconditionally used to start a real server and install real Claude
+// hooks as a side effect of module load.
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

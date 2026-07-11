@@ -26,6 +26,15 @@ export interface StandaloneSession {
   drainMessages: () => Promise<RecordedServerMessage[]>;
 }
 
+export interface LaunchStandaloneOptions {
+  /** Reuse an existing isolated HOME (for cross-surface multi-server tests).
+   *  A supplied directory is never removed by standalone cleanup. */
+  homeDir?: string;
+  /** Reuse an existing workspace. A supplied directory is never removed by
+   *  standalone cleanup. */
+  workspaceDir?: string;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -166,9 +175,19 @@ async function openStandalonePage(page: Page, hostUrl: string): Promise<void> {
   await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible({ timeout: 30_000 });
 }
 
-export async function launchStandalone(page: Page): Promise<StandaloneSession> {
-  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-standalone-e2e-home-'));
-  const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-standalone-e2e-workspace-'));
+export async function launchStandalone(
+  page: Page,
+  options: LaunchStandaloneOptions = {},
+): Promise<StandaloneSession> {
+  const ownsHome = options.homeDir === undefined;
+  const ownsWorkspace = options.workspaceDir === undefined;
+  const tmpHome =
+    options.homeDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-standalone-e2e-home-'));
+  const workspaceDir =
+    options.workspaceDir ??
+    fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-standalone-e2e-workspace-'));
+  fs.mkdirSync(tmpHome, { recursive: true });
+  fs.mkdirSync(workspaceDir, { recursive: true });
   const hostPort = await getFreePort();
   const hostUrl = `http://127.0.0.1:${hostPort}`;
   const hostProcess = spawnStandaloneHost({
@@ -209,14 +228,14 @@ export async function launchStandalone(page: Page): Promise<StandaloneSession> {
       drainMessages: () => drainRecordedMessages(page),
       cleanup: async () => {
         await stopProcess(hostProcess);
-        fs.rmSync(tmpHome, { recursive: true, force: true });
-        fs.rmSync(workspaceDir, { recursive: true, force: true });
+        if (ownsHome) fs.rmSync(tmpHome, { recursive: true, force: true });
+        if (ownsWorkspace) fs.rmSync(workspaceDir, { recursive: true, force: true });
       },
     };
   } catch (error) {
     await stopProcess(hostProcess);
-    fs.rmSync(tmpHome, { recursive: true, force: true });
-    fs.rmSync(workspaceDir, { recursive: true, force: true });
+    if (ownsHome) fs.rmSync(tmpHome, { recursive: true, force: true });
+    if (ownsWorkspace) fs.rmSync(workspaceDir, { recursive: true, force: true });
     throw error;
   }
 }
