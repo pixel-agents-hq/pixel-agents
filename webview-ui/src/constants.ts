@@ -91,6 +91,12 @@ export const PAN_MARGIN_FRACTION = 0.25;
 // ── Editor ───────────────────────────────────────────────────
 export const UNDO_STACK_MAX_SIZE = 50;
 export const LAYOUT_SAVE_DEBOUNCE_MS = 500;
+
+// ── Layout Import/Export (browser-native, standalone) ────────
+/** Suggested filename when exporting the office layout from the standalone browser. */
+export const LAYOUT_EXPORT_FILENAME = 'pixel-agents-layout.json';
+/** MIME type for the exported layout Blob. */
+export const LAYOUT_EXPORT_MIME = 'application/json';
 export const DEFAULT_FLOOR_COLOR: ColorValue = { h: 35, s: 30, b: 15, c: 0 };
 export const DEFAULT_WALL_COLOR: ColorValue = { h: 240, s: 25, b: 0, c: 0 };
 export const DEFAULT_NEUTRAL_COLOR: ColorValue = { h: 0, s: 0, b: 0, c: 0 };

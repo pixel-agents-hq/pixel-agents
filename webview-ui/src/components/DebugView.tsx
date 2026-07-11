@@ -80,10 +80,12 @@ export function DebugView({
     return () => clearInterval(interval);
   }, []);
 
-  // Listen for diagnostics response
+  // Listen for the diagnostics response via the transport (NOT a raw window
+  // 'message' listener): the standalone WebSocket transport delivers messages
+  // only to transport.onMessage handlers and never dispatches window events, so
+  // a window listener would never fire in standalone mode.
   useEffect(() => {
-    const handler = (event: MessageEvent) => {
-      const msg = event.data;
+    return transport.onMessage((msg) => {
       if (msg.type === 'agentDiagnostics') {
         const map: Record<number, AgentDiagnostics> = {};
         for (const a of msg.agents as AgentDiagnostics[]) {
@@ -91,9 +93,7 @@ export function DebugView({
         }
         setDiagnostics(map);
       }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
+    });
   }, []);
 
   const renderAgentCard = (id: number) => {

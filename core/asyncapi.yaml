@@ -860,13 +860,19 @@ components:
           const: openSessionsFolder
 
     AddExternalAssetDirectory:
-      description: Add an external asset directory (host shows a directory picker).
+      description: >-
+        Add an external asset directory. In VS Code the host shows a native
+        directory picker and omits `path`; the standalone browser has no native
+        picker, so it supplies an absolute `path` typed by the user.
       type: object
       additionalProperties: false
       required: [type]
       properties:
         type:
           const: addExternalAssetDirectory
+        path:
+          type: string
+          description: Absolute directory path (standalone browser only; omitted in VS Code).
 
     RemoveExternalAssetDirectory:
       description: Remove an external asset directory by path.

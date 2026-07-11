@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
+import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
@@ -19,9 +20,11 @@ import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { OfficeState } from './office/engine/officeState.js';
+import { exportLayoutToFile } from './office/layout/exportLayout.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
+import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
 import { getPetCount } from './office/sprites/petSpriteData.js';
-import { EditTool } from './office/types.js';
+import { EditTool, type OfficeLayout } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
@@ -72,6 +75,7 @@ function App() {
     layoutWasReset,
     loadedAssets,
     workspaceFolders,
+    agentFolderNames,
     externalAssetDirectories,
     lastSeenVersion,
     extensionVersion,
@@ -208,6 +212,69 @@ function App() {
 
   const officeState = getOfficeState();
 
+  // Merged set of folders the Areas dropdown can map: real workspace folders plus
+  // every distinct folder an agent has run in this session (deduped by name; name
+  // is the areaMappings key / seat-bias identity, path is only the React list key).
+  const areaFolders = useMemo(() => {
+    const byName = new Map<string, { name: string; path: string }>();
+    for (const f of workspaceFolders) byName.set(f.name, f);
+    for (const name of agentFolderNames) {
+      if (!byName.has(name)) byName.set(name, { name, path: name });
+    }
+    return [...byName.values()];
+  }, [workspaceFolders, agentFolderNames]);
+
+  // Areas authoring is available when the layout already defines areas, or when
+  // there is at least one mappable folder. Decouples the Areas UI from VS Code
+  // multi-root workspaces (fixes single-root VS Code AND standalone, where
+  // workspaceFolders is always empty).
+  const areasAvailable = (officeState.getLayout().areas?.length ?? 0) > 0 || areaFolders.length > 0;
+
+  const handleExportLayout = useCallback(() => {
+    exportLayoutToFile(getOfficeState().getLayout());
+  }, []);
+
+  const handleImportLayout = useCallback(
+    (file: File) => {
+      // Browser-native import (standalone): read + validate + apply directly,
+      // bypassing the layoutLoaded message whose dirty guard would skip it.
+      if (
+        isEditDirty() &&
+        !window.confirm('Replace the current layout? Unsaved edits will be lost.')
+      ) {
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const imported = JSON.parse(String(reader.result)) as Record<string, unknown>;
+          // Match the VS Code guard, plus the furniture-array check VS Code omits
+          // (migrate + rebuild iterate furniture and would throw on a non-array).
+          if (
+            imported.version !== 1 ||
+            !Array.isArray(imported.tiles) ||
+            !Array.isArray(imported.furniture)
+          ) {
+            window.alert('Invalid layout file.');
+            return;
+          }
+          const migrated = migrateLayoutColors(imported as unknown as OfficeLayout);
+          getOfficeState().rebuildFromLayout(migrated);
+          editor.setLastSavedLayout(migrated);
+          transport.send({
+            type: 'saveLayout',
+            layout: migrated as unknown as Record<string, unknown>,
+          });
+          editor.markClean();
+        } catch {
+          window.alert('Failed to read or parse layout file.');
+        }
+      };
+      reader.readAsText(file);
+    },
+    [isEditDirty, editor],
+  );
+
   // Force dependency on editorTickForKeyboard to propagate keyboard-triggered re-renders
   void editorTickForKeyboard;
 
@@ -315,7 +382,8 @@ function App() {
                   onCarpetAccentColorChange={editor.handleCarpetAccentColorChange}
                   areas={officeState.getLayout().areas ?? []}
                   selectedAreaLabel={editor.selectedAreaLabel}
-                  workspaceFolders={workspaceFolders}
+                  workspaceFolders={areaFolders}
+                  areasAvailable={areasAvailable}
                   areaMappings={areaMappings}
                   onSelectArea={editor.handleSelectArea}
                   onAddArea={editor.handleAddArea}
@@ -425,6 +493,8 @@ function App() {
         onOpenChangelog={handleOpenChangelog}
       />
 
+      <ConnectionIndicator />
+
       <ChangelogModal
         isOpen={isChangelogOpen}
         onClose={() => setIsChangelogOpen(false)}
@@ -453,7 +523,9 @@ function App() {
         }}
         showAreas={showAreas}
         onToggleShowAreas={onToggleShowAreas}
-        showAreasAvailable={workspaceFolders.length > 0}
+        showAreasAvailable={areasAvailable}
+        onExportLayout={handleExportLayout}
+        onImportLayout={handleImportLayout}
       />
 
       {showMigrationNotice && (

@@ -55,6 +55,8 @@ interface EditorActions {
   panRef: React.MutableRefObject<{ x: number; y: number }>;
   saveTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
   setLastSavedLayout: (layout: OfficeLayout) => void;
+  /** Clear the dirty flag (used after a browser import applies a new saved baseline). */
+  markClean: () => void;
   handleOpenClaude: () => void;
   handleToggleEditMode: () => void;
   handleToolChange: (tool: EditToolType) => void;
@@ -120,6 +122,14 @@ export function useEditorActions(
   const setLastSavedLayout = useCallback((layout: OfficeLayout) => {
     lastSavedLayoutRef.current = structuredClone(layout);
   }, []);
+
+  // Clear the dirty flag after a browser layout import: the imported layout is the
+  // new saved baseline (already persisted via saveLayout). setIsDirty also forces a
+  // re-render so dirty-gated UI (EditActionBar, areasAvailable) reflects the import.
+  const markClean = useCallback(() => {
+    editorState.isDirty = false;
+    setIsDirty(false);
+  }, [editorState]);
 
   // Debounced layout save
   const saveLayout = useCallback((layout: OfficeLayout) => {
@@ -907,6 +917,7 @@ export function useEditorActions(
     panRef,
     saveTimerRef,
     setLastSavedLayout,
+    markClean,
     handleOpenClaude,
     handleToggleEditMode,
     handleToolChange,

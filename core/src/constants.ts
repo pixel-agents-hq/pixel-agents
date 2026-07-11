@@ -17,3 +17,11 @@ export const HOOK_SCRIPTS_DIR = '.pixel-agents/hooks';
 
 export const BASH_COMMAND_DISPLAY_MAX_LENGTH = 30;
 export const TASK_DESCRIPTION_DISPLAY_MAX_LENGTH = 40;
+
+// ── Transport ────────────────────────────────────────────────
+// Connection-state names for the MessageTransport state machine.
+
+export const TRANSPORT_STATE_CONNECTING = 'connecting';
+export const TRANSPORT_STATE_CONNECTED = 'connected';
+export const TRANSPORT_STATE_RECONNECTING = 'reconnecting';
+export const TRANSPORT_STATE_DISCONNECTED = 'disconnected';

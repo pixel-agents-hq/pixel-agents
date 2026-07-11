@@ -64,6 +64,8 @@ interface ExtensionMessageState {
   layoutWasReset: boolean;
   loadedAssets?: { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> };
   workspaceFolders: WorkspaceFolder[];
+  /** Distinct folderNames seen across agents this session — source for the Areas folder dropdown. */
+  agentFolderNames: string[];
   externalAssetDirectories: string[];
   lastSeenVersion: string;
   extensionVersion: string;
@@ -108,6 +110,7 @@ export function useExtensionMessages(
     { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> } | undefined
   >();
   const [workspaceFolders, setWorkspaceFolders] = useState<WorkspaceFolder[]>([]);
+  const [agentFolderNames, setAgentFolderNames] = useState<string[]>([]);
   const [externalAssetDirectories, setExternalAssetDirectories] = useState<string[]>([]);
   const [lastSeenVersion, setLastSeenVersion] = useState('');
   const [extensionVersion, setExtensionVersion] = useState('');
@@ -130,6 +133,14 @@ export function useExtensionMessages(
       seatId?: string;
       folderName?: string;
     }> = [];
+
+    // Accumulate distinct folderNames seen across agents (never removed during the
+    // session): the source for the Areas folder-mapping dropdown, so a folder stays
+    // editable even after its agents close.
+    const noteFolderName = (name?: string) => {
+      if (!name) return;
+      setAgentFolderNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = (msg: any) => {
@@ -210,6 +221,7 @@ export function useExtensionMessages(
           const palette = parentCh ? parentCh.palette : undefined;
           const hueShift = parentCh ? parentCh.hueShift : undefined;
           os.addAgent(id, palette, hueShift, undefined, undefined, parentCh?.folderName);
+          noteFolderName(parentCh?.folderName);
           // Set team metadata on the character
           const ch = os.characters.get(id);
           if (ch) {
@@ -219,6 +231,7 @@ export function useExtensionMessages(
           }
         } else {
           os.addAgent(id, undefined, undefined, undefined, undefined, folderName);
+          noteFolderName(folderName);
         }
         saveAgentSeats(os);
       } else if (msg.type === 'agentClosed') {
@@ -264,6 +277,7 @@ export function useExtensionMessages(
             seatId: m?.seatId,
             folderName: folderNames[id],
           });
+          noteFolderName(folderNames[id]);
         }
         setAgents((prev) => {
           const ids = new Set(prev);
@@ -591,6 +605,7 @@ export function useExtensionMessages(
     layoutWasReset,
     loadedAssets,
     workspaceFolders,
+    agentFolderNames,
     externalAssetDirectories,
     lastSeenVersion,
     extensionVersion,

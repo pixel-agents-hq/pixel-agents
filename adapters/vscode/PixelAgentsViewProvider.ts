@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import { buildAgentDiagnostics } from '../../server/src/agentDiagnostics.js';
 import { AgentRuntime } from '../../server/src/agentRuntime.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import type {
@@ -13,17 +14,9 @@ import type {
 } from '../../server/src/assetLoader.js';
 import {
   loadCarpetTiles,
-  loadCharacterSprites,
   loadDefaultLayout,
-  loadExternalCharacterSprites,
-  loadExternalPetSprites,
   loadFloorTiles,
-  loadFurnitureAssets,
-  loadPetSprites,
   loadWallTiles,
-  mergeCharacterSprites,
-  mergeLoadedAssets,
-  mergePetSprites,
   sendAssetsToWebview,
   sendCarpetTilesToWebview,
   sendCharacterSpritesToWebview,
@@ -31,6 +24,7 @@ import {
   sendPetSpritesToWebview,
   sendWallTilesToWebview,
 } from '../../server/src/assetLoader.js';
+import { loadAllCharacters, loadAllFurniture, loadAllPets } from '../../server/src/assetReload.js';
 import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
 import { setFolderNameResolver, setTerminalAdapter } from '../../server/src/fileWatcher.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
@@ -609,30 +603,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         sendExistingAgents(this.store, this.adapter, this.webview);
       } else if (message.type === 'requestDiagnostics') {
         // Send connection diagnostics for all agents to the Debug View
-        const diagnostics: Array<Record<string, unknown>> = [];
-        for (const [, agent] of this.store) {
-          let jsonlExists = false;
-          let fileSize = 0;
-          try {
-            const stat = fs.statSync(agent.jsonlFile);
-            jsonlExists = true;
-            fileSize = stat.size;
-          } catch {
-            /* file doesn't exist */
-          }
-          diagnostics.push({
-            id: agent.id,
-            projectDir: agent.projectDir,
-            projectDirExists: fs.existsSync(agent.projectDir),
-            jsonlFile: agent.jsonlFile,
-            jsonlExists,
-            fileSize,
-            fileOffset: agent.fileOffset,
-            lastDataAt: agent.lastDataAt,
-            linesProcessed: agent.linesProcessed,
-          });
-        }
-        this.webview?.postMessage({ type: 'agentDiagnostics', agents: diagnostics });
+        this.webview?.postMessage({
+          type: 'agentDiagnostics',
+          agents: buildAgentDiagnostics(this.store),
+        });
       } else if (message.type === 'openSessionsFolder') {
         const projectDir = getProjectDirPath();
         if (projectDir && fs.existsSync(projectDir)) {
@@ -777,44 +751,17 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
   private async loadAllFurnitureAssets(): Promise<LoadedAssets | null> {
     if (!this.assetsRoot) return null;
-    let assets = await loadFurnitureAssets(this.assetsRoot);
-    const config = readConfig();
-    for (const extraDir of config.externalAssetDirectories) {
-      console.log('[Extension] Loading external assets from:', extraDir);
-      const extra = await loadFurnitureAssets(extraDir);
-      if (extra) {
-        assets = assets ? mergeLoadedAssets(assets, extra) : extra;
-      }
-    }
-    return assets;
+    return loadAllFurniture(this.assetsRoot, readConfig().externalAssetDirectories);
   }
 
   private async loadAllCharacterSprites(): Promise<LoadedCharacterSprites | null> {
     if (!this.assetsRoot) return null;
-    let chars = await loadCharacterSprites(this.assetsRoot);
-    const config = readConfig();
-    for (const extraDir of config.externalAssetDirectories) {
-      console.log('[Extension] Loading external character sprites from:', extraDir);
-      const extra = await loadExternalCharacterSprites(extraDir);
-      if (extra) {
-        chars = chars ? mergeCharacterSprites(chars, extra) : extra;
-      }
-    }
-    return chars;
+    return loadAllCharacters(this.assetsRoot, readConfig().externalAssetDirectories);
   }
 
   private async loadAllPetSprites(): Promise<LoadedPetSprites | null> {
     if (!this.assetsRoot) return null;
-    let pets = await loadPetSprites(this.assetsRoot);
-    const config = readConfig();
-    for (const extraDir of config.externalAssetDirectories) {
-      console.log('[Extension] Loading external pet sprites from:', extraDir);
-      const extra = await loadExternalPetSprites(extraDir);
-      if (extra) {
-        pets = pets ? mergePetSprites(pets, extra) : extra;
-      }
-    }
-    return pets;
+    return loadAllPets(this.assetsRoot, readConfig().externalAssetDirectories);
   }
 
   private async reloadAndSendFurniture(): Promise<void> {

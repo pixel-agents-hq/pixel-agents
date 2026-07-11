@@ -72,6 +72,8 @@ interface EditorToolbarProps {
   areas: AreaDefinition[];
   selectedAreaLabel: string | null;
   workspaceFolders: { name: string; path: string }[];
+  /** Whether the Areas tool is offered (layout has areas OR some folder is mappable). */
+  areasAvailable: boolean;
   areaMappings: Record<string, string[]>;
   onSelectArea: (label: string | null) => void;
   onAddArea: (label: string, color: string) => void;
@@ -116,6 +118,7 @@ export function EditorToolbar({
   areas,
   selectedAreaLabel,
   workspaceFolders,
+  areasAvailable,
   areaMappings,
   onSelectArea,
   onAddArea,
@@ -180,7 +183,6 @@ export function EditorToolbar({
     isCarpetActive;
   const isPetsActive = activeTool === EditTool.PETS;
   const carpetVariantCount = getCarpetSetCount();
-  const hasWorkspaceFolders = workspaceFolders.length > 0;
 
   /**
    * Draw a small carpet patch into the variant thumbnail. Rendering a 2×1 strip
@@ -265,7 +267,7 @@ export function EditorToolbar({
         >
           Pets
         </Button>
-        {hasWorkspaceFolders && (
+        {areasAvailable && (
           <Button
             variant={isAreasActive ? 'active' : 'default'}
             size="md"

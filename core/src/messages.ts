@@ -373,6 +373,7 @@ export interface OpenSessionsFolder {
 
 export interface AddExternalAssetDirectory {
   type: 'addExternalAssetDirectory';
+  path?: string;
 }
 
 export interface RemoveExternalAssetDirectory {

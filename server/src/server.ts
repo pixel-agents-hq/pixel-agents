@@ -6,7 +6,11 @@ import * as path from 'path';
 
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import type { AssetCache, SetHooksEnabledSideEffect } from './clientMessageHandler.js';
+import type {
+  AssetCache,
+  ReloadAssetsSideEffect,
+  SetHooksEnabledSideEffect,
+} from './clientMessageHandler.js';
 import {
   SERVER_JSON_DIR,
   SERVER_JSON_NAME,
@@ -64,6 +68,7 @@ export class PixelAgentsServer {
     staticDir?: string;
     assetCache?: AssetCache;
     onSetHooksEnabled?: SetHooksEnabledSideEffect;
+    onReloadAssets?: ReloadAssetsSideEffect;
   }): Promise<ServerConfig> {
     const embedded = options?.embedded ?? true;
     const wantsSpa = !embedded;
@@ -100,6 +105,7 @@ export class PixelAgentsServer {
       assetCache: options?.assetCache,
       onHookEvent: (providerId, event) => this.callback?.(providerId, event),
       onSetHooksEnabled: options?.onSetHooksEnabled,
+      onReloadAssets: options?.onReloadAssets,
     });
 
     this.app = app;

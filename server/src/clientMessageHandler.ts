@@ -1,3 +1,4 @@
+import { buildAgentDiagnostics } from './agentDiagnostics.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './assetLoader.js';
@@ -9,6 +10,13 @@ type WsSend = (message: Record<string, unknown>) => void;
 
 /** Async hook toggle side effect (install/uninstall + script copy). Provided by cli.ts. */
 export type SetHooksEnabledSideEffect = (enabled: boolean) => Promise<void> | void;
+
+/**
+ * Reload server-side assets after an external-asset-directory change and
+ * re-broadcast the updated sprites to the requesting client. Provided by cli.ts,
+ * which owns the dist root needed to re-run the loaders.
+ */
+export type ReloadAssetsSideEffect = (send: WsSend) => Promise<void> | void;
 
 /** Cached assets loaded at server startup. Sent to each WebSocket client on webviewReady. */
 export interface AssetCache {
@@ -27,6 +35,8 @@ export interface ClientMessageContext {
   cache: AssetCache | null;
   /** Install/uninstall hooks side effect. Needs server url+token known only to cli.ts. */
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
+  /** Reload assets after an external-asset-directory change. Needs the dist root, known only to cli.ts. */
+  onReloadAssets?: ReloadAssetsSideEffect;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -56,6 +66,25 @@ export function handleClientMessage(
   switch (msg.type) {
     case 'webviewReady':
       handleWebviewReady(send, ctx);
+      break;
+
+    case 'closeAgent': {
+      // Standalone agents are always external (no terminal), so mirror the VS
+      // Code external-agent branch: dismiss the file (so the external scanner
+      // doesn't re-adopt it) then remove. removeAgent fires the agentRemoved
+      // store event, which httpServer maps to an agentClosed broadcast.
+      const id = msg.id as number;
+      const agent = store.get(id);
+      if (agent && runtime) {
+        runtime.dismissalTracker.dismiss(agent.jsonlFile);
+        runtime.removeAgent(id);
+      }
+      break;
+    }
+
+    case 'requestDiagnostics':
+      // Point-to-point reply to the requesting socket (NOT a broadcast).
+      send({ type: 'agentDiagnostics', agents: buildAgentDiagnostics(store) });
       break;
 
     case 'saveLayout':
@@ -112,6 +141,7 @@ export function handleClientMessage(
         writeConfig(cfg);
       }
       send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
+      void ctx.onReloadAssets?.(send);
       break;
     }
 
@@ -122,6 +152,7 @@ export function handleClientMessage(
       cfg.externalAssetDirectories = cfg.externalAssetDirectories.filter((d) => d !== removePath);
       writeConfig(cfg);
       send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
+      void ctx.onReloadAssets?.(send);
       break;
     }
 
