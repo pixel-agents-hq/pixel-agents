@@ -70,4 +70,24 @@ test.describe('Areas (single-folder)', () => {
     // Single-folder fixture sends no workspaceFolders → the Areas button is gated off.
     await expect(frame.locator('button[title*="Define folder-bound areas"]')).toHaveCount(0);
   });
+
+  test.describe('seeded areas layout (positive gate)', () => {
+    test.use({
+      seedLayout: buildSeedLayout({
+        areas: [{ label: 'Engineering', color: '#ff6b6b' }],
+        areaTiles: [{ col: 2, row: 2, label: 'Engineering' }],
+      }),
+    });
+
+    test('the Areas tool button is visible with a seeded areas layout @area:areas', async ({
+      pixelAgents,
+    }) => {
+      const { frame } = pixelAgents;
+      await enterEditMode(frame);
+      // areasAvailable is now (layout.areas?.length ?? 0) > 0 || <folders>, so a
+      // seeded single-folder layout with areas makes the button visible even
+      // without workspace folders.
+      await expect(frame.locator('button[title*="Define folder-bound areas"]')).toHaveCount(1);
+    });
+  });
 });

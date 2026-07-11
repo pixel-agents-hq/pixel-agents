@@ -24,6 +24,14 @@ export interface StandaloneSession {
   getHostLogs: () => string;
   cleanup: () => Promise<void>;
   drainMessages: () => Promise<RecordedServerMessage[]>;
+  /** Stop the host process, breaking its WebSocket connections, without disposing
+   *  the browser page or its recorded message buffer. Fallback for tests that need
+   *  to observe a real connection drop when `context.setOffline` does not reliably
+   *  close an already-open WebSocket (Chromium-version dependent). */
+  stopHost: () => Promise<void>;
+  /** Restart the host on the SAME port after `stopHost`, so the already-connected
+   *  browser page's exponential-backoff retry succeeds again. */
+  startHost: () => Promise<void>;
 }
 
 export interface LaunchStandaloneOptions {
@@ -190,20 +198,20 @@ export async function launchStandalone(
   fs.mkdirSync(workspaceDir, { recursive: true });
   const hostPort = await getFreePort();
   const hostUrl = `http://127.0.0.1:${hostPort}`;
-  const hostProcess = spawnStandaloneHost({
-    homeDir: tmpHome,
-    hostPort,
-    workspaceDir,
-  });
 
   let hostStdout = '';
   let hostStderr = '';
-  hostProcess.stdout.on('data', (chunk) => {
-    hostStdout += chunk.toString();
-  });
-  hostProcess.stderr.on('data', (chunk) => {
-    hostStderr += chunk.toString();
-  });
+  function spawnAndAttach(): ChildProcessWithoutNullStreams {
+    const proc = spawnStandaloneHost({ homeDir: tmpHome, hostPort, workspaceDir });
+    proc.stdout.on('data', (chunk) => {
+      hostStdout += chunk.toString();
+    });
+    proc.stderr.on('data', (chunk) => {
+      hostStderr += chunk.toString();
+    });
+    return proc;
+  }
+  let hostProcess = spawnAndAttach();
 
   try {
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -226,6 +234,13 @@ export async function launchStandalone(
       getHostLogs: () =>
         [hostStdout.trim(), hostStderr.trim()].filter((value) => value.length > 0).join('\n'),
       drainMessages: () => drainRecordedMessages(page),
+      stopHost: async () => {
+        await stopProcess(hostProcess);
+      },
+      startHost: async () => {
+        hostProcess = spawnAndAttach();
+        await waitForHttpOk(`${hostUrl}/api/health`);
+      },
       cleanup: async () => {
         await stopProcess(hostProcess);
         if (ownsHome) fs.rmSync(tmpHome, { recursive: true, force: true });
