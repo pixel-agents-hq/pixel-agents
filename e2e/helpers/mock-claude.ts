@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
+import { ensureExternalMonitorOpen, getExternalNarrationLogPath } from './external-monitor';
 import { waitForHookServer } from './hooks';
 
 const DEFAULT_HOLD_OPEN_MS = 30_000;
@@ -349,19 +350,32 @@ export async function spawnExternalClaudeScenario(options: {
     ...applyMockHomeEnv(process.env, options.tmpHome),
     PATH: `${path.dirname(claudeBinary)}${path.delimiter}${process.env['PATH'] ?? ''}`,
     PIXEL_AGENTS_NODE_BIN: process.execPath,
+    // Switches the runner's narration to the magenta [external·tag] style.
+    PIXEL_AGENTS_MOCK_EXTERNAL: '1',
   };
 
-  // Pipe stderr so we can surface diagnostics on timeout; stdout stays ignored.
+  // Pipe stderr so we can surface diagnostics on timeout. stdout (the mock's
+  // step-by-step narration) appends to the per-test external-narration log,
+  // which the monitor terminal opened below tails inside the recorded window.
+  const narrationLog = getExternalNarrationLogPath(options.tmpHome);
+  fs.mkdirSync(path.dirname(narrationLog), { recursive: true });
+  const narrationFd = fs.openSync(narrationLog, 'a');
   const child = spawn(claudeBinary, ['--session-id', options.sessionId], {
     cwd: options.workspaceDir,
     env,
     shell: process.platform === 'win32',
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: ['ignore', narrationFd, 'pipe'],
   });
+  fs.closeSync(narrationFd);
 
   // Track this child so fixture teardown can SIGTERM it if the test forgot to.
   trackedExternalProcesses.add(child);
   child.on('exit', () => trackedExternalProcesses.delete(child));
+
+  // Cosmetic, one-time per test: surface the narration log in a terminal tab
+  // so run videos show what the external session is doing. No-op when the
+  // fixture registered no window context; never fails the spawn.
+  await ensureExternalMonitorOpen(options.tmpHome);
 
   // Capture stderr + early exit so timeouts can blame the actual cause. Use a
   // ref object so TypeScript narrows correctly through the async event-loop boundary

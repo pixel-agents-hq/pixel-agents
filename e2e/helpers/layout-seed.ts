@@ -80,11 +80,16 @@ export function buildSeedLayout(opts: SeedLayoutOptions = {}): Record<string, un
   return layout;
 }
 
-/** Mirrors server/src/configPersistence.ts DEFAULT_ADAPTER_SETTINGS. */
+/**
+ * Mirrors server/src/configPersistence.ts DEFAULT_ADAPTER_SETTINGS, except
+ * alwaysShowLabels — the e2e baseline turns labels on so overlay text is
+ * assertable without hover (same default the launch-level seed applies when a
+ * test passes no seedConfig; see e2e/helpers/launch.ts).
+ */
 const DEFAULT_ADAPTER_SETTINGS = {
   soundEnabled: true,
   lastSeenVersion: '',
-  alwaysShowLabels: false,
+  alwaysShowLabels: true,
   watchAllSessions: false,
   hooksEnabled: true,
   hooksInfoShown: false,

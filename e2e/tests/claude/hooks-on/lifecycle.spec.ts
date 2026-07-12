@@ -83,13 +83,6 @@ test.describe('Hooks ON / lifecycle', () => {
   }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
-    await setSettings(frame, {
-      watchAllSessions: false,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
-    });
-
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
@@ -135,22 +128,20 @@ test.describe('Hooks ON / lifecycle', () => {
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
   });
 
-  test('--resume reassigns the same agent within the grace window @area:lifecycle', async ({
+  // In-terminal /resume: the SAME live claude process fires SessionEnd(resume)
+  // then SessionStart(resume) with a new session id within milliseconds, so the
+  // grace window reassigns the existing character. The CLI `claude --resume`
+  // shape (old process gone, new one arrives later) is the "after the grace
+  // window expires" test below.
+  test('/resume reassigns the same agent within the grace window @area:lifecycle', async ({
     pixelAgents,
   }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
-    await setSettings(frame, {
-      watchAllSessions: false,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
-    });
-
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('--resume reassignment hooks on')
+      claudeScenario('/resume reassignment hooks on')
         .defineSession('replacement', '{{sessionId}}-resume')
         .at(3_500)
         .emitHook(sessionEndResume('{{sessionId}}') as Record<string, unknown>)
@@ -207,9 +198,6 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await waitForClaudeHookSetup(tmpHome);
@@ -291,9 +279,6 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await waitForClaudeHookSetup(tmpHome);
@@ -358,13 +343,6 @@ test.describe('Hooks ON / lifecycle', () => {
     pixelAgents,
   }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
-
-    await setSettings(frame, {
-      watchAllSessions: false,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
-    });
 
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
@@ -432,13 +410,6 @@ test.describe('Hooks ON / lifecycle', () => {
     const teamName = uniqueTeamName('teammate-removal-hooks-on');
     const configPath = seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE]);
 
-    await setSettings(frame, {
-      watchAllSessions: false,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
-    });
-
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
@@ -495,9 +466,6 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE, SECOND_TEAMMATE_ROLE]);
@@ -577,9 +545,6 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await waitForClaudeHookSetup(tmpHome);
@@ -643,9 +608,6 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE]);
@@ -723,9 +685,6 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE, SECOND_TEAMMATE_ROLE]);
@@ -808,13 +767,6 @@ test.describe('Hooks ON / lifecycle', () => {
   }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
-    await setSettings(frame, {
-      watchAllSessions: false,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
-    });
-
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
@@ -868,9 +820,6 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await waitForClaudeHookSetup(tmpHome);
@@ -960,9 +909,6 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await waitForClaudeHookSetup(tmpHome);
@@ -1047,13 +993,6 @@ test.describe('Hooks ON / lifecycle', () => {
     const { window, tmpHome, mockLogFile } = pixelAgents;
     let frame = pixelAgents.frame;
 
-    await setSettings(frame, {
-      watchAllSessions: false,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
-    });
-
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
@@ -1130,31 +1069,11 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await waitForClaudeHookSetup(tmpHome);
-    const serverConfig = await waitForHookServer(tmpHome);
+    await waitForHookServer(tmpHome);
     const sessionId = 'tool-status-matrix-session';
-
-    await spawnExternalClaudeScenario({
-      tmpHome,
-      workspaceDir,
-      mockLogFile,
-      scenario: claudeScenario('tool status text matrix').holdOpenFor(8_000).build(),
-      sessionId,
-    });
-
-    const projectDir = getClaudeProjectDir(tmpHome, workspaceDir);
-    const transcriptPath = path.join(projectDir, `${sessionId}.jsonl`);
-    await sendHookEvent(serverConfig, sessionStartStartup(sessionId, workspaceDir, transcriptPath));
-
-    // Drive the agent visible with a Bash tool first so the overlay exists.
-    await sendHookEvent(serverConfig, preToolUseBash(sessionId, 'npm test'));
-    await expectOverlayCount(frame, 1);
-    await expectOverlayVisible(frame, 'Running: npm test');
 
     // Task / Agent tools follow the sub-character code path (covered by the basic-spawn test)
     // and don't change the parent overlay text — they're excluded here.
@@ -1174,23 +1093,55 @@ test.describe('Hooks ON / lifecycle', () => {
       },
     ];
 
+    // Scenario-driven with 3s per tool phase (Pablo's review call, same rationale
+    // as the spawn-paths external test): each PostToolUse clears the prior tool,
+    // the paired PreToolUse 150ms later swaps in the next one, and the 3s phase
+    // keeps every label on screen long enough for the run video AND gives the
+    // polling assertions seconds of slack. The first Bash phase runs t+0.7s→5s
+    // because the external-monitor terminal opens (~2-3s) before assertions start.
+    const scenarioBuilder = claudeScenario('tool status text matrix')
+      .at(200)
+      .emitHook(
+        sessionStartStartup(sessionId, '{{cwd}}', '{{transcriptPath}}') as Record<string, unknown>,
+      )
+      .at(700)
+      .emitHook(preToolUseBash(sessionId, 'npm test') as Record<string, unknown>);
+    const CASE_BASE_MS = 5_000;
+    const CASE_PHASE_MS = 3_000;
+    cases.forEach((c, index) => {
+      const atMs = CASE_BASE_MS + index * CASE_PHASE_MS;
+      scenarioBuilder
+        .at(atMs)
+        .emitHook({ session_id: sessionId, hook_event_name: 'PostToolUse' })
+        .at(atMs + 150)
+        .emitHook({
+          session_id: sessionId,
+          hook_event_name: 'PreToolUse',
+          tool_name: c.toolName,
+          tool_input: c.toolInput,
+        });
+    });
+    const sessionEndAtMs = CASE_BASE_MS + cases.length * CASE_PHASE_MS + 500;
+    scenarioBuilder
+      .at(sessionEndAtMs)
+      .emitHook(sessionEndExit(sessionId) as Record<string, unknown>)
+      .holdOpenFor(sessionEndAtMs + 2_000);
+
+    await spawnExternalClaudeScenario({
+      tmpHome,
+      workspaceDir,
+      mockLogFile,
+      scenario: scenarioBuilder.build(),
+      sessionId,
+    });
+
+    await expectOverlayCount(frame, 1);
+    await expectOverlayVisible(frame, 'Running: npm test');
+
     for (const c of cases) {
-      // PostToolUse clears any prior tool's overlay; for the FIRST iteration this
-      // clears the seed Bash overlay above.
-      await sendHookEvent(serverConfig, {
-        session_id: sessionId,
-        hook_event_name: 'PostToolUse',
-      });
-      await sendHookEvent(serverConfig, {
-        session_id: sessionId,
-        hook_event_name: 'PreToolUse',
-        tool_name: c.toolName,
-        tool_input: c.toolInput,
-      });
       await expectOverlayVisible(frame, c.expectedText);
     }
 
-    await sendHookEvent(serverConfig, sessionEndExit(sessionId));
     await expectOverlayCount(frame, 0);
   });
 
@@ -1205,9 +1156,6 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await waitForClaudeHookSetup(tmpHome);
@@ -1346,7 +1294,9 @@ test.describe('Hooks ON / lifecycle', () => {
       })
       .toBe(false);
 
-    // Reinstall: toggle hooks back on.
+    // Reinstall: toggle hooks back on. hooksEnabled:true is the product
+    // default, but here it is a mid-test ACTION (re-enable after the
+    // uninstall above), not a redundant default — do not trim it.
     await setSettings(frame, { hooksEnabled: true });
     await expect
       .poll(() => pixelAgentsHookPresent(readClaudeSettings(tmpHome), 'PreToolUse'), {
@@ -1383,45 +1333,52 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await waitForClaudeHookSetup(tmpHome);
-    const serverConfig = await waitForHookServer(tmpHome);
+    await waitForHookServer(tmpHome);
     const sessionId = 'permission-bubble-clear-session';
 
+    // Scenario-driven with ~4s phases (same rationale as the spawn-paths and
+    // tool-status conversions): every state is visible in the run video and
+    // narrated by the external-sessions monitor.
     await spawnExternalClaudeScenario({
       tmpHome,
       workspaceDir,
       mockLogFile,
-      scenario: claudeScenario('permission bubble auto-clear').holdOpenFor(5_000).build(),
       sessionId,
+      scenario: claudeScenario('permission bubble auto-clear')
+        .at(200)
+        .emitHook(
+          sessionStartStartup(sessionId, '{{cwd}}', '{{transcriptPath}}') as Record<
+            string,
+            unknown
+          >,
+        )
+        .at(700)
+        .emitHook(preToolUseBash(sessionId, 'npm test') as Record<string, unknown>)
+        .at(4_500)
+        .emitHook(permissionRequest(sessionId) as Record<string, unknown>)
+        // Fresh PreToolUse without permissionActive must clear the bubble and
+        // swap the overlay text to the new tool's status string.
+        .at(8_500)
+        .emitHook({ session_id: sessionId, hook_event_name: 'PostToolUse' })
+        .at(8_650)
+        .emitHook({
+          session_id: sessionId,
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Read',
+          tool_input: { file_path: '/x/foo.ts' },
+        })
+        .holdOpenFor(13_000)
+        .build(),
     });
 
-    const projectDir = getClaudeProjectDir(tmpHome, workspaceDir);
-    const transcriptPath = path.join(projectDir, `${sessionId}.jsonl`);
-    await sendHookEvent(serverConfig, sessionStartStartup(sessionId, workspaceDir, transcriptPath));
-    await sendHookEvent(serverConfig, preToolUseBash(sessionId, 'npm test'));
     await expectOverlayCount(frame, 1);
     await expectOverlayVisible(frame, 'Running: npm test');
 
-    await sendHookEvent(serverConfig, permissionRequest(sessionId));
     await expectOverlayVisible(frame, 'Needs approval');
 
-    // Fresh PreToolUse without permissionActive should clear the bubble and
-    // swap the overlay text to the new tool's status string.
-    await sendHookEvent(serverConfig, {
-      session_id: sessionId,
-      hook_event_name: 'PostToolUse',
-    });
-    await sendHookEvent(serverConfig, {
-      session_id: sessionId,
-      hook_event_name: 'PreToolUse',
-      tool_name: 'Read',
-      tool_input: { file_path: '/x/foo.ts' },
-    });
     await expectOverlayVisible(frame, 'Reading foo.ts');
     await expectNoOverlay(frame, 'Needs approval', 2_000);
   });
@@ -1447,9 +1404,11 @@ test.describe('Hooks ON / lifecycle', () => {
     // Read whatever the fixture default is, then flip it. The persistence
     // assertion is about the FLIPPED state surviving a reload, not about the
     // initial default value.
-    const initial = await getSettingChecked(frame, 'Always Show Labels');
-    await setSettings(frame, { alwaysShowLabels: !initial });
-    expect(await getSettingChecked(frame, 'Always Show Labels')).toBe(!initial);
+    // dwellMs keeps the modal visibly open ~500ms per interaction so the run
+    // video shows the toggle states (Pablo's review call); no assertion change.
+    const initial = await getSettingChecked(frame, 'Always Show Labels', { dwellMs: 500 });
+    await setSettings(frame, { alwaysShowLabels: !initial }, { dwellMs: 500 });
+    expect(await getSettingChecked(frame, 'Always Show Labels', { dwellMs: 500 })).toBe(!initial);
 
     // Force a fresh webview by closing and reopening the panel (same
     // mechanism the restored-agents test uses for the existingAgents restore path).
@@ -1459,7 +1418,7 @@ test.describe('Hooks ON / lifecycle', () => {
 
     // After settingsLoaded re-hydrates, the toggle must still be in the
     // flipped state — not back to the fixture default.
-    expect(await getSettingChecked(frame, 'Always Show Labels')).toBe(!initial);
+    expect(await getSettingChecked(frame, 'Always Show Labels', { dwellMs: 500 })).toBe(!initial);
   });
 
   // layout editor smoke. Verifies entering edit mode reveals the editor

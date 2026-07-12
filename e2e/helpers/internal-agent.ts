@@ -1,5 +1,5 @@
-import { expect } from '@playwright/test';
 import type { Frame } from '@playwright/test';
+import { expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 

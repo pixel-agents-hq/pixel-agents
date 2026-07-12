@@ -80,6 +80,75 @@ function logAction(homeDir, message) {
   logLine(homeDir, 'actions.log', `${new Date().toISOString()} ${message}`);
 }
 
+const ANSI_DIM = '\u001b[2m';
+const ANSI_CYAN = '\u001b[36m';
+const ANSI_YELLOW = '\u001b[33m';
+const ANSI_MAGENTA = '\u001b[35m';
+const ANSI_RESET = '\u001b[0m';
+
+// External sessions (spawned detached by the e2e harness so Pixel Agents
+// ADOPTS them instead of launching them) narrate into a shared per-test log
+// that a monitor terminal tails. The magenta prefix keeps their lines
+// visually distinct from internal-terminal narration, and the short
+// per-session tag keeps interleaved external sessions tellable apart.
+const IS_EXTERNAL = process.env.PIXEL_AGENTS_MOCK_EXTERNAL === '1';
+let externalTag = '';
+
+function tinySessionTag(value) {
+  let hash = 0;
+  for (const ch of String(value)) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+  return (hash >>> 0).toString(36).slice(0, 4);
+}
+
+function shortId(value) {
+  const str = String(value);
+  return str.length > 24 ? `${str.slice(0, 8)}…${str.slice(-8)}` : str;
+}
+
+/**
+ * Human-readable narration to stdout. Pixel Agents never reads the terminal
+ * (its inputs are JSONL transcripts and hook POSTs), so this changes nothing
+ * about what tests exercise — it exists purely so run recordings show WHAT
+ * the mock is simulating and WHEN, where real claude would render its TUI.
+ */
+function echo(atMs, message) {
+  const stamp = typeof atMs === 'number' ? `t+${(atMs / 1000).toFixed(1)}s`.padStart(7) : '       ';
+  const prefix = IS_EXTERNAL
+    ? `${ANSI_MAGENTA}[external·${externalTag}]${ANSI_DIM}${stamp}${ANSI_RESET}`
+    : `${ANSI_DIM}[mock-claude]${stamp}${ANSI_RESET}`;
+  process.stdout.write(`${prefix} ${message}\n`);
+}
+
+function describeJsonlRecord(record) {
+  if (!record || typeof record !== 'object') return 'record';
+  const type = [record.type, record.subtype].filter(Boolean).join('/');
+  const content =
+    record.message && Array.isArray(record.message.content) ? record.message.content : [];
+  const tools = content
+    .filter((part) => part && part.type === 'tool_use')
+    .map((part) => part.name)
+    .filter(Boolean);
+  const resultCount = content.filter((part) => part && part.type === 'tool_result').length;
+  if (tools.length > 0) return `${type} tool_use ${tools.join(', ')}`;
+  if (resultCount > 0) return `${type} tool_result x${resultCount}`;
+  return type || 'record';
+}
+
+function describeHookPayload(payload) {
+  const parts = [String(payload.hook_event_name)];
+  if (payload.tool_name) parts.push(String(payload.tool_name));
+  const command = payload.tool_input && payload.tool_input.command;
+  if (command) parts.push(`"${String(command).slice(0, 40)}"`);
+  const target =
+    payload.tool_input &&
+    (payload.tool_input.file_path || payload.tool_input.pattern || payload.tool_input.url);
+  if (target) parts.push(String(target).slice(0, 40));
+  if (payload.source) parts.push(`source=${payload.source}`);
+  if (payload.reason) parts.push(`reason=${payload.reason}`);
+  if (payload.session_id) parts.push(`→ ${shortId(payload.session_id)}`);
+  return parts.join(' ');
+}
+
 function ensureSessionContext(homeDir, sessionId, cwd) {
   const projectDir = path.join(homeDir, '.claude', 'projects', claudeProjectDirName(cwd));
   fs.mkdirSync(projectDir, { recursive: true });
@@ -345,6 +414,7 @@ async function playScenario(homeDir, scenario, context) {
       content: 'mock-claude-ready',
     });
     logAction(homeDir, `appendJsonl self init ${path.basename(context.transcriptPath)}`);
+    echo(0, `session ready, transcript ${path.basename(context.transcriptPath)}`);
   }
 
   const actions = Array.isArray(scenario.actions) ? [...scenario.actions] : [];
@@ -371,6 +441,10 @@ async function playScenario(homeDir, scenario, context) {
         homeDir,
         `appendJsonl ${sessionAlias} ${path.basename(target.transcriptPath)} ${JSON.stringify(record)}`,
       );
+      echo(
+        atMs,
+        `${ANSI_CYAN}append${ANSI_RESET} ${describeJsonlRecord(record)} → ${path.basename(target.transcriptPath)}`,
+      );
       continue;
     }
 
@@ -378,6 +452,7 @@ async function playScenario(homeDir, scenario, context) {
       const payload = resolveValue(action.payload, context);
       await emitHook(homeDir, context, payload);
       logAction(homeDir, `emitHook ${payload.hook_event_name} ${JSON.stringify(payload)}`);
+      echo(atMs, `${ANSI_YELLOW}hook${ANSI_RESET} ${describeHookPayload(payload)}`);
       continue;
     }
 
@@ -389,6 +464,7 @@ async function playScenario(homeDir, scenario, context) {
         homeDir,
         `writeJson ${path.basename(filePath)} ${JSON.stringify({ filePath, value })}`,
       );
+      echo(atMs, `${ANSI_CYAN}write${ANSI_RESET} ${path.basename(filePath)}`);
       continue;
     }
 
@@ -396,11 +472,13 @@ async function playScenario(homeDir, scenario, context) {
       const filePath = resolveTemplateString(action.filePath, context);
       deletePathTarget(filePath);
       logAction(homeDir, `deletePath ${JSON.stringify({ filePath })}`);
+      echo(atMs, `${ANSI_CYAN}delete${ANSI_RESET} ${path.basename(filePath)}`);
       continue;
     }
 
     if (action.kind === 'exit') {
       logAction(homeDir, `exit code=${action.code || 0}`);
+      echo(atMs, `exit code=${action.code || 0}`);
       process.exit(typeof action.code === 'number' ? action.code : 0);
     }
   }
@@ -408,8 +486,10 @@ async function playScenario(homeDir, scenario, context) {
   const holdOpenMs =
     typeof scenario.holdOpenMs === 'number' ? scenario.holdOpenMs : DEFAULT_HOLD_OPEN_MS;
   if (holdOpenMs > 0) {
+    echo(null, `scenario done, holding session open ${(holdOpenMs / 1000).toFixed(0)}s`);
     await sleep(holdOpenMs);
   }
+  echo(null, 'session ended');
 }
 
 async function main() {
@@ -425,6 +505,16 @@ async function main() {
   };
 
   logInvocation(homeDir, sessionId, cwd, process.argv.slice(2));
+  if (IS_EXTERNAL) {
+    externalTag = tinySessionTag(sessionId);
+    process.stdout.write(
+      `${ANSI_MAGENTA}══ EXTERNAL session ·${externalTag} — adopted by Pixel Agents, not launched ══${ANSI_RESET}\n`,
+    );
+  }
+  echo(
+    null,
+    `mock claude session ${shortId(sessionId)}${scenario.name ? ` — scenario: ${scenario.name}` : ''}`,
+  );
 
   const context = buildContext(homeDir, scenario, sessionId, cwd);
   await playScenario(homeDir, scenario, context);

@@ -1,7 +1,8 @@
-import { test as base, expect } from '@playwright/test';
-import type { TestInfo } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+
+import type { TestInfo } from '@playwright/test';
+import { expect, test as base } from '@playwright/test';
 
 import { applyAllureLabels } from '../helpers/allure-labels';
 import { launchStandalone, type StandaloneSession } from '../helpers/standalone';

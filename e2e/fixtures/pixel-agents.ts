@@ -1,12 +1,16 @@
-import { test as base, expect } from '@playwright/test';
 import type { Frame, Page, TestInfo } from '@playwright/test';
+import { expect, test as base } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
 import { applyAllureLabels } from '../helpers/allure-labels';
+import {
+  clearExternalMonitorContext,
+  setExternalMonitorContext,
+} from '../helpers/external-monitor';
 import { launchVSCode, type VSCodeSession, waitForWorkbench } from '../helpers/launch';
 import { killTrackedExternalProcesses } from '../helpers/mock-claude';
-import { getPixelAgentsFrame, openPixelAgentsPanel } from '../helpers/webview';
+import { arrangeReviewLayout, getPixelAgentsFrame, openPixelAgentsPanel } from '../helpers/webview';
 
 const ATTACH_VIDEOS_ON_SUCCESS = process.env['PIXEL_AGENTS_E2E_ATTACH_VIDEOS_ON_SUCCESS'] === '1';
 
@@ -82,8 +86,16 @@ export const test = base.extend<{
 
     try {
       await waitForWorkbench(window);
-      await openPixelAgentsPanel(window);
+      // autoShown: the seeded pixel-agents.autoShowPanel setting surfaces the
+      // view on activation — no command-palette interaction at setup.
+      await openPixelAgentsPanel(window, { autoShown: true });
+      // Run-video layout: office 2/3 left, terminal editor tabs 1/3 right.
+      await arrangeReviewLayout(window);
       const frame = await getPixelAgentsFrame(window);
+
+      // Lets the first spawnExternalClaudeScenario call open the external-
+      // session narration monitor in this window (cosmetic, lazy).
+      setExternalMonitorContext(window, tmpHome);
 
       await use({
         session,
@@ -169,6 +181,7 @@ export const test = base.extend<{
       }
 
       const attachRunVideo = runVideo !== null && shouldAttachRunVideo(testInfo);
+      clearExternalMonitorContext();
       // Kill any leaked mock-claude processes spawned via spawnExternalClaudeScenario
       // BEFORE tearing down the session (and deleting tmpHome). Otherwise leaked
       // processes accumulate across the suite and add real environmental pressure.

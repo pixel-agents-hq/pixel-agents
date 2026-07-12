@@ -5,23 +5,29 @@ import {
   permissionRequest,
   preToolUseAgent,
   preToolUseBash,
-  sendHookEvent,
   sessionStartStartup,
   subagentStart,
-  waitForHookServer,
 } from '../../../helpers/hooks';
 import { spawnInternalAgentAndWait } from '../../../helpers/internal-agent';
-import { uniqueTeamName } from '../../../helpers/lifecycle';
+import {
+  INLINE_TEAMMATE_ALIAS,
+  uniqueTeamName,
+  withInlineTeammateSession,
+} from '../../../helpers/lifecycle';
+import {
+  arrangeNextClaudeInvocation,
+  claudeScenario,
+  spawnExternalClaudeScenario,
+  waitForClaudeHookSetup,
+} from '../../../helpers/mock-claude';
 import {
   expectNoOverlayWithTexts,
   expectOverlayCount,
   expectOverlayVisibleWithTexts,
 } from '../../../helpers/office';
 import {
-  appendAssistantToolUse,
-  appendTeamMetadata,
-  createClaudeTranscript,
-  createTeammateTranscript,
+  buildAssistantToolUseRecord,
+  buildTeamMetadataRecord,
   seedTeamConfig,
 } from '../../../helpers/team';
 import { getPixelAgentsFrame, openPixelAgentsPanel, setSettings } from '../../../helpers/webview';
@@ -38,51 +44,56 @@ async function expectTeammateActivity(frame: Frame, text: string): Promise<void>
   await expectNoOverlayWithTexts(frame, ['LEAD', text]);
 }
 
+// All four tests are scenario-driven (mocking rule 1) with ~3s phases so run
+// videos show each routing step and the mock narrates it — in the Claude Code
+// terminal for internal leads, in the external-sessions monitor for external
+// ones. TEAMMATE_ROLE equals INLINE_TEAMMATE_ROLE in helpers/lifecycle.ts, so
+// withInlineTeammateSession provides the teammate transcript + .meta.json
+// sidecar exactly like the old createTeammateTranscript test-body helper did.
 test.describe('Hooks ON / teams', () => {
   test('internal terminal lead with inline teammate routes tools to teammate @area:teams', async ({
     pixelAgents,
   }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
-    await setSettings(frame, {
-      watchAllSessions: false,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
-    });
-
-    const spawned = await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
-    await openPixelAgentsPanel(window);
-    const panelFrame = await getPixelAgentsFrame(window);
-    const serverConfig = await waitForHookServer(tmpHome);
-
     const teamName = uniqueTeamName('hooks-on-internal-inline');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
-    appendTeamMetadata(spawned.jsonlFile, teamName);
-    await expectOverlayVisibleWithTexts(panelFrame, ['LEAD']);
-
-    const teammateTranscript = createTeammateTranscript(
-      spawned.projectDir,
-      spawned.sessionId,
-      'agent-web-researcher',
-      teamName,
-      TEAMMATE_ROLE,
+    await waitForClaudeHookSetup(tmpHome);
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      withInlineTeammateSession(claudeScenario('internal inline teammate routing hooks on'))
+        .at(500)
+        .appendJsonl(buildTeamMetadataRecord(teamName))
+        .at(3_000)
+        .appendJsonl(buildTeamMetadataRecord(teamName, TEAMMATE_ROLE), {
+          session: INLINE_TEAMMATE_ALIAS,
+        })
+        .at(3_500)
+        .emitHook(preToolUseAgent('{{sessionId}}', 'Delegate research') as Record<string, unknown>)
+        .at(4_000)
+        .emitHook(subagentStart('{{sessionId}}', TEAMMATE_ROLE) as Record<string, unknown>)
+        .at(7_000)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-a3-lead-bash', 'Bash', { command: 'npm test' }),
+        )
+        .at(10_000)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-a3-teammate-search', 'WebSearch', {
+            query: 'pixel agents',
+          }),
+          { session: INLINE_TEAMMATE_ALIAS },
+        )
+        .holdOpenFor(14_000)
+        .build(),
     );
+    await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+    await openPixelAgentsPanel(window);
+    const panelFrame = await getPixelAgentsFrame(window);
 
-    await sendHookEvent(serverConfig, preToolUseAgent(spawned.sessionId, 'Delegate research'));
-    await sendHookEvent(serverConfig, subagentStart(spawned.sessionId, TEAMMATE_ROLE));
-
+    await expectOverlayVisibleWithTexts(panelFrame, ['LEAD']);
     await expectOverlayCount(panelFrame, 2);
     await expectOverlayVisibleWithTexts(panelFrame, [TEAMMATE_ROLE]);
-
-    appendAssistantToolUse(spawned.jsonlFile, 'toolu-a3-lead-bash', 'Bash', {
-      command: 'npm test',
-    });
     await expectLeadActivity(panelFrame, 'Running: npm test');
-
-    appendAssistantToolUse(teammateTranscript, 'toolu-a3-teammate-search', 'WebSearch', {
-      query: 'pixel agents',
-    });
     await expectTeammateActivity(panelFrame, 'Searching the web');
   });
 
@@ -91,152 +102,178 @@ test.describe('Hooks ON / teams', () => {
   }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
-    await setSettings(frame, {
-      watchAllSessions: false,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
-    });
-
-    const spawned = await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
-    await openPixelAgentsPanel(window);
-    const panelFrame = await getPixelAgentsFrame(window);
-    const serverConfig = await waitForHookServer(tmpHome);
-
     const teamName = uniqueTeamName('hooks-on-internal-tmux');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
-    appendTeamMetadata(spawned.jsonlFile, teamName);
-    await expectOverlayVisibleWithTexts(panelFrame, ['LEAD']);
-
-    appendAssistantToolUse(spawned.jsonlFile, 'toolu-a5-team-spawn', 'Agent', {
-      description: 'Delegate research',
-      run_in_background: true,
-    });
-    await expectLeadActivity(panelFrame, 'Subtask: Delegate research');
-
-    createTeammateTranscript(
-      spawned.projectDir,
-      spawned.sessionId,
-      'agent-web-researcher',
-      teamName,
-      TEAMMATE_ROLE,
+    await waitForClaudeHookSetup(tmpHome);
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      withInlineTeammateSession(claudeScenario('internal tmux teammate routing hooks on'))
+        .at(500)
+        .appendJsonl(buildTeamMetadataRecord(teamName))
+        // Lead's Agent tool_use with run_in_background — the lead overlay shows
+        // "Subtask: Delegate research" as its activity (team gate suppresses a
+        // basic sub-character because the lead has a teamName by now).
+        .at(3_000)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-a5-team-spawn', 'Agent', {
+            description: 'Delegate research',
+            run_in_background: true,
+          }),
+        )
+        .at(6_000)
+        .appendJsonl(buildTeamMetadataRecord(teamName, TEAMMATE_ROLE), {
+          session: INLINE_TEAMMATE_ALIAS,
+        })
+        .at(6_500)
+        .emitHook(preToolUseAgent('{{sessionId}}', 'Delegate research') as Record<string, unknown>)
+        .at(7_000)
+        .emitHook(subagentStart('{{sessionId}}', TEAMMATE_ROLE) as Record<string, unknown>)
+        .at(10_000)
+        .emitHook(preToolUseBash('{{sessionId}}', 'npm test') as Record<string, unknown>)
+        .at(13_000)
+        .emitHook(permissionRequest('{{sessionId}}') as Record<string, unknown>)
+        .holdOpenFor(17_000)
+        .build(),
     );
+    await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+    await openPixelAgentsPanel(window);
+    const panelFrame = await getPixelAgentsFrame(window);
 
-    await sendHookEvent(serverConfig, preToolUseAgent(spawned.sessionId, 'Delegate research'));
-    await sendHookEvent(serverConfig, subagentStart(spawned.sessionId, TEAMMATE_ROLE));
-
+    await expectOverlayVisibleWithTexts(panelFrame, ['LEAD']);
+    await expectLeadActivity(panelFrame, 'Subtask: Delegate research');
     await expectOverlayCount(panelFrame, 2);
     await expectOverlayVisibleWithTexts(panelFrame, [TEAMMATE_ROLE]);
-
-    await sendHookEvent(serverConfig, preToolUseBash(spawned.sessionId, 'npm test'));
     await expectLeadActivity(panelFrame, 'Running: npm test');
-
-    await sendHookEvent(serverConfig, permissionRequest(spawned.sessionId));
     await expectLeadActivity(panelFrame, 'Needs approval');
   });
 
   test('external session lead with inline teammate routes tools to teammate @area:teams', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
-
-    const serverConfig = await waitForHookServer(tmpHome);
-    const sessionId = 'hooks-on-external-inline-session';
-    const { projectDir, transcriptPath } = createClaudeTranscript(tmpHome, workspaceDir, sessionId);
 
     const teamName = uniqueTeamName('hooks-on-external-inline');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
+    await waitForClaudeHookSetup(tmpHome);
+    const sessionId = 'hooks-on-external-inline-session';
 
-    await sendHookEvent(serverConfig, sessionStartStartup(sessionId, workspaceDir, transcriptPath));
-    await frame.waitForTimeout(500);
+    await spawnExternalClaudeScenario({
+      tmpHome,
+      workspaceDir,
+      mockLogFile,
+      sessionId,
+      scenario: withInlineTeammateSession(
+        claudeScenario('external inline teammate routing hooks on'),
+      )
+        .at(200)
+        .emitHook(
+          sessionStartStartup(sessionId, '{{cwd}}', '{{transcriptPath}}') as Record<
+            string,
+            unknown
+          >,
+        )
+        .at(7_000)
+        .emitHook(preToolUseAgent(sessionId, 'Delegate research') as Record<string, unknown>)
+        .at(7_500)
+        .appendJsonl(buildTeamMetadataRecord(teamName))
+        .at(10_500)
+        .appendJsonl(buildTeamMetadataRecord(teamName, TEAMMATE_ROLE), {
+          session: INLINE_TEAMMATE_ALIAS,
+        })
+        .at(11_000)
+        .emitHook(subagentStart(sessionId, TEAMMATE_ROLE) as Record<string, unknown>)
+        .at(14_000)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-a9-lead-bash', 'Bash', { command: 'npm test' }),
+        )
+        .at(17_000)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-a9-teammate-search', 'WebSearch', {
+            query: 'pixel agents',
+          }),
+          { session: INLINE_TEAMMATE_ALIAS },
+        )
+        .holdOpenFor(21_000)
+        .build(),
+    });
+
+    // SessionStart alone (t+0.2s) leaves the session pending. Settle-based
+    // check (the scenario can't sequence delivery like sendHookEvent did);
+    // PreToolUse only lands at t+7s, leaving wide margin even with the
+    // external-monitor terminal opening (~3s) inside the spawn call above.
+    await frame.waitForTimeout(1_500);
     await expectOverlayCount(frame, 0);
 
-    await sendHookEvent(serverConfig, preToolUseAgent(sessionId, 'Delegate research'));
     await expectOverlayCount(frame, 1);
-
-    appendTeamMetadata(transcriptPath, teamName);
     await expectOverlayVisibleWithTexts(frame, ['LEAD']);
-
-    const teammateTranscript = createTeammateTranscript(
-      projectDir,
-      sessionId,
-      'agent-web-researcher',
-      teamName,
-      TEAMMATE_ROLE,
-    );
-
-    await sendHookEvent(serverConfig, subagentStart(sessionId, TEAMMATE_ROLE));
-
     await expectOverlayCount(frame, 2);
     await expectOverlayVisibleWithTexts(frame, [TEAMMATE_ROLE]);
-
-    appendAssistantToolUse(transcriptPath, 'toolu-a9-lead-bash', 'Bash', {
-      command: 'npm test',
-    });
     await expectLeadActivity(frame, 'Running: npm test');
-
-    appendAssistantToolUse(teammateTranscript, 'toolu-a9-teammate-search', 'WebSearch', {
-      query: 'pixel agents',
-    });
     await expectTeammateActivity(frame, 'Searching the web');
   });
 
   test('external session lead with tmux teammate routes tools to teammate @area:teams', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
-
-    const serverConfig = await waitForHookServer(tmpHome);
-    const sessionId = 'hooks-on-external-tmux-session';
-    const { projectDir, transcriptPath } = createClaudeTranscript(tmpHome, workspaceDir, sessionId);
 
     const teamName = uniqueTeamName('hooks-on-external-tmux');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
+    await waitForClaudeHookSetup(tmpHome);
+    const sessionId = 'hooks-on-external-tmux-session';
 
-    await sendHookEvent(serverConfig, sessionStartStartup(sessionId, workspaceDir, transcriptPath));
-    await sendHookEvent(serverConfig, preToolUseAgent(sessionId, 'Delegate research'));
-    await expectOverlayCount(frame, 1);
-
-    appendTeamMetadata(transcriptPath, teamName);
-    await expectOverlayVisibleWithTexts(frame, ['LEAD']);
-
-    appendAssistantToolUse(transcriptPath, 'toolu-a11-team-spawn', 'Agent', {
-      description: 'Delegate research',
-      run_in_background: true,
-    });
-    await expectLeadActivity(frame, 'Subtask: Delegate research');
-
-    createTeammateTranscript(
-      projectDir,
+    await spawnExternalClaudeScenario({
+      tmpHome,
+      workspaceDir,
+      mockLogFile,
       sessionId,
-      'agent-web-researcher',
-      teamName,
-      TEAMMATE_ROLE,
-    );
+      scenario: withInlineTeammateSession(claudeScenario('external tmux teammate routing hooks on'))
+        .at(200)
+        .emitHook(
+          sessionStartStartup(sessionId, '{{cwd}}', '{{transcriptPath}}') as Record<
+            string,
+            unknown
+          >,
+        )
+        .at(700)
+        .emitHook(preToolUseAgent(sessionId, 'Delegate research') as Record<string, unknown>)
+        .at(1_200)
+        .appendJsonl(buildTeamMetadataRecord(teamName))
+        .at(4_500)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-a11-team-spawn', 'Agent', {
+            description: 'Delegate research',
+            run_in_background: true,
+          }),
+        )
+        .at(7_500)
+        .appendJsonl(buildTeamMetadataRecord(teamName, TEAMMATE_ROLE), {
+          session: INLINE_TEAMMATE_ALIAS,
+        })
+        .at(8_000)
+        .emitHook(subagentStart(sessionId, TEAMMATE_ROLE) as Record<string, unknown>)
+        .at(11_000)
+        .emitHook(preToolUseBash(sessionId, 'npm test') as Record<string, unknown>)
+        .at(14_000)
+        .emitHook(permissionRequest(sessionId) as Record<string, unknown>)
+        .holdOpenFor(18_000)
+        .build(),
+    });
 
-    await sendHookEvent(serverConfig, subagentStart(sessionId, TEAMMATE_ROLE));
-
+    await expectOverlayCount(frame, 1);
+    await expectOverlayVisibleWithTexts(frame, ['LEAD']);
+    await expectLeadActivity(frame, 'Subtask: Delegate research');
     await expectOverlayCount(frame, 2);
     await expectOverlayVisibleWithTexts(frame, [TEAMMATE_ROLE]);
-
-    await sendHookEvent(serverConfig, preToolUseBash(sessionId, 'npm test'));
     await expectLeadActivity(frame, 'Running: npm test');
-
-    await sendHookEvent(serverConfig, permissionRequest(sessionId));
     await expectLeadActivity(frame, 'Needs approval');
   });
 });

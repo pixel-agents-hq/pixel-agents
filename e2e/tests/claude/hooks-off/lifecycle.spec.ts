@@ -57,10 +57,7 @@ test.describe('Hooks OFF / lifecycle', () => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
-      watchAllSessions: false,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await arrangeNextClaudeInvocation(
@@ -127,10 +124,7 @@ test.describe('Hooks OFF / lifecycle', () => {
     const { frame, window, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
-      watchAllSessions: false,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await arrangeNextClaudeInvocation(
@@ -169,10 +163,7 @@ test.describe('Hooks OFF / lifecycle', () => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
-      watchAllSessions: false,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await arrangeNextClaudeInvocation(
@@ -249,8 +240,6 @@ test.describe('Hooks OFF / lifecycle', () => {
     await setSettings(frame, {
       watchAllSessions: true,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await spawnExternalClaudeScenario({
@@ -304,10 +293,7 @@ test.describe('Hooks OFF / lifecycle', () => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
-      watchAllSessions: false,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await arrangeNextClaudeInvocation(
@@ -369,10 +355,7 @@ test.describe('Hooks OFF / lifecycle', () => {
     const configPath = seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE]);
 
     await setSettings(frame, {
-      watchAllSessions: false,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await arrangeNextClaudeInvocation(
@@ -421,10 +404,7 @@ test.describe('Hooks OFF / lifecycle', () => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
-      watchAllSessions: false,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await arrangeNextClaudeInvocation(
@@ -478,8 +458,6 @@ test.describe('Hooks OFF / lifecycle', () => {
     await setSettings(frame, {
       watchAllSessions: true,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await spawnExternalClaudeScenario({
@@ -546,8 +524,6 @@ test.describe('Hooks OFF / lifecycle', () => {
     await setSettings(frame, {
       watchAllSessions: true,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     // Heuristic-mode mirror of the hooks-on external-background-subagent
@@ -597,10 +573,7 @@ test.describe('Hooks OFF / lifecycle', () => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
-      watchAllSessions: false,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     // Cross-cutting invariant from the manual F5 matrix: when a turn ends
@@ -661,8 +634,6 @@ test.describe('Hooks OFF / lifecycle', () => {
     await setSettings(frame, {
       watchAllSessions: true,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await spawnExternalClaudeScenario({
@@ -729,10 +700,7 @@ test.describe('Hooks OFF / lifecycle', () => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
-      watchAllSessions: false,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     const parentToolId = 'toolu-c14-task';

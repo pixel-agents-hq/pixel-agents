@@ -1,8 +1,8 @@
 import path from 'node:path';
 
 import { expect, test } from '../../fixtures/standalone';
-import { expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
 import { sendHookEvent, sessionEndExit, sessionStartStartup } from '../../helpers/hooks';
+import { expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
 import type { RecordedServerMessage } from '../../helpers/standalone';
 import { setSettings } from '../../helpers/webview';
 
@@ -13,9 +13,7 @@ test.describe('Standalone / hooks', () => {
   }) => {
     await setSettings(page, {
       alwaysShowLabels: true,
-      hooksEnabled: true,
       watchAllSessions: true,
-      debugView: false,
     });
     await standalone.drainMessages();
 

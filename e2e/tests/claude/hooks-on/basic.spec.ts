@@ -2,10 +2,8 @@ import path from 'path';
 
 import { expect, test } from '../../../fixtures/pixel-agents';
 import {
-  idlePrompt,
   permissionRequest,
   preToolUseBash,
-  sendHookEvent,
   sessionEndExit,
   sessionStartStartup,
   stop,
@@ -19,12 +17,7 @@ import {
   waitForClaudeHookSetup,
 } from '../../../helpers/mock-claude';
 import { expectOverlayCount, expectOverlayVisible } from '../../../helpers/office';
-import {
-  appendAssistantToolUse,
-  appendJsonlRecord,
-  buildUserToolResultRecord,
-  getClaudeProjectDir,
-} from '../../../helpers/team';
+import { buildAssistantToolUseRecord, buildUserToolResultRecord } from '../../../helpers/team';
 import { getPixelAgentsFrame, openPixelAgentsPanel, setSettings } from '../../../helpers/webview';
 
 test.describe('Hooks ON / spawn paths', () => {
@@ -33,18 +26,34 @@ test.describe('Hooks ON / spawn paths', () => {
   }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
-    await setSettings(frame, {
-      watchAllSessions: false,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
-    });
-
+    // Sub-character appears on Task tool_use and despawns on tool_result.
+    // Task subagent lifecycle is JSONL-driven even in hooks-on mode
+    // (transcriptParser routes Task/Agent tool events through JSONL
+    // regardless of hookDelivered). Both records are appended by the mock's
+    // own scheduler (mocking rule 1): the Subtask phase stays open from
+    // t+5s to t+13s — a wide window for the polling assertions below, same
+    // shape as the matrix "internal basic spawn" scenario.
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('internal terminal basic spawn').build(),
+      claudeScenario('internal terminal basic spawn')
+        .at(5_000)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-subagent-spawn', 'Task', {
+            description: 'spawned subtask',
+          }),
+        )
+        .at(13_000)
+        .appendJsonl(buildUserToolResultRecord('toolu-subagent-spawn'))
+        .holdOpenFor(15_000)
+        .build(),
     );
     const spawned = await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+
+    // Panel first: the "no subtask yet" count-1 assertion must land before the
+    // scheduled Task append at t+5s. The timing-free plumbing checks follow.
+    await openPixelAgentsPanel(window);
+    const panelFrame = await getPixelAgentsFrame(window);
+    await expectOverlayCount(panelFrame, 1);
 
     expect(spawned.invocationLog).toContain(`session-id=${spawned.sessionId}`);
     expect(path.basename(spawned.jsonlFile)).toBe(`${spawned.sessionId}.jsonl`);
@@ -52,34 +61,30 @@ test.describe('Hooks ON / spawn paths', () => {
     const terminalTab = window.getByText(/Claude Code #\d+/);
     await expect(terminalTab.first()).toBeVisible({ timeout: 15_000 });
 
-    await openPixelAgentsPanel(window);
-    const panelFrame = await getPixelAgentsFrame(window);
-    await expectOverlayCount(panelFrame, 1);
-
-    // Sub-character appears on Task tool_use and despawns on tool_result.
-    // Task subagent lifecycle is JSONL-driven even in hooks-on mode
-    // (transcriptParser routes Task/Agent tool events through JSONL
-    // regardless of hookDelivered).
-    const taskToolId = 'toolu-subagent-spawn';
-    appendAssistantToolUse(spawned.jsonlFile, taskToolId, 'Task', {
-      description: 'spawned subtask',
-    });
     await expectOverlayCount(panelFrame, 2);
     await expectOverlayVisible(panelFrame, 'Subtask: spawned subtask');
 
-    appendJsonlRecord(spawned.jsonlFile, buildUserToolResultRecord(taskToolId));
     await expectOverlayCount(panelFrame, 1);
   });
 
-  // External hook-driven session adoption.
+  // External hook-driven session adoption, driven by the mock's own scheduler
+  // (mocking rule 1).
   //
-  // Driven directly from the test via sendHookEvent (not from mock-claude's
-  // scheduler) for deterministic timing. The original timer-driven version
-  // passed in isolation but flaked reliably under full-suite load: the
-  // 200ms/2000ms/3200ms/4400ms/6000ms scheduled emissions slipped, and the
-  // test raced to see all 5 effects within fixed wall-clock windows. The
-  // teammate-routing tests use this same direct-emission pattern and don't
-  // flake.
+  // Phase widths are deliberate. An early scenario-driven version (emissions at
+  // 200ms/2s/3.2s/4.4s/6s) flaked reliably under full-suite load: the phases
+  // were so narrow that a late-starting assertion missed its state entirely —
+  // e.g. the "Idle" label only renders after the ~2s green-checkmark fade
+  // (ToolOverlay's done-marker), so a sub-2s gap after Stop starves it of a
+  // window. The 3.5–5s phases below give every assertion seconds of slack
+  // against scheduler drift AND keep each state on screen long enough to be
+  // seen in the review videos.
+  //
+  // Deliberately NO Notification(idle_prompt) step: real Notification payloads
+  // carry no notification_type field (types are settings.json matchers), so the
+  // provider drops every live Notification and "Waiting for input" is currently
+  // unreachable in hooks-on mode — asserting it here would pin a mock-only
+  // branch. See the e2e review notes ("Findings for Florin"); re-add the step when the
+  // matcher-based installer fix ships.
   test('external Claude session adopted via hook confirmation lifecycle @area:spawn', async ({
     pixelAgents,
   }) => {
@@ -87,55 +92,57 @@ test.describe('Hooks ON / spawn paths', () => {
 
     await setSettings(frame, {
       watchAllSessions: true,
-      hooksEnabled: true,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await waitForClaudeHookSetup(tmpHome);
-    const serverConfig = await waitForHookServer(tmpHome);
+    await waitForHookServer(tmpHome);
     const sessionId = 'external-hook-session';
 
-    // Spawn mock-claude with only autoInit; the test drives every hook below.
-    // holdOpenFor(3_000) keeps the process alive briefly so the JSONL it created
-    // stays attached during the assertions, then exits before fixture teardown
-    // (the fixture's killTrackedExternalProcesses sweep is the fallback safety net).
     await spawnExternalClaudeScenario({
       tmpHome,
       workspaceDir,
       mockLogFile,
-      scenario: claudeScenario('external hook-driven session adoption').holdOpenFor(3_000).build(),
       sessionId,
+      scenario: claudeScenario('external hook-driven session adoption')
+        .at(200)
+        .emitHook(
+          sessionStartStartup(sessionId, '{{cwd}}', '{{transcriptPath}}') as Record<
+            string,
+            unknown
+          >,
+        )
+        .at(700)
+        .emitHook(preToolUseBash(sessionId, 'npm test') as Record<string, unknown>)
+        .at(4_500)
+        .emitHook(permissionRequest(sessionId) as Record<string, unknown>)
+        .at(8_500)
+        .emitHook(stop(sessionId) as Record<string, unknown>)
+        .at(13_500)
+        .emitHook(sessionEndExit(sessionId) as Record<string, unknown>)
+        .holdOpenFor(15_500)
+        .build(),
     });
 
-    const projectDir = getClaudeProjectDir(tmpHome, workspaceDir);
-    const transcriptPath = path.join(projectDir, `${sessionId}.jsonl`);
+    // No standalone "SessionStart alone creates no character" phase here — that
+    // transient-session filter is pinned by the teams routing tests
+    // (teams.spec.ts, sequenced SessionStart → count 0), where direct emission
+    // guarantees delivery before the check. Repeating it here would cost ~4s of
+    // dead time before the character can appear. PreToolUse fires 500ms after
+    // SessionStart (sequential POSTs, ordering preserved).
 
-    // 1. SessionStart fires. Session is pending (transient filter), no overlay yet.
-    await sendHookEvent(serverConfig, sessionStartStartup(sessionId, workspaceDir, transcriptPath));
-    await frame.waitForTimeout(500); // give SessionStart time to land before asserting absence
-    await expectOverlayCount(frame, 0);
-
-    // 2. PreToolUseBash confirms the session; agent appears with bash status.
-    await sendHookEvent(serverConfig, preToolUseBash(sessionId, 'npm test'));
+    // 1. PreToolUseBash (t+0.7s) confirms the session; agent appears with bash status.
     await expectOverlayCount(frame, 1);
     await expectOverlayVisible(frame, 'Running: npm test');
 
-    // 3. PermissionRequest → "Needs approval"
-    await sendHookEvent(serverConfig, permissionRequest(sessionId));
+    // 2. PermissionRequest (t+4.5s) → "Needs approval"
     await expectOverlayVisible(frame, 'Needs approval');
 
-    // 4. Stop → finished turn shows ONLY the checkmark; the label falls back to
-    //    idle (no dedicated text), distinct from idle_prompt's "Waiting for input".
-    await sendHookEvent(serverConfig, stop(sessionId));
+    // 3. Stop (t+8.5s) → finished turn shows ONLY the checkmark; the "Idle" label
+    //    surfaces once the checkmark fades (~2s later). The 5s gap before
+    //    SessionEnd is what guarantees "Idle" gets a visible window.
     await expectOverlayVisible(frame, 'Idle');
 
-    // 5. Notification(idle_prompt) → "Waiting for input"
-    await sendHookEvent(serverConfig, idlePrompt(sessionId));
-    await expectOverlayVisible(frame, 'Waiting for input');
-
-    // 6. SessionEnd(exit) → agent is removed.
-    await sendHookEvent(serverConfig, sessionEndExit(sessionId));
+    // 4. SessionEnd(exit) (t+13.5s) → agent is removed.
     await expectOverlayCount(frame, 0);
   });
 });

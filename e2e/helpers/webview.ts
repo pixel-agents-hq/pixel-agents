@@ -19,7 +19,7 @@ export interface WebviewSettings {
   debugView?: boolean;
 }
 
-async function runCommand(window: Page, command: string): Promise<void> {
+export async function runCommand(window: Page, command: string): Promise<void> {
   // Retry the full command palette interaction up to 3 times.
   // macOS CI can swallow keypresses or fail to populate results.
   //
@@ -126,12 +126,110 @@ async function ensurePanelIsLarge(window: Page): Promise<void> {
  * preceding openPixelAgentsPanel + spawn flow).
  */
 export async function closeBottomPanel(window: Page): Promise<void> {
-  await runCommand(window, 'View: Toggle Panel');
-  await window.waitForTimeout(800);
+  // Use the default Toggle Panel chord (⌘J / Ctrl+J) instead of the command
+  // palette: the palette's fuzzy match can select the wrong command — typing
+  // "View: Toggle Panel" is a subsequence of "View: Toggle MAXIMIZED Panel",
+  // which maximizes instead of closing and leaves the webview alive. Chords
+  // need workbench (not webview) focus, so click the empty status-bar middle
+  // first (same trick as arrangeReviewLayout).
+  const statusBox = await window
+    .locator('.part.statusbar')
+    .boundingBox()
+    .catch(() => null);
+  if (statusBox) {
+    await window.mouse.click(statusBox.x + statusBox.width / 2, statusBox.y + statusBox.height / 2);
+  }
+  await window.keyboard.press(process.platform === 'darwin' ? 'Meta+J' : 'Control+J');
+  // Wait until the Pixel Agents webview is actually DESTROYED, not merely
+  // hidden. VS Code disposes a hidden WebviewView lazily; returning on a
+  // fixed sleep lets a quick reopen re-show the SAME webview context, which
+  // breaks tests whose premise is a fresh webview (e.g. restored-agents reads
+  // the fresh context's addAgentLog). The old fixed 800ms only worked because
+  // the reopen path used to be slow enough to mask this.
+  await expect
+    .poll(
+      async () => {
+        for (const frame of window.frames()) {
+          if (!frame.url().startsWith('vscode-webview://')) continue;
+          try {
+            if ((await frame.locator('button', { hasText: '+ Agent' }).count()) > 0) return true;
+          } catch {
+            // Frame detached mid-check — treat as gone.
+          }
+        }
+        return false;
+      },
+      {
+        message: 'Expected the Pixel Agents webview to be disposed after closing the panel',
+        timeout: 15_000,
+      },
+    )
+    .toBe(false);
 }
 
-export async function openPixelAgentsPanel(window: Page): Promise<void> {
-  await runCommand(window, 'Pixel Agents: Show Panel');
+/**
+ * Single-shot (non-waiting) check for the Pixel Agents webview frame.
+ *
+ * The iframe must be VISIBLE, not merely attached: after the panel is hidden
+ * (View: Toggle Panel), VS Code keeps the dying webview's iframe in the DOM
+ * briefly. Matching it would hand callers a stale frame whose state (e.g.
+ * addAgentLog) belongs to the previous webview lifetime — the restored-agents
+ * test reads a fresh webview's log and MUST NOT see the old one.
+ */
+async function findPixelAgentsFrameOnce(window: Page): Promise<Frame | null> {
+  for (const frame of window.frames()) {
+    if (!frame.url().startsWith('vscode-webview://')) continue;
+    try {
+      // count() resolves immediately (no waiting); a non-zero count means
+      // this is the Pixel Agents frame.
+      const buttonCount = await frame.locator('button', { hasText: '+ Agent' }).count();
+      if (buttonCount === 0) continue;
+      const frameElement = await frame.frameElement();
+      const box = await frameElement.boundingBox();
+      await frameElement.dispose();
+      if (!box || box.width < 10 || box.height < 10) continue;
+      return frame;
+    } catch {
+      // Frame detached mid-check (webview being disposed) — not a match.
+      continue;
+    }
+  }
+  return null;
+}
+
+export async function openPixelAgentsPanel(
+  window: Page,
+  opts: { autoShown?: boolean } = {},
+): Promise<void> {
+  // If the view is already showing (single non-waiting check), there is
+  // nothing to open — mid-test callers hit this when the view never got
+  // hidden (terminals open as editor tabs now; see launch.ts).
+  //
+  // autoShown: the seeded pixel-agents.autoShowPanel setting (see
+  // e2e/helpers/launch.ts) focuses the view on activation, so at fixture
+  // setup the webview surfaces without any command-palette interaction. Poll
+  // for it and fall back to the palette only if it never appears. Mid-test
+  // callers reopening a deliberately closed panel skip the poll (the view
+  // won't auto-show again) and go straight to the palette.
+  let shown = (await findPixelAgentsFrameOnce(window)) !== null;
+  if (!shown && opts.autoShown) {
+    const deadline = Date.now() + PANEL_OPEN_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (await findPixelAgentsFrameOnce(window)) {
+        shown = true;
+        break;
+      }
+      await window.waitForTimeout(250);
+    }
+    if (!shown) {
+      console.warn(
+        '[e2e] autoShowPanel did not surface the webview in time; falling back to the command palette',
+      );
+    }
+  }
+  if (!shown) {
+    await runCommand(window, 'Pixel Agents: Show Panel');
+  }
 
   // Wait for the panel container to appear
   await window
@@ -143,6 +241,127 @@ export async function openPixelAgentsPanel(window: Page): Promise<void> {
     });
 
   await ensurePanelIsLarge(window);
+}
+
+const PANEL_WIDTH_FRACTION = 2 / 3;
+const PANEL_WIDTH_TOLERANCE_PX = 48;
+
+interface PanelRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  winW: number;
+}
+
+async function getPanelRect(window: Page): Promise<PanelRect | null> {
+  return window.evaluate(() => {
+    const panel =
+      document.querySelector<HTMLElement>('[id="workbench.parts.panel"]') ??
+      document.querySelector<HTMLElement>('.part.panel');
+    if (!panel) return null;
+    const r = panel.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height, winW: window.innerWidth };
+  });
+}
+
+/**
+ * Arrange the workbench into the run-video layout: Pixel Agents panel (docked
+ * left via workbench.panel.defaultLocation, see launch.ts) at ~2/3 window
+ * width, editor area (terminal tabs) in the remaining third, primary and
+ * secondary side bars hidden. Called once per test by the pixelAgents fixture
+ * right after the panel is shown.
+ *
+ * Side-bar visibility has no settings key, so hide-by-toggle with the default
+ * chords, gated on a DOM visibility check (a toggle without the check could
+ * SHOW a bar that started hidden). The panel resize drags the vertical sash
+ * at the panel's right edge; sash hit-testing is ±px sensitive, so retry with
+ * small offsets and verify by re-measuring.
+ */
+export async function arrangeReviewLayout(window: Page): Promise<void> {
+  const isDarwin = process.platform === 'darwin';
+
+  const isPartVisible = (selector: string): Promise<boolean> =>
+    window.evaluate((sel) => {
+      const el = document.querySelector<HTMLElement>(sel);
+      return el !== null && el.offsetWidth > 0;
+    }, selector);
+
+  const hidePartIfVisible = async (selector: string, chord: string): Promise<boolean> => {
+    if (!(await isPartVisible(selector))) return false;
+    await window.keyboard.press(chord);
+    await window.waitForTimeout(200);
+    return true;
+  };
+
+  // Suppress VS Code notification toasts (e.g. "All installed extensions are
+  // temporarily disabled" from --disable-extensions) for the whole session —
+  // they pop up at arbitrary times and overlap the recording. This hides only
+  // workbench chrome; webview-internal product toasts are unaffected, and no
+  // test asserts on VS Code notifications.
+  await window.evaluate(() => {
+    const style = document.createElement('style');
+    style.textContent = '.notifications-toasts { display: none !important; }';
+    document.head.appendChild(style);
+  });
+
+  const dragPanelToTarget = async (): Promise<boolean> => {
+    const rect = await getPanelRect(window);
+    if (!rect) return true;
+    const targetWidth = Math.round(rect.winW * PANEL_WIDTH_FRACTION);
+    if (Math.abs(rect.width - targetWidth) <= PANEL_WIDTH_TOLERANCE_PX) return true;
+    const y = rect.y + Math.min(200, rect.height / 2);
+    for (const offset of [0, -2, 2, -4, 4]) {
+      const start = await getPanelRect(window);
+      if (!start) return true;
+      await window.mouse.move(start.x + start.width + offset, y);
+      await window.mouse.down();
+      await window.mouse.move(start.x + targetWidth, y, { steps: 8 });
+      await window.mouse.up();
+      await window.waitForTimeout(150);
+      const after = await getPanelRect(window);
+      if (after && Math.abs(after.width - targetWidth) <= PANEL_WIDTH_TOLERANCE_PX) return true;
+    }
+    return false;
+  };
+
+  // VS Code restores the side bars asynchronously during startup, so a single
+  // hide pass can run before they mount (and a late-restored sidebar also
+  // shifts the panel/editor widths). Verify-and-repair until one pass finds
+  // nothing to fix, requiring at least one clean verification round.
+  let arranged = false;
+  for (let round = 0; round < 5; round++) {
+    await window.waitForTimeout(round === 0 ? 400 : 250);
+    let touched = false;
+    // The hide chords need workbench (not webview) focus: webviews forward
+    // only a whitelist of keybindings, and autoShowPanel leaves focus inside
+    // the Pixel Agents webview. Clicking the empty middle of the status bar
+    // moves focus to workbench chrome without triggering any action.
+    const statusBox = await window
+      .locator('.part.statusbar')
+      .boundingBox()
+      .catch(() => null);
+    if (statusBox) {
+      await window.mouse.click(
+        statusBox.x + statusBox.width / 2,
+        statusBox.y + statusBox.height / 2,
+      );
+    }
+    if (await hidePartIfVisible('.part.sidebar', isDarwin ? 'Meta+B' : 'Control+B')) {
+      touched = true;
+    }
+    if (await hidePartIfVisible('.part.auxiliarybar', isDarwin ? 'Alt+Meta+B' : 'Control+Alt+B')) {
+      touched = true;
+    }
+    if (!(await dragPanelToTarget())) touched = true;
+    if (!touched) {
+      arranged = true;
+      break;
+    }
+  }
+  if (!arranged) {
+    console.warn('[e2e] arrangeReviewLayout: layout did not settle after repair rounds');
+  }
 }
 
 /**
@@ -159,17 +378,8 @@ export async function getPixelAgentsFrame(window: Page): Promise<Frame> {
   await expect
     .poll(
       async () => {
-        for (const frame of window.frames()) {
-          if (!frame.url().startsWith('vscode-webview://')) continue;
-          // count() resolves immediately (no waiting); a non-zero count means
-          // this is the Pixel Agents frame.
-          const buttonCount = await frame.locator('button', { hasText: '+ Agent' }).count();
-          if (buttonCount > 0) {
-            foundFrame = frame;
-            return true;
-          }
-        }
-        return false;
+        foundFrame = await findPixelAgentsFrameOnce(window);
+        return foundFrame !== null;
       },
       {
         message: 'Pixel Agents webview frame with "+ Agent" button not found',
@@ -228,17 +438,30 @@ async function closeSettingsModal(settingsModal: Locator): Promise<void> {
  * Read the checked state of a Settings modal toggle without changing it.
  * Used by the settings-persistence test to assert state survives a panel reload.
  */
-export async function getSettingChecked(frame: WebviewSurface, label: string): Promise<boolean> {
+export async function getSettingChecked(
+  frame: WebviewSurface,
+  label: string,
+  options?: { dwellMs?: number },
+): Promise<boolean> {
   const settingsModal = await openSettingsModal(frame);
   const button = settingsModal.locator('button', { hasText: label });
   await expect(button).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
   const indicator = button.locator('span').last();
   const checked = ((await indicator.textContent()) ?? '').trim().toLowerCase() === 'x';
+  // dwellMs keeps the modal on screen before closing — purely for run-video
+  // readability (the settings-persistence test uses it); assertions unaffected.
+  if (options?.dwellMs) {
+    await frame.waitForTimeout(options.dwellMs);
+  }
   await closeSettingsModal(settingsModal);
   return checked;
 }
 
-export async function setSettings(frame: WebviewSurface, settings: WebviewSettings): Promise<void> {
+export async function setSettings(
+  frame: WebviewSurface,
+  settings: WebviewSettings,
+  options?: { dwellMs?: number },
+): Promise<void> {
   const settingsModal = await openSettingsModal(frame);
 
   if (settings.watchAllSessions !== undefined) {
@@ -254,6 +477,10 @@ export async function setSettings(frame: WebviewSurface, settings: WebviewSettin
     await setCheckbox(settingsModal, 'Debug View', settings.debugView);
   }
 
+  // See getSettingChecked: video-readability dwell only.
+  if (options?.dwellMs) {
+    await frame.waitForTimeout(options.dwellMs);
+  }
   await closeSettingsModal(settingsModal);
 
   // Allow the extension host to process settings updates before the test continues.
@@ -261,15 +488,12 @@ export async function setSettings(frame: WebviewSurface, settings: WebviewSettin
 }
 
 /**
- * Enable the settings needed for the hook-server e2e assertions:
- * - Watch All Sessions, so hooks-only external sessions are adopted
- * - Always Show Labels, so the normal office view exposes stable overlay text
+ * Enable Watch All Sessions so hooks-only external sessions are adopted.
+ * (Always Show Labels and hooks are already on via the fixture-seeded
+ * config.json and the product default — see e2e/helpers/launch.ts.)
  */
 export async function configureHookServerTestSettings(frame: WebviewSurface): Promise<void> {
   await setSettings(frame, {
     watchAllSessions: true,
-    hooksEnabled: true,
-    alwaysShowLabels: true,
-    debugView: false,
   });
 }

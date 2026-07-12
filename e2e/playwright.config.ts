@@ -31,10 +31,14 @@ export default defineConfig({
     ],
   ],
   outputDir: artifactsDir,
-  // NOTE: No `use` defaults — all browser-context settings are no-ops because
-  // tests launch Electron directly via electron.launch(). Video is configured
-  // in e2e/helpers/launch.ts (recordVideo option) and screenshots are taken
-  // manually in the fixture teardown (e2e/fixtures/pixel-agents.ts).
+  // NOTE: browser-context settings here are no-ops for the VS Code tests
+  // (they launch Electron directly via electron.launch(); video for them is
+  // configured in e2e/helpers/launch.ts and screenshots are taken manually in
+  // the fixture teardown). `video` DOES apply to the standalone suite, which
+  // uses Playwright's standard browser `page` fixture.
+  use: {
+    video: 'on',
+  },
   // Default to one worker locally; CI can override this with --workers.
   workers: 1,
   // Shard distribution at test level (not file level). Without this, Playwright

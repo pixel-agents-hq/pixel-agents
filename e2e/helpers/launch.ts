@@ -4,8 +4,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { applyMockHomeEnv } from './mock-claude';
 import { namespaceE2EPath } from '../run-config';
+import { applyMockHomeEnv } from './mock-claude';
 
 const REPO_ROOT = path.join(__dirname, '../..');
 const VSCODE_PATH_FILE = path.join(REPO_ROOT, '.vscode-test/vscode-executable.txt');
@@ -75,15 +75,22 @@ export async function launchVSCode(
   // so a test that needs specific areaMappings / showAreas / a known layout must
   // write them now. layout.json must carry a high layoutRevision to survive the
   // bundled-default reset gate (server/src/layoutPersistence.ts).
-  if (opts.seedConfig !== undefined || opts.seedLayout !== undefined) {
-    const paDir = path.join(tmpHome, '.pixel-agents');
-    fs.mkdirSync(paDir, { recursive: true });
-    if (opts.seedConfig !== undefined) {
-      fs.writeFileSync(path.join(paDir, 'config.json'), JSON.stringify(opts.seedConfig, null, 2));
-    }
-    if (opts.seedLayout !== undefined) {
-      fs.writeFileSync(path.join(paDir, 'layout.json'), JSON.stringify(opts.seedLayout, null, 2));
-    }
+  //
+  // config.json is ALWAYS seeded: every test wants alwaysShowLabels on (overlay
+  // text is only assertable when labels render without hover), so the e2e
+  // baseline enables it in both namespaces instead of each test clicking
+  // through the Settings modal. Missing keys are filled with product defaults
+  // by server/src/configPersistence.ts. Tests override via opts.seedConfig
+  // (buildSeedConfig in layout-seed.ts carries the same baseline).
+  const paDir = path.join(tmpHome, '.pixel-agents');
+  fs.mkdirSync(paDir, { recursive: true });
+  const seedConfig = opts.seedConfig ?? {
+    vscode: { alwaysShowLabels: true },
+    standalone: { alwaysShowLabels: true },
+  };
+  fs.writeFileSync(path.join(paDir, 'config.json'), JSON.stringify(seedConfig, null, 2));
+  if (opts.seedLayout !== undefined) {
+    fs.writeFileSync(path.join(paDir, 'layout.json'), JSON.stringify(opts.seedLayout, null, 2));
   }
 
   // Enable Claude Agent Teams in the test workspace. Real Claude Code reads this
@@ -185,44 +192,68 @@ export async function launchVSCode(
     fs.copyFileSync(MOCK_CLAUDE_RUNNER_PATH, path.join(mockBinDir, 'mock-claude-runner.cjs'));
   }
 
-  // macOS: VS Code's integrated terminal resolves PATH from the login shell,
-  // ignoring the process env. Define a custom terminal profile that uses a
-  // non-login shell with our mock bin dir in PATH. On Linux the process env
-  // propagates directly, so no custom profile is needed.
+  // VS Code user settings for the isolated profile. Together with
+  // arrangeReviewLayout() (e2e/helpers/webview.ts) they produce the run-video
+  // layout: Pixel Agents panel docked LEFT at ~2/3 width, terminals opening
+  // as editor tabs in the remaining right third, all other chrome hidden.
+  //
+  // - workbench.panel.defaultLocation "left": the panel (which hosts the
+  //   Pixel Agents webview) docks left at full height, so ensurePanelIsLarge()
+  //   no-ops instead of driving the flaky "View: Toggle Maximized Panel"
+  //   command-palette interaction at the start of every test.
+  // - pixel-agents.autoShowPanel: the extension focuses the Pixel Agents view
+  //   on activation (onStartupFinished), so openPixelAgentsPanel({ autoShown })
+  //   skips the "Pixel Agents: Show Panel" palette interaction at setup.
+  // - terminal.integrated.defaultLocation "editor": mock-claude terminals open
+  //   as editor tabs beside the office instead of stealing the panel (the
+  //   webview has no retainContextWhenHidden, so a panel-hosted terminal.show()
+  //   used to dispose it).
+  // - The rest strips chrome that eats video space (activity bar, welcome tab,
+  //   empty-editor hint, the Chat "Build with Agent" secondary side bar).
+  //
+  // macOS terminal profile: VS Code's integrated terminal resolves PATH from
+  // the login shell, ignoring the process env. Define a custom terminal
+  // profile that uses a non-login shell with our mock bin dir in PATH. On
+  // Linux the process env propagates directly, so no custom profile is needed.
+  const userSettingsDir = path.join(userDataDir, 'User');
+  fs.mkdirSync(userSettingsDir, { recursive: true });
+  const userSettings: Record<string, unknown> = {
+    'workbench.panel.defaultLocation': 'left',
+    'pixel-agents.autoShowPanel': true,
+    'terminal.integrated.defaultLocation': 'editor',
+    'workbench.activityBar.location': 'hidden',
+    'workbench.startupEditor': 'none',
+    'workbench.editor.empty.hint': 'hidden',
+    'workbench.secondarySideBar.defaultVisibility': 'hidden',
+    'chat.commandCenter.enabled': false,
+  };
   if (process.platform === 'darwin') {
-    const userSettingsDir = path.join(userDataDir, 'User');
-    fs.mkdirSync(userSettingsDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(userSettingsDir, 'settings.json'),
-      JSON.stringify(
-        {
-          'terminal.integrated.profiles.osx': {
-            e2e: {
-              path: '/bin/zsh',
-              args: ['--no-globalrcs'],
-              env: {
-                PATH: `${mockBinDir}:/usr/local/bin:/usr/bin:/bin`,
-                HOME: tmpHome,
-                PIXEL_AGENTS_E2E_CLAUDE_BIN: mockClaudeBinaryPath,
-                PIXEL_AGENTS_NODE_BIN: process.execPath,
-                ZDOTDIR: tmpHome,
-                CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
-                // inheritEnv is false for this profile, so the diagnostic log
-                // path must be set explicitly here or the mock-spawned
-                // claude-hook.js (which runs in this terminal) can't write to
-                // it. Path matches the `debugLogFile` const below.
-                PIXEL_AGENTS_DEBUG_LOG: path.join(tmpHome, '.pixel-agents', 'debug.log'),
-              },
-            },
-          },
-          'terminal.integrated.defaultProfile.osx': 'e2e',
-          'terminal.integrated.inheritEnv': false,
+    userSettings['terminal.integrated.profiles.osx'] = {
+      e2e: {
+        path: '/bin/zsh',
+        args: ['--no-globalrcs'],
+        env: {
+          PATH: `${mockBinDir}:/usr/local/bin:/usr/bin:/bin`,
+          HOME: tmpHome,
+          PIXEL_AGENTS_E2E_CLAUDE_BIN: mockClaudeBinaryPath,
+          PIXEL_AGENTS_NODE_BIN: process.execPath,
+          ZDOTDIR: tmpHome,
+          CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1',
+          // inheritEnv is false for this profile, so the diagnostic log
+          // path must be set explicitly here or the mock-spawned
+          // claude-hook.js (which runs in this terminal) can't write to
+          // it. Path matches the `debugLogFile` const below.
+          PIXEL_AGENTS_DEBUG_LOG: path.join(tmpHome, '.pixel-agents', 'debug.log'),
         },
-        null,
-        2,
-      ),
-    );
+      },
+    };
+    userSettings['terminal.integrated.defaultProfile.osx'] = 'e2e';
+    userSettings['terminal.integrated.inheritEnv'] = false;
   }
+  fs.writeFileSync(
+    path.join(userSettingsDir, 'settings.json'),
+    JSON.stringify(userSettings, null, 2),
+  );
 
   const mockLogFile = path.join(tmpHome, '.claude-mock', 'invocations.log');
   const launchLogFile = path.join(tmpHome, '.claude-mock', 'launch.log');

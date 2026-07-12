@@ -1,7 +1,6 @@
+import type { Frame } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-
-import type { Frame } from '@playwright/test';
 
 import { expect, test } from '../../../fixtures/pixel-agents';
 import {

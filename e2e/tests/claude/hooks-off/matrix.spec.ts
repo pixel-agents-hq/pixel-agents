@@ -58,10 +58,7 @@ test.describe('Hooks OFF / matrix', () => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
-      watchAllSessions: false,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await arrangeNextClaudeInvocation(
@@ -97,10 +94,7 @@ test.describe('Hooks OFF / matrix', () => {
     const teamName = uniqueTeamName('hooks-off-internal-inline');
 
     await setSettings(frame, {
-      watchAllSessions: false,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
@@ -146,10 +140,7 @@ test.describe('Hooks OFF / matrix', () => {
     const teamName = uniqueTeamName('hooks-off-internal-tmux');
 
     await setSettings(frame, {
-      watchAllSessions: false,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
@@ -199,8 +190,6 @@ test.describe('Hooks OFF / matrix', () => {
     await setSettings(frame, {
       watchAllSessions: true,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     await spawnExternalClaudeScenario({
@@ -239,8 +228,6 @@ test.describe('Hooks OFF / matrix', () => {
     await setSettings(frame, {
       watchAllSessions: true,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
@@ -289,8 +276,6 @@ test.describe('Hooks OFF / matrix', () => {
     await setSettings(frame, {
       watchAllSessions: true,
       hooksEnabled: false,
-      alwaysShowLabels: true,
-      debugView: false,
     });
 
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
