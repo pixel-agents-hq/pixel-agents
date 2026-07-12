@@ -28,6 +28,10 @@ function extractLatestSessionId(invocationLog: string): string | null {
   return matches.length > 0 ? (matches[matches.length - 1]?.[1] ?? null) : null;
 }
 
+function countInvocations(invocationLog: string): number {
+  return [...invocationLog.matchAll(/session-id=/g)].length;
+}
+
 function findJsonlFileForSession(tmpHome: string, sessionId: string): string | null {
   const projectsDir = path.join(tmpHome, '.claude', 'projects');
   try {
@@ -56,15 +60,20 @@ export async function spawnInternalAgentAndWait(
   tmpHome: string,
   mockLogFile: string,
 ): Promise<InternalAgentSpawn> {
+  // Count invocations BEFORE clicking, then wait for a NEW one. Polling for a
+  // merely non-empty log is satisfied instantly by a PRIOR agent's entry, so a
+  // second spawn in the same test could read a stale log and return the first
+  // agent's identity.
+  const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
   await clickAddAgent(frame);
 
   await expect
-    .poll(() => extractLatestSessionId(readInvocationLog(mockLogFile)) ?? '', {
-      message: `Expected mock invocation log at ${mockLogFile} to contain a session id`,
+    .poll(() => countInvocations(readInvocationLog(mockLogFile)), {
+      message: `Expected mock invocation log at ${mockLogFile} to record launch #${launchesBefore + 1}`,
       timeout: INTERNAL_AGENT_TIMEOUT_MS,
       intervals: [250, 500, 1000],
     })
-    .not.toBe('');
+    .toBeGreaterThan(launchesBefore);
 
   const invocationLog = readInvocationLog(mockLogFile);
   const sessionId = extractLatestSessionId(invocationLog);
@@ -99,15 +108,20 @@ export async function spawnInternalAgentAndWaitForInvocation(
   workspaceDir: string,
   mockLogFile: string,
 ): Promise<InternalAgentSpawn> {
+  // Count invocations BEFORE clicking, then wait for a NEW one. Polling for a
+  // merely non-empty log is satisfied instantly by a PRIOR agent's entry, so a
+  // second spawn in the same test could read a stale log and return the first
+  // agent's identity.
+  const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
   await clickAddAgent(frame);
 
   await expect
-    .poll(() => extractLatestSessionId(readInvocationLog(mockLogFile)) ?? '', {
-      message: `Expected mock invocation log at ${mockLogFile} to contain a session id`,
+    .poll(() => countInvocations(readInvocationLog(mockLogFile)), {
+      message: `Expected mock invocation log at ${mockLogFile} to record launch #${launchesBefore + 1}`,
       timeout: INTERNAL_AGENT_TIMEOUT_MS,
       intervals: [250, 500, 1000],
     })
-    .not.toBe('');
+    .toBeGreaterThan(launchesBefore);
 
   const invocationLog = readInvocationLog(mockLogFile);
   const sessionId = extractLatestSessionId(invocationLog);
@@ -139,6 +153,7 @@ export async function addAgentForFolder(
   tmpHome: string,
   mockLogFile: string,
 ): Promise<InternalAgentSpawn> {
+  const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
   await frame.locator('button', { hasText: '+ Agent' }).click();
   // The folder-picker entries are <button> DropdownItems; scope to the button
   // role so we don't collide with the same folder name shown as a <span> in an
@@ -148,12 +163,12 @@ export async function addAgentForFolder(
   await folderItem.click();
 
   await expect
-    .poll(() => extractLatestSessionId(readInvocationLog(mockLogFile)) ?? '', {
-      message: `Expected mock invocation log at ${mockLogFile} to contain a session id`,
+    .poll(() => countInvocations(readInvocationLog(mockLogFile)), {
+      message: `Expected mock invocation log at ${mockLogFile} to record launch #${launchesBefore + 1}`,
       timeout: INTERNAL_AGENT_TIMEOUT_MS,
       intervals: [250, 500, 1000],
     })
-    .not.toBe('');
+    .toBeGreaterThan(launchesBefore);
 
   const invocationLog = readInvocationLog(mockLogFile);
   const sessionId = extractLatestSessionId(invocationLog);

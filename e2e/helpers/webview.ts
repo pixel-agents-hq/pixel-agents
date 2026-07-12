@@ -19,7 +19,7 @@ export interface WebviewSettings {
   debugView?: boolean;
 }
 
-export async function runCommand(window: Page, command: string): Promise<void> {
+export async function runCommand(window: Page, command: string, attempts = 3): Promise<void> {
   // Retry the full command palette interaction up to 3 times.
   // macOS CI can swallow keypresses or fail to populate results.
   //
@@ -29,7 +29,7 @@ export async function runCommand(window: Page, command: string): Promise<void> {
   // Electron's app.evaluate only reaches the main process. So we drive the
   // quick-pick via key events and accept the retry cost on flaky CI.
   let lastError: unknown;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     // Dismiss any previous quick-input state
     await window.keyboard.press('Escape');
     await window.waitForTimeout(300);
@@ -62,9 +62,9 @@ export async function runCommand(window: Page, command: string): Promise<void> {
       console.warn(
         `[e2e] runCommand("${command}") attempt ${attempt} failed at phase=${phase}: ${message}`,
       );
-      if (attempt === 3) {
+      if (attempt === attempts) {
         throw new Error(
-          `Command palette failed after 3 attempts for "${command}" (last phase=${phase}): ${message}`,
+          `Command palette failed after ${attempts} attempts for "${command}" (last phase=${phase}): ${message}`,
         );
       }
     }

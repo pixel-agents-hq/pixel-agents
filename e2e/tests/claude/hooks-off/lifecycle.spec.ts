@@ -103,22 +103,26 @@ test.describe('Hooks OFF / lifecycle', () => {
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
   });
 
-  // Heuristic --resume reassignment at agent startup.
+  // Heuristic /resume reassignment at agent startup.
   //
   // Scenario: user clicks + Agent → terminal runs `claude --session-id <UUID>`,
-  // but the user actually types /resume (or claude --resume) so the session
-  // generates a DIFFERENT id and writes to <other-id>.jsonl. The expected
-  // <UUID>.jsonl never materializes. The heuristic in
-  // adapters/vscode/agentManager.ts:177-211 polls for the expected file at 1Hz;
-  // when pollCount > 10 and the expected file still doesn't exist, it scans
-  // the project dir for any jsonl modified after agent creation and reassigns
-  // the agent to the newest candidate.
+  // but the user immediately types /resume (or aborts and runs claude --resume)
+  // so the session generates a DIFFERENT id and writes to <other-id>.jsonl. The
+  // expected <UUID>.jsonl NEVER materializes (withoutAutoInit models this). The
+  // heuristic in adapters/vscode/agentManager.ts:177-211 polls for the expected
+  // file at 1Hz; when pollCount > 10 and the expected file still doesn't exist,
+  // it scans the project dir for any jsonl modified after agent creation and
+  // reassigns the agent to the newest candidate — hence the replacement landing
+  // at t+11s, just past the >10-poll threshold. Note this is a STARTUP fallback:
+  // there is no grace window in heuristic mode (that's hooks-mode vocabulary),
+  // and no conversation-content continuity is asserted — Pixel Agents tracks
+  // session files, not transcript content.
   //
   // Coexists with the /clear content-disambiguation heuristic in
   // fileWatcher.ts:150-152 (which requires the literal "/clear</command-name>"
   // substring in the new JSONL to claim it as a /clear file); --resume traffic
   // doesn't carry that substring so the two heuristics route correctly.
-  test('--resume reassigns the same agent within grace via JSONL polling @area:lifecycle', async ({
+  test('/resume at startup reassigns the same agent via JSONL polling @area:lifecycle', async ({
     pixelAgents,
   }) => {
     const { frame, window, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
@@ -129,7 +133,7 @@ test.describe('Hooks OFF / lifecycle', () => {
 
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('--resume reassignment hooks off')
+      claudeScenario('/resume reassignment hooks off')
         .withoutAutoInit()
         .defineSession('replacement', '{{sessionId}}-resume')
         .at(11_000)
