@@ -37,6 +37,23 @@ If you are using Remote SSH, WSL, or a dev container, `code --install-extension`
 
 After installing the `.vsix`, run **Developer: Reload Window** in VS Code to load the updated extension.
 
+### Verify the npm package locally
+
+The npm artifact has its own gate because source-level tests cannot detect a missing tarball file or a package-relative path bug:
+
+```bash
+npm run test:package-contract
+npm run verify:npm-package
+```
+
+The verifier runs the production `prepack` build, creates a tarball outside the repository, installs that exact tarball into a temporary project, and exercises CLI help, the health endpoint, the standalone SPA, bundled assets, and default Hook ON setup. Temporary files and the child server are removed automatically; it never publishes to npm.
+
+### Release publishing
+
+A published GitHub Release coordinates VS Code Marketplace, Open VSX, and npm publishing from the matching tag. Before creating it, update `package.json`, `package-lock.json`, and `CHANGELOG.md`, and make the tag exactly `v<package.json version>`.
+
+The npm job uses npm trusted publishing (OIDC) for `pixel-agents-hq/pixel-agents` and `.github/workflows/publish-extension.yml`; it must not use a long-lived `NPM_TOKEN`. A manual workflow dispatch builds, installs, and uploads the candidate tarball for inspection but never publishes it. The package owner must configure the trusted publisher on npm before the first release from this workflow.
+
 ## Development Workflow
 
 For development with live rebuilds, run:

@@ -11,6 +11,7 @@
 <div align="center" style="margin-top: 25px;">
 
 [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fpablodelucca%2F3cd28398fa4a2c0a636e1d51d41aee39%2Fraw%2Fversion.json)](https://github.com/pixel-agents-hq/pixel-agents/releases)
+[![npm version](https://img.shields.io/npm/v/pixel-agents)](https://www.npmjs.com/package/pixel-agents)
 [![marketplaces](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fpablodelucca%2F3cd28398fa4a2c0a636e1d51d41aee39%2Fraw%2Finstalls.json)](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents)
 [![stars](https://img.shields.io/github/stars/pixel-agents-hq/pixel-agents?logo=github&color=0183ff&style=flat)](https://github.com/pixel-agents-hq/pixel-agents/stargazers)
 [![license](https://img.shields.io/github/license/pixel-agents-hq/pixel-agents?color=0183ff&style=flat)](https://github.com/pixel-agents-hq/pixel-agents/blob/main/LICENSE)
@@ -53,13 +54,45 @@ Internally, the architecture is fully agent-agnostic and platform-agnostic: a ty
 
 ## Requirements
 
-- VS Code 1.105.0 or later
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
-- **Platform**: Windows, Linux, and macOS are supported
+- **VS Code extension:** VS Code 1.105.0 or later
+- **Standalone CLI:** Node.js 20 or later
+- **Platform:** Windows, Linux, and macOS are supported
 
 ## Getting Started
 
-If you just want to use Pixel Agents, the easiest way is to download the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents). If you want to play with the code, develop, or contribute, then:
+### VS Code extension
+
+Install Pixel Agents from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) or [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents), then open the **Pixel Agents** panel.
+
+### Standalone CLI
+
+Run the browser-based office without cloning the repository:
+
+```bash
+npx pixel-agents
+```
+
+Pixel Agents chooses a free local port and prints the exact URL to open. To use a predictable port instead:
+
+```bash
+npx pixel-agents --port 3100
+# Open http://127.0.0.1:3100
+```
+
+Other options:
+
+```text
+--port, -p <number>   Use a fixed port instead of an OS-assigned free port
+--host <address>      Bind address (default: 127.0.0.1)
+--help                Show CLI help
+```
+
+The extension and standalone CLI can run at the same time, including when the extension starts first. Each server registers separately under `~/.pixel-agents/servers/`; Claude hook events fan out to both, while each surface adopts only the sessions in its own workspace when **Watch All Sessions** is off. Hooks are enabled by default, and each surface persists its own Hooks setting under the shared `~/.pixel-agents/config.json` file.
+
+Settings and layouts persist under `~/.pixel-agents/`. Stop standalone with **Ctrl+C**; it removes its own server registration without disrupting a running extension.
+
+> Binding to `0.0.0.0` exposes the standalone UI and WebSocket to other machines on the network. Use the default loopback address unless remote access is intentional and the surrounding network is trusted.
 
 ### Install from source
 
@@ -72,13 +105,11 @@ npm run build
 
 Then press **F5** in VS Code to launch the Extension Development Host.
 
-To try the **standalone CLI** locally:
+To run the standalone bundle built from source:
 
 ```bash
-node dist/cli.js                 # or npx pixel-agents [--port 3100] after publish
+node dist/cli.js
 ```
-
-It starts the Fastify server, opens the webview SPA at `http://localhost:3100`, and (in the same `~/.pixel-agents/` namespace) shares your hooks and layout with the VS Code extension if both are running.
 
 ### Browser Preview & Hosted Reports
 
@@ -131,7 +162,7 @@ Characters are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-
 
 Pixel Agents has two parallel detection paths:
 
-- **Hooks mode** (preferred) — Claude Code's official Hooks API POSTs events (`SessionStart`, `PreToolUse`, `Notification`, `Stop`, etc.) to a local Fastify server (`POST /api/hooks/:providerId`). Instant, reliable. Server discovery via `~/.pixel-agents/server.json`.
+- **Hooks mode** (preferred) — Claude Code's official Hooks API POSTs events (`SessionStart`, `PreToolUse`, `Notification`, `Stop`, etc.) to local Fastify servers (`POST /api/hooks/:providerId`). Live servers register under `~/.pixel-agents/servers/`, and the hook script fans out to all valid entries so the extension and standalone can coexist. `~/.pixel-agents/server.json` remains as a legacy single-server fallback.
 - **Heuristic mode** (fallback) — Polls JSONL transcript files at `~/.claude/projects/<project-hash>/<session-id>.jsonl`. Used when hooks aren't installed.
 
 A single `HookProvider.normalizeHookEvent(raw)` translates each CLI's hook payload into a canonical `AgentEvent`. The shared `AgentRuntime` dispatches on `AgentEvent.kind`, mutates `AgentStateStore`, and the broadcast layer translates state events into typed `ServerMessage` over the active transport.
@@ -158,6 +189,13 @@ Builds: esbuild (extension + CLI + hook scripts), Vite (webview SPA). Tests: Vit
 - **Linux/macOS tip** — if you launch VS Code without a folder open (e.g. bare `code` command), agents will start in your home directory. This is fully supported; just be aware your Claude sessions will be tracked under `~/.claude/projects/` using your home directory as the project root.
 
 ## Troubleshooting
+
+For standalone startup problems:
+
+1. **Unsupported Node version** — Run `node --version`; standalone requires Node.js 20 or later.
+2. **Port already in use** — Omit `--port` to let Pixel Agents choose a free port, or select another fixed port.
+3. **Hooks are not active** — Open Settings and confirm **Hooks** is ON. Pixel Agents installs the hook script at `~/.pixel-agents/hooks/claude-hook.js`.
+4. **Extension and standalone are both running** — This is supported. Current versions create separate files under `~/.pixel-agents/servers/`; stopping one surface must not remove the other surface's registration.
 
 If your agent appears stuck on idle or doesn't spawn:
 

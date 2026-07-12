@@ -60,3 +60,58 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: ${{ steps.publish-vscode.outputs.vsixPath }}
+
+  publish-npm:
+    name: Verify and Publish npm Package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node for Trusted Publishing
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Install Trusted-Publishing npm CLI
+        run: npm install --global "npm@^11.5.1"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Verify Trusted-Publishing Toolchain
+        run: |
+          node -e "const semver = require('semver'); const npm = require('child_process').execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim(); if (!semver.satisfies(process.version, '>=22.14.0') || !semver.satisfies(npm, '>=11.5.1')) { throw new Error('Trusted publishing requires Node >=22.14.0 and npm >=11.5.1'); } console.log('Node', process.version, 'npm', npm);"
+
+      - name: Run Unit Tests
+        run: npm test
+
+      - name: Build and Verify npm Artifact
+        id: npm-package
+        shell: bash
+        run: |
+          output_dir="$RUNNER_TEMP/npm-package"
+          npm run verify:npm-package -- --output-dir "$output_dir"
+          echo "metadata=$output_dir/package-metadata.json" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Verified npm Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/npm-package/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish Verified Artifact to npm
+        if: github.event_name == 'release' && github.event.action == 'published'
+        run: >-
+          node scripts/publish-npm-package.mjs
+          --metadata "${{ steps.npm-package.outputs.metadata }}"
+          --tag "${{ github.event.release.tag_name }}"
+          --ref "${{ github.ref }}"

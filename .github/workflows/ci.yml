@@ -128,6 +128,12 @@ jobs:
           npm run build:webview
         continue-on-error: true
 
+      - name: Verify npm Package Artifact
+        id: npm_package
+        if: always() && steps.build.outcome == 'success' && steps.install_dependencies.outcome == 'success'
+        run: npm run test:package-contract && npm run verify:npm-package -- --skip-build
+        continue-on-error: true
+
       # --- Server Tests (require build for hook script) ---
 
       - name: Server Tests
@@ -165,6 +171,7 @@ jobs:
           WEBVIEW_TEST: ${{ steps.webview_test.outcome }}
           FORMAT_CHECK: ${{ steps.format_check.outcome }}
           BUILD: ${{ steps.build.outcome }}
+          NPM_PACKAGE: ${{ steps.npm_package.outcome }}
           SERVER_TEST: ${{ steps.server_test.outcome }}
           AUDIT: ${{ steps.audit.outcome }}
           KNIP: ${{ steps.knip.outcome }}
@@ -188,6 +195,7 @@ jobs:
             echo "| **Webview tests** | $(status "$WEBVIEW_TEST") |"
             echo "| **Format check** | $(status "$FORMAT_CHECK") |"
             echo "| **Build** | $(status "$BUILD") |"
+            echo "| **npm package artifact** | $(status "$NPM_PACKAGE") |"
             echo "| **Server tests** | $(status "$SERVER_TEST") |"
             echo "| Audit dependencies _(advisory)_ | $(advisory "$AUDIT") |"
             echo "| Knip _(advisory)_ | $(advisory "$KNIP") |"
@@ -206,12 +214,13 @@ jobs:
           WEBVIEW_TEST: ${{ steps.webview_test.outcome }}
           FORMAT_CHECK: ${{ steps.format_check.outcome }}
           BUILD: ${{ steps.build.outcome }}
+          NPM_PACKAGE: ${{ steps.npm_package.outcome }}
           SERVER_TEST: ${{ steps.server_test.outcome }}
         run: |
           failed=0
           for step in CHECKOUT SETUP_NODE INSTALL_DEPENDENCIES \
                       TYPE_CHECK LINT \
-                      WEBVIEW_TEST FORMAT_CHECK BUILD SERVER_TEST; do
+                      WEBVIEW_TEST FORMAT_CHECK BUILD NPM_PACKAGE SERVER_TEST; do
             val=$(printenv "$step" 2>/dev/null || echo "skipped")
             if [ "$val" != "success" ]; then
               echo "::error::$step failed"
@@ -219,6 +228,29 @@ jobs:
             fi
           done
           exit "$failed"
+
+  npm-package-node20:
+    name: npm Package Smoke (Node 20)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20.x'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Verify npm Package Contract and Installed Artifact
+        run: npm run test:package-contract && npm run verify:npm-package
 
   e2e:
     name: ${{ matrix.target.label }} E2E (shard ${{ matrix.shard }}/3)
