@@ -97,6 +97,15 @@ test.describe('Hooks ON / teams', () => {
     await expectTeammateActivity(panelFrame, 'Searching the web');
   });
 
+  // INCOMPLETE vs its title — kept deliberately (2026-07-12 review call): the
+  // title states the INTENDED functionality, that tools route properly to a
+  // tmux teammate. A tmux teammate is a session teammate (own session, own
+  // hooks), and this test does not yet simulate that second session, so no
+  // tool is ever routed TO the teammate. What IS pinned today: the teammate
+  // appears, and the lead's Bash + PermissionRequest stay on the LEAD (no
+  // misrouting). Closing the gap needs the session-teammate simulation plus a
+  // product decision on how that session maps onto the teammate character —
+  // see the e2e review notes ("Findings for Florin").
   test('internal terminal lead with tmux teammate routes tools to teammate @area:teams', async ({
     pixelAgents,
   }) => {
@@ -216,6 +225,8 @@ test.describe('Hooks ON / teams', () => {
     await expectTeammateActivity(frame, 'Searching the web');
   });
 
+  // Same scope note as the internal tmux test above: the title states the
+  // intended functionality; teammate-side routing is not yet simulated.
   test('external session lead with tmux teammate routes tools to teammate @area:teams', async ({
     pixelAgents,
   }) => {

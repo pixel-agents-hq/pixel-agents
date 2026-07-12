@@ -183,9 +183,9 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 ### `@area:teams` (4 tests)
 
 - `e2e/claude/hooks-on/teams.spec.ts:54` — internal terminal lead with inline teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:100` — internal terminal lead with tmux teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:150` — external session lead with inline teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:219` — external session lead with tmux teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:109` — internal terminal lead with tmux teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:159` — external session lead with inline teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:230` — external session lead with tmux teammate routes tools to teammate (Hooks ON / teams)
 
 ### `@area:matrix` (6 tests)
 
