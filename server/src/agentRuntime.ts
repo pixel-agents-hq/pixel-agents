@@ -101,9 +101,14 @@ export class AgentRuntime {
 
     // Wire hook lifecycle callbacks to shared agent operations
     this.hookEventHandler.setLifecycleCallbacks({
-      onExternalSessionDetected: (sessionId, transcriptPath, cwd) => {
+      onExternalSessionDetected: (sessionId, transcriptPath, cwd, opts) => {
         const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
-        if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
+        // Push-based providers (e.g. Orca) have no file fallback and every pushed
+        // session is intentional -> always adopt. File-scanning providers (Claude)
+        // still gate on the workspace or Watch All Sessions.
+        const provider = opts?.providerId ? this.providers.get(opts.providerId) : undefined;
+        const pushBased = provider !== undefined && provider.getSessionDirs === undefined;
+        if (!pushBased && !isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
           return;
         }
         adoptExternalSessionFromHook(
@@ -119,6 +124,7 @@ export class AgentRuntime {
           this.permissionTimers,
           () => this.store.persist(),
           (agent) => this.registerAgent(agent.sessionId, agent.id),
+          opts?.agentType,
         );
       },
       onSessionClear: (agentId, newSessionId, newTranscriptPath) => {

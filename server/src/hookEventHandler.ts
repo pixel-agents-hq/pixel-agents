@@ -37,6 +37,7 @@ interface SessionLifecycleCallbacks {
     sessionId: string,
     transcriptPath: string | undefined,
     cwd: string,
+    opts?: { providerId?: string; agentType?: string },
   ) => void;
   /** Called when /clear is detected via hooks (SessionEnd reason=clear + SessionStart source=clear). */
   onSessionClear?: (
@@ -263,6 +264,8 @@ export class HookEventHandler {
           sessionId: event.session_id,
           transcriptPath,
           cwd: cwd ?? '',
+          providerId,
+          agentType: typeof event.agent_type === 'string' ? event.agent_type : undefined,
         });
       } else {
         if (debug && tracked)
@@ -295,6 +298,7 @@ export class HookEventHandler {
         pending.sessionId,
         pending.transcriptPath,
         pending.cwd,
+        { providerId: pending.providerId, agentType: pending.agentType },
       );
       // Re-process this event now that the agent exists
       this.handleEvent(providerId, event);
