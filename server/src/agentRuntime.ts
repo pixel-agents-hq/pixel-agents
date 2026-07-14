@@ -66,6 +66,10 @@ export class AgentRuntime {
 
   // Dependencies
   readonly dismissalTracker = new DismissalTracker();
+  /** All registered hook providers, keyed by id (the `:providerId` of
+   *  POST /api/hooks/:providerId). Extra providers (e.g. the Orca bridge) are
+   *  added via registerProvider; the HookEventHandler shares this same Map. */
+  private readonly providers = new Map<string, HookProvider>();
   private hookEventHandler: HookEventHandler;
   private lifecycleCallbacks: RuntimeLifecycleCallbacks = {};
 
@@ -83,11 +87,14 @@ export class AgentRuntime {
     setAgentRemovalCallback((id) => this.removeAgent(id));
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
 
+    // Register the primary provider (Claude today). Additional hook providers
+    // can be added later via registerProvider(); the handler reads this same Map.
+    this.providers.set(provider.id, provider);
     this.hookEventHandler = new HookEventHandler(
       store,
       this.waitingTimers,
       this.permissionTimers,
-      provider,
+      this.providers,
       new SessionRouter(),
       this.watchAllSessions,
     );
@@ -186,6 +193,15 @@ export class AgentRuntime {
   // ── Hook event routing ──
 
   /** Route an incoming hook event to the appropriate agent. */
+  /**
+   * Register an additional hook provider after construction (e.g. the Orca
+   * bridge). Events posted to POST /api/hooks/<provider.id> then route to it.
+   * The primary provider passed to the constructor is always registered.
+   */
+  registerProvider(provider: HookProvider): void {
+    this.providers.set(provider.id, provider);
+  }
+
   handleHookEvent(providerId: string, event: Record<string, unknown>): void {
     this.hookEventHandler.handleEvent(providerId, event as HookEvent);
   }

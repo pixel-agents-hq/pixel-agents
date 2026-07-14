@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { HookProvider } from '../../core/src/provider.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { HookEventHandler } from '../src/hookEventHandler.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
@@ -65,9 +66,88 @@ describe('HookEventHandler', () => {
       agents,
       waitingTimers,
       permissionTimers,
-      claudeProvider,
+      new Map([[claudeProvider.id, claudeProvider]]),
       new SessionRouter(),
     );
+  });
+
+  // ── Multi-provider routing (M1) ─────────────────────────────
+  // The handler selects the provider by the `:providerId` of POST /api/hooks/:providerId.
+  // We assert routing by spying on each provider's normalizeHookEvent (the ingress boundary).
+
+  describe('multi-provider routing', () => {
+    function makeFakeProvider(
+      id: string,
+      protocolVersion = 1,
+    ): { provider: HookProvider; normalize: ReturnType<typeof vi.fn> } {
+      const normalize = vi.fn((): null => null);
+      const provider: HookProvider = {
+        kind: 'hook',
+        id,
+        displayName: id,
+        protocolVersion,
+        normalizeHookEvent: normalize,
+        installHooks: vi.fn(async () => {}),
+        uninstallHooks: vi.fn(async () => {}),
+        areHooksInstalled: vi.fn(async () => false),
+        formatToolStatus: (toolName: string) => toolName,
+        permissionExemptTools: new Set<string>(),
+        subagentToolNames: new Set<string>(),
+        readingTools: new Set<string>(),
+      };
+      return { provider, normalize };
+    }
+
+    function build(...fakes: Array<{ provider: HookProvider }>): HookEventHandler {
+      const entries = fakes.map((f): [string, HookProvider] => [f.provider.id, f.provider]);
+      return new HookEventHandler(
+        agents,
+        waitingTimers,
+        permissionTimers,
+        new Map(entries),
+        new SessionRouter(),
+      );
+    }
+
+    it('routes an event to the provider whose id matches the URL providerId', () => {
+      const alpha = makeFakeProvider('alpha');
+      const beta = makeFakeProvider('beta');
+      const h = build(alpha, beta);
+
+      h.handleEvent('beta', { hook_event_name: 'Stop', session_id: 's' });
+
+      expect(beta.normalize).toHaveBeenCalledTimes(1);
+      expect(alpha.normalize).not.toHaveBeenCalled();
+    });
+
+    it('drops events with an unknown providerId once 2+ providers are registered', () => {
+      const alpha = makeFakeProvider('alpha');
+      const beta = makeFakeProvider('beta');
+      const h = build(alpha, beta);
+
+      h.handleEvent('ghost', { hook_event_name: 'Stop', session_id: 's' });
+
+      expect(alpha.normalize).not.toHaveBeenCalled();
+      expect(beta.normalize).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the sole registered provider for any providerId (backward compat)', () => {
+      const only = makeFakeProvider('claude');
+      const h = build(only);
+
+      h.handleEvent('literally-anything', { hook_event_name: 'Stop', session_id: 's' });
+
+      expect(only.normalize).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops events from a provider whose protocolVersion is unsupported', () => {
+      const future = makeFakeProvider('future', 2);
+      const h = build(future);
+
+      h.handleEvent('future', { hook_event_name: 'Stop', session_id: 's' });
+
+      expect(future.normalize).not.toHaveBeenCalled();
+    });
   });
 
   // ── PermissionRequest ───────────────────────────────────────
