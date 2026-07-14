@@ -10,6 +10,7 @@
 export type ServerMessage =
   | ProviderCapabilities
   | AgentCreated
+  | AgentProviderInfo
   | AgentClosed
   | AgentSelected
   | ExistingAgents
@@ -51,6 +52,7 @@ export type ClientMessage =
   | SetHooksEnabled
   | SetHooksInfoShown
   | SetWatchAllSessions
+  | SetOrcaEnabled
   | ExportLayout
   | ImportLayout
   | OpenSessionsFolder
@@ -70,6 +72,13 @@ export interface AgentCreated {
   id: number;
   folderName?: string;
   isExternal?: boolean;
+}
+
+export interface AgentProviderInfo {
+  type: 'agentProviderInfo';
+  id: number;
+  agentType: string;
+  providerId?: string;
 }
 
 export interface AgentClosed {
@@ -259,6 +268,7 @@ export interface SettingsLoaded {
   alwaysShowLabels: boolean;
   hooksEnabled: boolean;
   hooksInfoShown: boolean;
+  orcaEnabled?: boolean;
   externalAssetDirectories: string[];
 }
 
@@ -365,6 +375,11 @@ export interface SetHooksInfoShown {
 
 export interface SetWatchAllSessions {
   type: 'setWatchAllSessions';
+  enabled: boolean;
+}
+
+export interface SetOrcaEnabled {
+  type: 'setOrcaEnabled';
   enabled: boolean;
 }
 

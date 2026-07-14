@@ -71,6 +71,8 @@ interface ExtensionMessageState {
   extensionVersion: string;
   watchAllSessions: boolean;
   setWatchAllSessions: (v: boolean) => void;
+  orcaEnabled: boolean;
+  setOrcaEnabled: (v: boolean) => void;
   alwaysShowLabels: boolean;
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
@@ -110,6 +112,7 @@ export function useExtensionMessages(
   const [lastSeenVersion, setLastSeenVersion] = useState('');
   const [extensionVersion, setExtensionVersion] = useState('');
   const [watchAllSessions, setWatchAllSessions] = useState(false);
+  const [orcaEnabled, setOrcaEnabled] = useState(false);
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
@@ -535,6 +538,9 @@ export function useExtensionMessages(
         if (typeof msg.watchAllSessions === 'boolean') {
           setWatchAllSessions(msg.watchAllSessions as boolean);
         }
+        if (typeof msg.orcaEnabled === 'boolean') {
+          setOrcaEnabled(msg.orcaEnabled as boolean);
+        }
         if (typeof msg.alwaysShowLabels === 'boolean') {
           setAlwaysShowLabels(msg.alwaysShowLabels as boolean);
         }
@@ -578,6 +584,9 @@ export function useExtensionMessages(
           msg.leadAgentId as number | undefined,
           msg.teamUsesTmux as boolean | undefined,
         );
+      } else if (msg.type === 'agentProviderInfo') {
+        const id = msg.id as number;
+        os.setProviderInfo(id, msg.agentType as string | undefined);
       } else if (msg.type === 'agentTokenUsage') {
         const id = msg.id as number;
         os.setAgentTokens(id, msg.inputTokens as number, msg.outputTokens as number);
@@ -620,6 +629,8 @@ export function useExtensionMessages(
     extensionVersion,
     watchAllSessions,
     setWatchAllSessions,
+    orcaEnabled,
+    setOrcaEnabled,
     alwaysShowLabels,
     hooksEnabled,
     setHooksEnabled,

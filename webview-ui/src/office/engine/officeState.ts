@@ -885,6 +885,13 @@ export class OfficeState {
     }
   }
 
+  /** Set the agent/CLI type (drives the type badge + hue tint). Mirrors setTeamInfo. */
+  setProviderInfo(id: number, agentType?: string): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    ch.agentType = agentType;
+  }
+
   setAgentTokens(id: number, inputTokens: number, outputTokens: number): void {
     const ch = this.characters.get(id);
     if (!ch) return;

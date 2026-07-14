@@ -36,6 +36,10 @@ export interface AgentState {
   hooksOnly?: boolean;
   /** Provider that created this agent (defaults to 'claude') */
   providerId?: string;
+  /** Fine-grained agent/CLI type for the office badge + hue tint: 'claude' today,
+   *  or one of Orca's normalized CLI types ('codex', 'cursor', ...) later. Distinct
+   *  from providerId (which names the HookProvider that owns the agent). */
+  agentType?: string;
   /** Set when SessionEnd(reason=clear) fires; cleared when SessionStart(source=clear) reassigns */
   pendingClear?: boolean;
   /** Hook-generated tool ID for PreToolUse/PostToolUse correlation */
@@ -83,4 +87,7 @@ export interface PersistedAgent {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
+
+  /** Fine-grained agent/CLI type for the office badge + hue tint (mirrors AgentState.agentType). */
+  agentType?: string;
 }

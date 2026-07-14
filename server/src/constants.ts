@@ -54,6 +54,12 @@ export const HOOK_EVENT_BUFFER_MS = 5_000;
 export const SESSION_END_GRACE_MS = 2000;
 export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
 
+// ── Agent Identity ──────────────────────────────────────────
+/** Fallback agentType tag when a provider hasn't set one. Claude is the sole
+ *  provider today, so unset === claude; Orca agents get their specific CLI type
+ *  ('codex', 'cursor', ...) at adoption. Drives the office type badge + hue tint. */
+export const DEFAULT_AGENT_TYPE = 'claude';
+
 // ── Activity Feed ───────────────────────────────────────────
 /** Max activity-feed entries retained per agent (ring buffer, server + client). */
 export const ACTIVITY_LOG_MAX = 50;

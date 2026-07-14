@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
-import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
+import { DEFAULT_AGENT_TYPE, JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
 import {
   ensureProjectScan,
   readNewLines,
@@ -270,6 +270,7 @@ export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): v
       isTeamLead: agent.isTeamLead,
       leadAgentId: agent.leadAgentId,
       teamUsesTmux: agent.teamUsesTmux,
+      agentType: agent.agentType,
     });
   }
   adapter.saveAgents(persisted);
@@ -358,6 +359,7 @@ export function restoreAgents(
       isTeamLead: p.isTeamLead,
       leadAgentId: p.leadAgentId,
       teamUsesTmux: p.teamUsesTmux,
+      agentType: p.agentType,
     };
 
     store.set(p.id, agent);
@@ -564,6 +566,13 @@ export function sendCurrentAgentStatuses(
         teamUsesTmux: agent.teamUsesTmux,
       });
     }
+    // Re-send provider / agent-type identity (always — every agent has a type)
+    webview.postMessage({
+      type: 'agentProviderInfo',
+      id: agentId,
+      agentType: agent.agentType ?? DEFAULT_AGENT_TYPE,
+      providerId: agent.providerId,
+    });
     // Re-send token usage
     if (agent.inputTokens > 0 || agent.outputTokens > 0) {
       webview.postMessage({

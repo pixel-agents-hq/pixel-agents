@@ -6,6 +6,12 @@ export interface PendingExternalSession {
   /** Transcript file path. Undefined for providers without transcripts (OpenCode, Copilot). */
   transcriptPath: string | undefined;
   cwd: string;
+  /** Provider that owns the session — lets adoption always-adopt push-based
+   *  providers (Orca) and gate file-scanning ones (Claude). */
+  providerId?: string;
+  /** CLI agent type from the originating event (Orca) — tags the adopted agent
+   *  so the office renders its type badge. */
+  agentType?: string;
 }
 
 /** An event waiting to be dispatched once its agent registers. */

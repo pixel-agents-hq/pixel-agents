@@ -63,9 +63,15 @@ export class AgentRuntime {
   // Configuration refs (mutable, shared with scanners)
   readonly watchAllSessions = { current: false };
   readonly hooksEnabled = { current: true };
+  /** Adopt push-based (Orca) agents. Off by default — opt-in via Settings. */
+  readonly orcaEnabled = { current: false };
 
   // Dependencies
   readonly dismissalTracker = new DismissalTracker();
+  /** All registered hook providers, keyed by id (the `:providerId` of
+   *  POST /api/hooks/:providerId). Extra providers (e.g. the Orca bridge) are
+   *  added via registerProvider; the HookEventHandler shares this same Map. */
+  private readonly providers = new Map<string, HookProvider>();
   private hookEventHandler: HookEventHandler;
   private lifecycleCallbacks: RuntimeLifecycleCallbacks = {};
 
@@ -83,20 +89,30 @@ export class AgentRuntime {
     setAgentRemovalCallback((id) => this.removeAgent(id));
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
 
+    // Register the primary provider (Claude today). Additional hook providers
+    // can be added later via registerProvider(); the handler reads this same Map.
+    this.providers.set(provider.id, provider);
     this.hookEventHandler = new HookEventHandler(
       store,
       this.waitingTimers,
       this.permissionTimers,
-      provider,
+      this.providers,
       new SessionRouter(),
       this.watchAllSessions,
     );
 
     // Wire hook lifecycle callbacks to shared agent operations
     this.hookEventHandler.setLifecycleCallbacks({
-      onExternalSessionDetected: (sessionId, transcriptPath, cwd) => {
+      onExternalSessionDetected: (sessionId, transcriptPath, cwd, opts) => {
         const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
-        if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
+        // Push-based providers (e.g. Orca) have no file fallback and every pushed
+        // session is intentional -> always adopt. File-scanning providers (Claude)
+        // still gate on the workspace or Watch All Sessions.
+        const provider = opts?.providerId ? this.providers.get(opts.providerId) : undefined;
+        const pushBased = provider !== undefined && provider.getSessionDirs === undefined;
+        if (pushBased) {
+          if (!this.orcaEnabled.current) return; // Orca integration disabled in Settings
+        } else if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
           return;
         }
         adoptExternalSessionFromHook(
@@ -112,6 +128,7 @@ export class AgentRuntime {
           this.permissionTimers,
           () => this.store.persist(),
           (agent) => this.registerAgent(agent.sessionId, agent.id),
+          opts?.agentType,
         );
       },
       onSessionClear: (agentId, newSessionId, newTranscriptPath) => {
@@ -186,6 +203,15 @@ export class AgentRuntime {
   // ── Hook event routing ──
 
   /** Route an incoming hook event to the appropriate agent. */
+  /**
+   * Register an additional hook provider after construction (e.g. the Orca
+   * bridge). Events posted to POST /api/hooks/<provider.id> then route to it.
+   * The primary provider passed to the constructor is always registered.
+   */
+  registerProvider(provider: HookProvider): void {
+    this.providers.set(provider.id, provider);
+  }
+
   handleHookEvent(providerId: string, event: Record<string, unknown>): void {
     this.hookEventHandler.handleEvent(providerId, event as HookEvent);
   }
@@ -376,6 +402,7 @@ export class AgentRuntime {
         isTeamLead: p.isTeamLead,
         leadAgentId: p.leadAgentId,
         teamUsesTmux: p.teamUsesTmux,
+        agentType: p.agentType,
       };
 
       this.store.set(p.id, agent);

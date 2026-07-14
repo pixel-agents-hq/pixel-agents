@@ -1,0 +1,531 @@
+<title>Pixel Agents × Orca — Office Preview</title>
+<style>
+/* ── Deliberate single-theme: the office IS a dark screen (arcade-cabinet commit).
+      Chrome speaks the pixel-agents UI language: sharp corners, 2px borders,
+      hard offset shadows (no blur), solid fills, monospace + tracked caps. ── */
+:root{
+  --bg:#0c0c14; --app:#1e1e2e; --panel:#181825; --panel-2:#11111b; --rug:#191926;
+  --line:#313244; --line-2:#45475a; --shadow:#0a0a14;
+  --ink:#cdd6f4; --ink-dim:#a6adc8; --ink-mute:#6c7086;
+  --accent:#89b4fa; --accent-2:#b4befe;
+  --good:#a6e3a1; --warn:#f9e2af; --active:#89dceb; --bad:#f38ba8; --lead:#f9e2af;
+  --shadow-h:3px 3px 0 var(--shadow);
+  --mono:ui-monospace,"SFMono-Regular","Cascadia Code","Consolas","Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--mono);
+  font-size:13px; line-height:1.4; -webkit-font-smoothing:none;
+  image-rendering:pixelated;
+}
+.app{
+  height:100vh; display:flex; flex-direction:column;
+  overflow:hidden; background:var(--app);
+}
+/* ── Top bar ── */
+.topbar{
+  display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  padding:8px 12px; background:var(--panel-2); border-bottom:2px solid var(--line);
+}
+.brand{display:flex; align-items:center; gap:10px; min-width:0}
+.logo{
+  width:22px; height:22px; display:grid; place-items:center; flex:none;
+  background:var(--accent); color:#0c0c14; font-weight:800; box-shadow:2px 2px 0 var(--shadow);
+}
+.wordmark{letter-spacing:2px; font-weight:700; font-size:15px}
+.wordmark b{color:var(--accent)}
+.src{
+  color:var(--accent-2); font-size:10px; letter-spacing:1.5px; padding:2px 6px;
+  border:1px solid var(--line-2); background:var(--panel);
+}
+.top-right{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+.pill{
+  display:inline-flex; align-items:center; gap:6px; padding:3px 8px; font-size:10px;
+  letter-spacing:1px; color:var(--ink-dim); background:var(--panel);
+  border:1px solid var(--line-2);
+}
+.pill.live{color:var(--good)}
+.pill.live .dot{width:7px;height:7px;background:var(--good);box-shadow:0 0 0 2px rgba(166,227,161,.18);animation:beat 1.6s steps(2) infinite}
+@keyframes beat{50%{opacity:.35}}
+
+/* ── Stage (the office screen) ── */
+/* Desktop: the pixel screen is a fixed 16:5 cinematic band. Mobile reverts (see media query). */
+.stage{position:relative; flex:none; width:100%; aspect-ratio:16/5; max-height:62vh; min-height:0; background:#0c0c14; overflow:hidden}
+#office{display:block; width:100%; height:100%; cursor:pointer}
+.stage::after{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,.14) 2px 3px),
+    radial-gradient(120% 120% at 50% 40%, transparent 55%, rgba(0,0,0,.5) 100%);
+}
+.overlay{position:absolute; pointer-events:none; z-index:2; font-size:10px; letter-spacing:1px}
+.zoomctl{
+  right:10px; bottom:10px; display:flex; align-items:center; gap:0;
+  background:var(--panel); border:2px solid var(--line-2); box-shadow:var(--shadow-h);
+}
+.zoomctl button{
+  all:unset; width:26px; height:24px; display:grid; place-items:center; color:var(--ink);
+  font-size:14px; cursor:pointer; pointer-events:auto;
+}
+.zoomctl button:hover{background:var(--line); color:var(--accent)}
+.zoomctl span{padding:0 8px; color:var(--ink-dim); font-size:10px; border-left:2px solid var(--line); border-right:2px solid var(--line); height:24px; display:grid; place-items:center; font-variant-numeric:tabular-nums}
+.src-tag{left:10px; top:10px; color:var(--ink-mute); background:rgba(17,17,27,.72); padding:3px 7px; border:1px solid var(--line)}
+.src-tag b{color:var(--accent-2)}
+.hint{left:10px; bottom:10px; color:var(--ink-mute); background:rgba(17,17,27,.72); padding:3px 7px; border:1px solid var(--line)}
+.hint b{color:var(--accent)}
+
+/* ── Resizable divider ── */
+.divider{height:8px; background:var(--panel-2); border-top:2px solid var(--line); border-bottom:2px solid var(--line); display:grid; place-items:center; cursor:ns-resize}
+.grip{width:44px;height:2px;background:var(--line-2);box-shadow:0 3px 0 var(--panel-2),0 -3px 0 var(--panel-2)}
+
+/* ── Dock: selected-agent detail + type legend ── */
+.dock{display:flex; gap:10px; padding:10px 12px; background:var(--app); align-items:stretch; flex:1 1 auto; min-height:0; overflow:hidden}
+.card{background:var(--panel); border:2px solid var(--line-2); box-shadow:var(--shadow-h); padding:10px; min-width:0; display:flex; flex-direction:column}
+.detail{flex:1.5}
+.legend{flex:1}
+.card-title{font-size:10px; letter-spacing:2px; color:var(--ink-mute); margin-bottom:8px; display:flex; justify-content:space-between; align-items:baseline; gap:8px}
+.card-title span{color:var(--line-2); font-size:9px; letter-spacing:1px}
+
+.dt-head{display:flex; align-items:center; gap:10px; min-width:0}
+.tbadge{
+  flex:none; padding:4px 9px; font-weight:700; font-size:12px; color:#12121c;
+  background:var(--accent); border:1px solid var(--shadow); box-shadow:2px 2px 0 var(--shadow);
+}
+.dt-id{min-width:0; flex:1}
+.dt-name{font-size:15px; font-weight:700; display:flex; align-items:center; gap:8px}
+.lead-chip{font-size:9px; letter-spacing:1px; color:#12121c; background:var(--lead); padding:1px 5px; border:1px solid var(--shadow)}
+.dt-sub{color:var(--ink-mute); font-size:10px; letter-spacing:.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.status{flex:none; font-size:10px; letter-spacing:1px; padding:4px 8px; border:1px solid var(--line-2)}
+.st-work{color:var(--active); border-color:#2a4a52; background:#0f1c22}
+.st-wait{color:var(--good); border-color:#2c4a2c; background:#0f1c11}
+.st-gate{color:var(--warn); border-color:#4a4020; background:#211d0d; animation:beat 1.4s steps(2) infinite}
+.st-done{color:var(--ink-mute); border-color:var(--line)}
+.dt-meta{margin:8px 0; padding:7px 9px; background:var(--panel-2); border-left:3px solid var(--accent); color:var(--ink-dim); font-size:11px}
+.dt-meta b{color:var(--ink)}
+
+.feed{display:flex; flex-direction:column; gap:2px; overflow:auto; min-height:0; margin-top:2px; flex:1 1 auto}
+.feed-label{font-size:9px; letter-spacing:1.5px; color:var(--ink-mute); margin:2px 0 4px}
+.frow{display:grid; grid-template-columns:74px auto 1fr auto; gap:8px; align-items:baseline; padding:3px 4px; border-bottom:1px solid var(--panel-2)}
+.frow.in{animation:slidein .3s ease}
+@keyframes slidein{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.ktag{font-size:9px; letter-spacing:.5px; text-align:right; white-space:nowrap}
+.k-call{color:var(--accent)} .k-res{color:var(--ink-mute)} .k-asst{color:var(--ink-dim); font-style:italic}
+.k-gate{color:var(--warn)} .k-sys{color:var(--line-2)}
+.ftool{font-weight:700; color:var(--accent-2); white-space:nowrap}
+.fdesc{color:var(--ink-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.k-asst ~ .fdesc{color:var(--ink)}
+.fage{color:var(--line-2); font-size:9px; font-variant-numeric:tabular-nums; white-space:nowrap}
+
+/* ── Legend of 17 Orca-normalized types ── */
+.lg-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(112px,1fr)); gap:5px 8px; overflow:auto; min-height:0; align-content:start; flex:1 1 auto}
+.lg{display:flex; align-items:center; gap:7px; font-size:11px; padding:2px 3px; opacity:.42}
+.lg.on{opacity:1}
+.lg i{width:11px; height:11px; flex:none; border:1px solid var(--shadow); box-shadow:1px 1px 0 var(--shadow)}
+.lg em{margin-left:auto; font-style:normal; font-size:9px; color:var(--ink-mute); font-variant-numeric:tabular-nums}
+.lg.on em{color:var(--accent); font-weight:700}
+
+/* ── Bottom toolbar + design-map ── */
+.toolbar{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:7px 12px; background:var(--panel-2); border-top:2px solid var(--line)}
+.tools{display:flex; gap:6px; flex-wrap:wrap}
+.tbtn{font-size:10px; letter-spacing:1px; color:var(--ink-dim); background:var(--panel); border:2px solid var(--line-2); box-shadow:2px 2px 0 var(--shadow); padding:4px 9px; cursor:pointer}
+.tbtn:hover{color:var(--accent); border-color:var(--accent)}
+.tbtn:active{transform:translate(2px,2px); box-shadow:none}
+.tbtn.ghost{color:var(--ink-mute); background:transparent; box-shadow:none; border-color:var(--line)}
+.maps{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
+.maps span{display:inline-flex; align-items:center; gap:6px; font-size:10px; color:var(--ink-mute); letter-spacing:.5px}
+.maps b{color:var(--accent); font-size:9px; border:1px solid var(--line-2); padding:0 4px}
+.k{width:11px;height:11px;flex:none;border:1px solid var(--shadow)}
+.k.badge{background:linear-gradient(135deg,#d97757 50%,#5b8def 50%)}
+.k.good{background:var(--good)} .k.warn{background:var(--warn)} .k.lead{background:var(--lead)}
+
+:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+
+@media (max-width:760px){
+  /* Mobile: keep the current stacked layout — stage flexes to fill, dock stacks below. */
+  .stage{flex:1 1 auto; aspect-ratio:auto; max-height:none}
+  .dock{flex:none; flex-direction:column; max-height:52vh; overflow:auto}
+  .frow{grid-template-columns:64px auto 1fr auto}
+}
+@media (prefers-reduced-motion: reduce){
+  .stage::after{background:radial-gradient(120% 120% at 50% 40%, transparent 55%, rgba(0,0,0,.5) 100%)}
+  .pill.live .dot,.st-gate{animation:none}
+  .frow.in{animation:none}
+}
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">▚</span>
+      <span class="wordmark">PIXEL<b>AGENTS</b></span>
+      <span class="src">▸ ORCA BRIDGE</span>
+    </div>
+    <div class="top-right">
+      <span class="pill live"><i class="dot"></i> CONNECTED · ws://localhost:3100</span>
+      <span class="pill" id="p-count">12 AGENTS · 2 WORKSPACES · 8 TYPES LIVE</span>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+    <canvas id="office"></canvas>
+    <div class="overlay src-tag">SOURCE&nbsp;<b>A</b> · Orca host push → <b>POST /api/hooks/orca</b></div>
+    <div class="overlay hint">▸ <b>click any agent</b> to inspect its live status</div>
+    <div class="overlay zoomctl">
+      <button aria-label="zoom out">−</button><span>300%</span><button aria-label="zoom in">+</button>
+    </div>
+  </main>
+
+  <div class="divider" title="drag to resize (standalone split layout)"><span class="grip"></span></div>
+
+  <section class="dock">
+    <div class="card detail">
+      <div class="card-title">SELECTED AGENT <span>AgentDetailPanel · standalone</span></div>
+      <div class="dt-head">
+        <span class="tbadge" id="dt-badge">claude</span>
+        <div class="dt-id">
+          <div class="dt-name"><span id="dt-name">claude</span><span class="lead-chip" id="dt-lead">LEAD</span></div>
+          <div class="dt-sub" id="dt-sub"></div>
+        </div>
+        <span class="status st-work" id="dt-status">● WORKING</span>
+      </div>
+      <div class="dt-meta" id="dt-meta"></div>
+      <div class="feed-label">LIVE ACTIVITY · orca event stream</div>
+      <div class="feed" id="feed"></div>
+    </div>
+
+    <aside class="card legend">
+      <div class="card-title">AGENT TYPES <span>17 normalized by Orca relay</span></div>
+      <div class="lg-grid" id="legend"></div>
+    </aside>
+  </section>
+
+  <footer class="toolbar">
+    <div class="tools">
+      <button class="tbtn">LAYOUT</button>
+      <button class="tbtn">SETTINGS</button>
+      <button class="tbtn">INFO</button>
+      <button class="tbtn ghost">npx pixel-agents --port 3100</button>
+    </div>
+    <div class="maps">
+      <span><i class="k badge"></i>per-type badge + hue tint <b>M2</b></span>
+      <span><i class="k good"></i>idle → ✓ + chime</span>
+      <span><i class="k warn"></i>decision-gate → “…”</span>
+      <span><i class="k lead"></i>coordinator → lead + teammates</span>
+    </div>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* 17 Orca-normalized agent types → signature hue (mirrors adjustSprite hue-tint). */
+  var TYPES = [
+    ["amp","#ff8c42"],["antigravity","#c792ea"],["claude","#d97757"],["codex","#10b981"],
+    ["command-code","#ffd166"],["copilot","#a0a8b7"],["cursor","#7dd3fc"],["devin","#818cf8"],
+    ["droid","#f472b6"],["gemini","#5b8def"],["grok","#e5e7eb"],["hermes","#f59e0b"],
+    ["kimi","#22d3ee"],["mimo-code","#84cc16"],["omp","#fb7185"],["opencode","#2dd4bf"],["pi","#a78bfa"]
+  ];
+  var TC = {}; TYPES.forEach(function(t){ TC[t[0]] = t[1]; });
+
+  /* Agents in the office. cx/ty = canvas art-pixel anchor (head center / head top). */
+  var AGENTS = [
+    {id:"a_claude",  type:"claude",  ws:"pixel-agents", state:"working", cx:130, ty:104, lead:true,  pty:"3f9a…::pixel-agents@@e1", task:"M1 · multi-provider routing"},
+    {id:"a_codex",   type:"codex",   ws:"pixel-agents", state:"working", cx:95,  ty:196, teammate:true, pty:"3f9a…@@c7", task:"provider-map refactor"},
+    {id:"a_gemini",  type:"gemini",  ws:"pixel-agents", state:"waiting", cx:185, ty:196, teammate:true, pty:"3f9a…@@g2", task:"routing unit tests"},
+    {id:"a_cursor",  type:"cursor",  ws:"pixel-agents", state:"working", cx:320, ty:104, pty:"71bd…@@a4", task:"agentType badge render (M2)"},
+    {id:"a_copilot", type:"copilot", ws:"pixel-agents", state:"waiting", cx:470, ty:104, pty:"71bd…@@f0"},
+    {id:"a_devin",   type:"devin",   ws:"pixel-agents", state:"gate",    cx:380, ty:196, pty:"9c12…@@d8", task:"install hooks in ~/.claude?"},
+    {id:"b_codex",   type:"codex",   ws:"new-game",     state:"working", cx:700,  ty:104, pty:"a80e…::new-game@@c1", task:"orca provider tests (M3)"},
+    {id:"b_droid",   type:"droid",   ws:"new-game",     state:"working", cx:860,  ty:104, pty:"a80e…@@dr", task:"sprite sheet import"},
+    {id:"b_grok",    type:"grok",    ws:"new-game",     state:"gate",    cx:1030, ty:104, pty:"a80e…@@gk", task:"git push origin main?"},
+    {id:"b_opencode",type:"opencode",ws:"new-game",     state:"waiting", cx:700,  ty:196, pty:"a80e…@@oc"},
+    {id:"b_amp",     type:"amp",     ws:"new-game",     state:"done",    cx:860,  ty:196, pty:"a80e…@@am"},
+    {id:"b_pi",      type:"pi",      ws:"new-game",     state:"working", cx:1030, ty:196, pty:"a80e…@@pi", task:"tilemap pathfinding"}
+  ];
+  var byId = {}; AGENTS.forEach(function(a){ byId[a.id]=a; });
+  var selected = "a_claude";
+
+  /* ── canvas plumbing: draw to art-res offscreen, blit at integer zoom (pixel-perfect) ── */
+  var cv = document.getElementById('office'), m = cv.getContext('2d');
+  var buf = document.createElement('canvas'), b = buf.getContext('2d');
+  var OW = 1152, OH = 360; buf.width = OW; buf.height = OH;   // 16:5 pixel screen
+  var blit = {x:0,y:0,z:1};
+
+  function shade(hex,amt){
+    var n=parseInt(hex.slice(1),16), r=n>>16&255, g=n>>8&255, bl=n&255, f=amt<0?0:255, p=Math.abs(amt);
+    r=Math.round(r+(f-r)*p); g=Math.round(g+(f-g)*p); bl=Math.round(bl+(f-bl)*p);
+    return "#"+((1<<24)+(r<<16)+(g<<8)+bl).toString(16).slice(1);
+  }
+  function lum(hex){ var n=parseInt(hex.slice(1),16); return (0.299*(n>>16&255)+0.587*(n>>8&255)+0.114*(n&255))/255; }
+  function px(x,y,w,h,c){ b.fillStyle=c; b.fillRect(x|0,y|0,w|0,h|0); }
+
+  function resize(){
+    var r = cv.parentElement.getBoundingClientRect();
+    var dpr = Math.max(1, Math.min(3, window.devicePixelRatio||1));
+    cv.width = Math.max(1,Math.round(r.width*dpr));
+    cv.height= Math.max(1,Math.round(r.height*dpr));
+    cv.style.width=r.width+"px"; cv.style.height=r.height+"px";
+    if(reduce) render(0);
+  }
+
+  function chip(x,y,label,accent){
+    b.font="700 8px "+getFont();
+    var w = Math.ceil(b.measureText(label).width)+18;
+    px(x-1,y-1,w+2,15,"#0a0a14"); px(x,y,w,13,"#232338"); px(x,y,3,13,accent||"#89b4fa");
+    px(x+8,y+4,5,5,accent||"#89b4fa");
+    b.fillStyle="#cdd6f4"; b.textAlign="left"; b.textBaseline="top"; b.fillText(label, x+17, y+3);
+    return w;
+  }
+  function getFont(){ return 'ui-monospace,"Cascadia Code",Consolas,monospace'; }
+
+  function badge(cx,y,text,color,lead){
+    b.font="700 8px "+getFont();
+    var w = Math.ceil(b.measureText(text).width)+8, x = Math.round(cx-w/2);
+    px(x-1,y-1,w+2,11,"#0a0a14"); px(x,y,w,9,color);
+    b.fillStyle = lum(color)>0.6?"#12121c":"#ffffff"; b.textAlign="center"; b.textBaseline="top";
+    b.fillText(text, cx, y+1);
+    if(lead){
+      var lx=x+w+3; px(lx-1,y-1,26,11,"#0a0a14"); px(lx,y,24,9,"#f9e2af");
+      b.fillStyle="#12121c"; b.textAlign="left"; b.fillText("LEAD", lx+2, y+1);
+    }
+  }
+
+  function bubbleWait(x,y){
+    px(x-1,y-1,18,14,"#0a0a14"); px(x,y,16,12,"#f4f4fb"); px(x+2,y+12,3,2,"#f4f4fb"); px(x+2,y+13,2,2,"#0a0a14"); px(x+5,y+12,1,2,"#0a0a14");
+    // green check
+    var g="#1f9d55";
+    px(x+4,y+6,2,2,g); px(x+6,y+8,2,2,g); px(x+8,y+5,2,2,g); px(x+10,y+3,2,2,g); px(x+7,y+7,1,1,g);
+  }
+  function bubbleGate(x,y,now){
+    px(x-1,y-1,18,14,"#0a0a14"); px(x,y,16,12,"#fff5d6"); px(x+2,y+12,3,2,"#fff5d6"); px(x+2,y+13,2,2,"#0a0a14");
+    var lit = reduce ? 3 : (Math.floor(now/260)%4);
+    for(var i=0;i<3;i++){ px(x+3+i*4, y+5, 3,3, i<lit ? "#e0a800" : "#d9cfa0"); }
+  }
+  function typingDots(x,y,now){
+    var ph = reduce?1:(Math.floor(now/150)%3);
+    for(var i=0;i<3;i++){ px(x+i*3, y - (i===ph?1:0), 2,2, i===ph?"#89dceb":"#3a5560"); }
+  }
+  function matrixRain(x0,y0,w,h,now){
+    for(var c=0;c<w;c+=2){
+      var head = ((reduce?60:now*0.05) + c*11) % (h+18) - 9;
+      for(var k=0;k<5;k++){
+        var yy=head-k*3;
+        if(yy>=0 && yy<h) px(x0+c, y0+yy, 2,2, k===0?"#c8ffd6":(k<3?"#4fbf6f":"#276b3d"));
+      }
+    }
+  }
+
+  function drawChar(cx, top, type, blink){
+    var shirt = TC[type], sh = shade(shirt,-0.35), skin="#e8b48c", ss="#cf9d75", hair="#2e2622";
+    // hair + head
+    px(cx-6,top,12,3,hair); px(cx-6,top+2,2,6,hair); px(cx+4,top+2,2,6,hair);
+    px(cx-5,top+3,10,7,skin);
+    if(blink){ px(cx-4,top+6,2,1,"#3a2c22"); px(cx+2,top+6,2,1,"#3a2c22"); }
+    else { px(cx-4,top+5,2,2,"#2a2018"); px(cx+2,top+5,2,2,"#2a2018"); }
+    px(cx-1,top+8,3,1,ss);
+    px(cx-3,top+10,6,2,ss); // neck
+    // torso
+    px(cx-8,top+12,16,12,shirt);
+    px(cx-8,top+13,3,10,sh); px(cx+5,top+13,3,10,sh); // arms
+    px(cx-6,top+12,12,2,shade(shirt,0.12)); // collar highlight
+    px(cx-7,top+21,3,2,skin); px(cx+4,top+21,3,2,skin); // hands
+  }
+
+  function drawStation(a, now){
+    var cx=a.cx, top=a.ty;
+    var bob = (a.state==="working" && !reduce && Math.sin(now/200 + cx)>0.4) ? -1 : 0;
+    var blink = !reduce && (Math.floor(now/140 + cx)%42===0);
+    var deskY = top+22;
+    // chair back
+    px(cx-9,top+10,18,15,"#20202f"); px(cx-9,top+10,18,2,"#2a2a3d");
+    // character
+    drawChar(cx, top+bob, a.type, blink);
+    // desk
+    px(cx-26,deskY,52,4,"#6b5540"); px(cx-26,deskY,52,1,"#8a6f54");
+    px(cx-26,deskY+4,52,10,"#463525"); px(cx-24,deskY+14,3,4,"#2e2216"); px(cx+21,deskY+14,3,4,"#2e2216");
+    // keyboard + mug
+    px(cx-16,deskY+1,17,2,"#12121a"); px(cx-22,deskY-3,4,4,shade(TC[a.type],0.1)); px(cx-22,deskY-4,4,1,"#cdd6f4");
+    // monitor (right side, screen faces viewer)
+    var scr = a.state==="working" ? TC[a.type] : a.state==="gate" ? "#4a3a12" : a.state==="done" ? "#141420" : "#22243a";
+    px(cx+13,deskY-2,3,2,"#15151e");
+    px(cx+6,deskY-13,17,13,"#15151e"); px(cx+8,deskY-11,13,9,scr);
+    if(a.state==="working"){
+      var t = reduce?0:now*0.02;
+      px(cx+9,deskY-9,8+Math.round(2*Math.sin(t)),1,shade(scr,-0.4));
+      px(cx+9,deskY-7,6+Math.round(3*Math.sin(t+1)),1,shade(scr,-0.4));
+      px(cx+9,deskY-5,9,1,shade(scr,-0.4));
+      if(reduce||Math.floor(now/400)%2) px(cx+9,deskY-3,1,1,shade(scr,0.5));
+    }
+    // effects / bubbles
+    if(a.state==="done") matrixRain(cx-9, top, 18, 26, now);
+    if(a.state==="working") typingDots(cx-16, deskY-2, now);
+    if(a.state==="waiting") bubbleWait(cx+15, top-10);
+    if(a.state==="gate")    bubbleGate(cx+15, top-10, now);
+    // badge
+    badge(cx, top-13, a.type, TC[a.type], a.lead);
+    // selection
+    if(a.id===selected){
+      var p = reduce?1:(0.55+0.45*Math.abs(Math.sin(now/300)));
+      b.globalAlpha=p; b.strokeStyle="#ffffff"; b.lineWidth=1;
+      b.strokeRect(cx-26.5, top-15.5, 52, deskY+14-(top-15));
+      b.globalAlpha=1;
+      px(cx-2, deskY+18, 4,1,"#89b4fa"); px(cx-1, deskY+19, 2,1,"#89b4fa");
+    }
+  }
+
+  function drawScene(now){
+    // floor checker
+    b.fillStyle="#161622"; b.fillRect(0,0,OW,OH);
+    for(var y=20;y<OH;y+=20) for(var x=0;x<OW;x+=20){ px(x,y,20,20, ((x/20+y/20)%2)?"#1a1a29":"#171724"); }
+    // top wall
+    px(0,0,OW,20,"#26263c"); px(0,0,OW,4,"#33334e"); px(0,20,OW,1,"#12121c");
+    // workspace rugs (group-by-workspace rooms)
+    function rug(x,w){ px(x,70,w,190,"#191926"); b.strokeStyle="#2b2b44"; b.lineWidth=1; b.strokeRect(x+0.5,70.5,w-1,189); }
+    rug(16,536); rug(592,544);
+    // partition between workspaces
+    px(568,20,6,OH-20,"#232338"); px(568,18,6,3,"#33334e");
+    // plants
+    function plant(x,y){ px(x+2,y+8,6,6,"#5a4632"); px(x+2,y+8,6,1,"#6b5540"); px(x,y,4,9,"#2f7d4f"); px(x+5,y-2,4,10,"#3a9d63"); px(x+3,y+2,3,8,"#348a58"); }
+    plant(30,234); plant(515,234); plant(1100,234);
+    // zone chips
+    chip(24,80,"pixel-agents","#89b4fa"); chip(600,80,"new-game","#a6e3a1");
+    // coordinator → teammates bracket (lead + inline teammates)
+    var lead=byId.a_claude;
+    b.strokeStyle="rgba(249,226,175,.5)"; b.lineWidth=1;
+    [byId.a_codex, byId.a_gemini].forEach(function(tm){
+      b.beginPath(); b.moveTo(lead.cx, lead.ty+30); b.lineTo(lead.cx,(lead.ty+tm.ty)/2+12); b.lineTo(tm.cx,(lead.ty+tm.ty)/2+12); b.lineTo(tm.cx, tm.ty-6); b.stroke();
+      px(tm.cx-1, tm.ty-8, 2,2, "#f9e2af");
+    });
+    // agents, back-to-front
+    AGENTS.slice().sort(function(p,q){ return p.ty-q.ty; }).forEach(function(a){ drawStation(a, now); });
+  }
+
+  function render(now){
+    drawScene(now||0);
+    var z = Math.min(cv.width/OW, cv.height/OH); if(!(z>0)) z=1;   // fill: art is 16:5, desktop stage is 16:5
+    var dw=OW*z, dh=OH*z, dx=Math.floor((cv.width-dw)/2), dy=Math.floor((cv.height-dh)/2);
+    blit={x:dx,y:dy,z:z};
+    m.imageSmoothingEnabled=false;
+    m.fillStyle="#0c0c14"; m.fillRect(0,0,cv.width,cv.height);
+    m.drawImage(buf, 0,0,OW,OH, dx,dy,dw,dh);
+  }
+  function loop(now){ render(now); requestAnimationFrame(loop); }
+
+  /* ── hit-testing: canvas click → select agent ── */
+  cv.addEventListener('click', function(e){
+    var r=cv.getBoundingClientRect();
+    var pxc=(e.clientX-r.left)*(cv.width/r.width), pyc=(e.clientY-r.top)*(cv.height/r.height);
+    var ax=(pxc-blit.x)/blit.z, ay=(pyc-blit.y)/blit.z, hit=null;
+    AGENTS.forEach(function(a){
+      if(ax>=a.cx-26 && ax<=a.cx+26 && ay>=a.ty-15 && ay<=a.ty+38) hit=a;
+    });
+    if(hit){ selected=hit.id; renderDetail(hit); setFeed(hit); if(reduce) render(0); }
+  });
+
+  /* ── detail panel ── */
+  function statusOf(a){
+    return a.state==="working" ? ["st-work","● WORKING"]
+      : a.state==="waiting" ? ["st-wait","✓ IDLE · AWAITING INPUT"]
+      : a.state==="gate" ? ["st-gate","… DECISION GATE"]
+      : ["st-done","○ DONE"];
+  }
+  function renderDetail(a){
+    var badgeEl=document.getElementById('dt-badge');
+    badgeEl.textContent=a.type; badgeEl.style.background=TC[a.type];
+    badgeEl.style.color = lum(TC[a.type])>0.6?"#12121c":"#ffffff";
+    document.getElementById('dt-name').textContent=a.type;
+    document.getElementById('dt-lead').style.display = a.lead ? "inline-block":"none";
+    document.getElementById('dt-sub').textContent = "workspace "+a.ws+" · ptyId "+a.pty;
+    var st=statusOf(a), s=document.getElementById('dt-status');
+    s.className="status "+st[0]; s.textContent=st[1];
+    var meta;
+    if(a.lead) meta = "coordinating <b>2 teammates</b> (codex, gemini) · on task <b>“"+a.task+"”</b>";
+    else if(a.teammate) meta = "inline teammate of <b>claude</b> · task <b>“"+a.task+"”</b>";
+    else if(a.state==="gate") meta = "awaiting human approval — <b>decision_gate</b> open";
+    else if(a.state==="waiting") meta = "turn complete · <b>awaiting input</b>";
+    else if(a.state==="done") meta = "session ended · character despawning (matrix effect)";
+    else meta = "on task <b>“"+(a.task||"—")+"”</b>";
+    document.getElementById('dt-meta').innerHTML=meta;
+  }
+
+  /* ── activity feed ── */
+  var claudePool=[
+    ["tool.call","Grep","“normalizeHookEvent” · server/src"],
+    ["tool.result","Grep","3 matches · hookEventHandler.ts"],
+    ["tool.call","Read","server/src/hookEventHandler.ts:132"],
+    ["assistant","","“handleEvent drops _providerId — route via Map<providerId,Provider>.”"],
+    ["tool.call","Task","dispatch codex → “provider-map refactor”"],
+    ["tool.call","Task","dispatch gemini → “routing unit tests”"],
+    ["tool.result","Edit","hookEventHandler.ts +12 −3"],
+    ["tool.call","Bash","npm run test:server"],
+    ["tool.result","Bash","✓ 14 passed"],
+    ["assistant","","“M1 green. agentType identity next (M2).”"]
+  ];
+  function genPool(a){ return [
+    ["tool.call","Read", a.ws+"/src/index.ts"],
+    ["tool.result","Read","128 lines"],
+    ["tool.call","Edit","apply patch · "+(a.task||"work")],
+    ["assistant","","“applying "+a.type+" changes…”"],
+    ["tool.call","Bash","npm run build"]
+  ]; }
+  function seed(a){
+    if(a.state==="working") return (a.id==="a_claude"?claudePool:genPool(a)).slice(0,5);
+    if(a.state==="waiting") return [["turn.end","","turn complete · 4.2s"],["assistant","","“Done — ready for next step.”"],["tool.result","Bash","exit 0"]];
+    if(a.state==="gate")    return [["gate","decision","awaiting human approval"],["tool.call","Bash","“"+(a.task||"run command")+"” · needs approval"],["agent.start","",a.type+" paused at gate"]];
+    return [["agent.end","","session ended · "+a.ws],["assistant","","“Task complete.”"],["tool.result","Edit","+42 −11"]];
+  }
+  function kcls(k){ return k==="tool.call"?"k-call":k==="tool.result"?"k-res":k==="assistant"?"k-asst":k==="gate"?"k-gate":"k-sys"; }
+  function fmtAge(s){ return s<1?"now":Math.round(s)+"s"; }
+
+  var feedTimer=null, feedRows=[], poolIdx=0;
+  function renderFeed(){
+    var html="";
+    feedRows.forEach(function(r,i){
+      html += '<div class="frow'+(r.fresh&&i===0?" in":"")+'">'
+        + '<span class="ktag '+kcls(r.k)+'">'+r.k+'</span>'
+        + '<span class="ftool">'+(r.t||"")+'</span>'
+        + '<span class="fdesc">'+r.d+'</span>'
+        + '<span class="fage">'+fmtAge(r.age)+'</span></div>';
+    });
+    document.getElementById('feed').innerHTML=html;
+  }
+  function setFeed(a){
+    if(feedTimer){ clearInterval(feedTimer); feedTimer=null; }
+    feedRows = seed(a).map(function(r,i){ return {k:r[0],t:r[1],d:r[2],age:i*2.4}; });
+    renderFeed();
+    if(!reduce && a.state==="working"){
+      var pool = a.id==="a_claude"?claudePool:genPool(a); poolIdx=0;
+      feedTimer=setInterval(function(){
+        feedRows.forEach(function(r){ r.age+=2.4; r.fresh=false; });
+        var p=pool[poolIdx++%pool.length];
+        feedRows.unshift({k:p[0],t:p[1],d:p[2],age:0,fresh:true});
+        if(feedRows.length>6) feedRows.pop();
+        renderFeed();
+      },2400);
+    }
+  }
+
+  /* ── legend ── */
+  (function(){
+    var counts={}; AGENTS.forEach(function(a){ counts[a.type]=(counts[a.type]||0)+1; });
+    var html="";
+    TYPES.forEach(function(t){
+      var n=counts[t[0]]||0;
+      html += '<span class="lg'+(n?" on":"")+'"><i style="background:'+t[1]+'"></i>'+t[0]
+        + '<em>'+(n?"×"+n:"·")+'</em></span>';
+    });
+    document.getElementById('legend').innerHTML=html;
+  })();
+
+  /* ── boot ── */
+  (function(){ var t={}; AGENTS.forEach(function(a){ t[a.type]=1; }); document.getElementById('p-count').textContent = AGENTS.length+" AGENTS · 2 WORKSPACES · "+Object.keys(t).length+" TYPES LIVE"; })();
+  renderDetail(byId.a_claude); setFeed(byId.a_claude);
+  resize();
+  window.addEventListener('resize', resize);
+  if(window.ResizeObserver) new ResizeObserver(resize).observe(document.getElementById('stage'));
+  if(reduce) render(0); else requestAnimationFrame(loop);
+})();
+</script>

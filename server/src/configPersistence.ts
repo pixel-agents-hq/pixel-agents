@@ -11,6 +11,8 @@ export interface AdapterSettings {
   watchAllSessions: boolean;
   hooksEnabled: boolean;
   hooksInfoShown: boolean;
+  /** Adopt agents pushed by Orca (POST /api/hooks/orca). Off by default (opt-in). */
+  orcaEnabled: boolean;
 }
 
 /** All keys in AdapterSettings. Used by adapters to map `pixel-agents.foo` → `foo`. */
@@ -21,6 +23,7 @@ export const ADAPTER_SETTING_KEYS = [
   'watchAllSessions',
   'hooksEnabled',
   'hooksInfoShown',
+  'orcaEnabled',
 ] as const;
 
 export type AdapterSettingKey = (typeof ADAPTER_SETTING_KEYS)[number];
@@ -41,6 +44,7 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   watchAllSessions: false,
   hooksEnabled: true,
   hooksInfoShown: false,
+  orcaEnabled: false,
 };
 
 function getConfigFilePath(): string {
@@ -75,6 +79,8 @@ function parseAdapterSettings(raw: unknown): AdapterSettings {
       typeof obj.hooksInfoShown === 'boolean'
         ? obj.hooksInfoShown
         : DEFAULT_ADAPTER_SETTINGS.hooksInfoShown,
+    orcaEnabled:
+      typeof obj.orcaEnabled === 'boolean' ? obj.orcaEnabled : DEFAULT_ADAPTER_SETTINGS.orcaEnabled,
   };
 }
 

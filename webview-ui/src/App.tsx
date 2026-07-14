@@ -87,6 +87,8 @@ function App() {
     extensionVersion,
     watchAllSessions,
     setWatchAllSessions,
+    orcaEnabled,
+    setOrcaEnabled,
     alwaysShowLabels,
     hooksEnabled,
     setHooksEnabled,
@@ -448,6 +450,13 @@ function App() {
           const newVal = !watchAllSessions;
           setWatchAllSessions(newVal);
           transport.send({ type: 'setWatchAllSessions', enabled: newVal });
+        }}
+        showOrcaToggle={isBrowserRuntime}
+        orcaEnabled={orcaEnabled}
+        onToggleOrcaEnabled={() => {
+          const newVal = !orcaEnabled;
+          setOrcaEnabled(newVal);
+          transport.send({ type: 'setOrcaEnabled', enabled: newVal });
         }}
         hooksEnabled={hooksEnabled}
         onToggleHooksEnabled={() => {

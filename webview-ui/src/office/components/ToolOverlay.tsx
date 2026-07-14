@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
 import {
+  AGENT_TYPE_BADGE_FALLBACK,
+  AGENT_TYPE_BADGE_TEXT,
+  AGENT_TYPE_COLORS,
   FUEL_COLOR_CRITICAL,
   FUEL_COLOR_DANGER,
   FUEL_COLOR_OK,
@@ -192,9 +195,10 @@ export function ToolOverlay({
         // Team info
         const isTeamAgent = !!ch.teamName;
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
+        const agentTypeLabel = ch.agentType || null;
         const totalTokens = ch.inputTokens + ch.outputTokens;
         const tokenRatio = totalTokens / MAX_CONTEXT_TOKENS;
-        const hasExtraLines = !!(ch.folderName || teamRoleLabel);
+        const hasExtraLines = !!(ch.folderName || teamRoleLabel || agentTypeLabel);
 
         return (
           <div
@@ -218,6 +222,20 @@ export function ToolOverlay({
                 />
               )}
               <div className="flex flex-col gap-0 overflow-hidden">
+                {agentTypeLabel && (
+                  <span
+                    data-testid="agent-type-badge"
+                    className="self-start overflow-hidden text-ellipsis leading-none font-bold"
+                    style={{
+                      fontSize: '15px',
+                      color: AGENT_TYPE_BADGE_TEXT,
+                      background: AGENT_TYPE_COLORS[agentTypeLabel] ?? AGENT_TYPE_BADGE_FALLBACK,
+                      padding: '1px 5px',
+                    }}
+                  >
+                    {agentTypeLabel}
+                  </span>
+                )}
                 {teamRoleLabel && (
                   <span
                     className="overflow-hidden text-ellipsis block leading-none"
