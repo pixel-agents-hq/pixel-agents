@@ -78,6 +78,8 @@ function App() {
     watchAllSessions,
     setWatchAllSessions,
     alwaysShowLabels,
+    showSessionNames,
+    setShowSessionNames,
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
@@ -261,6 +263,7 @@ function App() {
             panRef={editor.panRef}
             onCloseAgent={handleCloseAgent}
             alwaysShowOverlay={alwaysShowOverlay}
+            showSessionNames={showSessionNames}
           />
         </>
       ) : (
@@ -368,6 +371,12 @@ function App() {
           const newVal = !watchAllSessions;
           setWatchAllSessions(newVal);
           transport.send({ type: 'setWatchAllSessions', enabled: newVal });
+        }}
+        showSessionNames={showSessionNames}
+        onToggleShowSessionNames={() => {
+          const newVal = !showSessionNames;
+          setShowSessionNames(newVal);
+          transport.send({ type: 'setShowSessionNames', enabled: newVal });
         }}
         hooksEnabled={hooksEnabled}
         onToggleHooksEnabled={() => {

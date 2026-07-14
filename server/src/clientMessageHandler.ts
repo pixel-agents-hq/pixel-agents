@@ -32,6 +32,7 @@ export interface ClientMessageContext {
 const KEY_SOUND_ENABLED = 'pixel-agents.soundEnabled';
 const KEY_LAST_SEEN_VERSION = 'pixel-agents.lastSeenVersion';
 const KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
+const KEY_SHOW_SESSION_NAMES = 'pixel-agents.showSessionNames';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
@@ -80,6 +81,10 @@ export function handleClientMessage(
 
     case 'setAlwaysShowLabels':
       adapter?.setSetting(KEY_ALWAYS_SHOW_LABELS, msg.enabled);
+      break;
+
+    case 'setShowSessionNames':
+      adapter?.setSetting(KEY_SHOW_SESSION_NAMES, msg.enabled);
       break;
 
     case 'setWatchAllSessions': {
@@ -183,6 +188,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     extensionVersion: process.env.PIXEL_AGENTS_VERSION ?? '',
     watchAllSessions,
     alwaysShowLabels: adapter?.getSetting(KEY_ALWAYS_SHOW_LABELS, false) ?? false,
+    showSessionNames: adapter?.getSetting(KEY_SHOW_SESSION_NAMES, true) ?? true,
     hooksEnabled,
     hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
     externalAssetDirectories: cfg.externalAssetDirectories,
@@ -202,6 +208,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const agentIds: number[] = [];
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
+  const sessionNames: Record<number, string> = {};
   for (const [id, agent] of store) {
     agentIds.push(id);
     if (agent.folderName) {
@@ -209,6 +216,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
+    }
+    if (agent.sessionName) {
+      sessionNames[id] = agent.sessionName;
     }
   }
   const seats = adapter?.loadSeats() ?? {};
@@ -218,5 +228,6 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     agentMeta: seats,
     folderNames,
     externalAgents,
+    sessionNames,
   });
 }

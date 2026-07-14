@@ -58,6 +58,9 @@ export interface AgentState {
   leadAgentId?: number;
   /** True when lead spawns teammates via tmux (run_in_background Agent calls) */
   teamUsesTmux?: boolean;
+
+  /** User-set session name from the transcript (e.g. Claude's /rename) */
+  sessionName?: string;
 }
 
 export interface PersistedAgent {
@@ -78,4 +81,7 @@ export interface PersistedAgent {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
+
+  /** User-set session name from the transcript (e.g. Claude's /rename) */
+  sessionName?: string;
 }

@@ -25,6 +25,7 @@ export type ServerMessage =
   | SubagentToolPermission
   | AgentTeamInfo
   | AgentTokenUsage
+  | AgentSessionName
   | LayoutLoaded
   | FurnitureAssetsLoaded
   | CharacterSpritesLoaded
@@ -46,6 +47,7 @@ export type ClientMessage =
   | SetSoundEnabled
   | SetLastSeenVersion
   | SetAlwaysShowLabels
+  | SetShowSessionNames
   | SetHooksEnabled
   | SetHooksInfoShown
   | SetWatchAllSessions
@@ -85,6 +87,7 @@ export interface ExistingAgents {
   agentMeta: Record<string, AgentSeatMeta>;
   folderNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
+  sessionNames?: Record<string, string>;
 }
 
 export interface AgentSeatMeta {
@@ -177,6 +180,12 @@ export interface AgentTokenUsage {
   outputTokens: number;
 }
 
+export interface AgentSessionName {
+  type: 'agentSessionName';
+  id: number;
+  name: string;
+}
+
 export interface LayoutLoaded {
   type: 'layoutLoaded';
   layout: Record<string, any> | null;
@@ -254,6 +263,7 @@ export interface SettingsLoaded {
   extensionVersion: string;
   watchAllSessions: boolean;
   alwaysShowLabels: boolean;
+  showSessionNames?: boolean;
   hooksEnabled: boolean;
   hooksInfoShown: boolean;
   externalAssetDirectories: string[];
@@ -327,6 +337,11 @@ export interface SetLastSeenVersion {
 
 export interface SetAlwaysShowLabels {
   type: 'setAlwaysShowLabels';
+  enabled: boolean;
+}
+
+export interface SetShowSessionNames {
+  type: 'setShowSessionNames';
   enabled: boolean;
 }
 
