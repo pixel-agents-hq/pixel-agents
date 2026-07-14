@@ -200,6 +200,8 @@ export interface Character {
   leadAgentId?: number;
   /** True when lead spawns teammates via tmux (run_in_background Agent calls) */
   teamUsesTmux?: boolean;
+  /** Fine-grained agent/CLI type for the type badge + hue tint ('claude', 'codex', ...). */
+  agentType?: string;
   /** Cumulative input tokens consumed */
   inputTokens: number;
   /** Cumulative output tokens consumed */

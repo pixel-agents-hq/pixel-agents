@@ -10,6 +10,7 @@
 export type ServerMessage =
   | ProviderCapabilities
   | AgentCreated
+  | AgentProviderInfo
   | AgentClosed
   | AgentSelected
   | ExistingAgents
@@ -70,6 +71,13 @@ export interface AgentCreated {
   id: number;
   folderName?: string;
   isExternal?: boolean;
+}
+
+export interface AgentProviderInfo {
+  type: 'agentProviderInfo';
+  id: number;
+  agentType: string;
+  providerId?: string;
 }
 
 export interface AgentClosed {

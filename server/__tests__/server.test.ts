@@ -3,6 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { AgentState } from '../src/types.js';
+
 // Use isolated temp HOME to avoid touching real ~/.pixel-agents/
 let tmpBase: string;
 let serverJsonDir: string;
@@ -30,6 +32,35 @@ async function postHook(
     },
     body,
   });
+}
+
+/** Minimal AgentState for store-driven broadcast tests. */
+function makeAgent(id: number, agentType?: string): AgentState {
+  return {
+    id,
+    sessionId: `sess-${id}`,
+    isExternal: false,
+    projectDir: '/test',
+    jsonlFile: `/test/${id}.jsonl`,
+    fileOffset: 0,
+    lineBuffer: '',
+    activeToolIds: new Set(),
+    activeToolStatuses: new Map(),
+    activeToolNames: new Map(),
+    activeSubagentToolIds: new Map(),
+    activeSubagentToolNames: new Map(),
+    backgroundAgentToolIds: new Set(),
+    isWaiting: false,
+    permissionSent: false,
+    hadToolsInTurn: false,
+    lastDataAt: 0,
+    linesProcessed: 0,
+    seenUnknownRecordTypes: new Set(),
+    hookDelivered: false,
+    inputTokens: 0,
+    outputTokens: 0,
+    ...(agentType ? { agentType } : {}),
+  };
 }
 
 describe('PixelAgentsServer', () => {
@@ -111,6 +142,45 @@ describe('PixelAgentsServer', () => {
     expect(received[0].providerId).toBe('claude');
     expect(received[0].event.session_id).toBe('abc');
     expect(received[0].event.hook_event_name).toBe('Stop');
+  });
+
+  // M2: agent-type identity is broadcast to WS clients on agent creation.
+  it('broadcasts agentProviderInfo when an agent is added (WS)', async () => {
+    const { AgentStateStore } = await import('../src/agentStateStore.js');
+    const store = new AgentStateStore();
+    const config = await server.start({ store, embedded: false, port: 0 });
+
+    const messages: Array<Record<string, unknown>> = [];
+    const ws = new WebSocket(`ws://127.0.0.1:${config.port}/ws`);
+    ws.addEventListener('message', (ev) => {
+      messages.push(JSON.parse((ev as MessageEvent).data as string) as Record<string, unknown>);
+    });
+    await new Promise<void>((resolve, reject) => {
+      ws.addEventListener('open', () => resolve());
+      ws.addEventListener('error', () => reject(new Error('ws connect failed')));
+    });
+    // Let the server-side connection handler register its store listeners.
+    await new Promise((r) => setTimeout(r, 50));
+
+    store.set(1, makeAgent(1)); // no explicit type → defaults to 'claude'
+    store.set(2, makeAgent(2, 'codex')); // explicit Orca-style type
+
+    await vi.waitFor(
+      () => {
+        expect(messages.filter((m) => m.type === 'agentProviderInfo')).toHaveLength(2);
+      },
+      { timeout: 2000 },
+    );
+
+    const providerMsgs = messages.filter((m) => m.type === 'agentProviderInfo');
+    expect(providerMsgs).toContainEqual(
+      expect.objectContaining({ type: 'agentProviderInfo', id: 1, agentType: 'claude' }),
+    );
+    expect(providerMsgs).toContainEqual(
+      expect.objectContaining({ type: 'agentProviderInfo', id: 2, agentType: 'codex' }),
+    );
+
+    ws.close();
   });
 
   // 6. Hook endpoint rejects oversized body

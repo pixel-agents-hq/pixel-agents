@@ -578,6 +578,9 @@ export function useExtensionMessages(
           msg.leadAgentId as number | undefined,
           msg.teamUsesTmux as boolean | undefined,
         );
+      } else if (msg.type === 'agentProviderInfo') {
+        const id = msg.id as number;
+        os.setProviderInfo(id, msg.agentType as string | undefined);
       } else if (msg.type === 'agentTokenUsage') {
         const id = msg.id as number;
         os.setAgentTokens(id, msg.inputTokens as number, msg.outputTokens as number);

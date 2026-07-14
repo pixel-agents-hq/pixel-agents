@@ -149,6 +149,32 @@ export const FUEL_GAUGE_BG = '#222';
 export const TEAM_LEAD_COLOR = '#ffd700';
 export const TEAM_ROLE_COLOR = '#66aaff';
 
+// ── Agent-type badge (per Orca-normalized CLI type) ─────────
+/** Badge background per agentType. Keyed by the type id; unknown → fallback. */
+export const AGENT_TYPE_COLORS: Record<string, string> = {
+  amp: '#ff8c42',
+  antigravity: '#c792ea',
+  claude: '#d97757',
+  codex: '#10b981',
+  'command-code': '#ffd166',
+  copilot: '#a0a8b7',
+  cursor: '#7dd3fc',
+  devin: '#818cf8',
+  droid: '#f472b6',
+  gemini: '#5b8def',
+  grok: '#e5e7eb',
+  hermes: '#f59e0b',
+  kimi: '#22d3ee',
+  'mimo-code': '#84cc16',
+  omp: '#fb7185',
+  opencode: '#2dd4bf',
+  pi: '#a78bfa',
+};
+/** Badge background for an unrecognized agentType. */
+export const AGENT_TYPE_BADGE_FALLBACK = '#8a8fa3';
+/** Text color drawn on the (light) agent-type badge background. */
+export const AGENT_TYPE_BADGE_TEXT = '#12121c';
+
 // ── Agent Detail Panel ──────────────────────────────────────
 /** Max activity entries kept per agent client-side (mirror server ACTIVITY_LOG_MAX). */
 export const ACTIVITY_LOG_CLIENT_MAX = 50;

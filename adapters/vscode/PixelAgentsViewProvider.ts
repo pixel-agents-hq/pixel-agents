@@ -30,6 +30,7 @@ import {
   sendWallTilesToWebview,
 } from '../../server/src/assetLoader.js';
 import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
+import { DEFAULT_AGENT_TYPE } from '../../server/src/constants.js';
 import { setTerminalAdapter } from '../../server/src/fileWatcher.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
 import {
@@ -117,6 +118,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         parentAgentId: agent.leadAgentId,
         teamName: agent.teamName,
         hooksOnly: agent.hooksOnly || undefined,
+      });
+      // Provider / agent-type identity (badge + hue tint). Mirrors agentTeamInfo.
+      this.sendOrBuffer({
+        type: 'agentProviderInfo',
+        id,
+        agentType: agent.agentType ?? DEFAULT_AGENT_TYPE,
+        providerId: agent.providerId,
       });
     });
     this.store.on('agentRemoved', (id) => {

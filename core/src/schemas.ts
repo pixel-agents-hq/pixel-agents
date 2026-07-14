@@ -19,6 +19,8 @@ export interface PersistedAgent {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
+  /** Fine-grained agent/CLI type for the office badge + hue tint (mirrors AgentState.agentType). */
+  agentType?: string;
 }
 
 /** Agent seat assignment with visual identity */

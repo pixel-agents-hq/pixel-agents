@@ -9,7 +9,7 @@ import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { AssetCache, SetHooksEnabledSideEffect } from './clientMessageHandler.js';
 import { handleClientMessage } from './clientMessageHandler.js';
-import { HOOK_API_PREFIX, MAX_HOOK_BODY_SIZE } from './constants.js';
+import { DEFAULT_AGENT_TYPE, HOOK_API_PREFIX, MAX_HOOK_BODY_SIZE } from './constants.js';
 import type { AgentState } from './types.js';
 
 /** Options for creating the HTTP + WebSocket server. */
@@ -161,6 +161,13 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
         parentAgentId: agent.leadAgentId,
         teamName: agent.teamName,
         hooksOnly: agent.hooksOnly || undefined,
+      });
+      // Provider / agent-type identity (badge + hue tint). Mirrors agentTeamInfo.
+      safeSend(socket, {
+        type: 'agentProviderInfo',
+        id,
+        agentType: agent.agentType ?? DEFAULT_AGENT_TYPE,
+        providerId: agent.providerId,
       });
     };
 

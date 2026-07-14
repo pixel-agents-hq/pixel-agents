@@ -392,6 +392,7 @@ export class AgentRuntime {
         isTeamLead: p.isTeamLead,
         leadAgentId: p.leadAgentId,
         teamUsesTmux: p.teamUsesTmux,
+        agentType: p.agentType,
       };
 
       this.store.set(p.id, agent);

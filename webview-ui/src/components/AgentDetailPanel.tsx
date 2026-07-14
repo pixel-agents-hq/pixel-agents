@@ -1,4 +1,5 @@
 import type { ActivityEntry } from '../../../core/src/messages.js';
+import { AGENT_TYPE_BADGE_FALLBACK, AGENT_TYPE_COLORS } from '../constants.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 
 interface AgentDetailPanelProps {
@@ -72,6 +73,16 @@ export function AgentDetailPanel({
             data-agent-id={selectedAgentId ?? undefined}
             className="p-8 border-b-2 border-border"
           >
+            {selectedCh?.agentType && (
+              <span
+                className="text-2xs font-bold mr-4"
+                style={{
+                  color: AGENT_TYPE_COLORS[selectedCh.agentType] ?? AGENT_TYPE_BADGE_FALLBACK,
+                }}
+              >
+                {selectedCh.agentType}
+              </span>
+            )}
             <span className="text-sm font-bold">
               {selectedCh?.folderName ?? `Agent ${selectedAgentId}`}
             </span>{' '}

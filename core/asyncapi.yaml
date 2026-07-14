@@ -81,6 +81,7 @@ components:
         - $ref: '#/components/schemas/ProviderCapabilities'
         # Agent lifecycle
         - $ref: '#/components/schemas/AgentCreated'
+        - $ref: '#/components/schemas/AgentProviderInfo'
         - $ref: '#/components/schemas/AgentClosed'
         - $ref: '#/components/schemas/AgentSelected'
         - $ref: '#/components/schemas/ExistingAgents'
@@ -179,6 +180,24 @@ components:
           type: string
         isExternal:
           type: boolean
+
+    AgentProviderInfo:
+      description: |
+        Provider / agent-type identity: which CLI this agent is (claude, codex,
+        cursor, ...) and which HookProvider owns it. Drives the per-type badge and
+        hue tint in the office. Sent right after AgentCreated and replayed on reconnect.
+      type: object
+      additionalProperties: false
+      required: [type, id, agentType]
+      properties:
+        type:
+          const: agentProviderInfo
+        id:
+          type: integer
+        agentType:
+          type: string
+        providerId:
+          type: string
 
     AgentClosed:
       description: An agent has been removed from the office.
