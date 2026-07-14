@@ -35,6 +35,7 @@ const KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
+const KEY_ORCA_ENABLED = 'pixel-agents.orcaEnabled';
 
 /**
  * Handle incoming ClientMessage from a WebSocket client.
@@ -94,6 +95,13 @@ export function handleClientMessage(
       adapter?.setSetting(KEY_HOOKS_ENABLED, enabled);
       if (runtime) runtime.hooksEnabled.current = enabled;
       void ctx.onSetHooksEnabled?.(enabled);
+      break;
+    }
+
+    case 'setOrcaEnabled': {
+      const enabled = msg.enabled as boolean;
+      adapter?.setSetting(KEY_ORCA_ENABLED, enabled);
+      if (runtime) runtime.orcaEnabled.current = enabled;
       break;
     }
 
@@ -187,6 +195,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const cfg = readConfig();
   const watchAllSessions = adapter?.getSetting(KEY_WATCH_ALL_SESSIONS, false) ?? false;
   const hooksEnabled = adapter?.getSetting(KEY_HOOKS_ENABLED, true) ?? true;
+  const orcaEnabled = adapter?.getSetting(KEY_ORCA_ENABLED, false) ?? false;
   send({
     type: 'settingsLoaded',
     soundEnabled: adapter?.getSetting(KEY_SOUND_ENABLED, true) ?? true,
@@ -196,6 +205,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     alwaysShowLabels: adapter?.getSetting(KEY_ALWAYS_SHOW_LABELS, false) ?? false,
     hooksEnabled,
     hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
+    orcaEnabled,
     externalAssetDirectories: cfg.externalAssetDirectories,
   });
 
@@ -204,6 +214,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   if (runtime) {
     runtime.watchAllSessions.current = watchAllSessions;
     runtime.hooksEnabled.current = hooksEnabled;
+    runtime.orcaEnabled.current = orcaEnabled;
   }
 
   // 5. Restore persisted external agents (standalone only; VS Code handles its own restore)

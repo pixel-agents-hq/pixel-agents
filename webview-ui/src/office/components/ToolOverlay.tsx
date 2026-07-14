@@ -224,6 +224,7 @@ export function ToolOverlay({
               <div className="flex flex-col gap-0 overflow-hidden">
                 {agentTypeLabel && (
                   <span
+                    data-testid="agent-type-badge"
                     className="self-start overflow-hidden text-ellipsis leading-none font-bold"
                     style={{
                       fontSize: '15px',

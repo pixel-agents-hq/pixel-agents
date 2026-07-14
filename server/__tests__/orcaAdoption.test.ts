@@ -21,6 +21,7 @@ describe('Orca adoption (M4)', () => {
     store = new AgentStateStore();
     runtime = new AgentRuntime(store, claudeProvider);
     runtime.registerProvider(orcaProvider);
+    runtime.orcaEnabled.current = true; // enable Orca adoption (default is off / opt-in)
   });
 
   afterEach(() => {
@@ -119,5 +120,47 @@ describe('Orca adoption (M4)', () => {
     expect(list).toHaveLength(1);
     expect(list[0].agentType).toBe('droid');
     expect(list[0].isWaiting).toBe(true);
+  });
+
+  it('a permission.request (decision gate) raises the permission bubble on the adopted agent', () => {
+    const messages: Array<Record<string, unknown>> = [];
+    store.on('broadcast', (m) => messages.push(m));
+
+    runtime.handleHookEvent('orca', {
+      session_id: PTYID,
+      hook_event_name: ORCA_EVENT.SESSION_START,
+      agent_type: 'devin',
+    });
+    runtime.handleHookEvent('orca', {
+      session_id: PTYID,
+      hook_event_name: ORCA_EVENT.TOOL_CALL,
+      agent_type: 'devin',
+      tool: { name: 'Bash', input: { command: 'rm -rf build' } },
+    });
+    runtime.handleHookEvent('orca', {
+      session_id: PTYID,
+      hook_event_name: ORCA_EVENT.PERMISSION_REQUEST,
+      agent_type: 'devin',
+    });
+
+    const a = agents()[0];
+    expect(a.permissionSent).toBe(true);
+    expect(messages.some((m) => m.type === 'agentToolPermission' && m.id === a.id)).toBe(true);
+  });
+
+  it('does not adopt when the Orca integration setting is off (orcaEnabled=false)', () => {
+    runtime.orcaEnabled.current = false;
+    runtime.handleHookEvent('orca', {
+      session_id: PTYID,
+      hook_event_name: ORCA_EVENT.SESSION_START,
+      agent_type: 'codex',
+    });
+    runtime.handleHookEvent('orca', {
+      session_id: PTYID,
+      hook_event_name: ORCA_EVENT.TOOL_CALL,
+      agent_type: 'codex',
+      tool: { name: 'Read', input: {} },
+    });
+    expect(agents()).toHaveLength(0);
   });
 });

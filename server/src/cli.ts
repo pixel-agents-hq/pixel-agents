@@ -133,6 +133,7 @@ async function main(): Promise<void> {
     // Sync runtime refs with persisted settings BEFORE first scan tick
     runtime.hooksEnabled.current = adapter.getSetting('pixel-agents.hooksEnabled', true);
     runtime.watchAllSessions.current = adapter.getSetting('pixel-agents.watchAllSessions', false);
+    runtime.orcaEnabled.current = adapter.getSetting('pixel-agents.orcaEnabled', false);
 
     // Install hooks on startup if the persisted setting says so
     if (runtime.hooksEnabled.current) {

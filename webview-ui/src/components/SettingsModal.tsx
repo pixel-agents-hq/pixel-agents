@@ -17,6 +17,10 @@ interface SettingsModalProps {
   externalAssetDirectories: string[];
   watchAllSessions: boolean;
   onToggleWatchAllSessions: () => void;
+  /** Standalone only: the Orca integration toggle (Orca is not registered in VS Code). */
+  showOrcaToggle?: boolean;
+  orcaEnabled: boolean;
+  onToggleOrcaEnabled: () => void;
   hooksEnabled: boolean;
   onToggleHooksEnabled: () => void;
 }
@@ -31,6 +35,9 @@ export function SettingsModal({
   externalAssetDirectories,
   watchAllSessions,
   onToggleWatchAllSessions,
+  showOrcaToggle,
+  orcaEnabled,
+  onToggleOrcaEnabled,
   hooksEnabled,
   onToggleHooksEnabled,
 }: SettingsModalProps) {
@@ -103,6 +110,9 @@ export function SettingsModal({
         checked={watchAllSessions}
         onChange={onToggleWatchAllSessions}
       />
+      {showOrcaToggle && (
+        <Checkbox label="Show Orca Agents" checked={orcaEnabled} onChange={onToggleOrcaEnabled} />
+      )}
       <Checkbox
         label="Instant Detection (Hooks)"
         checked={hooksEnabled}

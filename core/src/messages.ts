@@ -52,6 +52,7 @@ export type ClientMessage =
   | SetHooksEnabled
   | SetHooksInfoShown
   | SetWatchAllSessions
+  | SetOrcaEnabled
   | ExportLayout
   | ImportLayout
   | OpenSessionsFolder
@@ -267,6 +268,7 @@ export interface SettingsLoaded {
   alwaysShowLabels: boolean;
   hooksEnabled: boolean;
   hooksInfoShown: boolean;
+  orcaEnabled?: boolean;
   externalAssetDirectories: string[];
 }
 
@@ -373,6 +375,11 @@ export interface SetHooksInfoShown {
 
 export interface SetWatchAllSessions {
   type: 'setWatchAllSessions';
+  enabled: boolean;
+}
+
+export interface SetOrcaEnabled {
+  type: 'setOrcaEnabled';
   enabled: boolean;
 }
 

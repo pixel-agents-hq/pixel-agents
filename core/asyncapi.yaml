@@ -133,6 +133,7 @@ components:
         - $ref: '#/components/schemas/SetHooksEnabled'
         - $ref: '#/components/schemas/SetHooksInfoShown'
         - $ref: '#/components/schemas/SetWatchAllSessions'
+        - $ref: '#/components/schemas/SetOrcaEnabled'
         - $ref: '#/components/schemas/ExportLayout'
         - $ref: '#/components/schemas/ImportLayout'
         - $ref: '#/components/schemas/OpenSessionsFolder'
@@ -634,6 +635,8 @@ components:
           type: boolean
         hooksInfoShown:
           type: boolean
+        orcaEnabled:
+          type: boolean
         externalAssetDirectories:
           type: array
           items:
@@ -837,6 +840,17 @@ components:
       properties:
         type:
           const: setWatchAllSessions
+        enabled:
+          type: boolean
+
+    SetOrcaEnabled:
+      description: Toggle adoption of Orca-pushed agents (POST /api/hooks/orca).
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setOrcaEnabled
         enabled:
           type: boolean
 

@@ -63,6 +63,8 @@ export class AgentRuntime {
   // Configuration refs (mutable, shared with scanners)
   readonly watchAllSessions = { current: false };
   readonly hooksEnabled = { current: true };
+  /** Adopt push-based (Orca) agents. Off by default — opt-in via Settings. */
+  readonly orcaEnabled = { current: false };
 
   // Dependencies
   readonly dismissalTracker = new DismissalTracker();
@@ -108,7 +110,9 @@ export class AgentRuntime {
         // still gate on the workspace or Watch All Sessions.
         const provider = opts?.providerId ? this.providers.get(opts.providerId) : undefined;
         const pushBased = provider !== undefined && provider.getSessionDirs === undefined;
-        if (!pushBased && !isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
+        if (pushBased) {
+          if (!this.orcaEnabled.current) return; // Orca integration disabled in Settings
+        } else if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
           return;
         }
         adoptExternalSessionFromHook(
