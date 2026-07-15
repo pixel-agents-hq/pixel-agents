@@ -104,7 +104,10 @@ test.describe('Standalone / UI', () => {
       .fill(standalone.workspaceDir);
     await modal.locator('button', { hasText: 'Add' }).click();
 
-    await expect(modal.locator(`[title="${standalone.workspaceDir}"]`)).toBeVisible();
+    // getByTitle matches the title attribute literally; a raw CSS
+    // [title="..."] selector would mis-parse the backslashes in a Windows path
+    // as CSS escapes and never match its own title.
+    await expect(modal.getByTitle(standalone.workspaceDir, { exact: true })).toBeVisible();
 
     // Light depth: prove the onReloadAssets re-broadcast fired, not a
     // character-count delta (no fixture PNGs staged in workspaceDir).
