@@ -171,8 +171,16 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
   const launchLogFile = path.join(tmpHome, '.claude-mock', 'launch.log');
 
   // --- Video output dir ---
+  // Playwright's video recording freezes VS Code's renderer on Windows, and on
+  // some local macOS machines (observed on macOS 13 Intel: the workbench never
+  // finishes loading while recording, so every test times out in fixture
+  // setup). Record only on CI, where the runners are known-good and videos are
+  // needed as failure artifacts; PIXEL_AGENTS_E2E_FORCE_VIDEO=1 re-enables
+  // local recording on machines where it works.
+  const videoEnabled =
+    !IS_WINDOWS && (!!process.env['CI'] || process.env['PIXEL_AGENTS_E2E_FORCE_VIDEO'] === '1');
   const safeTitle = testTitle.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-  const videoDir = IS_WINDOWS ? undefined : path.join(ARTIFACTS_DIR, 'videos', safeTitle);
+  const videoDir = videoEnabled ? path.join(ARTIFACTS_DIR, 'videos', safeTitle) : undefined;
   if (videoDir) {
     fs.mkdirSync(videoDir, { recursive: true });
   }
@@ -256,8 +264,8 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
   let app: ElectronApplication | undefined;
 
   try {
-    // Playwright's video recording freezes VS Code's renderer on Windows,
-    // so only enable it on non-Windows platforms.
+    // Video recording is gated by `videoDir` above (CI or explicit opt-in) —
+    // see the "Video output dir" comment for the renderer-freeze rationale.
     const launchOptions: Parameters<typeof electron.launch>[0] = {
       executablePath: vscodePath,
       args,
@@ -265,9 +273,9 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
       cwd: resolvedWorkspaceDir,
       timeout: 60_000,
     };
-    if (!IS_WINDOWS) {
+    if (videoDir) {
       launchOptions.recordVideo = {
-        dir: videoDir!,
+        dir: videoDir,
         size: { width: 1280, height: 800 },
       };
     }
