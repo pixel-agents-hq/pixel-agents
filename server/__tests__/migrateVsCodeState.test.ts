@@ -52,17 +52,22 @@ function makeContext(globalSeed = {}, workspaceSeed = {}) {
 describe('migrateVsCodeState', () => {
   let tempHome: string;
   let originalHome: string | undefined;
+  let originalUserProfile: string | undefined;
 
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-migrate-test-'));
     originalHome = process.env.HOME;
+    originalUserProfile = process.env.USERPROFILE;
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
     showWarningMessage.mockReset();
   });
 
   afterEach(() => {
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
+    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserProfile;
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
@@ -173,6 +178,7 @@ describe('migrateVsCodeState', () => {
     const blocker = path.join(tempHome, 'blocker');
     fs.writeFileSync(blocker, 'x');
     process.env.HOME = blocker; // HOME is now a file; can't mkdir inside
+    process.env.USERPROFILE = blocker;
 
     const { context, globalStore } = makeContext({
       'pixel-agents.soundEnabled': false,

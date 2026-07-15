@@ -81,8 +81,7 @@
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "npm run asyncapi:generate && npm run check-types && npm run lint && node esbuild.js --production && npm run build:webview",
     "asyncapi:generate": "tsx scripts/generate-messages.ts",
-    "asyncapi:validate": "asyncapi validate core/asyncapi.yaml",
-    "asyncapi:docs": "asyncapi start studio --file core/asyncapi.yaml",
+    "asyncapi:validate": "tsx scripts/validate-asyncapi.ts",
     "check-types": "tsc --noEmit && tsc --noEmit -p server/tsconfig.test.json",
     "prepare": "husky",
     "lint": "eslint adapters/vscode server core && cd webview-ui && eslint .",
@@ -103,9 +102,9 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@asyncapi/cli": "^6.0.0",
-    "@asyncapi/html-template": "^3.5.6",
     "@asyncapi/modelina": "^5.10.1",
+    "@asyncapi/parser": "^3.6.0",
+    "@babel/core": "8.0.1",
     "@playwright/test": "^1.58.2",
     "@types/node": "25.x",
     "@types/pngjs": "^6.0.5",
@@ -113,11 +112,12 @@
     "@vscode/test-electron": "^2.5.2",
     "allure-commandline": "^2.38.1",
     "allure-playwright": "^3.7.1",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.28.1",
     "eslint": "^10.0.3",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-simple-import-sort": "^13.0.0",
     "husky": "^9.1.7",
+    "js-yaml": "5.2.1",
     "knip": "^6.3.0",
     "lint-staged": "^16.3.2",
     "npm-run-all": "^4.1.5",
@@ -125,7 +125,9 @@
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.54.0"
+    "typescript-eslint": "^8.54.0",
+    "undici": "7.28.0",
+    "vite": "8.1.4"
   },
   "lint-staged": {
     "adapters/vscode/**/*.ts": "eslint --fix",
@@ -135,6 +137,23 @@
     "scripts/**/*.{js,mjs}": "prettier --write",
     "*.{ts,tsx,js,mjs,css,json,md}": "prettier --write",
     "webview-ui/**/*.{ts,tsx,js,css,json}": "prettier --write"
+  },
+  "overrides": {
+    "@asyncapi/parser": "$@asyncapi/parser",
+    "@babel/core": "$@babel/core",
+    "ajv@<=6.12.6": "6.14.0",
+    "brace-expansion": "5.0.7",
+    "esbuild": "$esbuild",
+    "fast-uri@<=3.1.1": "3.1.3",
+    "js-yaml": "$js-yaml",
+    "jsonpath-plus": "10.4.0",
+    "parserapiv1": "npm:@asyncapi/parser@3.6.0",
+    "parserapiv2": "npm:@asyncapi/parser@3.6.0",
+    "protobufjs": "7.6.5",
+    "shell-quote": "1.10.0",
+    "undici": "$undici",
+    "vite": "$vite",
+    "ws": "8.21.1"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",

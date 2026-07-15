@@ -133,7 +133,9 @@ function readSettings(homeDir) {
 }
 
 function normalizePathForMatch(value) {
-  return String(value).replace(/\\/g, '/');
+  // JSON-quoted Windows commands contain doubled backslashes. Normalize both
+  // path separators and the resulting repeated slashes before matching.
+  return String(value).replace(/\\/g, '/').replace(/\/{2,}/g, '/');
 }
 
 function isPixelAgentsHookCommand(homeDir, command) {
