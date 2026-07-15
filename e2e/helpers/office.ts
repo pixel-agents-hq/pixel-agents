@@ -1,6 +1,8 @@
 import type { Frame, Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
+import { narrate } from './test-narration';
+
 /**
  * Overlay helpers work the same against a VS Code webview iframe (Frame) and
  * a standalone browser page (Page). Both Playwright surfaces expose `locator`
@@ -168,5 +170,6 @@ export async function closeAgentFromOverlay(
 
   const closeButton = overlay.locator('button[title="Close agent"]');
   await expect(closeButton).toBeVisible({ timeout });
+  narrate.step('closing the agent via its "×" overlay button');
   await closeButton.click();
 }

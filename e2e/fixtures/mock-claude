@@ -6,4 +6,17 @@ NODE_BIN="${PIXEL_AGENTS_NODE_BIN:-node}"
 LOG_DIR="${HOME}/.claude-mock"
 mkdir -p "${LOG_DIR}"
 printf '%s wrapper node=%s cwd=%s args=%s\n' "$(date -Iseconds)" "${NODE_BIN}" "$(pwd)" "$*" >> "${LOG_DIR}/actions.log"
+
+# Cosmetic: background a headerless tail of the narration logs into this
+# terminal tab so the yellow [test] / magenta [external] story shows alongside
+# this session's own cyan [mock-claude] lines whenever the tab has focus. Only
+# for terminal-hosted (internal) sessions — external spawns set no
+# PIXEL_AGENTS_TEST_NARRATION_LOG (their stdout IS the external log, so a tail
+# there would loop). The tail dies with the terminal at test teardown.
+if [ -n "${PIXEL_AGENTS_TEST_NARRATION_LOG:-}" ]; then
+  "${NODE_BIN}" "${SCRIPT_DIR}/tail-follow.cjs" none \
+    "${PIXEL_AGENTS_TEST_NARRATION_LOG}" "${PIXEL_AGENTS_EXTERNAL_NARRATION_LOG:-}" \
+    2>/dev/null &
+fi
+
 exec "${NODE_BIN}" "${SCRIPT_DIR}/mock-claude-runner.cjs" "$@"

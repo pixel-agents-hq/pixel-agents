@@ -55,12 +55,14 @@ async function expectExternalAgentAdoption(frame: Frame): Promise<void> {
 
 test.describe('Hooks OFF / matrix', () => {
   test('internal basic spawn adopted via JSONL polling @area:matrix', async ({ pixelAgents }) => {
-    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('turning hooks OFF — adoption must come purely from JSONL polling');
     await setSettings(frame, {
       hooksEnabled: false,
     });
 
+    narrator.step('scripting the mock: a Task tool_use, its result, then turn_duration');
     await arrangeNextClaudeInvocation(
       tmpHome,
       claudeScenario('internal basic spawn hooks off')
@@ -81,23 +83,29 @@ test.describe('Hooks OFF / matrix', () => {
     await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
     const terminalTab = window.getByText(/Claude Code #\d+/);
     await expect(terminalTab.first()).toBeVisible({ timeout: 15_000 });
+    narrator.check('the Claude Code terminal tab is visible');
     await openPixelAgentsPanel(window);
     const panelFrame = await getPixelAgentsFrame(window);
 
+    narrator.step('watching the office — the launched session should be adopted by polling');
     await expectOverlayCount(panelFrame, 1);
+    narrator.check('exactly one character adopted via JSONL polling (count → 1)');
   });
 
   test('internal inline teammate adopted via JSONL polling @area:matrix', async ({
     pixelAgents,
   }) => {
-    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
     const teamName = uniqueTeamName('hooks-off-internal-inline');
 
+    narrator.step('turning hooks OFF — the team must be discovered from JSONL alone');
     await setSettings(frame, {
       hooksEnabled: false,
     });
 
+    narrator.step('seeding the team config: a lead plus a web-researcher teammate');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
+    narrator.step('scripting team-metadata records for the lead and teammate into JSONL');
     await arrangeNextClaudeInvocation(
       tmpHome,
       withTeammateSession(claudeScenario('internal inline teammate hooks off'))
@@ -129,21 +137,29 @@ test.describe('Hooks OFF / matrix', () => {
     const panelFrame = await getPixelAgentsFrame(window);
 
     await expectOverlayVisibleWithTexts(panelFrame, ['LEAD']);
+    narrator.check('the LEAD character renders');
+    narrator.step('expecting the web-researcher teammate to appear from JSONL polling');
     await expectOverlayCount(panelFrame, 2, 10_000);
     await expectOverlayVisibleWithTexts(panelFrame, [TEAMMATE_ROLE]);
+    narrator.check('web-researcher teammate joined — 2 characters in the office');
     await expectLeadActivity(panelFrame, 'Running: npm test');
+    narrator.check('"Running: npm test" on the lead only');
     await expectTeammateActivity(panelFrame, 'Searching the web');
+    narrator.check('"Searching the web" on the teammate only');
   });
 
   test('internal tmux teammate adopted via JSONL polling @area:matrix', async ({ pixelAgents }) => {
-    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
     const teamName = uniqueTeamName('hooks-off-internal-tmux');
 
+    narrator.step('turning hooks OFF — the tmux teammate must be found via JSONL polling');
     await setSettings(frame, {
       hooksEnabled: false,
     });
 
+    narrator.step('seeding the team config: a lead plus a web-researcher teammate');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
+    narrator.step('scripting a run_in_background Agent spawn + its async-launch result into JSONL');
     await arrangeNextClaudeInvocation(
       tmpHome,
       withTeammateSession(claudeScenario('internal tmux teammate hooks off'))
@@ -177,16 +193,24 @@ test.describe('Hooks OFF / matrix', () => {
     const panelFrame = await getPixelAgentsFrame(window);
 
     await expectOverlayVisibleWithTexts(panelFrame, ['LEAD']);
+    narrator.check('the LEAD character renders');
+    narrator.step('waiting for the run_in_background Agent to surface a Subtask');
     await expectOverlayVisible(panelFrame, 'Subtask: Delegate research');
+    narrator.check('"Subtask: Delegate research" appears');
     await expectOverlayCount(panelFrame, 2, 10_000);
     await expectOverlayVisibleWithTexts(panelFrame, [TEAMMATE_ROLE]);
+    narrator.check('web-researcher teammate present — 2 characters in the office');
     await expectLeadActivity(panelFrame, 'Running: npm test');
+    narrator.check('the follow-up "Running: npm test" stays on the lead only');
   });
 
   test('external basic spawn adopted via JSONL polling @area:matrix', async ({ pixelAgents }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
     const sessionId = 'hooks-off-external-basic-session';
 
+    narrator.step(
+      'enabling Watch All Sessions, hooks OFF — an outside session adopted by the scanner',
+    );
     await setSettings(frame, {
       watchAllSessions: true,
       hooksEnabled: false,
@@ -212,24 +236,33 @@ test.describe('Hooks OFF / matrix', () => {
         .build(),
     });
 
+    narrator.step('waiting for the 3s external scanner to adopt the session');
     await expectExternalAgentAdoption(frame);
+    narrator.check('external session adopted (count → 1)');
+    narrator.step('expecting the scripted Task to surface a Subtask');
     await expectOverlayVisible(frame, 'Subtask: External research', 10_000);
+    narrator.check('"Subtask: External research" appears');
     await expectOverlayCount(frame, 2, 10_000);
+    narrator.check('subtask on screen alongside the lead (count → 2)');
+    narrator.step('waiting for the tool_result + turn_duration to retire the subtask');
     await expectOverlayCount(frame, 1, 12_000);
+    narrator.check('subtask despawned — count back to 1');
   });
 
   test('external inline teammate adopted via JSONL polling @area:matrix', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
     const teamName = uniqueTeamName('hooks-off-external-inline');
     const sessionId = 'hooks-off-external-inline-session';
 
+    narrator.step('enabling Watch All Sessions, hooks OFF — external team discovered via JSONL');
     await setSettings(frame, {
       watchAllSessions: true,
       hooksEnabled: false,
     });
 
+    narrator.step('seeding the team config: a lead plus a web-researcher teammate');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
     await spawnExternalClaudeScenario({
       tmpHome,
@@ -260,24 +293,33 @@ test.describe('Hooks OFF / matrix', () => {
         .build(),
     });
 
+    narrator.step('waiting for the external scanner to adopt the session');
     await expectExternalAgentAdoption(frame);
+    narrator.check('external lead adopted (count → 1)');
     await expectOverlayVisibleWithTexts(frame, ['LEAD'], 10_000);
+    narrator.check('the LEAD character renders');
+    narrator.step('expecting the web-researcher teammate from JSONL team-metadata');
     await expectOverlayCount(frame, 2, 12_000);
     await expectOverlayVisibleWithTexts(frame, [TEAMMATE_ROLE]);
+    narrator.check('web-researcher teammate joined — 2 characters in the office');
     await expectLeadActivity(frame, 'Running: npm test');
+    narrator.check('"Running: npm test" on the lead only');
     await expectTeammateActivity(frame, 'Searching the web');
+    narrator.check('"Searching the web" on the teammate only');
   });
 
   test('external tmux teammate adopted via JSONL polling @area:matrix', async ({ pixelAgents }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
     const teamName = uniqueTeamName('hooks-off-external-tmux');
     const sessionId = 'hooks-off-external-tmux-session';
 
+    narrator.step('enabling Watch All Sessions, hooks OFF — external tmux team found via JSONL');
     await setSettings(frame, {
       watchAllSessions: true,
       hooksEnabled: false,
     });
 
+    narrator.step('seeding the team config: a lead plus a web-researcher teammate');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
     await spawnExternalClaudeScenario({
       tmpHome,
@@ -310,11 +352,18 @@ test.describe('Hooks OFF / matrix', () => {
         .build(),
     });
 
+    narrator.step('waiting for the external scanner to adopt the session');
     await expectExternalAgentAdoption(frame);
+    narrator.check('external lead adopted (count → 1)');
     await expectOverlayVisibleWithTexts(frame, ['LEAD'], 10_000);
+    narrator.check('the LEAD character renders');
+    narrator.step('waiting for the run_in_background Agent to surface a Subtask');
     await expectOverlayVisible(frame, 'Subtask: Delegate research', 10_000);
+    narrator.check('"Subtask: Delegate research" appears');
     await expectOverlayCount(frame, 2, 12_000);
     await expectOverlayVisibleWithTexts(frame, [TEAMMATE_ROLE]);
+    narrator.check('web-researcher teammate present — 2 characters in the office');
     await expectLeadActivity(frame, 'Running: npm test');
+    narrator.check('the follow-up "Running: npm test" stays on the lead only');
   });
 });

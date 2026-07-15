@@ -81,9 +81,12 @@ test.describe('Hooks ON / lifecycle', () => {
   test('/clear on internal agent reassigns the same character to the new JSONL @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
 
     await waitForClaudeHookSetup(tmpHome);
+    narrator.step(
+      'arranging a /clear — old session ends, a new one runs "npm test", a stale tool hits the old JSONL',
+    );
     await arrangeNextClaudeInvocation(
       tmpHome,
       claudeScenario('/clear reassignment hooks on')
@@ -118,14 +121,18 @@ test.describe('Hooks ON / lifecycle', () => {
     await openPixelAgentsPanel(window);
     const panelFrame = await getPixelAgentsFrame(window);
     const originalAgentId = await expectSingleAgentOverlay(panelFrame);
+    narrator.check('one character on screen before the /clear');
 
+    narrator.step('waiting for the reassigned character to run the new session');
     await expectOverlayVisible(panelFrame, 'Running: npm test');
     await expectOverlayCount(panelFrame, 1);
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
+    narrator.check('same character shows "Running: npm test" — reassigned, count still 1');
 
     await panelFrame.waitForTimeout(500);
     await expectNoOverlay(panelFrame, 'Running: npm run stale');
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
+    narrator.check('stale "npm run stale" never rendered; same single character throughout');
   });
 
   // In-terminal /resume: the SAME live claude process fires SessionEnd(resume)
@@ -136,9 +143,12 @@ test.describe('Hooks ON / lifecycle', () => {
   test('/resume reassigns the same agent within the grace window @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
 
     await waitForClaudeHookSetup(tmpHome);
+    narrator.step(
+      'arranging an in-terminal /resume — session ends then restarts inside the 2s grace window',
+    );
     await arrangeNextClaudeInvocation(
       tmpHome,
       claudeScenario('/resume reassignment hooks on')
@@ -173,34 +183,44 @@ test.describe('Hooks ON / lifecycle', () => {
     await openPixelAgentsPanel(window);
     const panelFrame = await getPixelAgentsFrame(window);
     const originalAgentId = await expectSingleAgentOverlay(panelFrame);
+    narrator.check('one character on screen before the /resume');
 
+    narrator.step('waiting for the resumed session to reuse the same character');
     await expectOverlayVisible(panelFrame, 'Running: npm test');
     await expectOverlayCount(panelFrame, 1);
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
+    narrator.check('same character shows "Running: npm test" within the grace window');
 
     // Settling wait: give the runtime a chance to wrongly attach the stale tool
     // to the resumed agent before asserting absence.
     await panelFrame.waitForTimeout(500);
     await expectNoOverlay(panelFrame, 'Running: npm run stale');
+    narrator.check('stale "npm run stale" never attaches to the resumed agent');
 
     // Wait past the 2s resume grace window for the new tool to take effect.
     // expectOverlayVisible polls until the assertion holds; bumping the timeout
     // covers grace expiry + post-grace tool propagation.
+    narrator.step('rechecking after the 2s grace window has expired');
     await expectOverlayVisible(panelFrame, 'Running: npm test', 5_000);
     await expectOverlayCount(panelFrame, 1);
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
+    narrator.check('still the same single character past the grace window');
   });
 
   test('/clear edge case with a sibling agent in the same projectDir @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, window, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('enabling Watch All Sessions so the external sibling session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
 
     await waitForClaudeHookSetup(tmpHome);
+    narrator.step(
+      'arranging a /clear on the internal agent while a sibling shares its project dir',
+    );
     await arrangeNextClaudeInvocation(
       tmpHome,
       claudeScenario('/clear edge with sibling agent hooks on')
@@ -236,6 +256,7 @@ test.describe('Hooks ON / lifecycle', () => {
     await openPixelAgentsPanel(window);
     const panelFrame = await getPixelAgentsFrame(window);
     const internalAgentId = await expectSingleAgentOverlay(panelFrame);
+    narrator.check('internal agent on screen before the /clear (count 1)');
 
     await spawnExternalClaudeScenario({
       tmpHome,
@@ -258,8 +279,10 @@ test.describe('Hooks ON / lifecycle', () => {
         .build(),
     });
 
+    narrator.step('waiting for both the internal agent and the sibling on screen (count → 2)');
     await expectOverlayCount(panelFrame, 2, 12_000);
     const externalAgentId = otherOverlayId(await readAgentOverlayIds(panelFrame), internalAgentId);
+    narrator.check('two characters share the same project dir');
 
     await expectOverlayVisibleForAgent(panelFrame, externalAgentId, 'Running: npm run sibling');
     await expectOverlayVisibleForAgent(
@@ -270,13 +293,17 @@ test.describe('Hooks ON / lifecycle', () => {
     );
     await expectNoOverlay(panelFrame, 'Running: npm run stale');
     expect(await readAgentOverlayIds(panelFrame)).toEqual([internalAgentId, externalAgentId]);
+    narrator.check(
+      'sibling keeps "npm run sibling", internal reassigns to "npm run cleared", stale never appears',
+    );
   });
 
   test('--resume after the grace window expires cleans up the old agent @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('enabling Watch All Sessions so the external session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
@@ -329,22 +356,28 @@ test.describe('Hooks ON / lifecycle', () => {
         .build(),
     });
 
+    narrator.step('waiting for the pre-resume tool to render');
     await expectOverlayVisible(frame, 'Running: npm run before-resume');
     const oldAgentId = await expectSingleAgentOverlay(frame);
+    narrator.check('old character shows "Running: npm run before-resume"');
 
+    narrator.step('resume arrives AFTER the grace window — the old character should be cleaned up');
     await expectOverlayCount(frame, 0, 8_000);
+    narrator.check('old character removed (count → 0)');
     await expectOverlayVisible(frame, 'Running: npm run late-resume', 10_000);
     const [newAgentId] = await readAgentOverlayIds(frame);
     expect(newAgentId).toBeDefined();
     expect(newAgentId).not.toBe(oldAgentId);
+    narrator.check('late-resumed session gets a NEW character with a different id');
   });
 
   test('three parallel Task subagents in one turn render distinct sub-characters @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
 
     await waitForClaudeHookSetup(tmpHome);
+    narrator.step('arranging one turn with three parallel Task tool_uses');
     await arrangeNextClaudeInvocation(
       tmpHome,
       claudeScenario('three parallel Task subagents in one turn hooks on')
@@ -393,24 +426,30 @@ test.describe('Hooks ON / lifecycle', () => {
     await openPixelAgentsPanel(window);
     const panelFrame = await getPixelAgentsFrame(window);
 
+    narrator.step('waiting for all three parallel Subtask sub-characters to appear');
     await expectOverlayVisible(panelFrame, 'Subtask: Parallel task 3');
     await expectOverlayVisible(panelFrame, 'Parallel task 1');
     await expectOverlayVisible(panelFrame, 'Parallel task 2');
     await expectOverlayVisible(panelFrame, 'Parallel task 3');
     await expectOverlayCount(panelFrame, 4, 10_000);
     expect(await readAgentOverlayIds(panelFrame)).toHaveLength(4);
+    narrator.check('parent + 3 subtasks on screen (count → 4)');
 
+    narrator.step('after the batched tool_results + turn_duration, the subtasks should collapse');
     await expectOverlayCount(panelFrame, 1, 16_000);
+    narrator.check('everything collapses back to just the parent (count → 1)');
   });
 
   test('inline teammate removed from team config disappears within one second @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
     const teamName = uniqueTeamName('teammate-removal-hooks-on');
+    narrator.step('seeding a team config with a lead + one inline teammate');
     const configPath = seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE]);
 
     await waitForClaudeHookSetup(tmpHome);
+    narrator.step('the scenario rewrites the config to lead-only at t+8s');
     await arrangeNextClaudeInvocation(
       tmpHome,
       withInlineTeammateSession(claudeScenario('inline teammate removed from config hooks on'))
@@ -447,27 +486,34 @@ test.describe('Hooks ON / lifecycle', () => {
     await expectOverlayVisibleWithTexts(panelFrame, [INLINE_TEAMMATE_ROLE], 10_000);
     await expectOverlayVisible(panelFrame, 'Searching the web');
     await expectOverlayCount(panelFrame, 2, 10_000);
+    narrator.check('lead + teammate on screen; teammate shows "Searching the web" (count 2)');
 
+    narrator.step('waiting for the 1s config poll to drop the removed teammate');
     await expectOverlayCount(panelFrame, 1, 12_000);
     await expectNoOverlayWithTexts(panelFrame, [INLINE_TEAMMATE_ROLE], 2_000);
+    narrator.check('teammate gone within a second (count 2 → 1)');
 
     // Stability check: after cascade removal, the teammate must not reappear
     // (zombie cleanup race). Polling alone cannot test this; we have to wait.
+    narrator.step('holding to confirm the teammate never reappears');
     await panelFrame.waitForTimeout(8_000);
     await expectOverlayCount(panelFrame, 1);
     await expectNoOverlayWithTexts(panelFrame, [INLINE_TEAMMATE_ROLE], 2_000);
+    narrator.check('teammate stays gone through the stability window (count 1)');
   });
 
   test('lead SessionEnd cascade-removes active inline teammates @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
     const teamName = uniqueTeamName('lead-cascade-hooks-on');
 
+    narrator.step('enabling Watch All Sessions so the external lead session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
 
+    narrator.step('seeding a team of lead + two inline teammates');
     seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE, SECOND_TEAMMATE_ROLE]);
     await waitForClaudeHookSetup(tmpHome);
     await spawnExternalClaudeScenario({
@@ -531,18 +577,23 @@ test.describe('Hooks ON / lifecycle', () => {
         .build(),
     });
 
+    narrator.step('waiting for the lead + both teammates on screen (count → 3)');
     await expectOverlayCount(frame, 3, 12_000);
     await expectOverlayVisibleWithTexts(frame, [INLINE_TEAMMATE_ROLE]);
     await expectOverlayVisibleWithTexts(frame, [SECOND_TEAMMATE_ROLE]);
+    narrator.check('lead + both teammates on screen, each mid-tool (count 3)');
 
+    narrator.step('lead emits SessionEnd — the whole trio should cascade away');
     await expectOverlayCount(frame, 0, 8_000);
+    narrator.check('closing the lead cascades: all three gone (count → 0)');
   });
 
   test('external basic subagent with run_in_background routes to basic path @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('enabling Watch All Sessions so the external lead session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
@@ -591,25 +642,33 @@ test.describe('Hooks ON / lifecycle', () => {
         .build(),
     });
 
+    narrator.step('waiting for a basic Subtask sub-character (run_in_background, no team)');
     await expectOverlayVisible(frame, 'Subtask: Background basic subtask');
     await expectOverlayCount(frame, 1, 10_000);
     await expectNoOverlay(frame, 'general-purpose', 2_000);
+    narrator.check(
+      'basic "Subtask: Background basic subtask" shown; no "general-purpose" teammate overlay',
+    );
     // Stability check: a misrouted SubagentStart could spawn a teammate-style
     // overlay seconds later (the lead has no teamName, so this is the regression).
+    narrator.step('holding to confirm no teammate overlay spawns late');
     await frame.waitForTimeout(5_000);
     await expectOverlayCount(frame, 1);
+    narrator.check('still just the basic subtask (count 1) — runInBackground gate holds');
   });
 
   test('lead permission_prompt routes bubble to teammate not lead when teammates exist @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
     const teamName = uniqueTeamName('teammate-permission-hooks-on');
 
+    narrator.step('enabling Watch All Sessions so the external lead session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
 
+    narrator.step('seeding a team of lead + one inline teammate');
     seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE]);
     await waitForClaudeHookSetup(tmpHome);
     await spawnExternalClaudeScenario({
@@ -671,22 +730,34 @@ test.describe('Hooks ON / lifecycle', () => {
         .build(),
     });
 
+    narrator.step('waiting for the teammate on screen doing the WebSearch');
     await expectOverlayVisibleWithTexts(frame, [INLINE_TEAMMATE_ROLE], 12_000);
+    narrator.check('teammate is up and working');
+
+    narrator.step(
+      'a permission_prompt arrives on the LEAD — the bubble should land on the working teammate',
+    );
     await expectOverlayVisibleWithTexts(frame, [INLINE_TEAMMATE_ROLE, 'Needs approval'], 8_000);
     await expectNoOverlayWithTexts(frame, ['LEAD', 'Needs approval']);
+    narrator.check('"Needs approval" is on the teammate; the lead has no bubble');
+
+    narrator.step('waiting for the teammate to finish its task');
     await expectNoOverlayWithTexts(frame, [INLINE_TEAMMATE_ROLE, 'Needs approval'], 8_000);
+    narrator.check('bubble clears when the teammate completes');
   });
 
   test('TeammateIdle marks the targeted teammate waiting and leaves lead unchanged @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
     const teamName = uniqueTeamName('targeted-teammate-idle-hooks-on');
 
+    narrator.step('enabling Watch All Sessions so the external lead session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
 
+    narrator.step('seeding a team of lead + two inline teammates');
     seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE, SECOND_TEAMMATE_ROLE]);
     await waitForClaudeHookSetup(tmpHome);
     await spawnExternalClaudeScenario({
@@ -755,19 +826,29 @@ test.describe('Hooks ON / lifecycle', () => {
         .build(),
     });
 
+    narrator.step('waiting for the lead + two teammates on screen (count → 3)');
     await expectOverlayCount(frame, 3, 12_000);
+    narrator.check('lead + two teammates on screen (count 3)');
+
+    narrator.step('a teammateIdle hook targets only the first teammate');
     await expectOverlayVisibleWithTexts(frame, [INLINE_TEAMMATE_ROLE, 'Waiting for input'], 8_000);
     await expectOverlayVisibleWithTexts(frame, [SECOND_TEAMMATE_ROLE, 'Running: npm run reviewer']);
     await expectNoOverlayWithTexts(frame, [SECOND_TEAMMATE_ROLE, 'Waiting for input']);
     await expectNoOverlayWithTexts(frame, ['LEAD', 'Waiting for input']);
+    narrator.check(
+      'first teammate shows "Waiting for input"; second still "Running: npm run reviewer"; lead unaffected',
+    );
   });
 
   test('rapid /clear then new tool within 500ms lands on the reassigned agent @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
 
     await waitForClaudeHookSetup(tmpHome);
+    narrator.step(
+      'arranging a time-compressed /clear — end, restart, fresh tool + a ghost tool all within ~500ms',
+    );
     await arrangeNextClaudeInvocation(
       tmpHome,
       claudeScenario('rapid clear then new tool under 500ms hooks on')
@@ -803,21 +884,26 @@ test.describe('Hooks ON / lifecycle', () => {
     await openPixelAgentsPanel(window);
     const panelFrame = await getPixelAgentsFrame(window);
     const originalAgentId = await expectSingleAgentOverlay(panelFrame);
+    narrator.check('one character before the rapid /clear');
 
+    narrator.step('waiting for the reassigned character to land on the fresh tool');
     await expectOverlayVisible(panelFrame, 'Running: npm run fresh');
     await expectOverlayCount(panelFrame, 1);
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
+    narrator.check('same character shows "Running: npm run fresh", count 1');
 
     await panelFrame.waitForTimeout(750);
     await expectNoOverlay(panelFrame, 'Running: npm run ghost');
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
+    narrator.check('ghost "npm run ghost" never renders; id unchanged');
   });
 
   test('close via X prevents re-adoption of old JSONL during dismissal cooldown @area:lifecycle', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('enabling Watch All Sessions so external sessions are adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
@@ -854,10 +940,13 @@ test.describe('Hooks ON / lifecycle', () => {
         .build(),
     });
 
+    narrator.step('waiting for the external agent to be active');
     await expectOverlayVisible(frame, 'Running: npm run old-live');
     const oldAgentId = await expectSingleAgentOverlay(frame);
+    narrator.check('external agent shows "Running: npm run old-live"');
     await closeAgentFromOverlay(frame, { agentId: oldAgentId });
     await expectOverlayCount(frame, 0, 8_000);
+    narrator.check('agent removed after the "×" (count → 0)');
 
     await spawnExternalClaudeScenario({
       tmpHome,
@@ -884,16 +973,22 @@ test.describe('Hooks ON / lifecycle', () => {
         .build(),
     });
 
+    narrator.step('waiting for the fresh external session to appear');
     await expectOverlayVisible(frame, 'Running: npm run reopened', 10_000);
     await expectOverlayCount(frame, 1);
     const [newAgentId] = await readAgentOverlayIds(frame);
     expect(newAgentId).not.toBe(oldAgentId);
+    narrator.check('the fresh session gets a NEW character (count 1)');
 
     // Stability check: the closed JSONL must NOT be re-adopted during the 3-min
     // cooldown. 4s is enough to cover several scanner ticks.
+    narrator.step(
+      'holding while the dismissed JSONL gets a late stale write that must not be re-adopted',
+    );
     await frame.waitForTimeout(4_000);
     await expectNoOverlay(frame, 'Running: npm run old-stale', 2_000);
     await expectOverlayCount(frame, 1);
+    narrator.check('closed JSONL never re-adopted during cooldown; count stays 1');
   });
 
   // verify playDoneSound() fires on agentStatus: 'waiting'.
@@ -905,8 +1000,9 @@ test.describe('Hooks ON / lifecycle', () => {
   test('done sound chime fires on agentStatus waiting @area:cross-cutting', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('enabling Watch All Sessions so the external session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
@@ -936,6 +1032,7 @@ test.describe('Hooks ON / lifecycle', () => {
     await sendHookEvent(serverConfig, preToolUseBash(sessionId, 'npm test'));
     await expectOverlayCount(frame, 1);
     await expectOverlayVisible(frame, 'Running: npm test');
+    narrator.check('external agent active — "Running: npm test"');
 
     // Reset the marker AFTER active-state dispatch so we only capture sounds
     // triggered by the idle_prompt under test.
@@ -946,9 +1043,14 @@ test.describe('Hooks ON / lifecycle', () => {
       if (w.__pixelAgentsTestHooks) w.__pixelAgentsTestHooks.playedSounds = [];
     });
 
+    narrator.step('sending an idle_prompt to flip the agent to waiting');
     await sendHookEvent(serverConfig, idlePrompt(sessionId));
     await expectOverlayVisible(frame, 'Waiting for input');
+    narrator.check('overlay shows "Waiting for input"');
 
+    narrator.step(
+      'checking a "done" chime was dispatched (test hook — the chime is not audible in the video)',
+    );
     await expect
       .poll(
         async () =>
@@ -961,6 +1063,7 @@ test.describe('Hooks ON / lifecycle', () => {
         { timeout: 5_000 },
       )
       .toContain('done');
+    narrator.check('playedSounds contains a "done" entry');
   });
 
   // verify restored agents skip the matrix-rain spawn animation.
@@ -990,10 +1093,11 @@ test.describe('Hooks ON / lifecycle', () => {
   test('restored agents skip the matrix spawn animation @area:cross-cutting', async ({
     pixelAgents,
   }) => {
-    const { window, tmpHome, mockLogFile } = pixelAgents;
+    const { window, tmpHome, mockLogFile, narrator } = pixelAgents;
     let frame = pixelAgents.frame;
 
     await waitForClaudeHookSetup(tmpHome);
+    narrator.step('spawning an agent, then closing + reopening the panel to force a fresh restore');
     await arrangeNextClaudeInvocation(
       tmpHome,
       claudeScenario('restored agents skip spawn effect').holdOpenFor(20_000).build(),
@@ -1003,11 +1107,15 @@ test.describe('Hooks ON / lifecycle', () => {
     await openPixelAgentsPanel(window);
     frame = await getPixelAgentsFrame(window);
     await expectOverlayCount(frame, 1);
+    narrator.check('one agent after the initial spawn');
 
     // Let the original spawn animation finish so we don't confuse it with
     // the post-restore observation (matrix effect lives ~300ms; 800ms cushion).
     await frame.waitForTimeout(800);
 
+    narrator.step(
+      'closing the panel (disposes the webview) then reopening to restore existingAgents',
+    );
     await closeBottomPanel(window);
     await openPixelAgentsPanel(window);
     frame = await getPixelAgentsFrame(window);
@@ -1017,6 +1125,9 @@ test.describe('Hooks ON / lifecycle', () => {
     // log captures matrixEffect AT addAgent time (synchronous inside the
     // wrapper), so it's immune to the ~300ms matrix-effect lifetime race that
     // would let a regression slip past a snapshot-based observable.
+    narrator.step(
+      'the whole signal is a test-hook read: every restored agent must skip the spawn effect',
+    );
     await expect
       .poll(
         async () =>
@@ -1051,6 +1162,7 @@ test.describe('Hooks ON / lifecycle', () => {
       expect(entry.skipSpawnEffect).toBe(true);
       expect(entry.matrixEffectAtCreation).toBeNull();
     }
+    narrator.check('every restored agent created with skipSpawnEffect=true and no matrix effect');
   });
 
   // verify formatToolStatus produces the right overlay text for every
@@ -1065,8 +1177,9 @@ test.describe('Hooks ON / lifecycle', () => {
   test('tool status text matches every PreToolUse tool name @area:cross-cutting', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('enabling Watch All Sessions so the external session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
@@ -1137,12 +1250,19 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await expectOverlayCount(frame, 1);
     await expectOverlayVisible(frame, 'Running: npm test');
+    narrator.check('agent active — "Running: npm test"');
 
+    narrator.step('cycling through Read, Edit, Write, Glob, Grep, WebFetch — one tool every 3s');
     for (const c of cases) {
       await expectOverlayVisible(frame, c.expectedText);
     }
+    narrator.check(
+      'each tool shows its exact status: Reading foo.ts, Editing bar.ts, Writing baz.ts, Searching files/code, Fetching web content',
+    );
 
+    narrator.step('waiting for SessionEnd to remove the character');
     await expectOverlayCount(frame, 0);
+    narrator.check('SessionEnd removes the character (count → 0)');
   });
 
   // verify playPermissionSound fires on agentToolPermission.
@@ -1152,8 +1272,9 @@ test.describe('Hooks ON / lifecycle', () => {
   test('permission sound chime fires on agentToolPermission @area:cross-cutting', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('enabling Watch All Sessions so the external session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
@@ -1175,6 +1296,7 @@ test.describe('Hooks ON / lifecycle', () => {
     await sendHookEvent(serverConfig, sessionStartStartup(sessionId, workspaceDir, transcriptPath));
     await sendHookEvent(serverConfig, preToolUseBash(sessionId, 'npm test'));
     await expectOverlayCount(frame, 1);
+    narrator.check('external agent active');
 
     // Reset the marker right before the action under test, so any earlier
     // sounds (none expected from the spawn, but defensive) are ignored.
@@ -1185,9 +1307,14 @@ test.describe('Hooks ON / lifecycle', () => {
       if (w.__pixelAgentsTestHooks) w.__pixelAgentsTestHooks.playedSounds = [];
     });
 
+    narrator.step('sending a permissionRequest hook to raise the approval bubble');
     await sendHookEvent(serverConfig, permissionRequest(sessionId));
     await expectOverlayVisible(frame, 'Needs approval');
+    narrator.check('"Needs approval" bubble is visible');
 
+    narrator.step(
+      'checking a "permission" chime was dispatched (test hook — not audible in the video)',
+    );
     await expect
       .poll(
         async () =>
@@ -1200,6 +1327,7 @@ test.describe('Hooks ON / lifecycle', () => {
         { timeout: 5_000 },
       )
       .toContain('permission');
+    narrator.check('playedSounds contains a "permission" entry');
   });
 
   // Hook installer side effects: claudeHookInstaller side effects on ~/.claude/settings.json.
@@ -1263,8 +1391,9 @@ test.describe('Hooks ON / lifecycle', () => {
   test('pixel-agents hook is installed in settings.json on extension startup @area:cross-cutting', async ({
     pixelAgents,
   }) => {
-    const { tmpHome } = pixelAgents;
+    const { tmpHome, narrator } = pixelAgents;
 
+    narrator.step('reading ~/.claude/settings.json after startup — the hook must be installed');
     await waitForClaudeHookSetup(tmpHome);
     const settings = readClaudeSettings(tmpHome);
 
@@ -1273,6 +1402,9 @@ test.describe('Hooks ON / lifecycle', () => {
     // installation succeeded.
     expect(pixelAgentsHookPresent(settings, 'SessionStart')).toBe(true);
     expect(pixelAgentsHookPresent(settings, 'PreToolUse')).toBe(true);
+    narrator.check(
+      '~/.claude/settings.json has the pixel-agents hook under both SessionStart and PreToolUse',
+    );
   });
 
   // toggling "Instant Detection" off uninstalls the pixel-agents hook;
@@ -1281,28 +1413,33 @@ test.describe('Hooks ON / lifecycle', () => {
   test('hook install and uninstall round-trip via the Settings toggle @area:cross-cutting', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome } = pixelAgents;
+    const { frame, tmpHome, narrator } = pixelAgents;
 
     await waitForClaudeHookSetup(tmpHome);
     expect(pixelAgentsHookPresent(readClaudeSettings(tmpHome), 'PreToolUse')).toBe(true);
+    narrator.check('pixel-agents hook present under PreToolUse at startup');
 
     // Uninstall: toggle hooks off.
+    narrator.step('toggling Hooks OFF in Settings — the hook entry should disappear');
     await setSettings(frame, { hooksEnabled: false });
     await expect
       .poll(() => pixelAgentsHookPresent(readClaudeSettings(tmpHome), 'PreToolUse'), {
         timeout: 5_000,
       })
       .toBe(false);
+    narrator.check('hook entry gone from settings.json after toggling off');
 
     // Reinstall: toggle hooks back on. hooksEnabled:true is the product
     // default, but here it is a mid-test ACTION (re-enable after the
     // uninstall above), not a redundant default — do not trim it.
+    narrator.step('toggling Hooks back ON — the entry should reappear');
     await setSettings(frame, { hooksEnabled: true });
     await expect
       .poll(() => pixelAgentsHookPresent(readClaudeSettings(tmpHome), 'PreToolUse'), {
         timeout: 5_000,
       })
       .toBe(true);
+    narrator.check('hook entry back in settings.json after toggling on');
 
     // No duplication: exactly one pixel-agents entry across all PreToolUse hooks.
     const settings = readClaudeSettings(tmpHome);
@@ -1317,6 +1454,7 @@ test.describe('Hooks ON / lifecycle', () => {
       );
     }, 0);
     expect(pixelAgentsCount).toBe(1);
+    narrator.check('exactly one pixel-agents entry — no duplicate installs');
   });
 
   // permission bubble auto-clears when a fresh PreToolUse arrives.
@@ -1329,8 +1467,9 @@ test.describe('Hooks ON / lifecycle', () => {
   test('permission bubble auto-clears when a fresh PreToolUse arrives @area:cross-cutting', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('enabling Watch All Sessions so the external session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
@@ -1376,11 +1515,15 @@ test.describe('Hooks ON / lifecycle', () => {
 
     await expectOverlayCount(frame, 1);
     await expectOverlayVisible(frame, 'Running: npm test');
+    narrator.check('agent active — "Running: npm test"');
 
     await expectOverlayVisible(frame, 'Needs approval');
+    narrator.check('"Needs approval" bubble is up');
 
+    narrator.step('a fresh PreToolUse(Read) arrives, as if the user approved in the terminal');
     await expectOverlayVisible(frame, 'Reading foo.ts');
     await expectNoOverlay(frame, 'Needs approval', 2_000);
+    narrator.check('overlay swaps to "Reading foo.ts"; the stale approval bubble is gone');
   });
 
   // persisted settings survive a webview reload.
@@ -1398,7 +1541,7 @@ test.describe('Hooks ON / lifecycle', () => {
   test('settings toggles persist across a webview reload @area:cross-cutting', async ({
     pixelAgents,
   }) => {
-    const { window } = pixelAgents;
+    const { window, narrator } = pixelAgents;
     let frame = pixelAgents.frame;
 
     // Read whatever the fixture default is, then flip it. The persistence
@@ -1407,11 +1550,14 @@ test.describe('Hooks ON / lifecycle', () => {
     // dwellMs keeps the modal visibly open ~500ms per interaction so the run
     // video shows the toggle states (Pablo's review call); no assertion change.
     const initial = await getSettingChecked(frame, 'Always Show Labels', { dwellMs: 500 });
+    narrator.step('flipping "Always Show Labels" in Settings');
     await setSettings(frame, { alwaysShowLabels: !initial }, { dwellMs: 500 });
     expect(await getSettingChecked(frame, 'Always Show Labels', { dwellMs: 500 })).toBe(!initial);
+    narrator.check('"Always Show Labels" is now flipped');
 
     // Force a fresh webview by closing and reopening the panel (same
     // mechanism the restored-agents test uses for the existingAgents restore path).
+    narrator.step('closing + reopening the panel to force a fresh webview');
     await closeBottomPanel(window);
     await openPixelAgentsPanel(window);
     frame = await getPixelAgentsFrame(window);
@@ -1419,6 +1565,7 @@ test.describe('Hooks ON / lifecycle', () => {
     // After settingsLoaded re-hydrates, the toggle must still be in the
     // flipped state — not back to the fixture default.
     expect(await getSettingChecked(frame, 'Always Show Labels', { dwellMs: 500 })).toBe(!initial);
+    narrator.check('flipped state survives the reload — persisted through config.json');
   });
 
   // layout editor smoke. Verifies entering edit mode reveals the editor
@@ -1438,7 +1585,7 @@ test.describe('Hooks ON / lifecycle', () => {
   test('layout editor enter paint save persist and exit round-trip @area:cross-cutting', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome } = pixelAgents;
+    const { frame, tmpHome, narrator } = pixelAgents;
 
     const layoutPath = path.join(tmpHome, '.pixel-agents', 'layout.json');
 
@@ -1465,6 +1612,7 @@ test.describe('Hooks ON / lifecycle', () => {
     }
 
     // Enter edit mode.
+    narrator.step('entering Layout mode');
     const layoutButton = frame.locator('button', { hasText: 'Layout' });
     await expect(layoutButton).toBeVisible({ timeout: 15_000 });
     await layoutButton.click();
@@ -1473,6 +1621,8 @@ test.describe('Hooks ON / lifecycle', () => {
     // always present in the floor section of the toolbar.
     const paintFloorBtn = frame.locator('button[title="Paint floor tiles"]');
     await expect(paintFloorBtn).toBeVisible({ timeout: 10_000 });
+    narrator.check('the layout editor toolbar is showing');
+    narrator.step('selecting Paint floor and painting one tile');
     await paintFloorBtn.click();
 
     // Click the canvas center — with paint floor active, this paints the
@@ -1486,6 +1636,7 @@ test.describe('Hooks ON / lifecycle', () => {
     // EditActionBar appears only when isDirty=true. Save button is part of it.
     const saveBtn = frame.locator('button', { hasText: 'Save' });
     await expect(saveBtn).toBeVisible({ timeout: 5_000 });
+    narrator.step('clicking Save — persisting the layout to disk');
     await saveBtn.click();
 
     // Wait until layout.json reflects a change. The debounced save in
@@ -1500,10 +1651,13 @@ test.describe('Hooks ON / lifecycle', () => {
         { timeout: 10_000 },
       )
       .toBe(true);
+    narrator.check('~/.pixel-agents/layout.json changed on disk after Save');
 
     // Exit edit mode and confirm the editor button disappears.
+    narrator.step('exiting Layout mode');
     await layoutButton.click();
     await expect(paintFloorBtn).toBeHidden({ timeout: 5_000 });
+    narrator.check('exiting Layout mode hides the editor toolbar');
   });
 
   // the regression that historically bit users. A third-party hook
@@ -1512,12 +1666,13 @@ test.describe('Hooks ON / lifecycle', () => {
   test('hook uninstall preserves a pre-existing third-party hook entry @area:cross-cutting', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome } = pixelAgents;
+    const { frame, tmpHome, narrator } = pixelAgents;
 
     await waitForClaudeHookSetup(tmpHome);
     const settingsPath = path.join(tmpHome, '.claude', 'settings.json');
 
     // Inject a third-party hook entry alongside our install.
+    narrator.step('planting a fake third-party hook next to the pixel-agents entry');
     const THIRD_PARTY_MARKER = '/usr/local/bin/third-party-hook.js';
     const settings = readClaudeSettings(tmpHome);
     if (!settings.hooks) settings.hooks = {};
@@ -1532,17 +1687,21 @@ test.describe('Hooks ON / lifecycle', () => {
     let now = readClaudeSettings(tmpHome);
     expect(pixelAgentsHookPresent(now, 'PreToolUse')).toBe(true);
     expect(thirdPartyHookPresent(now, 'PreToolUse', THIRD_PARTY_MARKER)).toBe(true);
+    narrator.check('both the pixel-agents and third-party hooks present before uninstall');
 
     // Uninstall via Settings toggle.
+    narrator.step('toggling Hooks OFF — only the pixel-agents entry should be removed');
     await setSettings(frame, { hooksEnabled: false });
     await expect
       .poll(() => pixelAgentsHookPresent(readClaudeSettings(tmpHome), 'PreToolUse'), {
         timeout: 5_000,
       })
       .toBe(false);
+    narrator.check('pixel-agents hook removed from settings.json');
 
     // The third-party hook must still be there.
     now = readClaudeSettings(tmpHome);
     expect(thirdPartyHookPresent(now, 'PreToolUse', THIRD_PARTY_MARKER)).toBe(true);
+    narrator.check('the third-party hook survived — surgical uninstall');
   });
 });

@@ -12,6 +12,7 @@ const VSCODE_PATH_FILE = path.join(REPO_ROOT, '.vscode-test/vscode-executable.tx
 const MOCK_CLAUDE_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude');
 const MOCK_CLAUDE_CMD_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude.cmd');
 const MOCK_CLAUDE_RUNNER_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude-runner.cjs');
+const TAIL_FOLLOW_PATH = path.join(REPO_ROOT, 'e2e/fixtures/tail-follow.cjs');
 const ARTIFACTS_DIR = namespaceE2EPath(path.join(REPO_ROOT, 'test-results/e2e'));
 const IS_WINDOWS = process.platform === 'win32';
 const PATH_SEP = IS_WINDOWS ? ';' : ':';
@@ -180,16 +181,21 @@ export async function launchVSCode(
     }
   }
 
-  // Copy mock-claude into an isolated bin dir
+  // Copy mock-claude into an isolated bin dir. The wrapper resolves its sibling
+  // scripts (mock-claude-runner.cjs, tail-follow.cjs) relative to its own dir
+  // (SCRIPT_DIR / %~dp0), so BOTH must live alongside it here — tail-follow.cjs
+  // is what backgrounds the narration tail into each mock terminal tab.
   const mockClaudeBinaryPath = path.join(mockBinDir, IS_WINDOWS ? 'claude.cmd' : 'claude');
   if (IS_WINDOWS) {
     // Windows: copy the .cmd batch file as 'claude.cmd'
     fs.copyFileSync(MOCK_CLAUDE_CMD_PATH, mockClaudeBinaryPath);
     fs.copyFileSync(MOCK_CLAUDE_RUNNER_PATH, path.join(mockBinDir, 'mock-claude-runner.cjs'));
+    fs.copyFileSync(TAIL_FOLLOW_PATH, path.join(mockBinDir, 'tail-follow.cjs'));
   } else {
     fs.copyFileSync(MOCK_CLAUDE_PATH, mockClaudeBinaryPath);
     fs.chmodSync(mockClaudeBinaryPath, 0o755);
     fs.copyFileSync(MOCK_CLAUDE_RUNNER_PATH, path.join(mockBinDir, 'mock-claude-runner.cjs'));
+    fs.copyFileSync(TAIL_FOLLOW_PATH, path.join(mockBinDir, 'tail-follow.cjs'));
   }
 
   // VS Code user settings for the isolated profile. Together with
@@ -244,6 +250,17 @@ export async function launchVSCode(
           // claude-hook.js (which runs in this terminal) can't write to
           // it. Path matches the `debugLogFile` const below.
           PIXEL_AGENTS_DEBUG_LOG: path.join(tmpHome, '.pixel-agents', 'debug.log'),
+          // Narration log paths for the mock-claude wrapper's background tail
+          // (see e2e/fixtures/mock-claude). inheritEnv:false means these must
+          // be set on the profile too, or internal mock tabs are silently
+          // narration-less on macOS — which is where the review videos record.
+          // Paths match the process-env block below.
+          PIXEL_AGENTS_TEST_NARRATION_LOG: path.join(tmpHome, '.claude-mock', 'test-narration.log'),
+          PIXEL_AGENTS_EXTERNAL_NARRATION_LOG: path.join(
+            tmpHome,
+            '.claude-mock',
+            'external-narration.log',
+          ),
         },
       },
     };
@@ -284,6 +301,17 @@ export async function launchVSCode(
     PIXEL_AGENTS_E2E_LAUNCH_LOG: launchLogFile,
     PIXEL_AGENTS_NODE_BIN: process.execPath,
     PIXEL_AGENTS_DEBUG_LOG: debugLogFile,
+    // Narration log paths, consumed by the mock-claude wrapper to background a
+    // headerless tail into its own terminal tab (yellow [test] + magenta
+    // [external] lines interleaved with the runner's cyan output). On Linux the
+    // process env propagates to the integrated terminal; macOS also needs these
+    // on the e2e terminal profile (inheritEnv:false) — see the block above.
+    PIXEL_AGENTS_TEST_NARRATION_LOG: path.join(tmpHome, '.claude-mock', 'test-narration.log'),
+    PIXEL_AGENTS_EXTERNAL_NARRATION_LOG: path.join(
+      tmpHome,
+      '.claude-mock',
+      'external-narration.log',
+    ),
     // Prevent VS Code from trying to talk to real accounts / telemetry
     VSCODE_TELEMETRY_DISABLED: '1',
     // Enable Claude Agent Teams feature (see workspace settings.local.json above)

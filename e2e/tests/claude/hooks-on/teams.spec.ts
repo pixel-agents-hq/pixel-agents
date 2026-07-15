@@ -54,11 +54,15 @@ test.describe('Hooks ON / teams', () => {
   test('internal terminal lead with inline teammate routes tools to teammate @area:teams', async ({
     pixelAgents,
   }) => {
-    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
 
     const teamName = uniqueTeamName('hooks-on-internal-inline');
+    narrator.step('seeding a team config: a lead plus a web-researcher teammate');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
     await waitForClaudeHookSetup(tmpHome);
+    narrator.step(
+      'arranging the run: SubagentStart brings in the teammate, then Bash on the lead, WebSearch on the teammate',
+    );
     await arrangeNextClaudeInvocation(
       tmpHome,
       withInlineTeammateSession(claudeScenario('internal inline teammate routing hooks on'))
@@ -91,10 +95,17 @@ test.describe('Hooks ON / teams', () => {
     const panelFrame = await getPixelAgentsFrame(window);
 
     await expectOverlayVisibleWithTexts(panelFrame, ['LEAD']);
+    narrator.check('the lead is on screen labelled "LEAD"');
+    narrator.step(
+      'waiting for SubagentStart + the teammate transcript to spawn the web-researcher',
+    );
     await expectOverlayCount(panelFrame, 2);
     await expectOverlayVisibleWithTexts(panelFrame, [TEAMMATE_ROLE]);
+    narrator.check('two characters now — the web-researcher teammate joined');
     await expectLeadActivity(panelFrame, 'Running: npm test');
+    narrator.check('"Running: npm test" on the lead only');
     await expectTeammateActivity(panelFrame, 'Searching the web');
+    narrator.check('"Searching the web" on the teammate only — routing is strict');
   });
 
   // INCOMPLETE vs its title — kept deliberately (2026-07-12 review call): the
@@ -109,11 +120,15 @@ test.describe('Hooks ON / teams', () => {
   test('internal terminal lead with tmux teammate routes tools to teammate @area:teams', async ({
     pixelAgents,
   }) => {
-    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
 
     const teamName = uniqueTeamName('hooks-on-internal-tmux');
+    narrator.step('seeding a team config: a lead plus a tmux teammate');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
     await waitForClaudeHookSetup(tmpHome);
+    narrator.step(
+      'arranging the run: the lead delegates via a background Agent, then runs Bash and hits a permission request',
+    );
     await arrangeNextClaudeInvocation(
       tmpHome,
       withInlineTeammateSession(claudeScenario('internal tmux teammate routing hooks on'))
@@ -149,23 +164,32 @@ test.describe('Hooks ON / teams', () => {
     const panelFrame = await getPixelAgentsFrame(window);
 
     await expectOverlayVisibleWithTexts(panelFrame, ['LEAD']);
+    narrator.check('the lead is on screen labelled "LEAD"');
+    narrator.step('waiting for the lead to delegate via a background Agent');
     await expectLeadActivity(panelFrame, 'Subtask: Delegate research');
+    narrator.check('"Subtask: Delegate research" on the lead — the delegation');
+    narrator.step('waiting for SubagentStart to bring in the tmux teammate');
     await expectOverlayCount(panelFrame, 2);
     await expectOverlayVisibleWithTexts(panelFrame, [TEAMMATE_ROLE]);
+    narrator.check('the teammate appears — two characters');
     await expectLeadActivity(panelFrame, 'Running: npm test');
+    narrator.check('"Running: npm test" stays on the lead');
     await expectLeadActivity(panelFrame, 'Needs approval');
+    narrator.check('"Needs approval" on the lead too — nothing misrouted to the teammate');
   });
 
   test('external session lead with inline teammate routes tools to teammate @area:teams', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('enabling Watch All Sessions so the external hooks-only session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
 
     const teamName = uniqueTeamName('hooks-on-external-inline');
+    narrator.step('seeding a team config: a lead plus a web-researcher teammate');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
     await waitForClaudeHookSetup(tmpHome);
     const sessionId = 'hooks-on-external-inline-session';
@@ -215,14 +239,22 @@ test.describe('Hooks ON / teams', () => {
     // PreToolUse only lands at t+7s, leaving wide margin even with the
     // external-monitor terminal opening (~3s) inside the spawn call above.
     await frame.waitForTimeout(1_500);
+    narrator.step('SessionStart alone should not create a character yet');
     await expectOverlayCount(frame, 0);
+    narrator.check('count 0 — SessionStart alone created nothing');
 
+    narrator.step('waiting for the first PreToolUse to adopt the external lead');
     await expectOverlayCount(frame, 1);
     await expectOverlayVisibleWithTexts(frame, ['LEAD']);
+    narrator.check('the lead is adopted and labelled "LEAD" — count 1');
+    narrator.step('waiting for team metadata + SubagentStart to bring in the teammate');
     await expectOverlayCount(frame, 2);
     await expectOverlayVisibleWithTexts(frame, [TEAMMATE_ROLE]);
+    narrator.check('the web-researcher teammate joined — count 2');
     await expectLeadActivity(frame, 'Running: npm test');
+    narrator.check('"Running: npm test" on the lead only');
     await expectTeammateActivity(frame, 'Searching the web');
+    narrator.check('"Searching the web" on the teammate only — routing is strict');
   });
 
   // Same scope note as the internal tmux test above: the title states the
@@ -230,13 +262,15 @@ test.describe('Hooks ON / teams', () => {
   test('external session lead with tmux teammate routes tools to teammate @area:teams', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('enabling Watch All Sessions so the external hooks-only session is adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
 
     const teamName = uniqueTeamName('hooks-on-external-tmux');
+    narrator.step('seeding a team config: a lead plus a tmux teammate');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
     await waitForClaudeHookSetup(tmpHome);
     const sessionId = 'hooks-on-external-tmux-session';
@@ -279,12 +313,20 @@ test.describe('Hooks ON / teams', () => {
         .build(),
     });
 
+    narrator.step('waiting for the external lead to be adopted via hooks');
     await expectOverlayCount(frame, 1);
     await expectOverlayVisibleWithTexts(frame, ['LEAD']);
+    narrator.check('the lead is adopted and labelled "LEAD" — count 1');
+    narrator.step('waiting for the lead to delegate via a background Agent');
     await expectLeadActivity(frame, 'Subtask: Delegate research');
+    narrator.check('"Subtask: Delegate research" on the lead — the delegation');
+    narrator.step('waiting for SubagentStart to bring in the tmux teammate');
     await expectOverlayCount(frame, 2);
     await expectOverlayVisibleWithTexts(frame, [TEAMMATE_ROLE]);
+    narrator.check('the teammate appears — count 2');
     await expectLeadActivity(frame, 'Running: npm test');
+    narrator.check('"Running: npm test" stays on the lead');
     await expectLeadActivity(frame, 'Needs approval');
+    narrator.check('"Needs approval" on the lead too — nothing misrouted to the teammate');
   });
 });

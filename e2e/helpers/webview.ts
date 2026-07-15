@@ -168,6 +168,25 @@ export async function closeBottomPanel(window: Page): Promise<void> {
 }
 
 /**
+ * Reopen the bottom panel with the same ⌘J/Ctrl+J toggle closeBottomPanel
+ * used. Compared to openPixelAgentsPanel (palette "Show Panel" plus a
+ * possible "Toggle Maximized Panel" resize), the chord restores the panel
+ * exactly as it was — no command-palette overlays in the run video. Caller
+ * must have closed the panel with closeBottomPanel first, and should follow
+ * with getPixelAgentsFrame(window) to wait for the fresh webview.
+ */
+export async function reopenBottomPanel(window: Page): Promise<void> {
+  const statusBox = await window
+    .locator('.part.statusbar')
+    .boundingBox()
+    .catch(() => null);
+  if (statusBox) {
+    await window.mouse.click(statusBox.x + statusBox.width / 2, statusBox.y + statusBox.height / 2);
+  }
+  await window.keyboard.press(process.platform === 'darwin' ? 'Meta+J' : 'Control+J');
+}
+
+/**
  * Single-shot (non-waiting) check for the Pixel Agents webview frame.
  *
  * The iframe must be VISIBLE, not merely attached: after the panel is hidden

@@ -24,7 +24,7 @@ test.describe('Hooks ON / spawn paths', () => {
   test('internal terminal spawns agent and Task subagent appears then despawns @area:spawn', async ({
     pixelAgents,
   }) => {
-    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
 
     // Sub-character appears on Task tool_use and despawns on tool_result.
     // Task subagent lifecycle is JSONL-driven even in hooks-on mode
@@ -33,6 +33,7 @@ test.describe('Hooks ON / spawn paths', () => {
     // own scheduler (mocking rule 1): the Subtask phase stays open from
     // t+5s to t+13s — a wide window for the polling assertions below, same
     // shape as the matrix "internal basic spawn" scenario.
+    narrator.step('arming the mock: spawn a Task subtask at t+5s, close it at t+13s');
     await arrangeNextClaudeInvocation(
       tmpHome,
       claudeScenario('internal terminal basic spawn')
@@ -54,17 +55,23 @@ test.describe('Hooks ON / spawn paths', () => {
     await openPixelAgentsPanel(window);
     const panelFrame = await getPixelAgentsFrame(window);
     await expectOverlayCount(panelFrame, 1);
+    narrator.check('the lead character is on screen — one agent, no subtask yet');
 
     expect(spawned.invocationLog).toContain(`session-id=${spawned.sessionId}`);
     expect(path.basename(spawned.jsonlFile)).toBe(`${spawned.sessionId}.jsonl`);
 
     const terminalTab = window.getByText(/Claude Code #\d+/);
     await expect(terminalTab.first()).toBeVisible({ timeout: 15_000 });
+    narrator.check('a real "Claude Code #N" terminal tab is open');
 
+    narrator.step('waiting for the t+5s Task tool_use to spawn a "Subtask" character');
     await expectOverlayCount(panelFrame, 2);
     await expectOverlayVisible(panelFrame, 'Subtask: spawned subtask');
+    narrator.check('"Subtask: spawned subtask" overlay up — count 1 → 2');
 
+    narrator.step('waiting for the t+13s tool_result — the subtask should despawn');
     await expectOverlayCount(panelFrame, 1);
+    narrator.check('count back to 1 after the tool_result');
   });
 
   // External hook-driven session adoption, driven by the mock's own scheduler
@@ -88,12 +95,14 @@ test.describe('Hooks ON / spawn paths', () => {
   test('external Claude session adopted via hook confirmation lifecycle @area:spawn', async ({
     pixelAgents,
   }) => {
-    const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
+    const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
+    narrator.step('enabling Watch All Sessions so the hooks-only session gets adopted');
     await setSettings(frame, {
       watchAllSessions: true,
     });
 
+    narrator.step('waiting for the hook install and hook server to be ready');
     await waitForClaudeHookSetup(tmpHome);
     await waitForHookServer(tmpHome);
     const sessionId = 'external-hook-session';
@@ -131,18 +140,26 @@ test.describe('Hooks ON / spawn paths', () => {
     // SessionStart (sequential POSTs, ordering preserved).
 
     // 1. PreToolUseBash (t+0.7s) confirms the session; agent appears with bash status.
+    narrator.step('waiting for the t+0.7s PreToolUse(Bash) to confirm the session');
     await expectOverlayCount(frame, 1);
     await expectOverlayVisible(frame, 'Running: npm test');
+    narrator.check('the external agent appeared — "Running: npm test"');
 
     // 2. PermissionRequest (t+4.5s) → "Needs approval"
+    narrator.step('waiting for the t+4.5s PermissionRequest');
     await expectOverlayVisible(frame, 'Needs approval');
+    narrator.check('"Needs approval" bubble on the agent');
 
     // 3. Stop (t+8.5s) → finished turn shows ONLY the checkmark; the "Idle" label
     //    surfaces once the checkmark fades (~2s later). The 5s gap before
     //    SessionEnd is what guarantees "Idle" gets a visible window.
+    narrator.step('waiting for the t+8.5s Stop — checkmark, then "Idle" after the fade');
     await expectOverlayVisible(frame, 'Idle');
+    narrator.check('turn finished — "Idle" after the green checkmark fades');
 
     // 4. SessionEnd(exit) (t+13.5s) → agent is removed.
+    narrator.step('waiting for the t+13.5s SessionEnd to remove the agent');
     await expectOverlayCount(frame, 0);
+    narrator.check('the agent is gone — count back to 0');
   });
 });

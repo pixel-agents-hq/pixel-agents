@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { getClaudeProjectDir } from './team';
+import { narrate } from './test-narration';
 import { clickAddAgent } from './webview';
 
 const INTERNAL_AGENT_TIMEOUT_MS = 20_000;
@@ -65,6 +66,7 @@ export async function spawnInternalAgentAndWait(
   // second spawn in the same test could read a stale log and return the first
   // agent's identity.
   const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
+  narrate.step('clicking "+ Agent" — a terminal launches the mock claude');
   await clickAddAgent(frame);
 
   await expect
@@ -94,6 +96,7 @@ export async function spawnInternalAgentAndWait(
     throw new Error(`No JSONL file found for session ${sessionId}`);
   }
 
+  narrate.check('mock claude launched with a --session-id and its JSONL exists');
   return {
     sessionId,
     projectDir: path.dirname(jsonlFile),
@@ -113,6 +116,7 @@ export async function spawnInternalAgentAndWaitForInvocation(
   // second spawn in the same test could read a stale log and return the first
   // agent's identity.
   const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
+  narrate.step('clicking "+ Agent" — a terminal launches the mock claude');
   await clickAddAgent(frame);
 
   await expect
@@ -129,6 +133,7 @@ export async function spawnInternalAgentAndWaitForInvocation(
     throw new Error(`No session id found in mock invocation log at ${mockLogFile}`);
   }
 
+  narrate.check('mock claude invoked with a fresh --session-id');
   const projectDir = getClaudeProjectDir(tmpHome, workspaceDir);
   return {
     sessionId,
@@ -154,6 +159,7 @@ export async function addAgentForFolder(
   mockLogFile: string,
 ): Promise<InternalAgentSpawn> {
   const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
+  narrate.step(`clicking "+ Agent" and picking the "${folderName}" folder`);
   await frame.locator('button', { hasText: '+ Agent' }).click();
   // The folder-picker entries are <button> DropdownItems; scope to the button
   // role so we don't collide with the same folder name shown as a <span> in an
@@ -189,6 +195,7 @@ export async function addAgentForFolder(
     throw new Error(`No JSONL file found for session ${sessionId}`);
   }
 
+  narrate.check(`agent for "${folderName}" launched — JSONL session created`);
   return { sessionId, projectDir: path.dirname(jsonlFile), jsonlFile, invocationLog };
 }
 

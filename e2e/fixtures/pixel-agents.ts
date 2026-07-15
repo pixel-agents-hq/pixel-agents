@@ -4,12 +4,14 @@ import fs from 'fs';
 import path from 'path';
 
 import { applyAllureLabels } from '../helpers/allure-labels';
-import {
-  clearExternalMonitorContext,
-  setExternalMonitorContext,
-} from '../helpers/external-monitor';
 import { launchVSCode, type VSCodeSession, waitForWorkbench } from '../helpers/launch';
 import { killTrackedExternalProcesses } from '../helpers/mock-claude';
+import {
+  clearNarrationContext,
+  openMonitorTerminal,
+  setNarrationContext,
+  type TestNarrator,
+} from '../helpers/test-narration';
 import { arrangeReviewLayout, getPixelAgentsFrame, openPixelAgentsPanel } from '../helpers/webview';
 
 const ATTACH_VIDEOS_ON_SUCCESS = process.env['PIXEL_AGENTS_E2E_ATTACH_VIDEOS_ON_SUCCESS'] === '1';
@@ -21,6 +23,13 @@ export interface PixelAgentsContext {
   tmpHome: string;
   workspaceDir: string;
   mockLogFile: string;
+  /**
+   * Yellow `[test]` narrator for the run video. Cosmetic only — never gate an
+   * assertion on it. Call step() before an action, check() after an assertion
+   * resolves. Shared helpers narrate universal moments via the module-level
+   * `narrate` (see helpers/test-narration.ts).
+   */
+  narrator: TestNarrator;
 }
 
 async function attachTextFileIfExists(
@@ -93,9 +102,13 @@ export const test = base.extend<{
       await arrangeReviewLayout(window);
       const frame = await getPixelAgentsFrame(window);
 
-      // Lets the first spawnExternalClaudeScenario call open the external-
-      // session narration monitor in this window (cosmetic, lazy).
-      setExternalMonitorContext(window, tmpHome);
+      // Narrator on by default: register the per-test narration context, then
+      // open the always-on "e2e monitor" terminal tailing the test + external
+      // logs. Opened LAST in setup (after layout, before any agent) so it can't
+      // disturb arrangement; strictly cosmetic — failures are swallowed inside
+      // openMonitorTerminal and no assertion depends on it.
+      const narrator = setNarrationContext(tmpHome);
+      await openMonitorTerminal(window, tmpHome);
 
       await use({
         session,
@@ -104,6 +117,7 @@ export const test = base.extend<{
         tmpHome,
         workspaceDir,
         mockLogFile,
+        narrator,
       });
     } finally {
       // Only attach debug artifacts (logs, screenshot, video) for failing tests
@@ -181,7 +195,7 @@ export const test = base.extend<{
       }
 
       const attachRunVideo = runVideo !== null && shouldAttachRunVideo(testInfo);
-      clearExternalMonitorContext();
+      clearNarrationContext();
       // Kill any leaked mock-claude processes spawned via spawnExternalClaudeScenario
       // BEFORE tearing down the session (and deleting tmpHome). Otherwise leaked
       // processes accumulate across the suite and add real environmental pressure.
