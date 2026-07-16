@@ -841,7 +841,8 @@ export function adoptExternalSessionFromHook(
     knownJsonlFiles.add(transcriptPath);
     const projectDir = path.dirname(transcriptPath);
     const folderName =
-      folderNameResolver?.({ projectDir }) ?? folderNameFromProjectDir(path.basename(projectDir));
+      folderNameResolver?.({ cwd, projectDir }) ??
+      folderNameFromProjectDir(path.basename(projectDir));
 
     adoptExternalSession(
       transcriptPath,
