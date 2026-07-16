@@ -8,6 +8,7 @@ import { launchVSCode, type VSCodeSession, waitForWorkbench } from '../helpers/l
 import { killTrackedExternalProcesses } from '../helpers/mock-claude';
 import {
   clearNarrationContext,
+  finishNarration,
   openMonitorTerminal,
   setNarrationContext,
   type TestNarrator,
@@ -102,13 +103,14 @@ export const test = base.extend<{
       await arrangeReviewLayout(window);
       const frame = await getPixelAgentsFrame(window);
 
-      // Narrator on by default: register the per-test narration context, then
-      // open the always-on "e2e monitor" terminal tailing the test + external
-      // logs. Opened LAST in setup (after layout, before any agent) so it can't
-      // disturb arrangement; strictly cosmetic — failures are swallowed inside
-      // openMonitorTerminal and no assertion depends on it.
-      const narrator = setNarrationContext(tmpHome);
+      // Terminal services are reliably ready only after VS Code finishes its
+      // startup layout restoration. Open the monitor at that lifecycle boundary
+      // so every test body still begins with it ready.
       await openMonitorTerminal(window, tmpHome);
+
+      // Start the narration clock only after fixture setup, so the first test
+      // action still begins around +0.0 s.
+      const narrator = setNarrationContext(tmpHome);
 
       await use({
         session,
@@ -120,6 +122,8 @@ export const test = base.extend<{
         narrator,
       });
     } finally {
+      await finishNarration(window);
+
       // Only attach debug artifacts (logs, screenshot, video) for failing tests
       // — or when --attach-videos-on-success is set. On a green run these are
       // pure noise and bloat the hosted Allure report (a per-test screenshot

@@ -271,6 +271,17 @@ export async function launchVSCode(
     path.join(userSettingsDir, 'settings.json'),
     JSON.stringify(userSettings, null, 2),
   );
+  // Stable, E2E-only path to create the narration terminal without driving
+  // the command palette. Pinning the chord in the isolated profile avoids
+  // platform/default-keymap differences.
+  fs.writeFileSync(
+    path.join(userSettingsDir, 'keybindings.json'),
+    JSON.stringify(
+      [{ key: 'f8', command: 'workbench.action.terminal.newInActiveWorkspace' }],
+      null,
+      2,
+    ),
+  );
 
   const mockLogFile = path.join(tmpHome, '.claude-mock', 'invocations.log');
   const launchLogFile = path.join(tmpHome, '.claude-mock', 'launch.log');

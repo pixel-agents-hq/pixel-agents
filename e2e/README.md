@@ -137,9 +137,10 @@ display it by simply tailing that log:
 narrate.step()/check()  ──►  <tmpHome>/.claude-mock/test-narration.log     (yellow [test])
 external mock stdout     ──►  <tmpHome>/.claude-mock/external-narration.log (magenta [external·tag])
 
-Surface A — the "e2e monitor" terminal: opened once per test by the fixture
-            (openMonitorTerminal). Tails BOTH logs, so even a test with no
-            agents has a narrated surface from its first action.
+Surface A — the "e2e monitor" terminal: opened by the fixture after VS Code
+            finishes restoring the review layout (openMonitorTerminal). Tails
+            BOTH logs, so even a test with no agents has a narrated surface
+            from its first action.
 Surface B — every mock-claude terminal tab: the wrapper backgrounds a headerless
             tail of both logs into its own stdout, interleaved with the runner's
             cyan [mock-claude] lines. Whichever tab has focus, the full story
@@ -162,7 +163,9 @@ change what a test exercises. Narration must **never carry an assertion, gate
 logic, or affect timing**. Deleting every `step`/`check` call must leave all
 tests passing. Never call the narrator from inside a browser-context callback
 (`frame.waitForFunction`/`evaluate`/`.poll`) — it is Node-side only. Never add a
-`waitForTimeout` for narration's sake.
+`waitForTimeout` for narration's sake. After the test body is complete, the
+fixture may wait for the final narration marker to render before closing the
+recorded window; that teardown-only synchronization cannot gate test behavior.
 
 ## Test inventory
 
