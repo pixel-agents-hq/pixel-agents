@@ -4,7 +4,7 @@ import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notifica
 import type { OfficeState } from '../office/engine/officeState.js';
 import { setFloorSprites } from '../office/floorTiles.js';
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js';
-import { migrateLayoutColors } from '../office/layout/layoutSerializer.js';
+import { migrateToDocument } from '../office/layout/layoutSerializer.js';
 import { setPetTemplates } from '../office/sprites/petSpriteData.js';
 import { setCharacterTemplates } from '../office/sprites/spriteData.js';
 import {
@@ -12,7 +12,7 @@ import {
   isSubagentToolName,
   setProviderCapabilities,
 } from '../office/toolUtils.js';
-import type { OfficeLayout, ToolActivity } from '../office/types.js';
+import type { OfficeDocument, ToolActivity } from '../office/types.js';
 import { setWallSprites } from '../office/wallTiles.js';
 import { isE2E } from '../runtime.js';
 import { transport } from '../transport/index.js';
@@ -85,7 +85,7 @@ function saveAgentSeats(os: OfficeState): void {
 
 export function useExtensionMessages(
   getOfficeState: () => OfficeState,
-  onLayoutLoaded?: (layout: OfficeLayout) => void,
+  onLayoutLoaded?: (doc: OfficeDocument) => void,
   isEditDirty?: () => boolean,
 ): ExtensionMessageState {
   const [agents, setAgents] = useState<number[]>([]);
@@ -161,14 +161,15 @@ export function useExtensionMessages(
           console.log('[Webview] Skipping external layout update — editor has unsaved changes');
           return;
         }
-        const rawLayout = msg.layout as OfficeLayout | null;
-        const layout = rawLayout && rawLayout.version === 1 ? migrateLayoutColors(rawLayout) : null;
-        if (layout) {
-          os.rebuildFromLayout(layout);
-          onLayoutLoaded?.(layout);
+        // Accepts v1 single-grid layouts (wrapped as one floor) and v2
+        // multi-floor documents; unknown shapes fall back to the default.
+        const doc = migrateToDocument(msg.layout);
+        if (doc) {
+          os.loadDocument(doc);
+          onLayoutLoaded?.(os.getDocument());
         } else {
-          // Default layout — snapshot whatever OfficeState built
-          onLayoutLoaded?.(os.getLayout());
+          // Default document — snapshot whatever OfficeState built
+          onLayoutLoaded?.(os.getDocument());
         }
         // Add buffered agents now that layout (and seats) are correct
         for (const p of pendingAgents) {

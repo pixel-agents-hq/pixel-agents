@@ -7,6 +7,14 @@ export const DEFAULT_ROWS = 11;
 export const MAX_COLS = 64;
 export const MAX_ROWS = 64;
 
+// ── Floors ───────────────────────────────────────────────────
+export const MAX_FLOORS = 12;
+export const FLOOR_NAME_MAX_LENGTH = 24;
+export const DEFAULT_FLOOR_ID = 'floor-1';
+export const DEFAULT_FLOOR_NAME = 'Floor 1';
+/** Delete arm state on a floor tab auto-disarms after this long */
+export const FLOOR_DELETE_CONFIRM_TIMEOUT_MS = 3000;
+
 // ── Character Animation ─────────────────────────────────────
 export const WALK_SPEED_PX_PER_SEC = 48;
 export const WALK_FRAME_DURATION_SEC = 0.15;

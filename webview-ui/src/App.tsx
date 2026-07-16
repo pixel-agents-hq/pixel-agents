@@ -5,6 +5,7 @@ import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
+import { FloorSwitcher } from './components/FloorSwitcher.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { Tooltip } from './components/Tooltip.js';
@@ -81,7 +82,7 @@ function App() {
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
-  } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
+  } = useExtensionMessages(getOfficeState, editor.setLastSavedDocument, isEditDirty);
 
   // Show migration notice once layout reset is detected
   const [migrationNoticeDismissed, setMigrationNoticeDismissed] = useState(false);
@@ -200,6 +201,16 @@ function App() {
       {!isDebugMode ? (
         <>
           <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
+
+          <FloorSwitcher
+            floors={officeState.getFloors()}
+            activeFloorId={officeState.activeFloorId}
+            isEditMode={editor.isEditMode}
+            onSwitch={editor.handleFloorSwitch}
+            onAdd={editor.handleFloorAdd}
+            onRename={editor.handleFloorRename}
+            onDelete={editor.handleFloorDelete}
+          />
 
           {/* Vignette overlay */}
           <div

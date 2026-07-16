@@ -125,6 +125,8 @@ export function ToolOverlay({
       {allIds.map((id) => {
         const ch = officeState.characters.get(id);
         if (!ch) return null;
+        // Overlays belong to the floor the character stands on
+        if (ch.floorId !== officeState.activeFloorId) return null;
 
         const isSelected = selectedId === id;
         const isHovered = hoveredId === id;

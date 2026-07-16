@@ -67,6 +67,7 @@ function makeChar(id: number, col: number, row: number): Character {
     path: [],
     moveProgress: 0,
     currentTool: null,
+    floorId: 'floor-1',
     palette: 0,
     hueShift: 0,
     frame: 0,

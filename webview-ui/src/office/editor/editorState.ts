@@ -77,6 +77,12 @@ export class EditorState {
     this.redoStack = [];
   }
 
+  /** Drop both stacks — undo history is per floor and cleared on floor switch */
+  clearHistory(): void {
+    this.undoStack = [];
+    this.redoStack = [];
+  }
+
   clearSelection(): void {
     this.selectedFurnitureUid = null;
   }

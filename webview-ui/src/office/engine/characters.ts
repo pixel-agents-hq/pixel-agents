@@ -50,7 +50,8 @@ export function createCharacter(
   palette: number,
   seatId: string | null,
   seat: Seat | null,
-  hueShift = 0,
+  hueShift: number,
+  floorId: string,
 ): Character {
   const col = seat ? seat.seatCol : 1;
   const row = seat ? seat.seatRow : 1;
@@ -74,6 +75,7 @@ export function createCharacter(
     wanderCount: 0,
     wanderLimit: randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX),
     isActive: true,
+    floorId,
     seatId,
     bubbleType: null,
     bubbleTimer: 0,

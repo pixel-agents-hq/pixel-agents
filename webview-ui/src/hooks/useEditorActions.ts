@@ -24,6 +24,7 @@ import {
 import { defaultZoom } from '../office/toolUtils.js';
 import type {
   EditTool as EditToolType,
+  OfficeDocument,
   OfficeLayout,
   PlacedFurniture,
   PlacedPet,
@@ -40,7 +41,7 @@ interface EditorActions {
   zoom: number;
   panRef: React.MutableRefObject<{ x: number; y: number }>;
   saveTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
-  setLastSavedLayout: (layout: OfficeLayout) => void;
+  setLastSavedDocument: (doc: OfficeDocument) => void;
   handleOpenClaude: () => void;
   handleToggleEditMode: () => void;
   handleToolChange: (tool: EditToolType) => void;
@@ -63,6 +64,10 @@ interface EditorActions {
   handleEditorSelectionChange: () => void;
   handleDragMove: (uid: string, newCol: number, newRow: number) => void;
   handlePetToggle: (petType: number, active: boolean) => void;
+  handleFloorSwitch: (floorId: string) => void;
+  handleFloorAdd: () => void;
+  handleFloorRename: (floorId: string, name: string) => void;
+  handleFloorDelete: (floorId: string) => void;
 }
 
 export function useEditorActions(
@@ -75,20 +80,22 @@ export function useEditorActions(
   const [zoom, setZoom] = useState(defaultZoom);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const panRef = useRef({ x: 0, y: 0 });
-  const lastSavedLayoutRef = useRef<OfficeLayout | null>(null);
+  const lastSavedDocRef = useRef<OfficeDocument | null>(null);
 
   // Called by useExtensionMessages on layoutLoaded to set the initial checkpoint
-  const setLastSavedLayout = useCallback((layout: OfficeLayout) => {
-    lastSavedLayoutRef.current = structuredClone(layout);
+  const setLastSavedDocument = useCallback((doc: OfficeDocument) => {
+    lastSavedDocRef.current = structuredClone(doc);
   }, []);
 
-  // Debounced layout save
-  const saveLayout = useCallback((layout: OfficeLayout) => {
+  // Debounced save of the full multi-floor document (edits mutate the active
+  // floor inside OfficeState; the persisted unit is always the whole document)
+  const saveDocument = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      transport.send({ type: 'saveLayout', layout: layout as unknown as Record<string, unknown> });
+      const doc = getOfficeState().getDocument();
+      transport.send({ type: 'saveLayout', layout: doc as unknown as Record<string, unknown> });
     }, LAYOUT_SAVE_DEBOUNCE_MS);
-  }, []);
+  }, [getOfficeState]);
 
   // Apply a layout edit: push undo, clear redo, rebuild state, save, mark dirty
   const applyEdit = useCallback(
@@ -99,10 +106,10 @@ export function useEditorActions(
       editorState.isDirty = true;
       setIsDirty(true);
       os.rebuildFromLayout(newLayout);
-      saveLayout(newLayout);
+      saveDocument();
       setEditorTick((n) => n + 1);
     },
-    [getOfficeState, editorState, saveLayout],
+    [getOfficeState, editorState, saveDocument],
   );
 
   const handleOpenClaude = useCallback(() => {
@@ -199,11 +206,11 @@ export function useEditorActions(
         editorState.isDirty = true;
         setIsDirty(true);
         os.rebuildFromLayout(newLayout);
-        saveLayout(newLayout);
+        saveDocument();
       }
       setEditorTick((n) => n + 1);
     },
-    [editorState, getOfficeState, saveLayout],
+    [editorState, getOfficeState, saveDocument],
   );
 
   const handleWallSetChange = useCallback(
@@ -241,10 +248,10 @@ export function useEditorActions(
       editorState.isDirty = true;
       setIsDirty(true);
       os.rebuildFromLayout(newLayout);
-      saveLayout(newLayout);
+      saveDocument();
       setEditorTick((n) => n + 1);
     },
-    [getOfficeState, editorState, saveLayout],
+    [getOfficeState, editorState, saveDocument],
   );
 
   const handleFurnitureTypeChange = useCallback(
@@ -320,11 +327,11 @@ export function useEditorActions(
     // Push current layout to redo stack before restoring
     editorState.pushRedo(os.getLayout());
     os.rebuildFromLayout(prev);
-    saveLayout(prev);
+    saveDocument();
     editorState.isDirty = true;
     setIsDirty(true);
     setEditorTick((n) => n + 1);
-  }, [getOfficeState, editorState, saveLayout]);
+  }, [getOfficeState, editorState, saveDocument]);
 
   const handleRedo = useCallback(() => {
     const next = editorState.popRedo();
@@ -333,19 +340,21 @@ export function useEditorActions(
     // Push current layout to undo stack before restoring
     editorState.pushUndo(os.getLayout());
     os.rebuildFromLayout(next);
-    saveLayout(next);
+    saveDocument();
     editorState.isDirty = true;
     setIsDirty(true);
     setEditorTick((n) => n + 1);
-  }, [getOfficeState, editorState, saveLayout]);
+  }, [getOfficeState, editorState, saveDocument]);
 
   const handleReset = useCallback(() => {
-    if (!lastSavedLayoutRef.current) return;
-    const saved = structuredClone(lastSavedLayoutRef.current);
-    applyEdit(saved);
+    if (!lastSavedDocRef.current) return;
+    const saved = structuredClone(lastSavedDocRef.current);
+    getOfficeState().loadDocument(saved);
+    saveDocument();
     editorState.reset();
     setIsDirty(false);
-  }, [editorState, applyEdit]);
+    setEditorTick((n) => n + 1);
+  }, [editorState, getOfficeState, saveDocument]);
 
   const handleSave = useCallback(() => {
     // Flush any pending debounced save immediately
@@ -354,9 +363,9 @@ export function useEditorActions(
       saveTimerRef.current = null;
     }
     const os = getOfficeState();
-    const layout = os.getLayout();
-    lastSavedLayoutRef.current = structuredClone(layout);
-    transport.send({ type: 'saveLayout', layout: layout as unknown as Record<string, unknown> });
+    const doc = os.getDocument();
+    lastSavedDocRef.current = structuredClone(doc);
+    transport.send({ type: 'saveLayout', layout: doc as unknown as Record<string, unknown> });
     editorState.isDirty = false;
     setIsDirty(false);
   }, [getOfficeState, editorState]);
@@ -453,6 +462,70 @@ export function useEditorActions(
       applyEdit(newLayout);
     },
     [getOfficeState, applyEdit],
+  );
+
+  // ── Floors ──────────────────────────────────────────────────
+  // Undo/redo history is per floor; every floor operation clears it. Floor
+  // structure changes (add/rename/delete) are saved immediately (debounced)
+  // and are not undoable — delete is guarded by a confirm in the switcher.
+
+  const handleFloorSwitch = useCallback(
+    (floorId: string) => {
+      const os = getOfficeState();
+      if (!os.setActiveFloor(floorId)) return;
+      editorState.clearHistory();
+      editorState.clearSelection();
+      editorState.clearGhost();
+      editorState.clearDrag();
+      panRef.current = { x: 0, y: 0 };
+      saveDocument(); // persist activeFloorId so reloads restore the viewed floor
+      setEditorTick((n) => n + 1);
+    },
+    [getOfficeState, editorState, saveDocument],
+  );
+
+  const handleFloorAdd = useCallback(() => {
+    const os = getOfficeState();
+    const id = os.addFloor();
+    if (!id) return; // MAX_FLOORS reached
+    editorState.clearHistory();
+    editorState.clearSelection();
+    editorState.clearGhost();
+    editorState.clearDrag();
+    panRef.current = { x: 0, y: 0 };
+    editorState.isDirty = true;
+    setIsDirty(true);
+    saveDocument();
+    setEditorTick((n) => n + 1);
+  }, [getOfficeState, editorState, saveDocument]);
+
+  const handleFloorRename = useCallback(
+    (floorId: string, name: string) => {
+      const os = getOfficeState();
+      if (!os.renameFloor(floorId, name)) return;
+      editorState.isDirty = true;
+      setIsDirty(true);
+      saveDocument();
+      setEditorTick((n) => n + 1);
+    },
+    [getOfficeState, editorState, saveDocument],
+  );
+
+  const handleFloorDelete = useCallback(
+    (floorId: string) => {
+      const os = getOfficeState();
+      if (!os.removeFloor(floorId)) return;
+      editorState.clearHistory();
+      editorState.clearSelection();
+      editorState.clearGhost();
+      editorState.clearDrag();
+      panRef.current = { x: 0, y: 0 };
+      editorState.isDirty = true;
+      setIsDirty(true);
+      saveDocument();
+      setEditorTick((n) => n + 1);
+    },
+    [getOfficeState, editorState, saveDocument],
   );
 
   const handleEditorTileAction = useCallback(
@@ -639,7 +712,7 @@ export function useEditorActions(
     zoom,
     panRef,
     saveTimerRef,
-    setLastSavedLayout,
+    setLastSavedDocument,
     handleOpenClaude,
     handleToggleEditMode,
     handleToolChange,
@@ -662,5 +735,9 @@ export function useEditorActions(
     handleEditorSelectionChange,
     handleDragMove,
     handlePetToggle,
+    handleFloorSwitch,
+    handleFloorAdd,
+    handleFloorRename,
+    handleFloorDelete,
   };
 }

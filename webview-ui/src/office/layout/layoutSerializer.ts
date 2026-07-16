@@ -1,7 +1,10 @@
 import type { ColorValue } from '../../components/ui/types.js';
+import { DEFAULT_FLOOR_ID, DEFAULT_FLOOR_NAME } from '../../constants.js';
 import { getColorizedSprite } from '../colorize.js';
 import type {
   FurnitureInstance,
+  OfficeDocument,
+  OfficeFloor,
   OfficeLayout,
   PlacedFurniture,
   Seat,
@@ -276,6 +279,73 @@ export function createDefaultLayout(): OfficeLayout {
  * @internal */
 export function serializeLayout(layout: OfficeLayout): string {
   return JSON.stringify(layout);
+}
+
+// ── Multi-floor document (layout.json v2) ────────────────────────
+
+/** Wrap a single (v1) layout as the only floor of a v2 document */
+export function wrapLayoutAsDocument(layout: OfficeLayout): OfficeDocument {
+  const migrated = migrateLayout(layout);
+  return {
+    version: 2,
+    activeFloorId: DEFAULT_FLOOR_ID,
+    ...(migrated.layoutRevision !== undefined ? { layoutRevision: migrated.layoutRevision } : {}),
+    floors: [{ id: DEFAULT_FLOOR_ID, name: DEFAULT_FLOOR_NAME, layout: migrated }],
+  };
+}
+
+/** Default single-floor document (used when no layout file or bundled default exists) */
+export function createDefaultDocument(): OfficeDocument {
+  return wrapLayoutAsDocument(createDefaultLayout());
+}
+
+/**
+ * Coerce anything read from layout.json (or received over the wire) into a v2
+ * OfficeDocument. Accepts v1 single-grid layouts (wrapped as one floor) and v2
+ * documents (each floor's layout individually migrated). Returns null for
+ * unrecognized shapes.
+ */
+export function migrateToDocument(raw: unknown): OfficeDocument | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as {
+    version?: number;
+    tiles?: unknown;
+    furniture?: unknown;
+    floors?: unknown;
+    activeFloorId?: unknown;
+    layoutRevision?: unknown;
+  };
+
+  if (obj.version === 1 && Array.isArray(obj.tiles) && Array.isArray(obj.furniture)) {
+    return wrapLayoutAsDocument(obj as unknown as OfficeLayout);
+  }
+
+  if (obj.version === 2 && Array.isArray(obj.floors)) {
+    const floors: OfficeFloor[] = [];
+    for (const f of obj.floors as Array<Partial<OfficeFloor>>) {
+      if (!f || typeof f.id !== 'string' || f.id.length === 0) continue;
+      const layout = f.layout;
+      if (!layout || !Array.isArray(layout.tiles) || !Array.isArray(layout.furniture)) continue;
+      floors.push({
+        id: f.id,
+        name: typeof f.name === 'string' && f.name.length > 0 ? f.name : DEFAULT_FLOOR_NAME,
+        layout: migrateLayout(layout),
+      });
+    }
+    if (floors.length === 0) return null;
+    const activeFloorId =
+      typeof obj.activeFloorId === 'string' && floors.some((f) => f.id === obj.activeFloorId)
+        ? obj.activeFloorId
+        : floors[0].id;
+    return {
+      version: 2,
+      activeFloorId,
+      ...(typeof obj.layoutRevision === 'number' ? { layoutRevision: obj.layoutRevision } : {}),
+      floors,
+    };
+  }
+
+  return null;
 }
 
 // ── Furniture type migration ────────────────────────────────────

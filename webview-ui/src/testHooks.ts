@@ -4,7 +4,13 @@ declare global {
   interface Window {
     __pixelAgentsTestHooks?: {
       playedSounds?: Array<{ kind: string; at: number }>;
-      getCharacters?: () => Array<{ id: number; matrixEffect: 'spawn' | 'despawn' | null }>;
+      getCharacters?: () => Array<{
+        id: number;
+        matrixEffect: 'spawn' | 'despawn' | null;
+        floorId: string;
+      }>;
+      getFloors?: () => Array<{ id: string; name: string }>;
+      getActiveFloorId?: () => string | null;
       getPets?: () => Array<{
         id: string;
         name: string;
@@ -47,6 +53,8 @@ declare global {
  *   let a regression slip past a snapshot-based check.
  * - playedSounds: populated separately by notificationSound.ts (same namespace,
  *   different owner).
+ * - messageLog: append-only history to track incoming ServerMessages for
+ *   deterministic e2e assertions.
  * - selectAgent(id): sets officeState.selectedAgentId directly, the same state
  *   a canvas click produces. Lets e2e reveal an agent's "Close agent" (×)
  *   button deterministically instead of pixel-hunting the sprite on the canvas
@@ -56,8 +64,10 @@ declare global {
 export function installTestHooks(officeStateRef: { current: OfficeState | null }): void {
   if (typeof window === 'undefined') return;
   if (!window.__pixelAgentsTestHooks) window.__pixelAgentsTestHooks = {};
+
   const hooks = window.__pixelAgentsTestHooks;
   if (!hooks.addAgentLog) hooks.addAgentLog = [];
+  if (!hooks.messageLog) hooks.messageLog = []; // Initialized here to prevent undefined errors in e2e
 
   hooks.getCharacters = () => {
     const os = officeStateRef.current;
@@ -65,7 +75,22 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
     return Array.from(os.characters.values()).map((ch) => ({
       id: ch.id,
       matrixEffect: ch.matrixEffect,
+      floorId: ch.floorId,
     }));
+  };
+
+  // Floor observability: which floors exist and which one is being viewed.
+  // Floor SWITCHING in e2e goes through the real FloorSwitcher buttons
+  // (data-testid="floor-tab-<id>"), not a hook.
+  hooks.getFloors = () => {
+    const os = officeStateRef.current;
+    if (!os) return [];
+    return os.getFloors();
+  };
+
+  hooks.getActiveFloorId = () => {
+    const os = officeStateRef.current;
+    return os ? os.activeFloorId : null;
   };
 
   hooks.selectAgent = (id) => {

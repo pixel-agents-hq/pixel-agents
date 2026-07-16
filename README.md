@@ -40,6 +40,7 @@ Internally, the architecture is fully agent-agnostic and platform-agnostic: a ty
 - **One agent, one character** — every Claude Code terminal gets its own animated character
 - **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
 - **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
+- **Multi-floor buildings** — add, rename, and switch between multiple floors, each with its own layout and seated agents (see [docs/multi-floor.md](docs/multi-floor.md))
 - **Speech bubbles** — visual indicators when an agent is waiting for input or needs permission
 - **Sound notifications** — optional chime when an agent finishes its turn
 - **Sub-agent visualization** — Task tool sub-agents spawn as separate characters linked to their parent

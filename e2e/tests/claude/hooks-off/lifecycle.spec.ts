@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 import { expect, test } from '../../../fixtures/pixel-agents';
 import {
   spawnInternalAgentAndWait,
@@ -790,5 +793,141 @@ test.describe('Hooks OFF / lifecycle', () => {
     // (7s), and broadcast-to-DOM takes another ~300ms (transport + React
     // render). So this wait must cover: 1s scenario gap + 7s timer + slop.
     await expectOverlayVisible(panelFrame, 'Needs approval', 10_000);
+  });
+
+  // Multi-floor Phase 1: add/switch/rename/delete floors from the editor,
+  // confirm agent overlays follow the floor they were seated on (ToolOverlay
+  // filters by officeState.activeFloorId), and confirm the persisted layout
+  // upgrades to a v2 multi-floor document on disk.
+  test('multi-floor: add, switch, rename and delete floors; persists a v2 document @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
+    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+
+    await setSettings(frame, {
+      watchAllSessions: false,
+      hooksEnabled: false,
+      alwaysShowLabels: true,
+      debugView: false,
+    });
+
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      claudeScenario('multi-floor smoke hooks off')
+        .at(1_000)
+        .appendJsonl(buildAssistantToolUseRecord('toolu-floor-1', 'Bash', { command: 'npm test' }))
+        .holdOpenFor(10_000)
+        .build(),
+    );
+
+    await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+    await openPixelAgentsPanel(window);
+    const panelFrame = await getPixelAgentsFrame(window);
+    await expectSingleAgentOverlay(panelFrame);
+    await expectOverlayVisible(panelFrame, 'Running: npm test', 12_000);
+
+    // A single-floor office hides the switcher entirely outside edit mode.
+    await expect(panelFrame.locator('[data-testid="floor-switcher"]')).toHaveCount(0);
+
+    // Dismiss first-run tooltips that can intercept the Layout button click.
+    for (const tooltipText of ['Instant Detection Active', 'Updated to v']) {
+      const tooltip = panelFrame.locator('div', { hasText: tooltipText }).first();
+      if (await tooltip.isVisible().catch(() => false)) {
+        const closeBtn = tooltip.locator('button', { hasText: 'x' }).first();
+        if (await closeBtn.isVisible().catch(() => false)) {
+          await closeBtn.click().catch(() => {});
+        }
+      }
+    }
+
+    const layoutButton = panelFrame.locator('button', { hasText: 'Layout' });
+    await expect(layoutButton).toBeVisible({ timeout: 15_000 });
+    await layoutButton.click();
+
+    const switcher = panelFrame.locator('[data-testid="floor-switcher"]');
+    await expect(switcher).toBeVisible({ timeout: 5_000 });
+
+    const getFloors = (): Promise<Array<{ id: string; name: string }>> =>
+      panelFrame.evaluate(() => {
+        const w = window as Window & {
+          __pixelAgentsTestHooks?: { getFloors?: () => Array<{ id: string; name: string }> };
+        };
+        return w.__pixelAgentsTestHooks?.getFloors?.() ?? [];
+      });
+    const getActiveFloorId = (): Promise<string | null> =>
+      panelFrame.evaluate(() => {
+        const w = window as Window & {
+          __pixelAgentsTestHooks?: { getActiveFloorId?: () => string | null };
+        };
+        return w.__pixelAgentsTestHooks?.getActiveFloorId?.() ?? null;
+      });
+
+    const initialFloors = await getFloors();
+    expect(initialFloors).toHaveLength(1);
+    const floor1Id = initialFloors[0]!.id;
+
+    // Add a floor — the new floor becomes active immediately.
+    await panelFrame.locator('[data-testid="floor-add"]').click();
+    await expect.poll(async () => (await getFloors()).length).toBe(2);
+
+    const floor2 = (await getFloors()).find((f) => f.id !== floor1Id);
+    if (!floor2) throw new Error('Expected a second floor after clicking + Floor');
+    await expect.poll(getActiveFloorId).toBe(floor2.id);
+
+    // The agent is seated on floor 1: its overlay is hidden while floor 2 is
+    // the one being viewed.
+    await expectNoOverlay(panelFrame, 'Running: npm test');
+
+    // Switch back to floor 1 — the overlay reappears.
+    await panelFrame.locator(`[data-testid="floor-tab-${floor1Id}"]`).click();
+    await expect.poll(getActiveFloorId).toBe(floor1Id);
+    await expectOverlayVisible(panelFrame, 'Running: npm test');
+
+    // Rename floor 2 via double-click.
+    await panelFrame.locator(`[data-testid="floor-tab-${floor2.id}"]`).dblclick();
+    const renameInput = panelFrame.locator(`[data-testid="floor-rename-input-${floor2.id}"]`);
+    await expect(renameInput).toBeVisible({ timeout: 3_000 });
+    await renameInput.fill('Engineering');
+    await renameInput.press('Enter');
+    await expect
+      .poll(async () => (await getFloors()).find((f) => f.id === floor2.id)?.name)
+      .toBe('Engineering');
+
+    // The document persists as a v2 multi-floor layout on disk.
+    const layoutPath = path.join(tmpHome, '.pixel-agents', 'layout.json');
+    await expect
+      .poll(
+        () => {
+          if (!fs.existsSync(layoutPath)) return null;
+          try {
+            return (JSON.parse(fs.readFileSync(layoutPath, 'utf8')) as { version?: number })
+              .version;
+          } catch {
+            return null;
+          }
+        },
+        { timeout: 5_000 },
+      )
+      .toBe(2);
+    const savedDoc = JSON.parse(fs.readFileSync(layoutPath, 'utf8')) as {
+      floors: Array<{ id: string; name: string }>;
+    };
+    expect(savedDoc.floors).toHaveLength(2);
+    expect(savedDoc.floors.map((f) => f.name)).toContain('Engineering');
+
+    // Exiting edit mode keeps the switcher visible now that there are 2 floors.
+    await layoutButton.click();
+    await expect(switcher).toBeVisible();
+
+    // Delete floor 2 (two-click confirm) — its characters move to floor 1.
+    await layoutButton.click();
+    const deleteBtn = panelFrame.locator(`[data-testid="floor-delete-${floor2.id}"]`);
+    await deleteBtn.click();
+    await deleteBtn.click();
+    await expect.poll(async () => (await getFloors()).length).toBe(1);
+
+    // Back to a single floor: the switcher hides again once edit mode exits.
+    await layoutButton.click();
+    await expect(panelFrame.locator('[data-testid="floor-switcher"]')).toHaveCount(0);
   });
 });

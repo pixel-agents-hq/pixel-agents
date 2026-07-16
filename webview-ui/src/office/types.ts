@@ -130,6 +130,29 @@ export interface OfficeLayout {
   pets?: PlacedPet[];
 }
 
+/** One named floor of the office. The grid itself keeps the v1 OfficeLayout shape. */
+export interface OfficeFloor {
+  /** Stable identifier; seat uids and characters reference floors through it */
+  id: string;
+  /** User-facing name ("Library", "Engineering", ...) */
+  name: string;
+  layout: OfficeLayout;
+}
+
+/**
+ * Persisted multi-floor office document (layout.json v2). A v1 OfficeLayout on
+ * disk is migrated by wrapping it as the single floor of a v2 document.
+ */
+export interface OfficeDocument {
+  version: 2;
+  /** Last-viewed floor; restored on reload when it still exists */
+  activeFloorId?: string;
+  /** Hoisted from the v1 layout so the bundled-default reset comparison in
+   *  server layoutPersistence (top-level layoutRevision key) keeps working */
+  layoutRevision?: number;
+  floors: OfficeFloor[];
+}
+
 export interface Character {
   id: number;
   state: CharacterState;
@@ -163,6 +186,8 @@ export interface Character {
   wanderLimit: number;
   /** Whether the agent is actively working */
   isActive: boolean;
+  /** Floor this character lives on (OfficeFloor.id) */
+  floorId: string;
   /** Assigned seat uid, or null if no seat */
   seatId: string | null;
   /** Active speech bubble type, or null if none showing */
@@ -186,6 +211,8 @@ export interface Character {
   matrixEffectTimer: number;
   /** Per-column random seeds (16 values) for staggered rain timing */
   matrixEffectSeeds: number[];
+  /** Optional display name; subagents inherit "<parent> (Task)" */
+  name?: string;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
 

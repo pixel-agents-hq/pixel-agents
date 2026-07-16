@@ -5,11 +5,13 @@ import {
   CHARACTER_HIT_HEIGHT,
   CHARACTER_SITTING_OFFSET_PX,
   DISMISS_BUBBLE_FAST_FADE_SEC,
+  FLOOR_NAME_MAX_LENGTH,
   FURNITURE_ANIM_INTERVAL_SEC,
   HUE_SHIFT_MIN_DEG,
   HUE_SHIFT_RANGE_DEG,
   INACTIVE_SEAT_TIMER_MIN_SEC,
   INACTIVE_SEAT_TIMER_RANGE_SEC,
+  MAX_FLOORS,
   MAX_PET_ID_LENGTH,
   PET_HIT_HALF_WIDTH,
   PET_HIT_HEIGHT,
@@ -17,11 +19,13 @@ import {
 } from '../../constants.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
 import {
+  createDefaultDocument,
   createDefaultLayout,
   getBlockedTiles,
   layoutToFurnitureInstances,
   layoutToSeats,
   layoutToTileMap,
+  wrapLayoutAsDocument,
 } from '../layout/layoutSerializer.js';
 import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
 import { getPetCount, getPetName } from '../sprites/petSpriteData.js';
@@ -29,6 +33,7 @@ import { getLoadedCharacterCount } from '../sprites/spriteData.js';
 import type {
   Character,
   FurnitureInstance,
+  OfficeDocument,
   OfficeLayout,
   Pet,
   PlacedFurniture,
@@ -47,15 +52,35 @@ import { createCharacter, updateCharacter } from './characters.js';
 import { matrixEffectSeeds } from './matrixEffect.js';
 import { createPet, updatePet } from './petEntity.js';
 
-export class OfficeState {
+/** All derived per-floor game state. The active floor's runtime is exposed
+ *  through OfficeState's layout/tileMap/seats/... getters so single-floor
+ *  consumers (renderer, editor, hit-testing) work unchanged. */
+interface FloorRuntime {
+  id: string;
+  name: string;
   layout: OfficeLayout;
   tileMap: TileTypeVal[][];
   seats: Map<string, Seat>;
   blockedTiles: Set<string>;
   furniture: FurnitureInstance[];
   walkableTiles: Array<{ col: number; row: number }>;
+  pets: Pet[];
+}
+
+export class OfficeState {
+  private floorRuntimes: Map<string, FloorRuntime> = new Map();
+  /** Floor ids in display order */
+  floorOrder: string[] = [];
+  /** Currently viewed floor. Change via setActiveFloor(). */
+  activeFloorId = '';
+  /** Preserved from the loaded document so getDocument() round-trips it */
+  private documentLayoutRevision?: number;
+  /** False until the first real loadDocument() after construction, so the
+   *  persisted activeFloorId is applied once and later external reloads
+   *  don't yank the user off the floor they are viewing. */
+  private hasLoadedDocument = false;
+
   characters: Map<number, Character> = new Map();
-  pets: Pet[] = [];
   /** Accumulated time for furniture animation frame cycling */
   furnitureAnimTimer = 0;
   selectedAgentId: number | null = null;
@@ -69,29 +94,280 @@ export class OfficeState {
   private nextSubagentId = -1;
 
   constructor(layout?: OfficeLayout) {
-    this.layout = layout || createDefaultLayout();
-    this.tileMap = layoutToTileMap(this.layout);
-    this.seats = layoutToSeats(this.layout.furniture);
-    this.blockedTiles = getBlockedTiles(this.layout.furniture);
-    this.furniture = layoutToFurnitureInstances(this.layout.furniture);
-    this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles);
-    // Pets are built last because they need walkableTiles populated for spawn.
-    this.rebuildPetsFromLayout(this.layout);
+    this.loadDocument(layout ? wrapLayoutAsDocument(layout) : createDefaultDocument());
+    // The constructor document is a placeholder — the first real layoutLoaded
+    // should still apply the persisted activeFloorId.
+    this.hasLoadedDocument = false;
   }
 
-  /** Rebuild all derived state from a new layout. Reassigns existing characters.
+  // ── Active-floor accessors (single-floor consumers read these) ──
+
+  private activeFloor(): FloorRuntime {
+    return this.floorRuntimes.get(this.activeFloorId)!;
+  }
+
+  /** Runtime for a character's floor, falling back to the active floor */
+  private floorRuntime(floorId: string): FloorRuntime {
+    return this.floorRuntimes.get(floorId) ?? this.activeFloor();
+  }
+
+  get layout(): OfficeLayout {
+    return this.activeFloor().layout;
+  }
+
+  get tileMap(): TileTypeVal[][] {
+    return this.activeFloor().tileMap;
+  }
+
+  get seats(): Map<string, Seat> {
+    return this.activeFloor().seats;
+  }
+
+  get blockedTiles(): Set<string> {
+    return this.activeFloor().blockedTiles;
+  }
+
+  get furniture(): FurnitureInstance[] {
+    return this.activeFloor().furniture;
+  }
+
+  get walkableTiles(): Array<{ col: number; row: number }> {
+    return this.activeFloor().walkableTiles;
+  }
+
+  get pets(): Pet[] {
+    return this.activeFloor().pets;
+  }
+
+  getLayout(): OfficeLayout {
+    return this.activeFloor().layout;
+  }
+
+  // ── Floors ────────────────────────────────────────────────────
+
+  /** Build all derived state for one floor. Pets spawn from layout.pets. */
+  private buildFloorRuntime(id: string, name: string, layout: OfficeLayout): FloorRuntime {
+    const tileMap = layoutToTileMap(layout);
+    const seats = layoutToSeats(layout.furniture);
+    const blockedTiles = getBlockedTiles(layout.furniture);
+    const furniture = layoutToFurnitureInstances(layout.furniture);
+    const walkableTiles = getWalkableTiles(tileMap, blockedTiles);
+    const rt: FloorRuntime = {
+      id,
+      name,
+      layout,
+      tileMap,
+      seats,
+      blockedTiles,
+      furniture,
+      walkableTiles,
+      pets: [],
+    };
+    this.rebuildPetsFromLayout(rt);
+    return rt;
+  }
+
+  /**
+   * Replace the whole multi-floor document (initial load, external file change,
+   * reset). Existing characters are kept and re-homed: their seat is preserved
+   * when it still exists on any floor, otherwise they get a free seat (or a
+   * random walkable tile) on their floor.
+   */
+  loadDocument(doc: OfficeDocument): void {
+    const prevActive = this.activeFloorId;
+    this.floorRuntimes = new Map();
+    this.floorOrder = [];
+    for (const f of doc.floors) {
+      if (this.floorRuntimes.has(f.id)) continue;
+      this.floorRuntimes.set(f.id, this.buildFloorRuntime(f.id, f.name, f.layout));
+      this.floorOrder.push(f.id);
+    }
+    this.documentLayoutRevision = doc.layoutRevision;
+
+    const docActive =
+      doc.activeFloorId && this.floorRuntimes.has(doc.activeFloorId)
+        ? doc.activeFloorId
+        : this.floorOrder[0];
+    this.activeFloorId =
+      this.hasLoadedDocument && this.floorRuntimes.has(prevActive) ? prevActive : docActive;
+    this.hasLoadedDocument = true;
+
+    // Re-home existing characters
+    for (const ch of this.characters.values()) {
+      if (!this.floorRuntimes.has(ch.floorId)) {
+        ch.floorId = this.activeFloorId;
+        ch.seatId = null;
+      }
+    }
+    // First pass: keep characters at their existing seats (seat uid may have
+    // moved to a different floor via import — follow it).
+    for (const ch of this.characters.values()) {
+      if (!ch.seatId) continue;
+      const owner = this.findSeatOwner(ch.seatId);
+      if (owner && !owner.seat.assigned) {
+        owner.seat.assigned = true;
+        ch.floorId = owner.runtime.id;
+        this.snapToSeat(ch, owner.seat);
+      } else {
+        ch.seatId = null;
+      }
+    }
+    // Second pass: seat (or relocate) everyone else on their floor
+    for (const ch of this.characters.values()) {
+      if (ch.seatId) continue;
+      const rt = this.floorRuntime(ch.floorId);
+      const seatId = this.findFreeSeat(rt);
+      if (seatId) {
+        const seat = rt.seats.get(seatId)!;
+        seat.assigned = true;
+        ch.seatId = seatId;
+        this.snapToSeat(ch, seat);
+      } else {
+        this.relocateCharacterToWalkable(ch, rt);
+      }
+    }
+
+    this.ensureFollowOnActiveFloor();
+    this.rebuildFurnitureInstances();
+  }
+
+  /** Serialize all floors back into a persistable v2 document */
+  getDocument(): OfficeDocument {
+    return {
+      version: 2,
+      activeFloorId: this.activeFloorId,
+      ...(this.documentLayoutRevision !== undefined
+        ? { layoutRevision: this.documentLayoutRevision }
+        : {}),
+      floors: this.floorOrder.map((id) => {
+        const rt = this.floorRuntimes.get(id)!;
+        return { id, name: rt.name, layout: rt.layout };
+      }),
+    };
+  }
+
+  getFloors(): Array<{ id: string; name: string }> {
+    return this.floorOrder.map((id) => {
+      const rt = this.floorRuntimes.get(id)!;
+      return { id, name: rt.name };
+    });
+  }
+
+  /** Switch the viewed floor. Selection survives (enables cross-floor seat
+   *  moves); camera follow and hover are cleared when they point off-floor. */
+  setActiveFloor(id: string): boolean {
+    if (id === this.activeFloorId || !this.floorRuntimes.has(id)) return false;
+    this.activeFloorId = id;
+    this.hoveredAgentId = null;
+    this.hoveredTile = null;
+    this.ensureFollowOnActiveFloor();
+    this.rebuildFurnitureInstances();
+    return true;
+  }
+
+  private ensureFollowOnActiveFloor(): void {
+    if (this.cameraFollowId === null) return;
+    const follow = this.characters.get(this.cameraFollowId);
+    if (!follow || follow.floorId !== this.activeFloorId) {
+      this.cameraFollowId = null;
+    }
+  }
+
+  /** Add an empty floor and switch to it. Returns the new floor id, or null at MAX_FLOORS. */
+  addFloor(name?: string): string | null {
+    if (this.floorOrder.length >= MAX_FLOORS) return null;
+    const id = `floor-${crypto.randomUUID().slice(0, 8)}`;
+    const floorName = (name ?? `Floor ${this.floorOrder.length + 1}`).slice(
+      0,
+      FLOOR_NAME_MAX_LENGTH,
+    );
+    this.floorRuntimes.set(id, this.buildFloorRuntime(id, floorName, createDefaultLayout()));
+    this.floorOrder.push(id);
+    this.setActiveFloor(id);
+    return id;
+  }
+
+  renameFloor(id: string, name: string): boolean {
+    const rt = this.floorRuntimes.get(id);
+    const trimmed = name.trim().slice(0, FLOOR_NAME_MAX_LENGTH);
+    if (!rt || trimmed.length === 0 || rt.name === trimmed) return false;
+    rt.name = trimmed;
+    return true;
+  }
+
+  /** Delete a floor. Characters on it move to the first remaining floor;
+   *  its pets are removed with it. Refuses to delete the last floor. */
+  removeFloor(id: string): boolean {
+    if (!this.floorRuntimes.has(id) || this.floorOrder.length <= 1) return false;
+    this.floorRuntimes.delete(id);
+    this.floorOrder = this.floorOrder.filter((f) => f !== id);
+    const fallbackId = this.floorOrder[0];
+    const fallback = this.floorRuntimes.get(fallbackId)!;
+    for (const ch of this.characters.values()) {
+      if (ch.floorId !== id) continue;
+      ch.floorId = fallbackId;
+      ch.seatId = null;
+      ch.path = [];
+      ch.moveProgress = 0;
+      const seatId = this.findFreeSeat(fallback);
+      if (seatId) {
+        const seat = fallback.seats.get(seatId)!;
+        seat.assigned = true;
+        ch.seatId = seatId;
+        this.snapToSeat(ch, seat);
+      } else {
+        this.relocateCharacterToWalkable(ch, fallback);
+      }
+    }
+    if (this.activeFloorId === id) {
+      this.activeFloorId = fallbackId;
+      this.hoveredAgentId = null;
+      this.hoveredTile = null;
+      this.ensureFollowOnActiveFloor();
+    }
+    this.rebuildFurnitureInstances();
+    return true;
+  }
+
+  /** Find a seat by uid across all floors */
+  private findSeatOwner(seatId: string): { runtime: FloorRuntime; seat: Seat } | null {
+    for (const rt of this.floorRuntimes.values()) {
+      const seat = rt.seats.get(seatId);
+      if (seat) return { runtime: rt, seat };
+    }
+    return null;
+  }
+
+  private snapToSeat(ch: Character, seat: Seat): void {
+    ch.tileCol = seat.seatCol;
+    ch.tileRow = seat.seatRow;
+    ch.x = seat.seatCol * TILE_SIZE + TILE_SIZE / 2;
+    ch.y = seat.seatRow * TILE_SIZE + TILE_SIZE / 2;
+    ch.dir = seat.facingDir;
+    ch.path = [];
+    ch.moveProgress = 0;
+  }
+
+  /** Rebuild the ACTIVE floor's derived state from a new layout (editor edits).
+   *  Reassigns this floor's characters; other floors are untouched.
    *  @param shift Optional pixel shift to apply when grid expands left/up */
   rebuildFromLayout(layout: OfficeLayout, shift?: { col: number; row: number }): void {
-    this.layout = layout;
-    this.tileMap = layoutToTileMap(layout);
-    this.seats = layoutToSeats(layout.furniture);
-    this.blockedTiles = getBlockedTiles(layout.furniture);
+    const rt = this.activeFloor();
+    rt.layout = layout;
+    rt.tileMap = layoutToTileMap(layout);
+    rt.seats = layoutToSeats(layout.furniture);
+    rt.blockedTiles = getBlockedTiles(layout.furniture);
     this.rebuildFurnitureInstances();
-    this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles);
+    rt.walkableTiles = getWalkableTiles(rt.tileMap, rt.blockedTiles);
+
+    const floorChars: Character[] = [];
+    for (const ch of this.characters.values()) {
+      if (ch.floorId === rt.id) floorChars.push(ch);
+    }
 
     // Shift character positions when grid expands left/up
     if (shift && (shift.col !== 0 || shift.row !== 0)) {
-      for (const ch of this.characters.values()) {
+      for (const ch of floorChars) {
         ch.tileCol += shift.col;
         ch.tileRow += shift.row;
         ch.x += shift.col * TILE_SIZE;
@@ -100,11 +376,7 @@ export class OfficeState {
         ch.path = [];
         ch.moveProgress = 0;
       }
-    }
-
-    // Shift pet positions when grid expands left/up
-    if (shift && (shift.col !== 0 || shift.row !== 0)) {
-      for (const pet of this.pets) {
+      for (const pet of rt.pets) {
         pet.tileCol += shift.col;
         pet.tileRow += shift.row;
         pet.x += shift.col * TILE_SIZE;
@@ -114,25 +386,20 @@ export class OfficeState {
       }
     }
 
-    // Reassign characters to new seats, preserving existing assignments when possible
-    for (const seat of this.seats.values()) {
+    // Reassign this floor's characters to new seats, preserving existing
+    // assignments when possible
+    for (const seat of rt.seats.values()) {
       seat.assigned = false;
     }
 
     // First pass: try to keep characters at their existing seats
-    for (const ch of this.characters.values()) {
-      if (ch.seatId && this.seats.has(ch.seatId)) {
-        const seat = this.seats.get(ch.seatId)!;
+    for (const ch of floorChars) {
+      if (ch.seatId && rt.seats.has(ch.seatId)) {
+        const seat = rt.seats.get(ch.seatId)!;
         if (!seat.assigned) {
           seat.assigned = true;
           // Snap character to seat position
-          ch.tileCol = seat.seatCol;
-          ch.tileRow = seat.seatRow;
-          const cx = seat.seatCol * TILE_SIZE + TILE_SIZE / 2;
-          const cy = seat.seatRow * TILE_SIZE + TILE_SIZE / 2;
-          ch.x = cx;
-          ch.y = cy;
-          ch.dir = seat.facingDir;
+          this.snapToSeat(ch, seat);
           continue;
         }
       }
@@ -140,23 +407,19 @@ export class OfficeState {
     }
 
     // Second pass: assign remaining characters to free seats
-    for (const ch of this.characters.values()) {
+    for (const ch of floorChars) {
       if (ch.seatId) continue;
-      const seatId = this.findFreeSeat();
+      const seatId = this.findFreeSeat(rt);
       if (seatId) {
-        this.seats.get(seatId)!.assigned = true;
+        const seat = rt.seats.get(seatId)!;
+        seat.assigned = true;
         ch.seatId = seatId;
-        const seat = this.seats.get(seatId)!;
-        ch.tileCol = seat.seatCol;
-        ch.tileRow = seat.seatRow;
-        ch.x = seat.seatCol * TILE_SIZE + TILE_SIZE / 2;
-        ch.y = seat.seatRow * TILE_SIZE + TILE_SIZE / 2;
-        ch.dir = seat.facingDir;
+        this.snapToSeat(ch, seat);
       }
     }
 
     // Relocate any characters that ended up outside bounds or on non-walkable tiles
-    for (const ch of this.characters.values()) {
+    for (const ch of floorChars) {
       if (ch.seatId) continue; // seated characters are fine
       if (
         ch.tileCol < 0 ||
@@ -164,21 +427,21 @@ export class OfficeState {
         ch.tileRow < 0 ||
         ch.tileRow >= layout.rows
       ) {
-        this.relocateCharacterToWalkable(ch);
+        this.relocateCharacterToWalkable(ch, rt);
       }
     }
 
     // Relocate any pets that ended up outside bounds or on non-walkable tiles
-    for (const pet of this.pets) {
+    for (const pet of rt.pets) {
       if (
         pet.tileCol < 0 ||
         pet.tileCol >= layout.cols ||
         pet.tileRow < 0 ||
         pet.tileRow >= layout.rows ||
-        !isWalkable(pet.tileCol, pet.tileRow, this.tileMap, this.blockedTiles)
+        !isWalkable(pet.tileCol, pet.tileRow, rt.tileMap, rt.blockedTiles)
       ) {
-        if (this.walkableTiles.length > 0) {
-          const spawn = this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)];
+        if (rt.walkableTiles.length > 0) {
+          const spawn = rt.walkableTiles[Math.floor(Math.random() * rt.walkableTiles.length)];
           pet.tileCol = spawn.col;
           pet.tileRow = spawn.row;
           pet.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
@@ -194,13 +457,13 @@ export class OfficeState {
     }
 
     // Reconcile pets against the layout roster (handles editor add/remove)
-    this.rebuildPetsFromLayout(layout);
+    this.rebuildPetsFromLayout(rt);
   }
 
-  /** Move a character to a random walkable tile */
-  private relocateCharacterToWalkable(ch: Character): void {
-    if (this.walkableTiles.length === 0) return;
-    const spawn = this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)];
+  /** Move a character to a random walkable tile on the given floor */
+  private relocateCharacterToWalkable(ch: Character, rt: FloorRuntime): void {
+    if (rt.walkableTiles.length === 0) return;
+    const spawn = rt.walkableTiles[Math.floor(Math.random() * rt.walkableTiles.length)];
     ch.tileCol = spawn.col;
     ch.tileRow = spawn.row;
     ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
@@ -209,31 +472,28 @@ export class OfficeState {
     ch.moveProgress = 0;
   }
 
-  getLayout(): OfficeLayout {
-    return this.layout;
-  }
-
   /** Get the blocked-tile key for a character's own seat, or null */
   private ownSeatKey(ch: Character): string | null {
     if (!ch.seatId) return null;
-    const seat = this.seats.get(ch.seatId);
+    const seat = this.floorRuntime(ch.floorId).seats.get(ch.seatId);
     if (!seat) return null;
     return `${seat.seatCol},${seat.seatRow}`;
   }
 
-  /** Temporarily unblock a character's own seat, run fn, then re-block */
+  /** Temporarily unblock a character's own seat (on its floor), run fn, then re-block */
   private withOwnSeatUnblocked<T>(ch: Character, fn: () => T): T {
+    const blocked = this.floorRuntime(ch.floorId).blockedTiles;
     const key = this.ownSeatKey(ch);
-    if (key) this.blockedTiles.delete(key);
+    if (key) blocked.delete(key);
     const result = fn();
-    if (key) this.blockedTiles.add(key);
+    if (key) blocked.add(key);
     return result;
   }
 
-  private findFreeSeat(): string | null {
+  private findFreeSeat(rt: FloorRuntime): string | null {
     // Build set of tiles occupied by electronics (PCs, monitors, etc.)
     const electronicsTiles = new Set<string>();
-    for (const item of this.layout.furniture) {
+    for (const item of rt.layout.furniture) {
       const entry = getCatalogEntry(item.type);
       if (!entry || entry.category !== 'electronics') continue;
       for (let dr = 0; dr < entry.footprintH; dr++) {
@@ -246,7 +506,7 @@ export class OfficeState {
     // Collect free seats, split into those facing electronics and the rest
     const pcSeats: string[] = [];
     const otherSeats: string[] = [];
-    for (const [uid, seat] of this.seats) {
+    for (const [uid, seat] of rt.seats) {
       if (seat.assigned) continue;
 
       // Check if this seat faces electronics (same logic as auto-state detection)
@@ -323,6 +583,7 @@ export class OfficeState {
     preferredSeatId?: string,
     skipSpawnEffect?: boolean,
     folderName?: string,
+    name?: string,
   ): void {
     if (this.characters.has(id)) return;
 
@@ -337,30 +598,37 @@ export class OfficeState {
       hueShift = pick.hueShift;
     }
 
-    // Try preferred seat first, then any free seat
+    // Try the preferred seat first — it may live on any floor (restored agents
+    // return to the floor their seat is on) — then any free seat on the
+    // active (viewed) floor.
     let seatId: string | null = null;
-    if (preferredSeatId && this.seats.has(preferredSeatId)) {
-      const seat = this.seats.get(preferredSeatId)!;
-      if (!seat.assigned) {
+    let seatFloor: FloorRuntime | null = null;
+    if (preferredSeatId) {
+      const owner = this.findSeatOwner(preferredSeatId);
+      if (owner && !owner.seat.assigned) {
         seatId = preferredSeatId;
+        seatFloor = owner.runtime;
       }
     }
     if (!seatId) {
-      seatId = this.findFreeSeat();
+      const rt = this.activeFloor();
+      seatId = this.findFreeSeat(rt);
+      seatFloor = seatId ? rt : null;
     }
 
     let ch: Character;
-    if (seatId) {
-      const seat = this.seats.get(seatId)!;
+    if (seatId && seatFloor) {
+      const seat = seatFloor.seats.get(seatId)!;
       seat.assigned = true;
-      ch = createCharacter(id, palette, seatId, seat, hueShift);
+      ch = createCharacter(id, palette, seatId, seat, hueShift, seatFloor.id);
     } else {
-      // No seats — spawn at random walkable tile
+      // No seats — spawn at random walkable tile on the active floor
+      const rt = this.activeFloor();
       const spawn =
-        this.walkableTiles.length > 0
-          ? this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)]
+        rt.walkableTiles.length > 0
+          ? rt.walkableTiles[Math.floor(Math.random() * rt.walkableTiles.length)]
           : { col: 1, row: 1 };
-      ch = createCharacter(id, palette, null, null, hueShift);
+      ch = createCharacter(id, palette, null, null, hueShift, rt.id);
       ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
       ch.y = spawn.row * TILE_SIZE + TILE_SIZE / 2;
       ch.tileCol = spawn.col;
@@ -370,6 +638,11 @@ export class OfficeState {
     if (folderName) {
       ch.folderName = folderName;
     }
+
+    if (name) {
+      ch.name = name;
+    }
+
     if (!skipSpawnEffect) {
       ch.matrixEffect = 'spawn';
       ch.matrixEffectTimer = 0;
@@ -384,7 +657,7 @@ export class OfficeState {
     if (ch.matrixEffect === 'despawn') return; // already despawning
     // Free seat and clear selection immediately
     if (ch.seatId) {
-      const seat = this.seats.get(ch.seatId);
+      const seat = this.floorRuntime(ch.floorId).seats.get(ch.seatId);
       if (seat) seat.assigned = false;
     }
     if (this.selectedAgentId === id) this.selectedAgentId = null;
@@ -396,31 +669,51 @@ export class OfficeState {
     ch.bubbleType = null;
   }
 
-  /** Find seat uid at a given tile position, or null */
+  /** Find seat uid at a given tile position on the active floor, or null */
   getSeatAtTile(col: number, row: number): string | null {
-    for (const [uid, seat] of this.seats) {
+    for (const [uid, seat] of this.activeFloor().seats) {
       if (seat.seatCol === col && seat.seatRow === row) return uid;
     }
     return null;
   }
 
-  /** Reassign an agent from their current seat to a new seat */
+  /** Reassign an agent to a seat on the active floor. When the agent lives on
+   *  another floor it teleports over (matrix spawn effect) — there is no
+   *  cross-floor pathfinding. */
   reassignSeat(agentId: number, seatId: string): void {
     const ch = this.characters.get(agentId);
     if (!ch) return;
-    // Unassign old seat
+    const rt = this.activeFloor();
+    const seat = rt.seats.get(seatId);
+    if (!seat || seat.assigned) return;
+    // Unassign old seat (possibly on another floor)
     if (ch.seatId) {
-      const old = this.seats.get(ch.seatId);
+      const old = this.floorRuntime(ch.floorId).seats.get(ch.seatId);
       if (old) old.assigned = false;
     }
-    // Assign new seat
-    const seat = this.seats.get(seatId);
-    if (!seat || seat.assigned) return;
     seat.assigned = true;
     ch.seatId = seatId;
+
+    if (ch.floorId !== rt.id) {
+      // Cross-floor move: teleport to the new floor's seat
+      ch.floorId = rt.id;
+      this.snapToSeat(ch, seat);
+      ch.state = CharacterState.TYPE;
+      ch.frame = 0;
+      ch.frameTimer = 0;
+      ch.matrixEffect = 'spawn';
+      ch.matrixEffectTimer = 0;
+      ch.matrixEffectSeeds = matrixEffectSeeds();
+      if (!ch.isActive) {
+        ch.seatTimer = INACTIVE_SEAT_TIMER_MIN_SEC + Math.random() * INACTIVE_SEAT_TIMER_RANGE_SEC;
+      }
+      this.rebuildFurnitureInstances();
+      return;
+    }
+
     // Pathfind to new seat (unblock own seat tile for this query)
     const path = this.withOwnSeatUnblocked(ch, () =>
-      findPath(ch.tileCol, ch.tileRow, seat.seatCol, seat.seatRow, this.tileMap, this.blockedTiles),
+      findPath(ch.tileCol, ch.tileRow, seat.seatCol, seat.seatRow, rt.tileMap, rt.blockedTiles),
     );
     if (path.length > 0) {
       ch.path = path;
@@ -444,10 +737,11 @@ export class OfficeState {
   sendToSeat(agentId: number): void {
     const ch = this.characters.get(agentId);
     if (!ch || !ch.seatId) return;
-    const seat = this.seats.get(ch.seatId);
+    const rt = this.floorRuntime(ch.floorId);
+    const seat = rt.seats.get(ch.seatId);
     if (!seat) return;
     const path = this.withOwnSeatUnblocked(ch, () =>
-      findPath(ch.tileCol, ch.tileRow, seat.seatCol, seat.seatRow, this.tileMap, this.blockedTiles),
+      findPath(ch.tileCol, ch.tileRow, seat.seatCol, seat.seatRow, rt.tileMap, rt.blockedTiles),
     );
     if (path.length > 0) {
       ch.path = path;
@@ -467,17 +761,20 @@ export class OfficeState {
     }
   }
 
-  /** Walk an agent to an arbitrary walkable tile (right-click command) */
+  /** Walk an agent to an arbitrary walkable tile (right-click command).
+   *  Only works on the floor currently being viewed. */
   walkToTile(agentId: number, col: number, row: number): boolean {
     const ch = this.characters.get(agentId);
     if (!ch || ch.isSubagent) return false;
-    if (!isWalkable(col, row, this.tileMap, this.blockedTiles)) {
+    if (ch.floorId !== this.activeFloorId) return false;
+    const rt = this.activeFloor();
+    if (!isWalkable(col, row, rt.tileMap, rt.blockedTiles)) {
       // Also allow walking to own seat tile (blocked for others but not self)
       const key = this.ownSeatKey(ch);
       if (!key || key !== `${col},${row}`) return false;
     }
     const path = this.withOwnSeatUnblocked(ch, () =>
-      findPath(ch.tileCol, ch.tileRow, col, row, this.tileMap, this.blockedTiles),
+      findPath(ch.tileCol, ch.tileRow, col, row, rt.tileMap, rt.blockedTiles),
     );
     if (path.length === 0) return false;
     ch.path = path;
@@ -488,7 +785,8 @@ export class OfficeState {
     return true;
   }
 
-  /** Create a sub-agent character with the parent's palette. Returns the sub-agent ID. */
+  /** Create a sub-agent character with the parent's palette on the parent's
+   *  floor. Returns the sub-agent ID. */
   addSubagent(parentAgentId: number, parentToolId: string): number {
     const key = `${parentAgentId}:${parentToolId}`;
     if (this.subagentIdMap.has(key)) return this.subagentIdMap.get(key)!;
@@ -497,23 +795,26 @@ export class OfficeState {
     const parentCh = this.characters.get(parentAgentId);
     const palette = parentCh ? parentCh.palette : 0;
     const hueShift = parentCh ? parentCh.hueShift : 0;
+    const rt = parentCh ? this.floorRuntime(parentCh.floorId) : this.activeFloor();
 
-    // Find the closest walkable tile to the parent, avoiding tiles occupied by other characters
+    // Find the closest walkable tile to the parent, avoiding tiles occupied by
+    // other characters on the same floor
     const parentCol = parentCh ? parentCh.tileCol : 0;
     const parentRow = parentCh ? parentCh.tileRow : 0;
     const dist = (c: number, r: number) => Math.abs(c - parentCol) + Math.abs(r - parentRow);
 
-    // Build set of tiles occupied by existing characters
+    // Build set of tiles occupied by existing characters on this floor
     const occupiedTiles = new Set<string>();
     for (const [, other] of this.characters) {
+      if (other.floorId !== rt.id) continue;
       occupiedTiles.add(`${other.tileCol},${other.tileRow}`);
     }
 
     let spawn = { col: parentCol, row: parentRow };
-    if (this.walkableTiles.length > 0) {
-      let closest = this.walkableTiles[0];
+    if (rt.walkableTiles.length > 0) {
+      let closest = rt.walkableTiles[0];
       let closestDist = Infinity;
-      for (const tile of this.walkableTiles) {
+      for (const tile of rt.walkableTiles) {
         if (occupiedTiles.has(`${tile.col},${tile.row}`)) continue;
         const d = dist(tile.col, tile.row);
         if (d < closestDist) {
@@ -524,11 +825,15 @@ export class OfficeState {
       spawn = closest;
     }
 
-    const ch = createCharacter(id, palette, null, null, hueShift);
+    const ch = createCharacter(id, palette, null, null, hueShift, rt.id);
     ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
     ch.y = spawn.row * TILE_SIZE + TILE_SIZE / 2;
     ch.tileCol = spawn.col;
     ch.tileRow = spawn.row;
+
+    // Subagents inherit the parent's display name
+    ch.name = parentCh?.name ? `${parentCh.name} (Task)` : 'Subagent';
+
     // Face the same direction as the parent agent
     if (parentCh) ch.dir = parentCh.dir;
     ch.isSubagent = true;
@@ -558,7 +863,7 @@ export class OfficeState {
         return;
       }
       if (ch.seatId) {
-        const seat = this.seats.get(ch.seatId);
+        const seat = this.floorRuntime(ch.floorId).seats.get(ch.seatId);
         if (seat) seat.assigned = false;
       }
       // Start despawn animation — keep character in map for rendering
@@ -589,7 +894,7 @@ export class OfficeState {
             continue;
           }
           if (ch.seatId) {
-            const seat = this.seats.get(ch.seatId);
+            const seat = this.floorRuntime(ch.floorId).seats.get(ch.seatId);
             if (seat) seat.assigned = false;
           }
           // Start despawn animation
@@ -629,19 +934,21 @@ export class OfficeState {
     }
   }
 
-  /** Rebuild furniture instances with auto-state applied (active agents turn electronics ON) */
+  /** Rebuild the active floor's furniture instances with auto-state applied
+   *  (active agents on this floor turn electronics ON) */
   private rebuildFurnitureInstances(): void {
-    // Collect tiles where active agents face desks
+    const rt = this.activeFloor();
+    // Collect tiles where active agents on this floor face desks
     const autoOnTiles = new Set<string>();
     for (const ch of this.characters.values()) {
-      if (!ch.isActive || !ch.seatId) continue;
-      const seat = this.seats.get(ch.seatId);
+      if (!ch.isActive || !ch.seatId || ch.floorId !== rt.id) continue;
+      const seat = rt.seats.get(ch.seatId);
       if (!seat) continue;
       // Find the desk tile(s) the agent faces from their seat
       const dCol =
         seat.facingDir === Direction.RIGHT ? 1 : seat.facingDir === Direction.LEFT ? -1 : 0;
       const dRow = seat.facingDir === Direction.DOWN ? 1 : seat.facingDir === Direction.UP ? -1 : 0;
-      // Check tiles in the facing direction (desk could be 1-3 tiles deep)
+      // Check tiles in the facing direction (desk could be 1-3 deep)
       for (let d = 1; d <= AUTO_ON_FACING_DEPTH; d++) {
         const tileCol = seat.seatCol + dCol * d;
         const tileRow = seat.seatRow + dRow * d;
@@ -664,13 +971,13 @@ export class OfficeState {
     }
 
     if (autoOnTiles.size === 0) {
-      this.furniture = layoutToFurnitureInstances(this.layout.furniture);
+      rt.furniture = layoutToFurnitureInstances(rt.layout.furniture);
       return;
     }
 
     // Build modified furniture list with auto-state and animation applied
     const animFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
-    const modifiedFurniture: PlacedFurniture[] = this.layout.furniture.map((item) => {
+    const modifiedFurniture: PlacedFurniture[] = rt.layout.furniture.map((item) => {
       const entry = getCatalogEntry(item.type);
       if (!entry) return item;
       // Check if any tile of this furniture overlaps an auto-on tile
@@ -694,7 +1001,7 @@ export class OfficeState {
       return item;
     });
 
-    this.furniture = layoutToFurnitureInstances(modifiedFurniture);
+    rt.furniture = layoutToFurnitureInstances(modifiedFurniture);
   }
 
   setAgentTool(id: number, tool: string | null): void {
@@ -745,11 +1052,15 @@ export class OfficeState {
   // ── Pets ──────────────────────────────────────────────────────
 
   /**
-   * Add a pet to the live runtime. Spawns at a uniformly-random walkable tile.
-   * Mirror in `this.layout.pets` so debounced saveLayout serialises the roster.
+   * Add a pet to the ACTIVE floor. Spawns at a uniformly-random walkable tile.
+   * Mirror in the floor's layout.pets so debounced saveLayout serialises the roster.
    * Bounds-checks petType against the loaded sprite count to defend against stale layouts.
    */
   addPet(placedPet: PlacedPet): void {
+    this.addPetTo(this.activeFloor(), placedPet);
+  }
+
+  private addPetTo(rt: FloorRuntime, placedPet: PlacedPet): void {
     // Defensive guards (upstream 5e6c0a0)
     if (
       typeof placedPet.id !== 'string' ||
@@ -765,44 +1076,48 @@ export class OfficeState {
     ) {
       return;
     }
-    if (this.pets.some((p) => p.id === placedPet.id)) return; // de-dupe
-    if (this.walkableTiles.length === 0) return; // no spawn space — silently drop
+    if (rt.pets.some((p) => p.id === placedPet.id)) return; // de-dupe
+    if (rt.walkableTiles.length === 0) return; // no spawn space — silently drop
 
-    const spawn = this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)];
+    const spawn = rt.walkableTiles[Math.floor(Math.random() * rt.walkableTiles.length)];
     const pet = createPet(placedPet.id, placedPet.petType, spawn.col, spawn.row);
     pet.name = getPetName(placedPet.petType);
-    this.pets.push(pet);
-    this.syncLayoutPets();
+    rt.pets.push(pet);
+    this.syncLayoutPets(rt);
   }
 
-  /** Remove a pet by id. Idempotent. */
+  /** Remove a pet by id from the active floor. Idempotent. */
   removePet(id: string): void {
-    const before = this.pets.length;
-    this.pets = this.pets.filter((p) => p.id !== id);
-    if (this.pets.length !== before) {
-      this.syncLayoutPets();
+    const rt = this.activeFloor();
+    const before = rt.pets.length;
+    rt.pets = rt.pets.filter((p) => p.id !== id);
+    if (rt.pets.length !== before) {
+      this.syncLayoutPets(rt);
     }
   }
 
-  /** Shallow snapshot for external consumers (renderer, hooks). */
+  /** Shallow snapshot of the active floor's pets (renderer, hooks). */
   getPets(): Pet[] {
-    return this.pets.slice();
+    return this.activeFloor().pets.slice();
   }
 
-  /** Unique petType values currently placed. Used by the Pets toolbar to mark active rows. */
+  /** Unique petType values placed on the ACTIVE floor. Used by the Pets
+   *  toolbar to mark active rows (pets are placed per floor). */
   getActivePetTypes(): number[] {
     const seen = new Set<number>();
-    for (const p of this.pets) seen.add(p.petType);
+    for (const p of this.activeFloor().pets) seen.add(p.petType);
     return Array.from(seen);
   }
 
   /**
-   * Hit-test pets at a pixel world position. Sorts back-to-front (largest y wins on tie)
-   * so the visually-frontmost pet receives the click.
-   * Returns the pet id or null.
+   * Hit-test the active floor's pets at a pixel world position. Sorts
+   * back-to-front (largest y wins on tie) so the visually-frontmost pet
+   * receives the click. Returns the pet id or null.
    */
   getPetAt(worldX: number, worldY: number): string | null {
-    const ordered = this.pets.slice().sort((a, b) => b.y - a.y);
+    const ordered = this.activeFloor()
+      .pets.slice()
+      .sort((a, b) => b.y - a.y);
     for (const pet of ordered) {
       const left = pet.x - PET_HIT_HALF_WIDTH;
       const right = pet.x + PET_HIT_HALF_WIDTH;
@@ -817,7 +1132,7 @@ export class OfficeState {
 
   /** Show the heart bubble on a pet for WAITING_BUBBLE_DURATION_SEC. */
   showPetBubble(petId: string): void {
-    const pet = this.pets.find((p) => p.id === petId);
+    const pet = this.activeFloor().pets.find((p) => p.id === petId);
     if (!pet) return;
     pet.bubbleType = 'heart';
     pet.bubbleTimer = WAITING_BUBBLE_DURATION_SEC;
@@ -825,45 +1140,45 @@ export class OfficeState {
 
   /** Dismiss the heart bubble on click; collapses timer to a fast fade. */
   dismissPetBubble(petId: string): void {
-    const pet = this.pets.find((p) => p.id === petId);
+    const pet = this.activeFloor().pets.find((p) => p.id === petId);
     if (!pet || !pet.bubbleType) return;
     pet.bubbleTimer = Math.min(pet.bubbleTimer, DISMISS_BUBBLE_FAST_FADE_SEC);
   }
 
   /**
-   * Reconcile `this.pets` to match the layout's placed-pet roster.
-   * - Pets in layout but not in runtime → spawn via addPet().
+   * Reconcile a floor's pets to match its layout's placed-pet roster.
+   * - Pets in layout but not in runtime → spawn via addPetTo().
    * - Pets in runtime but not in layout → remove.
    * - Pets in both → keep existing runtime state (position, FSM).
    *
-   * Called from constructor and rebuildFromLayout. Always runs AFTER walkableTiles
-   * is populated.
+   * Called from buildFloorRuntime and rebuildFromLayout. Always runs AFTER
+   * walkableTiles is populated.
    */
-  private rebuildPetsFromLayout(layout: OfficeLayout): void {
-    const placed = layout.pets ?? [];
+  private rebuildPetsFromLayout(rt: FloorRuntime): void {
+    const placed = rt.layout.pets ?? [];
     const placedIds = new Set(placed.map((p) => p.id));
 
     // 1. Remove pets no longer in layout
-    this.pets = this.pets.filter((p) => placedIds.has(p.id));
+    rt.pets = rt.pets.filter((p) => placedIds.has(p.id));
 
     // 2. Add pets that exist in layout but not in runtime
-    const existingIds = new Set(this.pets.map((p) => p.id));
+    const existingIds = new Set(rt.pets.map((p) => p.id));
     for (const p of placed) {
       if (existingIds.has(p.id)) continue;
-      this.addPet(p); // pushes onto this.pets, calls syncLayoutPets()
+      this.addPetTo(rt, p); // pushes onto rt.pets, calls syncLayoutPets()
     }
-    // syncLayoutPets() inside addPet keeps this.layout.pets coherent; one final
-    // sync handles the removal-only branch where addPet was never called.
-    this.syncLayoutPets();
+    // syncLayoutPets() inside addPetTo keeps rt.layout.pets coherent; one final
+    // sync handles the removal-only branch where addPetTo was never called.
+    this.syncLayoutPets(rt);
   }
 
   /**
-   * Re-export the current pet roster into `this.layout.pets`. Called only from
-   * mutating methods (addPet / removePet / rebuildPetsFromLayout) — NEVER from
-   * getLayout(), which runs on every render frame.
+   * Re-export a floor's pet roster into its layout.pets. Called only from
+   * mutating methods (addPetTo / removePet / rebuildPetsFromLayout) — NEVER
+   * from getLayout(), which runs on every render frame.
    */
-  private syncLayoutPets(): void {
-    this.layout.pets = this.pets.map((p) => ({ id: p.id, petType: p.petType }));
+  private syncLayoutPets(rt: FloorRuntime): void {
+    rt.layout.pets = rt.pets.map((p) => ({ id: p.id, petType: p.petType }));
   }
 
   setTeamInfo(
@@ -893,7 +1208,7 @@ export class OfficeState {
   }
 
   update(dt: number): void {
-    // Furniture animation cycling
+    // Furniture animation cycling (active floor)
     const prevFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
     this.furnitureAnimTimer += dt;
     const newFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
@@ -920,9 +1235,11 @@ export class OfficeState {
         continue; // skip normal FSM while effect is active
       }
 
-      // Temporarily unblock own seat so character can pathfind to it
+      // Tick the FSM with the character's own floor's structures — characters
+      // on non-active floors keep living while another floor is viewed.
+      const rt = this.floorRuntime(ch.floorId);
       this.withOwnSeatUnblocked(ch, () =>
-        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles),
+        updateCharacter(ch, dt, rt.walkableTiles, rt.seats, rt.tileMap, rt.blockedTiles),
       );
 
       // Tick bubble timer for waiting bubbles
@@ -939,16 +1256,23 @@ export class OfficeState {
       this.characters.delete(id);
     }
 
-    // ── Pet FSM ────────────────────────────────────────────────
-    for (const pet of this.pets) {
-      updatePet(pet, dt, this.walkableTiles, this.characters, this.tileMap, this.blockedTiles);
+    // ── Pet FSM (all floors; follow targets are same-floor characters) ──
+    for (const rt of this.floorRuntimes.values()) {
+      if (rt.pets.length === 0) continue;
+      const floorCharacters = new Map<number, Character>();
+      for (const [id, ch] of this.characters) {
+        if (ch.floorId === rt.id) floorCharacters.set(id, ch);
+      }
+      for (const pet of rt.pets) {
+        updatePet(pet, dt, rt.walkableTiles, floorCharacters, rt.tileMap, rt.blockedTiles);
 
-      // Tick heart bubble timer (mirrors character waiting-bubble pattern)
-      if (pet.bubbleType) {
-        pet.bubbleTimer -= dt;
-        if (pet.bubbleTimer <= 0) {
-          pet.bubbleType = null;
-          pet.bubbleTimer = 0;
+        // Tick heart bubble timer (mirrors character waiting-bubble pattern)
+        if (pet.bubbleType) {
+          pet.bubbleTimer -= dt;
+          if (pet.bubbleTimer <= 0) {
+            pet.bubbleType = null;
+            pet.bubbleTimer = 0;
+          }
         }
       }
     }
@@ -958,9 +1282,19 @@ export class OfficeState {
     return Array.from(this.characters.values());
   }
 
-  /** Get character at pixel position (for hit testing). Returns id or null. */
+  /** Characters on the active floor — what the renderer draws */
+  getVisibleCharacters(): Character[] {
+    const visible: Character[] = [];
+    for (const ch of this.characters.values()) {
+      if (ch.floorId === this.activeFloorId) visible.push(ch);
+    }
+    return visible;
+  }
+
+  /** Get character at pixel position on the active floor (for hit testing).
+   *  Returns id or null. */
   getCharacterAt(worldX: number, worldY: number): number | null {
-    const chars = this.getCharacters().sort((a, b) => b.y - a.y);
+    const chars = this.getVisibleCharacters().sort((a, b) => b.y - a.y);
     for (const ch of chars) {
       // Skip characters that are despawning
       if (ch.matrixEffect === 'despawn') continue;
