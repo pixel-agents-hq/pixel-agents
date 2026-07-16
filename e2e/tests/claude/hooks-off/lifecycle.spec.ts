@@ -38,7 +38,12 @@ import {
   buildUserToolResultRecord,
   seedTeamConfig,
 } from '../../../helpers/team';
-import { getPixelAgentsFrame, openPixelAgentsPanel, setSettings } from '../../../helpers/webview';
+import {
+  getPixelAgentsFrame,
+  openPixelAgentsPanel,
+  runCommand,
+  setSettings,
+} from '../../../helpers/webview';
 
 const PARALLEL_PARENT_TOOL_ID = 'toolu-b5-parent';
 
@@ -258,6 +263,84 @@ test.describe('Hooks OFF / lifecycle', () => {
     narrator.check(
       'sibling kept its own text — adopted neither cleared nor stale; id set is the pair',
     );
+  });
+
+  test('/clear retains its character after the terminal editor moves @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
+
+    narrator.step(
+      'hooks OFF — keep two internal characters while one terminal moves during /clear',
+    );
+    await setSettings(frame, {
+      hooksEnabled: false,
+    });
+
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      claudeScenario('/clear terminal move sibling hooks off')
+        .at(2_500)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-b2-move-sibling', 'Bash', {
+            command: 'npm run sibling',
+          }),
+        )
+        .holdOpenFor(16_000)
+        .build(),
+    );
+
+    await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+    await openPixelAgentsPanel(window);
+    let panelFrame = await getPixelAgentsFrame(window);
+    const siblingAgentId = await expectSingleAgentOverlay(panelFrame);
+
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      claudeScenario('/clear terminal move target hooks off')
+        .defineSession('replacement', '{{sessionId}}-clear-moved')
+        .at(3_500)
+        .appendJsonl(mockClaudeInitRecord('mock-claude-clear-moved-ready'), {
+          session: 'replacement',
+        })
+        .at(3_550)
+        .appendJsonl(buildClearCommandRecord(), {
+          session: 'replacement',
+        })
+        .at(4_500)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-b2-move-fresh', 'Bash', {
+            command: 'npm run moved-clear',
+          }),
+          { session: 'replacement' },
+        )
+        .holdOpenFor(16_000)
+        .build(),
+    );
+
+    await spawnInternalAgentAndWait(panelFrame, tmpHome, mockLogFile);
+    await expectOverlayCount(panelFrame, 2, 12_000);
+    const clearingAgentId = otherOverlayId(await readAgentOverlayIds(panelFrame), siblingAgentId);
+    narrator.check('captured the clearing character id before its terminal moves');
+    const terminalTab = window.getByText(/Claude Code #\d+/).last();
+    await expect(terminalTab).toBeVisible({ timeout: 15_000 });
+    await terminalTab.click();
+    narrator.step('moving the focused clearing terminal editor into the next group');
+    await runCommand(window, 'View: Move Editor into Next Group');
+
+    await openPixelAgentsPanel(window);
+    panelFrame = await getPixelAgentsFrame(window);
+    await expectOverlayCount(panelFrame, 2, 12_000);
+
+    await expectOverlayVisibleForAgent(panelFrame, clearingAgentId, 'Running: npm run moved-clear');
+    narrator.step('holding beyond two 3s external-scanner ticks');
+    await panelFrame.waitForTimeout(7_000);
+    await expectOverlayCount(panelFrame, 2);
+    expect([...(await readAgentOverlayIds(panelFrame)).sort((a, b) => a - b)]).toEqual([
+      siblingAgentId,
+      clearingAgentId,
+    ]);
+    narrator.check('the moved terminal reused its character; no third external character appeared');
   });
 
   test('heuristic late --resume after stale cleanup prevents zombie agents @area:lifecycle', async ({

@@ -684,8 +684,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     vscode.window.onDidChangeActiveTerminal((terminal) => {
-      this.runtime.activeAgentId.current = null;
       if (!terminal) return;
+      this.runtime.activeAgentId.current = null;
       for (const [id, agent] of this.store) {
         if (agent.terminalRef && agent.terminalRef === terminal) {
           this.runtime.activeAgentId.current = id;
