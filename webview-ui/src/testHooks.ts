@@ -6,7 +6,13 @@ declare global {
   interface Window {
     __pixelAgentsTestHooks?: {
       playedSounds?: Array<{ kind: string; at: number }>;
-      getCharacters?: () => Array<{ id: number; matrixEffect: 'spawn' | 'despawn' | null }>;
+      getCharacters?: () => Array<{
+        id: number;
+        matrixEffect: 'spawn' | 'despawn' | null;
+        agentName?: string;
+        bubbleType: 'permission' | 'waiting' | null;
+        waitingAwaitingInput?: boolean;
+      }>;
       // ── Carpet + Areas observability (added for carpet/areas e2e) ──
       /** Sparse list of painted carpet tiles with their grid coords. */
       getCarpetTiles?: () => Array<{
@@ -86,7 +92,7 @@ declare global {
  * state and changes no production logic. Called once at module-load from
  * App.tsx with the singleton officeStateRef.
  *
- * - getCharacters(): point-in-time snapshot of every character's matrixEffect.
+ * - getCharacters(): point-in-time snapshot of every character's matrix, team, and bubble state.
  * - addAgentLog: append-only history of every OfficeState.addAgent call. The
  *   log captures matrixEffect AT addAgent time (synchronously inside the
  *   wrapper), eliminating the ~300ms matrix-effect lifetime race that would
@@ -111,6 +117,9 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
     return Array.from(os.characters.values()).map((ch) => ({
       id: ch.id,
       matrixEffect: ch.matrixEffect,
+      agentName: ch.agentName,
+      bubbleType: ch.bubbleType,
+      waitingAwaitingInput: ch.waitingAwaitingInput,
     }));
   };
 

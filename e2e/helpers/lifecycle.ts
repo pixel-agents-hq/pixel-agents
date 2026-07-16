@@ -3,6 +3,7 @@ import { type ClaudeMockScenarioBuilder } from './mock-claude';
 export const INLINE_TEAMMATE_ROLE = 'web-researcher';
 export const INLINE_TEAMMATE_ALIAS = 'teammate';
 export const INLINE_TEAMMATE_SLUG = `agent-${INLINE_TEAMMATE_ROLE}`;
+export const TMUX_TEAMMATE_ALIAS = 'tmux-teammate';
 
 export function uniqueTeamName(prefix: string): string {
   return `${prefix}-${Date.now()}`;
@@ -42,4 +43,10 @@ export function withInlineTeammateSession(
   builder: ClaudeMockScenarioBuilder,
 ): ClaudeMockScenarioBuilder {
   return withNamedInlineTeammateSession(builder, INLINE_TEAMMATE_ALIAS, INLINE_TEAMMATE_ROLE);
+}
+
+export function withTmuxTeammateSession(
+  builder: ClaudeMockScenarioBuilder,
+): ClaudeMockScenarioBuilder {
+  return builder.defineSession(TMUX_TEAMMATE_ALIAS, '{{sessionId}}-tmux');
 }

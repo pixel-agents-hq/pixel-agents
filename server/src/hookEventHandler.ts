@@ -133,11 +133,12 @@ export class HookEventHandler {
       return; // version mismatch already logged in constructor
     }
     // ── Provider normalization boundary ───────────────────────────────────────
-    // All raw Claude-specific fields (tool_name, tool_input, agent_type, notification_type,
+    // All raw Claude-specific fields (tool_name, tool_input, agent_type, teammate_name,
+    // task_subject, notification_type,
     // reason, source) are extracted by provider.normalizeHookEvent. Downstream dispatch
     // uses the normalized AgentEvent.kind. Raw `event.*` reads are still allowed in a few
     // places for provider-specific metadata that AgentEvent doesn't capture (transcript_path,
-    // cwd for external-session adoption; agent_type for teammate routing).
+    // cwd for external-session adoption; event-specific teammate identity for routing).
     const normalized = this.provider.normalizeHookEvent(event);
     if (!normalized) return; // unknown / uninteresting event -- silently drop
     const normEvent = normalized.event;
@@ -321,7 +322,7 @@ export class HookEventHandler {
 
     // Dispatch on normalized AgentEvent.kind, not raw hook event names.
     // The TeammateIdle / TaskCompleted hooks normalize to `subagentTurnEnd` -- both
-    // carry `agent_type` in the raw payload, which we pass to the team-routing handler.
+    // retain their raw payload for the team-routing handler's identity extraction.
     switch (normEvent.kind) {
       case 'sessionEnd':
         return this.handleSessionEnd(normEvent, agent, agentId);
@@ -639,29 +640,30 @@ export class HookEventHandler {
 
   /**
    * Handle TeammateIdle: teammate signaled it's idle and available for work.
-   * Routes to the specific teammate if identifiable by agent_type, otherwise
+   * Routes to the specific teammate if identifiable by teammate_name, otherwise
    * marks all inline teammates of this lead as waiting.
    * Fallback: if the agent has no inline teammates, mark the agent itself.
    */
   private handleTeammateIdle(event: HookEvent, agent: AgentState, agentId: number): void {
-    const agentType = this.provider.team?.extractTeammateNameFromEvent(event);
+    const teammateName = this.provider.team?.extractTeammateNameFromEvent(event);
     const inlineTeammates = getInlineTeammates(agentId, this.agents);
 
     if (inlineTeammates.length === 0) {
-      // No inline teammates — treat as a regular idle signal for this agent.
-      // TeammateIdle is idle-semantics, so it surfaces "Waiting for input".
-      this.markAgentWaiting(agent, agentId, true);
+      // No inline teammates — treat as a completed turn for this agent.
+      this.markAgentWaiting(agent, agentId);
       return;
     }
 
     // Match by agentName if provider extracted a name from the event
-    if (agentType) {
-      const match = inlineTeammates.find(([, a]) => a.agentName === agentType);
+    if (teammateName) {
+      const match = inlineTeammates.find(([, a]) => a.agentName === teammateName);
       if (match) {
         const [id, a] = match;
         if (debug)
-          console.log(`[Pixel Agents] Hook: TeammateIdle "${agentType}" -> teammate Agent ${id}`);
-        this.markAgentWaiting(a, id, true);
+          console.log(
+            `[Pixel Agents] Hook: TeammateIdle "${teammateName}" -> teammate Agent ${id}`,
+          );
+        this.markAgentWaiting(a, id);
         return;
       }
     }
@@ -669,10 +671,10 @@ export class HookEventHandler {
     // Fallback: mark all inline teammates as waiting
     if (debug)
       console.log(
-        `[Pixel Agents] Hook: TeammateIdle (no agent_type match) -> marking ${inlineTeammates.length} teammate(s) waiting`,
+        `[Pixel Agents] Hook: TeammateIdle (no teammate_name match) -> marking ${inlineTeammates.length} teammate(s) done`,
       );
     for (const [id, a] of inlineTeammates) {
-      this.markAgentWaiting(a, id, true);
+      this.markAgentWaiting(a, id);
     }
   }
 
@@ -681,19 +683,24 @@ export class HookEventHandler {
    * Routes to the specific teammate when identifiable, marking it waiting instantly.
    */
   private handleTaskCompleted(event: HookEvent, agentId: number): void {
-    const subject = (event.subject as string) ?? '';
-    const agentType = this.provider.team?.extractTeammateNameFromEvent(event);
+    const taskSubject =
+      typeof event.task_subject === 'string'
+        ? event.task_subject
+        : typeof event.subject === 'string'
+          ? event.subject
+          : '';
+    const teammateName = this.provider.team?.extractTeammateNameFromEvent(event);
     if (debug)
       console.log(
-        `[Pixel Agents] Hook: Agent ${agentId} - TaskCompleted: ${subject}${agentType ? ` (agent_type=${agentType})` : ''}`,
+        `[Pixel Agents] Hook: Agent ${agentId} - TaskCompleted: ${taskSubject}${teammateName ? ` (teammate_name=${teammateName})` : ''}`,
       );
 
     const inlineTeammates = getInlineTeammates(agentId, this.agents);
     if (inlineTeammates.length === 0) return;
 
     // Match by agentName if available, otherwise mark all inline teammates waiting
-    if (agentType) {
-      const match = inlineTeammates.find(([, a]) => a.agentName === agentType);
+    if (teammateName) {
+      const match = inlineTeammates.find(([, a]) => a.agentName === teammateName);
       if (match) {
         const [id, a] = match;
         this.markAgentWaiting(a, id);

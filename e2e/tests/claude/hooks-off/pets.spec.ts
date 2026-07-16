@@ -119,11 +119,6 @@ test.describe('Pets', () => {
   }) => {
     const { frame, window, tmpHome, narrator } = pixelAgents;
 
-    // The pets tests have no mock-claude process, so the fixture's always-on
-    // "e2e monitor" terminal is the only narrated surface — the yellow [test]
-    // lines below are its whole story. The waitForTimeout dwells between phases
-    // are equally cosmetic — each state already asserted via test hook is held
-    // on screen long enough to be seen in the recording.
     narrator.step('opening the layout editor → Pets tab');
     const carousel = await openPetsTab(frame);
     const claudio = carousel.locator('button[title="Claudio"]');
@@ -137,7 +132,6 @@ test.describe('Pets', () => {
       return pets.length === 1 && pets[0]?.petType === 0;
     });
     narrator.check('one pet on the canvas (getPets → 1, petType claudio)');
-    await frame.waitForTimeout(1_500);
 
     // Toggle OFF: clicking the same (now-active) button removes it.
     narrator.step('clicking Claudio again — removing the pet');
@@ -146,18 +140,20 @@ test.describe('Pets', () => {
       () => ((window as PetWindow).__pixelAgentsTestHooks?.getPets?.() ?? []).length === 0,
     );
     narrator.check('canvas empty again (getPets → 0)');
-    await frame.waitForTimeout(1_500);
 
     // Place both pets, then persist via the EditActionBar Save button.
     narrator.step('placing both pets — Claudio, then Gitcat');
     await claudio.click();
-    await frame.waitForTimeout(1_000);
+    await frame.waitForFunction(
+      () =>
+        ((globalThis as unknown as PetWindow).__pixelAgentsTestHooks?.getPets?.() ?? []).length ===
+        1,
+    );
     await gitcat.click();
     await frame.waitForFunction(
       () => ((window as PetWindow).__pixelAgentsTestHooks?.getPets?.() ?? []).length === 2,
     );
     narrator.check('two pets on the canvas (getPets → 2)');
-    await frame.waitForTimeout(1_000);
 
     narrator.step('clicking Save — persisting the layout to disk');
     const saveBtn = frame.locator('button', { hasText: 'Save' });
@@ -184,7 +180,6 @@ test.describe('Pets', () => {
       )
       .toBe(2);
     narrator.check('~/.pixel-agents/layout.json contains 2 pets');
-    await frame.waitForTimeout(1_000);
 
     // Reload the panel (webview is disposed + re-resolved since there is no
     // retainContextWhenHidden) and confirm the pets rehydrate from disk.
@@ -193,7 +188,6 @@ test.describe('Pets', () => {
     // "Toggle Maximized Panel" overlays cluttering the end of the video.
     narrator.step('closing the bottom panel — the webview is disposed');
     await closeBottomPanel(window);
-    await window.waitForTimeout(1_500);
     narrator.step('reopening the panel — pets must rehydrate from disk');
     await reopenBottomPanel(window);
     const freshFrame = await getPixelAgentsFrame(window);
@@ -203,16 +197,13 @@ test.describe('Pets', () => {
       { timeout: 15_000 },
     );
     narrator.check('fresh webview shows 2 pets again — persisted across the reload');
-    await window.waitForTimeout(1_500);
   });
 
   test('clicking a pet shows a heart bubble that auto-dismisses and dismisses on re-click @area:pets', async ({
     pixelAgents,
   }) => {
     // `window` stays un-destructured here so the waitForFunction callbacks'
-    // `window` keeps resolving to the DOM global for TypeScript. Narration +
-    // dwells are cosmetic (video readability); the assertions are unchanged
-    // test-hook reads. See the sibling persistence test.
+    // `window` keeps resolving to the DOM global for TypeScript.
     const { frame, narrator } = pixelAgents;
 
     // Place one pet through the editor, then read its id back (spawn tile is
@@ -226,7 +217,6 @@ test.describe('Pets', () => {
     const pets = await readPets(frame);
     const petId = pets[0]!.id;
     narrator.check('pet placed (getPets → 1)');
-    await frame.waitForTimeout(500);
 
     // Click → heart bubble appears.
     narrator.step('clicking the pet — heart bubble should appear');
@@ -253,14 +243,9 @@ test.describe('Pets', () => {
       { timeout: 6_000 },
     );
     narrator.check('bubble auto-dismissed on its own (bubbleType = null)');
-    // Let the fade-out animation finish on screen before re-clicking.
-    await frame.waitForTimeout(500);
 
-    // Show it again, hold it visible for 500ms, then click while showing →
-    // fast-fade dismiss (0.3s). The window math still excludes the auto-path:
-    // the bubble reappears at t0, auto-dismiss would fire at t0+2000ms, and
-    // with the click at ~t0+500ms the 1000ms assert window closes at
-    // ~t0+1500ms — a null bubble by then can only be the click-dismiss path.
+    // The 1s assertion below completes before the 2s auto-dismiss timer, so
+    // a cleared bubble can only be the click-dismiss path.
     narrator.step('clicking again — heart bubble re-appears');
     await petClick(frame, petId);
     await frame.waitForFunction((id) => {
@@ -270,7 +255,6 @@ test.describe('Pets', () => {
       return p?.bubbleType === 'heart';
     }, petId);
     narrator.check('heart bubble showing again');
-    await frame.waitForTimeout(500);
 
     narrator.step('clicking while showing — must dismiss fast, not wait out the 2s timer');
     await petClick(frame, petId);
@@ -285,6 +269,5 @@ test.describe('Pets', () => {
       { timeout: 1_000 },
     );
     narrator.check('bubble cleared within 1s of the click — fast-dismiss path confirmed');
-    await frame.waitForTimeout(1_500);
   });
 });

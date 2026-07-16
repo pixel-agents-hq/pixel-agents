@@ -280,7 +280,7 @@ async function getPanelRect(window: Page): Promise<PanelRect | null> {
       document.querySelector<HTMLElement>('.part.panel');
     if (!panel) return null;
     const r = panel.getBoundingClientRect();
-    return { x: r.x, y: r.y, width: r.width, height: r.height, winW: window.innerWidth };
+    return { x: r.x, y: r.y, width: r.width, height: r.height, winW: globalThis.innerWidth };
   });
 }
 
@@ -457,30 +457,17 @@ async function closeSettingsModal(settingsModal: Locator): Promise<void> {
  * Read the checked state of a Settings modal toggle without changing it.
  * Used by the settings-persistence test to assert state survives a panel reload.
  */
-export async function getSettingChecked(
-  frame: WebviewSurface,
-  label: string,
-  options?: { dwellMs?: number },
-): Promise<boolean> {
+export async function getSettingChecked(frame: WebviewSurface, label: string): Promise<boolean> {
   const settingsModal = await openSettingsModal(frame);
   const button = settingsModal.locator('button', { hasText: label });
   await expect(button).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
   const indicator = button.locator('span').last();
   const checked = ((await indicator.textContent()) ?? '').trim().toLowerCase() === 'x';
-  // dwellMs keeps the modal on screen before closing — purely for run-video
-  // readability (the settings-persistence test uses it); assertions unaffected.
-  if (options?.dwellMs) {
-    await frame.waitForTimeout(options.dwellMs);
-  }
   await closeSettingsModal(settingsModal);
   return checked;
 }
 
-export async function setSettings(
-  frame: WebviewSurface,
-  settings: WebviewSettings,
-  options?: { dwellMs?: number },
-): Promise<void> {
+export async function setSettings(frame: WebviewSurface, settings: WebviewSettings): Promise<void> {
   const settingsModal = await openSettingsModal(frame);
 
   if (settings.watchAllSessions !== undefined) {
@@ -496,10 +483,6 @@ export async function setSettings(
     await setCheckbox(settingsModal, 'Debug View', settings.debugView);
   }
 
-  // See getSettingChecked: video-readability dwell only.
-  if (options?.dwellMs) {
-    await frame.waitForTimeout(options.dwellMs);
-  }
   await closeSettingsModal(settingsModal);
 
   // Allow the extension host to process settings updates before the test continues.

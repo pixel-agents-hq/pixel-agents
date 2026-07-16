@@ -2,10 +2,8 @@ import type { Frame } from '@playwright/test';
 
 import { expect, test } from '../../../fixtures/pixel-agents';
 import { spawnInternalAgentAndWait } from '../../../helpers/internal-agent';
-import { uniqueTeamName } from '../../../helpers/lifecycle';
 import {
   arrangeNextClaudeInvocation,
-  type ClaudeMockScenarioBuilder,
   claudeScenario,
   spawnExternalClaudeScenario,
 } from '../../../helpers/mock-claude';
@@ -23,29 +21,23 @@ import {
   buildUserToolResultRecord,
   seedTeamConfig,
 } from '../../../helpers/team';
+import {
+  INLINE_TEAMMATE_ALIAS,
+  INLINE_TEAMMATE_ROLE,
+  TMUX_TEAMMATE_ALIAS,
+  uniqueTeamName,
+  withInlineTeammateSession,
+  withTmuxTeammateSession,
+} from '../../../helpers/lifecycle';
 import { getPixelAgentsFrame, openPixelAgentsPanel, setSettings } from '../../../helpers/webview';
-
-const TEAMMATE_ROLE = 'web-researcher';
-const TEAMMATE_ALIAS = 'teammate';
-const TEAMMATE_SLUG = `agent-${TEAMMATE_ROLE}`;
-
-function withTeammateSession(builder: ClaudeMockScenarioBuilder): ClaudeMockScenarioBuilder {
-  return builder.defineSession(TEAMMATE_ALIAS, TEAMMATE_SLUG, {
-    transcriptPathTemplate: `{{projectDir}}/{{sessionId}}/subagents/${TEAMMATE_SLUG}.jsonl`,
-    sidecarPathTemplate: `{{projectDir}}/{{sessionId}}/subagents/${TEAMMATE_SLUG}.meta.json`,
-    sidecarJson: {
-      agentType: TEAMMATE_ROLE,
-    },
-  });
-}
 
 async function expectLeadActivity(frame: Frame, text: string): Promise<void> {
   await expectOverlayVisibleWithTexts(frame, ['LEAD', text]);
-  await expectNoOverlayWithTexts(frame, [TEAMMATE_ROLE, text]);
+  await expectNoOverlayWithTexts(frame, [INLINE_TEAMMATE_ROLE, text]);
 }
 
 async function expectTeammateActivity(frame: Frame, text: string): Promise<void> {
-  await expectOverlayVisibleWithTexts(frame, [TEAMMATE_ROLE, text]);
+  await expectOverlayVisibleWithTexts(frame, [INLINE_TEAMMATE_ROLE, text]);
   await expectNoOverlayWithTexts(frame, ['LEAD', text]);
 }
 
@@ -104,16 +96,16 @@ test.describe('Hooks OFF / matrix', () => {
     });
 
     narrator.step('seeding the team config: a lead plus a web-researcher teammate');
-    seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
+    seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE]);
     narrator.step('scripting team-metadata records for the lead and teammate into JSONL');
     await arrangeNextClaudeInvocation(
       tmpHome,
-      withTeammateSession(claudeScenario('internal inline teammate hooks off'))
+      withInlineTeammateSession(claudeScenario('internal inline teammate hooks off'))
         .at(500)
         .appendJsonl(buildTeamMetadataRecord(teamName))
         .at(2_000)
-        .appendJsonl(buildTeamMetadataRecord(teamName, TEAMMATE_ROLE), {
-          session: TEAMMATE_ALIAS,
+        .appendJsonl(buildTeamMetadataRecord(teamName, INLINE_TEAMMATE_ROLE), {
+          session: INLINE_TEAMMATE_ALIAS,
         })
         .at(3_500)
         .appendJsonl(
@@ -126,7 +118,7 @@ test.describe('Hooks OFF / matrix', () => {
           buildAssistantToolUseRecord('toolu-a4-teammate-search', 'WebSearch', {
             query: 'pixel agents',
           }),
-          { session: TEAMMATE_ALIAS },
+          { session: INLINE_TEAMMATE_ALIAS },
         )
         .holdOpenFor(10_000)
         .build(),
@@ -140,7 +132,7 @@ test.describe('Hooks OFF / matrix', () => {
     narrator.check('the LEAD character renders');
     narrator.step('expecting the web-researcher teammate to appear from JSONL polling');
     await expectOverlayCount(panelFrame, 2, 10_000);
-    await expectOverlayVisibleWithTexts(panelFrame, [TEAMMATE_ROLE]);
+    await expectOverlayVisibleWithTexts(panelFrame, [INLINE_TEAMMATE_ROLE]);
     narrator.check('web-researcher teammate joined — 2 characters in the office');
     await expectLeadActivity(panelFrame, 'Running: npm test');
     narrator.check('"Running: npm test" on the lead only');
@@ -158,11 +150,11 @@ test.describe('Hooks OFF / matrix', () => {
     });
 
     narrator.step('seeding the team config: a lead plus a web-researcher teammate');
-    seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
-    narrator.step('scripting a run_in_background Agent spawn + its async-launch result into JSONL');
+    seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE]);
+    narrator.step('scripting lead and separate tmux-teammate JSONL activity');
     await arrangeNextClaudeInvocation(
       tmpHome,
-      withTeammateSession(claudeScenario('internal tmux teammate hooks off'))
+      withTmuxTeammateSession(claudeScenario('internal tmux teammate hooks off'))
         .at(500)
         .appendJsonl(buildTeamMetadataRecord(teamName))
         .at(4_000)
@@ -175,14 +167,21 @@ test.describe('Hooks OFF / matrix', () => {
         .at(4_400)
         .appendJsonl(buildAsyncAgentLaunchResultRecord('toolu-a6-team-spawn'))
         .at(5_000)
-        .appendJsonl(buildTeamMetadataRecord(teamName, TEAMMATE_ROLE), {
-          session: TEAMMATE_ALIAS,
+        .appendJsonl(buildTeamMetadataRecord(teamName, INLINE_TEAMMATE_ROLE), {
+          session: TMUX_TEAMMATE_ALIAS,
         })
         .at(8_000)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-a6-lead-bash', 'Bash', {
             command: 'npm test',
           }),
+        )
+        .at(8_000)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-a6-teammate-search', 'WebSearch', {
+            query: 'pixel agents',
+          }),
+          { session: TMUX_TEAMMATE_ALIAS },
         )
         .holdOpenFor(12_000)
         .build(),
@@ -198,10 +197,12 @@ test.describe('Hooks OFF / matrix', () => {
     await expectOverlayVisible(panelFrame, 'Subtask: Delegate research');
     narrator.check('"Subtask: Delegate research" appears');
     await expectOverlayCount(panelFrame, 2, 10_000);
-    await expectOverlayVisibleWithTexts(panelFrame, [TEAMMATE_ROLE]);
+    await expectOverlayVisibleWithTexts(panelFrame, [INLINE_TEAMMATE_ROLE]);
     narrator.check('web-researcher teammate present — 2 characters in the office');
     await expectLeadActivity(panelFrame, 'Running: npm test');
-    narrator.check('the follow-up "Running: npm test" stays on the lead only');
+    narrator.check('the lead owns "Running: npm test" only');
+    await expectTeammateActivity(panelFrame, 'Searching the web');
+    narrator.check('the separate tmux teammate owns "Searching the web" only');
   });
 
   test('external basic spawn adopted via JSONL polling @area:matrix', async ({ pixelAgents }) => {
@@ -263,18 +264,18 @@ test.describe('Hooks OFF / matrix', () => {
     });
 
     narrator.step('seeding the team config: a lead plus a web-researcher teammate');
-    seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
+    seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE]);
     await spawnExternalClaudeScenario({
       tmpHome,
       workspaceDir,
       mockLogFile,
       sessionId,
-      scenario: withTeammateSession(claudeScenario('external inline teammate hooks off'))
+      scenario: withInlineTeammateSession(claudeScenario('external inline teammate hooks off'))
         .at(5_000)
         .appendJsonl(buildTeamMetadataRecord(teamName))
         .at(6_500)
-        .appendJsonl(buildTeamMetadataRecord(teamName, TEAMMATE_ROLE), {
-          session: TEAMMATE_ALIAS,
+        .appendJsonl(buildTeamMetadataRecord(teamName, INLINE_TEAMMATE_ROLE), {
+          session: INLINE_TEAMMATE_ALIAS,
         })
         .at(8_500)
         .appendJsonl(
@@ -287,7 +288,7 @@ test.describe('Hooks OFF / matrix', () => {
           buildAssistantToolUseRecord('toolu-a10-teammate-search', 'WebSearch', {
             query: 'pixel agents',
           }),
-          { session: TEAMMATE_ALIAS },
+          { session: INLINE_TEAMMATE_ALIAS },
         )
         .holdOpenFor(14_000)
         .build(),
@@ -300,7 +301,7 @@ test.describe('Hooks OFF / matrix', () => {
     narrator.check('the LEAD character renders');
     narrator.step('expecting the web-researcher teammate from JSONL team-metadata');
     await expectOverlayCount(frame, 2, 12_000);
-    await expectOverlayVisibleWithTexts(frame, [TEAMMATE_ROLE]);
+    await expectOverlayVisibleWithTexts(frame, [INLINE_TEAMMATE_ROLE]);
     narrator.check('web-researcher teammate joined — 2 characters in the office');
     await expectLeadActivity(frame, 'Running: npm test');
     narrator.check('"Running: npm test" on the lead only');
@@ -320,13 +321,13 @@ test.describe('Hooks OFF / matrix', () => {
     });
 
     narrator.step('seeding the team config: a lead plus a web-researcher teammate');
-    seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
+    seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE]);
     await spawnExternalClaudeScenario({
       tmpHome,
       workspaceDir,
       mockLogFile,
       sessionId,
-      scenario: withTeammateSession(claudeScenario('external tmux teammate hooks off'))
+      scenario: withTmuxTeammateSession(claudeScenario('external tmux teammate hooks off'))
         .at(5_000)
         .appendJsonl(buildTeamMetadataRecord(teamName))
         .at(6_500)
@@ -339,14 +340,21 @@ test.describe('Hooks OFF / matrix', () => {
         .at(7_000)
         .appendJsonl(buildAsyncAgentLaunchResultRecord('toolu-a12-team-spawn'))
         .at(8_000)
-        .appendJsonl(buildTeamMetadataRecord(teamName, TEAMMATE_ROLE), {
-          session: TEAMMATE_ALIAS,
+        .appendJsonl(buildTeamMetadataRecord(teamName, INLINE_TEAMMATE_ROLE), {
+          session: TMUX_TEAMMATE_ALIAS,
         })
         .at(10_000)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-a12-lead-bash', 'Bash', {
             command: 'npm test',
           }),
+        )
+        .at(10_000)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-a12-teammate-search', 'WebSearch', {
+            query: 'pixel agents',
+          }),
+          { session: TMUX_TEAMMATE_ALIAS },
         )
         .holdOpenFor(15_000)
         .build(),
@@ -361,9 +369,11 @@ test.describe('Hooks OFF / matrix', () => {
     await expectOverlayVisible(frame, 'Subtask: Delegate research', 10_000);
     narrator.check('"Subtask: Delegate research" appears');
     await expectOverlayCount(frame, 2, 12_000);
-    await expectOverlayVisibleWithTexts(frame, [TEAMMATE_ROLE]);
+    await expectOverlayVisibleWithTexts(frame, [INLINE_TEAMMATE_ROLE]);
     narrator.check('web-researcher teammate present — 2 characters in the office');
     await expectLeadActivity(frame, 'Running: npm test');
-    narrator.check('the follow-up "Running: npm test" stays on the lead only');
+    narrator.check('the lead owns "Running: npm test" only');
+    await expectTeammateActivity(frame, 'Searching the web');
+    narrator.check('the separate tmux teammate owns "Searching the web" only');
   });
 });

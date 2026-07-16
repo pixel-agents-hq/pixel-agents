@@ -90,12 +90,14 @@ test.describe('Areas (single-folder)', () => {
     test('the Areas tool button is visible with a seeded areas layout @area:areas', async ({
       pixelAgents,
     }) => {
-      const { frame } = pixelAgents;
+      const { frame, narrator } = pixelAgents;
+      narrator.step('opening the seeded layout editor to check the Areas tool gate');
       await enterEditMode(frame);
       // areasAvailable is now (layout.areas?.length ?? 0) > 0 || <folders>, so a
       // seeded single-folder layout with areas makes the button visible even
       // without workspace folders.
       await expect(frame.locator('button[title*="Define folder-bound areas"]')).toHaveCount(1);
+      narrator.check('the Areas tool button is visible because the seeded layout has an area');
     });
   });
 });

@@ -86,12 +86,6 @@ test.describe('Hooks ON / spawn paths', () => {
   // against scheduler drift AND keep each state on screen long enough to be
   // seen in the review videos.
   //
-  // Deliberately NO Notification(idle_prompt) step: real Notification payloads
-  // carry no notification_type field (types are settings.json matchers), so the
-  // provider drops every live Notification and "Waiting for input" is currently
-  // unreachable in hooks-on mode — asserting it here would pin a mock-only
-  // branch. See the e2e review notes ("Findings for Florin"); re-add the step when the
-  // matcher-based installer fix ships.
   test('external Claude session adopted via hook confirmation lifecycle @area:spawn', async ({
     pixelAgents,
   }) => {

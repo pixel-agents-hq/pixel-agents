@@ -200,24 +200,24 @@ export function stop(sessionId: string): HookEventPayload {
   };
 }
 
-export function teammateIdle(sessionId: string, agentType: string): HookEventPayload {
+export function teammateIdle(sessionId: string, teammateName: string): HookEventPayload {
   return {
     session_id: sessionId,
     hook_event_name: 'TeammateIdle',
-    agent_type: agentType,
+    teammate_name: teammateName,
   };
 }
 
 export function taskCompleted(
   sessionId: string,
-  agentType: string,
-  subject = 'Task completed',
+  teammateName: string,
+  taskSubject = 'Task completed',
 ): HookEventPayload {
   return {
     session_id: sessionId,
     hook_event_name: 'TaskCompleted',
-    agent_type: agentType,
-    subject,
+    teammate_name: teammateName,
+    task_subject: taskSubject,
   };
 }
 

@@ -51,8 +51,10 @@ export const claudeTeamProvider: TeamProvider = {
   },
 
   extractTeammateNameFromEvent(event) {
-    const value = event.agent_type;
-    return typeof value === 'string' ? value : undefined;
+    const teammateName = event.teammate_name;
+    if (typeof teammateName === 'string') return teammateName;
+    const agentType = event.agent_type;
+    return typeof agentType === 'string' ? agentType : undefined;
   },
 
   discoverTeammates(projectDir, leadSessionId) {

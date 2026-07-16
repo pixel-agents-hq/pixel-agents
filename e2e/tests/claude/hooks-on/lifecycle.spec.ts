@@ -746,7 +746,7 @@ test.describe('Hooks ON / lifecycle', () => {
     narrator.check('bubble clears when the teammate completes');
   });
 
-  test('TeammateIdle marks the targeted teammate waiting and leaves lead unchanged @area:lifecycle', async ({
+  test('TeammateIdle marks only the targeted teammate done and leaves lead unchanged @area:lifecycle', async ({
     pixelAgents,
   }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
@@ -830,13 +830,33 @@ test.describe('Hooks ON / lifecycle', () => {
     await expectOverlayCount(frame, 3, 12_000);
     narrator.check('lead + two teammates on screen (count 3)');
 
-    narrator.step('a teammateIdle hook targets only the first teammate');
-    await expectOverlayVisibleWithTexts(frame, [INLINE_TEAMMATE_ROLE, 'Waiting for input'], 8_000);
+    narrator.step('a TeammateIdle hook targets only the first teammate and marks it Done');
+    await expect
+      .poll(
+        async () =>
+          frame.evaluate((agentName) => {
+            const w = window as Window & {
+              __pixelAgentsTestHooks?: {
+                getCharacters?: () => Array<{
+                  agentName?: string;
+                  bubbleType: 'permission' | 'waiting' | null;
+                  waitingAwaitingInput?: boolean;
+                }>;
+              };
+            };
+            return w.__pixelAgentsTestHooks
+              ?.getCharacters?.()
+              .find((ch) => ch.agentName === agentName);
+          }, INLINE_TEAMMATE_ROLE),
+        { timeout: 8_000 },
+      )
+      .toMatchObject({ bubbleType: 'waiting', waitingAwaitingInput: false });
     await expectOverlayVisibleWithTexts(frame, [SECOND_TEAMMATE_ROLE, 'Running: npm run reviewer']);
+    await expectNoOverlayWithTexts(frame, [INLINE_TEAMMATE_ROLE, 'Waiting for input']);
     await expectNoOverlayWithTexts(frame, [SECOND_TEAMMATE_ROLE, 'Waiting for input']);
     await expectNoOverlayWithTexts(frame, ['LEAD', 'Waiting for input']);
     narrator.check(
-      'first teammate shows "Waiting for input"; second still "Running: npm run reviewer"; lead unaffected',
+      'first teammate exposes the Done checkmark; second still "Running: npm run reviewer"; lead unaffected',
     );
   });
 
@@ -1547,12 +1567,10 @@ test.describe('Hooks ON / lifecycle', () => {
     // Read whatever the fixture default is, then flip it. The persistence
     // assertion is about the FLIPPED state surviving a reload, not about the
     // initial default value.
-    // dwellMs keeps the modal visibly open ~500ms per interaction so the run
-    // video shows the toggle states (Pablo's review call); no assertion change.
-    const initial = await getSettingChecked(frame, 'Always Show Labels', { dwellMs: 500 });
+    const initial = await getSettingChecked(frame, 'Always Show Labels');
     narrator.step('flipping "Always Show Labels" in Settings');
-    await setSettings(frame, { alwaysShowLabels: !initial }, { dwellMs: 500 });
-    expect(await getSettingChecked(frame, 'Always Show Labels', { dwellMs: 500 })).toBe(!initial);
+    await setSettings(frame, { alwaysShowLabels: !initial });
+    expect(await getSettingChecked(frame, 'Always Show Labels')).toBe(!initial);
     narrator.check('"Always Show Labels" is now flipped');
 
     // Force a fresh webview by closing and reopening the panel (same
@@ -1564,7 +1582,7 @@ test.describe('Hooks ON / lifecycle', () => {
 
     // After settingsLoaded re-hydrates, the toggle must still be in the
     // flipped state — not back to the fixture default.
-    expect(await getSettingChecked(frame, 'Always Show Labels', { dwellMs: 500 })).toBe(!initial);
+    expect(await getSettingChecked(frame, 'Always Show Labels')).toBe(!initial);
     narrator.check('flipped state survives the reload — persisted through config.json');
   });
 

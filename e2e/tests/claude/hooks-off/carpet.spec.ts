@@ -137,8 +137,6 @@ test.describe('Carpet', () => {
     await paintTile(frame, 5, 5);
     await waitForCarpetCount(frame, 1);
     narrator.check('one carpet tile on the canvas');
-    // Video pacing: hold the painted tile on screen before erasing it.
-    await frame.waitForTimeout(500);
 
     narrator.step('erasing (5,5) via the right-drag erase path');
     // Right-drag erase path routes CARPET_PAINT → eraseCarpet (useEditorActions).
@@ -193,8 +191,6 @@ test.describe('Carpet', () => {
     await paintTile(frame, 2, 3);
     await waitForCarpetCount(frame, 2);
     narrator.check('two carpet tiles from the single stroke');
-    // Video pacing: hold the two-tile stroke on screen before undoing it.
-    await frame.waitForTimeout(500);
 
     narrator.step('clicking Undo once');
     await frame.locator('button', { hasText: 'Undo' }).click();
@@ -207,8 +203,6 @@ test.describe('Carpet', () => {
   }) => {
     const { frame, window, tmpHome, narrator } = pixelAgents;
 
-    // Narration + dwells are cosmetic (video readability); the assertions are
-    // unchanged. See the pets persistence test for the pattern.
     narrator.step('opening the layout editor → carpet tool');
     await enterEditMode(frame);
     await selectCarpetTool(frame);
@@ -219,7 +213,6 @@ test.describe('Carpet', () => {
     await paintTile(frame, 9, 9);
     await waitForCarpetCount(frame, 2);
     narrator.check('two carpet tiles recorded (getCarpetTiles → 2)');
-    await frame.waitForTimeout(1_000);
 
     narrator.step('clicking Save — persisting the layout to disk');
     await saveLayout(frame);
@@ -245,14 +238,12 @@ test.describe('Carpet', () => {
       )
       .toBe(2);
     narrator.check('~/.pixel-agents/layout.json contains 2 carpet tiles');
-    await frame.waitForTimeout(1_000);
 
     // Reload the panel and confirm the carpet rehydrates from disk. The
     // reopen uses the same ⌘J chord closeBottomPanel used, so the reload is
     // visible in the video with no palette overlays (see the pets test).
     narrator.step('closing the bottom panel — the webview is disposed');
     await closeBottomPanel(window);
-    await window.waitForTimeout(1_500);
     narrator.step('reopening the panel — carpet must rehydrate from disk');
     await reopenBottomPanel(window);
     const freshFrame = await getPixelAgentsFrame(window);
@@ -263,7 +254,6 @@ test.describe('Carpet', () => {
       { timeout: 15_000 },
     );
     narrator.check('fresh webview shows 2 carpet tiles again — persisted across the reload');
-    await window.waitForTimeout(1_500);
   });
 
   // 'the Carpet controls live inside the Furniture panel' was removed in the

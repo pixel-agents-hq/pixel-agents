@@ -7,7 +7,7 @@ import { getExternalNarrationLogPath } from './external-monitor';
 import { runCommand } from './webview';
 
 /**
- * Test-action narrator: the yellow `[test]` voice in every run video.
+ * Test-action narrator: the yellow `[test]` voice in every VS Code run video.
  *
  * The narrator writes one line per action taken / assertion verified to a
  * per-test log (`<tmpHome>/.claude-mock/test-narration.log`). That log is

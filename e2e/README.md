@@ -129,7 +129,7 @@ When you remove a test:
 
 ## Narration
 
-Every run video is narrated. The narrator writes one yellow `[test]` line per
+Every VS Code run video is narrated. The narrator writes one yellow `[test]` line per
 action taken and per assertion verified to a per-test log, and several surfaces
 display it by simply tailing that log:
 
@@ -146,6 +146,10 @@ Surface B — every mock-claude terminal tab: the wrapper backgrounds a headerle
             shows. Because the tail starts at byte 0, a tab opened mid-test
             replays the whole story so far.
 ```
+
+Standalone recordings are deliberately raw browser artifacts. Their fixture has
+no VS Code terminal or narration surface, so the eight standalone videos are
+outside this narration contract.
 
 Usage: the `pixelAgents` fixture exposes a `narrator` on its payload — tests call
 `narrator.step('…')` before an action and `narrator.check('…')` after an
@@ -171,7 +175,7 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 ### `@area:spawn` (2 tests)
 
 - `e2e/claude/hooks-on/basic.spec.ts:24` — internal terminal spawns agent and Task subagent appears then despawns (Hooks ON / spawn paths)
-- `e2e/claude/hooks-on/basic.spec.ts:95` — external Claude session adopted via hook confirmation lifecycle (Hooks ON / spawn paths)
+- `e2e/claude/hooks-on/basic.spec.ts:89` — external Claude session adopted via hook confirmation lifecycle (Hooks ON / spawn paths)
 
 ### `@area:lifecycle` (21 tests)
 
@@ -193,41 +197,41 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/claude/hooks-on/lifecycle.spec.ts:505` — lead SessionEnd cascade-removes active inline teammates (Hooks ON / lifecycle)
 - `e2e/claude/hooks-on/lifecycle.spec.ts:591` — external basic subagent with run_in_background routes to basic path (Hooks ON / lifecycle)
 - `e2e/claude/hooks-on/lifecycle.spec.ts:660` — lead permission_prompt routes bubble to teammate not lead when teammates exist (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:749` — TeammateIdle marks the targeted teammate waiting and leaves lead unchanged (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:843` — rapid /clear then new tool within 500ms lands on the reassigned agent (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:901` — close via X prevents re-adoption of old JSONL during dismissal cooldown (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:749` — TeammateIdle marks only the targeted teammate done and leaves lead unchanged (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:863` — rapid /clear then new tool within 500ms lands on the reassigned agent (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:921` — close via X prevents re-adoption of old JSONL during dismissal cooldown (Hooks ON / lifecycle)
 
 ### `@area:cross-cutting` (13 tests)
 
 - `e2e/claude/hooks-off/lifecycle.spec.ts:652` — agentToolsClear fires at turn end via turn_duration JSONL record (Hooks OFF / lifecycle)
 - `e2e/claude/hooks-off/lifecycle.spec.ts:717` — heuristic permission timer is cancelled when an agent is closed via overlay (Hooks OFF / lifecycle)
 - `e2e/claude/hooks-off/lifecycle.spec.ts:796` — sub-agent permission bubble fires on stalled non-exempt sub-tool via heuristic timer (Hooks OFF / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1000` — done sound chime fires on agentStatus waiting (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1093` — restored agents skip the matrix spawn animation (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1177` — tool status text matches every PreToolUse tool name (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1272` — permission sound chime fires on agentToolPermission (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1391` — pixel-agents hook is installed in settings.json on extension startup (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1413` — hook install and uninstall round-trip via the Settings toggle (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1467` — permission bubble auto-clears when a fresh PreToolUse arrives (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1541` — settings toggles persist across a webview reload (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1585` — layout editor enter paint save persist and exit round-trip (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1666` — hook uninstall preserves a pre-existing third-party hook entry (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1020` — done sound chime fires on agentStatus waiting (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1113` — restored agents skip the matrix spawn animation (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1197` — tool status text matches every PreToolUse tool name (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1292` — permission sound chime fires on agentToolPermission (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1411` — pixel-agents hook is installed in settings.json on extension startup (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1433` — hook install and uninstall round-trip via the Settings toggle (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1487` — permission bubble auto-clears when a fresh PreToolUse arrives (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1561` — settings toggles persist across a webview reload (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1603` — layout editor enter paint save persist and exit round-trip (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1684` — hook uninstall preserves a pre-existing third-party hook entry (Hooks ON / lifecycle)
 
 ### `@area:teams` (4 tests)
 
-- `e2e/claude/hooks-on/teams.spec.ts:54` — internal terminal lead with inline teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:120` — internal terminal lead with tmux teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:181` — external session lead with inline teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:262` — external session lead with tmux teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:55` — internal terminal lead with inline teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:112` — internal terminal lead with tmux teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:186` — external session lead with inline teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:265` — external session lead with tmux teammate routes tools to teammate (Hooks ON / teams)
 
 ### `@area:matrix` (6 tests)
 
-- `e2e/claude/hooks-off/matrix.spec.ts:57` — internal basic spawn adopted via JSONL polling (Hooks OFF / matrix)
-- `e2e/claude/hooks-off/matrix.spec.ts:95` — internal inline teammate adopted via JSONL polling (Hooks OFF / matrix)
-- `e2e/claude/hooks-off/matrix.spec.ts:151` — internal tmux teammate adopted via JSONL polling (Hooks OFF / matrix)
-- `e2e/claude/hooks-off/matrix.spec.ts:207` — external basic spawn adopted via JSONL polling (Hooks OFF / matrix)
-- `e2e/claude/hooks-off/matrix.spec.ts:252` — external inline teammate adopted via JSONL polling (Hooks OFF / matrix)
-- `e2e/claude/hooks-off/matrix.spec.ts:311` — external tmux teammate adopted via JSONL polling (Hooks OFF / matrix)
+- `e2e/claude/hooks-off/matrix.spec.ts:49` — internal basic spawn adopted via JSONL polling (Hooks OFF / matrix)
+- `e2e/claude/hooks-off/matrix.spec.ts:87` — internal inline teammate adopted via JSONL polling (Hooks OFF / matrix)
+- `e2e/claude/hooks-off/matrix.spec.ts:143` — internal tmux teammate adopted via JSONL polling (Hooks OFF / matrix)
+- `e2e/claude/hooks-off/matrix.spec.ts:208` — external basic spawn adopted via JSONL polling (Hooks OFF / matrix)
+- `e2e/claude/hooks-off/matrix.spec.ts:253` — external inline teammate adopted via JSONL polling (Hooks OFF / matrix)
+- `e2e/claude/hooks-off/matrix.spec.ts:312` — external tmux teammate adopted via JSONL polling (Hooks OFF / matrix)
 
 ### `@area:standalone` (8 tests)
 
@@ -257,16 +261,16 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/claude/hooks-off/carpet.spec.ts:71` — painting a tile records it in the carpet layer (Carpet)
 - `e2e/claude/hooks-off/carpet.spec.ts:88` — autotiling: the junction case reflects neighboring carpet tiles (Carpet)
 - `e2e/claude/hooks-off/carpet.spec.ts:129` — erasing removes a carpet tile (Carpet)
-- `e2e/claude/hooks-off/carpet.spec.ts:154` — the carpet eyedropper copies a tile’s variant (Carpet)
-- `e2e/claude/hooks-off/carpet.spec.ts:182` — a carpet stroke is a single undo entry (Carpet)
-- `e2e/claude/hooks-off/carpet.spec.ts:205` — carpet tiles persist across a save + panel reload (Carpet)
-- `e2e/claude/hooks-off/carpet.spec.ts:307` — a seeded carpet coexists with furniture on the same tile (Carpet surface placement (seeded))
+- `e2e/claude/hooks-off/carpet.spec.ts:152` — the carpet eyedropper copies a tile’s variant (Carpet)
+- `e2e/claude/hooks-off/carpet.spec.ts:180` — a carpet stroke is a single undo entry (Carpet)
+- `e2e/claude/hooks-off/carpet.spec.ts:201` — carpet tiles persist across a save + panel reload (Carpet)
+- `e2e/claude/hooks-off/carpet.spec.ts:297` — a seeded carpet coexists with furniture on the same tile (Carpet surface placement (seeded))
 
 ### `@area:pets` (3 tests)
 
 - `e2e/claude/hooks-off/pets.spec.ts:90` — pet sprites load, broadcast, and expose manifest names in the editor (Pets)
 - `e2e/claude/hooks-off/pets.spec.ts:117` — placing a pet toggles it on/off and persists across a panel reload (Pets)
-- `e2e/claude/hooks-off/pets.spec.ts:209` — clicking a pet shows a heart bubble that auto-dismisses and dismisses on re-click (Pets)
+- `e2e/claude/hooks-off/pets.spec.ts:202` — clicking a pet shows a heart bubble that auto-dismisses and dismisses on re-click (Pets)
 
 <!-- END:E2E-INVENTORY -->
 

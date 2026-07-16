@@ -216,7 +216,7 @@ function normalizeHookEvent(
       };
 
     // Agent Teams: a teammate went idle / marked a task complete. Normalize as
-    // `subagentTurnEnd` so the team handler can route by agent_type to the teammate.
+    // `subagentTurnEnd` so the team handler can route by the provider's event-specific identity.
     // `reason` discriminates the two so handlers don't read raw eventName.
     case 'TeammateIdle':
       return {
