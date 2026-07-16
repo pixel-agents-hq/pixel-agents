@@ -119,8 +119,13 @@ hides again once back to one floor.
 
 This is Phase 1 (core multi-floor engine + editor UI). Planned follow-ups:
 
-- **Phase 2** — MetroCity Interior tile/furniture assets (JIK-A-4, itch.io,
-  CC0) for floor-specific themes (Library, Penthouse, Engineering, ...).
+- **Phase 2** — done, scoped down to floor-tile _patterns_ rather than a
+  per-floor theme system. Three new selectable floor patterns (checkerboard,
+  wood plank, brick), adapted from JIK-A-4's Interior asset pack, joined the
+  existing 9 via the ordinary `floor_N.png` pipeline — no new UI or per-floor
+  state. See [`docs/reports/2026-07-16-multi-floor-phase2-report.md`](reports/2026-07-16-multi-floor-phase2-report.md)
+  for why a full per-floor theme system (auto-tiled walls included) was
+  scoped out for now.
 - **Phase 3** — a per-floor department board combining live agent data
   (seated staff, permission-wait "help wanted", running-tool "open items")
   with manual notes.

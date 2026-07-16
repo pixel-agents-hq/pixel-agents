@@ -126,7 +126,7 @@ To add a new furniture item, create a folder in `webview-ui/public/assets/furnit
 
 To use furniture from an external directory, open Settings → **Add Asset Directory**. See [docs/external-assets.md](docs/external-assets.md) for the full manifest format and how to use third-party asset packs.
 
-Characters are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack).
+Characters are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack). Three of the floor patterns (checkerboard, wood plank, brick) are adapted from the same author's Free Topdown Interior asset pack, also CC0.
 
 ## How It Works
 
