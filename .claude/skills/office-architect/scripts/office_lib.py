@@ -15,6 +15,44 @@ import time
 WALL = 0
 FLOOR_1 = 1
 FLOOR_2 = 2
+FLOOR_3 = 3
+FLOOR_4 = 4
+FLOOR_5 = 5
+FLOOR_6 = 6
+FLOOR_7 = 7
+FLOOR_8 = 8
+FLOOR_9 = 9
+VOID = 255
+
+# Name -> numeric tile value, for CLI convenience (matches TileType in
+# webview-ui/src/office/types.ts).
+TILE_NAME_TO_VALUE = {
+    "WALL": WALL,
+    "FLOOR_1": FLOOR_1,
+    "FLOOR_2": FLOOR_2,
+    "FLOOR_3": FLOOR_3,
+    "FLOOR_4": FLOOR_4,
+    "FLOOR_5": FLOOR_5,
+    "FLOOR_6": FLOOR_6,
+    "FLOOR_7": FLOOR_7,
+    "FLOOR_8": FLOOR_8,
+    "FLOOR_9": FLOOR_9,
+    "VOID": VOID,
+}
+
+
+def resolve_tile_value(spec):
+    """Accept either a bare int (as a string) or a TILE_NAME_TO_VALUE key
+    (e.g. 'FLOOR_3') and return the numeric tile value."""
+    if spec in TILE_NAME_TO_VALUE:
+        return TILE_NAME_TO_VALUE[spec]
+    try:
+        return int(spec)
+    except ValueError:
+        raise ValueError(
+            f"Unknown tile spec {spec!r}. Use a number or one of: "
+            f"{', '.join(TILE_NAME_TO_VALUE)}"
+        )
 
 DEFAULT_LAYOUT_PATH = os.path.expanduser("~/.pixel-agents/layout.json")
 
@@ -269,3 +307,81 @@ def validate_layout(layout, catalog):
                     )
         placed.append((item["uid"], item["col"], eff_row, w, eff_h, is_solid_floor_item))
     return problems
+
+
+# ── Carving an additional room into an existing floor's VOID space ──────
+
+
+def carve_room(layout, row, col, width, height, floor_tile, color, doors=None):
+    """Carve a new walled rectangular room into a floor's existing tile
+    grid, in place. Unlike two_room_layout() (which builds a whole new
+    layout from scratch), this mutates a floor that already has rooms on
+    it, adding a 3rd/4th/etc room into space that's currently VOID.
+
+    - `row`, `col`: the outer top-left corner of the room's wall rectangle.
+    - `width`, `height`: full rectangle size, walls included (each must be
+      >= 3 so there's a 1-tile interior).
+    - `floor_tile`: numeric tile value for the interior (see
+      TILE_NAME_TO_VALUE / resolve_tile_value).
+    - `color`: tileColors dict (h/s/b/c) applied to every interior tile;
+      wall tiles get color=None, matching two_room_layout()'s convention.
+    - `doors`: optional iterable of (col, row) absolute coordinates on the
+      rectangle's border to carve into floor instead of wall (a doorway
+      gap). Every coordinate must actually sit on this rectangle's border.
+
+    Refuses (raises ValueError, no mutation) if the rectangle would exceed
+    the floor's bounds, or if ANY target tile is not currently VOID — this
+    is what protects existing rooms/furniture from being clobbered by a
+    careless carve. Returns the new room's interior bounds as
+    {"col_lo", "col_hi", "row_lo", "row_hi"} (same shape callers already
+    get from room_bounds()), for handing straight to place_decor.py-style
+    furniture placement.
+    """
+    if width < 3 or height < 3:
+        raise ValueError(f"room must be at least 3x3 to have any interior (got {width}x{height})")
+    cols, rows = layout["cols"], layout["rows"]
+    if col < 0 or row < 0 or col + width > cols or row + height > rows:
+        raise ValueError(
+            f"room rectangle (col={col}, row={row}, {width}x{height}) exceeds this floor's "
+            f"{cols}x{rows} bounds"
+        )
+    doors = set(tuple(d) for d in (doors or []))
+    for dc, dr in doors:
+        on_border = dr in (row, row + height - 1) or dc in (col, col + width - 1)
+        in_rect = row <= dr < row + height and col <= dc < col + width
+        if not (on_border and in_rect):
+            raise ValueError(f"--door ({dc},{dr}) is not on this room's border")
+
+    tiles = layout["tiles"]
+    colors = layout["tileColors"]
+    conflicts = []
+    for r in range(row, row + height):
+        for c in range(col, col + width):
+            idx = r * cols + c
+            if tiles[idx] != VOID:
+                conflicts.append((c, r, tiles[idx]))
+    if conflicts:
+        sample = ", ".join(f"({c},{r})=tile {t}" for c, r, t in conflicts[:10])
+        more = f" ... and {len(conflicts) - 10} more" if len(conflicts) > 10 else ""
+        raise ValueError(
+            f"Refusing to carve: {len(conflicts)} target tile(s) are not VOID (already in use) — "
+            f"{sample}{more}. Pick a rectangle that only covers empty space."
+        )
+
+    for r in range(row, row + height):
+        for c in range(col, col + width):
+            idx = r * cols + c
+            is_border = r in (row, row + height - 1) or c in (col, col + width - 1)
+            if is_border and (c, r) not in doors:
+                tiles[idx] = WALL
+                colors[idx] = None
+            else:
+                tiles[idx] = floor_tile
+                colors[idx] = color
+
+    return {
+        "col_lo": col + 1,
+        "col_hi": col + width - 2,
+        "row_lo": row + 1,
+        "row_hi": row + height - 2,
+    }
