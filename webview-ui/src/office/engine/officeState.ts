@@ -101,6 +101,10 @@ export class OfficeState {
   /** Persistent subagent_type -> custom display name (e.g. "office-architect" -> "Paco"),
    *  loaded once from server state and edited via the Settings panel. */
   subagentTypeNames: Map<string, string> = new Map();
+  /** subagentType -> floorId, derived from every floor's static `roster`. A
+   *  subagent whose type is rostered to a floor always spawns there, regardless
+   *  of the active floor or which floor its parent character happens to be on. */
+  private rosterFloorByType: Map<string, string> = new Map();
 
   constructor(layout?: OfficeLayout) {
     this.loadDocument(layout ? wrapLayoutAsDocument(layout) : createDefaultDocument());
@@ -201,6 +205,12 @@ export class OfficeState {
         this.buildFloorRuntime(f.id, f.name, f.layout, f.notes ?? '', f.roster ?? []),
       );
       this.floorOrder.push(f.id);
+    }
+    this.rosterFloorByType = new Map();
+    for (const rt of this.floorRuntimes.values()) {
+      for (const entry of rt.roster) {
+        this.rosterFloorByType.set(entry.subagentType, rt.id);
+      }
     }
     this.documentLayoutRevision = doc.layoutRevision;
 
@@ -878,11 +888,15 @@ export class OfficeState {
     return true;
   }
 
-  /** Create a sub-agent character with the parent's palette on the parent's
-   *  floor. Returns the sub-agent ID. `subagentType` (the Task tool's
-   *  subagent_type argument, e.g. "office-architect") is looked up against
-   *  subagentTypeNames for a persistent custom name; falls back to the
-   *  generic "<parent> (Task)" label when absent or unnamed. */
+  /** Create a sub-agent character with the parent's palette. Returns the
+   *  sub-agent ID. `subagentType` (the Task tool's subagent_type argument,
+   *  e.g. "office-architect") is looked up against subagentTypeNames for a
+   *  persistent custom name; falls back to the generic "<parent> (Task)"
+   *  label when absent or unnamed. It is also looked up against
+   *  rosterFloorByType: a subagent whose type is rostered to a floor (e.g.
+   *  "zegion-security" on The Five Retainers) always spawns there, regardless
+   *  of which floor its parent is on or which floor is active — otherwise it
+   *  falls back to the parent's floor. */
   addSubagent(parentAgentId: number, parentToolId: string, subagentType?: string): number {
     const key = `${parentAgentId}:${parentToolId}`;
     if (this.subagentIdMap.has(key)) return this.subagentIdMap.get(key)!;
@@ -891,7 +905,12 @@ export class OfficeState {
     const parentCh = this.characters.get(parentAgentId);
     const palette = parentCh ? parentCh.palette : 0;
     const hueShift = parentCh ? parentCh.hueShift : 0;
-    const rt = parentCh ? this.floorRuntime(parentCh.floorId) : this.activeFloor();
+    const homeFloorId = subagentType ? this.rosterFloorByType.get(subagentType) : undefined;
+    const rt = homeFloorId
+      ? this.floorRuntime(homeFloorId)
+      : parentCh
+        ? this.floorRuntime(parentCh.floorId)
+        : this.activeFloor();
 
     // Find the closest walkable tile to the parent, avoiding tiles occupied by
     // other characters on the same floor
