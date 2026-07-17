@@ -26,6 +26,8 @@ export interface AgentMeta {
   palette: number;
   hueShift: number;
   seatId: string | null;
+  /** User-assigned custom display name, persisted across reloads/restarts */
+  name?: string;
 }
 
 // ── Layout ───────────────────────────────────────────────────

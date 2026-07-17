@@ -21,7 +21,6 @@ import {
   getRotatedType,
   getToggledType,
 } from '../office/layout/furnitureCatalog.js';
-import { defaultZoom } from '../office/toolUtils.js';
 import type {
   EditTool as EditToolType,
   OfficeDocument,
@@ -32,6 +31,7 @@ import type {
 } from '../office/types.js';
 import { EditTool } from '../office/types.js';
 import { TileType } from '../office/types.js';
+import { defaultZoom } from '../office/zoomUtils.js';
 import { transport } from '../transport/index.js';
 
 interface EditorActions {
@@ -68,6 +68,7 @@ interface EditorActions {
   handleFloorAdd: () => void;
   handleFloorRename: (floorId: string, name: string) => void;
   handleFloorDelete: (floorId: string) => void;
+  handleFloorNotesChange: (floorId: string, notes: string) => void;
 }
 
 export function useEditorActions(
@@ -528,6 +529,18 @@ export function useEditorActions(
     [getOfficeState, editorState, saveDocument],
   );
 
+  // Notes are a live workspace note, not a layout edit: no undo/redo
+  // interaction, no isDirty/EditActionBar involvement, available outside
+  // edit mode. Just persist through the same debounced document save.
+  const handleFloorNotesChange = useCallback(
+    (floorId: string, notes: string) => {
+      const os = getOfficeState();
+      if (!os.setFloorNotes(floorId, notes)) return;
+      saveDocument();
+    },
+    [getOfficeState, saveDocument],
+  );
+
   const handleEditorTileAction = useCallback(
     (col: number, row: number) => {
       const os = getOfficeState();
@@ -739,5 +752,6 @@ export function useEditorActions(
     handleFloorAdd,
     handleFloorRename,
     handleFloorDelete,
+    handleFloorNotesChange,
   };
 }

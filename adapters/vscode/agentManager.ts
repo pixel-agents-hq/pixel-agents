@@ -500,6 +500,7 @@ export function sendExistingAgents(
 
   // Include persisted palette/seatId from separate key
   const agentMeta = adapter.loadSeats();
+  const subagentNames = adapter.loadSubagentNames();
 
   // Include folderName and isExternal per agent
   const folderNames: Record<number, string> = {};
@@ -522,6 +523,7 @@ export function sendExistingAgents(
     agentMeta,
     folderNames,
     externalAgents,
+    subagentNames,
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
   // so that agentStatus/agentToolStart messages arrive after characters are created.

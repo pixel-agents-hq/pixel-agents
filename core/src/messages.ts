@@ -42,6 +42,7 @@ export type ClientMessage =
   | FocusAgent
   | CloseAgent
   | SaveAgentSeats
+  | SaveSubagentNames
   | SaveLayout
   | SetSoundEnabled
   | SetLastSeenVersion
@@ -85,12 +86,14 @@ export interface ExistingAgents {
   agentMeta: Record<string, AgentSeatMeta>;
   folderNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
+  subagentNames: Record<string, string>;
 }
 
 export interface AgentSeatMeta {
   palette?: number;
   hueShift?: number;
   seatId?: string;
+  name?: string;
 }
 
 export interface AgentStatus {
@@ -110,6 +113,7 @@ export interface AgentToolStart {
   toolName?: string;
   permissionActive?: boolean;
   runInBackground?: boolean;
+  subagentType?: string;
 }
 
 export interface AgentToolDone {
@@ -308,6 +312,12 @@ export interface SeatAssignment {
   palette: number;
   hueShift: number;
   seatId: string | null;
+  name?: string;
+}
+
+export interface SaveSubagentNames {
+  type: 'saveSubagentNames';
+  subagentNames: Record<string, string>;
 }
 
 export interface SaveLayout {

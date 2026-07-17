@@ -12,8 +12,18 @@ export const MAX_FLOORS = 12;
 export const FLOOR_NAME_MAX_LENGTH = 24;
 export const DEFAULT_FLOOR_ID = 'floor-1';
 export const DEFAULT_FLOOR_NAME = 'Floor 1';
+
+// ── Agents ───────────────────────────────────────────────────
+/** Max length for a user-assigned custom agent display name */
+export const AGENT_NAME_MAX_LENGTH = 24;
 /** Delete arm state on a floor tab auto-disarms after this long */
 export const FLOOR_DELETE_CONFIRM_TIMEOUT_MS = 3000;
+
+// ── Building View (all-floors cross-section) ────────────────
+/** Pixels per tile in each floor's mini blueprint */
+export const BUILDING_VIEW_TILE_PX = 6;
+/** Vertical gap between stacked floor strips */
+export const BUILDING_VIEW_FLOOR_GAP_PX = 16;
 
 // ── Character Animation ─────────────────────────────────────
 export const WALK_SPEED_PX_PER_SEC = 48;

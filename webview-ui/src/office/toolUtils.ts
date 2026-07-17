@@ -1,4 +1,10 @@
-import { ZOOM_DEFAULT_DPR_FACTOR, ZOOM_MIN } from '../constants.js';
+import type { ToolActivity } from './types.js';
+
+// Both turn-end states show the green checkmark bubble. A finished turn (Stop)
+// shows ONLY the checkmark (the label falls through to its normal idle text);
+// going idle waiting on the user (Notification(idle_prompt)) additionally
+// surfaces this label. Driven by Character.waitingAwaitingInput.
+export const WAITING_INPUT_ACTIVITY_TEXT = 'Waiting for input';
 
 /** Map status prefixes back to tool names for animation selection */
 const STATUS_TO_TOOL: Record<string, string> = {
@@ -19,12 +25,6 @@ export function extractToolName(status: string): string | null {
   }
   const first = status.split(/[\s:]/)[0];
   return first || null;
-}
-
-/** Compute a default integer zoom level (device pixels per sprite pixel) */
-export function defaultZoom(): number {
-  const dpr = window.devicePixelRatio || 1;
-  return Math.max(ZOOM_MIN, Math.round(ZOOM_DEFAULT_DPR_FACTOR * dpr));
 }
 
 // ── Provider capabilities (tool taxonomy for rendering decisions) ────────────
@@ -54,4 +54,41 @@ export function isReadingToolName(name: string | null | undefined): boolean {
 
 export function isSubagentToolName(name: string | null | undefined): boolean {
   return typeof name === 'string' && providerCaps.subagentToolNames.has(name);
+}
+
+/**
+ * Derive a short human-readable activity string from tools/status. The single
+ * source of truth for "what is this agent doing" text — shared by ToolOverlay
+ * (canvas overlay) and the department board (roster/help-wanted/open-items
+ * lists) so the two surfaces never drift out of sync.
+ */
+export function getAgentActivityText(
+  agentId: number,
+  agentTools: Record<number, ToolActivity[]>,
+  isActive: boolean,
+  bubbleType: 'permission' | 'waiting' | null,
+  waitingAwaitingInput: boolean,
+): string {
+  if (bubbleType === 'permission') return 'Needs approval';
+  // Only the idle case ("Waiting for input") gets a dedicated label. A finished
+  // turn (Stop, waitingAwaitingInput=false) falls through so the checkmark alone
+  // signals "done", same as the original behavior.
+  if (bubbleType === 'waiting' && waitingAwaitingInput) return WAITING_INPUT_ACTIVITY_TEXT;
+
+  const tools = agentTools[agentId];
+  if (tools && tools.length > 0) {
+    // Find the latest non-done tool
+    const activeTool = [...tools].reverse().find((t) => !t.done);
+    if (activeTool) {
+      if (activeTool.permissionWait) return 'Needs approval';
+      return activeTool.status;
+    }
+    // All tools done but agent still active (mid-turn) — keep showing last tool status
+    if (isActive) {
+      const lastTool = tools[tools.length - 1];
+      if (lastTool) return lastTool.status;
+    }
+  }
+
+  return 'Idle';
 }

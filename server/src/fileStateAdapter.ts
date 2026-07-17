@@ -33,10 +33,11 @@ function settingNameOf(key: string): AdapterSettingKey | null {
 
 interface AdapterState {
   agents: PersistedAgent[];
-  seats: Record<string, { palette?: number; hueShift?: number; seatId?: string }>;
+  seats: Record<string, { palette?: number; hueShift?: number; seatId?: string; name?: string }>;
+  subagentNames: Record<string, string>;
 }
 
-const EMPTY_STATE: AdapterState = { agents: [], seats: {} };
+const EMPTY_STATE: AdapterState = { agents: [], seats: {}, subagentNames: {} };
 
 export interface FileStateAdapterOptions {
   namespace: ConfigNamespace;
@@ -85,13 +86,28 @@ export class FileStateAdapter implements StateAdapter {
     this.writeState(state);
   }
 
-  loadSeats(): Record<string, { palette?: number; hueShift?: number; seatId?: string }> {
+  loadSeats(): Record<
+    string,
+    { palette?: number; hueShift?: number; seatId?: string; name?: string }
+  > {
     return this.readState().seats;
   }
 
-  saveSeats(seats: Record<string, { palette?: number; hueShift?: number; seatId?: string }>): void {
+  saveSeats(
+    seats: Record<string, { palette?: number; hueShift?: number; seatId?: string; name?: string }>,
+  ): void {
     const state = this.readState();
     state.seats = seats;
+    this.writeState(state);
+  }
+
+  loadSubagentNames(): Record<string, string> {
+    return this.readState().subagentNames;
+  }
+
+  saveSubagentNames(names: Record<string, string>): void {
+    const state = this.readState();
+    state.subagentNames = names;
     this.writeState(state);
   }
 
@@ -100,7 +116,7 @@ export class FileStateAdapter implements StateAdapter {
   private readState(): AdapterState {
     try {
       if (!fs.existsSync(this.stateFilePath)) {
-        return { agents: [], seats: {} };
+        return { agents: [], seats: {}, subagentNames: {} };
       }
       const raw = fs.readFileSync(this.stateFilePath, 'utf-8');
       const parsed = JSON.parse(raw) as Partial<AdapterState>;
@@ -109,6 +125,10 @@ export class FileStateAdapter implements StateAdapter {
         seats:
           parsed.seats && typeof parsed.seats === 'object'
             ? (parsed.seats as AdapterState['seats'])
+            : {},
+        subagentNames:
+          parsed.subagentNames && typeof parsed.subagentNames === 'object'
+            ? (parsed.subagentNames as AdapterState['subagentNames'])
             : {},
       };
     } catch (err) {

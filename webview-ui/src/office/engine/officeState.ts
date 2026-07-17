@@ -1,4 +1,5 @@
 import {
+  AGENT_NAME_MAX_LENGTH,
   AUTO_ON_FACING_DEPTH,
   AUTO_ON_SIDE_DEPTH,
   CHARACTER_HIT_HALF_WIDTH,
@@ -58,6 +59,8 @@ import { createPet, updatePet } from './petEntity.js';
 interface FloorRuntime {
   id: string;
   name: string;
+  /** Free-text manual notes for this floor's department board */
+  notes: string;
   layout: OfficeLayout;
   tileMap: TileTypeVal[][];
   seats: Map<string, Seat>;
@@ -92,6 +95,9 @@ export class OfficeState {
   /** Reverse lookup: sub-agent character ID → parent info */
   subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }> = new Map();
   private nextSubagentId = -1;
+  /** Persistent subagent_type -> custom display name (e.g. "office-architect" -> "Paco"),
+   *  loaded once from server state and edited via the Settings panel. */
+  subagentTypeNames: Map<string, string> = new Map();
 
   constructor(layout?: OfficeLayout) {
     this.loadDocument(layout ? wrapLayoutAsDocument(layout) : createDefaultDocument());
@@ -146,7 +152,12 @@ export class OfficeState {
   // ── Floors ────────────────────────────────────────────────────
 
   /** Build all derived state for one floor. Pets spawn from layout.pets. */
-  private buildFloorRuntime(id: string, name: string, layout: OfficeLayout): FloorRuntime {
+  private buildFloorRuntime(
+    id: string,
+    name: string,
+    layout: OfficeLayout,
+    notes = '',
+  ): FloorRuntime {
     const tileMap = layoutToTileMap(layout);
     const seats = layoutToSeats(layout.furniture);
     const blockedTiles = getBlockedTiles(layout.furniture);
@@ -155,6 +166,7 @@ export class OfficeState {
     const rt: FloorRuntime = {
       id,
       name,
+      notes,
       layout,
       tileMap,
       seats,
@@ -179,7 +191,7 @@ export class OfficeState {
     this.floorOrder = [];
     for (const f of doc.floors) {
       if (this.floorRuntimes.has(f.id)) continue;
-      this.floorRuntimes.set(f.id, this.buildFloorRuntime(f.id, f.name, f.layout));
+      this.floorRuntimes.set(f.id, this.buildFloorRuntime(f.id, f.name, f.layout, f.notes ?? ''));
       this.floorOrder.push(f.id);
     }
     this.documentLayoutRevision = doc.layoutRevision;
@@ -241,7 +253,12 @@ export class OfficeState {
         : {}),
       floors: this.floorOrder.map((id) => {
         const rt = this.floorRuntimes.get(id)!;
-        return { id, name: rt.name, layout: rt.layout };
+        return {
+          id,
+          name: rt.name,
+          layout: rt.layout,
+          ...(rt.notes ? { notes: rt.notes } : {}),
+        };
       }),
     };
   }
@@ -251,6 +268,19 @@ export class OfficeState {
       const rt = this.floorRuntimes.get(id)!;
       return { id, name: rt.name };
     });
+  }
+
+  /** Manual notes for a floor's department board, or '' if unset/unknown */
+  getFloorNotes(id: string): string {
+    return this.floorRuntimes.get(id)?.notes ?? '';
+  }
+
+  /** Set a floor's manual notes. Returns false if the floor doesn't exist. */
+  setFloorNotes(id: string, notes: string): boolean {
+    const rt = this.floorRuntimes.get(id);
+    if (!rt) return false;
+    rt.notes = notes;
+    return true;
   }
 
   /** Switch the viewed floor. Selection survives (enables cross-floor seat
@@ -292,6 +322,55 @@ export class OfficeState {
     const trimmed = name.trim().slice(0, FLOOR_NAME_MAX_LENGTH);
     if (!rt || trimmed.length === 0 || rt.name === trimmed) return false;
     rt.name = trimmed;
+    return true;
+  }
+
+  /** Set a custom display name for an agent character, or clear it (empty
+   *  string) to fall back to agentName / "Agent N". Subagents are transient
+   *  (re-keyed on every invocation) so they have no stable identity to name
+   *  -- see renameSubagentType for naming a whole subagent_type instead. */
+  renameAgent(id: number, name: string): boolean {
+    const ch = this.characters.get(id);
+    if (!ch || ch.isSubagent) return false;
+    const trimmed = name.trim().slice(0, AGENT_NAME_MAX_LENGTH);
+    const next = trimmed.length === 0 ? undefined : trimmed;
+    if (ch.name === next) return false;
+    ch.name = next;
+    return true;
+  }
+
+  /** Replace the full subagent_type -> custom name map (called once from the
+   *  existingAgents snapshot on connect). */
+  loadSubagentTypeNames(names: Record<string, string>): void {
+    this.subagentTypeNames = new Map(Object.entries(names));
+  }
+
+  /** Current subagent_type -> custom name map, for the Settings panel. */
+  getSubagentTypeNames(): Record<string, string> {
+    return Object.fromEntries(this.subagentTypeNames);
+  }
+
+  /** Set (or clear, with an empty string) the persistent display name for a
+   *  whole subagent_type -- e.g. every future "office-architect" spawn shows
+   *  as "Paco", not just the one currently running. Immediately relabels any
+   *  currently-live subagents of that type too. */
+  renameSubagentType(subagentType: string, name: string): boolean {
+    const trimmed = name.trim().slice(0, AGENT_NAME_MAX_LENGTH);
+    if (trimmed.length === 0) {
+      if (!this.subagentTypeNames.has(subagentType)) return false;
+      this.subagentTypeNames.delete(subagentType);
+    } else {
+      if (this.subagentTypeNames.get(subagentType) === trimmed) return false;
+      this.subagentTypeNames.set(subagentType, trimmed);
+    }
+    for (const ch of this.characters.values()) {
+      if (!ch.isSubagent || ch.subagentType !== subagentType) continue;
+      const parentCh =
+        ch.parentAgentId !== null ? this.characters.get(ch.parentAgentId) : undefined;
+      ch.name =
+        this.subagentTypeNames.get(subagentType) ??
+        (parentCh?.name ? `${parentCh.name} (Task)` : 'Subagent');
+    }
     return true;
   }
 
@@ -786,8 +865,11 @@ export class OfficeState {
   }
 
   /** Create a sub-agent character with the parent's palette on the parent's
-   *  floor. Returns the sub-agent ID. */
-  addSubagent(parentAgentId: number, parentToolId: string): number {
+   *  floor. Returns the sub-agent ID. `subagentType` (the Task tool's
+   *  subagent_type argument, e.g. "office-architect") is looked up against
+   *  subagentTypeNames for a persistent custom name; falls back to the
+   *  generic "<parent> (Task)" label when absent or unnamed. */
+  addSubagent(parentAgentId: number, parentToolId: string, subagentType?: string): number {
     const key = `${parentAgentId}:${parentToolId}`;
     if (this.subagentIdMap.has(key)) return this.subagentIdMap.get(key)!;
 
@@ -831,13 +913,16 @@ export class OfficeState {
     ch.tileCol = spawn.col;
     ch.tileRow = spawn.row;
 
-    // Subagents inherit the parent's display name
-    ch.name = parentCh?.name ? `${parentCh.name} (Task)` : 'Subagent';
+    // A persistent per-type name (set via Settings) wins; otherwise subagents
+    // inherit the parent's display name.
+    const customName = subagentType ? this.subagentTypeNames.get(subagentType) : undefined;
+    ch.name = customName ?? (parentCh?.name ? `${parentCh.name} (Task)` : 'Subagent');
 
     // Face the same direction as the parent agent
     if (parentCh) ch.dir = parentCh.dir;
     ch.isSubagent = true;
     ch.parentAgentId = parentAgentId;
+    ch.subagentType = subagentType;
     ch.matrixEffect = 'spawn';
     ch.matrixEffectTimer = 0;
     ch.matrixEffectSeeds = matrixEffectSeeds();

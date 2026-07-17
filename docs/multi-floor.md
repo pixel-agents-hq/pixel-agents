@@ -126,7 +126,7 @@ This is Phase 1 (core multi-floor engine + editor UI). Planned follow-ups:
   state. See [`docs/reports/2026-07-16-multi-floor-phase2-report.md`](reports/2026-07-16-multi-floor-phase2-report.md)
   for why a full per-floor theme system (auto-tiled walls included) was
   scoped out for now.
-- **Phase 3** — a per-floor department board combining live agent data
-  (seated staff, permission-wait "help wanted", running-tool "open items")
-  with manual notes.
+- **Phase 3** — done. Each floor has a department board: a live roster
+  (staff / help wanted / open items) plus manual notes, persisted per floor.
+  See [`docs/department-board.md`](department-board.md).
 - **Phase 4** — stairs/elevator visuals and named-floor presets.

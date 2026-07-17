@@ -72,13 +72,19 @@ interface ExtensionMessageState {
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
   hooksInfoShown: boolean;
+  renameAgent: (id: number, name: string) => void;
+  subagentNames: Record<string, string>;
+  renameSubagentType: (subagentType: string, name: string) => void;
 }
 
 function saveAgentSeats(os: OfficeState): void {
-  const seats: Record<number, { palette: number; hueShift: number; seatId: string | null }> = {};
+  const seats: Record<
+    number,
+    { palette: number; hueShift: number; seatId: string | null; name?: string }
+  > = {};
   for (const ch of os.characters.values()) {
     if (ch.isSubagent) continue;
-    seats[ch.id] = { palette: ch.palette, hueShift: ch.hueShift, seatId: ch.seatId };
+    seats[ch.id] = { palette: ch.palette, hueShift: ch.hueShift, seatId: ch.seatId, name: ch.name };
   }
   transport.send({ type: 'saveAgentSeats', seats });
 }
@@ -109,6 +115,7 @@ export function useExtensionMessages(
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
+  const [subagentNames, setSubagentNames] = useState<Record<string, string>>({});
 
   // Track whether initial layout has been loaded (ref to avoid re-render)
   const layoutReadyRef = useRef(false);
@@ -121,6 +128,7 @@ export function useExtensionMessages(
       hueShift?: number;
       seatId?: string;
       folderName?: string;
+      name?: string;
     }> = [];
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -173,7 +181,7 @@ export function useExtensionMessages(
         }
         // Add buffered agents now that layout (and seats) are correct
         for (const p of pendingAgents) {
-          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
+          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName, p.name);
         }
         pendingAgents = [];
         layoutReadyRef.current = true;
@@ -244,9 +252,12 @@ export function useExtensionMessages(
         const incoming = msg.agents as number[];
         const meta = (msg.agentMeta || {}) as Record<
           number,
-          { palette?: number; hueShift?: number; seatId?: string }
+          { palette?: number; hueShift?: number; seatId?: string; name?: string }
         >;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
+        const incomingSubagentNames = (msg.subagentNames || {}) as Record<string, string>;
+        os.loadSubagentTypeNames(incomingSubagentNames);
+        setSubagentNames(incomingSubagentNames);
         // Buffer agents — they'll be added in layoutLoaded after seats are built
         for (const id of incoming) {
           const m = meta[id];
@@ -256,6 +267,7 @@ export function useExtensionMessages(
             hueShift: m?.hueShift,
             seatId: m?.seatId,
             folderName: folderNames[id],
+            name: m?.name,
           });
         }
         setAgents((prev) => {
@@ -304,7 +316,8 @@ export function useExtensionMessages(
         const parentHasTeam = !!parentChar?.teamName;
         if (isSubagentToolName(toolName) && (!runInBackground || !parentHasTeam)) {
           const label = status.startsWith('Subtask:') ? status.slice('Subtask:'.length).trim() : '';
-          const subId = os.addSubagent(id, toolId);
+          const subagentType = msg.subagentType as string | undefined;
+          const subId = os.addSubagent(id, toolId, subagentType);
           setSubagentCharacters((prev) => {
             if (prev.some((s) => s.id === subId)) return prev;
             return [...prev, { id: subId, parentAgentId: id, parentToolId: toolId, label }];
@@ -582,5 +595,18 @@ export function useExtensionMessages(
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    renameAgent: (id: number, name: string) => {
+      const os = getOfficeState();
+      if (!os.renameAgent(id, name)) return;
+      saveAgentSeats(os);
+    },
+    subagentNames,
+    renameSubagentType: (subagentType: string, name: string) => {
+      const os = getOfficeState();
+      if (!os.renameSubagentType(subagentType, name)) return;
+      const next = os.getSubagentTypeNames();
+      setSubagentNames(next);
+      transport.send({ type: 'saveSubagentNames', subagentNames: next });
+    },
   };
 }

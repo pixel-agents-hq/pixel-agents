@@ -115,6 +115,38 @@
   .pixel-pulse {
     animation: pixel-pulse 1.5s ease-in-out infinite;
   }
+
+  /* BuildingView tile swatches, one per TileType (FLOOR_1..FLOOR_9). Flat
+   * legible colors — layout.tileColors stores Photoshop-style adjust-mode
+   * deltas (applied to a base sprite texture), not literal HSL, so it can't
+   * be reinterpreted as a CSS color directly; this is a schematic stand-in. */
+  .building-view-tile-1 {
+    fill: #8a7355;
+  }
+  .building-view-tile-2 {
+    fill: #4a6b7a;
+  }
+  .building-view-tile-3 {
+    fill: #6b7a4a;
+  }
+  .building-view-tile-4 {
+    fill: #7a4a6b;
+  }
+  .building-view-tile-5 {
+    fill: #7a5a4a;
+  }
+  .building-view-tile-6 {
+    fill: #4a5a7a;
+  }
+  .building-view-tile-7 {
+    fill: #5a7a6b;
+  }
+  .building-view-tile-8 {
+    fill: #7a6b4a;
+  }
+  .building-view-tile-9 {
+    fill: #6a4a7a;
+  }
 }
 
 @keyframes pixel-pulse {

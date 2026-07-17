@@ -65,8 +65,17 @@ export function handleClientMessage(
     case 'saveAgentSeats':
       if (msg.seats) {
         adapter?.saveSeats(
-          msg.seats as Record<string, { palette?: number; hueShift?: number; seatId?: string }>,
+          msg.seats as Record<
+            string,
+            { palette?: number; hueShift?: number; seatId?: string; name?: string }
+          >,
         );
+      }
+      break;
+
+    case 'saveSubagentNames':
+      if (msg.subagentNames) {
+        adapter?.saveSubagentNames(msg.subagentNames as Record<string, string>);
       }
       break;
 
@@ -212,11 +221,13 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     }
   }
   const seats = adapter?.loadSeats() ?? {};
+  const subagentNames = adapter?.loadSubagentNames() ?? {};
   send({
     type: 'existingAgents',
     agents: agentIds,
     agentMeta: seats,
     folderNames,
     externalAgents,
+    subagentNames,
   });
 }

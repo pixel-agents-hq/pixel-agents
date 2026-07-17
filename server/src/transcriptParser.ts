@@ -174,6 +174,10 @@ export function processTranscriptLine(
             const useJsonlToolEvents = agent.hookDelivered && hasInlineTeammates(agentId, agents);
             if (!agent.hookDelivered || useJsonlToolEvents || isSubagentSpawn) {
               const runInBackground = isSubagentSpawn && block.input?.run_in_background === true;
+              const subagentType =
+                isSubagentSpawn && typeof block.input?.subagent_type === 'string'
+                  ? block.input.subagent_type
+                  : undefined;
               agents.broadcast({
                 type: 'agentToolStart',
                 id: agentId,
@@ -182,6 +186,7 @@ export function processTranscriptLine(
                 toolName,
                 permissionActive: agent.permissionSent,
                 runInBackground,
+                ...(subagentType ? { subagentType } : {}),
               });
             }
           }

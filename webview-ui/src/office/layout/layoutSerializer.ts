@@ -330,6 +330,7 @@ export function migrateToDocument(raw: unknown): OfficeDocument | null {
         id: f.id,
         name: typeof f.name === 'string' && f.name.length > 0 ? f.name : DEFAULT_FLOOR_NAME,
         layout: migrateLayout(layout),
+        ...(typeof f.notes === 'string' && f.notes.length > 0 ? { notes: f.notes } : {}),
       });
     }
     if (floors.length === 0) return null;

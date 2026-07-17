@@ -250,6 +250,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // Store seat assignments in a separate key (never touched by persistAgents)
         console.log(`[Pixel Agents] State: saveAgentSeats:`, JSON.stringify(message.seats));
         this.adapter.saveSeats(message.seats);
+      } else if (message.type === 'saveSubagentNames') {
+        this.adapter.saveSubagentNames(message.subagentNames as Record<string, string>);
       } else if (message.type === 'saveLayout') {
         this.layoutWatcher?.markOwnWrite();
         writeLayoutToFile(message.layout as Record<string, unknown>);

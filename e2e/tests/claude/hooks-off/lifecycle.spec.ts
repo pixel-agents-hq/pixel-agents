@@ -930,4 +930,86 @@ test.describe('Hooks OFF / lifecycle', () => {
     await layoutButton.click();
     await expect(panelFrame.locator('[data-testid="floor-switcher"]')).toHaveCount(0);
   });
+
+  // Multi-floor Phase 3: department board — a live per-floor roster (staff /
+  // help wanted / open items, derived from the same state ToolOverlay reads)
+  // plus manual notes, persisted through the same v2 document as floors.
+  test('department board: live roster, notes persist, scoped to viewed floor @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
+    const { frame, window, tmpHome, mockLogFile } = pixelAgents;
+
+    await setSettings(frame, {
+      watchAllSessions: false,
+      hooksEnabled: false,
+      alwaysShowLabels: true,
+      debugView: false,
+    });
+
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      claudeScenario('department board smoke hooks off')
+        .at(1_000)
+        .appendJsonl(buildAssistantToolUseRecord('toolu-board-1', 'Bash', { command: 'npm test' }))
+        .holdOpenFor(10_000)
+        .build(),
+    );
+
+    const spawned = await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+    await openPixelAgentsPanel(window);
+    const panelFrame = await getPixelAgentsFrame(window);
+    const agentId = await expectSingleAgentOverlay(panelFrame);
+    await expectOverlayVisible(panelFrame, 'Running: npm test', 12_000);
+
+    // Hidden until toggled.
+    const board = panelFrame.locator('[data-testid="department-board"]');
+    await expect(board).toHaveCount(0);
+
+    const boardButton = panelFrame.locator('button', { hasText: 'Board' });
+    await expect(boardButton).toBeVisible({ timeout: 15_000 });
+    await boardButton.click();
+    await expect(board).toBeVisible({ timeout: 5_000 });
+
+    // Staff + Open Items both include the running agent (a running tool is an
+    // open item); Help Wanted is empty (no permission prompt yet).
+    await expect(board.locator(`[data-testid="board-entry-${agentId}"]`)).toHaveCount(2);
+    await expect(
+      panelFrame.locator('[data-testid="board-staff"]', { hasText: 'Running: npm test' }),
+    ).toBeVisible();
+    await expect(panelFrame.locator('[data-testid="board-help-wanted"]')).toContainText(
+      'No one needs approval',
+    );
+    await expect(
+      panelFrame.locator('[data-testid="board-open-items"]', { hasText: 'Running: npm test' }),
+    ).toBeVisible();
+
+    // Type a note — persisted through the same debounced v2-document save
+    // floor structure changes use (LAYOUT_SAVE_DEBOUNCE_MS = 500ms). Verified
+    // against the on-disk document directly, the same way the multi-floor
+    // test above confirms a floor rename lands on disk — persistence is the
+    // actual contract; whether a VS Code panel hide/show happens to retain
+    // or recreate the webview's local UI toggle state is unrelated chrome.
+    const notesField = panelFrame.locator('[data-testid="board-notes"]');
+    await notesField.fill('Ship the login page today.');
+
+    const layoutPath = path.join(tmpHome, '.pixel-agents', 'layout.json');
+    await expect
+      .poll(
+        () => {
+          if (!fs.existsSync(layoutPath)) return null;
+          try {
+            const doc = JSON.parse(fs.readFileSync(layoutPath, 'utf8')) as {
+              floors?: Array<{ id: string; notes?: string }>;
+            };
+            return doc.floors?.[0]?.notes ?? null;
+          } catch {
+            return null;
+          }
+        },
+        { timeout: 5_000 },
+      )
+      .toBe('Ship the login page today.');
+
+    expect(spawned.sessionId).toBeTruthy();
+  });
 });

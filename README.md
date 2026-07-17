@@ -41,6 +41,7 @@ Internally, the architecture is fully agent-agnostic and platform-agnostic: a ty
 - **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
 - **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
 - **Multi-floor buildings** — add, rename, and switch between multiple floors, each with its own layout and seated agents (see [docs/multi-floor.md](docs/multi-floor.md))
+- **Department board** — a live per-floor roster (staff, help wanted, open items) plus manual notes, toggled from the bottom toolbar (see [docs/department-board.md](docs/department-board.md))
 - **Speech bubbles** — visual indicators when an agent is waiting for input or needs permission
 - **Sound notifications** — optional chime when an agent finishes its turn
 - **Sub-agent visualization** — Task tool sub-agents spawn as separate characters linked to their parent
@@ -103,6 +104,10 @@ The staged Vercel output serves the standalone webview at `/webview/` and the Li
 3. Start coding with Claude — watch the character react in real time
 4. Click a character to select it, then click a seat to reassign it
 5. Click **Layout** to open the office editor and customize your space
+
+For the full walkthrough — seat reassignment, keyboard shortcuts, sound
+notifications, every Settings toggle, multi-floor buildings, and the
+department board — see [docs/usage-guide.md](docs/usage-guide.md).
 
 ## Layout Editor
 

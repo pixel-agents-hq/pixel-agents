@@ -12,7 +12,12 @@ interface BottomToolbarProps {
   onToggleEditMode: () => void;
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
+  isDepartmentBoardOpen: boolean;
+  onToggleDepartmentBoard: () => void;
   workspaceFolders: WorkspaceFolder[];
+  showBuildingButton: boolean;
+  isBuildingViewOpen: boolean;
+  onToggleBuildingView: () => void;
 }
 
 export function BottomToolbar({
@@ -21,7 +26,12 @@ export function BottomToolbar({
   onToggleEditMode,
   isSettingsOpen,
   onToggleSettings,
+  isDepartmentBoardOpen,
+  onToggleDepartmentBoard,
   workspaceFolders,
+  showBuildingButton,
+  isBuildingViewOpen,
+  onToggleBuildingView,
 }: BottomToolbarProps) {
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
   const [isBypassMenuOpen, setIsBypassMenuOpen] = useState(false);
@@ -127,6 +137,22 @@ export function BottomToolbar({
       >
         Layout
       </Button>
+      <Button
+        variant={isDepartmentBoardOpen ? 'active' : 'default'}
+        onClick={onToggleDepartmentBoard}
+        title="Department board"
+      >
+        Board
+      </Button>
+      {showBuildingButton && (
+        <Button
+          variant={isBuildingViewOpen ? 'active' : 'default'}
+          onClick={onToggleBuildingView}
+          title="View all floors at once"
+        >
+          Building
+        </Button>
+      )}
       <Button
         variant={isSettingsOpen ? 'active' : 'default'}
         onClick={onToggleSettings}

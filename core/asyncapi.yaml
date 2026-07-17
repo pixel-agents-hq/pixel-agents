@@ -122,6 +122,7 @@ components:
         - $ref: '#/components/schemas/FocusAgent'
         - $ref: '#/components/schemas/CloseAgent'
         - $ref: '#/components/schemas/SaveAgentSeats'
+        - $ref: '#/components/schemas/SaveSubagentNames'
         - $ref: '#/components/schemas/SaveLayout'
         - $ref: '#/components/schemas/SetSoundEnabled'
         - $ref: '#/components/schemas/SetLastSeenVersion'
@@ -204,7 +205,7 @@ components:
         changes that the client missed. Includes seat/palette assignments.
       type: object
       additionalProperties: false
-      required: [type, agents, agentMeta, folderNames, externalAgents]
+      required: [type, agents, agentMeta, folderNames, externalAgents, subagentNames]
       properties:
         type:
           const: existingAgents
@@ -227,6 +228,14 @@ components:
           description: Map of agent ID (string) to external flag.
           additionalProperties:
             type: boolean
+        subagentNames:
+          type: object
+          description: >-
+            Map of subagent_type (e.g. "office-architect") to a persistent
+            custom display name (e.g. "Paco"), applied to every future spawn
+            of that type. See `saveSubagentNames`.
+          additionalProperties:
+            type: string
 
     AgentStatus:
       description: Active vs waiting state for an agent (drives character animation).
@@ -273,6 +282,14 @@ components:
           type: boolean
         runInBackground:
           type: boolean
+        subagentType:
+          type: string
+          description: >-
+            The `subagent_type` argument of a Task/Agent tool call (e.g.
+            "office-architect"), when available. Lets the client apply a
+            persistent per-type display name (see `saveSubagentNames`) instead
+            of the generic "<parent> (Task)" label. Absent for non-subagent
+            tool calls or when the transcript didn't carry the argument.
 
     AgentToolDone:
       description: Agent finished executing a tool.
@@ -717,6 +734,24 @@ components:
           additionalProperties:
             $ref: '#/components/schemas/SeatAssignment'
 
+    SaveSubagentNames:
+      description: >-
+        Persist custom display names keyed by subagent_type (e.g.
+        "office-architect" -> "Paco"), applied to every future spawn of that
+        type -- distinct from `saveAgentSeats`, which names one specific
+        (stable-id) agent rather than a whole class of transient subagents.
+      type: object
+      additionalProperties: false
+      required: [type, subagentNames]
+      properties:
+        type:
+          const: saveSubagentNames
+        subagentNames:
+          type: object
+          description: Map of subagent_type to custom display name.
+          additionalProperties:
+            type: string
+
     SaveLayout:
       description: Save the office layout to ~/.pixel-agents/layout.json.
       type: object
@@ -847,9 +882,9 @@ components:
 
     AgentSeatMeta:
       description: |
-        Seat metadata associated with an agent (palette index, hue shift, seat ID).
-        Used in `existingAgents.agentMeta`. All fields optional because some agents
-        may not have a seat assignment yet.
+        Seat metadata associated with an agent (palette index, hue shift, seat ID,
+        custom display name). Used in `existingAgents.agentMeta`. All fields optional
+        because some agents may not have a seat assignment or custom name yet.
       type: object
       additionalProperties: false
       properties:
@@ -859,11 +894,15 @@ components:
           type: integer
         seatId:
           type: string
+        name:
+          type: string
+          description: User-assigned custom display name, persisted across reloads/restarts.
 
     SeatAssignment:
       description: |
         Required seat assignment payload sent in `saveAgentSeats`. `seatId` may be
-        null when the agent is unseated (left their chair). All other fields required.
+        null when the agent is unseated (left their chair). `name` is optional --
+        absent/empty means no custom name has been set for this agent.
       type: object
       additionalProperties: false
       required: [palette, hueShift, seatId]
@@ -874,6 +913,8 @@ components:
           type: integer
         seatId:
           type: [string, 'null']
+        name:
+          type: string
 
     WorkspaceFolder:
       type: object

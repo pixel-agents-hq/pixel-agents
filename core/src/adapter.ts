@@ -18,8 +18,17 @@ export interface StateAdapter {
   loadAgents(): PersistedAgent[];
   saveAgents(agents: PersistedAgent[]): void;
 
-  loadSeats(): Record<string, { palette?: number; hueShift?: number; seatId?: string }>;
-  saveSeats(seats: Record<string, { palette?: number; hueShift?: number; seatId?: string }>): void;
+  loadSeats(): Record<
+    string,
+    { palette?: number; hueShift?: number; seatId?: string; name?: string }
+  >;
+  saveSeats(
+    seats: Record<string, { palette?: number; hueShift?: number; seatId?: string; name?: string }>,
+  ): void;
+
+  /** Persistent per-subagent_type display names (e.g. "office-architect" -> "Paco"). */
+  loadSubagentNames(): Record<string, string>;
+  saveSubagentNames(names: Record<string, string>): void;
 
   // ── User-level settings (shared file, namespaced per adapter) ─────
 

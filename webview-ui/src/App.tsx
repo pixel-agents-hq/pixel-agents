@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
+import { BuildingView } from './components/BuildingView.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { DebugView } from './components/DebugView.js';
+import { DepartmentBoard } from './components/DepartmentBoard.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { FloorSwitcher } from './components/FloorSwitcher.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
@@ -17,6 +19,7 @@ import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
+import { deriveDepartmentBoard } from './office/departmentBoard.js';
 import { EditorState } from './office/editor/editorState.js';
 import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { OfficeState } from './office/engine/officeState.js';
@@ -82,6 +85,9 @@ function App() {
     hooksEnabled,
     setHooksEnabled,
     hooksInfoShown,
+    renameAgent,
+    subagentNames,
+    renameSubagentType,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedDocument, isEditDirty);
 
   // Show migration notice once layout reset is detected
@@ -90,6 +96,8 @@ function App() {
 
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isDepartmentBoardOpen, setIsDepartmentBoardOpen] = useState(false);
+  const [isBuildingViewOpen, setIsBuildingViewOpen] = useState(false);
   const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
@@ -273,6 +281,22 @@ function App() {
             onCloseAgent={handleCloseAgent}
             alwaysShowOverlay={alwaysShowOverlay}
           />
+
+          <DepartmentBoard
+            isOpen={isDepartmentBoardOpen}
+            floorId={officeState.activeFloorId}
+            floorName={
+              officeState.getFloors().find((f) => f.id === officeState.activeFloorId)?.name ?? ''
+            }
+            data={deriveDepartmentBoard(
+              officeState.characters,
+              officeState.activeFloorId,
+              agentTools,
+            )}
+            notes={officeState.getFloorNotes(officeState.activeFloorId)}
+            onNotesChange={editor.handleFloorNotesChange}
+            onRenameAgent={renameAgent}
+          />
         </>
       ) : (
         <DebugView
@@ -350,8 +374,22 @@ function App() {
         onToggleEditMode={editor.handleToggleEditMode}
         isSettingsOpen={isSettingsOpen}
         onToggleSettings={() => setIsSettingsOpen((v) => !v)}
+        isDepartmentBoardOpen={isDepartmentBoardOpen}
+        onToggleDepartmentBoard={() => setIsDepartmentBoardOpen((v) => !v)}
         workspaceFolders={workspaceFolders}
+        showBuildingButton={officeState.getFloors().length > 1}
+        isBuildingViewOpen={isBuildingViewOpen}
+        onToggleBuildingView={() => setIsBuildingViewOpen((v) => !v)}
       />
+
+      {isBuildingViewOpen && (
+        <BuildingView
+          floors={officeState.getDocument().floors}
+          activeFloorId={officeState.activeFloorId}
+          onSelectFloor={editor.handleFloorSwitch}
+          onClose={() => setIsBuildingViewOpen(false)}
+        />
+      )}
 
       <VersionIndicator
         currentVersion={extensionVersion}
@@ -386,6 +424,8 @@ function App() {
           setHooksEnabled(newVal);
           transport.send({ type: 'setHooksEnabled', enabled: newVal });
         }}
+        subagentNames={subagentNames}
+        onRenameSubagentType={renameSubagentType}
       />
 
       {showMigrationNotice && (

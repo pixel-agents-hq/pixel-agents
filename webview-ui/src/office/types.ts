@@ -137,6 +137,8 @@ export interface OfficeFloor {
   /** User-facing name ("Library", "Engineering", ...) */
   name: string;
   layout: OfficeLayout;
+  /** Free-text manual notes shown on this floor's department board */
+  notes?: string;
 }
 
 /**
@@ -205,13 +207,18 @@ export interface Character {
   isSubagent: boolean;
   /** Parent agent ID if this is a sub-agent, null otherwise */
   parentAgentId: number | null;
+  /** The Task/Agent tool's subagent_type argument (e.g. "office-architect"),
+   *  when known. Used to look up a persistent per-type display name. */
+  subagentType?: string;
   /** Active matrix spawn/despawn effect, or null */
   matrixEffect: 'spawn' | 'despawn' | null;
   /** Timer counting up from 0 to MATRIX_EFFECT_DURATION */
   matrixEffectTimer: number;
   /** Per-column random seeds (16 values) for staggered rain timing */
   matrixEffectSeeds: number[];
-  /** Optional display name; subagents inherit "<parent> (Task)" */
+  /** Optional display name. User-settable (renameAgent) and persisted per
+   *  agent id for real agents; subagents auto-inherit "<parent> (Task)" and
+   *  cannot be renamed (transient, re-keyed on every invocation). */
   name?: string;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
