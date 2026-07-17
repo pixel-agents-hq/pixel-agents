@@ -85,6 +85,8 @@ Other options:
 ```text
 --port, -p <number>   Use a fixed port instead of an OS-assigned free port
 --host <address>      Bind address (default: 127.0.0.1)
+--no-terminal         Disable the embedded terminal — watch agents without
+                      launching or attaching to them from the browser
 --help                Show CLI help
 ```
 

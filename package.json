@@ -8,14 +8,19 @@
     "type": "git",
     "url": "https://github.com/pixel-agents-hq/pixel-agents"
   },
-  "workspaces": ["server", "webview-ui"],
+  "workspaces": [
+    "server",
+    "webview-ui"
+  ],
   "icon": "icon.png",
   "license": "MIT",
   "engines": {
     "node": ">=20",
     "vscode": "^1.105.0"
   },
-  "extensionKind": ["workspace"],
+  "extensionKind": [
+    "workspace"
+  ],
   "categories": [
     "Other"
   ],
@@ -124,6 +129,7 @@
     "@types/node": "25.x",
     "@types/pngjs": "^6.0.5",
     "@types/vscode": "^1.105.0",
+    "@types/ws": "^8.18.1",
     "@vscode/test-electron": "^2.5.2",
     "allure-commandline": "^2.38.1",
     "allure-playwright": "^3.7.1",
@@ -156,5 +162,8 @@
     "@fastify/static": "^9.1.1",
     "@fastify/websocket": "^11.2.0",
     "fastify": "^5.8.5"
+  },
+  "optionalDependencies": {
+    "@lydell/node-pty": "^1.2.0-beta.12"
   }
 }

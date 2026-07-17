@@ -1,10 +1,15 @@
 import fastifyCors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
-import * as crypto from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 
+import {
+  CONTROL_CLOSE_UNAUTHORIZED,
+  CONTROL_SESSION_API_PATH,
+  CONTROL_WS_PROTOCOL,
+  TERMINAL_WS_PROTOCOL,
+} from '../../core/src/constants.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type {
@@ -14,6 +19,14 @@ import type {
 } from './clientMessageHandler.js';
 import { handleClientMessage } from './clientMessageHandler.js';
 import { HOOK_API_PREFIX, MAX_HOOK_BODY_SIZE } from './constants.js';
+import type { PtySessionManager } from './terminal/ptySessionManager.js';
+import {
+  extractTokenFromProtocolHeader,
+  isLoopbackHost,
+  isTrustedTerminalRequest,
+  isValidToken,
+} from './terminal/terminalProtocol.js';
+import { registerTerminalRoutes } from './terminalRoutes.js';
 import type { AgentState } from './types.js';
 
 /** Options for creating the HTTP + WebSocket server. */
@@ -40,6 +53,9 @@ export interface HttpServerOptions {
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
   /** Invoked when an external asset directory is added/removed. Standalone reloads + re-broadcasts assets here. */
   onReloadAssets?: ReloadAssetsSideEffect;
+  /** PTY terminals for standalone-launched agents. Absent = terminal feature off
+   *  (VS Code embedded mode, where the editor owns terminals). */
+  ptyManager?: PtySessionManager;
 }
 
 /** Result of createHttpServer(). */
@@ -63,7 +79,21 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
   });
 
   await app.register(fastifyCors, { origin: true });
-  await app.register(fastifyWebsocket);
+  await app.register(fastifyWebsocket, {
+    options: {
+      // The terminal and control sockets each carry their auth token as the
+      // second subprotocol value (see terminal/terminalProtocol.ts). A browser
+      // fails the connection unless the server echoes back one of the offered
+      // protocols, so select the protocol NAME -- never the token, which must
+      // not be reflected. A non-browser /ws client (Bearer header, no
+      // subprotocol) offers none and is left exactly as it was.
+      handleProtocols: (protocols: Set<string>) => {
+        if (protocols.has(TERMINAL_WS_PROTOCOL)) return TERMINAL_WS_PROTOCOL;
+        if (protocols.has(CONTROL_WS_PROTOCOL)) return CONTROL_WS_PROTOCOL;
+        return false;
+      },
+    },
+  });
 
   // Static SPA serving (standalone mode only)
   if (!options.embedded && options.staticDir) {
@@ -81,7 +111,15 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
 
   registerHealthRoute(app);
   registerHookRoute(app, options);
+  if (!options.embedded) {
+    registerControlSessionRoute(app, options);
+  }
   registerWebSocketRoute(app, options);
+  registerTerminalRoutes(app, {
+    token: options.token,
+    host: options.host ?? '127.0.0.1',
+    ptyManager: options.ptyManager,
+  });
 
   // ── Listen ──────────────────────────────────────────────────
 
@@ -135,22 +173,74 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
   );
 }
 
+// ── Control session (standalone token handoff) ─────────────────
+
+/**
+ * Hands the SPA the token it needs to open the /ws control socket.
+ *
+ * Same rationale as the terminal session route: the browser can't read
+ * ~/.pixel-agents/server.json, and the WebSocket constructor can't set an
+ * Authorization header, so the token has to reach the page over HTTP first. The
+ * trusted-origin guard (same-origin AND, on a loopback bind, a loopback Host) is
+ * what stops any other site from fetching it -- cors({origin:true}) reflects
+ * every Origin, and a DNS-rebound page defeats same-origin alone, so the Host
+ * allowlist is the load-bearing clause. Registered standalone-only: embedded
+ * clients hold the token in-process and never fetch it.
+ */
+function registerControlSessionRoute(app: FastifyInstance, options: HttpServerOptions): void {
+  const enforceLoopbackHost = isLoopbackHost(options.host ?? '127.0.0.1');
+  app.get(
+    CONTROL_SESSION_API_PATH,
+    {
+      preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
+        if (
+          !isTrustedTerminalRequest(
+            request.headers.origin,
+            request.headers.host,
+            enforceLoopbackHost,
+          )
+        ) {
+          await reply.code(403).send('forbidden');
+        }
+      },
+    },
+    async () => ({ token: options.token }),
+  );
+}
+
 // ── WebSocket ──────────────────────────────────────────────────
 
 function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions): void {
+  // Enforce the anti-rebinding loopback-Host allowlist only when actually
+  // loopback-bound; an operator who bound off-loopback opted into exposure and
+  // their legitimate Host is a LAN name we can't enumerate (mirrors the terminal
+  // route). Defence in depth: /ws requires the token regardless.
+  const enforceLoopbackHost = isLoopbackHost(options.host ?? '127.0.0.1');
+
   app.get('/ws', { websocket: true }, (socket, request) => {
-    // In standalone mode (not embedded), skip auth for WebSocket connections.
-    // The server binds to 127.0.0.1, so only local clients can connect.
-    // In embedded mode (VS Code), require Bearer token for security.
-    if (options.embedded) {
-      const auth = request.headers.authorization ?? '';
-      const expected = `Bearer ${options.token}`;
-      const authBuf = Buffer.from(auth);
-      const expectedBuf = Buffer.from(expected);
-      if (authBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(authBuf, expectedBuf)) {
-        socket.close(4001, 'unauthorized');
-        return;
-      }
+    // Authenticate BOTH modes. /ws can spawn agents (launchAgent) in standalone,
+    // so binding to 127.0.0.1 is not a sufficient boundary: any page the user
+    // visits can open ws://127.0.0.1/ws (WebSocket connections bypass CORS).
+    // Non-browser clients (VS Code host, MCP bridge, curl) present the token as
+    // `Authorization: Bearer <token>`; the browser SPA, which can't set that
+    // header, rides it as the second subprotocol value.
+    const provided =
+      extractBearerToken(request.headers.authorization) ??
+      extractTokenFromProtocolHeader(
+        request.headers['sec-websocket-protocol'],
+        CONTROL_WS_PROTOCOL,
+      );
+    if (!isValidToken(provided, options.token)) {
+      socket.close(CONTROL_CLOSE_UNAUTHORIZED, 'unauthorized');
+      return;
+    }
+    // Same-origin + loopback-Host guard, as on the terminal socket. Harmless to
+    // Bearer/Node clients (no Origin, loopback Host) and blunts DNS rebinding.
+    if (
+      !isTrustedTerminalRequest(request.headers.origin, request.headers.host, enforceLoopbackHost)
+    ) {
+      socket.close(CONTROL_CLOSE_UNAUTHORIZED, 'forbidden origin');
+      return;
     }
 
     const { store } = options;
@@ -195,6 +285,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
           cache: options.assetCache ?? null,
           onSetHooksEnabled: options.onSetHooksEnabled,
           onReloadAssets: options.onReloadAssets,
+          ptyManager: options.ptyManager,
         });
       } catch {
         // Malformed JSON, ignore
@@ -211,13 +302,17 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
 
 // ── Auth Helper ────────────────────────────────────────────────
 
+/** Pull the raw token out of an `Authorization: Bearer <token>` header, or null
+ *  if absent/malformed. Comparison is deferred to isValidToken (constant-time). */
+function extractBearerToken(auth: string | undefined): string | null {
+  const prefix = 'Bearer ';
+  if (auth === undefined || !auth.startsWith(prefix)) return null;
+  return auth.slice(prefix.length);
+}
+
 function bearerAuth(expectedToken: string) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const auth = request.headers.authorization ?? '';
-    const expected = `Bearer ${expectedToken}`;
-    const authBuf = Buffer.from(auth);
-    const expectedBuf = Buffer.from(expected);
-    if (authBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(authBuf, expectedBuf)) {
+    if (!isValidToken(extractBearerToken(request.headers.authorization), expectedToken)) {
       reply.code(401).send('unauthorized');
     }
   };

@@ -70,6 +70,29 @@ export const HOOK_EVENT_BUFFER_MS = 5_000;
 export const SESSION_END_GRACE_MS = 2000;
 export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
 
+// ── Standalone Embedded Terminal ────────────────────────────
+/** PTY module ids tried in order by the loader. @lydell/node-pty ships prebuilt
+ *  binaries for all six platform/arch targets as optionalDependencies with no
+ *  install scripts; official node-pty has no Linux prebuild and relies on
+ *  install scripts that npm >=11.16 gates by default. Keeping a candidate LIST
+ *  means anyone who prefers the Microsoft package can just install it.
+ *  See docs/design/standalone-terminal.md. */
+export const PTY_MODULE_CANDIDATES = ['@lydell/node-pty', 'node-pty'] as const;
+/** Scrollback lines the per-session headless-xterm mirror retains. Matches the
+ *  browser's TERMINAL_SCROLLBACK_LINES so a reattach replays the same depth the
+ *  client would have kept. Bounds the serialized replay snapshot. */
+export const TERMINAL_MIRROR_SCROLLBACK_LINES = 5_000;
+/** Terminal size used until the browser reports its real geometry. */
+export const TERMINAL_DEFAULT_COLS = 80;
+export const TERMINAL_DEFAULT_ROWS = 24;
+/** TERM value exported into the PTY. */
+export const TERMINAL_TERM_NAME = 'xterm-256color';
+/** Grace period between SIGHUP and SIGKILL when disposing a PTY. */
+export const TERMINAL_KILL_GRACE_MS = 2_000;
+/** unavailableReason() when the operator opted out with --no-terminal. Shown
+ *  verbatim as the disabled + Agent button's tooltip in the browser. */
+export const TERMINAL_DISABLED_BY_FLAG_REASON = 'Terminal disabled with --no-terminal.';
+
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';

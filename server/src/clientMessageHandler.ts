@@ -5,6 +5,8 @@ import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './a
 import { readConfig, writeConfig } from './configPersistence.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import { claudeProvider } from './providers/index.js';
+import type { PtySessionManager } from './terminal/ptySessionManager.js';
+import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -37,6 +39,9 @@ export interface ClientMessageContext {
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
   /** Reload assets after an external-asset-directory change. Needs the dist root, known only to cli.ts. */
   onReloadAssets?: ReloadAssetsSideEffect;
+  /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
+   *  mode, where the editor owns terminal lifecycle. */
+  ptyManager?: PtySessionManager;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -68,14 +73,34 @@ export function handleClientMessage(
       handleWebviewReady(send, ctx);
       break;
 
+    case 'launchAgent': {
+      // Standalone can now launch: the agent runs in a server-side PTY streamed
+      // to the browser drawer. Previously this fell through to `default:`.
+      if (!runtime || !ctx.ptyManager) break;
+      launchStandaloneAgent(
+        { store, runtime, ptyManager: ctx.ptyManager, provider: claudeProvider },
+        {
+          folderPath: msg.folderPath as string | undefined,
+          bypassPermissions: msg.bypassPermissions as boolean | undefined,
+        },
+      );
+      break;
+    }
+
     case 'closeAgent': {
-      // Standalone agents are always external (no terminal), so mirror the VS
-      // Code external-agent branch: dismiss the file (so the external scanner
-      // doesn't re-adopt it) then remove. removeAgent fires the agentRemoved
-      // store event, which httpServer maps to an agentClosed broadcast.
+      // Two shapes now: a PTY-backed agent we launched (kill the process -- the
+      // counterpart of VS Code's terminalRef.dispose()), or an external agent we
+      // merely observed (dismiss the file so the scanner doesn't re-adopt it,
+      // then remove). removeAgent fires agentRemoved, which httpServer maps to
+      // an agentClosed broadcast.
       const id = msg.id as number;
       const agent = store.get(id);
       if (agent && runtime) {
+        // dispose() is a no-op for agents with no terminal, so this is safe for
+        // both shapes. The PTY's onExit handler does the store cleanup for
+        // PTY-backed agents; do it here too so external agents (and a PTY that
+        // never exits) are still removed promptly.
+        ctx.ptyManager?.dispose(id);
         runtime.dismissalTracker.dismiss(agent.jsonlFile);
         runtime.removeAgent(id);
       }
@@ -174,8 +199,9 @@ export function handleClientMessage(
     }
 
     default:
-      // focusAgent, exportLayout, importLayout
-      // require IDE-specific handling (not yet implemented for standalone)
+      // focusAgent is handled entirely client-side in standalone (it focuses the
+      // drawer tab, which the server has no say in). exportLayout / importLayout
+      // still require IDE-specific handling.
       break;
   }
 }
@@ -190,6 +216,18 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     readingTools: [...claudeProvider.readingTools],
     subagentToolNames: [...claudeProvider.subagentToolNames],
   });
+
+  // 1b. Terminal availability. Gates the whole terminal UI (the + Agent button
+  // and the drawer), so it must land before the client can act on agents.
+  // Absent ptyManager = VS Code embedded mode, which owns its own terminals and
+  // must not be told the standalone terminal is unavailable.
+  if (ctx.ptyManager) {
+    send({
+      type: 'terminalAvailability',
+      available: ctx.ptyManager.isAvailable(),
+      reason: ctx.ptyManager.unavailableReason() ?? undefined,
+    });
+  }
 
   // 2. Assets (from server cache, loaded at startup via pngjs)
   if (cache) {
@@ -281,4 +319,16 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     folderNames,
     externalAgents,
   });
+
+  // 7. Re-announce live terminals AFTER existingAgents, so a browser that
+  // reloaded (or a second tab) rebuilds its drawer tabs. The PTY outlives the
+  // socket, so these sessions are still attachable and their scrollback replays
+  // on connect.
+  if (ctx.ptyManager) {
+    for (const id of agentIds) {
+      if (ctx.ptyManager.has(id)) {
+        send({ type: 'terminalSessionOpened', agentId: id });
+      }
+    }
+  }
 }

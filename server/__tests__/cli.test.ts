@@ -118,6 +118,19 @@ describe('parseArgs', () => {
   it('parses --host', () => {
     expect(parseArgs(['--host', '0.0.0.0']).host).toBe('0.0.0.0');
   });
+
+  // 11. Terminal is on by default; --no-terminal opts out
+  it('defaults terminal to enabled', () => {
+    expect(parseArgs([]).terminal).toBe(true);
+  });
+
+  it('disables the terminal with --no-terminal, independently of other flags', () => {
+    expect(parseArgs(['--no-terminal']).terminal).toBe(false);
+    expect(parseArgs(['--no-terminal', '--port', '3100'])).toMatchObject({
+      terminal: false,
+      port: 3100,
+    });
+  });
 });
 
 /**

@@ -122,7 +122,19 @@ async function buildCli() {
     sourcemap: !production,
     platform: 'node',
     outfile: 'dist/cli.js',
-    external: ['fastify', '@fastify/websocket', '@fastify/static', '@fastify/cors'],
+    external: [
+      'fastify',
+      '@fastify/websocket',
+      '@fastify/static',
+      '@fastify/cors',
+      // Native PTY modules: they ship platform-specific .node binaries that
+      // cannot be bundled, and they're OPTIONAL -- esbuild must not fail the
+      // build when they're absent, and the runtime require() must be left
+      // intact so its failure can be caught and degraded gracefully.
+      // See server/src/terminal/ptyModule.ts.
+      '@lydell/node-pty',
+      'node-pty',
+    ],
     define: versionDefine,
     logLevel: 'silent',
   });

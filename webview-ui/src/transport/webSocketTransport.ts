@@ -1,4 +1,6 @@
 import {
+  CONTROL_SESSION_API_PATH,
+  CONTROL_WS_PROTOCOL,
   TRANSPORT_STATE_CONNECTED,
   TRANSPORT_STATE_CONNECTING,
   TRANSPORT_STATE_DISCONNECTED,
@@ -6,6 +8,19 @@ import {
 } from '../../../core/src/constants.js';
 import type { ClientMessage, ServerMessage } from '../../../core/src/messages.js';
 import type { MessageTransport, TransportState } from './types.js';
+
+/** Fetch the /ws auth token from the same-origin session endpoint. Fetched
+ *  fresh on every (re)connect rather than cached: a restarted server mints a new
+ *  token, and re-fetching lets a reconnect pick it up instead of looping on a
+ *  stale one. A cross-origin page can't read this response (same-origin policy),
+ *  so the token stays out of a malicious tab's reach. */
+async function fetchControlToken(sessionUrl: string): Promise<string> {
+  const res = await fetch(sessionUrl);
+  if (!res.ok) throw new Error(`control session request failed: ${String(res.status)}`);
+  const body = (await res.json()) as { token?: unknown };
+  if (typeof body.token !== 'string') throw new Error('control session response missing token');
+  return body.token;
+}
 
 /**
  * WebSocket transport for standalone browser mode.
@@ -17,6 +32,7 @@ export class WebSocketTransport implements MessageTransport {
   private handlers: Array<(msg: ServerMessage) => void> = [];
   private stateHandlers: Array<(state: TransportState) => void> = [];
   private url: string;
+  private sessionUrl: string;
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
@@ -25,8 +41,9 @@ export class WebSocketTransport implements MessageTransport {
   private readonly _ready: Promise<void>;
   private resolveReady!: () => void;
 
-  constructor(url: string) {
+  constructor(url: string, sessionUrl: string = CONTROL_SESSION_API_PATH) {
     this.url = url;
+    this.sessionUrl = sessionUrl;
     this._ready = new Promise<void>((resolve) => {
       this.resolveReady = resolve;
     });
@@ -54,7 +71,24 @@ export class WebSocketTransport implements MessageTransport {
       this.reconnectAttempts > 0 ? TRANSPORT_STATE_RECONNECTING : TRANSPORT_STATE_CONNECTING,
     );
 
-    this.ws = new WebSocket(this.url);
+    // Fetch the auth token same-origin, then open the socket carrying it as the
+    // second subprotocol value (the browser WebSocket API can't set headers).
+    // A failed fetch schedules a reconnect rather than opening an unauthed
+    // socket that the server would just reject.
+    void fetchControlToken(this.sessionUrl)
+      .then((token) => {
+        if (this.disposed) return;
+        this.openSocket(token);
+      })
+      .catch((err: unknown) => {
+        if (this.disposed) return;
+        console.error('[Transport] Failed to get control session token:', err);
+        this.scheduleReconnect();
+      });
+  }
+
+  private openSocket(token: string): void {
+    this.ws = new WebSocket(this.url, [CONTROL_WS_PROTOCOL, token]);
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;

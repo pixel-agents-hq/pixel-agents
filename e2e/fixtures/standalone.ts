@@ -5,7 +5,11 @@ import type { TestInfo } from '@playwright/test';
 import { expect, test as base } from '@playwright/test';
 
 import { applyAllureLabels } from '../helpers/allure-labels';
-import { launchStandalone, type StandaloneSession } from '../helpers/standalone';
+import {
+  launchStandalone,
+  type LaunchStandaloneOptions,
+  type StandaloneSession,
+} from '../helpers/standalone';
 
 export interface StandaloneContext extends StandaloneSession {}
 
@@ -43,7 +47,14 @@ async function attachText(
   }
 }
 
-export const test = base.extend<{ standalone: StandaloneContext; _allureLabels: void }>({
+export const test = base.extend<{
+  standalone: StandaloneContext;
+  standaloneOptions: LaunchStandaloneOptions;
+  _allureLabels: void;
+}>({
+  // Per-test host options (e.g. extra CLI flags, mock claude on PATH). Override
+  // with test.use({ standaloneOptions: {...} }) in a describe block.
+  standaloneOptions: [{}, { option: true }],
   // Auto-fixture: tag every test with Allure epic + feature derived from its
   // @area: annotation and enclosing describe path. Runs before standalone.
   _allureLabels: [
@@ -53,8 +64,8 @@ export const test = base.extend<{ standalone: StandaloneContext; _allureLabels: 
     },
     { auto: true },
   ],
-  standalone: async ({ page }, use, testInfo) => {
-    const standalone = await launchStandalone(page);
+  standalone: async ({ page, standaloneOptions }, use, testInfo) => {
+    const standalone = await launchStandalone(page, standaloneOptions);
 
     try {
       await use(standalone);
@@ -65,6 +76,13 @@ export const test = base.extend<{ standalone: StandaloneContext; _allureLabels: 
         'server-json',
         path.join(standalone.tmpHome, '.pixel-agents', 'server.json'),
         'application/json',
+      );
+      // Only ever written when the host launched a mock claude (mockClaude: true).
+      await attachTextFileIfExists(
+        testInfo,
+        'mock-claude-invocations',
+        standalone.mockLogFile,
+        'text/plain',
       );
 
       try {

@@ -20,6 +20,7 @@ import {
 import { createHttpServer } from './httpServer.js';
 import type { ServerConfig } from './serverConfig.js';
 import { isServerConfig, isServerTarget } from './serverConfig.js';
+import type { PtySessionManager } from './terminal/ptySessionManager.js';
 
 export type { ServerConfig } from './serverConfig.js';
 
@@ -69,6 +70,7 @@ export class PixelAgentsServer {
     assetCache?: AssetCache;
     onSetHooksEnabled?: SetHooksEnabledSideEffect;
     onReloadAssets?: ReloadAssetsSideEffect;
+    ptyManager?: PtySessionManager;
   }): Promise<ServerConfig> {
     const embedded = options?.embedded ?? true;
     const wantsSpa = !embedded;
@@ -106,6 +108,7 @@ export class PixelAgentsServer {
       onHookEvent: (providerId, event) => this.callback?.(providerId, event),
       onSetHooksEnabled: options?.onSetHooksEnabled,
       onReloadAssets: options?.onReloadAssets,
+      ptyManager: options?.ptyManager,
     });
 
     this.app = app;
