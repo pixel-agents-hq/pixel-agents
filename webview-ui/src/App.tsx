@@ -292,6 +292,7 @@ function App() {
               officeState.characters,
               officeState.activeFloorId,
               agentTools,
+              officeState.getFloorRoster(officeState.activeFloorId),
             )}
             notes={officeState.getFloorNotes(officeState.activeFloorId)}
             onNotesChange={editor.handleFloorNotesChange}

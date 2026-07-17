@@ -7,6 +7,7 @@ import type {
   OfficeFloor,
   OfficeLayout,
   PlacedFurniture,
+  RosterEntry,
   Seat,
   TileType as TileTypeVal,
 } from '../types.js';
@@ -299,6 +300,28 @@ export function createDefaultDocument(): OfficeDocument {
   return wrapLayoutAsDocument(createDefaultLayout());
 }
 
+/** Coerce a floor's raw `roster` field into valid RosterEntry[], dropping any
+ *  entry missing a required string field rather than failing the whole floor. */
+function sanitizeRoster(raw: unknown): RosterEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const out: RosterEntry[] = [];
+  for (const entry of raw as unknown[]) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { subagentType, displayName, skill } = entry as Record<string, unknown>;
+    if (
+      typeof subagentType === 'string' &&
+      subagentType.length > 0 &&
+      typeof displayName === 'string' &&
+      displayName.length > 0 &&
+      typeof skill === 'string' &&
+      skill.length > 0
+    ) {
+      out.push({ subagentType, displayName, skill });
+    }
+  }
+  return out;
+}
+
 /**
  * Coerce anything read from layout.json (or received over the wire) into a v2
  * OfficeDocument. Accepts v1 single-grid layouts (wrapped as one floor) and v2
@@ -326,11 +349,13 @@ export function migrateToDocument(raw: unknown): OfficeDocument | null {
       if (!f || typeof f.id !== 'string' || f.id.length === 0) continue;
       const layout = f.layout;
       if (!layout || !Array.isArray(layout.tiles) || !Array.isArray(layout.furniture)) continue;
+      const roster = sanitizeRoster((f as { roster?: unknown }).roster);
       floors.push({
         id: f.id,
         name: typeof f.name === 'string' && f.name.length > 0 ? f.name : DEFAULT_FLOOR_NAME,
         layout: migrateLayout(layout),
         ...(typeof f.notes === 'string' && f.notes.length > 0 ? { notes: f.notes } : {}),
+        ...(roster.length > 0 ? { roster } : {}),
       });
     }
     if (floors.length === 0) return null;

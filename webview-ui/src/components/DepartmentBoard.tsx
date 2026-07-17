@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { DepartmentBoardData, DepartmentBoardEntry } from '../office/departmentBoard.js';
+import type {
+  DepartmentBoardData,
+  DepartmentBoardEntry,
+  RosterBoardEntry,
+} from '../office/departmentBoard.js';
 
 interface DepartmentBoardProps {
   isOpen: boolean;
@@ -111,6 +115,49 @@ function Section({ title, entries, emptyText, dotColor, testId, onRenameAgent }:
   );
 }
 
+/** Roster: the floor's static persona assignments, each tagged live (running
+ *  right now, real status text) or idle (skill description shown instead).
+ *  Distinct from Section above because the live/idle dot color is per-entry,
+ *  not one color for the whole list. */
+function RosterSection({ entries }: { entries: RosterBoardEntry[] }) {
+  return (
+    <div className="flex flex-col gap-2" data-testid="board-roster">
+      <div className="text-sm text-text-muted">Roster ({entries.length})</div>
+      {entries.length === 0 ? (
+        <div className="text-2xs text-text-muted italic">No one assigned here yet</div>
+      ) : (
+        <ul className="flex flex-col gap-2 m-0 pl-0 list-none">
+          {entries.map((entry) => (
+            <li
+              key={entry.id}
+              className="flex items-start gap-4 overflow-hidden"
+              data-testid={`board-roster-entry-${entry.id}`}
+            >
+              <span
+                className="w-6 h-6 rounded-full shrink-0 mt-2"
+                style={{
+                  background: entry.isLive
+                    ? 'var(--color-status-active)'
+                    : 'var(--color-text-muted)',
+                }}
+                title={entry.isLive ? 'Currently running' : 'Idle'}
+              />
+              <div className="flex flex-col overflow-hidden">
+                <span className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">
+                  {entry.label}
+                </span>
+                <span className="text-2xs text-text-muted overflow-hidden text-ellipsis whitespace-nowrap">
+                  {entry.isLive ? entry.statusText : entry.skill}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
  * Per-floor department board: a live roster (staff / help wanted / open
  * items, derived from officeState + agentTools by departmentBoard.ts) plus a
@@ -150,6 +197,8 @@ export function DepartmentBoard({
       <div className="text-sm font-bold overflow-hidden text-ellipsis whitespace-nowrap">
         {floorName}
       </div>
+
+      <RosterSection entries={data.roster} />
 
       <Section
         title="Staff"

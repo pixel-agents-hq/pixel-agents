@@ -163,5 +163,53 @@ test('label prefers name, falls back to agentName', () => {
 
 test('empty floor produces empty lists, not a throw', () => {
   const board = deriveDepartmentBoard(new Map(), 'floor-1', {});
-  assert.deepEqual(board, { staff: [], helpWanted: [], openItems: [] });
+  assert.deepEqual(board, { staff: [], helpWanted: [], openItems: [], roster: [] });
+});
+
+test('roster entry with no live match is idle (isLive false, no statusText)', () => {
+  const board = deriveDepartmentBoard(new Map(), 'floor-1', {}, [
+    { subagentType: 'souei-architect', displayName: 'Souei', skill: 'architecture review' },
+  ]);
+  assert.deepEqual(board.roster, [
+    {
+      id: -1_000_000,
+      label: 'Souei',
+      skill: 'architecture review',
+      isLive: false,
+      statusText: '',
+    },
+  ]);
+});
+
+test('roster entry picks up live status when its subagent_type is spawned on this floor', () => {
+  const tools: Record<number, ToolActivity[]> = {
+    5: [{ toolId: 't1', status: 'Running: npm test', done: false, permissionWait: false }],
+  };
+  const characters = charMap([
+    makeChar({ id: 5, isSubagent: true, subagentType: 'souei-architect', floorId: 'floor-1' }),
+  ]);
+  const board = deriveDepartmentBoard(characters, 'floor-1', tools, [
+    { subagentType: 'souei-architect', displayName: 'Souei', skill: 'architecture review' },
+  ]);
+  assert.deepEqual(board.roster, [
+    {
+      id: 5,
+      label: 'Souei',
+      skill: 'architecture review',
+      isLive: true,
+      statusText: 'Running: npm test',
+    },
+  ]);
+  // Live subagents still don't leak into the non-subagent staff list.
+  assert.deepEqual(board.staff, []);
+});
+
+test('roster entries from other floors are not matched as live', () => {
+  const characters = charMap([
+    makeChar({ id: 5, isSubagent: true, subagentType: 'souei-architect', floorId: 'floor-2' }),
+  ]);
+  const board = deriveDepartmentBoard(characters, 'floor-1', {}, [
+    { subagentType: 'souei-architect', displayName: 'Souei', skill: 'architecture review' },
+  ]);
+  assert.equal(board.roster[0]?.isLive, false);
 });

@@ -39,6 +39,7 @@ import type {
   Pet,
   PlacedFurniture,
   PlacedPet,
+  RosterEntry,
   Seat,
   TileType as TileTypeVal,
 } from '../types.js';
@@ -61,6 +62,8 @@ interface FloorRuntime {
   name: string;
   /** Free-text manual notes for this floor's department board */
   notes: string;
+  /** Static roster of subagent personas assigned to this floor */
+  roster: RosterEntry[];
   layout: OfficeLayout;
   tileMap: TileTypeVal[][];
   seats: Map<string, Seat>;
@@ -157,6 +160,7 @@ export class OfficeState {
     name: string,
     layout: OfficeLayout,
     notes = '',
+    roster: RosterEntry[] = [],
   ): FloorRuntime {
     const tileMap = layoutToTileMap(layout);
     const seats = layoutToSeats(layout.furniture);
@@ -167,6 +171,7 @@ export class OfficeState {
       id,
       name,
       notes,
+      roster,
       layout,
       tileMap,
       seats,
@@ -191,7 +196,10 @@ export class OfficeState {
     this.floorOrder = [];
     for (const f of doc.floors) {
       if (this.floorRuntimes.has(f.id)) continue;
-      this.floorRuntimes.set(f.id, this.buildFloorRuntime(f.id, f.name, f.layout, f.notes ?? ''));
+      this.floorRuntimes.set(
+        f.id,
+        this.buildFloorRuntime(f.id, f.name, f.layout, f.notes ?? '', f.roster ?? []),
+      );
       this.floorOrder.push(f.id);
     }
     this.documentLayoutRevision = doc.layoutRevision;
@@ -258,6 +266,7 @@ export class OfficeState {
           name: rt.name,
           layout: rt.layout,
           ...(rt.notes ? { notes: rt.notes } : {}),
+          ...(rt.roster.length > 0 ? { roster: rt.roster } : {}),
         };
       }),
     };
@@ -273,6 +282,11 @@ export class OfficeState {
   /** Manual notes for a floor's department board, or '' if unset/unknown */
   getFloorNotes(id: string): string {
     return this.floorRuntimes.get(id)?.notes ?? '';
+  }
+
+  /** Static roster for a floor's department board, or [] if unset/unknown */
+  getFloorRoster(id: string): RosterEntry[] {
+    return this.floorRuntimes.get(id)?.roster ?? [];
   }
 
   /** Set a floor's manual notes. Returns false if the floor doesn't exist. */

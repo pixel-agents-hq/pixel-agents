@@ -130,6 +130,15 @@ export interface OfficeLayout {
   pets?: PlacedPet[];
 }
 
+/** One named seat on a floor's roster: a subagent_type assigned to this floor,
+ *  its persistent display name, and a short skill/role description. Static —
+ *  independent of whether that subagent_type is currently spawned/running. */
+export interface RosterEntry {
+  subagentType: string;
+  displayName: string;
+  skill: string;
+}
+
 /** One named floor of the office. The grid itself keeps the v1 OfficeLayout shape. */
 export interface OfficeFloor {
   /** Stable identifier; seat uids and characters reference floors through it */
@@ -139,6 +148,9 @@ export interface OfficeFloor {
   layout: OfficeLayout;
   /** Free-text manual notes shown on this floor's department board */
   notes?: string;
+  /** Static roster of subagent personas assigned to this floor, for the
+   *  department board's Roster section */
+  roster?: RosterEntry[];
 }
 
 /**
