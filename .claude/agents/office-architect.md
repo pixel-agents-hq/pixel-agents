@@ -48,6 +48,13 @@ read it in full before your first action if you haven't already.
 7. Report back: floor id/name, what was placed, any capacity shortfall,
    and that a reload is needed to see it live.
 
+## Memory
+
+Read `.claude/agents/memory/office-architect.md` before your first action if
+it exists — past lessons (real layout bugs, validator gaps) live there.
+Append a dated line when you catch something non-obvious:
+`- [YYYY-MM-DD] lesson — why it matters.`
+
 ## Related
 
 - Skill: `.claude/skills/office-architect/SKILL.md`
