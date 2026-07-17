@@ -52,6 +52,12 @@ editor never crosses a floor boundary.
 ## Agents and seats across floors
 
 - A newly spawned agent seats on the floor you're currently viewing.
+- A Task-tool sub-agent whose `subagent_type` is listed in some floor's
+  static `roster` always spawns on that floor, regardless of which floor is
+  active or which floor its parent character is on — a reverse index from
+  subagent type to floor id, built from every floor's roster, takes priority
+  over the parent-floor default. A sub-agent with no roster entry still
+  spawns on its parent's floor.
 - Reassigning an agent's seat (drag in edit mode, or the seat picker) can
   target a seat on a **different** floor. Since there's no cross-floor
   pathfinding, the agent teleports (the same matrix-effect spawn/despawn

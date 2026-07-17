@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- **Rostered sub-agents spawn on their home floor** ([#346](https://github.com/pablodelucca/pixel-agents/pull/346)) — Task-tool sub-agents whose `subagent_type` is listed in a floor's static roster (e.g. a five-agent pipeline persona) now always spawn on that floor, instead of inheriting whatever floor the parent character happened to be on. Sub-agents with no roster entry keep the previous parent-floor behavior.
+
 ## v1.3.0
 
 ### Features

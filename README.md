@@ -44,7 +44,7 @@ Internally, the architecture is fully agent-agnostic and platform-agnostic: a ty
 - **Department board** — a live per-floor roster (staff, help wanted, open items) plus manual notes, toggled from the bottom toolbar (see [docs/department-board.md](docs/department-board.md))
 - **Speech bubbles** — visual indicators when an agent is waiting for input or needs permission
 - **Sound notifications** — optional chime when an agent finishes its turn
-- **Sub-agent visualization** — Task tool sub-agents spawn as separate characters linked to their parent
+- **Sub-agent visualization** — Task tool sub-agents spawn as separate characters linked to their parent, homing to their floor's roster assignment when one exists (see [docs/multi-floor.md](docs/multi-floor.md#agents-and-seats-across-floors))
 - **Persistent layouts** — your office design is saved and shared across VS Code windows
 - **External asset directories** — load custom or third-party furniture packs from any folder on your machine
 - **Diverse characters** — 6 diverse characters. These are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack).
