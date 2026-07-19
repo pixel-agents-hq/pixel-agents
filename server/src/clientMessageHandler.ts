@@ -221,9 +221,11 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     }
   }
 
-  // 3. Layout (saved file, or bundled default)
-  const savedLayout = readLayoutFromFile();
-  send({ type: 'layoutLoaded', layout: savedLayout ?? cache?.defaultLayout ?? null });
+  // 3. Layout is sent AFTER existingAgents — see step 7 below. The webview
+  // buffers agents from existingAgents and only materializes them on the next
+  // layoutLoaded (useExtensionMessages.ts: "Buffer agents — they'll be added
+  // in layoutLoaded"), so layout-first would leave a client that connects
+  // after agent creation with no characters.
 
   // 4. Settings (from adapter, with sensible defaults when adapter is absent)
   const cfg = readConfig();
@@ -281,4 +283,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     folderNames,
     externalAgents,
   });
+
+  // 7. Layout last (see step 3): flushes the webview's buffered existingAgents
+  // into characters once seats are rebuilt.
+  const savedLayout = readLayoutFromFile();
+  send({ type: 'layoutLoaded', layout: savedLayout ?? cache?.defaultLayout ?? null });
 }

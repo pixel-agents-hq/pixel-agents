@@ -11,6 +11,36 @@ import {
 } from '../src/clientMessageHandler.js';
 import { readConfig } from '../src/configPersistence.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
+import type { AgentState } from '../src/types.js';
+
+function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
+  return {
+    id: 1,
+    sessionId: 'sess-1',
+    terminalRef: undefined,
+    isExternal: false,
+    projectDir: '/test',
+    jsonlFile: '/test/session.jsonl',
+    fileOffset: 0,
+    lineBuffer: '',
+    activeToolIds: new Set(),
+    activeToolStatuses: new Map(),
+    activeToolNames: new Map(),
+    activeSubagentToolIds: new Map(),
+    activeSubagentToolNames: new Map(),
+    backgroundAgentToolIds: new Set(),
+    isWaiting: false,
+    permissionSent: false,
+    hadToolsInTurn: false,
+    lastDataAt: 0,
+    linesProcessed: 0,
+    seenUnknownRecordTypes: new Set(),
+    hookDelivered: false,
+    inputTokens: 0,
+    outputTokens: 0,
+    ...overrides,
+  } as AgentState;
+}
 
 /**
  * These tests exercise the area-related dispatch branches and the load-order
@@ -142,6 +172,26 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
 
       const mappings = sent[iAreaMappings] as { mappings?: Record<string, string[]> };
       expect(mappings.mappings).toEqual({ frontend: ['Engineering'] });
+    });
+
+    it('emits layoutLoaded after existingAgents so buffered agents materialize', () => {
+      // The webview buffers agents from existingAgents and only materializes
+      // them on the next layoutLoaded. If layout arrives first, a client
+      // connecting after agents were created never renders their characters.
+      store.set(1, createTestAgent({ id: 1 }));
+
+      handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx);
+
+      const types = sent.map((m) => m.type);
+      const iExistingAgents = types.indexOf('existingAgents');
+      const iLayout = types.indexOf('layoutLoaded');
+
+      expect(iExistingAgents).toBeGreaterThanOrEqual(0);
+      expect(iLayout).toBeGreaterThanOrEqual(0);
+      expect(iExistingAgents).toBeLessThan(iLayout);
+
+      const existing = sent[iExistingAgents] as { agents?: number[] };
+      expect(existing.agents).toEqual([1]);
     });
 
     it('emits carpetTilesLoaded after wallTilesLoaded when both are present in the cache', () => {
