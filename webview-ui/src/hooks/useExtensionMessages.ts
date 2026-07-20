@@ -217,10 +217,19 @@ export function useExtensionMessages(
         if (isTeammate && teammateParentId !== undefined) {
           // Teammate: inherit parent's palette and workspace folderName (teammate runs
           // in the same workspace as the lead). Name shown via agentName (teamRoleLabel).
+          // Seat them at the free seat closest to the lead so the team clusters.
           const parentCh = os.characters.get(teammateParentId);
           const palette = parentCh ? parentCh.palette : undefined;
           const hueShift = parentCh ? parentCh.hueShift : undefined;
-          os.addAgent(id, palette, hueShift, undefined, undefined, parentCh?.folderName);
+          os.addAgent(
+            id,
+            palette,
+            hueShift,
+            undefined,
+            undefined,
+            parentCh?.folderName,
+            teammateParentId,
+          );
           noteFolderName(parentCh?.folderName);
           // Set team metadata on the character
           const ch = os.characters.get(id);

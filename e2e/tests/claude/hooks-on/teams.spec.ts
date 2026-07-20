@@ -29,6 +29,7 @@ import {
   expectNoOverlayWithTexts,
   expectOverlayCount,
   expectOverlayVisibleWithTexts,
+  expectTeammateSeatedNextToLead,
 } from '../../../helpers/office';
 import {
   buildAgentSettingRecord,
@@ -271,6 +272,8 @@ test.describe('Hooks ON / teams', () => {
     await expectOverlayVisibleWithTexts(panelFrame, [role]);
     await expectOverlayCount(panelFrame, 2);
     narrator.check(`the ${role} teammate joined — two characters, no ghost Subtask left behind`);
+    await expectTeammateSeatedNextToLead(panelFrame, role);
+    narrator.check('the teammate took the free seat closest to the lead');
     narrator.step("waiting for the teammate's own-session hooks to route to it");
     await expectOverlayVisibleWithTexts(panelFrame, [role, 'Running: npm test']);
     await expectNoOverlayWithTexts(panelFrame, ['LEAD', 'Running: npm test']);
