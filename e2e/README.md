@@ -223,12 +223,12 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 
 ### `@area:teams` (6 tests)
 
-- `e2e/claude/hooks-on/teams.spec.ts:62` — internal terminal lead with inline teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:119` — internal terminal lead with tmux teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:193` — new-harness background agent becomes a named teammate character (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:283` — anonymous background agent is promoted to a named character and survives Stop (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:349` — external session lead with inline teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:428` — external session lead with tmux teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:63` — internal terminal lead with inline teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:120` — internal terminal lead with tmux teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:194` — new-harness background agent becomes a named teammate character (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:286` — anonymous background agent is promoted to a named character and survives Stop (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:354` — external session lead with inline teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:433` — external session lead with tmux teammate routes tools to teammate (Hooks ON / teams)
 
 ### `@area:matrix` (6 tests)
 
