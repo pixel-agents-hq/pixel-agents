@@ -44,12 +44,23 @@ export interface TeamProvider {
    *  teammates that run as independent top-level sessions tagged with the team
    *  rather than living under the lead session's own directory. Entries for such
    *  teammates carry their own `sessionId` so the host can route their hook
-   *  events directly; entries without one share the lead's session. */
+   *  events directly; entries without one share the lead's session.
+   *
+   *  Sidecar-backed entries additionally expose `toolUseId` (the lead's spawn
+   *  tool_use id) and `description` when the CLI records them — the host uses
+   *  toolUseId to match anonymous background agents (teams OFF) to the lead's
+   *  live spawn tools, and description as a display name. */
   discoverTeammates(
     projectDir: string,
     leadSessionId: string,
     teamName?: string,
-  ): Array<{ jsonlPath: string; teammateName: string; sessionId?: string }>;
+  ): Array<{
+    jsonlPath: string;
+    teammateName: string;
+    sessionId?: string;
+    toolUseId?: string;
+    description?: string;
+  }>;
 
   /** Detect a teammate spawn from a completed spawn-tool result on the LEAD's
    *  transcript. Some CLI versions never tag the lead's own records with team

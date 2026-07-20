@@ -19,13 +19,25 @@ function sidecarPath(jsonlPath: string): string {
   return jsonlPath.replace(/\.jsonl$/, '.meta.json');
 }
 
-/** Parse a sidecar's `agentType` field, if present. */
-function parseSidecarAgentType(jsonlPath: string): string | null {
+/** Parse a sidecar's metadata: `agentType` (required), plus `toolUseId` and
+ *  `description` when present (anonymous background agents record all three). */
+function parseSidecarMeta(
+  jsonlPath: string,
+): { agentType: string; toolUseId?: string; description?: string } | null {
   const metaPath = sidecarPath(jsonlPath);
   try {
     const raw = fs.readFileSync(metaPath, 'utf-8');
-    const data = JSON.parse(raw) as { agentType?: unknown };
-    return typeof data.agentType === 'string' ? data.agentType : null;
+    const data = JSON.parse(raw) as {
+      agentType?: unknown;
+      toolUseId?: unknown;
+      description?: unknown;
+    };
+    if (typeof data.agentType !== 'string') return null;
+    return {
+      agentType: data.agentType,
+      toolUseId: typeof data.toolUseId === 'string' ? data.toolUseId : undefined,
+      description: typeof data.description === 'string' ? data.description : undefined,
+    };
   } catch {
     return null;
   }
@@ -150,7 +162,13 @@ export const claudeTeamProvider: TeamProvider = {
   },
 
   discoverTeammates(projectDir, leadSessionId, teamName) {
-    const result: Array<{ jsonlPath: string; teammateName: string; sessionId?: string }> = [];
+    const result: Array<{
+      jsonlPath: string;
+      teammateName: string;
+      sessionId?: string;
+      toolUseId?: string;
+      description?: string;
+    }> = [];
 
     // Old-style: sidecar-tagged transcripts under <projectDir>/<leadSessionId>/subagents/.
     const dir = teammateDir(projectDir, leadSessionId);
@@ -163,9 +181,14 @@ export const claudeTeamProvider: TeamProvider = {
     for (const entry of entries) {
       if (!entry.endsWith('.jsonl')) continue;
       const jsonlPath = path.join(dir, entry);
-      const teammateName = parseSidecarAgentType(jsonlPath);
-      if (teammateName) {
-        result.push({ jsonlPath, teammateName });
+      const meta = parseSidecarMeta(jsonlPath);
+      if (meta) {
+        result.push({
+          jsonlPath,
+          teammateName: meta.agentType,
+          toolUseId: meta.toolUseId,
+          description: meta.description,
+        });
       }
     }
 

@@ -754,6 +754,108 @@ export function scanForTeammateFiles(
 }
 
 /**
+ * Adopt anonymous background agents (teams OFF) as named characters.
+ *
+ * When a lead's Agent tool_result reports an async launch ("Async agent
+ * launched successfully"), the spawned agent runs in-process with its
+ * transcript under `<projectDir>/<leadSessionId>/subagents/` and a sidecar
+ * carrying agentType/description/toolUseId — but NO team anywhere, so the
+ * teammate flow never engages and the only visible representation used to be
+ * the transient Subtask sub-character.
+ *
+ * The anti-spurious gate here is the sidecar's toolUseId matching one of the
+ * lead's LIVE backgroundAgentToolIds (instead of the teamName gate real teams
+ * use): only transcripts belonging to a currently-running background spawn are
+ * promoted. Completion (queue-operation on the lead) removes the character.
+ */
+export function scanForBackgroundAgentFiles(
+  leadId: number,
+  agents: AgentStateStore,
+  nextAgentIdRef: { current: number },
+  fileWatchers: Map<number, fs.FSWatcher>,
+  pollingTimers: Map<number, ReturnType<typeof setInterval>>,
+  waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
+  permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
+  persistAgents: () => void,
+  onAgentCreated?: (agent: AgentState) => void,
+): void {
+  if (!teamProvider) return;
+  const lead = agents.get(leadId);
+  if (!lead || !lead.sessionId || !lead.projectDir) return;
+  if (lead.backgroundAgentToolIds.size === 0) return;
+
+  const entries = teamProvider.discoverTeammates(lead.projectDir, lead.sessionId);
+  for (const entry of entries) {
+    if (!entry.toolUseId || !lead.backgroundAgentToolIds.has(entry.toolUseId)) continue;
+
+    let alreadyTracked = false;
+    for (const a of agents.values()) {
+      if (a.jsonlFile === entry.jsonlPath) {
+        alreadyTracked = true;
+        break;
+      }
+    }
+    if (alreadyTracked) continue;
+
+    const id = nextAgentIdRef.current++;
+    const agent: AgentState = {
+      id,
+      // In-process: shares the lead's session (like an inline teammate). Never
+      // registered with the session router -- it would overwrite the lead.
+      sessionId: lead.sessionId,
+      terminalRef: undefined,
+      isExternal: true,
+      projectDir: lead.projectDir,
+      jsonlFile: entry.jsonlPath,
+      fileOffset: 0,
+      lineBuffer: '',
+      activeToolIds: new Set(),
+      activeToolStatuses: new Map(),
+      activeToolNames: new Map(),
+      activeSubagentToolIds: new Map(),
+      activeSubagentToolNames: new Map(),
+      backgroundAgentToolIds: new Set(),
+      isWaiting: false,
+      permissionSent: false,
+      hadToolsInTurn: false,
+      hookDelivered: false,
+      lastDataAt: Date.now(),
+      linesProcessed: 0,
+      seenUnknownRecordTypes: new Set(),
+      inputTokens: 0,
+      outputTokens: 0,
+      // Teammate-like linkage, but NO teamName: config polling must not touch these.
+      agentName: entry.description ?? entry.teammateName,
+      leadAgentId: leadId,
+      spawnToolUseId: entry.toolUseId,
+    };
+
+    agents.set(id, agent);
+    persistAgents();
+
+    console.log(
+      `[Pixel Agents] Background agent promoted: "${agent.agentName}" (Agent ${id}) for lead Agent ${leadId} (${path.basename(entry.jsonlPath)})`,
+    );
+
+    // The transient Subtask sub-character is superseded by this real character.
+    agents.broadcast({ type: 'subagentClear', id: leadId, parentToolId: entry.toolUseId });
+
+    onAgentCreated?.(agent);
+
+    startFileWatching(
+      id,
+      entry.jsonlPath,
+      agents,
+      fileWatchers,
+      pollingTimers,
+      waitingTimers,
+      permissionTimers,
+    );
+    readNewLines(id, agents, waitingTimers, permissionTimers);
+  }
+}
+
+/**
  * Scan team config files (via the active TeamProvider) to detect teammate
  * dismissals. A teammate is considered dismissed if:
  *   - The team config no longer lists them in members, OR
@@ -817,6 +919,20 @@ export function scanAllTeammateFiles(
     // Only scan for lead agents (not teammates themselves)
     if (agent.leadAgentId !== undefined) continue;
     if (!agent.sessionId || !agent.projectDir) continue;
+    // Anonymous background agents (teams OFF): adopt sidecar transcripts for the
+    // lead's live background spawns. Gated by toolUseId matching, not teamName;
+    // no-ops instantly when the lead has no live background spawns.
+    scanForBackgroundAgentFiles(
+      agentId,
+      agents,
+      nextAgentIdRef,
+      fileWatchers,
+      pollingTimers,
+      waitingTimers,
+      permissionTimers,
+      persistAgents,
+      onAgentCreated,
+    );
     // Gate: basic-mode agents never get teamName set. Real team leads do, via JSONL.
     if (!agent.teamName) continue;
 

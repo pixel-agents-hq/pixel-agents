@@ -58,6 +58,10 @@ export interface AgentState {
   leadAgentId?: number;
   /** True when lead spawns teammates via tmux (run_in_background Agent calls) */
   teamUsesTmux?: boolean;
+  /** For a promoted anonymous background agent (teams OFF): the lead's Agent
+   *  tool_use id that spawned it. Links this character to the lead's
+   *  backgroundAgentToolIds entry so the queue-operation completion removes it. */
+  spawnToolUseId?: string;
 }
 
 export interface PersistedAgent {

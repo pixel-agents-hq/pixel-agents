@@ -8,6 +8,7 @@ import {
   preToolUseBash,
   sessionEndExit,
   sessionStartStartup,
+  stop,
   subagentStart,
 } from '../../../helpers/hooks';
 import { spawnInternalAgentAndWait } from '../../../helpers/internal-agent';
@@ -32,6 +33,8 @@ import {
 import {
   buildAgentSettingRecord,
   buildAssistantToolUseRecord,
+  buildAsyncAgentLaunchResultRecord,
+  buildBackgroundAgentDoneRecord,
   buildTeamMetadataRecord,
   buildTeammateSpawnResultRecord,
   seedTeamConfig,
@@ -275,6 +278,74 @@ test.describe('Hooks ON / teams', () => {
     narrator.step("waiting for the teammate's SessionEnd to despawn it");
     await expectOverlayCount(panelFrame, 1);
     narrator.check('the teammate despawned on its own SessionEnd — the lead remains');
+  });
+
+  test('anonymous background agent is promoted to a named character and survives Stop @area:teams', async ({
+    pixelAgents,
+  }) => {
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
+
+    // Unnamed Agent spawns (same CLI, no `name` in the input) take the OLD
+    // async path: "Async agent launched successfully", a transcript + sidecar
+    // under <sessionId>/subagents/, completion via queue-operation, and no team
+    // anywhere. The sidecar's toolUseId matching the lead's live background
+    // spawn promotes it to a named character; the Stop hook must not kill it.
+    const spawnToolId = 'toolu-bg-spawn';
+
+    narrator.step(
+      'arranging the run: unnamed async spawn with a sidecar, Stop mid-run, then completion',
+    );
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      claudeScenario('anonymous background agent promotion')
+        .defineSession('bg-agent', 'agent-bg1', {
+          transcriptPathTemplate: '{{projectDir}}/{{sessionId}}/subagents/agent-bg1.jsonl',
+          sidecarPathTemplate: '{{projectDir}}/{{sessionId}}/subagents/agent-bg1.meta.json',
+          sidecarJson: {
+            agentType: 'general-purpose',
+            description: 'Say hello',
+            toolUseId: spawnToolId,
+          },
+        })
+        .at(3_000)
+        .appendJsonl(
+          buildAssistantToolUseRecord(spawnToolId, 'Agent', {
+            description: 'Say hello',
+            subagent_type: 'general-purpose',
+          }),
+        )
+        .at(3_400)
+        .appendJsonl(buildAsyncAgentLaunchResultRecord(spawnToolId))
+        .at(5_000)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-bg-search', 'WebSearch', { query: 'greetings' }),
+          { session: 'bg-agent' },
+        )
+        .at(7_000)
+        .emitHook(stop('{{sessionId}}') as Record<string, unknown>)
+        .at(14_000)
+        .appendJsonl(buildBackgroundAgentDoneRecord(spawnToolId))
+        .holdOpenFor(18_000)
+        .build(),
+    );
+    await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+    await openPixelAgentsPanel(window);
+    const panelFrame = await getPixelAgentsFrame(window);
+
+    narrator.step('waiting for the async spawn to be promoted to a named character');
+    await expectOverlayVisibleWithTexts(panelFrame, ['Say hello']);
+    await expectOverlayCount(panelFrame, 2);
+    narrator.check('"Say hello" character joined — promoted from the sidecar, not a Subtask blip');
+    await expectOverlayVisibleWithTexts(panelFrame, ['Say hello', 'Searching the web']);
+    narrator.check('its own transcript animates it — "Searching the web"');
+    narrator.step('Stop fires on the lead mid-run — the promoted character must survive');
+    await panelFrame.waitForTimeout(2_000);
+    await expectOverlayCount(panelFrame, 2);
+    await expectOverlayVisibleWithTexts(panelFrame, ['Say hello']);
+    narrator.check('still two characters after Stop — the despawn bug is gone');
+    narrator.step('waiting for the completion queue-operation to despawn it');
+    await expectOverlayCount(panelFrame, 1);
+    narrator.check('the background agent despawned on completion — the lead remains');
   });
 
   test('external session lead with inline teammate routes tools to teammate @area:teams', async ({

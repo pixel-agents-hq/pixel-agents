@@ -3,7 +3,7 @@ const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
-import { hasInlineTeammates } from './teamUtils.js';
+import { hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import {
   cancelPermissionTimer,
   cancelWaitingTimer,
@@ -34,6 +34,26 @@ function isSubagentTool(toolName: string | null | undefined): boolean {
 /** Register the HookProvider that owns CLI-specific formatting and team metadata extraction. */
 export function setHookProvider(provider: HookProvider): void {
   hookProvider = provider;
+}
+
+/** Called when a lead's tool_result reports an anonymous async agent launch.
+ *  The host reacts by scanning the lead's subagents/ sidecars to promote the
+ *  spawn to its own character (fileWatcher.scanForBackgroundAgentFiles). */
+let backgroundAgentDetectedCallback: ((leadAgentId: number) => void) | null = null;
+
+export function setBackgroundAgentDetectedCallback(cb: (leadAgentId: number) => void): void {
+  backgroundAgentDetectedCallback = cb;
+}
+
+/** Called when a queue-operation record marks a background agent finished.
+ *  The host removes the promoted character for that spawn, if any. */
+let backgroundAgentCompletedCallback: ((leadAgentId: number, toolUseId: string) => void) | null =
+  null;
+
+export function setBackgroundAgentCompletedCallback(
+  cb: (leadAgentId: number, toolUseId: string) => void,
+): void {
+  backgroundAgentCompletedCallback = cb;
 }
 
 /** Format a tool status line. Delegates to the active HookProvider's formatToolStatus.
@@ -266,6 +286,10 @@ export function processTranscriptLine(
                   `[Pixel Agents] Agent ${agentId} background agent launched: ${completedToolId}`,
                 );
                 agent.backgroundAgentToolIds.add(completedToolId);
+                // Try promoting the anonymous background agent to its own named
+                // character right away (sidecar may lag; the periodic teammate
+                // scan retries until it lands).
+                backgroundAgentDetectedCallback?.(agentId);
                 continue; // don't mark as done yet
               }
 
@@ -341,6 +365,8 @@ export function processTranscriptLine(
             agent.activeToolIds.delete(completedToolId);
             agent.activeToolStatuses.delete(completedToolId);
             agent.activeToolNames.delete(completedToolId);
+            // Remove the promoted background-agent character for this spawn, if any.
+            backgroundAgentCompletedCallback?.(agentId, completedToolId);
             if (!agent.hookDelivered) {
               const toolId = completedToolId;
               setTimeout(() => {
@@ -378,8 +404,13 @@ export function processTranscriptLine(
         if (!agent.hookDelivered) {
           agents.broadcast({ type: 'agentToolsClear', id: agentId });
         }
-        // Re-send background agent tools so webview keeps their sub-agents alive
+        // Re-send background agent tools so webview keeps their sub-agents alive.
+        // toolName + runInBackground are REQUIRED: without them the webview can't
+        // recognize the re-sent tool as a subagent spawn and never recreates the
+        // Subtask sub-character. Skip tools whose agent was promoted to its own
+        // character -- re-sending would spawn a ghost Subtask alongside it.
         for (const toolId of agent.backgroundAgentToolIds) {
+          if (hasPromotedBackgroundAgent(agentId, toolId, agents)) continue;
           const status = agent.activeToolStatuses.get(toolId);
           if (status) {
             agents.broadcast({
@@ -387,6 +418,8 @@ export function processTranscriptLine(
               id: agentId,
               toolId,
               status,
+              toolName: agent.activeToolNames.get(toolId),
+              runInBackground: true,
             });
           }
         }

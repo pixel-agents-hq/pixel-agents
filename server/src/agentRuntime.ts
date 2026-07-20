@@ -20,6 +20,7 @@ import {
   ensureProjectScan,
   isTrackedProjectDir,
   reassignAgentToFile,
+  scanForBackgroundAgentFiles,
   scanForTeammateFiles,
   setAgentRemovalCallback,
   setDismissalTracker,
@@ -36,7 +37,11 @@ import { HookEventHandler } from './hookEventHandler.js';
 import { PathSet } from './pathKey.js';
 import { SessionRouter } from './sessionRouter.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
-import { setHookProvider } from './transcriptParser.js';
+import {
+  setBackgroundAgentCompletedCallback,
+  setBackgroundAgentDetectedCallback,
+  setHookProvider,
+} from './transcriptParser.js';
 import type { AgentState } from './types.js';
 
 /** Callbacks that adapters register for platform-specific behavior. */
@@ -89,6 +94,29 @@ export class AgentRuntime {
     // New-style teammates run their own sessions; registering routes their hook
     // events (PreToolUse, Stop, SessionEnd) directly to the teammate agent.
     setTeammateRegisterCallback((sessionId, agentId) => this.registerAgent(sessionId, agentId));
+    // Anonymous background agents (teams OFF): promote to named characters on
+    // spawn, remove when the completion queue-operation lands on the lead.
+    setBackgroundAgentDetectedCallback((leadId) => {
+      scanForBackgroundAgentFiles(
+        leadId,
+        this.store,
+        this.store.nextAgentId,
+        this.fileWatchers,
+        this.pollingTimers,
+        this.waitingTimers,
+        this.permissionTimers,
+        () => this.store.persist(),
+        undefined,
+      );
+    });
+    setBackgroundAgentCompletedCallback((leadId, toolUseId) => {
+      for (const [id, agent] of this.store) {
+        if (agent.leadAgentId === leadId && agent.spawnToolUseId === toolUseId) {
+          this.removeTeammate(id, 'background-complete');
+          break;
+        }
+      }
+    });
 
     this.hookEventHandler = new HookEventHandler(
       store,
@@ -215,9 +243,9 @@ export class AgentRuntime {
         if (!agent) return;
         this.dismissalTracker.clearSeededMtime(agent.jsonlFile);
         this.dismissalTracker.dismiss(agent.jsonlFile);
-        if (agent.isTeamLead) {
-          this.removeTeammates(agentId);
-        }
+        // Covers real team leads AND leads of promoted background agents
+        // (which have children but no isTeamLead). No-op when childless.
+        this.removeTeammates(agentId);
         if (agent.isExternal) {
           this.unregisterAgent(agent.sessionId);
           this.removeAgent(agentId);

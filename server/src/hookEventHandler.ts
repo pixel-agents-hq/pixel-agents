@@ -4,7 +4,7 @@ import type { AgentEvent, HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { SESSION_END_GRACE_MS } from './constants.js';
 import type { SessionRouter } from './sessionRouter.js';
-import { getInlineTeammates, hasInlineTeammates } from './teamUtils.js';
+import { getInlineTeammates, hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
 import type { AgentState } from './types.js';
 
@@ -738,8 +738,13 @@ export class HookEventHandler {
       }
     }
     this.agents.broadcast({ type: 'agentToolsClear', id: agentId });
-    // Re-send background agent tools to restore them after the clear
+    // Re-send background agent tools to restore them after the clear.
+    // toolName + runInBackground are REQUIRED: without them the webview can't
+    // recognize the re-sent tool as a subagent spawn and never recreates the
+    // Subtask sub-character (extractToolName("Subtask: ...") is not a tool).
+    // Skip tools whose background agent was promoted to its own character.
     for (const toolId of agent.backgroundAgentToolIds) {
+      if (hasPromotedBackgroundAgent(agentId, toolId, this.agents)) continue;
       const status = agent.activeToolStatuses.get(toolId);
       if (status) {
         this.agents.broadcast({
@@ -747,6 +752,8 @@ export class HookEventHandler {
           id: agentId,
           toolId,
           status,
+          toolName: agent.activeToolNames.get(toolId),
+          runInBackground: true,
         });
       }
     }

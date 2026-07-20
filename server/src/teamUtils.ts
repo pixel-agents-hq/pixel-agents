@@ -39,3 +39,18 @@ export function hasInlineTeammates(leadId: number, agents: AgentStateStore): boo
   }
   return false;
 }
+
+/** Does this lead have a promoted background-agent character for the given
+ *  spawn tool id? Used by the turn-end re-send paths: a background tool whose
+ *  agent was promoted must NOT be re-broadcast, or the webview would recreate
+ *  the Subtask sub-character alongside the real one. */
+export function hasPromotedBackgroundAgent(
+  leadId: number,
+  toolUseId: string,
+  agents: AgentStateStore,
+): boolean {
+  for (const a of agents.values()) {
+    if (a.leadAgentId === leadId && a.spawnToolUseId === toolUseId) return true;
+  }
+  return false;
+}
