@@ -37,6 +37,7 @@ import {
 } from '../../../helpers/mock-claude';
 import {
   closeAgentFromOverlay,
+  expectAgentOverlayGone,
   expectNoOverlay,
   expectNoOverlayWithTexts,
   expectOverlayCount,
@@ -363,6 +364,12 @@ test.describe('Hooks ON / lifecycle', () => {
     narrator.check('old character shows "Running: npm run before-resume"');
 
     narrator.step('resume arrives AFTER the grace window — the old character should be cleaned up');
+    // Id-scoped on purpose: the replacement session renders ~700ms after the
+    // grace-expiry removal, so a global count-0 assertion has to catch a sub-
+    // second all-gone window that slow CI runners poll right past (macOS CI
+    // failed exactly this way). The contract is "the OLD character goes away".
+    await expectAgentOverlayGone(frame, oldAgentId, 8_000);
+    narrator.check('old character removed');
     await expectOverlayVisible(frame, 'Running: npm run late-resume', 10_000);
     await expectOverlayCount(frame, 1);
     const [newAgentId] = await readAgentOverlayIds(frame);

@@ -134,6 +134,18 @@ export async function readAgentOverlayTexts(
   );
 }
 
+/** Wait for a specific agent's overlay to disappear. Prefer this over a global
+ *  count-0 assertion when a replacement character may render around the same
+ *  time — the global 0-count window can be shorter than Playwright's poll
+ *  interval on slow runners. */
+export async function expectAgentOverlayGone(
+  frame: OverlaySurface,
+  agentId: number,
+  timeout = OVERLAY_TIMEOUT_MS,
+): Promise<void> {
+  await expect(getOverlayByAgentId(frame, agentId)).toHaveCount(0, { timeout });
+}
+
 export async function expectSingleAgentOverlay(frame: OverlaySurface): Promise<number> {
   await expectOverlayCount(frame, 1);
   const ids = await readAgentOverlayIds(frame);
