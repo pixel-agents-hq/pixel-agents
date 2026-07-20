@@ -54,6 +54,11 @@ export interface AgentState {
   // -- Agent Teams --
   teamName?: string;
   agentName?: string;
+  /** True when teamName was read from the session's own record tags (tmux/
+   *  inline teams, teammate sessions). Tag identity is authoritative: spawn-
+   *  result re-latching (implicit-team generations on resume) only applies to
+   *  tag-less leads. Transient — not persisted. */
+  teamNameFromTags?: boolean;
   isTeamLead?: boolean;
   leadAgentId?: number;
   /** True when lead spawns teammates via tmux (run_in_background Agent calls) */

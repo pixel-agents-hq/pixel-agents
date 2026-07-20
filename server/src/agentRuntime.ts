@@ -41,6 +41,7 @@ import {
   setBackgroundAgentCompletedCallback,
   setBackgroundAgentDetectedCallback,
   setHookProvider,
+  setTeamSwitchCallback,
 } from './transcriptParser.js';
 import type { AgentState } from './types.js';
 
@@ -115,6 +116,17 @@ export class AgentRuntime {
           this.removeTeammate(id, 'background-complete');
           break;
         }
+      }
+    });
+    // A resumed lead that spawns again belongs to a freshly minted implicit
+    // team; its previous team's teammates are defunct. Promoted anonymous
+    // background agents (leadAgentId but no teamName) are left untouched.
+    setTeamSwitchCallback((leadId, previousTeamName) => {
+      const stale = [...this.store].filter(
+        ([, a]) => a.leadAgentId === leadId && a.teamName === previousTeamName,
+      );
+      for (const [id] of stale) {
+        this.removeTeammate(id, 'team-switch');
       }
     });
 

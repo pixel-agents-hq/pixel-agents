@@ -56,6 +56,18 @@ export function setBackgroundAgentCompletedCallback(
   backgroundAgentCompletedCallback = cb;
 }
 
+/** Called when a lead's spawn result names a DIFFERENT team than the one it is
+ *  latched to. Every CLI run of a session mints a fresh implicit team, so a
+ *  resumed lead that spawns again belongs to the new team; the host removes
+ *  the defunct team's teammate characters. */
+let teamSwitchCallback: ((leadAgentId: number, previousTeamName: string) => void) | null = null;
+
+export function setTeamSwitchCallback(
+  cb: (leadAgentId: number, previousTeamName: string) => void,
+): void {
+  teamSwitchCallback = cb;
+}
+
 /** Format a tool status line. Delegates to the active HookProvider's formatToolStatus.
  *  Invariant: a provider is registered before any transcript lines are parsed. */
 export function formatToolStatus(toolName: string, input: Record<string, unknown>): string {
@@ -82,6 +94,7 @@ export function processTranscriptLine(
     const teamMeta = hookProvider?.team?.extractTeamMetadataFromRecord(record);
     if (teamMeta?.teamName && teamMeta.teamName !== agent.teamName) {
       agent.teamName = teamMeta.teamName;
+      agent.teamNameFromTags = true;
       agent.agentName = teamMeta.agentName;
       agent.isTeamLead = undefined;
       agent.leadAgentId = undefined;
@@ -257,7 +270,19 @@ export function processTranscriptLine(
                     block.content,
                   )
                 : null;
-              if (teammateSpawn && !agent.teamName) {
+              if (
+                teammateSpawn &&
+                !agent.teamNameFromTags &&
+                agent.teamName !== teammateSpawn.teamName
+              ) {
+                // Last-wins for tag-less leads: a resumed session's transcript
+                // carries spawn results from several team generations (each CLI
+                // run mints a fresh session-<8hex> team). Re-latch to the
+                // newest team and drop the defunct team's teammates. Tag-
+                // derived identity (tmux/inline, teammate sessions) stays.
+                if (agent.teamName) {
+                  teamSwitchCallback?.(agentId, agent.teamName);
+                }
                 agent.teamName = teammateSpawn.teamName;
                 agent.isTeamLead = true;
                 if (debug) {
@@ -596,8 +621,9 @@ function processProgressRecord(
 
 /**
  * Link teammates within the same team.
- * The lead is the agent with no agentName (or the first one detected in the team).
- * Teammates get leadAgentId pointing to the lead.
+ * The lead is the agent with no agentName (or one already marked isTeamLead).
+ * Teammates get leadAgentId pointing to the lead. If only named teammates are
+ * tracked, linking waits until the lead is detected.
  */
 function linkTeammates(_agentId: number, agent: AgentState, agents: AgentStateStore): void {
   const teamName = agent.teamName;
@@ -622,7 +648,7 @@ function linkTeammates(_agentId: number, agent: AgentState, agents: AgentStateSt
     }
   }
   if (!lead) {
-    // No agent without agentName -- use existing isTeamLead or first agent
+    // No agent without agentName -- an already-marked lead may carry one
     for (const a of teamAgents) {
       if (a.isTeamLead) {
         lead = a;
@@ -631,7 +657,10 @@ function linkTeammates(_agentId: number, agent: AgentState, agents: AgentStateSt
     }
   }
   if (!lead) {
-    lead = teamAgents[0];
+    // Every tracked member carries an agentName: they are all teammates and
+    // the real lead's session isn't tracked (yet). Don't badge a teammate as
+    // LEAD -- this re-runs and links properly once the lead is detected.
+    return;
   }
 
   // Update all team members: mark lead, clear stale lead flags, link teammates

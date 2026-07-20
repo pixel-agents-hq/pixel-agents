@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
-import { processTranscriptLine, setHookProvider } from '../src/transcriptParser.js';
+import {
+  processTranscriptLine,
+  setHookProvider,
+  setTeamSwitchCallback,
+} from '../src/transcriptParser.js';
 import type { AgentState } from '../src/types.js';
 
 /** Minimal AgentState for testing (mirrors hookEventHandler.test.ts). */
@@ -68,7 +72,10 @@ describe('transcriptParser: teammate spawn results (new-harness implicit teams)'
       messages.push(msg as Record<string, unknown>);
     });
     vi.useFakeTimers();
-    return () => vi.useRealTimers();
+    return () => {
+      vi.useRealTimers();
+      setTeamSwitchCallback(() => {});
+    };
   });
 
   it('marks the agent as team lead when an Agent spawn result carries agent_id@team', () => {
@@ -128,8 +135,15 @@ describe('transcriptParser: teammate spawn results (new-harness implicit teams)'
   });
 
   it('does not overwrite team identity already established from record tags', () => {
-    agent.teamName = 'explicit-team';
-    agent.agentName = undefined;
+    // Tag-derived identity (tmux/inline leads) is authoritative over spawn results.
+    processTranscriptLine(
+      1,
+      JSON.stringify({ type: 'assistant', teamName: 'explicit-team', message: { content: [] } }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    expect(agent.teamName).toBe('explicit-team');
     processTranscriptLine(
       1,
       agentToolUseRecord('toolu_1', 'Agent', { name: 'helper' }),
@@ -145,6 +159,108 @@ describe('transcriptParser: teammate spawn results (new-harness implicit teams)'
       permissionTimers,
     );
     expect(agent.teamName).toBe('explicit-team');
+  });
+
+  it('re-latches a resumed tag-less lead to the newest team and reports the switch', () => {
+    const switches: Array<{ leadId: number; previousTeam: string }> = [];
+    setTeamSwitchCallback((leadId, previousTeam) => switches.push({ leadId, previousTeam }));
+
+    processTranscriptLine(
+      1,
+      agentToolUseRecord('toolu_1', 'Agent', { name: 'demo-15s' }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    processTranscriptLine(
+      1,
+      toolResultRecord('toolu_1', 'Spawned successfully.\nagent_id: demo-15s@session-aaaa1111'),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    expect(agent.teamName).toBe('session-aaaa1111');
+
+    // Resume: a new CLI run of the same session mints a fresh implicit team.
+    processTranscriptLine(
+      1,
+      agentToolUseRecord('toolu_2', 'Agent', { name: 'demo-15s' }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    processTranscriptLine(
+      1,
+      toolResultRecord('toolu_2', 'Spawned successfully.\nagent_id: demo-15s@session-bbbb2222'),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+
+    expect(agent.teamName).toBe('session-bbbb2222');
+    expect(agent.isTeamLead).toBe(true);
+    expect(switches).toEqual([{ leadId: 1, previousTeam: 'session-aaaa1111' }]);
+    const teamInfos = messages.filter((m) => m.type === 'agentTeamInfo');
+    expect(teamInfos[teamInfos.length - 1]).toMatchObject({
+      id: 1,
+      teamName: 'session-bbbb2222',
+      isTeamLead: true,
+    });
+  });
+
+  it('does not badge an adopted teammate session as LEAD when its lead is not tracked', () => {
+    processTranscriptLine(
+      1,
+      JSON.stringify({
+        type: 'user',
+        teamName: 'session-abc12345',
+        agentName: 'demo-15s',
+        message: { content: 'hello' },
+      }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    expect(agent.agentName).toBe('demo-15s');
+    expect(agent.teamName).toBe('session-abc12345');
+    expect(agent.isTeamLead).toBeFalsy();
+  });
+
+  it('links an earlier-adopted teammate once the lead latches onto the team', () => {
+    const teammate = createTestAgent({ id: 2, sessionId: 'tm-session' });
+    agents.set(2, teammate);
+    processTranscriptLine(
+      2,
+      JSON.stringify({
+        type: 'user',
+        teamName: 'session-abc12345',
+        agentName: 'demo-15s',
+        message: { content: 'hello' },
+      }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    expect(teammate.leadAgentId).toBeUndefined();
+
+    processTranscriptLine(
+      1,
+      agentToolUseRecord('toolu_1', 'Agent', { name: 'demo-15s' }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    processTranscriptLine(
+      1,
+      toolResultRecord('toolu_1', 'Spawned successfully.\nagent_id: demo-15s@session-abc12345'),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+
+    expect(agent.isTeamLead).toBe(true);
+    expect(teammate.leadAgentId).toBe(1);
+    expect(teammate.isTeamLead).toBe(false);
   });
 
   it('still parks old-style async agent launches as background tools', () => {

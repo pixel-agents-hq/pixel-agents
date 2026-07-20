@@ -371,7 +371,9 @@ export function restoreAgents(
       outputTokens: 0,
       teamName: p.teamName,
       agentName: p.agentName,
-      isTeamLead: p.isTeamLead,
+      // A named agent is a teammate; never restore it as a lead (guards against
+      // state persisted before linkTeammates stopped promoting teammates).
+      isTeamLead: p.agentName ? undefined : p.isTeamLead,
       leadAgentId: p.leadAgentId,
       teamUsesTmux: p.teamUsesTmux,
     };
