@@ -4,7 +4,9 @@ import { test } from '../../../fixtures/pixel-agents';
 import {
   permissionRequest,
   preToolUseAgent,
+  preToolUseAgentSpawn,
   preToolUseBash,
+  sessionEndExit,
   sessionStartStartup,
   subagentStart,
 } from '../../../helpers/hooks';
@@ -28,8 +30,10 @@ import {
   expectOverlayVisibleWithTexts,
 } from '../../../helpers/office';
 import {
+  buildAgentSettingRecord,
   buildAssistantToolUseRecord,
   buildTeamMetadataRecord,
+  buildTeammateSpawnResultRecord,
   seedTeamConfig,
 } from '../../../helpers/team';
 import { getPixelAgentsFrame, openPixelAgentsPanel, setSettings } from '../../../helpers/webview';
@@ -181,6 +185,96 @@ test.describe('Hooks ON / teams', () => {
     narrator.check('"Running: npm test" is routed to the tmux teammate, not the lead');
     await expectTeammateActivity(panelFrame, 'Needs approval');
     narrator.check('"Needs approval" is routed to the tmux teammate, not the lead');
+  });
+
+  test('new-harness background agent becomes a named teammate character @area:teams', async ({
+    pixelAgents,
+  }) => {
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
+
+    // Newer harnesses (Claude 5) run every Agent spawn in the background as an
+    // implicit-team teammate: the tool_input has NO run_in_background flag, the
+    // tool_result resolves in seconds with `agent_id: <name>@<team>`, and the
+    // agent runs as its OWN top-level session whose records carry teamName/
+    // agentName tags. The lead's records carry no team tags at all.
+    const role = 'broadcast-researcher';
+    const teamName = uniqueTeamName('session-nh');
+    const teammateAlias = 'nh-teammate';
+    const teammateSessionId = 'aaaaaaaa-1111-4111-8111-e2e000000001';
+
+    narrator.step('seeding the implicit team config the harness writes on spawn');
+    seedTeamConfig(tmpHome, teamName, ['team-lead', role]);
+    await waitForClaudeHookSetup(tmpHome);
+    narrator.step(
+      'arranging the run: unflagged Agent spawn, quick spawn result, teammate as its own top-level tagged session',
+    );
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      claudeScenario('new-harness background agent teammate')
+        .defineSession(teammateAlias, teammateSessionId)
+        .at(3_000)
+        .appendJsonl(
+          buildAssistantToolUseRecord('toolu-nh-spawn', 'Agent', {
+            name: role,
+            description: 'Research broadcast safety',
+            subagent_type: 'general-purpose',
+          }),
+        )
+        .at(3_200)
+        .emitHook(
+          preToolUseAgentSpawn('{{sessionId}}', 'Research broadcast safety', role) as Record<
+            string,
+            unknown
+          >,
+        )
+        .at(6_000)
+        .appendJsonl(buildTeammateSpawnResultRecord('toolu-nh-spawn', role, teamName))
+        .at(6_200)
+        .appendJsonl(buildAgentSettingRecord(), { session: teammateAlias })
+        .at(6_400)
+        .appendJsonl(buildTeamMetadataRecord(teamName, role), { session: teammateAlias })
+        .at(7_000)
+        .emitHook(
+          sessionStartStartup(
+            `{{sessions.${teammateAlias}.sessionId}}`,
+            `{{sessions.${teammateAlias}.cwd}}`,
+            `{{sessions.${teammateAlias}.transcriptPath}}`,
+          ) as Record<string, unknown>,
+        )
+        .at(10_000)
+        .emitHook(
+          preToolUseBash(`{{sessions.${teammateAlias}.sessionId}}`, 'npm test') as Record<
+            string,
+            unknown
+          >,
+        )
+        .at(17_000)
+        .emitHook(
+          sessionEndExit(`{{sessions.${teammateAlias}.sessionId}}`) as Record<string, unknown>,
+        )
+        .holdOpenFor(21_000)
+        .build(),
+    );
+    await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+    await openPixelAgentsPanel(window);
+    const panelFrame = await getPixelAgentsFrame(window);
+
+    narrator.step('waiting for the spawn result to mark the internal agent as team lead');
+    await expectOverlayVisibleWithTexts(panelFrame, ['LEAD']);
+    narrator.check(
+      'the lead is marked "LEAD" purely from the spawn result — its records have no team tags',
+    );
+    narrator.step('waiting for the tagged top-level session to appear as a named teammate');
+    await expectOverlayVisibleWithTexts(panelFrame, [role]);
+    await expectOverlayCount(panelFrame, 2);
+    narrator.check(`the ${role} teammate joined — two characters, no ghost Subtask left behind`);
+    narrator.step("waiting for the teammate's own-session hooks to route to it");
+    await expectOverlayVisibleWithTexts(panelFrame, [role, 'Running: npm test']);
+    await expectNoOverlayWithTexts(panelFrame, ['LEAD', 'Running: npm test']);
+    narrator.check('"Running: npm test" lands on the teammate only — its own session routes to it');
+    narrator.step("waiting for the teammate's SessionEnd to despawn it");
+    await expectOverlayCount(panelFrame, 1);
+    narrator.check('the teammate despawned on its own SessionEnd — the lead remains');
   });
 
   test('external session lead with inline teammate routes tools to teammate @area:teams', async ({

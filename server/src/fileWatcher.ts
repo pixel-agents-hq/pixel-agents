@@ -565,6 +565,18 @@ export function setTeammateRemovalCallback(cb: (teammateAgentId: number) => void
   teammateRemovalCallback = cb;
 }
 
+/** Callback that registers a teammate's OWN session with the hook router.
+ *  Only invoked for teammates that run independent sessions (new-style implicit
+ *  teams); inline teammates share the lead's session and are never registered. */
+let teammateRegisterCallback: ((sessionId: string, agentId: number) => void) | null = null;
+
+/** Register the callback used to route an own-session teammate's hook events to it. */
+export function setTeammateRegisterCallback(
+  cb: (sessionId: string, agentId: number) => void,
+): void {
+  teammateRegisterCallback = cb;
+}
+
 /** Register the TeamProvider that describes the active CLI's Lead+Teammates pattern. */
 export function setTeamProvider(provider: TeamProvider): void {
   teamProvider = provider;
@@ -612,11 +624,12 @@ export function scanForTeammateFiles(
   onAgentCreated?: (agent: AgentState) => void,
 ): void {
   if (!teamProvider) return;
-  const teammates = teamProvider.discoverTeammates(projectDir, sessionId);
-
   const parentAgent = agents.get(parentAgentId);
+  // teamName lets the provider also find new-style teammates: independent
+  // top-level sessions tagged with the team, not files under the lead's dir.
+  const teammates = teamProvider.discoverTeammates(projectDir, sessionId, parentAgent?.teamName);
 
-  for (const { jsonlPath: file, teammateName } of teammates) {
+  for (const { jsonlPath: file, teammateName, sessionId: ownSessionId } of teammates) {
     if (knownTeammateFiles.has(file)) continue;
 
     // Also check if any existing agent already tracks this file
@@ -657,6 +670,10 @@ export function scanForTeammateFiles(
       existingTeammate.linesProcessed = 0;
       existingTeammate.isWaiting = false;
       existingTeammate.teamUsesTmux = parentAgent?.teamUsesTmux;
+      if (ownSessionId && existingTeammate.sessionId !== ownSessionId) {
+        existingTeammate.sessionId = ownSessionId;
+        teammateRegisterCallback?.(ownSessionId, existingTeammate.id);
+      }
       startFileWatching(
         existingTeammate.id,
         file,
@@ -672,9 +689,10 @@ export function scanForTeammateFiles(
 
     const id = nextAgentIdRef.current++;
     // Read from start -- teammate JSONL is usually small and we want full tool history
+    // New-style teammates carry their own session id; inline teammates share the lead's.
     const agent: AgentState = {
       id,
-      sessionId,
+      sessionId: ownSessionId ?? sessionId,
       terminalRef: undefined,
       isExternal: true,
       projectDir,
@@ -712,6 +730,13 @@ export function scanForTeammateFiles(
     console.log(
       `[Pixel Agents] Teammate detected: "${teammateName}" (Agent ${id}) for parent Agent ${parentAgentId} (${path.basename(file)})`,
     );
+
+    // Own-session teammates get registered so their hook events route directly
+    // to them. Inline teammates share the lead's session and must NOT be
+    // registered -- they would overwrite the lead in the session router.
+    if (ownSessionId) {
+      teammateRegisterCallback?.(ownSessionId, id);
+    }
 
     onAgentCreated?.(agent);
 

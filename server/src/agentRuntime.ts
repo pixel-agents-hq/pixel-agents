@@ -24,6 +24,7 @@ import {
   setAgentRemovalCallback,
   setDismissalTracker,
   setHookProvider as setFileWatcherHookProvider,
+  setTeammateRegisterCallback,
   setTeammateRemovalCallback,
   setTeamProvider,
   startExternalSessionScanning,
@@ -85,6 +86,9 @@ export class AgentRuntime {
     }
     setAgentRemovalCallback((id) => this.removeAgent(id));
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
+    // New-style teammates run their own sessions; registering routes their hook
+    // events (PreToolUse, Stop, SessionEnd) directly to the teammate agent.
+    setTeammateRegisterCallback((sessionId, agentId) => this.registerAgent(sessionId, agentId));
 
     this.hookEventHandler = new HookEventHandler(
       store,
@@ -99,7 +103,48 @@ export class AgentRuntime {
     this.hookEventHandler.setLifecycleCallbacks({
       onExternalSessionDetected: (sessionId, transcriptPath, cwd) => {
         const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
+        // Teammate session of a tracked lead? Attach it as a teammate character
+        // instead of adopting a generic external agent -- and regardless of the
+        // Watch All Sessions setting: tracking the lead is the opt-in for its
+        // team. (Newer harnesses run every spawned agent as an independent
+        // top-level session that fires its own hooks.)
+        if (transcriptPath) {
+          const teamMeta = provider.team?.getTeamMetadataForSession(transcriptPath);
+          if (teamMeta?.teamName && teamMeta.agentName) {
+            for (const [leadId, lead] of this.store) {
+              if (lead.teamName !== teamMeta.teamName || lead.leadAgentId !== undefined) continue;
+              console.log(
+                `[Pixel Agents] Hook: session ${sessionId.slice(0, 8)}... is teammate "${teamMeta.agentName}" of Agent ${leadId}, attaching`,
+              );
+              scanForTeammateFiles(
+                lead.projectDir,
+                lead.sessionId,
+                leadId,
+                this.store.nextAgentId,
+                this.store,
+                this.fileWatchers,
+                this.pollingTimers,
+                this.waitingTimers,
+                this.permissionTimers,
+                () => this.store.persist(),
+                undefined,
+              );
+              break;
+            }
+            // Done only if discovery actually adopted this transcript. Old-style
+            // tmux teammates (non-UUID transcript names outside discovery's scan)
+            // fall through to normal external adoption and self-identify from
+            // their record tags.
+            for (const a of this.store.values()) {
+              if (a.jsonlFile === transcriptPath) return;
+            }
+          }
+        }
         if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
+          console.log(
+            `[Pixel Agents] Hook: external session ${sessionId.slice(0, 8)}... not adopted ` +
+              `(project untracked, Watch All Sessions off)`,
+          );
           return;
         }
         adoptExternalSessionFromHook(

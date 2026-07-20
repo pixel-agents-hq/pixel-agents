@@ -38,11 +38,30 @@ export interface TeamProvider {
   /** Find all teammate transcripts belonging to a given lead session.
    *  Provider chooses how to discover them (filesystem scan, API call, cache).
    *  The returned `jsonlPath` is an opaque transcript handle the caller hands
-   *  back to adoption code; the `teammateName` identifies which team member it is. */
+   *  back to adoption code; the `teammateName` identifies which team member it is.
+   *
+   *  `teamName` (when the lead's team is known) lets the provider also find
+   *  teammates that run as independent top-level sessions tagged with the team
+   *  rather than living under the lead session's own directory. Entries for such
+   *  teammates carry their own `sessionId` so the host can route their hook
+   *  events directly; entries without one share the lead's session. */
   discoverTeammates(
     projectDir: string,
     leadSessionId: string,
-  ): Array<{ jsonlPath: string; teammateName: string }>;
+    teamName?: string,
+  ): Array<{ jsonlPath: string; teammateName: string; sessionId?: string }>;
+
+  /** Detect a teammate spawn from a completed spawn-tool result on the LEAD's
+   *  transcript. Some CLI versions never tag the lead's own records with team
+   *  metadata; the only lead-side evidence of the team is the spawn tool's
+   *  result (Claude: `agent_id: <name>@<team>` in the Agent tool_result).
+   *  Returns the spawned teammate's identity, or null when the result is not a
+   *  teammate spawn. `resultContent` is the raw tool_result content (string or
+   *  content-block array). */
+  extractTeammateSpawnFromToolResult?(
+    toolName: string,
+    resultContent: unknown,
+  ): { teamName: string; teammateName: string } | null;
 
   /** Return team metadata for a session if it participates in a team.
    *  Provider decides where to look (sidecar file, JSONL header, DB, etc.).
@@ -59,6 +78,8 @@ export interface TeamProvider {
 
   /** Get the currently-active member names of a team. Source of truth for team membership.
    *  Returns the Set of names, or null if the team can't be read (team dissolved / no data).
+   *  Members the CLI has marked as finished (Claude: `isActive: false`) are excluded, so
+   *  completed one-shot teammates despawn via the periodic config scan.
    *
    *  Claude reads `~/.claude/teams/<teamName>/config.json`'s `members[].name` array.
    *  Providers using API-driven team stores implement without a file path. */

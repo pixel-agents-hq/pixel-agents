@@ -120,6 +120,152 @@ describe('claudeTeamProvider', () => {
     });
   });
 
+  describe('extractTeammateSpawnFromToolResult', () => {
+    const spawnText =
+      'Spawned successfully. (This tool result is internal metadata.)\n' +
+      'agent_id: wa-broadcast-safety-research@session-029c4a18\nname: wa-broadcast-safety-research';
+
+    it('extracts teammate name + team from an Agent spawn result (block array)', () => {
+      expect(
+        claudeTeamProvider.extractTeammateSpawnFromToolResult!('Agent', [
+          { type: 'text', text: spawnText },
+        ]),
+      ).toEqual({
+        teammateName: 'wa-broadcast-safety-research',
+        teamName: 'session-029c4a18',
+      });
+    });
+
+    it('extracts from plain string content', () => {
+      expect(claudeTeamProvider.extractTeammateSpawnFromToolResult!('Agent', spawnText)).toEqual({
+        teammateName: 'wa-broadcast-safety-research',
+        teamName: 'session-029c4a18',
+      });
+    });
+
+    it('returns null for non-spawn tools even when the text matches', () => {
+      expect(claudeTeamProvider.extractTeammateSpawnFromToolResult!('Task', spawnText)).toBeNull();
+      expect(claudeTeamProvider.extractTeammateSpawnFromToolResult!('Read', spawnText)).toBeNull();
+    });
+
+    it('returns null for Agent results without an agent_id line', () => {
+      expect(
+        claudeTeamProvider.extractTeammateSpawnFromToolResult!('Agent', [
+          { type: 'text', text: 'Async agent launched successfully.' },
+        ]),
+      ).toBeNull();
+      expect(claudeTeamProvider.extractTeammateSpawnFromToolResult!('Agent', undefined)).toBeNull();
+    });
+  });
+
+  describe('discoverTeammates (new-style: top-level tagged sessions)', () => {
+    const fsMod = require('fs') as typeof import('fs');
+    const tmpRoot = path.join(os.tmpdir(), 'pixel-agents-discover-new-' + Date.now());
+    const LEAD_SESSION = '11111111-1111-4111-8111-111111111111';
+    const MATE_SESSION = '22222222-2222-4222-8222-222222222222';
+    const TEAM = 'session-abc12345';
+
+    /** Teammate transcript as newer harnesses write it: setting records first
+     *  (no team tags), tags appear on the first user record. */
+    function writeTeammateFile(sessionId: string, teamName: string, agentName: string): string {
+      const p = path.join(tmpRoot, `${sessionId}.jsonl`);
+      fsMod.writeFileSync(
+        p,
+        JSON.stringify({ type: 'agent-setting', agentSetting: 'general-purpose', sessionId }) +
+          '\n' +
+          JSON.stringify({ type: 'mode', mode: 'default' }) +
+          '\n' +
+          JSON.stringify({
+            type: 'user',
+            teamName,
+            agentName,
+            message: { role: 'user', content: 'go' },
+          }) +
+          '\n',
+      );
+      return p;
+    }
+
+    afterEach(() => {
+      try {
+        fsMod.rmSync(tmpRoot, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+    });
+
+    it('finds top-level teammate sessions tagged with the team, with their own sessionId', () => {
+      fsMod.mkdirSync(tmpRoot, { recursive: true });
+      // Lead's own transcript: untagged user record, must never be a teammate.
+      fsMod.writeFileSync(
+        path.join(tmpRoot, `${LEAD_SESSION}.jsonl`),
+        JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }) + '\n',
+      );
+      writeTeammateFile(MATE_SESSION, TEAM, 'wa-research');
+
+      const result = claudeTeamProvider.discoverTeammates(tmpRoot, LEAD_SESSION, TEAM);
+      expect(result).toEqual([
+        {
+          jsonlPath: path.join(tmpRoot, `${MATE_SESSION}.jsonl`),
+          teammateName: 'wa-research',
+          sessionId: MATE_SESSION,
+        },
+      ]);
+    });
+
+    it('ignores sessions tagged with a different team', () => {
+      fsMod.mkdirSync(tmpRoot, { recursive: true });
+      writeTeammateFile(MATE_SESSION, 'session-other000', 'stranger');
+      expect(claudeTeamProvider.discoverTeammates(tmpRoot, LEAD_SESSION, TEAM)).toEqual([]);
+    });
+
+    it('skips new-style scanning entirely when teamName is not provided', () => {
+      fsMod.mkdirSync(tmpRoot, { recursive: true });
+      writeTeammateFile(MATE_SESSION, TEAM, 'wa-research');
+      expect(claudeTeamProvider.discoverTeammates(tmpRoot, LEAD_SESSION)).toEqual([]);
+    });
+
+    it('re-checks settings-only files on later scans (tags arrive after creation)', () => {
+      fsMod.mkdirSync(tmpRoot, { recursive: true });
+      const p = path.join(tmpRoot, `${MATE_SESSION}.jsonl`);
+      // Freshly created transcript: only setting records so far.
+      fsMod.writeFileSync(
+        p,
+        JSON.stringify({ type: 'agent-setting', agentSetting: 'general-purpose' }) + '\n',
+      );
+      expect(claudeTeamProvider.discoverTeammates(tmpRoot, LEAD_SESSION, TEAM)).toEqual([]);
+      // Tagged user record lands -> next scan must pick it up.
+      fsMod.appendFileSync(
+        p,
+        JSON.stringify({
+          type: 'user',
+          teamName: TEAM,
+          agentName: 'late-bloomer',
+          message: { role: 'user', content: 'go' },
+        }) + '\n',
+      );
+      const result = claudeTeamProvider.discoverTeammates(tmpRoot, LEAD_SESSION, TEAM);
+      expect(result.map((t) => t.teammateName)).toEqual(['late-bloomer']);
+    });
+
+    it('combines old-style sidecar teammates with new-style tagged sessions', () => {
+      const sessDir = path.join(tmpRoot, LEAD_SESSION, 'subagents');
+      fsMod.mkdirSync(sessDir, { recursive: true });
+      const oldStyle = path.join(sessDir, 'agent-a.jsonl');
+      fsMod.writeFileSync(oldStyle, '');
+      fsMod.writeFileSync(
+        oldStyle.replace(/\.jsonl$/, '.meta.json'),
+        '{"agentType":"web-researcher"}',
+      );
+      writeTeammateFile(MATE_SESSION, TEAM, 'wa-research');
+
+      const result = claudeTeamProvider.discoverTeammates(tmpRoot, LEAD_SESSION, TEAM);
+      expect(result.map((t) => t.teammateName).sort()).toEqual(['wa-research', 'web-researcher']);
+      const oldEntry = result.find((t) => t.teammateName === 'web-researcher')!;
+      expect(oldEntry.sessionId).toBeUndefined();
+    });
+  });
+
   describe('getTeamMetadataForSession', () => {
     const fsMod = require('fs') as typeof import('fs');
     const tmpRoot = path.join(os.tmpdir(), 'pixel-agents-meta-' + Date.now());
@@ -170,6 +316,39 @@ describe('claudeTeamProvider', () => {
         agentName: undefined,
       });
     });
+
+    it('scans past untagged setting records to find team tags (newer harnesses)', () => {
+      fsMod.mkdirSync(tmpRoot, { recursive: true });
+      const p = path.join(tmpRoot, 'new-style.jsonl');
+      fsMod.writeFileSync(
+        p,
+        JSON.stringify({ type: 'agent-setting', agentSetting: 'general-purpose' }) +
+          '\n' +
+          JSON.stringify({ type: 'mode', mode: 'default' }) +
+          '\n' +
+          JSON.stringify({ type: 'user', teamName: 'session-abc12345', agentName: 'researcher' }) +
+          '\n',
+      );
+      expect(claudeTeamProvider.getTeamMetadataForSession(p)).toEqual({
+        teamName: 'session-abc12345',
+        agentName: 'researcher',
+      });
+    });
+
+    it('returns null when the first conversational record is untagged', () => {
+      fsMod.mkdirSync(tmpRoot, { recursive: true });
+      const p = path.join(tmpRoot, 'plain-session.jsonl');
+      fsMod.writeFileSync(
+        p,
+        JSON.stringify({ type: 'mode', mode: 'default' }) +
+          '\n' +
+          JSON.stringify({ type: 'user', message: { role: 'user', content: 'hi' } }) +
+          '\n' +
+          JSON.stringify({ type: 'assistant', teamName: 'too-late' }) +
+          '\n',
+      );
+      expect(claudeTeamProvider.getTeamMetadataForSession(p)).toBeNull();
+    });
   });
 
   describe('getTeamMembers', () => {
@@ -213,6 +392,23 @@ describe('claudeTeamProvider', () => {
       fs.mkdirSync(teamDir, { recursive: true });
       fs.writeFileSync(path.join(teamDir, 'config.json'), 'not json');
       expect(claudeTeamProvider.getTeamMembers(TEAM_NAME)).toBeNull();
+    });
+
+    it('excludes members marked isActive:false (finished one-shot teammates)', () => {
+      const teamDir = path.join(os.homedir(), '.claude', 'teams', TEAM_NAME);
+      fs.mkdirSync(teamDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(teamDir, 'config.json'),
+        JSON.stringify({
+          members: [
+            { name: 'team-lead' },
+            { name: 'still-running', isActive: true },
+            { name: 'finished', isActive: false },
+          ],
+        }),
+      );
+      const result = claudeTeamProvider.getTeamMembers(TEAM_NAME);
+      expect([...result!].sort()).toEqual(['still-running', 'team-lead']);
     });
 
     it('skips members without a string name', () => {

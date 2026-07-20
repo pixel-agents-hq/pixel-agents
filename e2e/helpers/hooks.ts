@@ -160,6 +160,25 @@ export function preToolUseAgent(
   };
 }
 
+/** PreToolUse for the new-harness Agent tool: background by default, so the
+ *  input carries the agent's name but NO run_in_background flag. */
+export function preToolUseAgentSpawn(
+  sessionId: string,
+  description: string,
+  name: string,
+): HookEventPayload {
+  return {
+    session_id: sessionId,
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Agent',
+    tool_input: {
+      name,
+      description,
+      subagent_type: 'general-purpose',
+    },
+  };
+}
+
 export function subagentStart(sessionId: string, agentType: string): HookEventPayload {
   return {
     session_id: sessionId,

@@ -217,7 +217,7 @@ export function processTranscriptLine(
     } else if (record.type === 'user') {
       const content = record.message?.content ?? record.content;
       if (Array.isArray(content)) {
-        const blocks = content as Array<{ type: string; tool_use_id?: string }>;
+        const blocks = content as Array<{ type: string; tool_use_id?: string; content?: unknown }>;
         const hasToolResult = blocks.some((b) => b.type === 'tool_result');
         if (hasToolResult) {
           for (const block of blocks) {
@@ -225,8 +225,43 @@ export function processTranscriptLine(
               const completedToolId = block.tool_use_id;
               const completedToolName = agent.activeToolNames.get(completedToolId);
 
+              // Teammate spawn result (newer harnesses: every Agent spawn is a
+              // background teammate of an implicit team; the lead's own records
+              // carry no team tags, so this result line is the only lead-side
+              // signal). Marks the agent as lead so teammate discovery engages,
+              // then falls through to normal tool-done handling -- the teammate
+              // character replaces the transient Subtask one.
+              const teammateSpawn = completedToolName
+                ? hookProvider?.team?.extractTeammateSpawnFromToolResult?.(
+                    completedToolName,
+                    block.content,
+                  )
+                : null;
+              if (teammateSpawn && !agent.teamName) {
+                agent.teamName = teammateSpawn.teamName;
+                agent.isTeamLead = true;
+                if (debug) {
+                  console.log(
+                    `[Pixel Agents] Agent ${agentId} spawned teammate "${teammateSpawn.teammateName}" -> lead of team ${teammateSpawn.teamName}`,
+                  );
+                }
+                linkTeammates(agentId, agent, agents);
+                agents.broadcast({
+                  type: 'agentTeamInfo',
+                  id: agentId,
+                  teamName: agent.teamName,
+                  agentName: agent.agentName,
+                  isTeamLead: agent.isTeamLead,
+                  leadAgentId: agent.leadAgentId,
+                });
+              }
+
               // Detect background agent launches — keep the tool alive until queue-operation
-              if (isSubagentTool(completedToolName) && isAsyncAgentResult(block)) {
+              if (
+                !teammateSpawn &&
+                isSubagentTool(completedToolName) &&
+                isAsyncAgentResult(block)
+              ) {
                 console.log(
                   `[Pixel Agents] Agent ${agentId} background agent launched: ${completedToolId}`,
                 );

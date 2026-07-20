@@ -110,6 +110,29 @@ export function buildUserToolResultBatchRecord(
   };
 }
 
+/** Agent tool_result as newer harnesses write it: the spawn resolves in seconds
+ *  with the spawned agent's identity (`agent_id: <name>@<team>`) while the agent
+ *  runs on as an independent top-level session. This result line is the only
+ *  lead-side team signal — the lead's own records carry no team tags. */
+export function buildTeammateSpawnResultRecord(
+  toolUseId: string,
+  teammateName: string,
+  teamName: string,
+): Record<string, unknown> {
+  return buildUserToolResultRecord(toolUseId, [
+    {
+      type: 'text',
+      text: `Spawned successfully.\nagent_id: ${teammateName}@${teamName}\nname: ${teammateName}`,
+    },
+  ]);
+}
+
+/** Setting record that opens new-harness teammate transcripts. Carries no team
+ *  tags — those appear only on later user/assistant records. */
+export function buildAgentSettingRecord(agentType = 'general-purpose'): Record<string, unknown> {
+  return { type: 'agent-setting', agentSetting: agentType };
+}
+
 export function buildAsyncAgentLaunchResultRecord(toolUseId: string): Record<string, unknown> {
   return buildUserToolResultRecord(toolUseId, [
     {
