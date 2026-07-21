@@ -11,6 +11,7 @@
 <div align="center" style="margin-top: 25px;">
 
 [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fpablodelucca%2F3cd28398fa4a2c0a636e1d51d41aee39%2Fraw%2Fversion.json)](https://github.com/pixel-agents-hq/pixel-agents/releases)
+[![npm version](https://img.shields.io/npm/v/pixel-agents)](https://www.npmjs.com/package/pixel-agents)
 [![marketplaces](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fpablodelucca%2F3cd28398fa4a2c0a636e1d51d41aee39%2Fraw%2Finstalls.json)](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents)
 [![stars](https://img.shields.io/github/stars/pixel-agents-hq/pixel-agents?logo=github&color=0183ff&style=flat)](https://github.com/pixel-agents-hq/pixel-agents/stargazers)
 [![license](https://img.shields.io/github/license/pixel-agents-hq/pixel-agents?color=0183ff&style=flat)](https://github.com/pixel-agents-hq/pixel-agents/blob/main/LICENSE)
@@ -26,9 +27,12 @@
 
 Pixel Agents turns multi-agent AI systems into something you can actually see and manage. Each agent becomes a character in a pixel art office. They walk around, sit at their desk, and visually reflect what they are doing — typing when writing code, reading when searching files, waiting when it needs your attention.
 
-Right now it works as a VS Code extension with Claude Code. The vision though, is a fully agent-agnostic, platform-agnostic interface for orchestrating any AI agents, deployable anywhere.
+It ships in **two flavors from the same source tree**:
 
-This is the source code for the free Pixel Agents extension for VS Code — install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) or [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents) with the full furniture catalog included.
+- **VS Code extension** — `pablodelucca.pixel-agents` on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) and [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents). Agents spawn into VS Code terminals; characters render in the panel area.
+- **Standalone CLI** — `npx pixel-agents` runs a local Fastify server and serves the office as a browser SPA. Useful in tmux workflows, remote sessions, or any environment without a desktop VS Code.
+
+Internally, the architecture is fully agent-agnostic and platform-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation today; Codex, Gemini, Cursor, and others are on the roadmap.
 
 ![Pixel Agents screenshot](webview-ui/public/Screenshot.jpg)
 
@@ -50,25 +54,77 @@ This is the source code for the free Pixel Agents extension for VS Code — inst
 
 ## Requirements
 
-- VS Code 1.105.0 or later
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
-- **Platform**: Windows, Linux, and macOS are supported
+- **VS Code extension:** VS Code 1.105.0 or later
+- **Standalone CLI:** Node.js 20 or later
+- **Platform:** Windows, Linux, and macOS are supported
 
 ## Getting Started
 
-If you just want to use Pixel Agents, the easiest way is to download the [VS Code extension](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents). If you want to play with the code, develop, or contribute, then:
+### VS Code extension
+
+Install Pixel Agents from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) or [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents), then open the **Pixel Agents** panel.
+
+### Standalone CLI
+
+Run the browser-based office without cloning the repository:
+
+```bash
+npx pixel-agents
+```
+
+Pixel Agents chooses a free local port and prints the exact URL to open. To use a predictable port instead:
+
+```bash
+npx pixel-agents --port 3100
+# Open http://127.0.0.1:3100
+```
+
+Other options:
+
+```text
+--port, -p <number>   Use a fixed port instead of an OS-assigned free port
+--host <address>      Bind address (default: 127.0.0.1)
+--help                Show CLI help
+```
+
+The extension and standalone CLI can run at the same time, including when the extension starts first. Each server registers separately under `~/.pixel-agents/servers/`; Claude hook events fan out to both, while each surface adopts only the sessions in its own workspace when **Watch All Sessions** is off. Hooks are enabled by default, and each surface persists its own Hooks setting under the shared `~/.pixel-agents/config.json` file.
+
+Settings and layouts persist under `~/.pixel-agents/`. Stop standalone with **Ctrl+C**; it removes its own server registration without disrupting a running extension.
+
+> Binding to `0.0.0.0` exposes the standalone UI and WebSocket to other machines on the network. Use the default loopback address unless remote access is intentional and the surrounding network is trusted.
 
 ### Install from source
 
 ```bash
 git clone https://github.com/pixel-agents-hq/pixel-agents.git
 cd pixel-agents
-npm install
-cd webview-ui && npm install && cd ..
+npm install      # npm workspaces installs root + server + webview-ui in one shot
 npm run build
 ```
 
 Then press **F5** in VS Code to launch the Extension Development Host.
+
+To run the standalone bundle built from source:
+
+```bash
+node dist/cli.js
+```
+
+### Browser Preview & Hosted Reports
+
+The browser-preview version of the webview can be built and staged for Vercel separately from the VS Code extension build.
+
+```bash
+npm run test
+npm run e2e
+npm run e2e -- --attach-videos-on-success
+npm run vercel:prepare
+```
+
+Run `npm run test:report` separately when you want the combined Allure report locally without preparing the full Vercel output.
+
+The staged Vercel output serves the standalone webview at `/webview/` and the Linux Allure report at `/reports/allure/`, combining the `e2e`, `server`, and `webview` suites. The GitHub Actions deploy job expects `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID` secrets.
 
 ### Usage
 
@@ -104,14 +160,27 @@ Characters are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-
 
 ## How It Works
 
-Pixel Agents watches Claude Code's JSONL transcript files to track what each agent is doing. When an agent uses a tool (like writing a file or running a command), the extension detects it and updates the character's animation accordingly. No modifications to Claude Code are needed — it's purely observational.
+Pixel Agents has two parallel detection paths:
 
-The webview runs a lightweight game loop with canvas rendering, BFS pathfinding, and a character state machine (idle → walk → type/read). Everything is pixel-perfect at integer zoom levels.
+- **Hooks mode** (preferred) — Claude Code's official Hooks API POSTs events (`SessionStart`, `PreToolUse`, `Notification`, `Stop`, etc.) to local Fastify servers (`POST /api/hooks/:providerId`). Live servers register under `~/.pixel-agents/servers/`, and the hook script fans out to all valid entries so the extension and standalone can coexist. `~/.pixel-agents/server.json` remains as a legacy single-server fallback.
+- **Heuristic mode** (fallback) — Polls JSONL transcript files at `~/.claude/projects/<project-hash>/<session-id>.jsonl`. Used when hooks aren't installed.
+
+A single `HookProvider.normalizeHookEvent(raw)` translates each CLI's hook payload into a canonical `AgentEvent`. The shared `AgentRuntime` dispatches on `AgentEvent.kind`, mutates `AgentStateStore`, and the broadcast layer translates state events into typed `ServerMessage` over the active transport.
+
+The webview runs a lightweight game loop with canvas rendering, BFS pathfinding, and a character state machine (idle → walk → type/read). Everything is pixel-perfect at integer zoom levels. Game state lives in an imperative `OfficeState` class outside React; React components read from it during render but don't own the state.
+
+No modifications to Claude Code are needed — Pixel Agents is purely observational.
 
 ## Tech Stack
 
-- **Extension**: TypeScript, VS Code Webview API, esbuild
-- **Webview**: React 19, TypeScript, Vite, Canvas 2D
+Four-package monorepo, npm workspaces:
+
+- **`core/`** — TypeScript-only protocol + interfaces (AsyncAPI 3.0 contract, `HookProvider`, `MessageTransport`, `StateAdapter`). Zero runtime side effects.
+- **`server/`** — Fastify v5 (HTTP + WebSocket), Vitest. Owns `AgentRuntime`, `AgentStateStore`, `SessionRouter`, `DismissalTracker`, file watching, transcript parsing, providers. Ships the `npx pixel-agents` CLI.
+- **`adapters/vscode/`** — VS Code Extension API. Composes `core/` + `server/` for the desktop surface.
+- **`webview-ui/`** — React 19, Vite, Canvas 2D. Transport-agnostic (`PostMessageTransport` in VS Code, `WebSocketTransport` in the browser).
+
+Builds: esbuild (extension + CLI + hook scripts), Vite (webview SPA). Tests: Vitest (server + webview unit), Playwright (e2e against real VS Code + standalone Fastify).
 
 ## Known Limitations
 
@@ -120,6 +189,13 @@ The webview runs a lightweight game loop with canvas rendering, BFS pathfinding,
 - **Linux/macOS tip** — if you launch VS Code without a folder open (e.g. bare `code` command), agents will start in your home directory. This is fully supported; just be aware your Claude sessions will be tracked under `~/.claude/projects/` using your home directory as the project root.
 
 ## Troubleshooting
+
+For standalone startup problems:
+
+1. **Unsupported Node version** — Run `node --version`; standalone requires Node.js 20 or later.
+2. **Port already in use** — Omit `--port` to let Pixel Agents choose a free port, or select another fixed port.
+3. **Hooks are not active** — Open Settings and confirm **Hooks** is ON. Pixel Agents installs the hook script at `~/.pixel-agents/hooks/claude-hook.js`.
+4. **Extension and standalone are both running** — This is supported. Current versions create separate files under `~/.pixel-agents/servers/`; stopping one surface must not remove the other surface's registration.
 
 If your agent appears stuck on idle or doesn't spawn:
 

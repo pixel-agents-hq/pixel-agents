@@ -37,19 +37,41 @@ describe('claudeTeamProvider', () => {
   });
 
   describe('extractTeammateNameFromEvent', () => {
-    it('reads agent_type field when present', () => {
+    it('reads current teammate_name when present', () => {
+      expect(
+        claudeTeamProvider.extractTeammateNameFromEvent({ teammate_name: 'web-researcher' }),
+      ).toBe('web-researcher');
+    });
+
+    it('falls back to agent_type for SubagentStart compatibility', () => {
       expect(
         claudeTeamProvider.extractTeammateNameFromEvent({ agent_type: 'web-researcher' }),
       ).toBe('web-researcher');
     });
 
-    it('returns undefined when agent_type is missing', () => {
-      expect(claudeTeamProvider.extractTeammateNameFromEvent({})).toBeUndefined();
+    it('prefers teammate_name when both names are present', () => {
+      expect(
+        claudeTeamProvider.extractTeammateNameFromEvent({
+          teammate_name: 'web-researcher',
+          agent_type: 'legacy-agent-type',
+        }),
+      ).toBe('web-researcher');
     });
 
-    it('returns undefined when agent_type is not a string', () => {
-      expect(claudeTeamProvider.extractTeammateNameFromEvent({ agent_type: 42 })).toBeUndefined();
-      expect(claudeTeamProvider.extractTeammateNameFromEvent({ agent_type: null })).toBeUndefined();
+    it('falls back when teammate_name is not a string', () => {
+      expect(
+        claudeTeamProvider.extractTeammateNameFromEvent({
+          teammate_name: 42,
+          agent_type: 'web-researcher',
+        }),
+      ).toBe('web-researcher');
+    });
+
+    it('returns undefined when teammate identity is missing or malformed', () => {
+      expect(claudeTeamProvider.extractTeammateNameFromEvent({})).toBeUndefined();
+      expect(
+        claudeTeamProvider.extractTeammateNameFromEvent({ teammate_name: null, agent_type: 42 }),
+      ).toBeUndefined();
     });
   });
 

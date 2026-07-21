@@ -3,3 +3,16 @@ set -e
 
 echo "🔍 Type-checking..."
 npm run check-types
+
+# Catch generated-file drift locally instead of only in CI. Regenerate the
+# AsyncAPI bindings + the e2e test inventory, then fail if either differs from
+# what's committed (same gate CI runs). On drift the files are left regenerated
+# in the working tree -- just commit them and push again.
+echo "🔍 Checking generated-file drift (AsyncAPI bindings + e2e inventory)..."
+npm run asyncapi:generate
+npm run e2e:inventory
+if ! git diff --exit-code core/src/messages.ts e2e/README.md; then
+  echo "❌ Generated files were out of date and have been regenerated above."
+  echo "   Commit the changes (core/src/messages.ts and/or e2e/README.md), then push again."
+  exit 1
+fi

@@ -188,7 +188,9 @@ function normalizeHookEvent(
         return { sessionId, event: { kind: 'permissionRequest' } };
       }
       if (notificationType === 'idle_prompt') {
-        return { sessionId, event: { kind: 'turnEnd' } };
+        // idle_prompt = Claude went idle waiting on the user, not just a finished
+        // turn. awaitingInput drives the "Waiting for input" label (vs "Done" for Stop).
+        return { sessionId, event: { kind: 'turnEnd', awaitingInput: true } };
       }
       return null;
     }
@@ -214,7 +216,7 @@ function normalizeHookEvent(
       };
 
     // Agent Teams: a teammate went idle / marked a task complete. Normalize as
-    // `subagentTurnEnd` so the team handler can route by agent_type to the teammate.
+    // `subagentTurnEnd` so the team handler can route by the provider's event-specific identity.
     // `reason` discriminates the two so handlers don't read raw eventName.
     case 'TeammateIdle':
       return {

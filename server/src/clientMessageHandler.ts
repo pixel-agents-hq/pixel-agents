@@ -1,6 +1,7 @@
+import { buildAgentDiagnostics } from './agentDiagnostics.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import type { LoadedAssets, LoadedCharacterSprites } from './assetLoader.js';
+import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './assetLoader.js';
 import { readConfig, writeConfig } from './configPersistence.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import { claudeProvider } from './providers/index.js';
@@ -10,11 +11,20 @@ type WsSend = (message: Record<string, unknown>) => void;
 /** Async hook toggle side effect (install/uninstall + script copy). Provided by cli.ts. */
 export type SetHooksEnabledSideEffect = (enabled: boolean) => Promise<void> | void;
 
+/**
+ * Reload server-side assets after an external-asset-directory change and
+ * re-broadcast the updated sprites to the requesting client. Provided by cli.ts,
+ * which owns the dist root needed to re-run the loaders.
+ */
+export type ReloadAssetsSideEffect = (send: WsSend) => Promise<void> | void;
+
 /** Cached assets loaded at server startup. Sent to each WebSocket client on webviewReady. */
 export interface AssetCache {
   characters: LoadedCharacterSprites | null;
+  pets: LoadedPetSprites | null;
   floorTiles: string[][][] | null;
   wallTiles: string[][][][] | null;
+  carpetTiles: string[][][][] | null;
   furniture: LoadedAssets | null;
   defaultLayout: Record<string, unknown> | null;
 }
@@ -25,6 +35,8 @@ export interface ClientMessageContext {
   cache: AssetCache | null;
   /** Install/uninstall hooks side effect. Needs server url+token known only to cli.ts. */
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
+  /** Reload assets after an external-asset-directory change. Needs the dist root, known only to cli.ts. */
+  onReloadAssets?: ReloadAssetsSideEffect;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -34,6 +46,7 @@ const KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
+const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
 
 /**
  * Handle incoming ClientMessage from a WebSocket client.
@@ -53,6 +66,25 @@ export function handleClientMessage(
   switch (msg.type) {
     case 'webviewReady':
       handleWebviewReady(send, ctx);
+      break;
+
+    case 'closeAgent': {
+      // Standalone agents are always external (no terminal), so mirror the VS
+      // Code external-agent branch: dismiss the file (so the external scanner
+      // doesn't re-adopt it) then remove. removeAgent fires the agentRemoved
+      // store event, which httpServer maps to an agentClosed broadcast.
+      const id = msg.id as number;
+      const agent = store.get(id);
+      if (agent && runtime) {
+        runtime.dismissalTracker.dismiss(agent.jsonlFile);
+        runtime.removeAgent(id);
+      }
+      break;
+    }
+
+    case 'requestDiagnostics':
+      // Point-to-point reply to the requesting socket (NOT a broadcast).
+      send({ type: 'agentDiagnostics', agents: buildAgentDiagnostics(store) });
       break;
 
     case 'saveLayout':
@@ -109,6 +141,7 @@ export function handleClientMessage(
         writeConfig(cfg);
       }
       send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
+      void ctx.onReloadAssets?.(send);
       break;
     }
 
@@ -119,6 +152,24 @@ export function handleClientMessage(
       cfg.externalAssetDirectories = cfg.externalAssetDirectories.filter((d) => d !== removePath);
       writeConfig(cfg);
       send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
+      void ctx.onReloadAssets?.(send);
+      break;
+    }
+
+    case 'saveAreaMappings': {
+      const rawMappings = msg.mappings;
+      if (!rawMappings || typeof rawMappings !== 'object') {
+        break;
+      }
+      const cfg = readConfig();
+      cfg.standalone.areaMappings = rawMappings as Record<string, string[]>;
+      writeConfig(cfg);
+      break;
+    }
+
+    case 'setShowAreas': {
+      const enabled = msg.enabled as boolean;
+      adapter?.setSetting(KEY_SHOW_AREAS, enabled);
       break;
     }
 
@@ -145,11 +196,21 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     if (cache.characters) {
       send({ type: 'characterSpritesLoaded', characters: cache.characters.characters });
     }
+    if (cache.pets) {
+      send({
+        type: 'petSpritesLoaded',
+        pets: cache.pets.pets,
+        petNames: cache.pets.manifests.map((m) => m.name),
+      });
+    }
     if (cache.floorTiles) {
       send({ type: 'floorTilesLoaded', sprites: cache.floorTiles });
     }
     if (cache.wallTiles) {
       send({ type: 'wallTilesLoaded', sets: cache.wallTiles });
+    }
+    if (cache.carpetTiles) {
+      send({ type: 'carpetTilesLoaded', sets: cache.carpetTiles });
     }
     if (cache.furniture) {
       send({
@@ -168,6 +229,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const cfg = readConfig();
   const watchAllSessions = adapter?.getSetting(KEY_WATCH_ALL_SESSIONS, false) ?? false;
   const hooksEnabled = adapter?.getSetting(KEY_HOOKS_ENABLED, true) ?? true;
+  const showAreas = adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false;
   send({
     type: 'settingsLoaded',
     soundEnabled: adapter?.getSetting(KEY_SOUND_ENABLED, true) ?? true,
@@ -178,6 +240,14 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     hooksEnabled,
     hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
     externalAssetDirectories: cfg.externalAssetDirectories,
+    showAreas,
+  });
+
+  // 4b. Folder→Area mappings (must arrive before existingAgents so the
+  // webview seat-preference logic has the dict when characters are created).
+  send({
+    type: 'areaMappingsLoaded',
+    mappings: cfg.standalone.areaMappings ?? {},
   });
 
   // Sync runtime refs with the persisted settings so scanners behave correctly

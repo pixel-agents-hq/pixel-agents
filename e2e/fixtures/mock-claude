@@ -1,47 +1,22 @@
 #!/usr/bin/env bash
-# Mock 'claude' executable for Pixel Agents e2e tests.
-#
-# Behaviour:
-#   1. Parses --session-id <id> from args.
-#   2. Appends an invocation record to $HOME/.claude-mock/invocations.log.
-#   3. Creates the expected JSONL file under $HOME/.claude/projects/<hash>/<id>.jsonl
-#      using the same path-hash algorithm as agentManager.ts
-#      (replace every non-[a-zA-Z0-9-] char with '-').
-#   4. Writes a minimal valid JSONL line so the extension file-watcher can proceed.
-#   5. Stays alive for up to 30 s (tests can kill it once assertions pass).
-
 set -euo pipefail
 
-SESSION_ID=""
-PREV=""
-for arg in "$@"; do
-  if [ "$PREV" = "--session-id" ]; then
-    SESSION_ID="$arg"
-  fi
-  PREV="$arg"
-done
-
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NODE_BIN="${PIXEL_AGENTS_NODE_BIN:-node}"
 LOG_DIR="${HOME}/.claude-mock"
-mkdir -p "$LOG_DIR"
-echo "$(date -Iseconds) session-id=${SESSION_ID} cwd=$(pwd) args=$*" >> "${LOG_DIR}/invocations.log"
+mkdir -p "${LOG_DIR}"
+printf '%s wrapper node=%s cwd=%s args=%s\n' "$(date -Iseconds)" "${NODE_BIN}" "$(pwd)" "$*" >> "${LOG_DIR}/actions.log"
 
-if [ -n "$SESSION_ID" ]; then
-  CWD="$(pwd)"
-  # Replicate agentManager.ts: workspacePath.replace(/[^a-zA-Z0-9-]/g, '-')
-  DIR_NAME="$(printf '%s' "$CWD" | tr -c 'a-zA-Z0-9-' '-')"
-  PROJECT_DIR="${HOME}/.claude/projects/${DIR_NAME}"
-  mkdir -p "$PROJECT_DIR"
-  JSONL_FILE="${PROJECT_DIR}/${SESSION_ID}.jsonl"
-
-  # Write a minimal system init line so the extension watcher sees the file.
-  printf '{"type":"system","subtype":"init","content":"mock-claude-ready"}\n' >> "$JSONL_FILE"
+# Cosmetic: background a headerless tail of the narration logs into this
+# terminal tab so the yellow [test] / magenta [external] story shows alongside
+# this session's own cyan [mock-claude] lines whenever the tab has focus. Only
+# for terminal-hosted (internal) sessions — external spawns set no
+# PIXEL_AGENTS_TEST_NARRATION_LOG (their stdout IS the external log, so a tail
+# there would loop). The tail dies with the terminal at test teardown.
+if [ -n "${PIXEL_AGENTS_TEST_NARRATION_LOG:-}" ]; then
+  "${NODE_BIN}" "${SCRIPT_DIR}/tail-follow.cjs" none \
+    "${PIXEL_AGENTS_TEST_NARRATION_LOG}" "${PIXEL_AGENTS_EXTERNAL_NARRATION_LOG:-}" \
+    2>/dev/null &
 fi
 
-# Stay alive so the VS Code terminal doesn't immediately close.
-sleep 30 &
-SLEEP_PID=$!
-
-# Clean exit on SIGTERM/SIGINT.
-trap 'kill $SLEEP_PID 2>/dev/null; exit 0' SIGTERM SIGINT
-
-wait $SLEEP_PID || true
+exec "${NODE_BIN}" "${SCRIPT_DIR}/mock-claude-runner.cjs" "$@"

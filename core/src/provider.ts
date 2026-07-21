@@ -23,7 +23,14 @@ export type AgentEvent =
       runInBackground?: boolean;
     }
   | { kind: 'toolEnd'; toolId: string }
-  | { kind: 'turnEnd' }
+  | {
+      kind: 'turnEnd';
+      /** True when the turn ended because the agent went idle waiting on the
+       *  user (Claude's Notification(idle_prompt)) rather than simply finishing
+       *  its response (Stop). Drives the "Waiting for input" vs "Done" label.
+       *  Absent/false = the agent finished its turn (Done). */
+      awaitingInput?: boolean;
+    }
   | {
       kind: 'subagentStart';
       parentToolId: string;

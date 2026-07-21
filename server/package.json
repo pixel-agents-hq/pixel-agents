@@ -6,6 +6,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "allure-vitest": "^3.9.0",
     "vitest": "^3.2.1"
   },
   "dependencies": {

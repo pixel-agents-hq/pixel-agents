@@ -39,3 +39,21 @@ export interface CatalogEntry {
   animationGroup?: string;
   frame?: number;
 }
+
+export interface PetSpriteFrames {
+  /** 3 frames of 16×32 — pet walking toward viewer (south). */
+  walkDown: string[][][];
+  /** 3 frames of 16×32 — pet idle facing viewer (south). */
+  idleDown: string[][][];
+  /** 3 frames of 16×32 — pet walking away from viewer (north). */
+  walkUp: string[][][];
+  /** 3 frames of 16×32 — pet idle facing away (north). */
+  idleUp: string[][][];
+  /** 3 frames of 32×32 — pet walking east. Left = horizontal flip at render time. */
+  walkRight: string[][][];
+}
+
+export interface PetManifest {
+  id: string;
+  name: string;
+}

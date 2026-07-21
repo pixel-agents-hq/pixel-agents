@@ -348,6 +348,11 @@ function migrateLayout(layout: OfficeLayout): OfficeLayout {
     };
   }
 
+  // Default pets to empty array if absent (backward-compat for legacy layouts).
+  if (!layout.pets) {
+    layout = { ...layout, pets: [] };
+  }
+
   if (layout.tileColors && layout.tileColors.length === layout.tiles.length) {
     return layout; // Already migrated tile colors
   }

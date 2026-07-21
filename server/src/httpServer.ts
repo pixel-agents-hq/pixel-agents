@@ -7,7 +7,11 @@ import Fastify from 'fastify';
 
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import type { AssetCache, SetHooksEnabledSideEffect } from './clientMessageHandler.js';
+import type {
+  AssetCache,
+  ReloadAssetsSideEffect,
+  SetHooksEnabledSideEffect,
+} from './clientMessageHandler.js';
 import { handleClientMessage } from './clientMessageHandler.js';
 import { HOOK_API_PREFIX, MAX_HOOK_BODY_SIZE } from './constants.js';
 import type { AgentState } from './types.js';
@@ -34,6 +38,8 @@ export interface HttpServerOptions {
   onHookEvent?: (providerId: string, event: Record<string, unknown>) => void;
   /** Invoked when setHooksEnabled is toggled via WebSocket. Standalone installs/uninstalls hooks here. */
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
+  /** Invoked when an external asset directory is added/removed. Standalone reloads + re-broadcasts assets here. */
+  onReloadAssets?: ReloadAssetsSideEffect;
 }
 
 /** Result of createHttpServer(). */
@@ -188,6 +194,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
           runtime: options.runtime,
           cache: options.assetCache ?? null,
           onSetHooksEnabled: options.onSetHooksEnabled,
+          onReloadAssets: options.onReloadAssets,
         });
       } catch {
         // Malformed JSON, ignore

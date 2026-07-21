@@ -46,6 +46,22 @@ export {
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
 } from '../../core/src/constants.js';
 
+// ── Multi-Server Discovery ──────────────────────────────────
+/** Subdirectory (under SERVER_JSON_DIR) holding one registry entry per live
+ *  server, so a hook event can fan out to every running instance instead of
+ *  only the single legacy server.json pointer. See server/src/server.ts. */
+export const SERVERS_DIR = 'servers';
+/** Valid explicit TCP port range. Port 0 remains an internal-only signal for
+ *  OS-assigned ephemeral binding and is never accepted from persisted records
+ *  or the CLI's --port option. */
+export const MIN_PORT = 1;
+export const MAX_PORT = 65_535;
+/** Format version stamped on every registry entry (both the per-server records
+ *  and the legacy server.json). Bump on breaking field changes; additive
+ *  fields (servesSpa, protocol itself) don't require a bump -- readers already
+ *  tolerate unknown/missing fields (see ServerConfig.debugLog precedent). */
+export const SERVER_REGISTRY_PROTOCOL_VERSION = 1;
+
 export const HOOK_EVENT_BUFFER_MS = 5_000;
 /** Grace period after SessionEnd(reason=clear/resume) before triggering onSessionEnd.
  *  /clear and /resume fire SessionEnd then SessionStart within ms. This timeout is a

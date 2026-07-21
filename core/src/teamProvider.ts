@@ -32,7 +32,7 @@ export interface TeamProvider {
 
   /** Extract a teammate's identity (name) from a raw hook event payload (pre-normalization).
    *  Used to route TeammateIdle / TaskCompleted hooks to the specific teammate agent.
-   *  Claude: reads the `agent_type` field. Returns undefined if not present. */
+   *  Claude: prefers `teammate_name`, with `agent_type` kept for SubagentStart compatibility. */
   extractTeammateNameFromEvent(event: Record<string, unknown>): string | undefined;
 
   /** Find all teammate transcripts belonging to a given lead session.

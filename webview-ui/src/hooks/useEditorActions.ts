@@ -1,18 +1,32 @@
 import { useCallback, useRef, useState } from 'react';
 
 import type { ColorValue } from '../components/ui/types.js';
-import { LAYOUT_SAVE_DEBOUNCE_MS, ZOOM_MAX, ZOOM_MIN } from '../constants.js';
+import {
+  CARPET_DEFAULT_ACCENT_COLOR,
+  CARPET_DEFAULT_COLOR,
+  LAYOUT_SAVE_DEBOUNCE_MS,
+  ZOOM_MAX,
+  ZOOM_MIN,
+} from '../constants.js';
 import type { ExpandDirection } from '../office/editor/editorActions.js';
 import {
+  addArea,
   canPlaceFurniture,
+  eraseArea,
+  eraseCarpet,
   expandLayout,
   getWallPlacementRow,
   moveFurniture,
+  paintArea,
+  paintCarpet,
   paintTile,
   placeFurniture,
+  removeArea,
   removeFurniture,
+  renameArea,
   rotateFurniture,
   toggleFurnitureState,
+  updateAreaColor,
 } from '../office/editor/editorActions.js';
 import type { EditorState } from '../office/editor/editorState.js';
 import type { OfficeState } from '../office/engine/officeState.js';
@@ -26,6 +40,7 @@ import type {
   EditTool as EditToolType,
   OfficeLayout,
   PlacedFurniture,
+  PlacedPet,
   TileType as TileTypeVal,
 } from '../office/types.js';
 import { EditTool } from '../office/types.js';
@@ -40,6 +55,8 @@ interface EditorActions {
   panRef: React.MutableRefObject<{ x: number; y: number }>;
   saveTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
   setLastSavedLayout: (layout: OfficeLayout) => void;
+  /** Clear the dirty flag (used after a browser import applies a new saved baseline). */
+  markClean: () => void;
   handleOpenClaude: () => void;
   handleToggleEditMode: () => void;
   handleToolChange: (tool: EditToolType) => void;
@@ -48,6 +65,7 @@ interface EditorActions {
   handleWallColorChange: (color: ColorValue) => void;
   handleWallSetChange: (setIndex: number) => void;
   handleSelectedFurnitureColorChange: (color: ColorValue | null) => void;
+  handlePickedFurnitureColorChange: (color: ColorValue | null) => void;
   handleFurnitureTypeChange: (type: string) => void; // FurnitureType enum or asset ID
   handleDeleteSelected: () => void;
   handleRotateSelected: () => void;
@@ -61,6 +79,23 @@ interface EditorActions {
   handleEditorEraseAction: (col: number, row: number) => void;
   handleEditorSelectionChange: () => void;
   handleDragMove: (uid: string, newCol: number, newRow: number) => void;
+  handlePetToggle: (petType: number, active: boolean) => void;
+  // Carpet state + handlers
+  carpetVariant: number;
+  carpetColor: ColorValue;
+  carpetAccentColor: ColorValue;
+  handleCarpetVariantChange: (variant: number) => void;
+  handleCarpetColorChange: (color: ColorValue) => void;
+  handleCarpetAccentColorChange: (color: ColorValue) => void;
+  handleResetCarpetColor: () => void;
+  handleResetCarpetAccentColor: () => void;
+  // Area state + handlers (selection lives on editorState for imperative access)
+  selectedAreaLabel: string | null;
+  handleSelectArea: (label: string | null) => void;
+  handleAddArea: (label: string, color: string) => void;
+  handleRemoveArea: (label: string) => void;
+  handleRenameArea: (oldLabel: string, newLabel: string) => void;
+  handleAreaColorChange: (label: string, color: string) => void;
 }
 
 export function useEditorActions(
@@ -71,6 +106,14 @@ export function useEditorActions(
   const [editorTick, setEditorTick] = useState(0);
   const [isDirty, setIsDirty] = useState(false);
   const [zoom, setZoom] = useState(defaultZoom);
+  const [carpetVariant, setCarpetVariantState] = useState<number>(editorState.carpetVariant);
+  const [carpetColor, setCarpetColorState] = useState<ColorValue>(editorState.carpetColor);
+  const [carpetAccentColor, setCarpetAccentColorState] = useState<ColorValue>(
+    editorState.carpetAccentColor,
+  );
+  const [selectedAreaLabel, setSelectedAreaLabelState] = useState<string | null>(
+    editorState.selectedAreaLabel,
+  );
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const panRef = useRef({ x: 0, y: 0 });
   const lastSavedLayoutRef = useRef<OfficeLayout | null>(null);
@@ -79,6 +122,14 @@ export function useEditorActions(
   const setLastSavedLayout = useCallback((layout: OfficeLayout) => {
     lastSavedLayoutRef.current = structuredClone(layout);
   }, []);
+
+  // Clear the dirty flag after a browser layout import: the imported layout is the
+  // new saved baseline (already persisted via saveLayout). setIsDirty also forces a
+  // re-render so dirty-gated UI (EditActionBar, areasAvailable) reflects the import.
+  const markClean = useCallback(() => {
+    editorState.isDirty = false;
+    setIsDirty(false);
+  }, [editorState]);
 
   // Debounced layout save
   const saveLayout = useCallback((layout: OfficeLayout) => {
@@ -136,19 +187,131 @@ export function useEditorActions(
   // Tool toggle: clicking already-active tool deselects it (returns to SELECT)
   const handleToolChange = useCallback(
     (tool: EditToolType) => {
-      if (editorState.activeTool === tool) {
-        editorState.activeTool = EditTool.SELECT;
-      } else {
-        editorState.activeTool = tool;
-      }
+      const next = editorState.activeTool === tool ? EditTool.SELECT : tool;
+      editorState.activeTool = next;
       editorState.clearSelection();
       editorState.clearGhost();
       editorState.clearDrag();
       colorEditUidRef.current = null;
       wallColorEditActiveRef.current = false;
+      // Reset carpet stroke buffer whenever leaving the carpet paint flow so the
+      // next click starts a fresh undo entry.
+      if (next !== EditTool.CARPET_PAINT) {
+        editorState.carpetStrokeInitialLayout = null;
+        editorState.carpetDragErasing = null;
+      }
+      if (next !== EditTool.AREA_PAINT) {
+        editorState.areaDragErasing = null;
+      }
       setEditorTick((n) => n + 1);
     },
     [editorState],
+  );
+
+  // ── Carpet handlers ──────────────────────────────────────────────
+  const handleCarpetVariantChange = useCallback(
+    (variant: number) => {
+      editorState.carpetVariant = variant;
+      setCarpetVariantState(variant);
+    },
+    [editorState],
+  );
+
+  const handleCarpetColorChange = useCallback(
+    (color: ColorValue) => {
+      editorState.carpetColor = color;
+      setCarpetColorState(color);
+    },
+    [editorState],
+  );
+
+  const handleCarpetAccentColorChange = useCallback(
+    (color: ColorValue) => {
+      editorState.carpetAccentColor = color;
+      setCarpetAccentColorState(color);
+    },
+    [editorState],
+  );
+
+  const handleResetCarpetColor = useCallback(() => {
+    const next: ColorValue = { ...CARPET_DEFAULT_COLOR };
+    editorState.carpetColor = next;
+    setCarpetColorState(next);
+  }, [editorState]);
+
+  const handleResetCarpetAccentColor = useCallback(() => {
+    const next: ColorValue = { ...CARPET_DEFAULT_ACCENT_COLOR };
+    editorState.carpetAccentColor = next;
+    setCarpetAccentColorState(next);
+  }, [editorState]);
+
+  // ── Area handlers ──────────────────────────────────────────────
+  const handleSelectArea = useCallback(
+    (label: string | null) => {
+      editorState.selectedAreaLabel = label;
+      setSelectedAreaLabelState(label);
+      // Reset stroke direction so the next drag re-decides paint vs erase.
+      editorState.areaDragErasing = null;
+      setEditorTick((n) => n + 1);
+    },
+    [editorState],
+  );
+
+  const handleAddArea = useCallback(
+    (label: string, color: string) => {
+      const os = getOfficeState();
+      const layout = os.getLayout();
+      const next = addArea(layout, label, color);
+      if (next !== layout) {
+        applyEdit(next);
+      }
+    },
+    [getOfficeState, applyEdit],
+  );
+
+  const handleRemoveArea = useCallback(
+    (label: string) => {
+      const os = getOfficeState();
+      const layout = os.getLayout();
+      const next = removeArea(layout, label);
+      if (next !== layout) {
+        if (editorState.selectedAreaLabel === label) {
+          editorState.selectedAreaLabel = null;
+          setSelectedAreaLabelState(null);
+        }
+        applyEdit(next);
+      }
+    },
+    [getOfficeState, editorState, applyEdit],
+  );
+
+  const handleRenameArea = useCallback(
+    (oldLabel: string, newLabel: string) => {
+      const os = getOfficeState();
+      const layout = os.getLayout();
+      const next = renameArea(layout, oldLabel, newLabel);
+      if (next !== layout) {
+        const trimmed = newLabel.trim();
+        if (editorState.selectedAreaLabel === oldLabel) {
+          editorState.selectedAreaLabel = trimmed;
+          setSelectedAreaLabelState(trimmed);
+        }
+        applyEdit(next);
+      }
+    },
+    [getOfficeState, editorState, applyEdit],
+  );
+
+  const handleAreaColorChange = useCallback(
+    (label: string, color: string) => {
+      const os = getOfficeState();
+      const layout = os.getLayout();
+      const next = updateAreaColor(layout, label, color);
+      if (next !== layout) {
+        applyEdit(next);
+      }
+    },
+    [getOfficeState, applyEdit],
   );
 
   const handleTileTypeChange = useCallback(
@@ -243,6 +406,16 @@ export function useEditorActions(
       setEditorTick((n) => n + 1);
     },
     [getOfficeState, editorState, saveLayout],
+  );
+
+  // Color applied to NEWLY placed furniture (and the palette/ghost previews).
+  // Stored imperatively on editorState; placement reads it in the click handler.
+  const handlePickedFurnitureColorChange = useCallback(
+    (color: ColorValue | null) => {
+      editorState.pickedFurnitureColor = color;
+      setEditorTick((n) => n + 1);
+    },
+    [editorState],
   );
 
   const handleFurnitureTypeChange = useCallback(
@@ -426,6 +599,33 @@ export function useEditorActions(
     [],
   );
 
+  const handlePetToggle = useCallback(
+    (petType: number, active: boolean) => {
+      const os = getOfficeState();
+      const layout = os.getLayout();
+      const currentPets: PlacedPet[] = layout.pets ?? [];
+
+      let newPets: PlacedPet[];
+      if (active) {
+        // Idempotent: if this pet type is already placed, no-op (prevent double-write).
+        if (currentPets.some((p) => p.petType === petType)) {
+          return;
+        }
+        newPets = [...currentPets, { id: crypto.randomUUID(), petType }];
+      } else {
+        newPets = currentPets.filter((p) => p.petType !== petType);
+        // Idempotent: nothing to remove → no-op.
+        if (newPets.length === currentPets.length) {
+          return;
+        }
+      }
+
+      const newLayout: OfficeLayout = { ...layout, pets: newPets };
+      applyEdit(newLayout);
+    },
+    [getOfficeState, applyEdit],
+  );
+
   const handleEditorTileAction = useCallback(
     (col: number, row: number) => {
       const os = getOfficeState();
@@ -569,6 +769,78 @@ export function useEditorActions(
           editorState.activeTool = EditTool.WALL_PAINT;
         }
         setEditorTick((n) => n + 1);
+      } else if (editorState.activeTool === EditTool.AREA_PAINT) {
+        // Area paint/erase is direction-aware: the first tile of a drag decides
+        // whether the rest of the stroke paints (default) or erases (when the
+        // first tile already had this label). Each tile pushes its own undo
+        // entry — area painting is deliberate and low-velocity, unlike carpet.
+        if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return;
+        const label = editorState.selectedAreaLabel;
+        if (!label) return;
+        const idx = row * layout.cols + col;
+        const tileVal = layout.tiles[idx];
+        if (tileVal === TileType.VOID || tileVal === TileType.WALL) return;
+
+        if (editorState.areaDragErasing === null) {
+          const existing = layout.areaTiles?.[idx] ?? null;
+          editorState.areaDragErasing = existing === label;
+        }
+        const newLayout = editorState.areaDragErasing
+          ? eraseArea(layout, col, row)
+          : paintArea(layout, col, row, label);
+        if (newLayout !== layout) {
+          applyEdit(newLayout);
+        }
+      } else if (editorState.activeTool === EditTool.CARPET_PAINT) {
+        // Drag-paint carpet with stroke-based undo: snapshot once per stroke, then
+        // mutate in-place without pushing further undo entries. Stroke resets
+        // happen in OfficeCanvas onMouseUp/onMouseLeave and on tool change.
+        if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return;
+        const idx = row * layout.cols + col;
+        const tileVal = layout.tiles[idx];
+        if (tileVal === TileType.VOID || tileVal === TileType.WALL) return;
+
+        // Snapshot the layout exactly once per stroke for undo.
+        if (editorState.carpetStrokeInitialLayout === null) {
+          editorState.carpetStrokeInitialLayout = layout;
+          editorState.pushUndo(layout);
+          editorState.clearRedo();
+        }
+
+        const newLayout = paintCarpet(
+          layout,
+          col,
+          row,
+          editorState.carpetVariant,
+          editorState.carpetColor,
+          editorState.carpetAccentColor,
+        );
+        if (newLayout !== layout) {
+          editorState.isDirty = true;
+          setIsDirty(true);
+          os.rebuildFromLayout(newLayout);
+          saveLayout(newLayout);
+          setEditorTick((n) => n + 1);
+        }
+      } else if (editorState.activeTool === EditTool.CARPET_PICK) {
+        if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return;
+        const idx = row * layout.cols + col;
+        const tile = layout.carpetTiles?.[idx];
+        if (!tile) return;
+        editorState.carpetVariant = tile.variant;
+        setCarpetVariantState(tile.variant);
+        if (tile.color) {
+          const next = { ...tile.color };
+          editorState.carpetColor = next;
+          setCarpetColorState(next);
+        }
+        if (tile.accentColor) {
+          const next = { ...tile.accentColor };
+          editorState.carpetAccentColor = next;
+          setCarpetAccentColorState(next);
+        }
+        editorState.activeTool = EditTool.CARPET_PAINT;
+        setEditorTick((n) => n + 1);
       } else if (editorState.activeTool === EditTool.SELECT) {
         const hit = layout.furniture.find((f) => {
           const entry = getCatalogEntry(f.type);
@@ -584,7 +856,7 @@ export function useEditorActions(
         setEditorTick((n) => n + 1);
       }
     },
-    [getOfficeState, editorState, applyEdit, maybeExpand],
+    [getOfficeState, editorState, applyEdit, maybeExpand, saveLayout],
   );
 
   const handleEditorEraseAction = useCallback(
@@ -592,6 +864,40 @@ export function useEditorActions(
       const os = getOfficeState();
       const layout = os.getLayout();
       if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return;
+
+      // Right-click while in AREA_PAINT unconditionally clears the area on the
+      // dragged tile (regardless of which label is selected). Per-tile undo
+      // matches the left-click area paint semantics.
+      if (editorState.activeTool === EditTool.AREA_PAINT) {
+        if (!layout.areaTiles || layout.areaTiles[row * layout.cols + col] == null) return;
+        const newLayout = eraseArea(layout, col, row);
+        if (newLayout !== layout) {
+          applyEdit(newLayout);
+        }
+        return;
+      }
+
+      // Right-click while in CARPET_PAINT removes carpets from the dragged path.
+      // Reuses the same stroke-based undo machinery as left-click painting so a
+      // single click-drag-release becomes one undo entry, not many.
+      if (editorState.activeTool === EditTool.CARPET_PAINT) {
+        if (!layout.carpetTiles || layout.carpetTiles[row * layout.cols + col] == null) return;
+        if (editorState.carpetStrokeInitialLayout === null) {
+          editorState.carpetStrokeInitialLayout = layout;
+          editorState.pushUndo(layout);
+          editorState.clearRedo();
+        }
+        const newLayout = eraseCarpet(layout, col, row);
+        if (newLayout !== layout) {
+          editorState.isDirty = true;
+          setIsDirty(true);
+          os.rebuildFromLayout(newLayout);
+          saveLayout(newLayout);
+          setEditorTick((n) => n + 1);
+        }
+        return;
+      }
+
       const idx = row * layout.cols + col;
       // Only erase non-VOID tiles
       if (layout.tiles[idx] === TileType.VOID) return;
@@ -600,7 +906,7 @@ export function useEditorActions(
         applyEdit(newLayout);
       }
     },
-    [getOfficeState, applyEdit],
+    [getOfficeState, editorState, applyEdit, saveLayout],
   );
 
   return {
@@ -611,6 +917,7 @@ export function useEditorActions(
     panRef,
     saveTimerRef,
     setLastSavedLayout,
+    markClean,
     handleOpenClaude,
     handleToggleEditMode,
     handleToolChange,
@@ -619,6 +926,7 @@ export function useEditorActions(
     handleWallColorChange,
     handleWallSetChange,
     handleSelectedFurnitureColorChange,
+    handlePickedFurnitureColorChange,
     handleFurnitureTypeChange,
     handleDeleteSelected,
     handleRotateSelected,
@@ -632,5 +940,20 @@ export function useEditorActions(
     handleEditorEraseAction,
     handleEditorSelectionChange,
     handleDragMove,
+    handlePetToggle,
+    carpetVariant,
+    carpetColor,
+    carpetAccentColor,
+    handleCarpetVariantChange,
+    handleCarpetColorChange,
+    handleCarpetAccentColorChange,
+    handleResetCarpetColor,
+    handleResetCarpetAccentColor,
+    selectedAreaLabel,
+    handleSelectArea,
+    handleAddArea,
+    handleRemoveArea,
+    handleRenameArea,
+    handleAreaColorChange,
   };
 }
