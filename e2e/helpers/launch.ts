@@ -392,7 +392,7 @@ export async function launchVSCode(
       cwd: resolvedWorkspaceDir,
       timeout: 60_000,
     };
-    if (!IS_WINDOWS) {
+    if (!IS_WINDOWS && process.env['PIXEL_AGENTS_E2E_NO_VIDEO'] !== '1') {
       launchOptions.recordVideo = {
         dir: videoDir!,
         size: { width: 1280, height: 800 },

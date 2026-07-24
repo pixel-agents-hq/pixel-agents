@@ -144,7 +144,7 @@ export function startFileWatching(
           if (dismissalTracker!.isDismissed(file)) continue;
           let tracked = false;
           for (const a of agents.values()) {
-            if (a.jsonlFile === file) {
+            if (pathsMatch(a.jsonlFile, file)) {
               tracked = true;
               break;
             }
@@ -241,13 +241,20 @@ export function readNewLines(
 // Track all project directories to scan (supports multi-root workspaces)
 const trackedProjectDirs = new Set<string>();
 
+function pathsMatch(left: string, right: string): boolean {
+  const resolvedLeft = path.resolve(left);
+  const resolvedRight = path.resolve(right);
+  return process.platform === 'win32'
+    ? resolvedLeft.toLowerCase() === resolvedRight.toLowerCase()
+    : resolvedLeft === resolvedRight;
+}
+
 /** Check if a project dir is tracked by the workspace scanner. */
 export function isTrackedProjectDir(dir: string): boolean {
   if (trackedProjectDirs.has(dir)) return true;
   // Case-insensitive fallback for Windows (drive letter casing: c:\ vs C:\)
-  const resolved = path.resolve(dir).toLowerCase();
   for (const tracked of trackedProjectDirs) {
-    if (path.resolve(tracked).toLowerCase() === resolved) return true;
+    if (pathsMatch(tracked, dir)) return true;
   }
   return false;
 }
@@ -619,7 +626,7 @@ export function scanForTeammateFiles(
     // Also check if any existing agent already tracks this file
     let alreadyTracked = false;
     for (const a of agents.values()) {
-      if (a.jsonlFile === file) {
+      if (pathsMatch(a.jsonlFile, file)) {
         alreadyTracked = true;
         break;
       }
@@ -834,7 +841,7 @@ export function adoptExternalSessionFromHook(
     // File-based provider (Claude, Codex): adopt with JSONL file watching
     // Guard: don't adopt if file is already tracked by an agent
     for (const agent of agents.values()) {
-      if (agent.jsonlFile === transcriptPath) return;
+      if (pathsMatch(agent.jsonlFile, transcriptPath)) return;
     }
     // Don't check knownJsonlFiles here -- hooks confirmed this is a real session,
     // and seeded files at startup are in knownJsonlFiles but may become active later.
@@ -860,7 +867,7 @@ export function adoptExternalSessionFromHook(
       folderName,
     );
 
-    const adoptedAgent = [...agents.values()].find((a) => a.jsonlFile === transcriptPath);
+    const adoptedAgent = [...agents.values()].find((a) => pathsMatch(a.jsonlFile, transcriptPath));
     if (adoptedAgent && debug) {
       console.log(
         `[Pixel Agents] Hook: Agent ${adoptedAgent.id} - detected external session ${path.basename(transcriptPath)}${adoptedAgent.folderName ? ` (${adoptedAgent.folderName})` : ''}`,
@@ -1083,7 +1090,7 @@ export function scanExternalDir(
   // and agentManager will detect and reassign it. Prevents the scanner from
   // stealing the file as a new external agent.
   const hasOrphanedInternal = [...agents.values()].some((a) => {
-    if (a.isExternal || a.projectDir !== projectDir) return false;
+    if (a.isExternal || !pathsMatch(a.projectDir, projectDir)) return false;
     try {
       fs.statSync(a.jsonlFile);
       return false;
@@ -1092,6 +1099,14 @@ export function scanExternalDir(
     }
   });
   if (hasOrphanedInternal) return;
+
+  // SessionEnd(clear/resume) marks the current agent pending before SessionStart
+  // reassigns it. Do not let the external scanner steal the replacement file in
+  // that brief window.
+  const hasPendingReassignment = [...agents.values()].some(
+    (agent) => agent.pendingClear && pathsMatch(agent.projectDir, projectDir),
+  );
+  if (hasPendingReassignment) return;
 
   for (const file of files) {
     // --resume detection: seeded files whose mtime changed have new data.
@@ -1129,10 +1144,9 @@ export function scanExternalDir(
     // Check if already tracked by an agent (normalize paths for comparison).
     // This prevents the external scanner from adopting /clear files (already
     // reassigned to a terminal agent) while allowing untracked files through.
-    const normalizedFile = path.resolve(file);
     let tracked = false;
     for (const agent of agents.values()) {
-      if (path.resolve(agent.jsonlFile) === normalizedFile) {
+      if (pathsMatch(agent.jsonlFile, file)) {
         tracked = true;
         break;
       }
@@ -1220,7 +1234,7 @@ function scanGlobalProjectDirs(
   const now = Date.now();
   for (const dirPath of projectDirs) {
     // Skip directories already tracked by workspace scanning
-    if (trackedProjectDirs.has(dirPath)) continue;
+    if (isTrackedProjectDir(dirPath)) continue;
 
     let files: string[];
     try {
@@ -1236,7 +1250,7 @@ function scanGlobalProjectDirs(
       if (knownJsonlFiles.has(file)) continue;
       let tracked = false;
       for (const agent of agents.values()) {
-        if (agent.jsonlFile === file) {
+        if (pathsMatch(agent.jsonlFile, file)) {
           tracked = true;
           break;
         }

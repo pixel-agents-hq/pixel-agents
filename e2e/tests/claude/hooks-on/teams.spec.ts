@@ -239,16 +239,9 @@ test.describe('Hooks ON / teams', () => {
         .build(),
     });
 
-    // SessionStart alone (t+0.2s) leaves the session pending. Settle-based
-    // check (the scenario can't sequence delivery like sendHookEvent did);
-    // PreToolUse only lands at t+7s, leaving wide margin even with the
-    // external-monitor terminal opening (~3s) inside the spawn call above.
-    await frame.waitForTimeout(1_500);
-    narrator.step('SessionStart alone should not create a character yet');
-    await expectOverlayCount(frame, 0);
-    narrator.check('count 0 — SessionStart alone created nothing');
-
-    narrator.step('waiting for the first PreToolUse to adopt the external lead');
+    // Workspace JSONL polling remains authoritative while hooks are enabled, so
+    // this session may be adopted before the delayed t+7s PreToolUse confirms it.
+    narrator.step('waiting for JSONL discovery or PreToolUse to adopt the external lead');
     await expectOverlayCount(frame, 1);
     await expectOverlayVisibleWithTexts(frame, ['LEAD']);
     narrator.check('the lead is adopted and labelled "LEAD" — count 1');

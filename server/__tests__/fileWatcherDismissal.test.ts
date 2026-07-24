@@ -22,12 +22,14 @@ import {
 } from '../src/constants.js';
 import { DismissalTracker } from '../src/dismissalTracker.js';
 import {
+  adoptExternalSessionFromHook,
   ensureProjectScan,
   scanExternalDir,
   scanForNewJsonlFiles,
   setDismissalTracker,
   startExternalSessionScanning,
 } from '../src/fileWatcher.js';
+import type { AgentState } from '../src/types.js';
 
 /**
  * Tests for the DismissalTracker integration with fileWatcher's scanner functions.
@@ -335,6 +337,63 @@ describe('fileWatcher dismissal state', () => {
       const adopted = [...agents.values()][0];
       expect(adopted.jsonlFile).toBe(path.join(projectDir, 'workspace-session.jsonl'));
       expect(adopted.isExternal).toBe(true);
+    });
+
+    it('does not steal a replacement transcript while an agent awaits reassignment', () => {
+      const oldFile = writeJsonlFile('old-session.jsonl', '{"type":"assistant"}\n');
+      const replacementFile = writeJsonlFile('replacement-session.jsonl', '{"type":"assistant"}\n');
+      knownJsonlFiles.add(oldFile);
+      agents.set(1, {
+        id: 1,
+        isExternal: false,
+        projectDir,
+        jsonlFile: oldFile,
+        pendingClear: true,
+      } as AgentState);
+      nextAgentIdRef.current = 2;
+
+      runExternalScan();
+      expect(agents.size).toBe(1);
+      expect(knownJsonlFiles.has(replacementFile)).toBe(false);
+
+      agents.get(1)!.pendingClear = false;
+      runExternalScan();
+      expect(agents.size).toBe(2);
+      expect(knownJsonlFiles.has(replacementFile)).toBe(true);
+    });
+
+    it('deduplicates case-varied transcript paths across hook and polling adoption', () => {
+      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+      try {
+        const file = writeJsonlFile('workspace-session.jsonl', '{"type":"assistant"}\n');
+        agents.set(1, {
+          id: 1,
+          isExternal: true,
+          projectDir,
+          jsonlFile: file.toUpperCase(),
+        } as AgentState);
+        nextAgentIdRef.current = 2;
+
+        adoptExternalSessionFromHook(
+          'workspace-session',
+          file,
+          projectDir,
+          knownJsonlFiles,
+          nextAgentIdRef,
+          agents,
+          fileWatchers,
+          pollingTimers,
+          waitingTimers,
+          permissionTimers,
+          () => {},
+        );
+        runExternalScan();
+
+        expect(agents.size).toBe(1);
+        expect(nextAgentIdRef.current).toBe(2);
+      } finally {
+        platformSpy.mockRestore();
+      }
     });
   });
 

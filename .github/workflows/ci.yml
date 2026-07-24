@@ -421,6 +421,32 @@ jobs:
           done
           exit "$failed"
 
+  # Single aggregate status check to require in branch protection, instead of
+  # pinning every job/shard name (which silently breaks when a shard is renamed
+  # or the shard count changes). Green only when ci, npm-package-node20, and the
+  # whole e2e matrix all succeed.
+  required-checks:
+    name: Required Checks
+    if: always()
+    needs:
+      - ci
+      - npm-package-node20
+      - e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all required jobs succeeded
+        run: |
+          echo "ci=${{ needs.ci.result }}"
+          echo "npm-package-node20=${{ needs.npm-package-node20.result }}"
+          echo "e2e=${{ needs.e2e.result }}"
+          if [ "${{ needs.ci.result }}" != "success" ] \
+            || [ "${{ needs.npm-package-node20.result }}" != "success" ] \
+            || [ "${{ needs.e2e.result }}" != "success" ]; then
+            echo "::error::One or more required jobs did not succeed"
+            exit 1
+          fi
+          echo "All required jobs succeeded."
+
   deploy-preview-precheck:
     name: Deploy Precheck
     if: always()
