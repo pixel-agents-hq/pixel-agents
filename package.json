@@ -93,8 +93,7 @@
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "package": "npm run asyncapi:generate && npm run check-types && npm run lint && node esbuild.js --production && npm run build:webview",
     "asyncapi:generate": "tsx scripts/generate-messages.ts",
-    "asyncapi:validate": "asyncapi validate core/asyncapi.yaml",
-    "asyncapi:docs": "asyncapi start studio --file core/asyncapi.yaml",
+    "asyncapi:validate": "node scripts/validate-asyncapi.mjs",
     "check-types": "tsc --noEmit && tsc --noEmit -p server/tsconfig.test.json",
     "prepare": "husky",
     "lint": "eslint adapters/vscode server core && cd webview-ui && eslint .",
@@ -117,9 +116,8 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@asyncapi/cli": "^6.0.0",
-    "@asyncapi/html-template": "^3.5.6",
     "@asyncapi/modelina": "^5.10.1",
+    "@asyncapi/parser": "^3.6.0",
     "@playwright/test": "^1.58.2",
     "@types/node": "25.x",
     "@types/pngjs": "^6.0.5",
@@ -153,8 +151,13 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
-    "@fastify/static": "^9.1.1",
+    "@fastify/static": "^10.1.2",
     "@fastify/websocket": "^11.2.0",
     "fastify": "^5.8.5"
+  },
+  "overrides": {
+    "jsonpath-plus": "^10.4.0",
+    "brace-expansion": "^5.0.2",
+    "minimatch": "^10.1.1"
   }
 }
