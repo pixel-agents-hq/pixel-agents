@@ -29,6 +29,7 @@ import {
   setDismissalTracker,
   startExternalSessionScanning,
 } from '../src/fileWatcher.js';
+import { PathSet } from '../src/pathKey.js';
 import type { AgentState } from '../src/types.js';
 
 /**
@@ -42,7 +43,9 @@ describe('fileWatcher dismissal state', () => {
   let tmpDir: string;
   let projectDir: string;
   let tracker: DismissalTracker;
-  let knownJsonlFiles: Set<string>;
+  // PathSet, not Set — mirrors AgentRuntime.knownJsonlFiles so the case-varied
+  // path cases below exercise the real membership semantics.
+  let knownJsonlFiles: PathSet;
   let nextAgentIdRef: { current: number };
   let agents: AgentStateStore;
   let fileWatchers: Map<number, fs.FSWatcher>;
@@ -77,7 +80,7 @@ describe('fileWatcher dismissal state', () => {
     tracker = new DismissalTracker();
     setDismissalTracker(tracker);
 
-    knownJsonlFiles = new Set();
+    knownJsonlFiles = new PathSet();
     nextAgentIdRef = { current: 1 };
     agents = new AgentStateStore();
     fileWatchers = new Map();
@@ -360,6 +363,39 @@ describe('fileWatcher dismissal state', () => {
       runExternalScan();
       expect(agents.size).toBe(2);
       expect(knownJsonlFiles.has(replacementFile)).toBe(true);
+    });
+
+    it('honors a dismissal recorded under a different path spelling', () => {
+      // Windows only: the user closes a hook-adopted agent (Claude's spelling of the
+      // transcript path) and the scanner then rediscovers the same file under VS Code's
+      // spelling. An exact-string dismissal key missed and the file was re-adopted
+      // seconds later, mid-cooldown.
+      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+      try {
+        const file = writeJsonlFile('closed-session.jsonl', '{"type":"assistant"}\n');
+        tracker.dismiss(file.toUpperCase());
+
+        runExternalScan();
+
+        expect(agents.size).toBe(0);
+        expect(tracker.isDismissed(file)).toBe(true);
+      } finally {
+        platformSpy.mockRestore();
+      }
+    });
+
+    it('treats a case-varied transcript as already known', () => {
+      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+      try {
+        const file = writeJsonlFile('known-session.jsonl', '{"type":"assistant"}\n');
+        knownJsonlFiles.add(file.toUpperCase());
+
+        runExternalScan();
+
+        expect(agents.size).toBe(0);
+      } finally {
+        platformSpy.mockRestore();
+      }
     });
 
     it('deduplicates case-varied transcript paths across hook and polling adoption', () => {

@@ -33,6 +33,7 @@ import {
   watchLayoutFile,
   writeLayoutToFile,
 } from '../../server/src/layoutPersistence.js';
+import { PathSet } from '../../server/src/pathKey.js';
 import { claudeProvider, copyHookScript } from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
@@ -327,8 +328,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           }
           this.globalDismissedFiles.clear();
         } else {
-          // Remove all external agents not from the current workspace folders
-          const workspaceDirs = new Set<string>();
+          // Remove all external agents not from the current workspace folders.
+          // PathSet: an agent adopted via hooks carries Claude's spelling of the
+          // project dir, which differs from VS Code's by drive-letter case on Windows.
+          const workspaceDirs = new PathSet();
           for (const folder of vscode.workspace.workspaceFolders ?? []) {
             const dir = getProjectDirPath(folder.uri.fsPath);
             if (dir) workspaceDirs.add(dir);

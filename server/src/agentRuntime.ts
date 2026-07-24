@@ -32,6 +32,7 @@ import {
 } from './fileWatcher.js';
 import type { HookEvent } from './hookEventHandler.js';
 import { HookEventHandler } from './hookEventHandler.js';
+import { PathSet } from './pathKey.js';
 import { SessionRouter } from './sessionRouter.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
 import { setHookProvider } from './transcriptParser.js';
@@ -53,8 +54,10 @@ export class AgentRuntime {
   readonly permissionTimers = new Map<number, ReturnType<typeof setTimeout>>();
   readonly jsonlPollTimers = new Map<number, ReturnType<typeof setInterval>>();
 
-  // Scanning state
-  readonly knownJsonlFiles = new Set<string>();
+  // Scanning state. PathSet (not Set) so a transcript adopted via hooks is still
+  // recognized as known when a scanner rebuilds the path from the workspace folder
+  // -- the two spellings differ by drive-letter case on Windows.
+  readonly knownJsonlFiles = new PathSet();
   readonly projectScanTimer = { current: null as ReturnType<typeof setInterval> | null };
   readonly activeAgentId = { current: null as number | null };
   private externalScanTimer: ReturnType<typeof setInterval> | null = null;

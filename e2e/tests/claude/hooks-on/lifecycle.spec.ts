@@ -44,6 +44,7 @@ import {
   expectOverlayVisibleForAgent,
   expectOverlayVisibleWithTexts,
   expectSingleAgentOverlay,
+  getOverlayByAgentId,
   readAgentOverlayIds,
 } from '../../../helpers/office';
 import {
@@ -362,13 +363,19 @@ test.describe('Hooks ON / lifecycle', () => {
     narrator.check('old character shows "Running: npm run before-resume"');
 
     narrator.step('resume arrives AFTER the grace window — the old character should be cleaned up');
-    await expectOverlayCount(frame, 0, 8_000);
-    narrator.check('old character removed (count → 0)');
     await expectOverlayVisible(frame, 'Running: npm run late-resume', 10_000);
+    await expectOverlayCount(frame, 1);
     const [newAgentId] = await readAgentOverlayIds(frame);
     expect(newAgentId).toBeDefined();
     expect(newAgentId).not.toBe(oldAgentId);
-    narrator.check('late-resumed session gets a NEW character with a different id');
+    // The old agent must be GONE, not reassigned: a reassignment would have kept
+    // oldAgentId on the surviving character (that is the within-grace behavior, and
+    // the id check above would catch it), a zombie would leave two overlays.
+    // Asserted on the end state rather than on a transient count of 0 — the cleanup
+    // and the replacement's adoption land within a few hundred ms of each other, so
+    // polling for the empty office in between is a coin flip.
+    await expect(getOverlayByAgentId(frame, oldAgentId)).toHaveCount(0);
+    narrator.check('late-resumed session gets a NEW character; the old one is gone');
   });
 
   test('three parallel Task subagents in one turn render distinct sub-characters @area:lifecycle', async ({

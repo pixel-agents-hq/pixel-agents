@@ -42,6 +42,7 @@ import {
   PROJECT_SCAN_INTERVAL_MS,
 } from './constants.js';
 import type { DismissalTracker } from './dismissalTracker.js';
+import { pathsMatch } from './pathKey.js';
 import { cancelPermissionTimer, cancelWaitingTimer, clearAgentActivity } from './timerManager.js';
 import { processTranscriptLine } from './transcriptParser.js';
 import type { AgentState } from './types.js';
@@ -240,14 +241,6 @@ export function readNewLines(
 
 // Track all project directories to scan (supports multi-root workspaces)
 const trackedProjectDirs = new Set<string>();
-
-function pathsMatch(left: string, right: string): boolean {
-  const resolvedLeft = path.resolve(left);
-  const resolvedRight = path.resolve(right);
-  return process.platform === 'win32'
-    ? resolvedLeft.toLowerCase() === resolvedRight.toLowerCase()
-    : resolvedLeft === resolvedRight;
-}
 
 /** Check if a project dir is tracked by the workspace scanner. */
 export function isTrackedProjectDir(dir: string): boolean {
