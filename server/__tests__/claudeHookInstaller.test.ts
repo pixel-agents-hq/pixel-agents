@@ -124,4 +124,25 @@ describe('claudeHookInstaller', () => {
     // Check owner execute bit
     expect(stat.mode & 0o100).toBeTruthy();
   });
+
+  // 11. copyHookScript reports success when the source exists (issue #333)
+  it('copyHookScript returns true when the source exists', () => {
+    const mockExtPath = path.join(tmpBase, 'mock-ext');
+    const hookSrc = path.join(mockExtPath, 'dist', 'hooks');
+    fs.mkdirSync(hookSrc, { recursive: true });
+    fs.writeFileSync(path.join(hookSrc, 'claude-hook.js'), '// mock');
+
+    expect(copyHookScript(mockExtPath)).toBe(true);
+  });
+
+  // 12. copyHookScript reports failure when the source is missing (issue #333):
+  //     without this, a path regression logs "Hooks installed" while installing
+  //     nothing — the silent failure the reporter flagged.
+  it('copyHookScript returns false when the source is missing', () => {
+    const mockExtPath = path.join(tmpBase, 'mock-ext'); // no dist/hooks/claude-hook.js
+    const dst = path.join(tmpBase, '.pixel-agents', 'hooks', 'claude-hook.js');
+
+    expect(copyHookScript(mockExtPath)).toBe(false);
+    expect(fs.existsSync(dst)).toBe(false);
+  });
 });

@@ -209,7 +209,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.runtime.hooksEnabled.current = hooksEnabled;
         if (hooksEnabled) {
           void claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
-          copyHookScript(this.context.extensionPath);
+          if (!copyHookScript(this.context.extensionPath)) {
+            console.warn('[Pixel Agents] Hook script not copied, hooks may not fire');
+          }
         }
         console.log(`[Pixel Agents] Server: ready on port ${config.port}`);
       })
@@ -301,8 +303,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             serverConfig ? `http://127.0.0.1:${serverConfig.port}` : '',
             serverConfig?.token ?? '',
           );
-          copyHookScript(this.context.extensionPath);
-          console.log('[Pixel Agents] Hooks enabled by user');
+          const copied = copyHookScript(this.context.extensionPath);
+          console.log(
+            copied
+              ? '[Pixel Agents] Hooks enabled by user'
+              : '[Pixel Agents] Hooks NOT fully enabled, hook script missing',
+          );
         } else {
           void claudeProvider.uninstallHooks();
           console.log('[Pixel Agents] Hooks disabled by user');

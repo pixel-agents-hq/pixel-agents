@@ -132,8 +132,12 @@ async function main(): Promise<void> {
           `http://127.0.0.1:${currentConfig.port}`,
           currentConfig.token,
         );
-        copyHookScript(packageRoot);
-        console.log('[Pixel Agents] Hooks installed (user toggle)');
+        const copied = copyHookScript(packageRoot);
+        console.log(
+          copied
+            ? '[Pixel Agents] Hooks installed (user toggle)'
+            : '[Pixel Agents] Hooks NOT installed (user toggle), hook script missing',
+        );
       } else {
         await claudeProvider.uninstallHooks();
         console.log('[Pixel Agents] Hooks uninstalled (user toggle)');
@@ -198,8 +202,12 @@ async function main(): Promise<void> {
     if (runtime.hooksEnabled.current) {
       try {
         await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
-        copyHookScript(packageRoot);
-        console.log('[Pixel Agents] Hooks installed');
+        const copied = copyHookScript(packageRoot);
+        console.log(
+          copied
+            ? '[Pixel Agents] Hooks installed'
+            : '[Pixel Agents] Hooks NOT installed, hook script missing',
+        );
       } catch (err) {
         console.error('[Pixel Agents] Failed to install hooks:', err);
       }

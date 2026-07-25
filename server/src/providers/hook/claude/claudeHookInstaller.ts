@@ -167,8 +167,11 @@ export function uninstallHooks(): void {
   }
 }
 
-/** Copy the shipped hook script from the extension to ~/.pixel-agents/hooks/ */
-export function copyHookScript(extensionPath: string): void {
+/** Copy the shipped hook script from the extension to ~/.pixel-agents/hooks/.
+ *  Returns true if the script was copied, false if the source was missing or the
+ *  copy failed, so callers can report the failure instead of logging a false
+ *  success (issue #333: a path regression silently installed nothing). */
+export function copyHookScript(extensionPath: string): boolean {
   const src = path.join(extensionPath, 'dist', 'hooks', CLAUDE_HOOK_SCRIPT_NAME);
   const dst = getHookScriptPath();
   const dstDir = path.dirname(dst);
@@ -179,12 +182,14 @@ export function copyHookScript(extensionPath: string): void {
     }
     if (!fs.existsSync(src)) {
       console.warn(`[Pixel Agents] Hook script not found at ${src}`);
-      return;
+      return false;
     }
     fs.copyFileSync(src, dst);
     fs.chmodSync(dst, 0o700);
     console.log(`[Pixel Agents] Hook script installed at ${dst}`);
+    return true;
   } catch (e) {
     console.error(`[Pixel Agents] Failed to copy hook script: ${e}`);
+    return false;
   }
 }
