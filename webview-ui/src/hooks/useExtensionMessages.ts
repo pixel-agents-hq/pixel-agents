@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
+import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
+import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { setFloorSprites } from '../office/floorTiles.js';
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js';
@@ -126,13 +128,7 @@ export function useExtensionMessages(
 
   useEffect(() => {
     // Buffer agents from existingAgents until layout is loaded
-    let pendingAgents: Array<{
-      id: number;
-      palette?: number;
-      hueShift?: number;
-      seatId?: string;
-      folderName?: string;
-    }> = [];
+    let pendingAgents: PendingAgent[] = [];
 
     // Accumulate distinct folderNames seen across agents (never removed during the
     // session): the source for the Areas folder-mapping dropdown, so a folder stays
@@ -271,22 +267,26 @@ export function useExtensionMessages(
         os.removeAgent(id);
       } else if (msg.type === 'existingAgents') {
         const incoming = msg.agents as number[];
-        const meta = (msg.agentMeta || {}) as Record<
-          number,
-          { palette?: number; hueShift?: number; seatId?: string }
-        >;
+        const meta = (msg.agentMeta || {}) as Record<number, ExistingAgentMeta>;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
-        // Buffer agents — they'll be added in layoutLoaded after seats are built
         for (const id of incoming) {
-          const m = meta[id];
-          pendingAgents.push({
-            id,
-            palette: m?.palette,
-            hueShift: m?.hueShift,
-            seatId: m?.seatId,
-            folderName: folderNames[id],
-          });
           noteFolderName(folderNames[id]);
+        }
+        // Order-independent restore: add agents now if the layout (and its seats)
+        // is already built, otherwise buffer them for the next layoutLoaded.
+        // Depending on layoutLoaded always arriving last stranded restored agents
+        // on surfaces that send layout first (issue #334).
+        if (
+          reconcileExistingAgents(
+            os,
+            incoming,
+            meta,
+            folderNames,
+            layoutReadyRef.current,
+            pendingAgents,
+          )
+        ) {
+          saveAgentSeats(os);
         }
         setAgents((prev) => {
           const ids = new Set(prev);
