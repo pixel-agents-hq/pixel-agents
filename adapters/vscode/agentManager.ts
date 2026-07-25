@@ -262,6 +262,14 @@ export function removeAgent(
   store.persist();
 }
 
+/**
+ * Reference implementation of the AgentState → PersistedAgent projection: it shows
+ * exactly which fields survive a reload. Kept as the worked example for adapters that
+ * persist through a StateAdapter directly; AgentStateStore.persist() is what the
+ * VS Code surface calls at runtime.
+ *
+ * @public
+ */
 export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): void {
   const persisted: PersistedAgent[] = [];
   for (const agent of agents.values()) {

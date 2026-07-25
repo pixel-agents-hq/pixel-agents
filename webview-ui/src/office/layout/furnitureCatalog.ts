@@ -25,13 +25,7 @@ export interface LoadedAssetData {
 }
 
 export type FurnitureCategory =
-  | 'desks'
-  | 'chairs'
-  | 'storage'
-  | 'decor'
-  | 'electronics'
-  | 'wall'
-  | 'misc';
+  'desks' | 'chairs' | 'storage' | 'decor' | 'electronics' | 'wall' | 'misc';
 
 /** @internal */
 export interface CatalogEntryWithCategory extends FurnitureCatalogEntry {

@@ -54,7 +54,10 @@ export function getCarpetSetCount(): number {
   return carpetSets.length;
 }
 
-/** Return the raw sprite sheet for a variant (or undefined). Used by editor previews. */
+/** Return the raw sprite sheet for a variant (or undefined). Used by editor previews.
+ *
+ * @public
+ */
 export function getCarpetVariantSprites(variant: number): SpriteData[] | undefined {
   if (variant < 0 || variant >= carpetSets.length) return undefined;
   return carpetSets[variant];

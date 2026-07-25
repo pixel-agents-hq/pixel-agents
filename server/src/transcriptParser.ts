@@ -85,8 +85,7 @@ export function processTranscriptLine(
 
     // -- Token usage extraction from assistant records --
     const usage = record.message?.usage as
-      | { input_tokens?: number; output_tokens?: number }
-      | undefined;
+      { input_tokens?: number; output_tokens?: number } | undefined;
     if (usage) {
       if (typeof usage.input_tokens === 'number') {
         agent.inputTokens += usage.input_tokens;

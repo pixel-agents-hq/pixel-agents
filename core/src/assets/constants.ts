@@ -33,4 +33,3 @@ export const MAX_PET_PNG_SIZE = 512 * 1024; // 512 KB cap per pet PNG
 export const CARPET_TILE_SIZE = 16;
 export const CARPET_GRID_COLS = 4;
 export const CARPET_MARCHING_SQUARES_COUNT = 16;
-export const CARPET_VARIANT_COUNT = 3;

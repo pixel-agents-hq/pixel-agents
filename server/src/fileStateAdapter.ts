@@ -134,4 +134,5 @@ export class FileStateAdapter implements StateAdapter {
 }
 
 // Re-export for callers that want to construct AdapterSettings defaults directly.
+/** @public */
 export type { AdapterSettings, ConfigNamespace };

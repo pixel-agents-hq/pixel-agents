@@ -53,7 +53,10 @@ export function setDismissalTracker(tracker: DismissalTracker): void {
   dismissalTracker = tracker;
 }
 
-/** Get the active DismissalTracker (for PixelAgentsViewProvider direct access). */
+/** Get the active DismissalTracker (for PixelAgentsViewProvider direct access).
+ *
+ * @public
+ */
 export function getDismissalTracker(): DismissalTracker | null {
   return dismissalTracker;
 }
