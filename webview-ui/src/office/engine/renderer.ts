@@ -21,6 +21,16 @@ import {
   CARPET_DEFAULT_COLOR,
   CHARACTER_SITTING_OFFSET_PX,
   CHARACTER_Z_SORT_OFFSET,
+  CHAT_BUBBLE_BG,
+  CHAT_BUBBLE_BORDER,
+  CHAT_BUBBLE_BORDER_WIDTH_PX,
+  CHAT_BUBBLE_FONT_SIZE_PX,
+  CHAT_BUBBLE_HEIGHT_PX,
+  CHAT_BUBBLE_PADDING_PX,
+  CHAT_BUBBLE_SHADOW_COLOR,
+  CHAT_BUBBLE_SHADOW_OFFSET_PX,
+  CHAT_BUBBLE_TEXT,
+  CHAT_BUBBLE_Y_OFFSET_PX,
   DELETE_BUTTON_BG,
   FALLBACK_FLOOR_COLOR,
   GHOST_BORDER_HOVER_FILL,
@@ -371,7 +381,8 @@ export function renderScene(
     const spriteData = getCharacterSprite(ch, sprites);
     const cached = getCachedSprite(spriteData, zoom);
     // Sitting offset: shift character down when seated so they visually sit in the chair
-    const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
+    const sittingOffset =
+      ch.seatId && ch.state !== CharacterState.WALK ? CHARACTER_SITTING_OFFSET_PX : 0;
     // Anchor at bottom-center of character — round to integer device pixels
     const drawX = Math.round(offsetX + ch.x * zoom - cached.width / 2);
     const drawY = Math.round(offsetY + (ch.y + sittingOffset) * zoom - cached.height);
@@ -756,7 +767,7 @@ function renderBubbles(
     // Position: centered above the character's head
     // Character is anchored bottom-center at (ch.x, ch.y), sprite is 16x24
     // Place bubble above head with a small gap; follow sitting offset
-    const sittingOff = ch.state === CharacterState.TYPE ? BUBBLE_SITTING_OFFSET_PX : 0;
+    const sittingOff = ch.seatId && ch.state !== CharacterState.WALK ? BUBBLE_SITTING_OFFSET_PX : 0;
     const bubbleX = Math.round(offsetX + ch.x * zoom - cached.width / 2);
     const bubbleY = Math.round(
       offsetY + (ch.y + sittingOff - BUBBLE_VERTICAL_OFFSET_PX) * zoom - cached.height - 1 * zoom,
@@ -766,6 +777,39 @@ function renderBubbles(
     if (alpha < 1.0) ctx.globalAlpha = alpha;
     ctx.drawImage(cached, bubbleX, bubbleY);
     ctx.restore();
+  }
+
+  for (const ch of characters) {
+    const message = ch.chat?.message;
+    if (!message || ch.bubbleType) continue;
+
+    const fontSize = Math.round(CHAT_BUBBLE_FONT_SIZE_PX * zoom);
+    ctx.font = `${fontSize}px "FS Pixel Sans", monospace`;
+    const textWidth = ctx.measureText(message).width;
+    const padding = CHAT_BUBBLE_PADDING_PX * zoom;
+    const boxW = textWidth + padding * 2;
+    const boxH = CHAT_BUBBLE_HEIGHT_PX * zoom;
+    const sittingOff =
+      ch.seatId && ch.state !== CharacterState.WALK ? CHARACTER_SITTING_OFFSET_PX : 0;
+
+    const bx = Math.round(offsetX + ch.x * zoom - boxW / 2);
+    const by = Math.round(offsetY + (ch.y + sittingOff - CHAT_BUBBLE_Y_OFFSET_PX) * zoom - boxH);
+
+    // Sombras offset
+    ctx.fillStyle = CHAT_BUBBLE_SHADOW_COLOR;
+    const shadowOff = CHAT_BUBBLE_SHADOW_OFFSET_PX * zoom;
+    ctx.fillRect(bx + shadowOff, by + shadowOff, boxW, boxH);
+
+    ctx.fillStyle = CHAT_BUBBLE_BG;
+    ctx.fillRect(bx, by, boxW, boxH);
+
+    ctx.strokeStyle = CHAT_BUBBLE_BORDER;
+    ctx.lineWidth = Math.max(1, Math.round(CHAT_BUBBLE_BORDER_WIDTH_PX * zoom));
+    ctx.strokeRect(bx, by, boxW, boxH);
+
+    ctx.fillStyle = CHAT_BUBBLE_TEXT;
+    ctx.textBaseline = 'top';
+    ctx.fillText(message, bx + padding, by + padding);
   }
 }
 

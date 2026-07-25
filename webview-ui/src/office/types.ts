@@ -165,6 +165,13 @@ export interface OfficeLayout {
   areaTiles?: Array<string | null>;
 }
 
+export interface CharacterChatState {
+  message: string | null;
+  timerSec: number;
+  idleTimeSec: number;
+  cooldownSec: number;
+}
+
 export interface Character {
   id: number;
   state: CharacterState;
@@ -209,6 +216,8 @@ export interface Character {
   waitingAwaitingInput?: boolean;
   /** Countdown timer for bubble (waiting: 2→0, permission: unused) */
   bubbleTimer: number;
+  /** Social chat state */
+  chat?: CharacterChatState;
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */
   seatTimer: number;
   /** Whether this character represents a sub-agent (spawned by Task tool) */

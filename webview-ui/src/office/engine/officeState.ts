@@ -4,6 +4,11 @@ import {
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
   CHARACTER_SITTING_OFFSET_PX,
+  CHAT_COOLDOWN_SEC,
+  CHAT_DISTANCE_TILES,
+  CHAT_DURATION_SEC,
+  CHAT_IDLE_MIN_SEC,
+  CHAT_RETRY_COOLDOWN_SEC,
   DISMISS_BUBBLE_FAST_FADE_SEC,
   FURNITURE_ANIM_INTERVAL_SEC,
   HUE_SHIFT_MIN_DEG,
@@ -44,6 +49,7 @@ import {
   TILE_SIZE,
 } from '../types.js';
 import { createCharacter, updateCharacter } from './characters.js';
+import { getRandomPhrase } from './chatter.js';
 import { matrixEffectSeeds } from './matrixEffect.js';
 import { createPet, updatePet } from './petEntity.js';
 
@@ -823,6 +829,15 @@ export class OfficeState {
     }
   }
 
+  /** Display a custom text chat bubble above the character */
+  showChatMessage(id: number, message: string | null, durationSec: number = 5): void {
+    const ch = this.characters.get(id);
+    if (ch && ch.chat) {
+      ch.chat.message = message;
+      ch.chat.timerSec = durationSec;
+    }
+  }
+
   // ── Pets ──────────────────────────────────────────────────────
 
   /**
@@ -946,7 +961,6 @@ export class OfficeState {
   private syncLayoutPets(): void {
     this.layout.pets = this.pets.map((p) => ({ id: p.id, petType: p.petType }));
   }
-
   setTeamInfo(
     id: number,
     teamName?: string,
@@ -1012,6 +1026,90 @@ export class OfficeState {
         if (ch.bubbleTimer <= 0) {
           ch.bubbleType = null;
           ch.bubbleTimer = 0;
+        }
+      }
+
+      if (ch.chat && ch.chat.message) {
+        ch.chat.timerSec -= dt;
+        if (ch.chat.timerSec <= 0) {
+          ch.chat.message = null;
+          ch.chat.timerSec = 0;
+        }
+      }
+
+      if (ch.chat && ch.chat.cooldownSec > 0) ch.chat.cooldownSec -= dt;
+
+      if (!ch.isActive && ch.chat) {
+        if (ch.state === CharacterState.IDLE) {
+          ch.chat.idleTimeSec += dt;
+        } else {
+          ch.chat.idleTimeSec = 0;
+        }
+
+        if (
+          ch.state === CharacterState.IDLE &&
+          !ch.bubbleType &&
+          ch.chat.idleTimeSec >= CHAT_IDLE_MIN_SEC &&
+          ch.chat.cooldownSec <= 0 &&
+          !ch.chat.message
+        ) {
+          for (const other of this.characters.values()) {
+            if (other.id === ch.id) continue;
+            if (other.isActive || other.state !== CharacterState.IDLE || other.bubbleType) continue;
+            if (
+              !other.chat ||
+              other.chat.cooldownSec > CHAT_RETRY_COOLDOWN_SEC ||
+              other.chat.message
+            )
+              continue; // Allow targeting if only on retry cooldown
+
+            const dist =
+              Math.abs(ch.tileCol - other.tileCol) + Math.abs(ch.tileRow - other.tileRow);
+
+            if (dist <= CHAT_DISTANCE_TILES) {
+              this.showChatMessage(ch.id, getRandomPhrase(), CHAT_DURATION_SEC);
+              ch.chat.cooldownSec = CHAT_COOLDOWN_SEC;
+              ch.chat.idleTimeSec = 0;
+
+              // Face each other, prioritizing the larger distance axis
+              const dCol = other.tileCol - ch.tileCol;
+              const dRow = other.tileRow - ch.tileRow;
+              let newChDir = ch.dir;
+              let newOtherDir = other.dir;
+
+              if (Math.abs(dCol) > Math.abs(dRow)) {
+                newChDir = dCol > 0 ? Direction.RIGHT : Direction.LEFT;
+                newOtherDir = dCol > 0 ? Direction.LEFT : Direction.RIGHT;
+              } else {
+                if (dRow > 0) {
+                  newChDir = Direction.DOWN;
+                  newOtherDir = Direction.UP;
+                } else if (dRow < 0) {
+                  newChDir = Direction.UP;
+                  newOtherDir = Direction.DOWN;
+                }
+              }
+
+              if (!ch.seatId) ch.dir = newChDir;
+              if (!other.seatId) other.dir = newOtherDir;
+
+              // Prevent the other from talking at exactly the same time
+              other.chat.cooldownSec = CHAT_COOLDOWN_SEC;
+              other.chat.idleTimeSec = 0;
+              break;
+            }
+          }
+
+          // Optimization: If no one was found, wait 2 seconds before checking again
+          if (ch.chat.cooldownSec <= 0) {
+            ch.chat.cooldownSec = CHAT_RETRY_COOLDOWN_SEC;
+          }
+        }
+      } else if (ch.chat) {
+        ch.chat.idleTimeSec = 0;
+        if (ch.chat.message) {
+          ch.chat.message = null;
+          ch.chat.timerSec = 0;
         }
       }
     }

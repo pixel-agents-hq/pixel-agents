@@ -77,6 +77,12 @@ export function createCharacter(
     seatId,
     bubbleType: null,
     bubbleTimer: 0,
+    chat: {
+      message: null,
+      timerSec: 0,
+      idleTimeSec: 0,
+      cooldownSec: 0,
+    },
     seatTimer: 0,
     isSubagent: false,
     parentAgentId: null,
@@ -158,6 +164,10 @@ export function updateCharacter(
             ch.frameTimer = 0;
           }
         }
+        break;
+      }
+      // Skip wandering if they are talking
+      if (ch.chat?.message) {
         break;
       }
       // Countdown wander timer
