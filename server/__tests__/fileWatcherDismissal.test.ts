@@ -27,9 +27,11 @@ import {
   scanExternalDir,
   scanForNewJsonlFiles,
   setDismissalTracker,
+  setTeamProvider,
   startExternalSessionScanning,
 } from '../src/fileWatcher.js';
 import { PathSet } from '../src/pathKey.js';
+import { claudeTeamProvider } from '../src/providers/hook/claude/claudeTeamProvider.js';
 import type { AgentState } from '../src/types.js';
 
 /**
@@ -59,7 +61,7 @@ describe('fileWatcher dismissal state', () => {
     return filePath;
   }
 
-  function runExternalScan(): void {
+  function runExternalScan(hooksEnabled = false): void {
     scanExternalDir(
       projectDir,
       knownJsonlFiles,
@@ -70,6 +72,7 @@ describe('fileWatcher dismissal state', () => {
       waitingTimers,
       permissionTimers,
       () => {},
+      { current: hooksEnabled },
     );
   }
 
@@ -288,6 +291,95 @@ describe('fileWatcher dismissal state', () => {
       // No active-terminal agent is present, so adoption shouldn't fire regardless.
       // Primarily: dismissal entry should NOT get erased by this pass.
       expect(tracker.isDismissed(file)).toBe(true);
+    });
+  });
+
+  describe('scanExternalDir: team session ownership', () => {
+    it('leaves a tracked lead’s teammate session to team discovery', () => {
+      // Newer harnesses run each spawned agent as its own top-level session in
+      // the LEAD's projectDir, so this scan sees it too. Generic adoption here
+      // would strip the teammate identity (no leadAgentId, and a seat picked by
+      // findFreeSeat rather than the seat closest to its lead), and since
+      // workspace polling runs under hooks it can beat the hook-driven attach.
+      setTeamProvider(claudeTeamProvider);
+      try {
+        const teamName = 'session-abc12345';
+        const leadFile = writeJsonlFile('lead.jsonl', '{"type":"assistant"}\n');
+        knownJsonlFiles.add(leadFile);
+        nextAgentIdRef.current = 50;
+        agents.set(1, {
+          id: 1,
+          jsonlFile: leadFile,
+          projectDir,
+          isExternal: false,
+          teamName,
+        } as AgentState);
+
+        writeJsonlFile(
+          'aaaaaaaa-1111-4111-8111-e2e000000001.jsonl',
+          `${JSON.stringify({ type: 'system', teamName, agentName: 'researcher' })}\n`,
+        );
+
+        runExternalScan(true);
+
+        // The teammate transcript must be left for team discovery. Asserted on
+        // the adopted FILES, not the store size: the scanner assigns ids from
+        // nextAgentIdRef, which can collide with a hand-seeded lead and mask an
+        // adoption as an overwrite.
+        const adopted = [...agents.values()].map((a) => path.basename(a.jsonlFile));
+        expect(adopted).toEqual(['lead.jsonl']);
+      } finally {
+        setTeamProvider(null as unknown as Parameters<typeof setTeamProvider>[0]);
+      }
+    });
+
+    it('still adopts a teammate session when hooks are OFF', () => {
+      // Hooks off = no fast-attach, so this scan is the ONLY discovery path for
+      // tmux teammates. Guarding on team tags without checking hooks state broke
+      // the hooks-off matrix specs: the teammate was never adopted at all.
+      setTeamProvider(claudeTeamProvider);
+      try {
+        const teamName = 'session-abc12345';
+        const leadFile = writeJsonlFile('lead.jsonl', '{"type":"assistant"}\n');
+        knownJsonlFiles.add(leadFile);
+        nextAgentIdRef.current = 50;
+        agents.set(1, {
+          id: 1,
+          jsonlFile: leadFile,
+          projectDir,
+          isExternal: false,
+          teamName,
+        } as AgentState);
+
+        writeJsonlFile(
+          'cccccccc-3333-4333-8333-e2e000000003.jsonl',
+          `${JSON.stringify({ type: 'system', teamName, agentName: 'researcher' })}\n`,
+        );
+
+        runExternalScan(false);
+
+        const adopted = [...agents.values()].map((a) => path.basename(a.jsonlFile));
+        expect(adopted).toContain('cccccccc-3333-4333-8333-e2e000000003.jsonl');
+      } finally {
+        setTeamProvider(null as unknown as Parameters<typeof setTeamProvider>[0]);
+      }
+    });
+
+    it('still adopts an orphan team session whose lead is not tracked', () => {
+      setTeamProvider(claudeTeamProvider);
+      try {
+        writeJsonlFile(
+          'bbbbbbbb-2222-4222-8222-e2e000000002.jsonl',
+          `${JSON.stringify({ type: 'system', teamName: 'session-orphan1', agentName: 'stray' })}\n`,
+        );
+
+        runExternalScan(true);
+
+        const adopted = [...agents.values()].map((a) => path.basename(a.jsonlFile));
+        expect(adopted).toEqual(['bbbbbbbb-2222-4222-8222-e2e000000002.jsonl']);
+      } finally {
+        setTeamProvider(null as unknown as Parameters<typeof setTeamProvider>[0]);
+      }
     });
   });
 

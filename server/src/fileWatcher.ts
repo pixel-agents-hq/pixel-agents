@@ -1162,7 +1162,7 @@ export function startExternalSessionScanning(
 
   persistAgents: () => void,
   watchAllSessionsRef?: { current: boolean },
-  _hooksEnabledRef?: { current: boolean },
+  hooksEnabledRef?: { current: boolean },
 ): ReturnType<typeof setInterval> {
   return setInterval(() => {
     // Scan all tracked project dirs in both hooks and heuristic modes. Hooks are
@@ -1179,6 +1179,7 @@ export function startExternalSessionScanning(
         waitingTimers,
         permissionTimers,
         persistAgents,
+        hooksEnabledRef,
       );
     }
     // If "Watch All Sessions" is ON, also scan all global project dirs
@@ -1209,6 +1210,9 @@ export function scanExternalDir(
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
 
   persistAgents: () => void,
+  /** True when hooks are delivering. Only then does the hook-driven fast-attach
+   *  own teammate sessions; with hooks off this scan IS their discovery path. */
+  hooksEnabledRef?: { current: boolean },
 ): void {
   let files: string[];
   try {
@@ -1289,6 +1293,34 @@ export function scanExternalDir(
       }
     }
     if (tracked) continue;
+
+    // WITH HOOKS ON, teammate sessions belong to team discovery, not to generic
+    // external adoption. Newer harnesses run each spawned agent as its own
+    // top-level session inside the LEAD's projectDir, so this scan sees it too
+    // -- and since workspace polling now runs under hooks as well, it can win
+    // the race against the hook-driven fast-attach. Adopting it here would strip
+    // the teammate identity (no leadAgentId, generic seat instead of the seat
+    // closest to its lead).
+    //
+    // WITH HOOKS OFF there is no fast-attach, so this scan is the ONLY discovery
+    // path for tmux teammates and must keep adopting them (they self-identify
+    // from their record tags afterwards). Hence the hooksEnabledRef gate.
+    //
+    // Skip only when the lead is actually tracked; an orphan team session still
+    // falls through to normal adoption.
+    const teamMeta = hooksEnabledRef?.current
+      ? teamProvider?.getTeamMetadataForSession(file)
+      : null;
+    if (teamMeta?.teamName && teamMeta.agentName) {
+      let leadTracked = false;
+      for (const agent of agents.values()) {
+        if (agent.teamName === teamMeta.teamName && agent.leadAgentId === undefined) {
+          leadTracked = true;
+          break;
+        }
+      }
+      if (leadTracked) continue;
+    }
 
     // Only adopt recently-active files (modified within threshold).
     try {
