@@ -1,19 +1,13 @@
 version: 2
 updates:
+  # One npm entry for the whole monorepo. `directory: /` covers the root manifest
+  # AND the `server` / `webview-ui` workspace manifests, updating the single root
+  # package-lock.json in the same PR. Do NOT add a per-workspace entry: a workspace
+  # subdir has no lockfile of its own, so Dependabot would edit only its
+  # package.json and leave the root lock stale, which fails `npm ci` in CI before
+  # anything compiles.
   - package-ecosystem: npm
     directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 10
-    groups:
-      minor-and-patch:
-        update-types:
-          - minor
-          - patch
-
-  - package-ecosystem: npm
-    directory: /webview-ui
     schedule:
       interval: weekly
       day: monday
