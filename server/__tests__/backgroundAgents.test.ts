@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { scanForBackgroundAgentFiles, setTeamProvider } from '../src/fileWatcher.js';
@@ -183,6 +183,39 @@ describe('anonymous background agents (teams OFF) promoted to named characters',
     expect(
       messages.some((m) => m.type === 'subagentClear' && m.parentToolId === SPAWN_TOOL_ID),
     ).toBe(true);
+  });
+
+  it('does not promote a second character when the sidecar path is spelled differently', () => {
+    // Windows only: the same transcript reaches the runtime spelled two ways
+    // (hooks carry Claude's `process.cwd()` casing, scanners build from
+    // Uri.fsPath's lowercased drive letter). An exact-string already-tracked
+    // check missed and promoted the same background agent twice.
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    try {
+      const jsonlPath = seedSidecar();
+      processTranscriptLine(1, agentSpawnRecord(), agents, waitingTimers, permissionTimers);
+      processTranscriptLine(1, asyncLaunchResultRecord(), agents, waitingTimers, permissionTimers);
+      const promoted = [...agents.values()].filter((a) => a.leadAgentId === 1);
+      expect(promoted).toHaveLength(1);
+
+      // Re-scan with the agent's path stored under the other spelling.
+      promoted[0].jsonlFile = jsonlPath.toUpperCase();
+      scanForBackgroundAgentFiles(
+        1,
+        agents,
+        { current: 200 },
+        fileWatchers,
+        pollingTimers,
+        waitingTimers,
+        permissionTimers,
+        () => {},
+        undefined,
+      );
+
+      expect([...agents.values()].filter((a) => a.leadAgentId === 1)).toHaveLength(1);
+    } finally {
+      platformSpy.mockRestore();
+    }
   });
 
   it('does not re-send the spawn tool at turn end once promoted (no ghost Subtask)', () => {

@@ -790,7 +790,7 @@ export function scanForBackgroundAgentFiles(
 
     let alreadyTracked = false;
     for (const a of agents.values()) {
-      if (a.jsonlFile === entry.jsonlPath) {
+      if (pathsMatch(a.jsonlFile, entry.jsonlPath)) {
         alreadyTracked = true;
         break;
       }

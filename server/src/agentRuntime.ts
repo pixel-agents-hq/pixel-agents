@@ -34,7 +34,7 @@ import {
 } from './fileWatcher.js';
 import type { HookEvent } from './hookEventHandler.js';
 import { HookEventHandler } from './hookEventHandler.js';
-import { PathSet } from './pathKey.js';
+import { PathSet, pathsMatch } from './pathKey.js';
 import { SessionRouter } from './sessionRouter.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
 import {
@@ -176,7 +176,7 @@ export class AgentRuntime {
             // fall through to normal external adoption and self-identify from
             // their record tags.
             for (const a of this.store.values()) {
-              if (a.jsonlFile === transcriptPath) return;
+              if (pathsMatch(a.jsonlFile, transcriptPath)) return;
             }
           }
         }
