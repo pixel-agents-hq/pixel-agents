@@ -273,13 +273,21 @@ export function processTranscriptLine(
               if (
                 teammateSpawn &&
                 !agent.teamNameFromTags &&
+                !agent.leadAgentId &&
                 agent.teamName !== teammateSpawn.teamName
               ) {
-                // Last-wins for tag-less leads: a resumed session's transcript
+                // Last-wins for tag-less LEADS: a resumed session's transcript
                 // carries spawn results from several team generations (each CLI
                 // run mints a fresh session-<8hex> team). Re-latch to the
                 // newest team and drop the defunct team's teammates. Tag-
                 // derived identity (tmux/inline, teammate sessions) stays.
+                //
+                // `!agent.leadAgentId` keeps a TEAMMATE that spawns its own
+                // named Agent from re-latching itself out of its team: it would
+                // flip to the nested team, set isTeamLead, and linkTeammates
+                // would then detach it from its real lead (phantom LEAD, broken
+                // click-to-focus). An agent that already has a lead is never a
+                // re-latch candidate, whatever its teamNameFromTags says.
                 if (agent.teamName) {
                   teamSwitchCallback?.(agentId, agent.teamName);
                 }

@@ -208,6 +208,53 @@ describe('transcriptParser: teammate spawn results (new-harness implicit teams)'
     });
   });
 
+  it('does not re-latch a teammate that spawns its own named Agent', () => {
+    // A teammate session runs through the same processTranscriptLine as its
+    // lead. Claude 5 teammates can use the Agent tool, so the teammate's own
+    // transcript carries a spawn tool_result naming a NESTED team. Without the
+    // leadAgentId guard the teammate re-latches onto that nested team, sets
+    // isTeamLead, and linkTeammates detaches it from its real lead.
+    const switches: Array<{ leadId: number; previousTeam: string }> = [];
+    setTeamSwitchCallback((leadId, previousTeam) => switches.push({ leadId, previousTeam }));
+
+    const teammate = createTestAgent({
+      id: 2,
+      sessionId: 'teammate-session',
+      jsonlFile: '/test/teammate.jsonl',
+      // As adopted by fileWatcher: team + lead are pre-set, and
+      // teamNameFromTags is NOT set (the tag branch short-circuits because
+      // teamName already matches).
+      teamName: 'session-aaaa1111',
+      agentName: 'helper',
+      leadAgentId: 1,
+    });
+    agents.set(2, teammate);
+
+    processTranscriptLine(
+      2,
+      agentToolUseRecord('toolu_9', 'Agent', { name: 'nested-helper' }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    processTranscriptLine(
+      2,
+      toolResultRecord(
+        'toolu_9',
+        'Spawned successfully.\nagent_id: nested-helper@session-cccc3333',
+      ),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+
+    // Stays in its own team, stays a teammate, stays attached to its lead.
+    expect(teammate.teamName).toBe('session-aaaa1111');
+    expect(teammate.isTeamLead).toBeFalsy();
+    expect(teammate.leadAgentId).toBe(1);
+    expect(switches).toEqual([]);
+  });
+
   it('does not badge an adopted teammate session as LEAD when its lead is not tracked', () => {
     processTranscriptLine(
       1,
