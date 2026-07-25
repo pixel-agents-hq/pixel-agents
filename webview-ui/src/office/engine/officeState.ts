@@ -46,6 +46,7 @@ import {
 import { createCharacter, updateCharacter } from './characters.js';
 import { matrixEffectSeeds } from './matrixEffect.js';
 import { createPet, updatePet } from './petEntity.js';
+import { anchorTile, closestFreeSeat } from './seatPlacement.js';
 
 /** Internal helper: facing-tile coords for a seat. Returns null for invalid direction. */
 function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } {
@@ -369,21 +370,6 @@ export class OfficeState {
     return this.pickFromSeats(freeSeats, electronicsTiles);
   }
 
-  /** Free seat closest (Manhattan) to a tile — seats teammates beside their lead. */
-  private findClosestFreeSeatTo(col: number, row: number): string | null {
-    let best: string | null = null;
-    let bestDist = Infinity;
-    for (const [uid, seat] of this.seats) {
-      if (seat.assigned) continue;
-      const d = Math.abs(seat.seatCol - col) + Math.abs(seat.seatRow - row);
-      if (d < bestDist) {
-        best = uid;
-        bestDist = d;
-      }
-    }
-    return best;
-  }
-
   /** Closest walkable tile to (col,row) not occupied by another character, or null. */
   private closestFreeWalkableTile(col: number, row: number): { col: number; row: number } | null {
     const occupied = new Set<string>();
@@ -454,8 +440,11 @@ export class OfficeState {
     }
 
     // Try preferred seat first, then (for teammates) the seat closest to the
-    // anchor agent, then any free seat.
+    // anchor agent, then any free seat. anchorTile resolves to the anchor's SEAT
+    // (stable from creation) rather than its live tile, so a teammate placed while
+    // the lead is still walking to its seat still clusters around the final seat.
     const anchor = nearAgentId !== undefined ? this.characters.get(nearAgentId) : undefined;
+    const anchorAt = anchorTile(anchor, this.seats);
     let seatId: string | null = null;
     if (preferredSeatId && this.seats.has(preferredSeatId)) {
       const seat = this.seats.get(preferredSeatId)!;
@@ -463,8 +452,8 @@ export class OfficeState {
         seatId = preferredSeatId;
       }
     }
-    if (!seatId && anchor) {
-      seatId = this.findClosestFreeSeatTo(anchor.tileCol, anchor.tileRow);
+    if (!seatId && anchorAt) {
+      seatId = closestFreeSeat(this.seats, anchorAt.col, anchorAt.row);
     }
     if (!seatId) {
       seatId = this.findFreeSeat(folderName);
@@ -477,7 +466,7 @@ export class OfficeState {
       ch = createCharacter(id, palette, seatId, seat, hueShift);
     } else {
       // No seats — teammates spawn beside their anchor, others at a random walkable tile
-      let spawn = anchor ? this.closestFreeWalkableTile(anchor.tileCol, anchor.tileRow) : null;
+      let spawn = anchorAt ? this.closestFreeWalkableTile(anchorAt.col, anchorAt.row) : null;
       if (!spawn) {
         spawn =
           this.walkableTiles.length > 0
@@ -561,6 +550,34 @@ export class OfficeState {
       if (!ch.isActive) {
         ch.seatTimer = INACTIVE_SEAT_TIMER_MIN_SEC + Math.random() * INACTIVE_SEAT_TIMER_RANGE_SEC;
       }
+    }
+  }
+
+  /**
+   * Move a just-linked teammate to the free seat closest to its lead, so teams
+   * cluster. Only moves when that seat is strictly closer than the teammate's
+   * current one — a teammate created as a plain external agent (seated by an
+   * arbitrary findFreeSeat) and tagged as a teammate only after tag discovery
+   * would otherwise keep its arbitrary seat, unlike an inline teammate seated
+   * next to the lead at creation.
+   */
+  private reseatNextToLead(teammateId: number, leadId: number): void {
+    const teammate = this.characters.get(teammateId);
+    const lead = this.characters.get(leadId);
+    if (!teammate || !lead) return;
+    const anchorAt = anchorTile(lead, this.seats);
+    if (!anchorAt) return;
+    const target = closestFreeSeat(this.seats, anchorAt.col, anchorAt.row);
+    if (!target || target === teammate.seatId) return;
+    const targetSeat = this.seats.get(target)!;
+    const targetDist =
+      Math.abs(targetSeat.seatCol - anchorAt.col) + Math.abs(targetSeat.seatRow - anchorAt.row);
+    const currentSeat = teammate.seatId ? this.seats.get(teammate.seatId) : undefined;
+    const currentDist = currentSeat
+      ? Math.abs(currentSeat.seatCol - anchorAt.col) + Math.abs(currentSeat.seatRow - anchorAt.row)
+      : Infinity;
+    if (targetDist < currentDist) {
+      this.reassignSeat(teammateId, target);
     }
   }
 
@@ -982,12 +999,19 @@ export class OfficeState {
   ): void {
     const ch = this.characters.get(id);
     if (!ch) return;
+    const wasUnlinked = ch.leadAgentId === undefined;
     ch.teamName = teamName;
     ch.agentName = agentName;
     ch.isTeamLead = isTeamLead;
     ch.leadAgentId = leadAgentId;
     if (teamUsesTmux !== undefined) {
       ch.teamUsesTmux = teamUsesTmux;
+    }
+    // A teammate discovered only after its plain external session was adopted is
+    // linked here, not at creation, so it never went through the seat-next-to-lead
+    // path addAgent runs for inline teammates. Cluster it now, once, on first link.
+    if (wasUnlinked && leadAgentId !== undefined && !isTeamLead) {
+      this.reseatNextToLead(id, leadAgentId);
     }
   }
 
