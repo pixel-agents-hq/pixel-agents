@@ -7,7 +7,7 @@
   },
   "devDependencies": {
     "allure-vitest": "^3.9.0",
-    "vitest": "^3.2.1"
+    "vitest": "^4.1.10"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
