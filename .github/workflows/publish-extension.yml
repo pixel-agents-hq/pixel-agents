@@ -36,7 +36,7 @@ jobs:
           fi
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -109,7 +109,7 @@ jobs:
           fi
 
       - name: Setup Node for Trusted Publishing
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22.x'
           registry-url: https://registry.npmjs.org
