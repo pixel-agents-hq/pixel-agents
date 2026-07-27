@@ -122,7 +122,7 @@
     "@types/node": "25.x",
     "@types/pngjs": "^6.0.5",
     "@types/vscode": "^1.105.0",
-    "@vscode/test-electron": "^2.5.2",
+    "@vscode/test-electron": "^3.1.0",
     "allure-commandline": "^2.38.1",
     "allure-playwright": "^3.7.1",
     "esbuild": "^0.28.0",
