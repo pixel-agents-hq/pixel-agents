@@ -22,6 +22,9 @@ export interface AgentState {
   hadToolsInTurn: boolean;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+  /** Resolved Claude session name/title (from ~/.claude/sessions). Kept fresh by
+   *  the runtime's periodic refresh. Preferred over folderName for the label. */
+  sessionName?: string;
   /** Timestamp of last JSONL data received (ms since epoch) */
   lastDataAt: number;
   /** Total JSONL lines processed for this agent */

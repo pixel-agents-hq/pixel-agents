@@ -25,6 +25,12 @@ export const EXTERNAL_ACTIVE_THRESHOLD_MS = 120_000; // 2 minutes
 /** Remove external agents after this much inactivity */
 // export const EXTERNAL_STALE_TIMEOUT_MS = 300_000; // 5 minutes - deprecated
 export const EXTERNAL_STALE_CHECK_INTERVAL_MS = 30_000;
+/** How often the runtime re-resolves each agent's session name (picks up names
+ *  that appear after startup and user renames). */
+export const SESSION_NAME_REFRESH_INTERVAL_MS = 3000;
+/** TTL for the provider's session-name lookup cache (one directory scan is reused
+ *  across all agents within this window). */
+export const SESSION_NAME_CACHE_TTL_MS = 2000;
 /** Cooldown after user closes an agent via X. Must be > EXTERNAL_ACTIVE_THRESHOLD_MS
  *  so the file's mtime becomes stale before the dismissal expires. */
 export const DISMISSED_COOLDOWN_MS = 180_000; // 3 minutes

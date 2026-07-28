@@ -43,6 +43,7 @@ declare global {
         seatId: string | null;
         areaLabel: string | null;
         folderName?: string;
+        sessionName?: string;
       }>;
       /** All seats with grid coords + the area their tile falls in — lets a spec
        *  paint an Area over a known seat without hardcoding layout coordinates. */
@@ -241,6 +242,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
         seatId: ch.seatId,
         areaLabel: ch.seatId ? os.seatZone(ch.seatId) : null,
         folderName: ch.folderName,
+        sessionName: ch.sessionName,
       }));
   };
 

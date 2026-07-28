@@ -517,12 +517,16 @@ export function sendExistingAgents(
   // Include persisted palette/seatId from separate key
   const agentMeta = adapter.loadSeats();
 
-  // Include folderName and isExternal per agent
+  // Include folderName, sessionName and isExternal per agent
   const folderNames: Record<number, string> = {};
+  const sessionNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   for (const [id, agent] of agents) {
     if (agent.folderName) {
       folderNames[id] = agent.folderName;
+    }
+    if (agent.sessionName) {
+      sessionNames[id] = agent.sessionName;
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
@@ -537,6 +541,7 @@ export function sendExistingAgents(
     agents: agentIds,
     agentMeta,
     folderNames,
+    sessionNames,
     externalAgents,
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded

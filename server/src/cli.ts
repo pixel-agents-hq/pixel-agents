@@ -215,6 +215,7 @@ async function main(): Promise<void> {
       runtime.startExternalScanning(projectDir);
       runtime.startStaleCheck();
     }
+    runtime.startSessionNameRefresh();
 
     console.log(`\n  Pixel Agents server running at http://${args.host}:${config.port}\n`);
 

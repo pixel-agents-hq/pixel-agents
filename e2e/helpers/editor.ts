@@ -32,6 +32,7 @@ export interface TestHooksWindow extends Window {
       seatId: string | null;
       areaLabel: string | null;
       folderName?: string;
+      sessionName?: string;
     }>;
     getSeats?: () => Array<{
       uid: string;
@@ -187,7 +188,13 @@ export async function readSeats(
 export async function readAgentSeats(
   frame: Frame,
 ): Promise<
-  Array<{ id: number; seatId: string | null; areaLabel: string | null; folderName?: string }>
+  Array<{
+    id: number;
+    seatId: string | null;
+    areaLabel: string | null;
+    folderName?: string;
+    sessionName?: string;
+  }>
 > {
   return frame.evaluate(
     () => (window as TestHooksWindow).__pixelAgentsTestHooks?.getAgentSeats?.() ?? [],

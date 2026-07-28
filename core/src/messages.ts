@@ -12,6 +12,7 @@ export type ServerMessage =
   | AgentCreated
   | AgentClosed
   | AgentSelected
+  | AgentSessionNameChanged
   | ExistingAgents
   | AgentStatus
   | AgentToolStart
@@ -70,6 +71,7 @@ export interface AgentCreated {
   type: 'agentCreated';
   id: number;
   folderName?: string;
+  sessionName?: string;
   isExternal?: boolean;
 }
 
@@ -83,11 +85,18 @@ export interface AgentSelected {
   id: number;
 }
 
+export interface AgentSessionNameChanged {
+  type: 'agentSessionNameChanged';
+  id: number;
+  sessionName?: string;
+}
+
 export interface ExistingAgents {
   type: 'existingAgents';
   agents: number[];
   agentMeta: Record<string, AgentSeatMeta>;
   folderNames: Record<string, string>;
+  sessionNames?: Record<string, string>;
   externalAgents: Record<string, boolean>;
 }
 

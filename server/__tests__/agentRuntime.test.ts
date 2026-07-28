@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import type { AgentState } from '../src/types.js';
 
 /**
  * D5 gate (tier-3 multi-server hook fan-out plan): the hook script now
@@ -74,5 +75,90 @@ describe('AgentRuntime -- D5 foreign-session gate', () => {
     runtime.startProjectScan(dir); // marks `dir` as owned/tracked
     fireSessionStartThenStop('d5-tracked-dir', dir);
     expect(store.size).toBe(1);
+  });
+});
+
+describe('AgentRuntime -- session name refresh', () => {
+  let runtime: AgentRuntime;
+  let store: AgentStateStore;
+
+  afterEach(() => {
+    runtime?.dispose();
+  });
+
+  function makeAgent(id: number, sessionId: string, leadAgentId?: number): AgentState {
+    return {
+      id,
+      sessionId,
+      isExternal: false,
+      projectDir: '',
+      jsonlFile: '',
+      fileOffset: 0,
+      lineBuffer: '',
+      activeToolIds: new Set(),
+      activeToolStatuses: new Map(),
+      activeToolNames: new Map(),
+      activeSubagentToolIds: new Map(),
+      activeSubagentToolNames: new Map(),
+      backgroundAgentToolIds: new Set(),
+      isWaiting: false,
+      permissionSent: false,
+      hadToolsInTurn: false,
+      lastDataAt: 0,
+      linesProcessed: 0,
+      seenUnknownRecordTypes: new Set(),
+      hookDelivered: false,
+      inputTokens: 0,
+      outputTokens: 0,
+      leadAgentId,
+    };
+  }
+
+  /** Invoke the private periodic refresh once (a single interval tick). */
+  function tick(): void {
+    (runtime as unknown as { refreshSessionNames(): void }).refreshSessionNames();
+  }
+
+  it('broadcasts agentSessionNameChanged when a name appears, and stores it', () => {
+    store = new AgentStateStore();
+    let name: string | undefined;
+    const provider = { ...claudeProvider, getSessionName: () => name };
+    runtime = new AgentRuntime(store, provider);
+    store.set(1, makeAgent(1, 'sess-1'));
+
+    const events: Array<Record<string, unknown>> = [];
+    store.on('broadcast', (m) => events.push(m));
+
+    // No name yet -> immediate resolve fires nothing (undefined unchanged).
+    runtime.startSessionNameRefresh();
+    expect(events).toHaveLength(0);
+    expect(store.get(1)?.sessionName).toBeUndefined();
+
+    // Name resolves -> next tick broadcasts and stores it.
+    name = 'pixel-agents-1a';
+    tick();
+    expect(store.get(1)?.sessionName).toBe('pixel-agents-1a');
+    expect(events).toEqual([
+      { type: 'agentSessionNameChanged', id: 1, sessionName: 'pixel-agents-1a' },
+    ]);
+
+    // Unchanged name -> no duplicate broadcast.
+    tick();
+    expect(events).toHaveLength(1);
+  });
+
+  it('does not resolve session names for teammates (they inherit folderName)', () => {
+    store = new AgentStateStore();
+    const provider = { ...claudeProvider, getSessionName: () => 'lead-session' };
+    runtime = new AgentRuntime(store, provider);
+    store.set(2, makeAgent(2, 'lead-sess', /* leadAgentId */ 1));
+
+    const events: Array<Record<string, unknown>> = [];
+    store.on('broadcast', (m) => events.push(m));
+
+    runtime.startSessionNameRefresh();
+    tick();
+    expect(store.get(2)?.sessionName).toBeUndefined();
+    expect(events).toHaveLength(0);
   });
 });
