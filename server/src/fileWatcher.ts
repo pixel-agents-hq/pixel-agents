@@ -96,6 +96,42 @@ let clearDetectionDeps: {
   persistAgents: () => void;
 } | null = null;
 
+/**
+ * Decide which agent should claim a freshly created /clear transcript when
+ * several sessions share a project dir. The session that ran /clear stopped
+ * writing its old transcript at the moment the new file was created, so among
+ * the eligible (internal, hookless, idle) agents the one whose lastDataAt is
+ * closest to the file's creation time is the claimant (#251). Candidate
+ * `agentId` is the polling agent; it is assumed eligible by its own poll gate.
+ */
+export function pickClearClaimant(
+  agents: AgentStateStore,
+  agentId: number,
+  fileBirth: number,
+): number {
+  const self = agents.get(agentId);
+  let bestDelta = self ? Math.abs(self.lastDataAt - fileBirth) : Number.POSITIVE_INFINITY;
+  let claimant = agentId;
+  for (const [otherId, other] of agents) {
+    if (otherId === agentId) continue;
+    if (
+      other.hookDelivered ||
+      !other.terminalRef ||
+      other.isExternal ||
+      other.linesProcessed <= 0 ||
+      Date.now() - other.lastDataAt <= CLEAR_IDLE_THRESHOLD_MS
+    ) {
+      continue;
+    }
+    const delta = Math.abs(other.lastDataAt - fileBirth);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      claimant = otherId;
+    }
+  }
+  return claimant;
+}
+
 export function startFileWatching(
   agentId: number,
   _filePath: string,
@@ -129,7 +165,6 @@ export function startFileWatching(
       !agent.isExternal &&
       ![...agents.values()].some((a) => a.isExternal) &&
       agent.linesProcessed > 0 &&
-      clearDetectionDeps.activeAgentIdRef.current === agentId &&
       Date.now() - agent.lastDataAt > CLEAR_IDLE_THRESHOLD_MS
     ) {
       const deps = clearDetectionDeps;
@@ -166,6 +201,22 @@ export function startFileWatching(
           } catch {
             continue;
           }
+          // Attribute the /clear file to the right agent when several sessions share
+          // this project dir. The session that ran /clear stopped writing its old
+          // transcript at the moment the new file was created, so the eligible agent
+          // whose lastDataAt is closest to the file's creation time is the claimant —
+          // not necessarily the active terminal: the user may be focusing another,
+          // still-busy session when /clear runs elsewhere (#251).
+          let fileBirth = 0;
+          try {
+            const st = fs.statSync(file);
+            fileBirth = st.birthtimeMs || st.mtimeMs;
+          } catch {
+            continue;
+          }
+          // Another idle agent matches the file's creation time better — let its
+          // own poll claim it.
+          if (pickClearClaimant(agents, agentId, fileBirth) !== agentId) continue;
           // Found a /clear file (has last-prompt) → claim it
           deps.knownJsonlFiles.add(file);
           console.log(
