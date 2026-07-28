@@ -15,6 +15,7 @@ const AREA_TO_EPIC: Record<string, string> = {
   pets: 'Pet system',
   carpet: 'Carpet system',
   areas: 'Areas (zoning) system',
+  labels: 'Agent labels',
 };
 
 /**

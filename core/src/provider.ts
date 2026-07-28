@@ -114,6 +114,11 @@ export interface HookProvider {
   getAllSessionRoots?(): string[];
   /** Glob pattern for session files (e.g., '*.jsonl'). */
   readonly sessionFilePattern?: string;
+  /** Resolve a human-readable session name/title for a session id, if the CLI
+   *  exposes one (e.g. Claude's `~/.claude/sessions/<pid>.json` `name`). Used as
+   *  the agent label, preferred over the workspace folder name. Undefined when
+   *  the provider has no session-naming concept or the name isn't known yet. */
+  getSessionName?(sessionId: string): string | undefined;
   /** Parse one line of a transcript file into an AgentEvent. */
   parseTranscriptLine?(line: string): AgentEvent | null;
   /** Build CLI launch command for +Agent button. */

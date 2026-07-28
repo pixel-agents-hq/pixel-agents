@@ -202,7 +202,9 @@ export function ToolOverlay({
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
         const totalTokens = ch.inputTokens + ch.outputTokens;
         const tokenRatio = totalTokens / MAX_CONTEXT_TOKENS;
-        const hasExtraLines = !!(ch.folderName || teamRoleLabel);
+        // Session name (e.g. "pixel-agents-1a") preferred over the workspace folder.
+        const secondaryLabel = ch.sessionName || ch.folderName;
+        const hasExtraLines = !!(secondaryLabel || teamRoleLabel);
 
         return (
           <div
@@ -247,9 +249,9 @@ export function ToolOverlay({
                 >
                   {activityText}
                 </span>
-                {ch.folderName && (
+                {secondaryLabel && (
                   <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
-                    {ch.folderName}
+                    {secondaryLabel}
                   </span>
                 )}
               </div>

@@ -83,6 +83,7 @@ components:
         - $ref: '#/components/schemas/AgentCreated'
         - $ref: '#/components/schemas/AgentClosed'
         - $ref: '#/components/schemas/AgentSelected'
+        - $ref: '#/components/schemas/AgentSessionNameChanged'
         - $ref: '#/components/schemas/ExistingAgents'
         # Agent status / tool activity
         - $ref: '#/components/schemas/AgentStatus'
@@ -177,6 +178,9 @@ components:
           type: integer
         folderName:
           type: string
+        sessionName:
+          type: string
+          description: Claude session name/title, if resolvable. Preferred over folderName for the label.
         isExternal:
           type: boolean
 
@@ -202,6 +206,22 @@ components:
         id:
           type: integer
 
+    AgentSessionNameChanged:
+      description: |
+        An agent's resolved Claude session name changed (appeared after startup, or
+        the user renamed the session). The UI updates the agent's label. Absent
+        sessionName clears it (label falls back to folderName).
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentSessionNameChanged
+        id:
+          type: integer
+        sessionName:
+          type: string
+
     ExistingAgents:
       description: |
         Snapshot of all current agents. Sent on initial connect and after agent set
@@ -224,6 +244,11 @@ components:
         folderNames:
           type: object
           description: Map of agent ID (string) to workspace folder name.
+          additionalProperties:
+            type: string
+        sessionNames:
+          type: object
+          description: Map of agent ID (string) to resolved Claude session name (when known).
           additionalProperties:
             type: string
         externalAgents:

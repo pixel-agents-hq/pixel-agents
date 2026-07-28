@@ -223,6 +223,8 @@ export interface Character {
   matrixEffectSeeds: number[];
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+  /** Resolved Claude session name/title. Preferred over folderName for the label. */
+  sessionName?: string;
 
   // -- Agent Teams --
   /** Team name this agent belongs to */

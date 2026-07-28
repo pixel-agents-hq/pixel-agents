@@ -14,6 +14,7 @@ import * as path from 'path';
 
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
+import { SESSION_NAME_REFRESH_INTERVAL_MS } from './constants.js';
 import { DismissalTracker } from './dismissalTracker.js';
 import {
   adoptExternalSessionFromHook,
@@ -62,6 +63,7 @@ export class AgentRuntime {
   readonly activeAgentId = { current: null as number | null };
   private externalScanTimer: ReturnType<typeof setInterval> | null = null;
   private staleCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private sessionNameTimer: ReturnType<typeof setInterval> | null = null;
 
   // Configuration refs (mutable, shared with scanners)
   readonly watchAllSessions = { current: false };
@@ -74,7 +76,7 @@ export class AgentRuntime {
 
   constructor(
     private readonly store: AgentStateStore,
-    provider: HookProvider,
+    private readonly provider: HookProvider,
   ) {
     // Wire module-level dependencies
     setDismissalTracker(this.dismissalTracker);
@@ -320,6 +322,32 @@ export class AgentRuntime {
     );
   }
 
+  /** Periodically re-resolve each agent's session name (picks up names that appear
+   *  after startup and user renames) and broadcast changes. No-op when the provider
+   *  has no session-naming concept. */
+  startSessionNameRefresh(): void {
+    if (this.sessionNameTimer || !this.provider.getSessionName) return;
+    this.refreshSessionNames(); // resolve immediately so labels appear fast
+    this.sessionNameTimer = setInterval(
+      () => this.refreshSessionNames(),
+      SESSION_NAME_REFRESH_INTERVAL_MS,
+    );
+  }
+
+  private refreshSessionNames(): void {
+    const resolve = this.provider.getSessionName;
+    if (!resolve) return;
+    for (const [id, agent] of this.store) {
+      // Teammates share the lead's sessionId; leave their label on folderName.
+      if (agent.leadAgentId !== undefined) continue;
+      const name = resolve(agent.sessionId);
+      if (name !== agent.sessionName) {
+        agent.sessionName = name;
+        this.store.broadcast({ type: 'agentSessionNameChanged', id, sessionName: name });
+      }
+    }
+  }
+
   // ── Restore persisted external agents (standalone) ──
 
   /**
@@ -432,6 +460,10 @@ export class AgentRuntime {
     if (this.staleCheckTimer) {
       clearInterval(this.staleCheckTimer);
       this.staleCheckTimer = null;
+    }
+    if (this.sessionNameTimer) {
+      clearInterval(this.sessionNameTimer);
+      this.sessionNameTimer = null;
     }
 
     for (const id of [...this.store.keys()]) {

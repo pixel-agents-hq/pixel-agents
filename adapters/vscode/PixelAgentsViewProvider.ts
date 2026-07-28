@@ -109,6 +109,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         type: 'agentCreated',
         id,
         folderName: agent.folderName,
+        sessionName: agent.sessionName,
         isExternal: agent.isExternal || undefined,
         isTeammate: agent.leadAgentId !== undefined || undefined,
         teammateName: agent.agentName,
@@ -510,6 +511,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
 
         this.runtime.startStaleCheck();
+        this.runtime.startSessionNameRefresh();
 
         // Load furniture assets BEFORE sending layout
         (async () => {

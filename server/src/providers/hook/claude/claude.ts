@@ -6,6 +6,7 @@ import { normalizeProjectPath } from '../../../../../core/src/normalizeProjectPa
 import type { AgentEvent, HookProvider } from '../../../../../core/src/provider.js';
 import {
   BASH_COMMAND_DISPLAY_MAX_LENGTH,
+  SESSION_NAME_CACHE_TTL_MS,
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
 } from '../../../constants.js';
 import {
@@ -107,6 +108,51 @@ function buildLaunchCommand(
  *  global session scanner ("Watch All Sessions"). */
 function getAllSessionRoots(): string[] {
   return [path.join(os.homedir(), '.claude', 'projects')];
+}
+
+// ── Session name resolution ──
+//
+// Claude records a per-session registry under ~/.claude/sessions/<pid>.json:
+//   { pid, sessionId, cwd, name, nameSource, status, ... }
+// The `name` (e.g. "pixel-agents-1a", derived or user-set) is the human-readable
+// session title. We resolve it by sessionId. A short-lived cache reuses a single
+// directory scan across all agents (the runtime refreshes every few seconds).
+
+let sessionNameCache: Map<string, string> | null = null;
+let sessionNameCacheAt = 0;
+
+function buildSessionNameCache(): Map<string, string> {
+  const map = new Map<string, string>();
+  const sessionsDir = path.join(os.homedir(), '.claude', 'sessions');
+  let files: string[];
+  try {
+    files = fs.readdirSync(sessionsDir).filter((f) => f.endsWith('.json'));
+  } catch {
+    return map; // dir missing / unreadable
+  }
+  for (const file of files) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(sessionsDir, file), 'utf8')) as {
+        sessionId?: unknown;
+        name?: unknown;
+      };
+      if (typeof raw.sessionId === 'string' && typeof raw.name === 'string' && raw.name) {
+        map.set(raw.sessionId, raw.name);
+      }
+    } catch {
+      // malformed / partially-written session file -> skip
+    }
+  }
+  return map;
+}
+
+function getSessionName(sessionId: string): string | undefined {
+  const now = Date.now();
+  if (!sessionNameCache || now - sessionNameCacheAt > SESSION_NAME_CACHE_TTL_MS) {
+    sessionNameCache = buildSessionNameCache();
+    sessionNameCacheAt = now;
+  }
+  return sessionNameCache.get(sessionId);
 }
 
 // ── normalizeHookEvent: the single Claude-specific normalization boundary ──
@@ -275,6 +321,7 @@ export const claudeProvider: HookProvider = {
   getSessionDirs,
   getAllSessionRoots,
   sessionFilePattern: '*.jsonl',
+  getSessionName,
   buildLaunchCommand,
 
   team: claudeTeamProvider,

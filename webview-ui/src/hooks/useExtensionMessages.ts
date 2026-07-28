@@ -132,6 +132,7 @@ export function useExtensionMessages(
       hueShift?: number;
       seatId?: string;
       folderName?: string;
+      sessionName?: string;
     }> = [];
 
     // Accumulate distinct folderNames seen across agents (never removed during the
@@ -192,6 +193,10 @@ export function useExtensionMessages(
         // Add buffered agents now that layout (and seats) are correct
         for (const p of pendingAgents) {
           os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
+          if (p.sessionName) {
+            const ch = os.characters.get(p.id);
+            if (ch) ch.sessionName = p.sessionName;
+          }
         }
         pendingAgents = [];
         layoutReadyRef.current = true;
@@ -205,6 +210,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentCreated') {
         const id = msg.id as number;
         const folderName = msg.folderName as string | undefined;
+        const sessionName = msg.sessionName as string | undefined;
         const isTeammate = msg.isTeammate as boolean | undefined;
         const teammateName = msg.teammateName as string | undefined;
         const teammateParentId = msg.parentAgentId as number | undefined;
@@ -232,8 +238,24 @@ export function useExtensionMessages(
         } else {
           os.addAgent(id, undefined, undefined, undefined, undefined, folderName);
           noteFolderName(folderName);
+          if (sessionName) {
+            const ch = os.characters.get(id);
+            if (ch) ch.sessionName = sessionName;
+          }
         }
         saveAgentSeats(os);
+      } else if (msg.type === 'agentSessionNameChanged') {
+        // Session name resolved/renamed after startup — update the label in place.
+        const id = msg.id as number;
+        const sessionName = msg.sessionName as string | undefined;
+        const ch = os.characters.get(id);
+        if (ch) {
+          // Buffered agent not yet materialized — patch the pending entry too.
+          ch.sessionName = sessionName;
+        } else {
+          const pending = pendingAgents.find((p) => p.id === id);
+          if (pending) pending.sessionName = sessionName;
+        }
       } else if (msg.type === 'agentClosed') {
         const id = msg.id as number;
         setAgents((prev) => prev.filter((a) => a !== id));
@@ -267,6 +289,7 @@ export function useExtensionMessages(
           { palette?: number; hueShift?: number; seatId?: string }
         >;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
+        const sessionNames = (msg.sessionNames || {}) as Record<number, string>;
         // Buffer agents — they'll be added in layoutLoaded after seats are built
         for (const id of incoming) {
           const m = meta[id];
@@ -276,6 +299,7 @@ export function useExtensionMessages(
             hueShift: m?.hueShift,
             seatId: m?.seatId,
             folderName: folderNames[id],
+            sessionName: sessionNames[id],
           });
           noteFolderName(folderNames[id]);
         }
