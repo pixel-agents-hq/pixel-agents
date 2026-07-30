@@ -137,7 +137,7 @@ jobs:
           echo "metadata=$output_dir/package-metadata.json" >> "$GITHUB_OUTPUT"
 
       - name: Upload Verified npm Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: npm-package-${{ github.run_attempt }}
           path: ${{ runner.temp }}/npm-package/

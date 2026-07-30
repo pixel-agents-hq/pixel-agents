@@ -102,7 +102,7 @@ jobs:
 
       - name: Upload Linux Webview Allure Results
         if: always() && steps.install_dependencies.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-results-webview-linux
           if-no-files-found: warn
@@ -146,7 +146,7 @@ jobs:
 
       - name: Upload Linux Server Allure Results
         if: always() && steps.build.outcome == 'success' && steps.install_dependencies.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-results-server-linux
           if-no-files-found: warn
@@ -348,7 +348,7 @@ jobs:
 
       - name: Upload E2E Artifacts
         if: always() && steps.install_playwright_deps.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-artifacts-${{ matrix.target.label }}-shard-${{ matrix.shard }}
           if-no-files-found: ignore
@@ -358,7 +358,7 @@ jobs:
 
       - name: Upload Allure Results
         if: always() && steps.install_playwright_deps.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-results-e2e-${{ matrix.target.label }}-shard-${{ matrix.shard }}
           if-no-files-found: warn
@@ -491,7 +491,7 @@ jobs:
 
       - name: Upload Merged Cross-Platform E2E Allure Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-results-e2e
           if-no-files-found: warn
