@@ -5,6 +5,8 @@
 ### Features
 
 - **Claude Code Agent Teams visualization** ([#218](https://github.com/pixel-agents-hq/pixel-agents/pull/218)) — Renders team leads and teammates as coordinated characters in both tmux and inline modes, with role labels, lead badges, token fuel gauges, tool activity, persistence, and coordinated cleanup. Builds on the early implementations in [#79](https://github.com/pixel-agents-hq/pixel-agents/pull/79) and [#177](https://github.com/pixel-agents-hq/pixel-agents/pull/177). Closes [#65](https://github.com/pixel-agents-hq/pixel-agents/issues/65).
+- **Claude Code sub-agents and teammates compatible up to v2.1.220** ([#351](https://github.com/pixel-agents-hq/pixel-agents/pull/351)) — Supports the newer Claude harness, where every `Agent` spawn runs in the background against an implicit per-session team. Named spawns become seated teammate characters with their own hook routing; unnamed spawns stay Subtask sub-agents whose transcripts are watched for live tool activity. Resumed leads re-latch to their newest team instead of stranding departed teammates or showing a phantom lead, and teammates take the free seat closest to their lead.
+- **Context gauge on every agent** ([#351](https://github.com/pixel-agents-hq/pixel-agents/pull/351)) — Shows each agent's context occupancy above its character, sized to the context window of the model that session actually runs.
 - **Animated pets** ([#315](https://github.com/pixel-agents-hq/pixel-agents/pull/315)) — Adds Claudio and Gitcat to the layout editor, autonomous walking and idle animations, petting interactions, saved placement, and custom pets loaded from external asset directories. Reimplements and supersedes [#219](https://github.com/pixel-agents-hq/pixel-agents/pull/219) on the new architecture.
 - **Carpets and workspace Areas** ([#316](https://github.com/pixel-agents-hq/pixel-agents/pull/316)) — Adds three auto-tiling carpet styles with WYSIWYG color controls, paint/erase/eyedropper tools, undo, and persistence. Named Areas can be painted onto the office, mapped to workspace folders, and used to seat agents in the right part of the layout. Integrates the original carpet work from [#213](https://github.com/pixel-agents-hq/pixel-agents/pull/213) and Areas work from [#259](https://github.com/pixel-agents-hq/pixel-agents/pull/259).
 - **Optional startup automation** ([#221](https://github.com/pixel-agents-hq/pixel-agents/pull/221)) — Adds `pixel-agents.autoShowPanel` and `pixel-agents.autoSpawnAgent` settings to open the panel and launch an agent automatically when VS Code starts. Both remain off by default.
@@ -21,11 +23,17 @@
 - **Agent and teammate lifecycle reliability** ([#287](https://github.com/pixel-agents-hq/pixel-agents/pull/287), [#344](https://github.com/pixel-agents-hq/pixel-agents/pull/344)) — Fixes idle/done state regressions, aligns teammate lifecycle behavior, and preserves agent tracking when terminals move between VS Code locations.
 - **Standalone server and development reliability** ([#316](https://github.com/pixel-agents-hq/pixel-agents/pull/316), [#344](https://github.com/pixel-agents-hq/pixel-agents/pull/344)) — Honors an explicit `--port`, restores browser-mock hot reload, adds connection-state feedback, and fixes Windows e2e startup behavior.
 - **Areas editor and seating polish** ([#316](https://github.com/pixel-agents-hq/pixel-agents/pull/316)) — Correctly seats agents from custom-named workspace folders, fits four Area cards per row, and prevents the folder picker from being clipped.
+- **File watching and session adoption** ([#352](https://github.com/pixel-agents-hq/pixel-agents/pull/352)) — Fixes duplicate agent adoption on Windows, where case-sensitive path comparison let the same session be adopted twice, and closes a `/clear` race in which the external scanner could adopt a replacement transcript before `SessionStart` reassigned it.
+- **Hook install failures and restored-agent rendering** ([#351](https://github.com/pixel-agents-hq/pixel-agents/pull/351)) — Hook installation now reports failure instead of logging false success, and restored agents render regardless of the order in which `layoutLoaded` and `existingAgents` arrive. Closes [#333](https://github.com/pixel-agents-hq/pixel-agents/issues/333), [#334](https://github.com/pixel-agents-hq/pixel-agents/issues/334).
+- **Standalone rendering of already-running agents** ([#349](https://github.com/pixel-agents-hq/pixel-agents/pull/349)) — Sends `layoutLoaded` after `existingAgents` on `webviewReady`, so a standalone client that connects once agents already exist renders their characters instead of an empty office.
+- **Workspace transcript discovery with hooks enabled** ([#330](https://github.com/pixel-agents-hq/pixel-agents/pull/330)) — Keeps workspace JSONL discovery active when hooks are installed, so sessions are still found by file path rather than relying on hook delivery alone.
+- **Cross-platform build and server tests** ([#289](https://github.com/pixel-agents-hq/pixel-agents/pull/289)) — Fixes `npm run build` failing outright on Windows for paths containing spaces, and server tests that bypassed temp-home isolation and wrote to the real `~/.pixel-agents`.
 
 ### Testing and Release Infrastructure
 
 - **Comprehensive Playwright e2e suite** ([#287](https://github.com/pixel-agents-hq/pixel-agents/pull/287), [#344](https://github.com/pixel-agents-hq/pixel-agents/pull/344)) — Expands coverage across VS Code and standalone, hooks-on and hooks-off lifecycles, Agent Teams, pets, carpets, Areas, and multi-server behavior. Adds a deterministic mock Claude process, narrated run videos, an in-repo coverage inventory, and combined Allure reporting.
 - **Verified npm publishing pipeline** ([#344](https://github.com/pixel-agents-hq/pixel-agents/pull/344)) — Adds package-contract tests, installed-tarball smoke verification, release tag/version checks, and provenance-ready npm publishing for the standalone package.
+- **CI gating and platform coverage** ([#352](https://github.com/pixel-agents-hq/pixel-agents/pull/352)) — Adds a single aggregate `Required Checks` job so branch protection can gate on one stable check instead of every shard name, and unblocks the e2e suite on macOS Tahoe by making video recording optional.
 
 ### Maintenance
 
@@ -39,10 +47,14 @@ Thank you to the contributors who made this release possible:
 - [@itsManeka](https://github.com/itsManeka) — Animated pet system, bundled pet sprites, and pet interactions
 - [@NNTin](https://github.com/NNTin) — Carpet system and foundational Playwright e2e infrastructure
 - [@balgaly](https://github.com/balgaly) — Automatic panel display and agent startup settings
+- [@elietwd](https://github.com/elietwd) — Cross-platform Windows build script and server test isolation
+- [@snvtac](https://github.com/snvtac) — Workspace JSONL discovery with hooks enabled
+- [@bezzborodth-tech](https://github.com/bezzborodth-tech) — Standalone rendering fix for agents that already exist on connect
+- [@srasantos](https://github.com/srasantos) — Reported the hook-install and restored-agent rendering bugs
 - [@ErickGross-19](https://github.com/ErickGross-19), [@ZenidX](https://github.com/ZenidX) — Early Agent Teams implementations that informed the shipped design
-- [@pablodelucca](https://github.com/pablodelucca) — Workspace Areas, layout-editor polish, and watchable narrated e2e review
+- [@pablodelucca](https://github.com/pablodelucca) — Claude 2.1.220 sub-agent and teammate support, context gauge, Workspace Areas, layout-editor polish, and watchable narrated e2e review
 - [@modtanoii](https://github.com/modtanoii) — Architecture refactor collaboration, server and WebSocket design, and extensibility hardening
-- [@florintimbuc](https://github.com/florintimbuc) — Architecture refactor, Agent Teams integration, standalone and npm package, multi-server support, e2e expansion, and release coordination
+- [@florintimbuc](https://github.com/florintimbuc) — Architecture refactor, Agent Teams integration, standalone and npm package, multi-server support, file-watcher and CI hardening, e2e expansion, and release coordination
 
 ### Community acknowledgements
 

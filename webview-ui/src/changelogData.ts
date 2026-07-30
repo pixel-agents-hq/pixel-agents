@@ -33,6 +33,7 @@ export const changelogEntries: ChangelogEntry[] = [
         title: 'Features',
         items: [
           'Claude Code Agent Teams visualization with lead badges, role labels, and coordinated lifecycle',
+          'Claude Code 2.1.220 support: named spawns become seated teammates, unnamed spawns stay watched sub-agents',
           'Context gauge on every agent, sized to the model its session runs',
           'Animated pets with saved placement, petting interactions, and external pet packs',
           'Auto-tiling carpets with color controls, painting tools, undo, and persistence',
@@ -55,6 +56,10 @@ export const changelogEntries: ChangelogEntry[] = [
           'Preserve agent tracking across terminal moves and align teammate lifecycle behavior',
           'Honor explicit standalone ports and restore browser-mock hot reload',
           'Improve Areas seating for custom-named folders and polish editor layouts',
+          'Fix duplicate agent adoption on Windows and a /clear session reassignment race',
+          'Render restored agents reliably, in VS Code and on standalone reconnect',
+          'Surface hook install failures instead of logging false success',
+          'Fix the Windows build for paths with spaces and keep JSONL discovery active with hooks',
         ],
       },
       {
@@ -82,6 +87,31 @@ export const changelogEntries: ChangelogEntry[] = [
         description: 'Automatic panel display and agent startup settings',
       },
       {
+        name: '@elietwd',
+        url: 'https://github.com/elietwd',
+        description: 'Cross-platform Windows build script and server test isolation',
+      },
+      {
+        name: '@snvtac',
+        url: 'https://github.com/snvtac',
+        description: 'Workspace JSONL discovery with hooks enabled',
+      },
+      {
+        name: '@bezzborodth-tech',
+        url: 'https://github.com/bezzborodth-tech',
+        description: 'Standalone rendering fix for agents that already exist on connect',
+      },
+      {
+        name: '@Ralphive',
+        url: 'https://github.com/Ralphive',
+        description: 'Restored-agent rendering fix',
+      },
+      {
+        name: '@srasantos',
+        url: 'https://github.com/srasantos',
+        description: 'Reported the hook-install and restored-agent rendering bugs',
+      },
+      {
         name: '@ErickGross-19',
         url: 'https://github.com/ErickGross-19',
         description: 'Early Agent Teams implementation that informed the shipped design',
@@ -94,12 +124,14 @@ export const changelogEntries: ChangelogEntry[] = [
       {
         name: '@pablodelucca',
         url: 'https://github.com/pablodelucca',
-        description: 'Workspace Areas, layout-editor polish, narrated e2e review',
+        description:
+          'Claude 2.1.220 sub-agents and teammates, context gauge, Workspace Areas, layout-editor polish, narrated e2e review',
       },
       {
         name: '@florintimbuc',
         url: 'https://github.com/florintimbuc',
-        description: 'Architecture, Agent Teams, standalone, multi-server, e2e, and release work',
+        description:
+          'Architecture, Agent Teams, standalone, multi-server, file-watcher and CI hardening, e2e, and release work',
       },
     ],
   },
