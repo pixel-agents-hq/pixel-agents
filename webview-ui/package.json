@@ -29,7 +29,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "eslint-plugin-simple-import-sort": "^12.1.1",
-    "globals": "^17.5.0",
+    "globals": "^17.8.0",
     "pngjs": "^7.0.0",
     "tailwindcss": "^4.2.2",
     "tsx": "^4.19.3",
