@@ -114,6 +114,7 @@ export interface AgentToolStart {
   toolName?: string;
   permissionActive?: boolean;
   runInBackground?: boolean;
+  isTeammateSpawn?: boolean;
 }
 
 export interface AgentToolDone {

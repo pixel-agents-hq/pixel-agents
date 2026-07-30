@@ -47,9 +47,10 @@ export interface TeamProvider {
    *  events directly; entries without one share the lead's session.
    *
    *  Sidecar-backed entries additionally expose `toolUseId` (the lead's spawn
-   *  tool_use id) and `description` when the CLI records them — the host uses
-   *  toolUseId to match anonymous background agents (teams OFF) to the lead's
-   *  live spawn tools, and description as a display name. */
+   *  tool_use id), `description`, and `name` when the CLI records them. The host
+   *  uses toolUseId to match background spawns (teams OFF) to the lead's live
+   *  spawn tools, and `name` as the classifier: a named spawn is a Teammate, an
+   *  unnamed one is a Sub-agent (see CONTEXT.md — name is the sole distinction). */
   discoverTeammates(
     projectDir: string,
     leadSessionId: string,
@@ -60,6 +61,7 @@ export interface TeamProvider {
     sessionId?: string;
     toolUseId?: string;
     description?: string;
+    name?: string;
   }>;
 
   /** Detect a teammate spawn from a completed spawn-tool result on the LEAD's

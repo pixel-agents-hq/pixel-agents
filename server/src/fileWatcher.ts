@@ -43,6 +43,7 @@ import {
 } from './constants.js';
 import type { DismissalTracker } from './dismissalTracker.js';
 import { pathsMatch } from './pathKey.js';
+import type { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer, clearAgentActivity } from './timerManager.js';
 import { processTranscriptLine } from './transcriptParser.js';
 import type { AgentState } from './types.js';
@@ -582,6 +583,16 @@ export function setTeamProvider(provider: TeamProvider): void {
   teamProvider = provider;
 }
 
+/** Shadow-store watcher for UNNAMED background spawns (sub-agents). Owned by
+ *  AgentRuntime; registered once at startup. When unset (tests wiring only the
+ *  scanners), unnamed spawns are simply not watched. */
+let subagentWatch: SubagentWatch | null = null;
+
+/** Register the SubagentWatch that mirrors unnamed background spawns' transcripts. */
+export function setSubagentWatch(watch: SubagentWatch | null): void {
+  subagentWatch = watch;
+}
+
 /** Register the active HookProvider for non-team capabilities (session roots, etc.). */
 export function setHookProvider(provider: HookProvider): void {
   hookProvider = provider;
@@ -629,11 +640,17 @@ export function scanForTeammateFiles(
   // top-level sessions tagged with the team, not files under the lead's dir.
   const teammates = teamProvider.discoverTeammates(projectDir, sessionId, parentAgent?.teamName);
 
-  for (const { jsonlPath: file, teammateName, sessionId: ownSessionId } of teammates) {
+  const parentLiveSpawnIds = parentAgent ? liveSpawnToolIds(parentAgent) : null;
+  for (const { jsonlPath: file, teammateName, sessionId: ownSessionId, toolUseId } of teammates) {
+    // Live-spawn sidecars (they carry the lead's spawn toolUseId) belong to
+    // scanForBackgroundAgentFiles, which classifies them by name: named
+    // background -> teammate, everything else -> watched sub-agent. Adopting
+    // them here would race that classification and mint a spurious teammate.
+    if (toolUseId && parentLiveSpawnIds?.has(toolUseId)) continue;
     if (knownTeammateFiles.has(file)) continue;
 
     // Also check if any existing agent already tracks this file
-    let alreadyTracked = false;
+    let alreadyTracked = subagentWatch?.isWatching(file) ?? false;
     for (const a of agents.values()) {
       if (pathsMatch(a.jsonlFile, file)) {
         alreadyTracked = true;
@@ -753,20 +770,44 @@ export function scanForTeammateFiles(
   }
 }
 
+/** All of a lead's LIVE spawn tool ids: background spawns (kept alive past
+ *  their tool_result, until the completion queue-operation) plus still-open
+ *  foreground spawn tools (Agent run_in_background:false — same sidecar shape
+ *  on current harnesses, closes with its tool_result). Sidecars matching any
+ *  of these belong to the background-agent flow, not teammate discovery. */
+function liveSpawnToolIds(lead: AgentState): Set<string> {
+  const ids = new Set(lead.backgroundAgentToolIds);
+  for (const toolId of lead.activeToolIds) {
+    const toolName = lead.activeToolNames.get(toolId);
+    if (toolName && hookProvider?.subagentToolNames.has(toolName)) {
+      ids.add(toolId);
+    }
+  }
+  return ids;
+}
+
 /**
- * Adopt anonymous background agents (teams OFF) as named characters.
+ * Classify background spawns (teams OFF) by their sidecar `name`.
  *
  * When a lead's Agent tool_result reports an async launch ("Async agent
  * launched successfully"), the spawned agent runs in-process with its
  * transcript under `<projectDir>/<leadSessionId>/subagents/` and a sidecar
- * carrying agentType/description/toolUseId — but NO team anywhere, so the
- * teammate flow never engages and the only visible representation used to be
- * the transient Subtask sub-character.
+ * carrying agentType/description/toolUseId (+ `name` when the spawn was
+ * named) — but NO team registry anywhere, so the teammate flow never engages
+ * on its own. Per the domain model (CONTEXT.md) the name is the sole
+ * classifier:
  *
- * The anti-spurious gate here is the sidecar's toolUseId matching one of the
+ * - NAMED spawn → Teammate: its own seated character, named from the sidecar
+ *   `name`; the spawner becomes its Lead (derived team — no teamName is set,
+ *   so team-config polling stays away).
+ * - UNNAMED spawn → Sub-agent: the transient Subtask character stays, and the
+ *   spawn's transcript is watched in the SHADOW store so its live activity
+ *   reaches the sub-character via subagentToolStart/Done translation.
+ *
+ * The anti-spurious gate is the sidecar's toolUseId matching one of the
  * lead's LIVE backgroundAgentToolIds (instead of the teamName gate real teams
- * use): only transcripts belonging to a currently-running background spawn are
- * promoted. Completion (queue-operation on the lead) removes the character.
+ * use): only transcripts belonging to a currently-running background spawn
+ * are adopted. Completion (queue-operation on the lead) removes both kinds.
  */
 export function scanForBackgroundAgentFiles(
   leadId: number,
@@ -782,21 +823,41 @@ export function scanForBackgroundAgentFiles(
   if (!teamProvider) return;
   const lead = agents.get(leadId);
   if (!lead || !lead.sessionId || !lead.projectDir) return;
-  if (lead.backgroundAgentToolIds.size === 0) return;
+  const liveSpawnIds = liveSpawnToolIds(lead);
+  if (liveSpawnIds.size === 0) return;
 
   const entries = teamProvider.discoverTeammates(lead.projectDir, lead.sessionId);
   for (const entry of entries) {
-    if (!entry.toolUseId || !lead.backgroundAgentToolIds.has(entry.toolUseId)) continue;
+    if (!entry.toolUseId || !liveSpawnIds.has(entry.toolUseId)) continue;
 
-    let alreadyTracked = false;
-    for (const a of agents.values()) {
-      if (pathsMatch(a.jsonlFile, entry.jsonlPath)) {
-        alreadyTracked = true;
-        break;
+    let alreadyTracked = subagentWatch?.isWatching(entry.jsonlPath) ?? false;
+    if (!alreadyTracked) {
+      for (const a of agents.values()) {
+        if (pathsMatch(a.jsonlFile, entry.jsonlPath)) {
+          alreadyTracked = true;
+          break;
+        }
       }
     }
     if (alreadyTracked) continue;
 
+    // Foreground spawns (Agent run_in_background:false — the tool stays open
+    // for the whole run) write the same sidecar shape. They are within-turn
+    // work whatever the sidecar says: watch them, never seat them.
+    const isForeground = !lead.backgroundAgentToolIds.has(entry.toolUseId);
+
+    if (!entry.name || isForeground) {
+      // Unnamed spawn = Sub-agent: keep the Subtask character, watch the
+      // transcript in the shadow store for live activity. No agentCreated, no
+      // subagentClear, no persistence.
+      subagentWatch?.watch(lead, leadId, {
+        jsonlPath: entry.jsonlPath,
+        toolUseId: entry.toolUseId,
+      });
+      continue;
+    }
+
+    // Named spawn = Teammate.
     const id = nextAgentIdRef.current++;
     const agent: AgentState = {
       id,
@@ -825,16 +886,31 @@ export function scanForBackgroundAgentFiles(
       inputTokens: 0,
       outputTokens: 0,
       // Teammate-like linkage, but NO teamName: config polling must not touch these.
-      agentName: entry.description ?? entry.teammateName,
+      agentName: entry.name,
       leadAgentId: leadId,
       spawnToolUseId: entry.toolUseId,
     };
 
     agents.set(id, agent);
+
+    // Derived team: spawning a named agent makes the spawner a Lead, whether
+    // or not the CLI registered a team. No teamName on purpose (see above).
+    if (!lead.isTeamLead) {
+      lead.isTeamLead = true;
+      agents.broadcast({
+        type: 'agentTeamInfo',
+        id: leadId,
+        teamName: lead.teamName,
+        agentName: lead.agentName,
+        isTeamLead: true,
+        leadAgentId: lead.leadAgentId,
+      });
+    }
+
     persistAgents();
 
     console.log(
-      `[Pixel Agents] Background agent promoted: "${agent.agentName}" (Agent ${id}) for lead Agent ${leadId} (${path.basename(entry.jsonlPath)})`,
+      `[Pixel Agents] Background teammate detected: "${agent.agentName}" (Agent ${id}) for lead Agent ${leadId} (${path.basename(entry.jsonlPath)})`,
     );
 
     // The transient Subtask sub-character is superseded by this real character.

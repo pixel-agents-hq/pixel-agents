@@ -152,6 +152,10 @@ export class AgentStateStore {
     }
     const persisted: PersistedAgent[] = [];
     for (const agent of this.agents.values()) {
+      // Background-spawn children are derived state: the 1s scan re-materializes
+      // them from sidecars after a restore. Persisting them would resurrect
+      // immortal characters whose completion signal never comes.
+      if (agent.spawnToolUseId) continue;
       persisted.push({
         id: agent.id,
         sessionId: agent.sessionId,
@@ -165,6 +169,8 @@ export class AgentStateStore {
         isTeamLead: agent.isTeamLead,
         leadAgentId: agent.leadAgentId,
         teamUsesTmux: agent.teamUsesTmux,
+        backgroundAgentToolIds:
+          agent.backgroundAgentToolIds.size > 0 ? [...agent.backgroundAgentToolIds] : undefined,
       });
     }
     this.adapter.saveAgents(persisted);

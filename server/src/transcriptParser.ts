@@ -36,9 +36,10 @@ export function setHookProvider(provider: HookProvider): void {
   hookProvider = provider;
 }
 
-/** Called when a lead's tool_result reports an anonymous async agent launch.
- *  The host reacts by scanning the lead's subagents/ sidecars to promote the
- *  spawn to its own character (fileWatcher.scanForBackgroundAgentFiles). */
+/** Called when a lead's tool_result reports an async agent launch. The host
+ *  reacts by scanning the lead's subagents/ sidecars and classifying each
+ *  spawn by its sidecar name: named -> teammate character, unnamed -> shadow-
+ *  watched sub-agent (fileWatcher.scanForBackgroundAgentFiles). */
 let backgroundAgentDetectedCallback: ((leadAgentId: number) => void) | null = null;
 
 export function setBackgroundAgentDetectedCallback(cb: (leadAgentId: number) => void): void {
@@ -46,7 +47,7 @@ export function setBackgroundAgentDetectedCallback(cb: (leadAgentId: number) => 
 }
 
 /** Called when a queue-operation record marks a background agent finished.
- *  The host removes the promoted character for that spawn, if any. */
+ *  The host removes the teammate character or stops the shadow watch. */
 let backgroundAgentCompletedCallback: ((leadAgentId: number, toolUseId: string) => void) | null =
   null;
 
@@ -54,6 +55,14 @@ export function setBackgroundAgentCompletedCallback(
   cb: (leadAgentId: number, toolUseId: string) => void,
 ): void {
   backgroundAgentCompletedCallback = cb;
+}
+
+/** Notify the host that a spawn tool finished, so it can remove the spawn's
+ *  teammate character or stop its shadow watch. Exported for hookEventHandler,
+ *  which clears foreground tools on the Stop hook. Safe to fire for tools that
+ *  never had a watch — the host's lookups simply miss. */
+export function notifyBackgroundAgentCompleted(leadAgentId: number, toolUseId: string): void {
+  backgroundAgentCompletedCallback?.(leadAgentId, toolUseId);
 }
 
 /** Called when a lead's spawn result names a DIFFERENT team than the one it is
@@ -203,6 +212,16 @@ export function processTranscriptLine(
             // EXCEPTION: inline teammates need JSONL tool events even in hooks mode so their
             // tool activity is displayed correctly.
             const isSubagentSpawn = isSubagentTool(toolName);
+            // A spawn call carrying a `name` is a Teammate-to-be: flag it so
+            // the webview never creates a Subtask ghost that the teammate
+            // character replaces seconds later.
+            const isTeammateSpawn =
+              isSubagentSpawn &&
+              typeof block.input?.name === 'string' &&
+              block.input.name.length > 0;
+            if (isTeammateSpawn) {
+              (agent.teammateSpawnToolIds ??= new Set()).add(block.id);
+            }
             const useJsonlToolEvents = agent.hookDelivered && hasInlineTeammates(agentId, agents);
             if (!agent.hookDelivered || useJsonlToolEvents || isSubagentSpawn) {
               const runInBackground = isSubagentSpawn && block.input?.run_in_background === true;
@@ -214,6 +233,7 @@ export function processTranscriptLine(
                 toolName,
                 permissionActive: agent.permissionSent,
                 runInBackground,
+                isTeammateSpawn: isTeammateSpawn || undefined,
               });
             }
           }
@@ -319,9 +339,26 @@ export function processTranscriptLine(
                   `[Pixel Agents] Agent ${agentId} background agent launched: ${completedToolId}`,
                 );
                 agent.backgroundAgentToolIds.add(completedToolId);
-                // Try promoting the anonymous background agent to its own named
-                // character right away (sidecar may lag; the periodic teammate
-                // scan retries until it lands).
+                // Current harnesses OMIT run_in_background from the tool_use
+                // input, so the spawn's original agentToolStart went out
+                // unflagged. Re-broadcast it flagged now that the result
+                // proves it's background: the webview marks the Subtask as
+                // background-parented BEFORE the first turn-end clear, or the
+                // sub-character gets removed and recreated at a new tile.
+                const spawnStatus = agent.activeToolStatuses.get(completedToolId);
+                if (spawnStatus) {
+                  agents.broadcast({
+                    type: 'agentToolStart',
+                    id: agentId,
+                    toolId: completedToolId,
+                    status: spawnStatus,
+                    toolName: completedToolName,
+                    runInBackground: true,
+                    isTeammateSpawn: agent.teammateSpawnToolIds?.has(completedToolId) || undefined,
+                  });
+                }
+                // Classify the spawn right away (sidecar may lag; the periodic
+                // teammate scan retries until it lands).
                 backgroundAgentDetectedCallback?.(agentId);
                 continue; // don't mark as done yet
               }
@@ -338,6 +375,8 @@ export function processTranscriptLine(
                   id: agentId,
                   parentToolId: completedToolId,
                 });
+                // Stop the shadow watch on a foreground spawn's transcript.
+                backgroundAgentCompletedCallback?.(agentId, completedToolId);
               }
               agent.activeToolIds.delete(completedToolId);
               agent.activeToolStatuses.delete(completedToolId);
@@ -398,7 +437,7 @@ export function processTranscriptLine(
             agent.activeToolIds.delete(completedToolId);
             agent.activeToolStatuses.delete(completedToolId);
             agent.activeToolNames.delete(completedToolId);
-            // Remove the promoted background-agent character for this spawn, if any.
+            // Remove the spawn's teammate character or stop its shadow watch.
             backgroundAgentCompletedCallback?.(agentId, completedToolId);
             if (!agent.hookDelivered) {
               const toolId = completedToolId;
@@ -432,6 +471,9 @@ export function processTranscriptLine(
           if (isSubagentTool(toolName)) {
             agent.activeSubagentToolIds.delete(toolId);
             agent.activeSubagentToolNames.delete(toolId);
+            // A foreground spawn dropped at turn end without a tool_result:
+            // stop its shadow watch too, or it lingers until sessionEnd.
+            backgroundAgentCompletedCallback?.(agentId, toolId);
           }
         }
         if (!agent.hookDelivered) {
@@ -453,6 +495,7 @@ export function processTranscriptLine(
               status,
               toolName: agent.activeToolNames.get(toolId),
               runInBackground: true,
+              isTeammateSpawn: agent.teammateSpawnToolIds?.has(toolId) || undefined,
             });
           }
         }

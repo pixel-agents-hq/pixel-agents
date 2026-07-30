@@ -67,6 +67,11 @@ export interface AgentState {
    *  tool_use id that spawned it. Links this character to the lead's
    *  backgroundAgentToolIds entry so the queue-operation completion removes it. */
   spawnToolUseId?: string;
+  /** Tool ids of spawn calls whose input carried a `name` — teammates-to-be.
+   *  Every agentToolStart (re-)broadcast for these carries isTeammateSpawn so
+   *  the webview never creates a Subtask ghost for them. Transient, lazily
+   *  created, never persisted. */
+  teammateSpawnToolIds?: Set<string>;
 }
 
 export interface PersistedAgent {
@@ -87,4 +92,8 @@ export interface PersistedAgent {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
+  /** Live background-spawn tool ids on a lead. Persisted so the spawns'
+   *  transcripts are re-adopted after a reload; the spawned children
+   *  themselves are derived state and never persisted. */
+  backgroundAgentToolIds?: string[];
 }

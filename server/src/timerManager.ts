@@ -1,5 +1,6 @@
 import type { AgentStateStore } from './agentStateStore.js';
 import { PERMISSION_TIMER_DELAY_MS } from './constants.js';
+import { hasPromotedBackgroundAgent } from './teamUtils.js';
 import type { AgentState } from './types.js';
 
 export function clearAgentActivity(
@@ -34,8 +35,13 @@ export function clearAgentActivity(
   agent.permissionSent = false;
   cancelPermissionTimer(agentId, permissionTimers);
   agents.broadcast({ type: 'agentToolsClear', id: agentId });
-  // Re-send background agent tools so webview re-creates their sub-agents
+  // Re-send background agent tools so webview re-creates their sub-agents.
+  // toolName + runInBackground are REQUIRED: without them the webview can't
+  // recognize the re-sent tool as a subagent spawn and never recreates the
+  // Subtask sub-character. Skip tools whose spawn became its own character
+  // (named background teammate) -- re-sending would spawn a ghost alongside it.
   for (const toolId of agent.backgroundAgentToolIds) {
+    if (hasPromotedBackgroundAgent(agentId, toolId, agents)) continue;
     const status = agent.activeToolStatuses.get(toolId);
     if (status) {
       agents.broadcast({
@@ -43,6 +49,9 @@ export function clearAgentActivity(
         id: agentId,
         toolId,
         status,
+        toolName: agent.activeToolNames.get(toolId),
+        runInBackground: true,
+        isTeammateSpawn: agent.teammateSpawnToolIds?.has(toolId) || undefined,
       });
     }
   }

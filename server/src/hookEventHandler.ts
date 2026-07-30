@@ -6,6 +6,7 @@ import { SESSION_END_GRACE_MS } from './constants.js';
 import type { SessionRouter } from './sessionRouter.js';
 import { getInlineTeammates, hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
+import { notifyBackgroundAgentCompleted } from './transcriptParser.js';
 import type { AgentState } from './types.js';
 
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
@@ -735,6 +736,9 @@ export class HookEventHandler {
       if (toolName && parentTools.has(toolName)) {
         agent.activeSubagentToolIds.delete(toolId);
         agent.activeSubagentToolNames.delete(toolId);
+        // A foreground spawn dropped at Stop without a tool_result: stop its
+        // shadow watch too, or it lingers until sessionEnd.
+        notifyBackgroundAgentCompleted(agentId, toolId);
       }
     }
     this.agents.broadcast({ type: 'agentToolsClear', id: agentId });
@@ -754,6 +758,7 @@ export class HookEventHandler {
           status,
           toolName: agent.activeToolNames.get(toolId),
           runInBackground: true,
+          isTeammateSpawn: agent.teammateSpawnToolIds?.has(toolId) || undefined,
         });
       }
     }

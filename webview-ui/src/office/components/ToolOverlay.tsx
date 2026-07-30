@@ -33,6 +33,7 @@ interface ToolOverlayProps {
   officeState: OfficeState;
   agents: number[];
   agentTools: Record<number, ToolActivity[]>;
+  subagentTools: Record<number, Record<string, ToolActivity[]>>;
   subagentCharacters: SubagentCharacter[];
   containerRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
@@ -84,6 +85,7 @@ export function ToolOverlay({
   officeState,
   agents,
   agentTools,
+  subagentTools,
   subagentCharacters,
   containerRef,
   zoom,
@@ -170,8 +172,13 @@ export function ToolOverlay({
           if (subHasPermission) {
             activityText = 'Needs approval';
           } else {
+            // Hover shows the subtask title; SELECTING the sub reveals its live
+            // tool activity (watched sub-agents stream it via subagentToolStart).
             const sub = subagentCharacters.find((s) => s.id === id);
-            activityText = sub ? sub.label : 'Subtask';
+            const rows = sub ? subagentTools[sub.parentAgentId]?.[sub.parentToolId] : undefined;
+            const activeRow =
+              isSelected && rows ? [...rows].reverse().find((t) => !t.done) : undefined;
+            activityText = activeRow?.status ?? (sub?.label || 'Subtask');
           }
         } else {
           activityText = getActivityText(

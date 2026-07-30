@@ -25,6 +25,10 @@ export interface PersistedAgent {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
+  /** Live background-spawn tool ids on a lead. Persisted so the spawns'
+   *  transcripts are re-adopted after a reload; the spawned children
+   *  themselves are derived state and never persisted. */
+  backgroundAgentToolIds?: string[];
 }
 
 /** Agent seat assignment with visual identity

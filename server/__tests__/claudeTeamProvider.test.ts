@@ -118,6 +118,42 @@ describe('claudeTeamProvider', () => {
       expect(result.map((t) => t.teammateName).sort()).toEqual(['code-reviewer', 'web-researcher']);
       expect(result.every((t) => t.jsonlPath.endsWith('.jsonl'))).toBe(true);
     });
+
+    it('exposes the sidecar name when present (named background spawn)', () => {
+      const sessDir = path.join(tmpRoot, 'sess-1', 'subagents');
+      fsMod.mkdirSync(sessDir, { recursive: true });
+      const agentA = path.join(sessDir, 'agent-a.jsonl');
+      fsMod.writeFileSync(agentA, '');
+      fsMod.writeFileSync(
+        agentA.replace(/\.jsonl$/, '.meta.json'),
+        '{"agentType":"general-purpose","toolUseId":"toolu_1","description":"Write a haiku","name":"ghost-writer"}',
+      );
+      const result = claudeTeamProvider.discoverTeammates(tmpRoot, 'sess-1');
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('ghost-writer');
+      expect(result[0].toolUseId).toBe('toolu_1');
+      expect(result[0].description).toBe('Write a haiku');
+    });
+
+    it('leaves name undefined when absent or malformed (unnamed spawn)', () => {
+      const sessDir = path.join(tmpRoot, 'sess-1', 'subagents');
+      fsMod.mkdirSync(sessDir, { recursive: true });
+      const unnamed = path.join(sessDir, 'agent-a.jsonl');
+      fsMod.writeFileSync(unnamed, '');
+      fsMod.writeFileSync(
+        unnamed.replace(/\.jsonl$/, '.meta.json'),
+        '{"agentType":"general-purpose","toolUseId":"toolu_1"}',
+      );
+      const malformed = path.join(sessDir, 'agent-b.jsonl');
+      fsMod.writeFileSync(malformed, '');
+      fsMod.writeFileSync(
+        malformed.replace(/\.jsonl$/, '.meta.json'),
+        '{"agentType":"general-purpose","toolUseId":"toolu_2","name":42}',
+      );
+      const result = claudeTeamProvider.discoverTeammates(tmpRoot, 'sess-1');
+      expect(result).toHaveLength(2);
+      expect(result.every((t) => t.name === undefined)).toBe(true);
+    });
   });
 
   describe('extractTeammateSpawnFromToolResult', () => {

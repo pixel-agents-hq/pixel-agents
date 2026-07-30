@@ -273,6 +273,9 @@ export function removeAgent(
 export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): void {
   const persisted: PersistedAgent[] = [];
   for (const agent of agents.values()) {
+    // Background-spawn children are derived state — never persisted (the 1s
+    // scan re-materializes them from sidecars after a restore).
+    if (agent.spawnToolUseId) continue;
     persisted.push({
       id: agent.id,
       sessionId: agent.sessionId,
@@ -286,6 +289,8 @@ export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): v
       isTeamLead: agent.isTeamLead,
       leadAgentId: agent.leadAgentId,
       teamUsesTmux: agent.teamUsesTmux,
+      backgroundAgentToolIds:
+        agent.backgroundAgentToolIds.size > 0 ? [...agent.backgroundAgentToolIds] : undefined,
     });
   }
   adapter.saveAgents(persisted);
@@ -328,6 +333,11 @@ export function restoreAgents(
       continue;
     }
 
+    // Background-spawn children (a leadAgentId but no teamName) are derived
+    // state re-materialized by the 1s scan — never restored directly (also
+    // skips stale entries written by older builds that persisted them).
+    if (p.leadAgentId !== undefined && !p.teamName) continue;
+
     let terminal: vscode.Terminal | undefined;
     const isExternal = p.isExternal ?? false;
 
@@ -358,7 +368,9 @@ export function restoreAgents(
       activeToolNames: new Map(),
       activeSubagentToolIds: new Map(),
       activeSubagentToolNames: new Map(),
-      backgroundAgentToolIds: new Set(),
+      // Live spawn ids survive the reload so the 1s scan can re-adopt the
+      // spawns' transcripts and the completion queue-op still matches.
+      backgroundAgentToolIds: new Set(p.backgroundAgentToolIds ?? []),
       isWaiting: false,
       permissionSent: false,
       hadToolsInTurn: false,
@@ -570,8 +582,9 @@ export function sendCurrentAgentStatuses(
         status: 'waiting',
       });
     }
-    // Re-send team metadata
-    if (agent.teamName) {
+    // Re-send team metadata. Derived teams (named background spawns) have a
+    // name and a lead link but NO teamName, so gate on any team field.
+    if (agent.teamName || agent.agentName || agent.isTeamLead) {
       webview.postMessage({
         type: 'agentTeamInfo',
         id: agentId,

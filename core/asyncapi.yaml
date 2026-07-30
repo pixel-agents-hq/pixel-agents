@@ -277,6 +277,12 @@ components:
           type: boolean
         runInBackground:
           type: boolean
+        isTeammateSpawn:
+          type: boolean
+          description: >-
+            True when this spawn tool call carries a name, making the spawn a
+            Teammate-to-be. The office must not create a Subtask sub-character
+            for it — a teammate character will represent the spawn instead.
 
     AgentToolDone:
       description: Agent finished executing a tool.
