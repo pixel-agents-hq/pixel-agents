@@ -288,4 +288,18 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // into characters once seats are rebuilt.
   const savedLayout = readLayoutFromFile();
   send({ type: 'layoutLoaded', layout: savedLayout ?? cache?.defaultLayout ?? null });
+
+  // 8. Context gauges, AFTER layoutLoaded -- the characters they target only
+  // exist once the layout flush creates them. Without this a reconnecting
+  // client shows bare characters until each agent takes another turn.
+  for (const [id, agent] of store) {
+    if (agent.contextTokens > 0) {
+      send({
+        type: 'agentContextUsage',
+        id,
+        contextTokens: agent.contextTokens,
+        maxContextTokens: agent.maxContextTokens,
+      });
+    }
+  }
 }

@@ -33,6 +33,7 @@ import type { ITerminalAdapter } from '../../core/src/terminalAdapter.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import {
   CLEAR_IDLE_THRESHOLD_MS,
+  DEFAULT_MAX_CONTEXT_TOKENS,
   EXTERNAL_ACTIVE_THRESHOLD_MS,
   EXTERNAL_SCAN_INTERVAL_MS,
   EXTERNAL_STALE_CHECK_INTERVAL_MS,
@@ -41,11 +42,12 @@ import {
   GLOBAL_SCAN_ACTIVE_MIN_SIZE,
   PROJECT_SCAN_INTERVAL_MS,
 } from './constants.js';
+import { seedContextUsage } from './contextUsage.js';
 import type { DismissalTracker } from './dismissalTracker.js';
 import { pathsMatch } from './pathKey.js';
 import type { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer, clearAgentActivity } from './timerManager.js';
-import { processTranscriptLine } from './transcriptParser.js';
+import { getHookProvider, processTranscriptLine } from './transcriptParser.js';
 import type { AgentState } from './types.js';
 
 /** Dismissal tracker instance. Set once at startup via setDismissalTracker().
@@ -106,6 +108,11 @@ export function startFileWatching(
   waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
 ): void {
+  // Every watched agent passes through here, so this is the one place that can
+  // give an agent adopted or restored mid-session a context gauge without
+  // replaying its whole transcript.
+  seedContextUsage(agentId, agents, getHookProvider());
+
   // Single polling approach: reliable on all platforms (macOS, Linux, WSL2, Windows).
   // Previously used triple-redundant fs.watch + fs.watchFile + setInterval, but
   // fs.watch is unreliable on macOS/WSL2 and the redundancy created 3 timers per
@@ -519,8 +526,8 @@ function adoptTerminalForFile(
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
     hookDelivered: false,
-    inputTokens: 0,
-    outputTokens: 0,
+    contextTokens: 0,
+    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };
 
   agents.set(id, agent);
@@ -732,8 +739,8 @@ export function scanForTeammateFiles(
       lastDataAt: Date.now(),
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
-      inputTokens: 0,
-      outputTokens: 0,
+      contextTokens: 0,
+      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       // Agent Teams fields
       agentName: teammateName,
       leadAgentId: parentAgentId,
@@ -883,8 +890,8 @@ export function scanForBackgroundAgentFiles(
       lastDataAt: Date.now(),
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
-      inputTokens: 0,
-      outputTokens: 0,
+      contextTokens: 0,
+      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       // Teammate-like linkage, but NO teamName: config polling must not touch these.
       agentName: entry.name,
       leadAgentId: leadId,
@@ -1119,8 +1126,8 @@ export function adoptExternalSessionFromHook(
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
       folderName,
-      inputTokens: 0,
-      outputTokens: 0,
+      contextTokens: 0,
+      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
     };
     agents.set(id, agent);
     persistAgents();
@@ -1199,8 +1206,8 @@ function adoptExternalSession(
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
     folderName,
-    inputTokens: 0,
-    outputTokens: 0,
+    contextTokens: 0,
+    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };
 
   agents.set(id, agent);

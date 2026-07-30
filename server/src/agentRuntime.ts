@@ -14,6 +14,7 @@ import * as path from 'path';
 
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
+import { DEFAULT_MAX_CONTEXT_TOKENS } from './constants.js';
 import { DismissalTracker } from './dismissalTracker.js';
 import {
   adoptExternalSessionFromHook,
@@ -506,8 +507,8 @@ export class AgentRuntime {
         seenUnknownRecordTypes: new Set(),
         folderName: p.folderName,
         hookDelivered: false,
-        inputTokens: 0,
-        outputTokens: 0,
+        contextTokens: 0,
+        maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
         teamName: p.teamName,
         agentName: p.agentName,
         isTeamLead: p.isTeamLead,

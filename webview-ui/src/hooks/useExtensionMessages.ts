@@ -647,9 +647,9 @@ export function useExtensionMessages(
           msg.leadAgentId as number | undefined,
           msg.teamUsesTmux as boolean | undefined,
         );
-      } else if (msg.type === 'agentTokenUsage') {
+      } else if (msg.type === 'agentContextUsage') {
         const id = msg.id as number;
-        os.setAgentTokens(id, msg.inputTokens as number, msg.outputTokens as number);
+        os.setAgentContext(id, msg.contextTokens as number, msg.maxContextTokens as number);
       }
     };
     const unsubscribe = transport.onMessage(handler);

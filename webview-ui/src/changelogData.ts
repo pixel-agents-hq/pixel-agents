@@ -32,7 +32,8 @@ export const changelogEntries: ChangelogEntry[] = [
       {
         title: 'Features',
         items: [
-          'Claude Code Agent Teams visualization with lead badges, role labels, token gauges, and coordinated lifecycle',
+          'Claude Code Agent Teams visualization with lead badges, role labels, and coordinated lifecycle',
+          'Context gauge on every agent, sized to the model its session runs',
           'Animated pets with saved placement, petting interactions, and external pet packs',
           'Auto-tiling carpets with color controls, painting tools, undo, and persistence',
           'Workspace Areas that map folders to office zones and guide agent seating',

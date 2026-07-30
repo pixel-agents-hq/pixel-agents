@@ -47,9 +47,16 @@ export interface AgentState {
    *  the PostToolUse-before-SubagentStart race); overwritten on the next PreToolUse. */
   currentHookIsTeammateSpawn?: boolean;
 
-  // -- Token tracking --
-  inputTokens: number;
-  outputTokens: number;
+  // -- Context window usage (server/src/contextUsage.ts) --
+  /** Tokens in the agent's context as of its newest turn; 0 until one is seen.
+   *  A snapshot, not a running total -- it falls on compaction and /clear. */
+  contextTokens: number;
+  /** Observational estimate of the window `contextTokens` fits in. Widens as
+   *  larger contexts appear, never shrinks. */
+  maxContextTokens: number;
+  /** True once this transcript produced a main-chain turn, after which
+   *  sidechain records belong to sub-agents and stop moving the gauge. */
+  sawMainChainUsage?: boolean;
 
   // -- Agent Teams --
   teamName?: string;

@@ -235,10 +235,13 @@ export interface Character {
   leadAgentId?: number;
   /** True when lead spawns teammates via tmux (run_in_background Agent calls) */
   teamUsesTmux?: boolean;
-  /** Cumulative input tokens consumed */
-  inputTokens: number;
-  /** Cumulative output tokens consumed */
-  outputTokens: number;
+
+  // -- Context gauge --
+  /** Tokens in the agent's context as of its newest turn; 0 until reported.
+   *  Sub-agents have no session of their own and stay at 0. */
+  contextTokens: number;
+  /** Window `contextTokens` is measured against. */
+  maxContextTokens: number;
 }
 
 export const PetState = { IDLE: 'idle', WALK: 'walk', FOLLOW: 'follow' } as const;

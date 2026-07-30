@@ -16,8 +16,17 @@ import {
   spawnExternalClaudeScenario,
   waitForClaudeHookSetup,
 } from '../../../helpers/mock-claude';
-import { expectOverlayCount, expectOverlayVisible } from '../../../helpers/office';
-import { buildAssistantToolUseRecord, buildUserToolResultRecord } from '../../../helpers/team';
+import {
+  expectContextGauge,
+  expectOverlayCount,
+  expectOverlayVisible,
+  getContextGauges,
+} from '../../../helpers/office';
+import {
+  buildAssistantToolUseRecord,
+  buildAssistantUsageRecord,
+  buildUserToolResultRecord,
+} from '../../../helpers/team';
 import { getPixelAgentsFrame, openPixelAgentsPanel, setSettings } from '../../../helpers/webview';
 
 test.describe('Hooks ON / spawn paths', () => {
@@ -43,6 +52,8 @@ test.describe('Hooks ON / spawn paths', () => {
             description: 'spawned subtask',
           }),
         )
+        .at(7_000)
+        .appendJsonl(buildAssistantUsageRecord(90_000))
         .at(13_000)
         .appendJsonl(buildUserToolResultRecord('toolu-subagent-spawn'))
         .holdOpenFor(15_000)
@@ -68,6 +79,14 @@ test.describe('Hooks ON / spawn paths', () => {
     await expectOverlayCount(panelFrame, 2);
     await expectOverlayVisible(panelFrame, 'Subtask: spawned subtask');
     narrator.check('"Subtask: spawned subtask" overlay up — count 1 → 2');
+
+    // The agent is on no team, so this also pins that the context gauge is not
+    // a teams feature. 90k of an Opus 5 window is 9%; reading 45% would mean
+    // the runtime fell back to assuming a 200k window.
+    narrator.step("waiting for the t+7s usage record to fill the agent's context gauge");
+    await expectContextGauge(panelFrame, 9);
+    await expect(getContextGauges(panelFrame)).toHaveCount(1);
+    narrator.check('the agent shows a 9% context gauge; the subtask has none');
 
     narrator.step('waiting for the t+13s tool_result — the subtask should despawn');
     await expectOverlayCount(panelFrame, 1);

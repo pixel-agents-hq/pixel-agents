@@ -14,7 +14,12 @@ import {
   uninstallHooks as installerUninstallHooks,
 } from './claudeHookInstaller.js';
 import { claudeTeamProvider } from './claudeTeamProvider.js';
-import { CLAUDE_TERMINAL_NAME_PREFIX } from './constants.js';
+import {
+  CLAUDE_LARGE_CONTEXT_WINDOW,
+  CLAUDE_SMALL_CONTEXT_MODEL_PATTERN,
+  CLAUDE_SMALL_CONTEXT_WINDOW,
+  CLAUDE_TERMINAL_NAME_PREFIX,
+} from './constants.js';
 
 // ── formatToolStatus: moved from src/transcriptParser.ts ──
 
@@ -252,6 +257,24 @@ function areHooksInstalled(): Promise<boolean> {
   return Promise.resolve(installerAreHooksInstalled());
 }
 
+// ── Context windows ──
+
+/**
+ * Window a Claude model's context is measured against.
+ *
+ * Claude Code writes the model id on every assistant record but never the
+ * limit, so this table is the only thing standing between the context gauge and a
+ * wrong denominator -- assuming 200k for a 1M model reads five times too full.
+ * Unknown ids return undefined so the runtime keeps whatever it already
+ * assumed rather than adopting a fresh guess.
+ */
+export function contextWindowForModel(model: string | undefined): number | undefined {
+  if (!model || model === '<synthetic>') return undefined;
+  return CLAUDE_SMALL_CONTEXT_MODEL_PATTERN.test(model)
+    ? CLAUDE_SMALL_CONTEXT_WINDOW
+    : CLAUDE_LARGE_CONTEXT_WINDOW;
+}
+
 // ── The provider ──
 
 export const claudeProvider: HookProvider = {
@@ -271,6 +294,7 @@ export const claudeProvider: HookProvider = {
   subagentToolNames: new Set(['Task', 'Agent']),
   readingTools: new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']),
   terminalNamePrefix: CLAUDE_TERMINAL_NAME_PREFIX,
+  contextWindowForModel,
 
   getSessionDirs,
   getAllSessionRoots,

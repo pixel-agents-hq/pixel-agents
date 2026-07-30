@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MAX_CONTEXT_TOKENS,
   SEAT_REST_MAX_SEC,
   SEAT_REST_MIN_SEC,
   TYPE_FRAME_DURATION_SEC,
@@ -83,8 +84,8 @@ export function createCharacter(
     matrixEffect: null,
     matrixEffectTimer: 0,
     matrixEffectSeeds: [],
-    inputTokens: 0,
-    outputTokens: 0,
+    contextTokens: 0,
+    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };
 }
 

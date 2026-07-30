@@ -103,6 +103,26 @@ export async function expectNoOverlayWithTexts(
   await expect(getOverlayByTexts(frame, texts)).toHaveCount(0, { timeout });
 }
 
+/**
+ * Context gauges. Every agent that has taken a turn shows one; sub-agents
+ * never do, so the count doubles as an assertion about who owns a session.
+ */
+export function getContextGauges(frame: OverlaySurface): Locator {
+  return frame.locator('[data-testid="context-gauge"]');
+}
+
+export async function expectContextGauge(
+  frame: OverlaySurface,
+  percent: number,
+  timeout = OVERLAY_TIMEOUT_MS,
+): Promise<void> {
+  await expect(getContextGauges(frame).first()).toHaveAttribute(
+    'data-context-pct',
+    String(percent),
+    { timeout },
+  );
+}
+
 export async function readAgentOverlayIds(frame: OverlaySurface): Promise<number[]> {
   const rawIds = await getAgentOverlays(frame).evaluateAll((elements) =>
     elements.map((element) => element.getAttribute('data-agent-id')),

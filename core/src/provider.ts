@@ -103,6 +103,14 @@ export interface HookProvider {
    *  match VS Code terminals to agents for heuristic adoption. */
   readonly terminalNamePrefix?: string;
 
+  /** Context window, in tokens, for a model id this CLI reports in its
+   *  transcripts. Transcripts state token usage but never the limit it counts
+   *  against, so only the provider can say — and getting it wrong is visible:
+   *  the office renders usage/window as a context gauge over every character.
+   *  Return undefined for an unrecognized model; the runtime then keeps its
+   *  previous estimate and widens it if a context ever exceeds it. */
+  contextWindowForModel?(model: string | undefined): number | undefined;
+
   // ── Optional file fallback (heuristic mode) ──
 
   /** Session directories to scan. Undefined = no file fallback. */

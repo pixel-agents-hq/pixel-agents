@@ -50,8 +50,8 @@ function createLeadAgent(projectDir: string): AgentState {
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
     hookDelivered: false,
-    inputTokens: 0,
-    outputTokens: 0,
+    contextTokens: 0,
+    maxContextTokens: 200_000,
   } as AgentState;
 }
 

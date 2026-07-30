@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
-import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
+import { DEFAULT_MAX_CONTEXT_TOKENS, JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
 import {
   ensureProjectScan,
   readNewLines,
@@ -115,8 +115,8 @@ export async function launchNewTerminal(
     seenUnknownRecordTypes: new Set(),
     folderName,
     hookDelivered: false,
-    inputTokens: 0,
-    outputTokens: 0,
+    contextTokens: 0,
+    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };
 
   agents.set(id, agent);
@@ -379,8 +379,8 @@ export function restoreAgents(
       seenUnknownRecordTypes: new Set(),
       folderName: p.folderName,
       hookDelivered: false,
-      inputTokens: 0,
-      outputTokens: 0,
+      contextTokens: 0,
+      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       teamName: p.teamName,
       agentName: p.agentName,
       // A named agent is a teammate; never restore it as a lead (guards against
@@ -595,13 +595,13 @@ export function sendCurrentAgentStatuses(
         teamUsesTmux: agent.teamUsesTmux,
       });
     }
-    // Re-send token usage
-    if (agent.inputTokens > 0 || agent.outputTokens > 0) {
+    // Re-send context usage
+    if (agent.contextTokens > 0) {
       webview.postMessage({
-        type: 'agentTokenUsage',
+        type: 'agentContextUsage',
         id: agentId,
-        inputTokens: agent.inputTokens,
-        outputTokens: agent.outputTokens,
+        contextTokens: agent.contextTokens,
+        maxContextTokens: agent.maxContextTokens,
       });
     }
   }

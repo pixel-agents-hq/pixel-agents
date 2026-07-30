@@ -84,8 +84,8 @@ function makeChar(id: number, col: number, row: number): Character {
     matrixEffect: null,
     matrixEffectTimer: 0,
     matrixEffectSeeds: [],
-    inputTokens: 0,
-    outputTokens: 0,
+    contextTokens: 0,
+    maxContextTokens: 200_000,
   };
 }
 

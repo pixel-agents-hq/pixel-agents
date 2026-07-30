@@ -98,7 +98,8 @@ components:
         - $ref: '#/components/schemas/SubagentToolPermission'
         # Agent Teams
         - $ref: '#/components/schemas/AgentTeamInfo'
-        - $ref: '#/components/schemas/AgentTokenUsage'
+        # Context window
+        - $ref: '#/components/schemas/AgentContextUsage'
         # Layout
         - $ref: '#/components/schemas/LayoutLoaded'
         # Assets
@@ -409,19 +410,26 @@ components:
         teamUsesTmux:
           type: boolean
 
-    AgentTokenUsage:
-      description: Cumulative token usage for the agent's session.
+    AgentContextUsage:
+      description: |
+        How much of the agent's context window is in use, as of its most recent
+        turn. A snapshot, NOT a running total: it falls when the session
+        compacts or clears. `maxContextTokens` is the runtime's best estimate of
+        the window size — transcripts don't state it, so it starts at the
+        default and widens (never shrinks) once a larger context is observed.
+        Sent for every agent, including leads and teammates; sub-agents have no
+        session of their own and never report it.
       type: object
       additionalProperties: false
-      required: [type, id, inputTokens, outputTokens]
+      required: [type, id, contextTokens, maxContextTokens]
       properties:
         type:
-          const: agentTokenUsage
+          const: agentContextUsage
         id:
           type: integer
-        inputTokens:
+        contextTokens:
           type: integer
-        outputTokens:
+        maxContextTokens:
           type: integer
 
     LayoutLoaded:

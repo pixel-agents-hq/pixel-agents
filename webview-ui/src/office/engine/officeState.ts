@@ -1015,11 +1015,11 @@ export class OfficeState {
     }
   }
 
-  setAgentTokens(id: number, inputTokens: number, outputTokens: number): void {
+  setAgentContext(id: number, contextTokens: number, maxContextTokens: number): void {
     const ch = this.characters.get(id);
     if (!ch) return;
-    ch.inputTokens = inputTokens;
-    ch.outputTokens = outputTokens;
+    ch.contextTokens = contextTokens;
+    ch.maxContextTokens = maxContextTokens;
   }
 
   update(dt: number): void {

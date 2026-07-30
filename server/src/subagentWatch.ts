@@ -20,6 +20,7 @@
 import type * as fs from 'fs';
 
 import { AgentStateStore } from './agentStateStore.js';
+import { DEFAULT_MAX_CONTEXT_TOKENS } from './constants.js';
 import { readNewLines, startFileWatching } from './fileWatcher.js';
 import { pathsMatch } from './pathKey.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -91,8 +92,8 @@ export class SubagentWatch {
       lastDataAt: Date.now(),
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
-      inputTokens: 0,
-      outputTokens: 0,
+      contextTokens: 0,
+      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       leadAgentId: leadId,
       spawnToolUseId: entry.toolUseId,
     };
@@ -157,7 +158,7 @@ export class SubagentWatch {
   /** Re-emit shadow-store activity on the main store as subagent* messages.
    *  Everything not listed here (agentTokenUsage, agentTeamInfo, the shadow's
    *  own nested subagent* messages) is deliberately dropped: the sub-character
-   *  has no fuel gauge, no team badge, and no sub-sub-characters.
+   *  has no context gauge, no team badge, and no sub-sub-characters.
    *
    *  Per-tool dones are DEFERRED to the sub's turn end: emitting them as they
    *  happen made the sub-character flap between typing and idle on every

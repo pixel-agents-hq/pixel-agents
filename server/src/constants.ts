@@ -29,6 +29,18 @@ export const EXTERNAL_STALE_CHECK_INTERVAL_MS = 30_000;
  *  so the file's mtime becomes stale before the dismissal expires. */
 export const DISMISSED_COOLDOWN_MS = 180_000; // 3 minutes
 
+// ── Context Window Usage ────────────────────────────────────
+/** Window size assumed until a transcript proves otherwise. Transcripts never
+ *  state the model's context limit, so this is the floor, not the truth. */
+export const DEFAULT_MAX_CONTEXT_TOKENS = 200_000;
+/** Known window sizes, ascending. The smallest tier that fits the largest
+ *  context observed so far wins; beyond the last tier we round up to a whole
+ *  multiple of it, so an unknown future window still reads under 100%. */
+export const CONTEXT_WINDOW_TIERS = [200_000, 1_000_000] as const;
+/** How much of a transcript's tail to read when seeding an agent's context on
+ *  adoption or restore. Comfortably more than one turn's worth of records. */
+export const CONTEXT_SEED_TAIL_BYTES = 256 * 1024;
+
 // ── Global Session Scanning ─────────────────────────────────
 /** Only adopt global JSONL files larger than this (filters out empty/init-only sessions) */
 export const GLOBAL_SCAN_ACTIVE_MIN_SIZE = 3_072; // 3KB

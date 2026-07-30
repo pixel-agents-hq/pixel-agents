@@ -3,6 +3,7 @@ const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
+import { updateContextUsage } from './contextUsage.js';
 import { hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import {
   cancelPermissionTimer,
@@ -34,6 +35,12 @@ function isSubagentTool(toolName: string | null | undefined): boolean {
 /** Register the HookProvider that owns CLI-specific formatting and team metadata extraction. */
 export function setHookProvider(provider: HookProvider): void {
   hookProvider = provider;
+}
+
+/** The registered provider, for modules that need it outside line parsing
+ *  (fileWatcher seeds context gauges before any line has been read). */
+export function getHookProvider(): HookProvider | null {
+  return hookProvider;
 }
 
 /** Called when a lead's tool_result reports an async agent launch. The host
@@ -125,23 +132,8 @@ export function processTranscriptLine(
       });
     }
 
-    // -- Token usage extraction from assistant records --
-    const usage = record.message?.usage as
-      { input_tokens?: number; output_tokens?: number } | undefined;
-    if (usage) {
-      if (typeof usage.input_tokens === 'number') {
-        agent.inputTokens += usage.input_tokens;
-      }
-      if (typeof usage.output_tokens === 'number') {
-        agent.outputTokens += usage.output_tokens;
-      }
-      agents.broadcast({
-        type: 'agentTokenUsage',
-        id: agentId,
-        inputTokens: agent.inputTokens,
-        outputTokens: agent.outputTokens,
-      });
-    }
+    // -- Context window usage (drives every agent's context gauge) --
+    updateContextUsage(agentId, agent, agents, record, hookProvider);
 
     // Resilient content extraction: support both record.message.content and record.content
     // Claude Code may change the JSONL structure across versions

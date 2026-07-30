@@ -150,6 +150,28 @@ export function buildBackgroundAgentDoneRecord(toolUseId: string): Record<string
   };
 }
 
+/**
+ * Assistant record that carries only token usage — the signal behind the
+ * context gauge. Real turns put almost the whole context in the cache
+ * counters (`input_tokens` is single digits once caching kicks in), so the
+ * cache read alone is the context size, which keeps expected percentages exact.
+ */
+export function buildAssistantUsageRecord(cacheReadTokens: number): Record<string, unknown> {
+  return {
+    type: 'assistant',
+    message: {
+      model: 'claude-opus-5',
+      content: [{ type: 'text', text: 'still working' }],
+      usage: {
+        input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: cacheReadTokens,
+        output_tokens: 0,
+      },
+    },
+  };
+}
+
 export function buildTurnDurationRecord(): Record<string, unknown> {
   return {
     type: 'system',

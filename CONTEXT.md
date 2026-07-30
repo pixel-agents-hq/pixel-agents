@@ -105,6 +105,10 @@ _Avoid_: status text, tool status
 The indicator above a character announcing a form of inactivity: "…" for a permission request (stays until resolved), a checkmark for a finished turn (fades on its own).
 _Avoid_: bubble alone when ambiguous, notification
 
+**Context gauge**:
+The small bar under an agent's activity label showing how full its context window is. Every agent has one once it has taken a turn; sub-agents never do, having no session of their own. It reads the newest turn, so it falls when a session compacts or clears — it is a level, not a total.
+_Avoid_: fuel gauge, health bar, token gauge (tokens are the unit, context is the thing)
+
 ## Office & Layout
 
 **Office**:
