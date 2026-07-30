@@ -4,7 +4,7 @@
 
 ### Features
 
-- **Claude Code Agent Teams visualization** ([#218](https://github.com/pixel-agents-hq/pixel-agents/pull/218)) — Renders team leads and teammates as coordinated characters in both tmux and inline modes, with role labels, lead badges, token fuel gauges, tool activity, persistence, and coordinated cleanup. Builds on the early implementations in [#79](https://github.com/pixel-agents-hq/pixel-agents/pull/79) and [#177](https://github.com/pixel-agents-hq/pixel-agents/pull/177).
+- **Claude Code Agent Teams visualization** ([#218](https://github.com/pixel-agents-hq/pixel-agents/pull/218)) — Renders team leads and teammates as coordinated characters in both tmux and inline modes, with role labels, lead badges, token fuel gauges, tool activity, persistence, and coordinated cleanup. Builds on the early implementations in [#79](https://github.com/pixel-agents-hq/pixel-agents/pull/79) and [#177](https://github.com/pixel-agents-hq/pixel-agents/pull/177). Closes [#65](https://github.com/pixel-agents-hq/pixel-agents/issues/65).
 - **Animated pets** ([#315](https://github.com/pixel-agents-hq/pixel-agents/pull/315)) — Adds Claudio and Gitcat to the layout editor, autonomous walking and idle animations, petting interactions, saved placement, and custom pets loaded from external asset directories. Reimplements and supersedes [#219](https://github.com/pixel-agents-hq/pixel-agents/pull/219) on the new architecture.
 - **Carpets and workspace Areas** ([#316](https://github.com/pixel-agents-hq/pixel-agents/pull/316)) — Adds three auto-tiling carpet styles with WYSIWYG color controls, paint/erase/eyedropper tools, undo, and persistence. Named Areas can be painted onto the office, mapped to workspace folders, and used to seat agents in the right part of the layout. Integrates the original carpet work from [#213](https://github.com/pixel-agents-hq/pixel-agents/pull/213) and Areas work from [#259](https://github.com/pixel-agents-hq/pixel-agents/pull/259).
 - **Optional startup automation** ([#221](https://github.com/pixel-agents-hq/pixel-agents/pull/221)) — Adds `pixel-agents.autoShowPanel` and `pixel-agents.autoSpawnAgent` settings to open the panel and launch an agent automatically when VS Code starts. Both remain off by default.
@@ -12,7 +12,7 @@
 ### Standalone and Architecture
 
 - **Layered architecture and provider-ready core** ([#236](https://github.com/pixel-agents-hq/pixel-agents/pull/236), [#238](https://github.com/pixel-agents-hq/pixel-agents/pull/238), [#273](https://github.com/pixel-agents-hq/pixel-agents/pull/273), merged through [#275](https://github.com/pixel-agents-hq/pixel-agents/pull/275)) — Separates shared contracts, the runtime server, the VS Code adapter, and the webview; centralizes lifecycle state in `AgentRuntime` and `AgentStateStore`; and removes runtime VS Code dependencies from the server. Provider, adapter, transport, and state interfaces now give future clients and agent providers stable integration points.
-- **Standalone browser app and npm package** ([#273](https://github.com/pixel-agents-hq/pixel-agents/pull/273), [#344](https://github.com/pixel-agents-hq/pixel-agents/pull/344)) — `npx pixel-agents` starts a local Fastify server and browser office with WebSocket state delivery. The standalone UI now covers the core VS Code experience, including settings, diagnostics, asset reloads, layout import/export, Areas, carpets, and pets, while user state is centralized under `~/.pixel-agents/`.
+- **Standalone browser app and npm package** ([#273](https://github.com/pixel-agents-hq/pixel-agents/pull/273), [#344](https://github.com/pixel-agents-hq/pixel-agents/pull/344)) — `npx pixel-agents` starts a local Fastify server and browser office with WebSocket state delivery. The standalone UI now covers the core VS Code experience, including settings, diagnostics, asset reloads, layout import/export, Areas, carpets, and pets, while user state is centralized under `~/.pixel-agents/`. Closes [#120](https://github.com/pixel-agents-hq/pixel-agents/issues/120).
 - **Multi-server hook discovery and fan-out** ([#344](https://github.com/pixel-agents-hq/pixel-agents/pull/344)) — Lets the VS Code extension and one or more standalone servers run together. Each server registers independently, Claude hook events fan out to every live server, and each surface adopts only the sessions in its configured scope.
 - **Published WebSocket protocol contract** ([#273](https://github.com/pixel-agents-hq/pixel-agents/pull/273)) — Makes `core/asyncapi.yaml` the authoritative AsyncAPI contract and generates the shared TypeScript message bindings with CI drift detection.
 
@@ -41,7 +41,26 @@ Thank you to the contributors who made this release possible:
 - [@balgaly](https://github.com/balgaly) — Automatic panel display and agent startup settings
 - [@ErickGross-19](https://github.com/ErickGross-19), [@ZenidX](https://github.com/ZenidX) — Early Agent Teams implementations that informed the shipped design
 - [@pablodelucca](https://github.com/pablodelucca) — Workspace Areas, layout-editor polish, and watchable narrated e2e review
+- [@modtanoii](https://github.com/modtanoii) — Architecture refactor collaboration, server and WebSocket design, and extensibility hardening
 - [@florintimbuc](https://github.com/florintimbuc) — Architecture refactor, Agent Teams integration, standalone and npm package, multi-server support, e2e expansion, and release coordination
+
+### Community acknowledgements
+
+#### Architecture and standalone direction
+
+Earlier standalone implementations from [@rollecode](https://github.com/rollecode) ([#156](https://github.com/pixel-agents-hq/pixel-agents/pull/156)), [@MikaelDDavidd](https://github.com/MikaelDDavidd) ([#166](https://github.com/pixel-agents-hq/pixel-agents/pull/166)), and [@TimpiaAI](https://github.com/TimpiaAI) ([#63](https://github.com/pixel-agents-hq/pixel-agents/pull/63)) demonstrated community demand and validated the browser SPA, WebSocket, and server discovery direction. These PRs were closed as superseded, with many thanks to their authors.
+
+#### Independent fixes
+
+Several community PRs independently diagnosed or fixed issues resolved in v1.4.0. Some overlapped with the final implementation, but each helped validate and strengthen the release:
+
+- **Standalone hook path:** [@sakuramoon44](https://github.com/sakuramoon44) ([#283](https://github.com/pixel-agents-hq/pixel-agents/pull/283)), [@joemanat1997](https://github.com/joemanat1997) ([#292](https://github.com/pixel-agents-hq/pixel-agents/pull/292)), [@Ralphive](https://github.com/Ralphive) ([#295](https://github.com/pixel-agents-hq/pixel-agents/pull/295)), [@AxlLinares](https://github.com/AxlLinares) ([#306](https://github.com/pixel-agents-hq/pixel-agents/pull/306)), [@mariopablobarron](https://github.com/mariopablobarron) ([#325](https://github.com/pixel-agents-hq/pixel-agents/pull/325)), and [@NatVich](https://github.com/NatVich) ([#326](https://github.com/pixel-agents-hq/pixel-agents/pull/326)).
+- **Windows message generation:** [@sakuramoon44](https://github.com/sakuramoon44) ([#280](https://github.com/pixel-agents-hq/pixel-agents/pull/280)) and [@joemanat1997](https://github.com/joemanat1997) ([#291](https://github.com/pixel-agents-hq/pixel-agents/pull/291)).
+- **Standalone agent rendering:** shipped through [@bezzborodth-tech](https://github.com/bezzborodth-tech) ([#349](https://github.com/pixel-agents-hq/pixel-agents/pull/349)), with independent fixes and tests from [@miguemlima-creator](https://github.com/miguemlima-creator) ([#324](https://github.com/pixel-agents-hq/pixel-agents/pull/324)), [@Ralphive](https://github.com/Ralphive) ([#297](https://github.com/pixel-agents-hq/pixel-agents/pull/297)), [@meganechan](https://github.com/meganechan) ([#299](https://github.com/pixel-agents-hq/pixel-agents/pull/299)), [@SichAlexander](https://github.com/SichAlexander) ([#336](https://github.com/pixel-agents-hq/pixel-agents/pull/336)), and [@yshyuk](https://github.com/yshyuk) ([#338](https://github.com/pixel-agents-hq/pixel-agents/pull/338)).
+- **Windows test isolation:** [@sakuramoon44](https://github.com/sakuramoon44) ([#281](https://github.com/pixel-agents-hq/pixel-agents/pull/281)), consolidated by [@elietwd](https://github.com/elietwd) ([#289](https://github.com/pixel-agents-hq/pixel-agents/pull/289)).
+- **Dependency audit cleanup:** [@Suoriks](https://github.com/Suoriks) ([#345](https://github.com/pixel-agents-hq/pixel-agents/pull/345)).
+
+Special thanks to [@sakuramoon44](https://github.com/sakuramoon44), [@Ralphive](https://github.com/Ralphive), and [@joemanat1997](https://github.com/joemanat1997) for contributing multiple fixes during this release cycle.
 
 ## v1.3.0
 
