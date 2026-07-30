@@ -223,13 +223,13 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 
 ### `@area:teams` (7 tests)
 
-- `e2e/claude/hooks-on/teams.spec.ts:63` — internal terminal lead with inline teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:120` — internal terminal lead with tmux teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:194` — new-harness background agent becomes a named teammate character (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:286` — unnamed background spawn stays a sub-agent with live activity and survives Stop (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:356` — named background spawn becomes a teammate and badges the spawner LEAD (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:420` — external session lead with inline teammate routes tools to teammate (Hooks ON / teams)
-- `e2e/claude/hooks-on/teams.spec.ts:492` — external session lead with tmux teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:64` — internal terminal lead with inline teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:121` — internal terminal lead with tmux teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:195` — new-harness background agent becomes a named teammate character (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:287` — unnamed background spawn stays a sub-agent with live activity and survives Stop (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:358` — named background spawn becomes a teammate and badges the spawner LEAD (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:422` — external session lead with inline teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:494` — external session lead with tmux teammate routes tools to teammate (Hooks ON / teams)
 
 ### `@area:matrix` (6 tests)
 
