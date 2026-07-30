@@ -27,10 +27,10 @@ Pixel Agents turns the AI coding agents running in your terminals into animated 
 
 It ships in two forms from the same codebase:
 
-- **VS Code extension** — [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) and [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents). Agents spawn into VS Code terminals; characters render in the panel area.
+- **VS Code extension** — [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) and [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents). Agents launch into VS Code terminals; characters render in the panel area.
 - **Standalone CLI** — `npx pixel-agents` starts a local server and serves the same office as a browser app, useful for tmux, remote, and non-VS Code workflows.
 
-The architecture is fully agent-agnostic and platform-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation today; Codex, Gemini, Cursor, and others are on the roadmap.
+The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation today; Codex, Gemini, Cursor, and others are on the roadmap.
 
 ![Pixel Agents screenshot](webview-ui/public/office.png)
 
@@ -39,12 +39,12 @@ The architecture is fully agent-agnostic and platform-agnostic: a typed `HookPro
 - **One agent, one character** — every Claude Code terminal gets its own animated character
 - **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
 - **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
-- **Speech bubbles** — visual indicators when an agent is waiting for input or needs permission
-- **Sound notifications** — optional chime when an agent finishes its turn
-- **Subagents and Agent Teams** — see ephemeral subagents and persistent Claude teammates as separate characters, including team roles and lifecycle changes
+- **Speech bubbles** — visual indicators when an agent is waiting for input or awaiting permission
+- **Sound notifications** — optional chimes when an agent finishes its turn or requests permission
+- **Sub-agents and Agent Teams** — see ephemeral sub-agents and persistent Claude teammates as separate characters, including team roles and lifecycle changes
 - **Persistent layouts** — your office design is saved and shared across VS Code windows
 - **Shared layout and assets** — import/export layouts and load external character, pet, and furniture packs
-- **Areas** — paint named office zones, map folders to them, and seat agents inside the area assigned to their folder
+- **Areas** — paint named areas onto the office, map workspace folders to them, and new agents sit inside the areas mapped to their folder
 - **Diverse characters** — 6 diverse characters. These are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack).
 
 <p align="center">
@@ -108,7 +108,9 @@ pixel-agents --help
 
 The default bind address is `127.0.0.1`. Binding to `0.0.0.0` exposes the UI and WebSocket to the local network; do this only on a trusted network.
 
-### Running multiple surfaces
+Pass `--no-terminal` to disable the embedded terminal — watch agents without launching or attaching to them from the browser.
+
+### Running the extension and standalone together
 
 The extension and standalone CLI can run at the same time. Each server registers under `~/.pixel-agents/servers/`; the Claude hook script sends events to all active registrations. VS Code and standalone keep separate agents, seats, and settings while using the shared office layout.
 
@@ -138,7 +140,7 @@ Use **Settings → Add Asset Directory** to load external characters, pets, and 
 Pixel Agents uses two Claude Code detection paths:
 
 - **Hooks mode** (default) — a hook script receives Claude events such as `SessionStart`, `PreToolUse`, `PermissionRequest`, and `Stop`. It discovers active Pixel Agents servers and sends authenticated events to each one.
-- **Transcript mode** (fallback) — the runtime scans Claude's JSONL session files under `~/.claude/projects/` when hooks are unavailable or for details not present in an event.
+- **Heuristic mode** (fallback) — when hooks are unavailable, the runtime infers agent status by scanning Claude's JSONL session transcripts under `~/.claude/projects/`. Transcripts are also read in hooks mode for details not present in an event.
 
 The Claude provider normalizes both sources into a shared `AgentEvent` model. `AgentRuntime` updates the central state store, and the active transport sends typed messages to the React webview. The office renders through Canvas 2D with pathfinding and character state machines.
 
@@ -148,8 +150,8 @@ Pixel Agents does not modify Claude Code. Its hook configuration and persistent 
 
 - **`core/`** — provider, adapter, transport, schema, and AsyncAPI message contracts with no runtime side effects.
 - **`server/`** — shared Fastify server, agent runtime, persistence, Claude provider, transcript scanning, and standalone CLI.
-- **`adapters/vscode/`** — the VS Code terminal, persistence, and webview bridge.
-- **`webview-ui/`** — React 19, Vite, Canvas 2D, and host-specific transports for VS Code and browser WebSocket clients.
+- **`adapters/vscode/`** — the VS Code adapter: terminal, persistence, and webview bridge.
+- **`webview-ui/`** — React 19, Vite, Canvas 2D, and adapter-specific transports for VS Code and browser WebSocket clients.
 
 The extension and CLI are bundled with esbuild; the webview is built with Vite. Unit tests use Vitest and Node's test runner, and end-to-end coverage uses Playwright against VS Code and standalone.
 
