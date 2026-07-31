@@ -176,6 +176,39 @@ export async function expectSingleAgentOverlay(frame: OverlaySurface): Promise<n
 }
 
 /**
+ * Assert whether the office's single character is drawn as a ghost — the
+ * translucent rendering a headless agent gets (adopted from outside, so there
+ * is no terminal to focus) while "Display Headless as Ghosts" is on.
+ *
+ * Both inputs to that decision are canvas-only: the per-character flag and the
+ * renderer's setting. So this reads them through the test hooks and combines
+ * them the same way the renderer does — same rationale as getCharacters/getPets.
+ */
+export async function expectCharacterGhosted(
+  frame: OverlaySurface,
+  ghosted: boolean,
+): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        await frame.evaluate(() => {
+          interface GhostHooks {
+            getCharacters?: () => Array<{ id: number; isHeadless?: boolean }>;
+            getGhostHeadlessAgents?: () => boolean;
+          }
+          const hooks = (window as { __pixelAgentsTestHooks?: GhostHooks }).__pixelAgentsTestHooks;
+          const characters = hooks?.getCharacters?.() ?? [];
+          if (characters.length !== 1) return `expected 1 character, got ${characters.length}`;
+          const setting = hooks?.getGhostHeadlessAgents?.() ?? false;
+          return characters[0]!.isHeadless === true && setting;
+        }),
+      { timeout: OVERLAY_TIMEOUT_MS },
+    )
+    .toBe(ghosted);
+  narrate.check(`character is drawn ${ghosted ? 'as a ghost (translucent)' : 'fully opaque'}`);
+}
+
+/**
  * Assert the named teammate character occupies the free seat closest to its
  * lead. Seats and characters render only on the canvas (no DOM), so this reads
  * through the test hooks — the same rationale as getCharacters/getPets.

@@ -38,15 +38,22 @@ interface AddAgentCall {
 
 /** A fake office that records addAgent calls, mirroring how officeCanvasCursor
  *  tests inject closures instead of constructing a real OfficeState. */
-function fakeOffice(existing: number[] = []): ExistingAgentsOffice & { calls: AddAgentCall[] } {
+function fakeOffice(
+  existing: number[] = [],
+): ExistingAgentsOffice & { calls: AddAgentCall[]; headless: number[] } {
   const ids = new Set(existing);
   const calls: AddAgentCall[] = [];
+  const headless: number[] = [];
   return {
     calls,
+    headless,
     characters: { has: (id: number) => ids.has(id) },
     addAgent: (id, palette, hueShift, seatId, skipSpawnEffect, folderName) => {
       ids.add(id);
       calls.push({ id, palette, hueShift, seatId, skipSpawnEffect, folderName });
+    },
+    setHeadless: (id, isHeadless) => {
+      if (isHeadless) headless.push(id);
     },
   };
 }
@@ -93,7 +100,7 @@ test('layout not ready: buffers restored agents for the later layoutLoaded flush
   assert.equal(addedDirectly, false);
   assert.equal(os.calls.length, 0, 'no agent should be added before the layout is ready');
   assert.deepEqual(pending, [
-    { id: 5, palette: 2, hueShift: 90, seatId: 'seat-a', folderName: 'alpha' },
+    { id: 5, palette: 2, hueShift: 90, seatId: 'seat-a', folderName: 'alpha', isHeadless: false },
   ]);
 });
 
@@ -120,6 +127,33 @@ test('layout ready: a mixed roster adds only the missing agent', () => {
   assert.deepEqual(
     os.calls.map((c) => c.id),
     [6],
+  );
+});
+
+// ── headless flag (adopted agents, no terminal to focus) ────────
+
+test('layout ready: marks restored headless agents and leaves the others alone', () => {
+  const os = fakeOffice();
+  const pending: PendingAgent[] = [];
+
+  reconcileExistingAgents(os, [5, 6], {}, {}, true, pending, { 5: true });
+
+  assert.deepEqual(os.headless, [5]);
+});
+
+test('layout not ready: the headless flag rides along on the buffered agent', () => {
+  const os = fakeOffice();
+  const pending: PendingAgent[] = [];
+
+  reconcileExistingAgents(os, [5, 6], {}, {}, false, pending, { 5: true });
+
+  assert.equal(os.headless.length, 0, 'nothing is marked before the layout flush');
+  assert.deepEqual(
+    pending.map((p) => [p.id, p.isHeadless]),
+    [
+      [5, true],
+      [6, false],
+    ],
   );
 });
 

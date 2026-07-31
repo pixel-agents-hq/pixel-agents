@@ -1007,12 +1007,25 @@ export class OfficeState {
     if (teamUsesTmux !== undefined) {
       ch.teamUsesTmux = teamUsesTmux;
     }
+    // A teammate is not a headless agent: clicking it focuses its lead's terminal.
+    // Adopted sessions are marked headless at creation and only later discovered
+    // to be teammates, so drop the mark once the link lands.
+    if (leadAgentId !== undefined) {
+      ch.isHeadless = false;
+    }
     // A teammate discovered only after its plain external session was adopted is
     // linked here, not at creation, so it never went through the seat-next-to-lead
     // path addAgent runs for inline teammates. Cluster it now, once, on first link.
     if (wasUnlinked && leadAgentId !== undefined && !isTeamLead) {
       this.reseatNextToLead(id, leadAgentId);
     }
+  }
+
+  /** Mark an agent as headless (adopted, no terminal to focus). */
+  setHeadless(id: number, headless: boolean): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    ch.isHeadless = headless;
   }
 
   setAgentContext(id: number, contextTokens: number, maxContextTokens: number): void {

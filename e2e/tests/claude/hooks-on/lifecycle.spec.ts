@@ -1582,10 +1582,15 @@ test.describe('Hooks ON / lifecycle', () => {
     // assertion is about the FLIPPED state surviving a reload, not about the
     // initial default value.
     const initial = await getSettingChecked(frame, 'Always Show Labels');
-    narrator.step('flipping "Always Show Labels" in Settings');
-    await setSettings(frame, { alwaysShowLabels: !initial });
+    const initialGhost = await getSettingChecked(frame, 'Display Headless as Ghosts');
+    narrator.step('flipping "Always Show Labels" + "Display Headless as Ghosts" in Settings');
+    await setSettings(frame, {
+      alwaysShowLabels: !initial,
+      ghostHeadlessAgents: !initialGhost,
+    });
     expect(await getSettingChecked(frame, 'Always Show Labels')).toBe(!initial);
-    narrator.check('"Always Show Labels" is now flipped');
+    expect(await getSettingChecked(frame, 'Display Headless as Ghosts')).toBe(!initialGhost);
+    narrator.check('both toggles are now flipped');
 
     // Force a fresh webview by closing and reopening the panel (same
     // mechanism the restored-agents test uses for the existingAgents restore path).
@@ -1597,6 +1602,7 @@ test.describe('Hooks ON / lifecycle', () => {
     // After settingsLoaded re-hydrates, the toggle must still be in the
     // flipped state — not back to the fixture default.
     expect(await getSettingChecked(frame, 'Always Show Labels')).toBe(!initial);
+    expect(await getSettingChecked(frame, 'Display Headless as Ghosts')).toBe(!initialGhost);
     narrator.check('flipped state survives the reload — persisted through config.json');
   });
 

@@ -16,6 +16,7 @@ export interface WebviewSettings {
   watchAllSessions?: boolean;
   hooksEnabled?: boolean;
   alwaysShowLabels?: boolean;
+  ghostHeadlessAgents?: boolean;
   debugView?: boolean;
 }
 
@@ -478,6 +479,9 @@ export async function setSettings(frame: WebviewSurface, settings: WebviewSettin
   }
   if (settings.alwaysShowLabels !== undefined) {
     await setCheckbox(settingsModal, 'Always Show Labels', settings.alwaysShowLabels);
+  }
+  if (settings.ghostHeadlessAgents !== undefined) {
+    await setCheckbox(settingsModal, 'Display Headless as Ghosts', settings.ghostHeadlessAgents);
   }
   if (settings.debugView !== undefined) {
     await setCheckbox(settingsModal, 'Debug View', settings.debugView);

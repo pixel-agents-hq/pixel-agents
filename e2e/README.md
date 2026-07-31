@@ -177,8 +177,8 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 
 ### `@area:spawn` (2 tests)
 
-- `e2e/claude/hooks-on/basic.spec.ts:33` — internal terminal spawns agent and Task subagent appears then despawns (Hooks ON / spawn paths)
-- `e2e/claude/hooks-on/basic.spec.ts:108` — external Claude session adopted via hook confirmation lifecycle (Hooks ON / spawn paths)
+- `e2e/claude/hooks-on/basic.spec.ts:34` — internal terminal spawns agent and Task subagent appears then despawns (Hooks ON / spawn paths)
+- `e2e/claude/hooks-on/basic.spec.ts:114` — external Claude session adopted via hook confirmation lifecycle (Hooks ON / spawn paths)
 
 ### `@area:lifecycle` (22 tests)
 
@@ -218,8 +218,8 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/claude/hooks-on/lifecycle.spec.ts:1447` — hook install and uninstall round-trip via the Settings toggle (Hooks ON / lifecycle)
 - `e2e/claude/hooks-on/lifecycle.spec.ts:1501` — permission bubble auto-clears when a fresh PreToolUse arrives (Hooks ON / lifecycle)
 - `e2e/claude/hooks-on/lifecycle.spec.ts:1575` — settings toggles persist across a webview reload (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1617` — layout editor enter paint save persist and exit round-trip (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1698` — hook uninstall preserves a pre-existing third-party hook entry (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1623` — layout editor enter paint save persist and exit round-trip (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1704` — hook uninstall preserves a pre-existing third-party hook entry (Hooks ON / lifecycle)
 
 ### `@area:teams` (7 tests)
 

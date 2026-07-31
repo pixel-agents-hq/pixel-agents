@@ -17,6 +17,7 @@ import {
   waitForClaudeHookSetup,
 } from '../../../helpers/mock-claude';
 import {
+  expectCharacterGhosted,
   expectContextGauge,
   expectOverlayCount,
   expectOverlayVisible,
@@ -74,6 +75,11 @@ test.describe('Hooks ON / spawn paths', () => {
     const terminalTab = window.getByText(/Claude Code #\d+/);
     await expect(terminalTab.first()).toBeVisible({ timeout: 15_000 });
     narrator.check('a real "Claude Code #N" terminal tab is open');
+
+    // The terminal above is exactly what makes this agent NOT headless: it has
+    // one to focus, so it renders fully opaque (contrast: the adopted external
+    // session in the next test).
+    await expectCharacterGhosted(panelFrame, false);
 
     narrator.step('waiting for the t+5s Task tool_use to spawn a "Subtask" character');
     await expectOverlayCount(panelFrame, 2);
@@ -157,6 +163,10 @@ test.describe('Hooks ON / spawn paths', () => {
     await expectOverlayCount(frame, 1);
     await expectOverlayVisible(frame, 'Running: npm test');
     narrator.check('the external agent appeared — "Running: npm test"');
+
+    // Adopted from outside via Watch All Sessions: no terminal to focus, so the
+    // character is headless and renders translucent.
+    await expectCharacterGhosted(frame, true);
 
     // 2. PermissionRequest (t+4.5s) → "Needs approval"
     narrator.step('waiting for the t+4.5s PermissionRequest');
