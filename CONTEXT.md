@@ -23,11 +23,15 @@ An AI coding session tracked by Pixel Agents, whether spawned from the office or
 _Avoid_: bot, terminal (as a synonym), session (as a synonym)
 
 **Headless agent**:
-An agent with no terminal — a non-interactive run adopted from outside the office, for example. A full citizen: it has a seat and can be selected, but there is no terminal to focus. Agents it spawns are sub-agents or teammates like anyone else's.
+An agent with no terminal — a non-interactive run adopted from outside the office, for example. A full citizen: it has a seat and can be selected, but there is no terminal to focus. Agents it spawns are sub-agents or teammates like anyone else's. Optionally drawn as a Ghost.
 
 **Character**:
 The animated pixel-art figure representing an agent in the office. An agent has a status and a session; its character has a position and an animation state.
 _Avoid_: avatar, sprite (a sprite is the image asset, not the figure)
+
+**Ghost**:
+A character drawn translucent because its agent is headless — the visual shorthand for "nothing to focus here". Opt-in: off unless the user turns on "Display Headless as Ghosts", and never used in adapters without terminals, where every agent would qualify and the cue would say nothing. Teammates and sub-agents are never ghosts; clicking one reaches its lead's or parent's terminal.
+_Avoid_: faded, dimmed, transparent, inactive (that's a status)
 
 **Sub-agent**:
 An unnamed piece of delegated work spawned by an agent, visualized with its own character near its parent — around it, not in a seat. Not an Agent (no session of its own) and not a Teammate (no name). It exists only for the duration of its task, which may outlive the parent's turn. Having no name is what makes it a sub-agent.

@@ -81,9 +81,10 @@ import { getPetSpriteData } from './petEntity.js';
  * Module state rather than a render param: the rAF loop reads it every frame,
  * so a toggle takes effect on the next one without threading a 21st argument
  * through renderFrame. Same shape as setProviderCapabilities / setSoundEnabled.
- * Mirrors the server default (on).
+ * Mirrors the server default (off) — the cue is opt-in, so an office looks the
+ * same as it did before the setting existed until someone turns it on.
  */
-let ghostHeadlessAgents = true;
+let ghostHeadlessAgents = false;
 
 export function setGhostHeadlessAgents(enabled: boolean): void {
   ghostHeadlessAgents = enabled;

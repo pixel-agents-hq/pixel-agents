@@ -400,7 +400,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         );
         const ghostHeadlessAgents = this.adapter.getSetting<boolean>(
           GLOBAL_KEY_GHOST_HEADLESS_AGENTS,
-          true,
+          false,
         );
         this.runtime.watchAllSessions.current = watchAllSessions;
         const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);

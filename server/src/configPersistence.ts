@@ -44,7 +44,7 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   soundEnabled: true,
   lastSeenVersion: '',
   alwaysShowLabels: false,
-  ghostHeadlessAgents: true,
+  ghostHeadlessAgents: false,
   watchAllSessions: false,
   hooksEnabled: true,
   hooksInfoShown: false,

@@ -36,6 +36,12 @@ test.describe('Hooks ON / spawn paths', () => {
   }) => {
     const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
 
+    // Ghosting ships off, so turn it on before anything spawns. That makes the
+    // "not a ghost" assertion below say something — that this agent owns a
+    // terminal — rather than merely restating the default.
+    narrator.step('enabling "Display Headless as Ghosts" so the opacity cue is live');
+    await setSettings(frame, { ghostHeadlessAgents: true });
+
     // Sub-character appears on Task tool_use and despawns on tool_result.
     // Task subagent lifecycle is JSONL-driven even in hooks-on mode
     // (transcriptParser routes Task/Agent tool events through JSONL
@@ -116,9 +122,13 @@ test.describe('Hooks ON / spawn paths', () => {
   }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile, narrator } = pixelAgents;
 
-    narrator.step('enabling Watch All Sessions so the hooks-only session gets adopted');
+    // Ghosting ships off, so the test turns it on — otherwise the adopted agent
+    // below is headless but drawn at full opacity, which is the correct default
+    // behaviour and would make the ghost assertion unreachable.
+    narrator.step('enabling Watch All Sessions + ghosting so the hooks-only session gets adopted');
     await setSettings(frame, {
       watchAllSessions: true,
+      ghostHeadlessAgents: true,
     });
 
     narrator.step('waiting for the hook install and hook server to be ready');
