@@ -20,9 +20,9 @@
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^26.1.1",
     "@types/pngjs": "^6.0.5",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "allure-vitest": "^3.9.0",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
@@ -35,7 +35,7 @@
     "tsx": "^4.19.3",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.8",
+    "vite": "^8.2.0",
     "vitest": "^4.1.10"
   }
 }
