@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import { resendAgentActivity } from '../../server/src/agentActivityResend.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { DEFAULT_MAX_CONTEXT_TOKENS, JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
 import {
@@ -567,49 +568,7 @@ export function sendCurrentAgentStatuses(
   webview: vscode.Webview | undefined,
 ): void {
   if (!webview) return;
-  for (const [agentId, agent] of agents) {
-    // Re-send active tools
-    for (const [toolId, status] of agent.activeToolStatuses) {
-      const toolName = agent.activeToolNames.get(toolId) ?? '';
-      webview.postMessage({
-        type: 'agentToolStart',
-        id: agentId,
-        toolId,
-        status,
-        toolName,
-      });
-    }
-    // Re-send waiting status
-    if (agent.isWaiting) {
-      webview.postMessage({
-        type: 'agentStatus',
-        id: agentId,
-        status: 'waiting',
-      });
-    }
-    // Re-send team metadata. Derived teams (named background spawns) have a
-    // name and a lead link but NO teamName, so gate on any team field.
-    if (agent.teamName || agent.agentName || agent.isTeamLead) {
-      webview.postMessage({
-        type: 'agentTeamInfo',
-        id: agentId,
-        teamName: agent.teamName,
-        agentName: agent.agentName,
-        isTeamLead: agent.isTeamLead,
-        leadAgentId: agent.leadAgentId,
-        teamUsesTmux: agent.teamUsesTmux,
-      });
-    }
-    // Re-send context usage
-    if (agent.contextTokens > 0) {
-      webview.postMessage({
-        type: 'agentContextUsage',
-        id: agentId,
-        contextTokens: agent.contextTokens,
-        maxContextTokens: agent.maxContextTokens,
-      });
-    }
-  }
+  resendAgentActivity((msg) => webview.postMessage(msg), agents);
 }
 
 export function sendLayout(
