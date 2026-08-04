@@ -341,4 +341,23 @@ describe('PixelAgentsServer', () => {
 
     expect(received).toHaveLength(0);
   });
+
+  // 23. Custom token is used when provided
+  it('uses a custom token when provided via options', async () => {
+    const customToken = 'my-custom-static-token';
+    const config = await server.start({ token: customToken });
+    expect(config.token).toBe(customToken);
+  });
+
+  // 24. Custom token is enforced for Bearer auth
+  it('rejects a random token when a custom token was set', async () => {
+    const customToken = 'my-custom-static-token';
+    const config = await server.start({ token: customToken });
+    const res = await fetch(`http://127.0.0.1:${config.port}/api/hooks/claude`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer not-the-right-token' },
+      body: '{}',
+    });
+    expect(res.status).toBe(401);
+  });
 });

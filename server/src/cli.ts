@@ -32,6 +32,8 @@ export interface CliArgs {
    *  can run at once without a collision. --port picks a fixed one. */
   port?: number;
   host: string;
+  /** Static auth token. If not provided, a random UUID is generated. */
+  token?: string;
 }
 
 /** Thrown by parseArgs on an invalid --port. Kept separate from process.exit so
@@ -60,12 +62,23 @@ export function parseArgs(argv: string[]): CliArgs {
     } else if (argv[i] === '--host' && argv[i + 1]) {
       args.host = argv[i + 1];
       i++;
+    } else if (argv[i] === '--token' || argv[i] === '-t') {
+      const raw = argv[i + 1];
+      if (raw === undefined) {
+        throw new CliArgsError(`Missing value for ${argv[i]}: expected a string token.`);
+      }
+      if (raw.length < 8) {
+        throw new CliArgsError(`Invalid --token: must be at least 8 characters.`);
+      }
+      args.token = raw;
+      i++;
     } else if (argv[i] === '--help') {
       console.log(`Usage: pixel-agents [options]
 
 Options:
   --port, -p <number>   Port to listen on (default: OS-assigned ephemeral port)
   --host <string>       Host to bind to (default: 127.0.0.1)
+  --token, -t <string>  Static auth token (default: random UUID, min 8 chars)
   --help                Show this help message`);
       process.exit(0);
     }
@@ -187,6 +200,7 @@ async function main(): Promise<void> {
       embedded: false,
       host: args.host,
       port: args.port,
+      token: args.token,
       staticDir,
       assetCache,
       onSetHooksEnabled,

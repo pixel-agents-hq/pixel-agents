@@ -118,6 +118,46 @@ describe('parseArgs', () => {
   it('parses --host', () => {
     expect(parseArgs(['--host', '0.0.0.0']).host).toBe('0.0.0.0');
   });
+
+  // 11. --token defaults to undefined (server generates a random UUID)
+  it('defaults token to undefined when --token is omitted', () => {
+    expect(parseArgs([]).token).toBeUndefined();
+  });
+
+  // 12. Valid --token is accepted
+  it('accepts a valid --token (>= 8 characters)', () => {
+    expect(parseArgs(['--token', 'my-secret-token']).token).toBe('my-secret-token');
+  });
+
+  // 13. -t short form works
+  it('accepts -t as a short form for --token', () => {
+    expect(parseArgs(['-t', 'abcdefgh']).token).toBe('abcdefgh');
+  });
+
+  // 14. Exactly 8 characters is the minimum accepted
+  it('accepts a token of exactly 8 characters', () => {
+    expect(parseArgs(['--token', '12345678']).token).toBe('12345678');
+  });
+
+  // 15. Token shorter than 8 characters is rejected
+  it('rejects --token shorter than 8 characters', () => {
+    expect(() => parseArgs(['--token', 'short'])).toThrow(CliArgsError);
+    expect(() => parseArgs(['--token', 'short'])).toThrow(/at least 8 characters/);
+  });
+
+  // 16. --token without a value is rejected
+  it.each(['--token', '-t'])('rejects %s when its value is missing', (option) => {
+    expect(() => parseArgs([option])).toThrow(CliArgsError);
+    expect(() => parseArgs([option])).toThrow(/Missing value/);
+  });
+
+  // 17. --token combined with other options
+  it('parses --token alongside --port and --host', () => {
+    const args = parseArgs(['--port', '3100', '--host', '0.0.0.0', '--token', 'my-token-123']);
+    expect(args.port).toBe(3100);
+    expect(args.host).toBe('0.0.0.0');
+    expect(args.token).toBe('my-token-123');
+  });
 });
 
 /**
