@@ -85,9 +85,13 @@ export async function launchVSCode(
   // (buildSeedConfig in layout-seed.ts carries the same baseline).
   const paDir = path.join(tmpHome, '.pixel-agents');
   fs.mkdirSync(paDir, { recursive: true });
+  // hooksConsentGiven is part of the baseline: without it the first-run consent
+  // prompt gates hook installation and every hooks-on spec would stall on a
+  // native notification no test answers.
   const seedConfig = opts.seedConfig ?? {
     vscode: { alwaysShowLabels: true },
     standalone: { alwaysShowLabels: true },
+    hooksConsentGiven: true,
   };
   fs.writeFileSync(path.join(paDir, 'config.json'), JSON.stringify(seedConfig, null, 2));
   if (opts.seedLayout !== undefined) {

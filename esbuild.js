@@ -109,7 +109,23 @@ async function main() {
     copyAssets();
     buildHooks();
     await buildCli();
+    await buildUninstall();
   }
+}
+
+/** Bundle the vscode:uninstall hook — plain Node, runs after extension removal. */
+async function buildUninstall() {
+  await esbuild.build({
+    entryPoints: ['adapters/vscode/uninstall.ts'],
+    bundle: true,
+    format: 'cjs',
+    minify: production,
+    sourcemap: false,
+    platform: 'node',
+    outfile: 'dist/uninstall.js',
+    define: versionDefine,
+    logLevel: 'silent',
+  });
 }
 
 /** Bundle the standalone CLI entry point. */

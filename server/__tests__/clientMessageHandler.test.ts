@@ -139,6 +139,34 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
     });
   });
 
+  // ── hooksStatus (actual install state, not the hooksEnabled setting) ──
+
+  describe('hooksStatus', () => {
+    it('webviewReady reports installed: false when no hooks are in settings.json', async () => {
+      handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx);
+      // The provider check is async; the message lands after the sync handshake.
+      await new Promise((r) => setTimeout(r, 0));
+
+      const status = sent.find((m) => m.type === 'hooksStatus');
+      expect(status).toEqual({ type: 'hooksStatus', installed: false });
+    });
+
+    it('setHooksEnabled reports the actual outcome after the side effect settles', async () => {
+      let sideEffectRan = false;
+      ctx.onSetHooksEnabled = async () => {
+        sideEffectRan = true;
+      };
+      handleClientMessage({ type: 'setHooksEnabled', enabled: true }, (m) => sent.push(m), ctx);
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(sideEffectRan).toBe(true);
+      // The side effect installed nothing (stub), so the truthful answer is false
+      // even though the user just toggled the setting ON.
+      const status = sent.find((m) => m.type === 'hooksStatus');
+      expect(status).toEqual({ type: 'hooksStatus', installed: false });
+    });
+  });
+
   // ── handleWebviewReady ordering ──────────────────────────────
 
   describe('handleWebviewReady ordering', () => {

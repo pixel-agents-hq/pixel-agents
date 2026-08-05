@@ -118,5 +118,8 @@ export function buildSeedConfig(opts: SeedConfigOptions = {}): Record<string, un
     },
     standalone: { ...DEFAULT_ADAPTER_SETTINGS },
     externalAssetDirectories: [],
+    // Same baseline as the launch-level seed: skip the first-run consent prompt
+    // so hook installation proceeds at startup (see e2e/helpers/launch.ts).
+    hooksConsentGiven: true,
   };
 }

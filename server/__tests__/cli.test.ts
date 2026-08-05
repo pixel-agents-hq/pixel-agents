@@ -162,6 +162,14 @@ describe('dist/cli.js entry-point guard', () => {
 
     const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-home-'));
     const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-workspace-'));
+    // The spawned CLI has no TTY, and without prior consent the first-run gate
+    // (rightly) skips hook installation there — seed consent so this test can
+    // exercise the actual install path.
+    fs.mkdirSync(path.join(tmpHome, '.pixel-agents'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpHome, '.pixel-agents', 'config.json'),
+      JSON.stringify({ hooksConsentGiven: true }),
+    );
     const port = await getFreePort();
     const child = spawn(
       process.execPath,

@@ -86,6 +86,7 @@ function App() {
     setGhostHeadlessAgents,
     hooksEnabled,
     setHooksEnabled,
+    hooksInstalled,
     hooksInfoShown,
     areaMappings,
     setAreaMappings,
@@ -430,8 +431,11 @@ function App() {
         />
       )}
 
-      {/* Hooks first-run tooltip */}
-      {!hooksInfoShown && !hooksTooltipDismissed && (
+      {/* Hooks first-run tooltip. Gated on hooksInstalled (the hooksStatus
+          message), NOT the hooksEnabled preference: hooksEnabled defaults true
+          while first-run consent is still pending, and announcing "Instant
+          Detection Active" before anything is installed would be a lie. */}
+      {hooksEnabled && hooksInstalled && !hooksInfoShown && !hooksTooltipDismissed && (
         <Tooltip
           title="Instant Detection Active"
           position="top-right"

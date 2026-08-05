@@ -111,6 +111,7 @@ components:
         - $ref: '#/components/schemas/CarpetTilesLoaded'
         # Settings & config
         - $ref: '#/components/schemas/SettingsLoaded'
+        - $ref: '#/components/schemas/HooksStatus'
         - $ref: '#/components/schemas/ExternalAssetDirectoriesUpdated'
         - $ref: '#/components/schemas/AreaMappingsLoaded'
         - $ref: '#/components/schemas/WorkspaceFolders'
@@ -665,6 +666,22 @@ components:
           items:
             type: string
         showAreas:
+          type: boolean
+
+    HooksStatus:
+      description: |
+        Actual hook installation state, as opposed to the hooksEnabled
+        preference in SettingsLoaded. The two can disagree: hooksEnabled
+        defaults to true while first-run consent is still pending and nothing
+        is installed yet. Sent after the connect handshake and whenever the
+        install state changes (consent granted, settings toggle, uninstall).
+      type: object
+      additionalProperties: false
+      required: [type, installed]
+      properties:
+        type:
+          const: hooksStatus
+        installed:
           type: boolean
 
     AreaMappingsLoaded:

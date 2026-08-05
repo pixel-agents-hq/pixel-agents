@@ -162,7 +162,13 @@ export function handleClientMessage(
       const enabled = msg.enabled as boolean;
       adapter?.setSetting(KEY_HOOKS_ENABLED, enabled);
       if (runtime) runtime.hooksEnabled.current = enabled;
-      void ctx.onSetHooksEnabled?.(enabled);
+      // After the install/uninstall side effect settles, report the ACTUAL
+      // install state — the toggle expresses intent, not outcome (the
+      // installer refuses to touch an unparseable settings.json).
+      void (async () => {
+        await ctx.onSetHooksEnabled?.(enabled);
+        send({ type: 'hooksStatus', installed: await claudeProvider.areHooksInstalled() });
+      })();
       break;
     }
 
@@ -282,6 +288,15 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
     externalAssetDirectories: cfg.externalAssetDirectories,
     showAreas,
+  });
+
+  // 4a. Actual install state, distinct from the hooksEnabled preference —
+  // hooksEnabled defaults true while first-run consent is still pending. The
+  // provider check is async, so this lands as a follow-up right after the
+  // synchronous handshake; the webview's default (not installed) is the safe
+  // assumption until it arrives.
+  void claudeProvider.areHooksInstalled().then((installed) => {
+    send({ type: 'hooksStatus', installed });
   });
 
   // 4b. Folder→Area mappings (must arrive before existingAgents so the

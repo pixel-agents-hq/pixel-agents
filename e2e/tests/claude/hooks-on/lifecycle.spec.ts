@@ -1374,8 +1374,11 @@ test.describe('Hooks ON / lifecycle', () => {
   // setSettings UI toggle → file on disk.
   //
   // Pixel-agents hook entries are recognised by the command string containing
-  // 'claude-hook.js' (or legacy 'pixel-agents-hook.js'); see
-  // server/src/providers/hook/claude/claudeHookInstaller.ts::isOurHookEntry.
+  // BOTH 'claude-hook.js' and the '.pixel-agents' directory (or legacy
+  // 'pixel-agents-hook.js'); see
+  // server/src/providers/hook/claude/claudeHookInstaller.ts::isOurHookCommand.
+  // These test helpers match on the script names alone, which is fine here:
+  // every command the installer writes contains the full path.
 
   function readClaudeSettings(tmpHome: string): {
     hooks?: Record<string, Array<{ matcher?: string; hooks: Array<{ command: string }> }>>;

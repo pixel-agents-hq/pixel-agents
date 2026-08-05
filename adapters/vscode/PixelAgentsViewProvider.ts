@@ -25,7 +25,7 @@ import {
   sendWallTilesToWebview,
 } from '../../server/src/assetLoader.js';
 import { loadAllCharacters, loadAllFurniture, loadAllPets } from '../../server/src/assetReload.js';
-import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
+import { grantHooksConsent, readConfig, writeConfig } from '../../server/src/configPersistence.js';
 import { setFolderNameResolver, setTerminalAdapter } from '../../server/src/fileWatcher.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
 import {
@@ -211,16 +211,61 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         const hooksEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_ENABLED, true);
         this.runtime.hooksEnabled.current = hooksEnabled;
         if (hooksEnabled) {
-          void claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
-          if (!copyHookScript(this.context.extensionPath)) {
-            console.warn('[Pixel Agents] Hook script not copied, hooks may not fire');
-          }
+          void this.installHooksWithConsent(config.port, config.token);
         }
         console.log(`[Pixel Agents] Server: ready on port ${config.port}`);
       })
       .catch((e) => {
         console.error(`[Pixel Agents] Failed to start server: ${e}`);
       });
+  }
+
+  /** Install hooks + copy the hook script, surfacing installer errors
+   *  (e.g. an unparseable settings.json) instead of swallowing them. */
+  private installHooksAndScript(port: number | undefined, token: string | undefined): void {
+    claudeProvider
+      .installHooks(port !== undefined ? `http://127.0.0.1:${port}` : '', token ?? '')
+      .then(() => {
+        this.sendOrBuffer({ type: 'hooksStatus', installed: true });
+      })
+      .catch((err: unknown) => {
+        vscode.window.showErrorMessage(
+          `Pixel Agents: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    if (!copyHookScript(this.context.extensionPath)) {
+      console.warn('[Pixel Agents] Hook script not copied, hooks may not fire');
+    }
+  }
+
+  /** First-run consent gate: never touch ~/.claude/settings.json until the
+   *  user has approved it once (persisted in config.json, shared with the
+   *  standalone CLI). Hooks already present count as consent granted to a
+   *  pre-consent version. "Not Now" and a plain dismissal both leave
+   *  everything untouched and ask again next startup; only the explicit
+   *  "Don't Ask Again" persists hooks-off. */
+  private async installHooksWithConsent(port: number, token: string): Promise<void> {
+    if (!readConfig().hooksConsentGiven) {
+      if (await claudeProvider.areHooksInstalled()) {
+        grantHooksConsent();
+      } else {
+        const choice = await vscode.window.showInformationMessage(
+          "To show your agents in real time, Pixel Agents needs to add its hooks to ~/.claude/settings.json. Your existing settings are kept safe, and you can remove Pixel Agents' hooks at any time.",
+          'Install Hooks',
+          'Not Now',
+          "Don't Ask Again",
+        );
+        if (choice !== 'Install Hooks') {
+          if (choice === "Don't Ask Again") {
+            this.adapter.setSetting(GLOBAL_KEY_HOOKS_ENABLED, false);
+            this.runtime.hooksEnabled.current = false;
+          }
+          return;
+        }
+        grantHooksConsent();
+      }
+    }
+    this.installHooksAndScript(port, token);
   }
 
   resolveWebviewView(webviewView: vscode.WebviewView) {
@@ -303,20 +348,23 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.adapter.setSetting(GLOBAL_KEY_HOOKS_ENABLED, enabled);
         this.runtime.hooksEnabled.current = enabled;
         if (enabled) {
+          // An explicit Settings toggle IS the consent to modify settings.json.
+          grantHooksConsent();
           const serverConfig = this.pixelAgentsServer?.getConfig();
-          void claudeProvider.installHooks(
-            serverConfig ? `http://127.0.0.1:${serverConfig.port}` : '',
-            serverConfig?.token ?? '',
-          );
-          const copied = copyHookScript(this.context.extensionPath);
-          console.log(
-            copied
-              ? '[Pixel Agents] Hooks enabled by user'
-              : '[Pixel Agents] Hooks NOT fully enabled, hook script missing',
-          );
+          this.installHooksAndScript(serverConfig?.port, serverConfig?.token);
+          console.log('[Pixel Agents] Hooks enabled by user');
         } else {
-          void claudeProvider.uninstallHooks();
-          console.log('[Pixel Agents] Hooks disabled by user');
+          claudeProvider
+            .uninstallHooks()
+            .then(() => {
+              this.sendOrBuffer({ type: 'hooksStatus', installed: false });
+              console.log('[Pixel Agents] Hooks disabled by user');
+            })
+            .catch((err: unknown) => {
+              vscode.window.showErrorMessage(
+                `Pixel Agents: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            });
         }
       } else if (message.type === 'setHooksInfoShown') {
         this.adapter.setSetting(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
@@ -421,6 +469,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           hooksInfoShown,
           externalAssetDirectories: config.externalAssetDirectories,
           showAreas,
+        });
+
+        // Actual install state, distinct from the hooksEnabled preference —
+        // hooksEnabled defaults true while first-run consent is still pending.
+        this.webview?.postMessage({
+          type: 'hooksStatus',
+          installed: await claudeProvider.areHooksInstalled(),
         });
 
         // Folder→Area mappings (must arrive before any agentCreated/existingAgents

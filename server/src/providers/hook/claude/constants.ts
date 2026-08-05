@@ -30,6 +30,14 @@ export const CLAUDE_HOOK_EVENTS = [
   'TaskCompleted',
 ] as const;
 
+/** Attempts for the settings.json read-modify-write cycle. Claude Code writes
+ *  the same file: re-reading just before the write and retrying on a torn or
+ *  concurrent read narrows the lost-update window to the read-verify-rename
+ *  gap instead of the whole modify cycle. */
+export const SETTINGS_MUTATE_ATTEMPTS = 3;
+/** Delay between settings.json mutation attempts (lets a concurrent writer finish). */
+export const SETTINGS_MUTATE_RETRY_DELAY_MS = 100;
+
 /** Terminal name prefix used when launching Claude Code in VS Code.
  *  Used by the extension to match terminals to agents for adoption. */
 export const CLAUDE_TERMINAL_NAME_PREFIX = 'Claude Code';

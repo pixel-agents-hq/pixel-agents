@@ -3,7 +3,13 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { parseAreaMappings, readConfig, writeConfig } from '../src/configPersistence.js';
+import {
+  grantHooksConsent,
+  parseAreaMappings,
+  readConfig,
+  resetHooksConfig,
+  writeConfig,
+} from '../src/configPersistence.js';
 
 describe('configPersistence: areas', () => {
   let tempHome: string;
@@ -79,6 +85,50 @@ describe('configPersistence: areas', () => {
     it('preserves empty arrays as a deliberate "folder has no preferred area" signal', () => {
       const input = { frontend: [] };
       expect(parseAreaMappings(input)).toEqual({ frontend: [] });
+    });
+  });
+
+  // ── hooksConsentGiven ────────────────────────────────────────
+
+  describe('hooksConsentGiven', () => {
+    it('defaults to false when the config file is missing or predates the field', () => {
+      expect(readConfig().hooksConsentGiven).toBe(false);
+      writeConfig(readConfig()); // full config on disk...
+      const raw = JSON.parse(
+        fs.readFileSync(path.join(tempHome, '.pixel-agents', 'config.json'), 'utf-8'),
+      );
+      delete raw.hooksConsentGiven; // ...from a pre-consent version
+      fs.writeFileSync(
+        path.join(tempHome, '.pixel-agents', 'config.json'),
+        JSON.stringify(raw, null, 2),
+      );
+      expect(readConfig().hooksConsentGiven).toBe(false);
+    });
+
+    it('grantHooksConsent persists and is idempotent', () => {
+      grantHooksConsent();
+      expect(readConfig().hooksConsentGiven).toBe(true);
+      grantHooksConsent();
+      expect(readConfig().hooksConsentGiven).toBe(true);
+    });
+
+    it('resetHooksConfig returns all hooks choices to factory state (uninstall → ask again)', () => {
+      const cfg = readConfig();
+      cfg.hooksConsentGiven = true;
+      cfg.vscode.hooksEnabled = false; // a persisted "off" must not survive uninstall,
+      cfg.standalone.hooksEnabled = false; // or the next install never prompts
+      cfg.vscode.hooksInfoShown = true;
+      cfg.standalone.hooksInfoShown = true;
+      writeConfig(cfg);
+
+      resetHooksConfig();
+
+      const reset = readConfig();
+      expect(reset.hooksConsentGiven).toBe(false);
+      expect(reset.vscode.hooksEnabled).toBe(true);
+      expect(reset.standalone.hooksEnabled).toBe(true);
+      expect(reset.vscode.hooksInfoShown).toBe(false);
+      expect(reset.standalone.hooksInfoShown).toBe(false);
     });
   });
 

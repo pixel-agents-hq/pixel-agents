@@ -38,6 +38,10 @@ export interface PixelAgentsConfig {
   vscode: AdapterSettings;
   standalone: AdapterSettings;
   externalAssetDirectories: string[];
+  /** One-time user approval to modify ~/.claude/settings.json. Shared across
+   *  surfaces (consent is per-human, not per-adapter); until granted, neither
+   *  surface installs hooks. */
+  hooksConsentGiven: boolean;
 }
 
 const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
@@ -126,6 +130,7 @@ export function readConfig(): PixelAgentsConfig {
         vscode: { ...DEFAULT_ADAPTER_SETTINGS },
         standalone: { ...DEFAULT_ADAPTER_SETTINGS },
         externalAssetDirectories: [],
+        hooksConsentGiven: false,
       };
     }
     const raw = fs.readFileSync(filePath, 'utf-8');
@@ -136,6 +141,8 @@ export function readConfig(): PixelAgentsConfig {
       externalAssetDirectories: Array.isArray(parsed.externalAssetDirectories)
         ? parsed.externalAssetDirectories.filter((d): d is string => typeof d === 'string')
         : [],
+      hooksConsentGiven:
+        typeof parsed.hooksConsentGiven === 'boolean' ? parsed.hooksConsentGiven : false,
     };
   } catch (err) {
     console.error('[Pixel Agents] Failed to read config file:', err);
@@ -143,8 +150,34 @@ export function readConfig(): PixelAgentsConfig {
       vscode: { ...DEFAULT_ADAPTER_SETTINGS },
       standalone: { ...DEFAULT_ADAPTER_SETTINGS },
       externalAssetDirectories: [],
+      hooksConsentGiven: false,
     };
   }
+}
+
+/** Persist the one-time user approval for modifying ~/.claude/settings.json. */
+export function grantHooksConsent(): void {
+  const cfg = readConfig();
+  if (!cfg.hooksConsentGiven) {
+    cfg.hooksConsentGiven = true;
+    writeConfig(cfg);
+  }
+}
+
+/** Called on extension uninstall: return every hooks-related choice to factory
+ *  state — consent revoked, hooksEnabled/hooksInfoShown back to defaults in
+ *  both namespaces. The choices belonged to an installation that no longer
+ *  exists; a future install must start from the first-run experience (and its
+ *  consent prompt), not inherit stale decisions like a persisted hooks-off
+ *  that would silently skip the prompt forever. */
+export function resetHooksConfig(): void {
+  const cfg = readConfig();
+  cfg.hooksConsentGiven = false;
+  for (const ns of ['vscode', 'standalone'] as const) {
+    cfg[ns].hooksEnabled = DEFAULT_ADAPTER_SETTINGS.hooksEnabled;
+    cfg[ns].hooksInfoShown = DEFAULT_ADAPTER_SETTINGS.hooksInfoShown;
+  }
+  writeConfig(cfg);
 }
 
 export function writeConfig(config: PixelAgentsConfig): void {

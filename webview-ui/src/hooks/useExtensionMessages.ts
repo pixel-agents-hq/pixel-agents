@@ -90,6 +90,9 @@ interface ExtensionMessageState {
   setGhostHeadlessAgents: (v: boolean) => void;
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
+  /** Actual install state (hooksStatus message) — false while first-run
+   *  consent is pending, unlike hooksEnabled which defaults true. */
+  hooksInstalled: boolean;
   hooksInfoShown: boolean;
   // Areas
   areaMappings: Record<string, string[]>;
@@ -134,6 +137,7 @@ export function useExtensionMessages(
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [ghostHeadlessAgents, setGhostHeadlessAgentsState] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
+  const [hooksInstalled, setHooksInstalled] = useState(false);
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
   const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
   const [showAreas, setShowAreas] = useState(false);
@@ -658,6 +662,10 @@ export function useExtensionMessages(
         if (typeof msg.extensionVersion === 'string') {
           setExtensionVersion(msg.extensionVersion as string);
         }
+      } else if (msg.type === 'hooksStatus') {
+        if (typeof msg.installed === 'boolean') {
+          setHooksInstalled(msg.installed as boolean);
+        }
       } else if (msg.type === 'externalAssetDirectoriesUpdated') {
         if (Array.isArray(msg.dirs)) {
           setExternalAssetDirectories(msg.dirs as string[]);
@@ -730,6 +738,7 @@ export function useExtensionMessages(
     ghostHeadlessAgents,
     setGhostHeadlessAgents: applyGhostHeadlessAgents,
     hooksEnabled,
+    hooksInstalled,
     setHooksEnabled,
     hooksInfoShown,
     areaMappings,

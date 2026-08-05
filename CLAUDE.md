@@ -27,7 +27,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     providers/hook/claude/           Reference HookProvider — only place that knows Claude specifics
       claude.ts                      normalizeHookEvent for 11 Claude events, formatToolStatus, file fallback
       claudeTeamProvider.ts          TeamProvider: reads ~/.claude/teams/<name>/config.json
-      claudeHookInstaller.ts         Atomic install/uninstall in ~/.claude/settings.json
+      claudeHookInstaller.ts         Consent-gated install/uninstall in ~/.claude/settings.json (abort on unparseable file, one-time .backup, re-read + retry write cycle)
       constants.ts                   Claude hook event names, script path
       hooks/claude-hook.ts           Hook script (CJS+shebang, bundled to dist/hooks/claude-hook.js)
     providers/index.ts               Provider registry
@@ -58,6 +58,7 @@ adapters/vscode/                     VS Code surface — composes core + server
   PixelAgentsViewProvider.ts         WebviewViewProvider, thin bridge to AgentRuntime
   agentManager.ts                    Terminal lifecycle (claude --session-id <uuid>), restore, persist
   vscodeTerminalAdapter.ts           TerminalAdapter implementation
+  uninstall.ts                       vscode:uninstall hook — removes hook entries + factory-resets hooks config after extension removal
   migrateVsCodeState.ts              One-time legacy state migration (verify-before-clear)
   constants.ts                       VS Code IDs, command names, key names
 
@@ -188,7 +189,7 @@ Adding a new CLI integration is one subdirectory under `server/src/providers/hoo
 
 `core/asyncapi.yaml` is the contract. Pinned to **3.0.0** because `@asyncapi/modelina@5.10.1` declares `supportedVersions: ['3.0.0']` only; bumping to 3.1.0 produces `export type Root = any`. Revisit when Modelina ships 3.1.0 support.
 
-- **26 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + context usage, assets, settings + workspace, diagnostics.
+- **27 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + context usage, assets, settings + workspace, diagnostics.
 - **18 ClientMessage variants** (client → server): lifecycle (`webviewReady`, `launchAgent`, `focusAgent`, `closeAgent`), layout (`saveAgentSeats`, `saveLayout`, `exportLayout`, `importLayout`), settings (`setSoundEnabled`, `setHooksEnabled`, `setWatchAllSessions`, `setAlwaysShowLabels`, `setHooksInfoShown`, `setLastSeenVersion`), discovery + assets, diagnostics.
 
 Both unions use `oneOf` with `discriminator: type`. Every concrete message sets `additionalProperties: false`.
@@ -449,7 +450,7 @@ Three tiers, each with its own framework.
 | `teamUtils.test.ts`            | Inline-teammate helpers                                             |
 | `claudeTeamProvider.test.ts`   | Discovery, membership, metadata extraction                          |
 | `claude.test.ts`               | `normalizeHookEvent` per Claude event, file fallback                |
-| `claudeHookInstaller.test.ts`  | Atomic install/uninstall                                            |
+| `claudeHookInstaller.test.ts`  | Atomic install/uninstall, unparseable-file abort, one-time backup   |
 | `claude-hook.test.ts`          | Spawned hook script integration (needs `dist/hooks/claude-hook.js`) |
 | `server.test.ts`               | HTTP lifecycle, auth, `/ws`, broadcast                              |
 | `mockClaudeRunner.test.ts`     | E2E scenario runner sanity                                          |

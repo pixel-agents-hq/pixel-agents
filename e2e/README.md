@@ -214,12 +214,12 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/claude/hooks-on/lifecycle.spec.ts:1127` — restored agents skip the matrix spawn animation (Hooks ON / lifecycle)
 - `e2e/claude/hooks-on/lifecycle.spec.ts:1211` — tool status text matches every PreToolUse tool name (Hooks ON / lifecycle)
 - `e2e/claude/hooks-on/lifecycle.spec.ts:1306` — permission sound chime fires on agentToolPermission (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1425` — pixel-agents hook is installed in settings.json on extension startup (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1447` — hook install and uninstall round-trip via the Settings toggle (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1501` — permission bubble auto-clears when a fresh PreToolUse arrives (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1575` — settings toggles persist across a webview reload (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1623` — layout editor enter paint save persist and exit round-trip (Hooks ON / lifecycle)
-- `e2e/claude/hooks-on/lifecycle.spec.ts:1704` — hook uninstall preserves a pre-existing third-party hook entry (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1428` — pixel-agents hook is installed in settings.json on extension startup (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1450` — hook install and uninstall round-trip via the Settings toggle (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1504` — permission bubble auto-clears when a fresh PreToolUse arrives (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1578` — settings toggles persist across a webview reload (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1626` — layout editor enter paint save persist and exit round-trip (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1707` — hook uninstall preserves a pre-existing third-party hook entry (Hooks ON / lifecycle)
 
 ### `@area:teams` (7 tests)
 

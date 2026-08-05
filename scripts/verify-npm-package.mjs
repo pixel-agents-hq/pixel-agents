@@ -100,6 +100,14 @@ async function verifyInstalledTarball(tarballPath) {
   const smokeProject = path.join(smokeRoot, 'project');
   fs.mkdirSync(smokeHome, { recursive: true });
   fs.mkdirSync(smokeProject, { recursive: true });
+  // The spawned CLI has no TTY, and without prior consent the first-run gate
+  // (rightly) skips hook installation there — seed consent so the smoke test
+  // can exercise the actual install path (mirrors server/__tests__/cli.test.ts).
+  fs.mkdirSync(path.join(smokeHome, '.pixel-agents'), { recursive: true });
+  fs.writeFileSync(
+    path.join(smokeHome, '.pixel-agents', 'config.json'),
+    JSON.stringify({ hooksConsentGiven: true }),
+  );
   fs.writeFileSync(
     path.join(smokeProject, 'package.json'),
     JSON.stringify({ name: 'pixel-agents-package-smoke', private: true }, null, 2),

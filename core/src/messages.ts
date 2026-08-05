@@ -33,6 +33,7 @@ export type ServerMessage =
   | WallTilesLoaded
   | CarpetTilesLoaded
   | SettingsLoaded
+  | HooksStatus
   | ExternalAssetDirectoriesUpdated
   | AreaMappingsLoaded
   | WorkspaceFolders
@@ -272,6 +273,11 @@ export interface SettingsLoaded {
   hooksInfoShown: boolean;
   externalAssetDirectories: string[];
   showAreas: boolean;
+}
+
+export interface HooksStatus {
+  type: 'hooksStatus';
+  installed: boolean;
 }
 
 export interface ExternalAssetDirectoriesUpdated {
