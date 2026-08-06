@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { AgentStateStore } from '../src/agentStateStore.js';
 import {
+  applySetClaudeConfigDir,
   type AssetCache,
   type ClientMessageContext,
   handleClientMessage,
@@ -428,5 +429,97 @@ describe('clientMessageHandler: saveAgentSeats palette sync', () => {
       ctx,
     );
     expect(store.get(1)?.palette).toBe(7);
+  });
+});
+
+describe('clientMessageHandler: setClaudeConfigDir', () => {
+  let tempHome: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cmh-ccd-test-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  describe('applySetClaudeConfigDir', () => {
+    it('persists a valid absolute path and returns the five fields', () => {
+      const fields = applySetClaudeConfigDir('/custom/claude');
+      expect(fields).not.toBeNull();
+      expect(fields?.claudeConfigDir).toBe('/custom/claude');
+      expect(readConfig().claudeConfigDir).toBe('/custom/claude');
+    });
+
+    it('persists blank and clears the setting', () => {
+      applySetClaudeConfigDir('/custom/claude');
+      const fields = applySetClaudeConfigDir('');
+      expect(fields?.claudeConfigDir).toBe('');
+      expect(readConfig().claudeConfigDir).toBe('');
+    });
+
+    it('returns null and does not write for a non-absolute path', () => {
+      const before = readConfig().claudeConfigDir;
+      const fields = applySetClaudeConfigDir('relative/path');
+      expect(fields).toBeNull();
+      expect(readConfig().claudeConfigDir).toBe(before);
+    });
+
+    it('returns null and does not write for a non-string payload', () => {
+      const before = readConfig().claudeConfigDir;
+      const fields = applySetClaudeConfigDir(42);
+      expect(fields).toBeNull();
+      expect(readConfig().claudeConfigDir).toBe(before);
+    });
+
+    it('trims whitespace before persisting', () => {
+      const fields = applySetClaudeConfigDir('  /custom/claude  ');
+      expect(fields?.claudeConfigDir).toBe('/custom/claude');
+    });
+  });
+
+  describe('via handleClientMessage', () => {
+    let store: AgentStateStore;
+    let sent: Array<Record<string, unknown>>;
+    let ctx: ClientMessageContext;
+
+    beforeEach(() => {
+      store = new AgentStateStore();
+      store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
+      sent = [];
+      ctx = { store, cache: null };
+    });
+
+    afterEach(() => {
+      store.dispose();
+    });
+
+    it('sends claudeConfigDirUpdated on a valid save', () => {
+      handleClientMessage(
+        { type: 'setClaudeConfigDir', claudeConfigDir: '/custom/claude' },
+        (msg) => sent.push(msg),
+        ctx,
+      );
+      const reply = sent.find((m) => m.type === 'claudeConfigDirUpdated');
+      expect(reply).toBeTruthy();
+      expect(reply?.claudeConfigDir).toBe('/custom/claude');
+    });
+
+    it('sends nothing on an invalid save', () => {
+      handleClientMessage(
+        { type: 'setClaudeConfigDir', claudeConfigDir: 'relative/path' },
+        (msg) => sent.push(msg),
+        ctx,
+      );
+      expect(sent.find((m) => m.type === 'claudeConfigDirUpdated')).toBeUndefined();
+    });
   });
 });

@@ -5,7 +5,11 @@ import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './a
 import { readConfig, writeConfig } from './configPersistence.js';
 import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT } from './constants.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
-import { claudeProvider } from './providers/index.js';
+import {
+  buildClaudeConfigDirFields,
+  claudeProvider,
+  normalizeClaudeConfigDirInput,
+} from './providers/index.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -49,6 +53,29 @@ const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
+
+/**
+ * Validate + persist a setClaudeConfigDir payload, returning the five
+ * settingsLoaded/claudeConfigDirUpdated fields on success or null on
+ * rejection (non-string payload, or a path normalizeClaudeConfigDirInput
+ * rejects as non-absolute/not-a-directory). Rejection is silent by design
+ * -- no write, no reply -- matching how addExternalAssetDirectory already
+ * handles a missing path. Shared between the WebSocket handler below and
+ * the VS Code adapter, so the two surfaces can't drift apart the way the
+ * settingsLoaded emitters once did.
+ */
+export function applySetClaudeConfigDir(
+  raw: unknown,
+): ReturnType<typeof buildClaudeConfigDirFields> | null {
+  const trimmed = typeof raw === 'string' ? raw.trim() : undefined;
+  if (trimmed === undefined) return null;
+  const newDir = normalizeClaudeConfigDirInput(trimmed);
+  if (newDir === null) return null;
+  const cfg = readConfig();
+  cfg.claudeConfigDir = newDir;
+  writeConfig(cfg);
+  return buildClaudeConfigDirFields(newDir);
+}
 
 /**
  * Handle incoming ClientMessage from a WebSocket client.
@@ -211,6 +238,12 @@ export function handleClientMessage(
       break;
     }
 
+    case 'setClaudeConfigDir': {
+      const fields = applySetClaudeConfigDir(msg.claudeConfigDir);
+      if (fields) send({ type: 'claudeConfigDirUpdated', ...fields });
+      break;
+    }
+
     default:
       // focusAgent, exportLayout, importLayout
       // require IDE-specific handling (not yet implemented for standalone)
@@ -282,6 +315,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
     externalAssetDirectories: cfg.externalAssetDirectories,
     showAreas,
+    ...buildClaudeConfigDirFields(cfg.claudeConfigDir),
   });
 
   // 4b. Folder→Area mappings (must arrive before existingAgents so the
