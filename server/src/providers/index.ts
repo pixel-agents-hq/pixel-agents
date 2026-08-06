@@ -12,4 +12,11 @@
  */
 
 export { claudeProvider } from './hook/claude/claude.js';
-export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+export {
+  buildClaudeConfigDirFields,
+  getClaudeConfigDir,
+  getClaudeConfigDirSource,
+  normalizeClaudeConfigDirInput,
+  setClaudeConfigDirOverride,
+} from './hook/claude/claudeConfigDir.js';
+export { copyHookScript, uninstallHooksAt } from './hook/claude/claudeHookInstaller.js';
