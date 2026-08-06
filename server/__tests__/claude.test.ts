@@ -1,6 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+
+let tmpHome: string;
+
+vi.mock('os', async () => {
+  const actual = await vi.importActual<typeof import('os')>('os');
+  return { ...actual, homedir: () => tmpHome };
+});
+
+const { resetClaudeConfigDirOverrideForTests, setClaudeConfigDirOverride } =
+  await import('../src/providers/hook/claude/claudeConfigDir.js');
 
 describe('claudeProvider', () => {
   describe('identity', () => {
@@ -256,6 +266,58 @@ describe('claudeProvider', () => {
     });
     it('handles undefined input', () => {
       expect(claudeProvider.formatToolStatus('Read', undefined)).toBe('Reading ');
+    });
+  });
+});
+
+describe('claudeProvider: config dir precedence', () => {
+  beforeEach(() => {
+    tmpHome = '/tmp/pxl-claude-test-home';
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '');
+    resetClaudeConfigDirOverrideForTests();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetClaudeConfigDirOverrideForTests();
+  });
+
+  describe('getSessionDirs', () => {
+    it('resolves under ~/.claude/projects/ by default', () => {
+      const dirs = claudeProvider.getSessionDirs?.('/workspace');
+      expect(dirs?.[0]).toContain(`${tmpHome}/.claude/projects/`);
+    });
+
+    it('resolves under the env var when CLAUDE_CONFIG_DIR is set', () => {
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '/env/claude');
+      const dirs = claudeProvider.getSessionDirs?.('/workspace');
+      expect(dirs?.[0]).toContain('/env/claude/projects/');
+    });
+
+    it('resolves under the override when set (even with env var also set)', () => {
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '/env/claude');
+      setClaudeConfigDirOverride('/setting/claude');
+      const dirs = claudeProvider.getSessionDirs?.('/workspace');
+      expect(dirs?.[0]).toContain('/setting/claude/projects/');
+    });
+  });
+
+  describe('getAllSessionRoots', () => {
+    it('resolves under ~/.claude/projects by default', () => {
+      const roots = claudeProvider.getAllSessionRoots?.();
+      expect(roots?.[0]).toBe(`${tmpHome}/.claude/projects`);
+    });
+
+    it('resolves under the env var when set', () => {
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '/env/claude');
+      const roots = claudeProvider.getAllSessionRoots?.();
+      expect(roots?.[0]).toBe('/env/claude/projects');
+    });
+
+    it('resolves under the override when set', () => {
+      setClaudeConfigDirOverride('/setting/claude');
+      const roots = claudeProvider.getAllSessionRoots?.();
+      expect(roots?.[0]).toBe('/setting/claude/projects');
     });
   });
 });
