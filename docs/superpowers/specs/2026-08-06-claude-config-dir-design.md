@@ -1,7 +1,8 @@
 # CLAUDE_CONFIG_DIR support — design spec
 
 **Date:** 2026-08-06
-**Status:** Revised after two rounds of Opus design review
+**Status:** Revised after three rounds of Opus design review, plus a scope
+cut adopted after the third round (see "Third review round" below)
 
 ## Problem
 
@@ -45,9 +46,11 @@ Confirmed with the user:
   the user's own current setup uses the env var successfully.
 - **Restart required to apply**, not live-apply. Changing the value only
   persists it and surfaces a "restart to apply" notice — it does not
-  uninstall/reinstall hooks or reset live scanners mid-session. Exception:
-  see S2 below — removing hooks from the *previous* location on change is a
-  plain cleanup, not a live-reinstall, and can't safely be deferred.
+  uninstall/reinstall hooks or reset live scanners mid-session. This applies
+  without exception, including cleanup of hooks left in the old location
+  (S2/§4c): the original design tried to do that cleanup live, at save
+  time; after two review rounds of edge cases it produced, it was moved to
+  boot time instead — see "Third review round" below.
 
 ### Non-goals
 
@@ -59,6 +62,18 @@ Confirmed with the user:
   `externalAssetDirectories`, ...) in the webview Settings modal backed by
   shared `~/.pixel-agents/config.json`, not VS Code's native settings UI.
   `claudeConfigDir` follows that existing pattern.
+- No cross-process coordination between VS Code and standalone when both
+  are running and one changes the setting — the other only picks up the
+  change (hook cleanup + reinstall) on its own next restart, per §4c's
+  residual cross-surface note. Building real coordination (e.g. a lock file,
+  a live IPC signal between two otherwise-independent local processes) for
+  a setting that's rarely changed and already requires a restart to take
+  effect isn't worth it.
+- No dedicated error-reporting protocol for settings-modal input that fails
+  server-side validation after passing the client-side pre-check (§5) — it
+  is silently dropped rather than surfaced with a `claudeConfigDirRejected`-style
+  message, which was cut for being disproportionate to how rarely it would
+  actually fire (see §3).
 
 ## Design review findings addressed in this revision
 
@@ -101,6 +116,45 @@ themselves:
 | NEW-6 (nit) | `void uninstallHooksAt(previousDir)` implies a Promise the function doesn't return | §4: call made synchronous, no `void` |
 | NEW-7 (nit) | `normalizeClaudeConfigDirInput` didn't handle Windows `~\`, didn't normalize `..`/trailing separators, and accepted a path pointing at an existing file | §1: `path.normalize`, `~\` handling, and an `fs.statSync` file-vs-directory check added |
 | NEW-8 (nit) | "Files touched" omitted `agentManager.ts`, `standalone.ts`, and undercounted the e2e helper changes | §7: list corrected (and the dropped e2e scenario removed) |
+
+## Third review round
+
+A third pass re-verified every code claim (all confirmed accurate — line
+numbers, the `standalone.ts` bypass, the `mock-claude-runner.cjs` hardcoding)
+and confirmed `vscode.TerminalOptions.env` **merges** with the inherited
+environment rather than replacing it (only `strictEnv: true` would replace —
+not used here), so the §4b terminal fix is API-safe. It found six should-fix
+issues, none blocking, but its most consequential input was a direct
+question: **is the design still proportionate after two rounds of patches?**
+
+The answer was no, and the diagnosis was specific: **S2 (uninstall hooks
+from the old location immediately, at save time) was the actual complexity
+source** — it directly produced NEW-1 (the spurious-uninstall bug), NEW-5/S2's
+own dependency-threading, NEW-6, most of §4's code, and a newly-surfaced
+cross-surface race (VS Code and standalone sharing `claudeConfigDir` but
+each running its own live override — whichever saves a change can uninstall
+hooks the other process is still relying on, unaddressed until this pass).
+The fix accepted, rather than another round of patching around it: **move
+the cleanup from "immediately on save" to "at next boot, right before
+installing at the new location"** — which fits the "restart required"
+decision already made everywhere else in this spec, and removes the
+live-trigger logic (and everything it caused) outright rather than hardening
+it further. `claudeConfigDirRejected` was cut for the same reason: a whole
+message variant to reject a non-absolute path, when light client-side
+validation plus a silent server-side drop (matching how e.g.
+`addExternalAssetDirectory` already handles a missing `path`) covers it for
+free.
+
+| # | Finding | Fix applied in this revision |
+| --- | --- | --- |
+| NEW-1 (re-verified) | Re-confirmed RESOLVED against same-path-resave, clear-with-env-set, and new-path cases — moot in this revision anyway since the live-trigger logic it patched no longer exists (see scope cut above) | §4c: cleanup moved to boot time |
+| NEW-2 (partial) | `pendingDirExists` lived only on `claudeConfigDirUpdated`; a `settingsLoaded` fetched after an unrestarted change (e.g. reopening the panel) showed the restart notice with no existence warning | §1: folded into `buildClaudeConfigDirFields` as a fifth field, present on both messages by construction |
+| NEW-3 (partial) | `env` semantics confirmed safe, but hardcoding `CLAUDE_CONFIG_DIR` directly in `adapters/vscode/agentManager.ts` violates "only the Claude provider knows Claude specifics" — and `buildLaunchCommand()`'s existing `env` return field is already the right seam, currently unused | §4b: env var moves into `claude.ts`'s `buildLaunchCommand`; `agentManager.ts` passes `launch.env` through instead of naming the var itself |
+| should-fix 5 | VS Code's `setClaudeConfigDir` handling was described as "the equivalent case in its own switch" — ~25 lines of hand-duplicated logic, the same drift mechanism that caused S1 | §4: extracted into one shared `applySetClaudeConfigDir()`, called by both surfaces |
+| should-fix 6 | Cross-surface race (two processes, one shared config field, two independent live overrides) | Resolved by the boot-time-cleanup scope cut — the residual risk (one surface's boot-time cleanup racing another surface's concurrent boot) is now rare and low-consequence enough to document rather than engineer around further (Non-goals) |
+| nit | `getClaudeSettingsPath()` in a log line inside `uninstallHooksAt(dir)` needs the `dir` argument, not the no-arg default | §4c: fixed |
+| nit | A third, untyped `settingsLoaded` emitter exists in `webview-ui/src/browserMock.ts` (dev-only browser mock) | Noted in §4 as an acknowledged, intentionally out-of-scope gap — it already tolerates missing fields |
+| nit | `~\` handling in `normalizeClaudeConfigDirInput` isn't platform-gated | Left unconditional deliberately — a literal `~\` at the start of a path is not a realistic input on any platform, and a `process.platform` branch isn't worth the complexity for it |
 
 ## Design
 
@@ -178,28 +232,37 @@ export function normalizeClaudeConfigDirInput(raw: string): string | null {
   return normalized;
 }
 
-/** The four settingsLoaded/claudeConfigDirUpdated fields, computed together
- *  so both server-side emitters (S1) stay in sync by construction.
+/** The five settingsLoaded/claudeConfigDirUpdated fields, computed together
+ *  so both server-side emitters (S1) — and both messages (NEW-2) — stay in
+ *  sync by construction.
  *
  *  `rawPersistedValue` is the caller's `readConfig().claudeConfigDir` —
  *  passed in rather than read here so this provider-internal module doesn't
- *  reach up into server-level config persistence. It deliberately does NOT
- *  feed back into `getClaudeConfigDir()`: per the restart-required decision,
- *  `resolved*` fields reflect the LIVE module override (set once at boot),
- *  which can legitimately differ from `claudeConfigDir` right after a save
- *  — that gap is what drives the "restart to apply" notice in the UI. */
+ *  reach up into server-level config persistence. `resolved*` deliberately
+ *  reflects the LIVE module override (set once at boot), which can
+ *  legitimately differ from `claudeConfigDir` right after a save — that gap
+ *  is what drives the "restart to apply" notice in the UI. `pendingDirExists`
+ *  is the complementary check: it resolves `rawPersistedValue` through the
+ *  SAME precedence chain (without touching the live override) so it
+ *  describes the directory that *will* be active after a restart, not the
+ *  one that's active now — computed here rather than ad hoc at each call
+ *  site so it can't drift out of sync with the other four fields the way it
+ *  did in the previous revision (NEW-2). */
 export function buildClaudeConfigDirFields(rawPersistedValue: string): {
   claudeConfigDir: string;
   resolvedClaudeConfigDir: string;
   resolvedClaudeConfigDirSource: 'setting' | 'env' | 'default';
   resolvedClaudeConfigDirExists: boolean;
+  pendingDirExists: boolean;
 } {
   const resolvedClaudeConfigDir = getClaudeConfigDir();
+  const pendingDir = resolveClaudeConfigDir(rawPersistedValue || undefined);
   return {
     claudeConfigDir: rawPersistedValue,
     resolvedClaudeConfigDir,
     resolvedClaudeConfigDirSource: getClaudeConfigDirSource(),
     resolvedClaudeConfigDirExists: fs.existsSync(resolvedClaudeConfigDir),
+    pendingDirExists: fs.existsSync(pendingDir),
   };
 }
 ```
@@ -238,19 +301,22 @@ export {
   setClaudeConfigDirOverride,
   getClaudeConfigDir,
   getClaudeConfigDirSource,
-  resolveClaudeConfigDir,
   normalizeClaudeConfigDirInput,
   buildClaudeConfigDirFields,
 } from './hook/claude/claudeConfigDir.js';
 ```
 
-(`resolveClaudeConfigDir` must be included — §4's `setClaudeConfigDir` case
-needs it directly, not just `getClaudeConfigDir()`. `resetClaudeConfigDirOverrideForTests`
-is deliberately left out of this list: it's a test-only escape hatch, and
-`server/__tests__/*.test.ts` files import it directly from
-`claudeConfigDir.js` the same way `claudeHookInstaller.test.ts` already
-imports internals directly — S5's "don't reach into provider internals"
-concern is about production adapters, not test files.)
+`resolveClaudeConfigDir` is intentionally **not** re-exported here — after
+the boot-time-cleanup scope cut (§4c), nothing outside `claudeConfigDir.ts`
+calls it directly any more (it's used internally by `getClaudeConfigDir()`
+and `buildClaudeConfigDirFields()`); the earlier revision needed it exported
+for a live comparison in the message handler that no longer exists.
+`resetClaudeConfigDirOverrideForTests` is deliberately left out of this list
+too: it's a test-only escape hatch, and `server/__tests__/*.test.ts` files
+import it directly from `claudeConfigDir.js` the same way
+`claudeHookInstaller.test.ts` already imports internals directly — S5's
+"don't reach into provider internals" concern is about production adapters,
+not test files.
 
 Call sites updated to use `getClaudeConfigDir()` instead of
 `path.join(os.homedir(), '.claude', ...)`:
@@ -259,6 +325,11 @@ Call sites updated to use `getClaudeConfigDir()` instead of
   Windows fallback paths), `getAllSessionRoots()`
 - `claudeHookInstaller.ts`: `getClaudeSettingsPath()`
 - `claudeTeamProvider.ts`: the `teams/<teamName>/config.json` path
+
+`claude.ts`'s `buildLaunchCommand()` also gains a call to
+`getClaudeConfigDirSource()`/`getClaudeConfigDir()` — not to relocate a
+hardcoded path (it doesn't touch the filesystem), but to populate the
+`env.CLAUDE_CONFIG_DIR` it returns when an override is active (§4b).
 
 `~/.pixel-agents/*` paths (server discovery, hook script destination,
 Pixel Agents' own state) are untouched — they're this project's own
@@ -281,12 +352,21 @@ export interface PixelAgentsConfig {
   standalone: AdapterSettings;
   externalAssetDirectories: string[];
   claudeConfigDir: string; // '' = unset; falls through to env var / default
+  claudeConfigDirHooksInstalledAt: string; // '' = never installed; tracks where hooks currently live (§4c)
 }
 ```
 
-`readConfig()` defensively parses it (default `''` if missing or
-non-string), `writeConfig()` persists it verbatim — same treatment as
+`readConfig()` defensively parses both (default `''` if missing or
+non-string), `writeConfig()` persists them verbatim — same treatment as
 `externalAssetDirectories`.
+
+`claudeConfigDirHooksInstalledAt` exists solely to make the boot-time
+cleanup in §4c possible without live-tracking: it records the resolved
+directory hooks were installed into *last time this process (or the other
+surface) ran* `installHooks()`, so the next boot can tell "hooks might still
+be sitting in a directory that's no longer the resolved one" without needing
+to compare against anything live. It is never read or written outside that
+one boot-time check.
 
 ### 3. Protocol (AsyncAPI)
 
@@ -306,8 +386,11 @@ non-string), `writeConfig()` persists it verbatim — same treatment as
       claudeConfigDir: { type: string } # '' clears the override
   ```
 
-- `settingsLoaded` (existing `ServerMessage`) gains four fields, added to
-  both `required` and `properties`:
+- `settingsLoaded` (existing `ServerMessage`) gains five fields, added to
+  both `required` and `properties` — all five always computed together via
+  `buildClaudeConfigDirFields()` (§1), never added piecemeal, which is what
+  let one of them (`pendingDirExists`) go missing from this message in an
+  earlier revision (NEW-2):
   - `claudeConfigDir: string` — the raw persisted override, i.e. what
     populates the settings text box.
   - `resolvedClaudeConfigDir: string` — what `getClaudeConfigDir()` resolves
@@ -316,22 +399,20 @@ non-string), `writeConfig()` persists it verbatim — same treatment as
     blank and the value is actually coming from the env var.
   - `resolvedClaudeConfigDirSource: string` (`'setting' | 'env' | 'default'`)
     — which source is currently active, from `getClaudeConfigDirSource()`.
-  - `resolvedClaudeConfigDirExists: boolean` — whether that resolved path
-    exists on disk right now (`fs.existsSync`), so the UI can warn (§5)
-    instead of letting a typo silently create an empty directory.
+  - `resolvedClaudeConfigDirExists: boolean` — whether the *currently
+    active* resolved path exists on disk right now, so the UI can warn (§5)
+    next to the "Using ..." helper text.
+  - `pendingDirExists: boolean` — whether the directory `claudeConfigDir`
+    (the raw, possibly-just-saved value) would resolve to *after a
+    restart* exists on disk, so the UI can warn next to the "restart to
+    apply" notice specifically — decoupled from `resolvedClaudeConfigDirExists`
+    so a typo is flagged even before restarting, not only after.
 - New `ServerMessage` variant `claudeConfigDirUpdated`, sent in reply to
   `setClaudeConfigDir` so the webview refreshes immediately without waiting
   for the next `webviewReady` — same motivation as
-  `externalAssetDirectoriesUpdated`. Carries the same four fields as the
-  `settingsLoaded` additions above (all recomputed after the write, still
-  describing the *live* resolved dir — which legitimately still points at
-  the pre-restart value, per §4), **plus** a fifth field,
-  `pendingDirExists: boolean`, checked against `nextDir` — the value that
-  *will* become active after a restart (§4's `resolveClaudeConfigDir(newDir
-  || undefined)`, already computed for the hook-cleanup decision) — rather
-  than the currently-lagging `resolvedClaudeConfigDir` (NEW-2: the first cut
-  warned about the *old* path's existence, never the one the user just
-  typed, which defeated the whole point of the check):
+  `externalAssetDirectoriesUpdated`. Carries exactly the same five fields,
+  via the same `buildClaudeConfigDirFields()` call, recomputed after the
+  write:
 
   ```yaml
   ClaudeConfigDirUpdated:
@@ -348,28 +429,14 @@ non-string), `writeConfig()` persists it verbatim — same treatment as
       pendingDirExists: { type: boolean }
   ```
 
-- New `ServerMessage` variant `claudeConfigDirRejected`, sent instead of
-  `claudeConfigDirUpdated` when `normalizeClaudeConfigDirInput` (§1, S3)
-  rejects the input as non-absolute, so the UI can show an inline error
-  without guessing from a silently-unchanged `settingsLoaded`:
-
-  ```yaml
-  ClaudeConfigDirRejected:
-    type: object
-    additionalProperties: false
-    required: [type, reason]
-    properties:
-      type: { const: claudeConfigDirRejected }
-      reason: { type: string } # currently always 'not-absolute'; unconstrained
-  ```
-
-  `reason` is left as a plain `string` rather than `const`/`enum` (NEW-4):
-  every existing `const` in the contract sits under a `type` discriminator,
-  and the one precedent for a closed value set on a non-`type` field
-  (`status`) uses `enum`. Constraining a single-value field here would be
-  exercising an untested corner of the generator for a value the UI only
-  ever branches on by string equality anyway — not worth the risk given CI
-  hard-fails on any drift in the generated output.
+No `claudeConfigDirRejected` message: invalid input (non-absolute after
+expansion, or an existing-file-not-directory) is silently dropped
+server-side — no write, no reply — the same way e.g.
+`addExternalAssetDirectory` already handles a missing `path` today (§4, §5).
+A dedicated rejection message was in an earlier revision; cut for being a
+whole new `ServerMessage` variant (and the AsyncAPI regen it entails) to
+guard a case light client-side validation already prevents in the normal
+path (§5).
 
 Regenerate `core/src/messages.ts` via `npm run asyncapi:generate` (CI enforces
 zero diff). Because CI's drift check only catches the generated-file diff,
@@ -386,73 +453,88 @@ must be updated by hand.
   object literal, not type-checked against the generated union, so it will
   not fail to compile if left out; it must be checked by hand.
 
-Both get all four new fields added to their payload via
-`buildClaudeConfigDirFields(readConfig().claudeConfigDir)` (defined in §1),
-spread into the `send`/`postMessage` call. Pulling the four-field
-computation into one shared helper — rather than duplicating it in both
-emitters — is a direct fix for how S1 happened in the first place: the two
-emitters drifting out of sync because one of them was hand-maintained.
+(A third, untyped `settingsLoaded` emitter exists in
+`webview-ui/src/browserMock.ts`, a dev-only mock used when developing the
+webview outside a real server connection. It already tolerates missing
+fields and isn't part of the shipped product path, so it's left out of
+scope here rather than tracked as a third thing to keep in sync.)
 
-**`clientMessageHandler.ts`: new `case 'setClaudeConfigDir'`** (S4: guarded
-like every other case), mirroring `addExternalAssetDirectory`:
+Both real emitters get all five new fields added to their payload via
+`buildClaudeConfigDirFields(readConfig().claudeConfigDir)` (defined in §1),
+spread into the `send`/`postMessage` call. Pulling that computation into one
+shared helper — rather than duplicating it in both emitters — is a direct
+fix for how S1 happened in the first place: the two emitters drifting out of
+sync because one of them was hand-maintained.
+
+**`setClaudeConfigDir` handling is extracted into one shared function**,
+`applySetClaudeConfigDir`, living in `clientMessageHandler.ts` (which
+already imports `readConfig`/`writeConfig` and the provider functions) and
+called directly by `adapters/vscode/PixelAgentsViewProvider.ts` — not
+duplicated into a second hand-written copy the way the first two revisions
+of this spec had it. That duplication was going to reproduce S1's exact
+failure mode (two copies of non-trivial logic drifting apart) for no
+reason: this handler has no host-specific behavior to justify two versions.
 
 ```ts
-case 'setClaudeConfigDir': {
-  const raw = typeof msg.claudeConfigDir === 'string' ? msg.claudeConfigDir.trim() : undefined;
-  if (raw === undefined) break;
-  // S3: expand ~ and reject non-absolute non-empty input (see §5) before it
-  // ever reaches readConfig()/writeConfig() — validation lives here, not in
-  // the webview, since only the server knows this process's home directory.
-  const newDir = normalizeClaudeConfigDirInput(raw); // '' | absolute path, or reply with an error and break
-  if (newDir === null) {
-    send({ type: 'claudeConfigDirRejected', reason: 'not-absolute' });
-    break;
-  }
+// clientMessageHandler.ts
+export function applySetClaudeConfigDir(
+  raw: unknown,
+): ReturnType<typeof buildClaudeConfigDirFields> | null {
+  const trimmed = typeof raw === 'string' ? raw.trim() : undefined;
+  if (trimmed === undefined) return null;
+  // S3: expand ~ and reject non-absolute/non-directory input. Validation
+  // lives here (not in the webview) because expanding ~ requires knowing
+  // the SERVER's home directory — see §5 for why that can't be done
+  // client-side. Invalid input is silently dropped: no write, no reply,
+  // matching how addExternalAssetDirectory already handles a missing path.
+  const newDir = normalizeClaudeConfigDirInput(trimmed);
+  if (newDir === null) return null;
   const cfg = readConfig();
-  const previousDir = getClaudeConfigDir(); // resolved value BEFORE the change
-  // NEW-1: resolve the candidate through the SAME precedence chain before
-  // comparing — comparing the raw (possibly '') newDir against an
-  // always-resolved previousDir made every save of an empty field look like
-  // a change, even on a default install with nothing to clean up.
-  const nextDir = resolveClaudeConfigDir(newDir || undefined);
   cfg.claudeConfigDir = newDir;
   writeConfig(cfg);
-  // S2: remove any hooks we previously installed at the old location — this is a
-  // plain removal, not the live-reinstall declared a non-goal, and can't safely
-  // wait for a restart or the old settings.json keeps firing hooks at us forever.
-  if (previousDir !== nextDir) {
-    uninstallHooksAt(previousDir); // synchronous — see NEW-6
-  }
-  send({
-    type: 'claudeConfigDirUpdated',
-    ...buildClaudeConfigDirFields(newDir),
-    pendingDirExists: fs.existsSync(nextDir), // NEW-2: check what WILL be active, not what still is
-  });
+  return buildClaudeConfigDirFields(newDir);
+}
+```
+
+Callers just relay the result if non-null:
+
+```ts
+// clientMessageHandler.ts
+case 'setClaudeConfigDir': {
+  const fields = applySetClaudeConfigDir(msg.claudeConfigDir);
+  if (fields) send({ type: 'claudeConfigDirUpdated', ...fields });
   break;
 }
 ```
 
-Note `setClaudeConfigDirOverride()` is deliberately **not** called here —
-per the restart-required decision, the live module override only changes at
-boot, so `getClaudeConfigDir()` keeps resolving to the pre-edit value for
-the rest of this process's life (that's exactly what makes
-`resolvedClaudeConfigDir` in the reply legitimately differ from
-`claudeConfigDir` and drives the "restart to apply" notice, §5).
-`previousDir = getClaudeConfigDir()` — read *before* `writeConfig` — is
-"where hooks are installed right now"; `nextDir` is "where they'd resolve
-to if the process restarted right now". Comparing those two (not `previousDir`
-against the raw, possibly-empty `newDir`) is what makes the cleanup fire
-exactly when the resolved location actually changes, including the case
-where clearing an override (`newDir === ''`) happens to resolve back to the
-same directory an active env var already pointed at (no-op, correctly).
+```ts
+// adapters/vscode/PixelAgentsViewProvider.ts, in the existing if/else chain
+} else if (message.type === 'setClaudeConfigDir') {
+  const fields = applySetClaudeConfigDir(message.claudeConfigDir);
+  if (fields) this.sendOrBuffer({ type: 'claudeConfigDirUpdated', ...fields });
+}
+```
 
-`uninstallHooksAt(dir)` in `claudeHookInstaller.ts` needs more than a new
-top-level function — `getClaudeSettingsPath()`, `readClaudeSettings()`, and
-`writeClaudeSettings()` all currently resolve the path internally via the
-module-private `getClaudeSettingsPath()` with no way to target a different
-directory (S2/NEW-5). All three get an optional explicit-dir parameter,
-defaulting to `getClaudeConfigDir()` so every other existing call site is
-unaffected:
+Note this handler does **not** touch hooks at all — no uninstall, no
+`setClaudeConfigDirOverride()` call. Per the restart-required decision, the
+live module override only ever changes at boot (§4c), so saving a new value
+here only ever writes `config.json`; `getClaudeConfigDir()` keeps resolving
+to the pre-edit value for the rest of this process's life, which is exactly
+what makes `resolvedClaudeConfigDir` in the reply legitimately differ from
+`claudeConfigDir` and drives the "restart to apply" notice (§5). Cleanup of
+whatever hooks were installed at the *old* location happens later, at the
+next boot — see §4c — not here. (An earlier revision tried to do that
+cleanup synchronously in this handler; it produced a spurious-uninstall bug
+and a cross-surface race, documented in "Third review round" above, and was
+removed rather than patched further.)
+
+**`uninstallHooksAt(dir)` in `claudeHookInstaller.ts`** (used by §4c's
+boot-time cleanup, below) needs more than a new top-level function —
+`getClaudeSettingsPath()`, `readClaudeSettings()`, and `writeClaudeSettings()`
+all currently resolve the path internally via the module-private
+`getClaudeSettingsPath()` with no way to target a different directory
+(S2/NEW-5). All three get an optional explicit-dir parameter, defaulting to
+`getClaudeConfigDir()` so every other existing call site is unaffected:
 
 ```ts
 function getClaudeSettingsPath(dir: string = getClaudeConfigDir()): string {
@@ -467,24 +549,25 @@ export function uninstallHooks(): void {
 export function uninstallHooksAt(dir: string): void {
   const settings = readClaudeSettings(dir);
   // ...same filtering logic uninstallHooks() has today...
-  if (changed) writeClaudeSettings(settings, dir);
+  if (changed) writeClaudeSettings(settings, dir); // log line prints getClaudeSettingsPath(dir), not the no-arg default
 }
 ```
 
+`isOurHookEntry`/`makeHookEntry`/`makeHookCommand` do **not** need the dir
+threaded through them — they all key off `getHookScriptPath()`, which
+resolves under `~/.pixel-agents/hooks/` (this project's own namespace, left
+alone per §1), and `isOurHookEntry` matches on the script filename marker,
+independent of which Claude config dir it's found in.
+
 `uninstallHooksAt` is exported alongside the rest (and re-exported via
 `providers/index.ts`, S5) the same way `copyHookScript` already is — a
-Claude-specific helper used directly by the adapters, not part of the
-generic `HookProvider` interface, since no other provider has an equivalent
-concept. `installHooks`/`areHooksInstalled` keep using the ambient
-`getClaudeConfigDir()` default as before; only the cleanup-of-the-old-location
-path needs an explicit target. `uninstallHooks()`/`uninstallHooksAt()` are
-synchronous (matching today's `uninstallHooks`), so the call in the handler
-above isn't `void`-wrapped (NEW-6 — the first cut's `void` implied a Promise
-that was never there).
-
-VS Code adapter gets the equivalent case in its own message-handling switch,
-same guard, same `resolveClaudeConfigDir`-based comparison, and same
-old-location cleanup.
+Claude-specific helper used directly by callers outside the provider, not
+part of the generic `HookProvider` interface, since no other provider has
+an equivalent concept. `installHooks`/`areHooksInstalled` keep using the
+ambient `getClaudeConfigDir()` default as before; only the
+cleanup-of-the-old-location path needs an explicit target.
+`uninstallHooks()`/`uninstallHooksAt()` are synchronous (matching today's
+`uninstallHooks`) — no `void` wrapping needed at call sites (NEW-6).
 
 ### 4b. Self-launched agents must inherit the override (NEW-3 fix)
 
@@ -497,27 +580,65 @@ session/hook data to the wrong place while Pixel Agents watches the right
 one, which is precisely the bug this feature exists to fix, just moved from
 the read side to the write side.
 
-`adapters/vscode/agentManager.ts`'s `launchNewTerminal` calls
-`vscode.window.createTerminal({ name, cwd })` with no `env`, so the spawned
-terminal (and the `claude` process typed into it via `sendText`) inherits
-only the extension host's ambient environment. Fix: pass an explicit `env`
-whenever an override is active, i.e. whenever
-`getClaudeConfigDirSource() !== 'default'`:
+The fix belongs in the Claude provider, not the adapter: `claude.ts`'s
+`buildLaunchCommand()` already returns an `env` field
+(`HookProvider`'s launch-command contract exists for exactly this kind of
+thing), but `adapters/vscode/agentManager.ts` currently ignores it entirely
+— `env` is computed (`{ PWD: cwd }`) and never used. Fixing this in
+`agentManager.ts` by naming `CLAUDE_CONFIG_DIR` directly there would put
+Claude-specific knowledge in the one layer that's supposed to stay
+Claude-agnostic (CLAUDE.md: "the Claude provider is the only place that
+knows Claude specifics"); using the existing `env` field instead fixes the
+gap *and* the layering *and* the dead field in one move.
+
+`buildLaunchCommand()` gains the var when an override is active:
 
 ```ts
-const configDirSource = getClaudeConfigDirSource();
+// claude.ts
+function buildLaunchCommand(
+  sessionId: string,
+  cwd: string,
+  opts?: { bypassPermissions?: boolean },
+): { command: string; args: string[]; env?: Record<string, string> } {
+  const args = ['--session-id', sessionId];
+  if (opts?.bypassPermissions) args.push('--dangerously-skip-permissions');
+  const env: Record<string, string> = { PWD: cwd };
+  if (getClaudeConfigDirSource() !== 'default') {
+    env[CLAUDE_CONFIG_DIR_ENV_VAR] = getClaudeConfigDir();
+  }
+  return { command: 'claude', args, env };
+}
+```
+
+`agentManager.ts`'s `launchNewTerminal` passes `launch.env` through to
+`vscode.window.createTerminal`, which requires calling `buildLaunchCommand`
+*before* `createTerminal` rather than after (today's order, reversed here
+since `createTerminal` now needs `launch.env`):
+
+```ts
+const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
+if (!launch) throw new Error('claudeProvider.buildLaunchCommand is not implemented');
 const terminal = vscode.window.createTerminal({
   name: `${CLAUDE_TERMINAL_NAME_PREFIX} #${idx}`,
   cwd,
-  env: configDirSource === 'default' ? undefined : { CLAUDE_CONFIG_DIR: getClaudeConfigDir() },
+  env: launch.env,
 });
 ```
 
-Passing it whenever the source isn't `'default'` (not only for `'setting'`)
-is deliberately redundant in the `'env'` case — the extension host's own
-env var would normally already flow through — but cheap insurance against
-any environment-inheritance edge case between the extension host process
-and a VS Code-spawned terminal.
+`vscode.TerminalOptions.env` **merges** with the terminal's inherited
+environment by default (it only replaces it if `strictEnv: true` is also
+passed, which this doesn't) — confirmed against the VS Code API before
+relying on it, since a replacing merge would have broken every other
+environment variable the terminal needs. Passing `env.PWD` through as a
+side effect of using the field at all is harmless (redundant with `cwd`,
+which already sets the shell's working directory).
+
+Passing `CLAUDE_CONFIG_DIR` whenever the source isn't `'default'` (not only
+for `'setting'`) is deliberately redundant in the `'env'` case — the
+extension host's own env var would normally already flow through to the
+terminal via the merge above — but is cheap insurance against any
+environment-inheritance edge case between the extension host process and a
+VS Code-spawned terminal.
 
 The standalone CLI has no equivalent gap: it never launches `claude`
 processes itself (there's no `launchAgent` handler in
@@ -525,27 +646,82 @@ processes itself (there's no `launchAgent` handler in
 where they're already responsible for their own environment), so no
 standalone-side fix is needed here.
 
-### 4c. Boot order (B1 fix)
+### 4c. Boot sequence: override, then stale-hook cleanup, then install (B1 + S2 fix)
 
-In `server/src/cli.ts`, the setter call slots in
-right next to the existing earliest `readConfig()` call (the one that reads
-`externalAssetDirectories` for the asset cache) — this placement was
-correct in the original draft and is unchanged:
+Both entrypoints need three things to happen in order, every boot. Rather
+than each entrypoint hand-rolling this sequence (the S1/should-fix-5 drift
+risk again), it's two exported functions in a new shared module,
+`server/src/claudeConfigDirBoot.ts`, imported by both `cli.ts` and
+`adapters/vscode/PixelAgentsViewProvider.ts` — this one lives at the server
+level rather than inside the provider directory because, like
+`applySetClaudeConfigDir`, it needs `readConfig`/`writeConfig` directly:
 
 ```ts
-setClaudeConfigDirOverride(readConfig().claudeConfigDir);
+// server/src/claudeConfigDirBoot.ts
+
+/** 1: set the live override. 2: if hooks might still be sitting in a
+ *  DIFFERENT directory than the one that's now resolved, remove them from
+ *  there — cheap no-op if there's nothing to clean up. Call once, as early
+ *  as possible in boot, before any code path can reach installHooks(). */
+export function prepareClaudeConfigDirForBoot(): void {
+  const cfg = readConfig();
+  setClaudeConfigDirOverride(cfg.claudeConfigDir || undefined);
+  const resolvedDir = getClaudeConfigDir();
+  if (cfg.claudeConfigDirHooksInstalledAt && cfg.claudeConfigDirHooksInstalledAt !== resolvedDir) {
+    uninstallHooksAt(cfg.claudeConfigDirHooksInstalledAt);
+  }
+}
+
+/** 3: record where hooks now live, once installHooks() has actually
+ *  succeeded. Call only from the existing hooksEnabled branch in each
+ *  entrypoint, right after the existing installHooks() call. */
+export function recordClaudeConfigDirHooksInstalled(): void {
+  const cfg = readConfig(); // re-read: installHooks() is async, something
+  cfg.claudeConfigDirHooksInstalledAt = getClaudeConfigDir(); // else may have written config.json meanwhile
+  writeConfig(cfg);
+}
 ```
 
-In `adapters/vscode/PixelAgentsViewProvider.ts`, this must move to the
-**first statement of the constructor**, immediately after `this.adapter =
-adapter;` (line 106) — *before* `this.initServer()` is called at the end of
-the constructor (line 169), which is what triggers `installHooks()`
-asynchronously inside `pixelAgentsServer.start().then(...)`. The original
-draft's claim that the earliest `readConfig()` call (inside the
+`recordClaudeConfigDirHooksInstalled()` re-reads `config.json` rather than
+reusing whatever `prepareClaudeConfigDirForBoot()` already had in scope,
+since `installHooks()` is async and other code may run — and may itself
+write `config.json` — in between; re-reading avoids clobbering a concurrent
+write. Both entrypoints call it exactly where they already call
+`installHooks()` today, inside the existing `if (hooksEnabled)` branch,
+right after that call succeeds.
+
+This replaces the live per-save cleanup an earlier revision attempted (see
+"Third review round"): the check now runs once, at a point where "the
+resolved directory" is completely unambiguous (nothing else is running
+yet), rather than mid-session where the live override, the just-saved raw
+value, and hooks another process installed can all be in different states
+at once.
+
+**Placement — this is where B1 actually lived**, and the fix from the first
+review round is unchanged by the S2 rework: in `server/src/cli.ts`,
+`prepareClaudeConfigDirForBoot()` slots in right next to the existing
+earliest `readConfig()` call (the one that reads `externalAssetDirectories`
+for the asset cache). In `adapters/vscode/PixelAgentsViewProvider.ts`, it
+must run as the **first statement of the constructor**, immediately after
+`this.adapter = adapter;` (line 106) — *before* `this.initServer()` is
+called at the end of the constructor (line 169), which is what triggers
+`installHooks()` asynchronously inside `pixelAgentsServer.start().then(...)`.
+The original draft's claim that the earliest `readConfig()` call (inside the
 `webviewReady` branch, line 411) was early enough is wrong: that branch only
 runs once the panel is actually revealed, which can be well after
-activation or never. Constructor placement guarantees the override is set
-before any code path in the class can reach `installHooks()`.
+activation or never. Constructor placement guarantees the override — and
+the stale-hook cleanup — happen before any code path in the class can reach
+`installHooks()`.
+
+**Residual cross-surface note.** `claudeConfigDirHooksInstalledAt` is shared
+(same `config.json`) but each surface's live override is per-process; if
+VS Code and standalone are both running and one changes the setting, the
+*other* only picks up the cleanup-and-reinstall dance the next time *it*
+restarts — until then it keeps whatever hooks state it booted with. This is
+strictly better than the live-cleanup design's race (where a save from
+either surface could immediately uninstall hooks the other was actively
+depending on) and is accepted as a known limitation rather than engineered
+around further — see Non-goals.
 
 ### 5. UI
 
@@ -553,31 +729,45 @@ before any code path in the class can reach `installHooks()`.
 external-asset-directory row:
 
 - Value bound to `claudeConfigDir` (from `settingsLoaded`).
-- On blur or an "Apply" button click, trim and send
-  `{ type: 'setClaudeConfigDir', claudeConfigDir: <value> }`. Validation
-  (S3: `~`-expansion, absolute-path requirement) is authoritative
-  server-side (`normalizeClaudeConfigDirInput`, §1) rather than duplicated
-  in the webview, since expanding `~` requires knowing the *server's* home
-  directory — for the standalone CLI and the VS Code extension host that
-  isn't necessarily the browser/webview's notion of "home" (standalone's
-  webview runs in an ordinary browser tab). A `claudeConfigDirRejected`
-  reply (§3) surfaces as an inline error instead of updating the resolved
-  path/source display; a `claudeConfigDirUpdated` reply confirms success.
+- Light client-side pre-check before sending at all: blank, or starts with
+  `/` or `~` (a cheap heuristic, not full validation — it exists so an
+  obviously-wrong value like a relative path gets an immediate inline error
+  without a round trip). On blur or an "Apply" button click, if the
+  pre-check passes, trim and send
+  `{ type: 'setClaudeConfigDir', claudeConfigDir: <value> }`.
+- The pre-check is deliberately not the authoritative validation —
+  `normalizeClaudeConfigDirInput` (§1, S3) is, and it runs server-side,
+  since expanding a leading `~` requires knowing the *server's* home
+  directory, which for the standalone CLI is not the browser tab the
+  webview runs in, and for VS Code is not necessarily the webview iframe's
+  notion of anything either. If input somehow reaches the server invalid
+  despite passing the client pre-check (e.g. it resolves to an existing
+  file, which the client can't check at all), it's silently dropped — no
+  write, no reply (§3, §4) — so the UI simply doesn't see a
+  `claudeConfigDirUpdated` confirmation for that save. This is an accepted,
+  documented gap (no dedicated error protocol for it) rather than a
+  motivation to build one; see §3's rationale for cutting
+  `claudeConfigDirRejected`.
+- A `claudeConfigDirUpdated` reply confirms success and refreshes the
+  helper text/warnings below immediately.
 - Muted helper text underneath shows `resolvedClaudeConfigDir` and, per N4,
   which source produced it: `"Using ~/.claude (default)"` /
   `"Using $CLAUDE_CONFIG_DIR: /path"` / `"Using configured path: /path"`.
 - If the input's current (unsaved or just-saved) value differs from
   `resolvedClaudeConfigDir`, show a small "restart Pixel Agents to apply"
   notice.
-- Two distinct existence signals, not to be conflated: `resolvedClaudeConfigDirExists`
-  (from `settingsLoaded`/`claudeConfigDirUpdated`) describes the *currently
-  active* directory and drives a warning next to the "Using ..." helper text;
-  `pendingDirExists` (from `claudeConfigDirUpdated` only, §3) describes the
-  directory that will become active *after a restart* and drives a warning
-  next to the "restart to apply" notice specifically — otherwise a typo'd
-  save would show no warning until the user actually restarts and the wrong
+- Two distinct existence signals, not to be conflated, both present on
+  *both* `settingsLoaded` and `claudeConfigDirUpdated` (§3) since both come
+  from the same `buildClaudeConfigDirFields()` call: `resolvedClaudeConfigDirExists`
+  describes the *currently active* directory and drives a warning next to
+  the "Using ..." helper text; `pendingDirExists` describes the directory
+  that will become active *after a restart* and drives a warning next to
+  the "restart to apply" notice specifically — otherwise a typo'd save
+  would show no warning until the user actually restarts and the wrong
   directory silently gets created by `writeClaudeSettings`'s
-  `mkdirSync(..., {recursive:true})` on next hook install.
+  `mkdirSync(..., {recursive:true})` on next hook install. Because both
+  fields are present on `settingsLoaded` too, this warning survives a panel
+  reload between saving and restarting, not just the immediate reply.
 
 `useExtensionMessages.ts` picks up the new `settingsLoaded` fields into
 state, threaded down through `App.tsx` to `SettingsModal`, following the
@@ -590,8 +780,11 @@ same path as `externalAssetDirectories`.
   every other defensively-parsed field.
 - Empty string clears the override — `getClaudeConfigDir()` falls through to
   the env var, then the default. No separate "unset" sentinel is needed.
-- Non-absolute input is rejected at the settings-handler boundary (S3) rather
-  than silently accepted and misresolved.
+- Non-absolute (or existing-file) input is rejected at the settings-handler
+  boundary (S3) rather than silently accepted and misresolved — but the
+  rejection itself is silent (no reply message, §3), relying on the
+  client-side pre-check (§5) to catch the common cases before they're ever
+  sent.
 - No new failure modes in the session scanner / team provider — they already
   tolerate a nonexistent target directory (e.g. `getSessionDirs` already
   returns a path even if it doesn't exist yet, "caller tolerates missing
@@ -609,26 +802,40 @@ same path as `externalAssetDirectories`.
   `vi.unstubAllEnvs()` in `afterEach`; plus `normalizeClaudeConfigDirInput`
   cases (blank, `~/foo`, `~\foo` on Windows, `..`-containing paths, relative
   paths rejected, an existing-file path rejected, an existing-directory path
-  accepted); plus `buildClaudeConfigDirFields` returning the raw value
-  unchanged alongside the live-resolved fields.
+  accepted); plus `buildClaudeConfigDirFields` returning all five fields
+  consistently, including `pendingDirExists` resolving the raw value through
+  the same precedence chain independent of the live override.
+- `server/__tests__/claude.test.ts`: `getSessionDirs()`/`getAllSessionRoots()`
+  respect override → env var → default precedence; `buildLaunchCommand()`
+  includes `env.CLAUDE_CONFIG_DIR` when the source isn't `'default'` and
+  omits it otherwise (§4b) — same env-stubbing additions as the other files
+  in this list, since this file also calls `os.homedir()`.
 - `server/__tests__/claudeHookInstaller.test.ts`: add
   `vi.stubEnv('CLAUDE_CONFIG_DIR', '')` + `resetClaudeConfigDirOverrideForTests()`
   to `beforeEach`, `vi.unstubAllEnvs()` to `afterEach`, so the existing
   `os.homedir()`-mocked isolation isn't defeated by an inherited env var on
   a developer machine that has one exported. Add cases for install/uninstall
-  targeting an overridden path, and for `uninstallHooksAt(explicitDir)`.
+  targeting an overridden path, and for `uninstallHooksAt(explicitDir)`
+  (including that it's a no-op, not an error, when nothing is installed at
+  `explicitDir`).
 - `server/__tests__/claudeTeamProvider.test.ts`: same env-stubbing addition
   (this file currently uses the *real* `os.homedir()`, making it more
   exposed to this hazard, not less) plus a case for the overridden path.
 - `server/__tests__/configPersistence.test.ts` (existing or new): read/write
-  round-trip and default-on-malformed-input for `claudeConfigDir`.
+  round-trip and default-on-malformed-input for `claudeConfigDir` and
+  `claudeConfigDirHooksInstalledAt`.
 - `server/__tests__/clientMessageHandler.test.ts`: new `setClaudeConfigDir`
-  cases, explicitly including the regression this revision's own bug-fix
-  (NEW-1) needs pinned down — saving `''` on an install with no override and
-  no env var set must NOT call `uninstallHooksAt` (previously it would have,
-  on every such save) — plus a case where the resolved directory genuinely
-  changes and cleanup *does* fire, and a rejected-input case (non-absolute
-  path → `claudeConfigDirRejected`, no write).
+  cases against `applySetClaudeConfigDir` directly — a valid absolute path
+  persists and returns the five fields; blank persists and clears; a
+  non-absolute or existing-file input returns `null` and performs no write.
+  No live-uninstall case needed here any more (S2's cleanup moved to boot
+  time, below) — this handler now only ever touches `config.json`.
+- New `server/__tests__/claudeConfigDirBoot.test.ts`: `prepareClaudeConfigDirForBoot()`
+  — no-op when `claudeConfigDirHooksInstalledAt` is unset or already matches
+  the resolved dir; calls `uninstallHooksAt` exactly once when they differ.
+  `recordClaudeConfigDirHooksInstalled()` — writes the currently-resolved
+  dir. Together: a same-path resave never triggers cleanup; a genuine
+  override change does, exactly once, at the next boot.
 
 **E2E (B3 fix — protective only, see rationale below):**
 
@@ -678,6 +885,7 @@ server/src/providers/hook/claude/claude.ts
 server/src/providers/hook/claude/claudeHookInstaller.ts
 server/src/providers/hook/claude/claudeTeamProvider.ts
 server/src/providers/index.ts
+server/src/claudeConfigDirBoot.ts                       (new)
 server/src/configPersistence.ts
 server/src/clientMessageHandler.ts
 server/src/cli.ts
@@ -690,7 +898,9 @@ webview-ui/src/hooks/useExtensionMessages.ts
 webview-ui/src/App.tsx
 e2e/helpers/mock-claude.ts
 e2e/helpers/standalone.ts
+server/__tests__/claude.test.ts
 server/__tests__/claudeConfigDir.test.ts                (new)
+server/__tests__/claudeConfigDirBoot.test.ts             (new)
 server/__tests__/claudeHookInstaller.test.ts
 server/__tests__/claudeTeamProvider.test.ts
 server/__tests__/configPersistence.test.ts
