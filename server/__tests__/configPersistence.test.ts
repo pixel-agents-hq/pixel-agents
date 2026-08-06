@@ -140,3 +140,90 @@ describe('configPersistence: areas', () => {
     });
   });
 });
+
+describe('configPersistence: claude config dir', () => {
+  let tempHome: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-config-claudedir-test-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  describe('claudeConfigDir (shared, top-level)', () => {
+    it('defaults to "" when no config file exists', () => {
+      const cfg = readConfig();
+      expect(cfg.claudeConfigDir).toBe('');
+    });
+
+    it('round-trips a set value', () => {
+      const cfg = readConfig();
+      cfg.claudeConfigDir = '/custom/claude';
+      writeConfig(cfg);
+
+      const reloaded = readConfig();
+      expect(reloaded.claudeConfigDir).toBe('/custom/claude');
+    });
+
+    it('defaults to "" on a non-string value in a hand-edited config.json', () => {
+      const configDir = path.join(tempHome, '.pixel-agents');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.json'),
+        JSON.stringify({ claudeConfigDir: 42 }),
+        'utf-8',
+      );
+      expect(readConfig().claudeConfigDir).toBe('');
+    });
+  });
+
+  describe('claudeConfigDirHooksInstalledAt (per-namespace)', () => {
+    it('defaults to "" for both namespaces when no config file exists', () => {
+      const cfg = readConfig();
+      expect(cfg.vscode.claudeConfigDirHooksInstalledAt).toBe('');
+      expect(cfg.standalone.claudeConfigDirHooksInstalledAt).toBe('');
+    });
+
+    it('round-trips independently per namespace', () => {
+      const cfg = readConfig();
+      cfg.vscode.claudeConfigDirHooksInstalledAt = '/vscode/claude';
+      cfg.standalone.claudeConfigDirHooksInstalledAt = '/standalone/claude';
+      writeConfig(cfg);
+
+      const reloaded = readConfig();
+      expect(reloaded.vscode.claudeConfigDirHooksInstalledAt).toBe('/vscode/claude');
+      expect(reloaded.standalone.claudeConfigDirHooksInstalledAt).toBe('/standalone/claude');
+    });
+
+    it('setting one namespace does not touch the other', () => {
+      const cfg = readConfig();
+      cfg.vscode.claudeConfigDirHooksInstalledAt = '/vscode/claude';
+      writeConfig(cfg);
+
+      const reloaded = readConfig();
+      expect(reloaded.vscode.claudeConfigDirHooksInstalledAt).toBe('/vscode/claude');
+      expect(reloaded.standalone.claudeConfigDirHooksInstalledAt).toBe('');
+    });
+
+    it('defaults to "" on a non-string value in a hand-edited config.json', () => {
+      const configDir = path.join(tempHome, '.pixel-agents');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.json'),
+        JSON.stringify({ vscode: { claudeConfigDirHooksInstalledAt: 42 } }),
+        'utf-8',
+      );
+      expect(readConfig().vscode.claudeConfigDirHooksInstalledAt).toBe('');
+    });
+  });
+});

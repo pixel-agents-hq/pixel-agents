@@ -14,6 +14,11 @@ export interface AdapterSettings {
   hooksInfoShown: boolean;
   showAreas: boolean;
   areaMappings: Record<string, string[]>;
+  // '' = this surface has never installed hooks. Per-namespace (NOT shared with
+  // claudeConfigDir on PixelAgentsConfig below) so VS Code and standalone can never
+  // act on each other's hook-install record -- see
+  // docs/superpowers/specs/2026-08-06-claude-config-dir-design.md §2.
+  claudeConfigDirHooksInstalledAt: string;
 }
 
 /** All keys in AdapterSettings. Used by adapters to map `pixel-agents.foo` → `foo`. */
@@ -27,6 +32,7 @@ export const ADAPTER_SETTING_KEYS = [
   'hooksInfoShown',
   'showAreas',
   'areaMappings',
+  'claudeConfigDirHooksInstalledAt',
 ] as const;
 
 export type AdapterSettingKey = (typeof ADAPTER_SETTING_KEYS)[number];
@@ -38,6 +44,7 @@ export interface PixelAgentsConfig {
   vscode: AdapterSettings;
   standalone: AdapterSettings;
   externalAssetDirectories: string[];
+  claudeConfigDir: string; // '' = unset; falls through to CLAUDE_CONFIG_DIR env var / default ~/.claude
 }
 
 const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
@@ -50,6 +57,7 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   hooksInfoShown: false,
   showAreas: false,
   areaMappings: {},
+  claudeConfigDirHooksInstalledAt: '',
 };
 
 function getConfigFilePath(): string {
@@ -115,6 +123,10 @@ function parseAdapterSettings(raw: unknown): AdapterSettings {
     showAreas:
       typeof obj.showAreas === 'boolean' ? obj.showAreas : DEFAULT_ADAPTER_SETTINGS.showAreas,
     areaMappings: parseAreaMappings(obj.areaMappings),
+    claudeConfigDirHooksInstalledAt:
+      typeof obj.claudeConfigDirHooksInstalledAt === 'string'
+        ? obj.claudeConfigDirHooksInstalledAt
+        : DEFAULT_ADAPTER_SETTINGS.claudeConfigDirHooksInstalledAt,
   };
 }
 
@@ -126,6 +138,7 @@ export function readConfig(): PixelAgentsConfig {
         vscode: { ...DEFAULT_ADAPTER_SETTINGS },
         standalone: { ...DEFAULT_ADAPTER_SETTINGS },
         externalAssetDirectories: [],
+        claudeConfigDir: '',
       };
     }
     const raw = fs.readFileSync(filePath, 'utf-8');
@@ -136,6 +149,7 @@ export function readConfig(): PixelAgentsConfig {
       externalAssetDirectories: Array.isArray(parsed.externalAssetDirectories)
         ? parsed.externalAssetDirectories.filter((d): d is string => typeof d === 'string')
         : [],
+      claudeConfigDir: typeof parsed.claudeConfigDir === 'string' ? parsed.claudeConfigDir : '',
     };
   } catch (err) {
     console.error('[Pixel Agents] Failed to read config file:', err);
@@ -143,6 +157,7 @@ export function readConfig(): PixelAgentsConfig {
       vscode: { ...DEFAULT_ADAPTER_SETTINGS },
       standalone: { ...DEFAULT_ADAPTER_SETTINGS },
       externalAssetDirectories: [],
+      claudeConfigDir: '',
     };
   }
 }
