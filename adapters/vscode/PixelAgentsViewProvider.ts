@@ -25,6 +25,11 @@ import {
   sendWallTilesToWebview,
 } from '../../server/src/assetLoader.js';
 import { loadAllCharacters, loadAllFurniture, loadAllPets } from '../../server/src/assetReload.js';
+import {
+  prepareClaudeConfigDirForBoot,
+  recordClaudeConfigDirHooksInstalled,
+} from '../../server/src/claudeConfigDirBoot.js';
+import { applySetClaudeConfigDir } from '../../server/src/clientMessageHandler.js';
 import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
 import { setFolderNameResolver, setTerminalAdapter } from '../../server/src/fileWatcher.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
@@ -34,7 +39,11 @@ import {
   writeLayoutToFile,
 } from '../../server/src/layoutPersistence.js';
 import { PathSet } from '../../server/src/pathKey.js';
-import { claudeProvider, copyHookScript } from '../../server/src/providers/index.js';
+import {
+  buildClaudeConfigDirFields,
+  claudeProvider,
+  copyHookScript,
+} from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
   getProjectDirPath,
@@ -103,6 +112,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     private readonly context: vscode.ExtensionContext,
     adapter: StateAdapter,
   ) {
+    // Must run before anything in this constructor (or initServer(), called
+    // at the end of it) can reach installHooks() -- sets the live
+    // CLAUDE_CONFIG_DIR override and cleans up any stale hook install from a
+    // previous directory.
+    prepareClaudeConfigDirForBoot('vscode');
     this.adapter = adapter;
     this.store.setAdapter(this.adapter);
     this.store.on('agentAdded', (id, agent) => {
@@ -212,6 +226,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.runtime.hooksEnabled.current = hooksEnabled;
         if (hooksEnabled) {
           void claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+          // installHooks() above is a Promise.resolve() wrapper around a
+          // synchronous write (see claude.ts) -- recording immediately after
+          // the void call, not chained onto its promise, is correct today
+          // and harmless even if that ever changed (worst case: one no-op
+          // uninstallHooksAt on a future boot).
+          recordClaudeConfigDirHooksInstalled('vscode');
           if (!copyHookScript(this.context.extensionPath)) {
             console.warn('[Pixel Agents] Hook script not copied, hooks may not fire');
           }
@@ -308,6 +328,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             serverConfig ? `http://127.0.0.1:${serverConfig.port}` : '',
             serverConfig?.token ?? '',
           );
+          recordClaudeConfigDirHooksInstalled('vscode');
           const copied = copyHookScript(this.context.extensionPath);
           console.log(
             copied
@@ -323,6 +344,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       } else if (message.type === 'setShowAreas') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_SHOW_AREAS, enabled);
+      } else if (message.type === 'setClaudeConfigDir') {
+        const fields = applySetClaudeConfigDir(message.claudeConfigDir);
+        if (fields) this.sendOrBuffer({ type: 'claudeConfigDirUpdated', ...fields });
       } else if (message.type === 'saveAreaMappings') {
         const mappings = message.mappings as Record<string, string[]>;
         const cfg = readConfig();
@@ -421,6 +445,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           hooksInfoShown,
           externalAssetDirectories: config.externalAssetDirectories,
           showAreas,
+          ...buildClaudeConfigDirFields(config.claudeConfigDir),
         });
 
         // Folder→Area mappings (must arrive before any agentCreated/existingAgents
