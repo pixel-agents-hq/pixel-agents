@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentStateStore } from '../src/agentStateStore.js';
 import {
@@ -173,6 +173,35 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
 
       const mappings = sent[iAreaMappings] as { mappings?: Record<string, string[]> };
       expect(mappings.mappings).toEqual({ frontend: ['Engineering'] });
+    });
+
+    it('emits settingsLoaded with all five claudeConfigDir fields, reflecting a live override', () => {
+      // Isolate from any CLAUDE_CONFIG_DIR the ambient environment might have
+      // set — this test asserts the 'default' source, which only holds when
+      // nothing overrides it.
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '');
+
+      // Fresh temp HOME, no override written yet -> defaults.
+      handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx);
+      const first = sent.find((m) => m.type === 'settingsLoaded') as Record<string, unknown>;
+      expect(first).toBeTruthy();
+      expect(first.claudeConfigDir).toBe('');
+      expect(first.resolvedClaudeConfigDir).toBe(path.join(tempHome, '.claude'));
+      expect(first.resolvedClaudeConfigDirSource).toBe('default');
+      expect(typeof first.resolvedClaudeConfigDirExists).toBe('boolean');
+      expect(typeof first.pendingDirExists).toBe('boolean');
+
+      // Now persist an explicit override and prove settingsLoaded reflects the
+      // LIVE config on the next webviewReady, not a stale default snapshot --
+      // this is what actually proves the spread reads through to config.
+      sent = [];
+      applySetClaudeConfigDir('/custom/claude-dir');
+      handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx);
+      const second = sent.find((m) => m.type === 'settingsLoaded') as Record<string, unknown>;
+      expect(second).toBeTruthy();
+      expect(second.claudeConfigDir).toBe('/custom/claude-dir');
+
+      vi.unstubAllEnvs();
     });
 
     it('emits layoutLoaded after existingAgents so buffered agents materialize', () => {
