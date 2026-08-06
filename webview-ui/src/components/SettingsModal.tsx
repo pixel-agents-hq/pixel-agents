@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
 import { isBrowserRuntime } from '../runtime.js';
@@ -19,6 +19,16 @@ interface SettingsModalProps {
   ghostHeadlessAgents: boolean;
   onToggleGhostHeadlessAgents: () => void;
   externalAssetDirectories: string[];
+  /** Raw persisted CLAUDE_CONFIG_DIR override; '' means unset. */
+  claudeConfigDir: string;
+  /** What the server actually resolves to right now (setting, env var, or default). */
+  resolvedClaudeConfigDir: string;
+  /** Which source produced resolvedClaudeConfigDir: 'setting' | 'env' | 'default'. */
+  resolvedClaudeConfigDirSource: string;
+  /** Whether resolvedClaudeConfigDir exists on disk right now. */
+  resolvedClaudeConfigDirExists: boolean;
+  /** Whether claudeConfigDir would resolve to an existing directory after a restart. */
+  pendingDirExists: boolean;
   watchAllSessions: boolean;
   onToggleWatchAllSessions: () => void;
   hooksEnabled: boolean;
@@ -44,6 +54,11 @@ export function SettingsModal({
   ghostHeadlessAgents,
   onToggleGhostHeadlessAgents,
   externalAssetDirectories,
+  claudeConfigDir,
+  resolvedClaudeConfigDir,
+  resolvedClaudeConfigDirSource,
+  resolvedClaudeConfigDirExists,
+  pendingDirExists,
   watchAllSessions,
   onToggleWatchAllSessions,
   hooksEnabled,
@@ -57,6 +72,21 @@ export function SettingsModal({
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [assetDirDraft, setAssetDirDraft] = useState('');
+  const [claudeConfigDirDraft, setClaudeConfigDirDraft] = useState(claudeConfigDir);
+
+  useEffect(() => {
+    setClaudeConfigDirDraft(claudeConfigDir);
+  }, [claudeConfigDir]);
+
+  const draftTrimmed = claudeConfigDirDraft.trim();
+  // A blank draft only needs a restart if a setting-sourced override is
+  // CURRENTLY live -- i.e. the user is clearing a previously-active override
+  // and that clearing hasn't taken effect yet. A non-blank draft needs a
+  // restart whenever it hasn't taken effect yet (differs from what's live).
+  const needsRestart =
+    draftTrimmed === ''
+      ? resolvedClaudeConfigDirSource === 'setting'
+      : draftTrimmed !== resolvedClaudeConfigDir;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings">
@@ -165,6 +195,49 @@ export function SettingsModal({
           </Button>
         </div>
       ))}
+      <div className="flex flex-col gap-4 py-4 px-10">
+        <div className="flex items-center gap-4">
+          <input
+            type="text"
+            value={claudeConfigDirDraft}
+            placeholder="Claude config directory (blank = default)"
+            onChange={(e) => setClaudeConfigDirDraft(e.target.value)}
+            onBlur={() => {
+              // Light pre-check only -- authoritative validation is server-side
+              // (see clientMessageHandler.ts's applySetClaudeConfigDir), since
+              // expanding a leading ~ requires knowing the SERVER's home
+              // directory, which the browser tab this modal renders in
+              // doesn't have access to.
+              if (
+                draftTrimmed !== '' &&
+                !draftTrimmed.startsWith('/') &&
+                !draftTrimmed.startsWith('~')
+              ) {
+                return;
+              }
+              transport.send({ type: 'setClaudeConfigDir', claudeConfigDir: draftTrimmed });
+            }}
+            className="flex-1 min-w-0 text-xs py-2 px-4 bg-bg border-2 border-border rounded-none text-text"
+          />
+        </div>
+        {resolvedClaudeConfigDir !== '' && (
+          <span className="text-xs text-text-muted">
+            {resolvedClaudeConfigDirSource === 'setting' &&
+              `Using configured path: ${resolvedClaudeConfigDir}`}
+            {resolvedClaudeConfigDirSource === 'env' &&
+              `Using $CLAUDE_CONFIG_DIR: ${resolvedClaudeConfigDir}`}
+            {resolvedClaudeConfigDirSource === 'default' &&
+              `Using ${resolvedClaudeConfigDir} (default)`}
+            {!resolvedClaudeConfigDirExists && ' — does not exist on disk'}
+          </span>
+        )}
+        {needsRestart && (
+          <span className="text-xs text-text-muted">
+            Restart Pixel Agents to apply
+            {!pendingDirExists && ' — this directory does not exist yet'}
+          </span>
+        )}
+      </div>
       <Checkbox
         label="Sound Notifications"
         checked={soundLocal}
