@@ -3,12 +3,13 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { HOOK_SCRIPTS_DIR } from '../../../constants.js';
+import { getClaudeConfigDir } from './claudeConfigDir.js';
 import { CLAUDE_HOOK_EVENTS, CLAUDE_HOOK_SCRIPT_NAME } from './constants.js';
 
 /** Marker string used to identify Pixel Agents hook entries in Claude's settings. */
 const HOOK_SCRIPT_MARKER = CLAUDE_HOOK_SCRIPT_NAME;
 
-/** A single hook entry in Claude Code's ~/.claude/settings.json hooks config. */
+/** A single hook entry in Claude Code's <CLAUDE_CONFIG_DIR>/settings.json hooks config. */
 interface ClaudeHookEntry {
   matcher: string;
   hooks: Array<{
@@ -18,25 +19,27 @@ interface ClaudeHookEntry {
   }>;
 }
 
-/** Partial shape of ~/.claude/settings.json (only the hooks field is relevant). */
+/** Partial shape of <CLAUDE_CONFIG_DIR>/settings.json (only the hooks field is relevant). */
 interface ClaudeSettings {
   hooks?: Record<string, ClaudeHookEntry[]>;
   [key: string]: unknown;
 }
 
-/** Returns the absolute path to ~/.claude/settings.json. */
-function getClaudeSettingsPath(): string {
-  return path.join(os.homedir(), '.claude', 'settings.json');
+/** Returns the absolute path to <dir>/settings.json, defaulting to the
+ *  currently-resolved Claude config directory. */
+function getClaudeSettingsPath(dir: string = getClaudeConfigDir()): string {
+  return path.join(dir, 'settings.json');
 }
 
-/** Returns the destination path for the hook script (~/.pixel-agents/hooks/claude-hook.js). */
+/** Returns the destination path for the hook script (~/.pixel-agents/hooks/claude-hook.js).
+ *  Always under Pixel Agents' own namespace -- unrelated to Claude's config dir. */
 function getHookScriptPath(): string {
   return path.join(os.homedir(), HOOK_SCRIPTS_DIR, CLAUDE_HOOK_SCRIPT_NAME);
 }
 
-/** Read and parse ~/.claude/settings.json. Returns empty object if missing or malformed. */
-function readClaudeSettings(): ClaudeSettings {
-  const settingsPath = getClaudeSettingsPath();
+/** Read and parse <dir>/settings.json. Returns empty object if missing or malformed. */
+function readClaudeSettings(dir?: string): ClaudeSettings {
+  const settingsPath = getClaudeSettingsPath(dir);
   try {
     if (fs.existsSync(settingsPath)) {
       return JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as ClaudeSettings;
@@ -47,13 +50,13 @@ function readClaudeSettings(): ClaudeSettings {
   return {};
 }
 
-/** Write settings back to ~/.claude/settings.json via atomic tmp + rename. */
-function writeClaudeSettings(settings: ClaudeSettings): void {
-  const settingsPath = getClaudeSettingsPath();
-  const dir = path.dirname(settingsPath);
+/** Write settings back to <dir>/settings.json via atomic tmp + rename. */
+function writeClaudeSettings(settings: ClaudeSettings, dir?: string): void {
+  const settingsPath = getClaudeSettingsPath(dir);
+  const settingsDir = path.dirname(settingsPath);
   try {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(settingsDir)) {
+      fs.mkdirSync(settingsDir, { recursive: true });
     }
     // Atomic write via tmp file + rename
     const tmpPath = settingsPath + '.pixel-agents-tmp';
@@ -94,7 +97,7 @@ function makeHookEntry(): ClaudeHookEntry {
   };
 }
 
-/** Check if Pixel Agents hooks are already installed in ~/.claude/settings.json. */
+/** Check if Pixel Agents hooks are already installed in the resolved settings.json. */
 export function areHooksInstalled(): boolean {
   const settings = readClaudeSettings();
   if (!settings.hooks) return false;
@@ -106,9 +109,8 @@ export function areHooksInstalled(): boolean {
 }
 
 /**
- * Install Pixel Agents hook entries into ~/.claude/settings.json for
- * Notification, Stop, and PermissionRequest events. Idempotent: removes
- * any existing Pixel Agents entries before adding fresh ones.
+ * Install Pixel Agents hook entries into the resolved settings.json.
+ * Idempotent: removes any existing Pixel Agents entries before adding fresh ones.
  */
 export function installHooks(): void {
   const settings = readClaudeSettings();
@@ -135,13 +137,23 @@ export function installHooks(): void {
 
   if (changed) {
     writeClaudeSettings(settings);
-    console.log('[Pixel Agents] Hooks installed in ~/.claude/settings.json');
+    console.log(`[Pixel Agents] Hooks installed in ${getClaudeSettingsPath()}`);
   }
 }
 
-/** Remove all Pixel Agents hook entries from ~/.claude/settings.json. Cleans up empty objects. */
+/** Remove all Pixel Agents hook entries from the resolved settings.json. */
 export function uninstallHooks(): void {
-  const settings = readClaudeSettings();
+  uninstallHooksAt(getClaudeConfigDir());
+}
+
+/** Remove all Pixel Agents hook entries from <dir>/settings.json. Cleans up
+ *  empty objects. A no-op (not an error) if nothing is installed there. Used
+ *  directly (rather than always going through the ambient uninstallHooks())
+ *  by the boot-time stale-hook cleanup in claudeConfigDirBoot.ts, which needs
+ *  to target a specific PREVIOUS directory, not wherever the live override
+ *  currently resolves to. */
+export function uninstallHooksAt(dir: string): void {
+  const settings = readClaudeSettings(dir);
   if (!settings.hooks) return;
 
   let changed = false;
@@ -162,8 +174,8 @@ export function uninstallHooks(): void {
   }
 
   if (changed) {
-    writeClaudeSettings(settings);
-    console.log('[Pixel Agents] Hooks removed from ~/.claude/settings.json');
+    writeClaudeSettings(settings, dir);
+    console.log(`[Pixel Agents] Hooks removed from ${getClaudeSettingsPath(dir)}`);
   }
 }
 
