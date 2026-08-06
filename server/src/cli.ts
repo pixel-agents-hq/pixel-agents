@@ -18,6 +18,10 @@ import {
   loadAllFurniture,
   loadAllPets,
 } from './assetReload.js';
+import {
+  prepareClaudeConfigDirForBoot,
+  recordClaudeConfigDirHooksInstalled,
+} from './claudeConfigDirBoot.js';
 import type { AssetCache, ReloadAssetsSideEffect } from './clientMessageHandler.js';
 import { readConfig } from './configPersistence.js';
 import { MAX_PORT, MIN_PORT } from './constants.js';
@@ -89,6 +93,12 @@ async function main(): Promise<void> {
   const packageRoot = path.dirname(distRoot);
   const staticDir = path.join(distRoot, 'webview');
 
+  // Must run before anything that could call claudeProvider.installHooks() --
+  // sets the live CLAUDE_CONFIG_DIR override and cleans up any stale hook
+  // install from a previous directory, both before hooks get (re)installed
+  // below.
+  prepareClaudeConfigDirForBoot('standalone');
+
   // ── Load assets on startup (same pipeline as VS Code extension) ──
   // External asset directories are merged at startup too, so directories added
   // in a previous session survive a restart. buildAssetCache is the shared
@@ -132,6 +142,7 @@ async function main(): Promise<void> {
           `http://127.0.0.1:${currentConfig.port}`,
           currentConfig.token,
         );
+        recordClaudeConfigDirHooksInstalled('standalone');
         const copied = copyHookScript(packageRoot);
         console.log(
           copied
@@ -202,6 +213,7 @@ async function main(): Promise<void> {
     if (runtime.hooksEnabled.current) {
       try {
         await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+        recordClaudeConfigDirHooksInstalled('standalone');
         const copied = copyHookScript(packageRoot);
         console.log(
           copied

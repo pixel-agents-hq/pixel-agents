@@ -207,4 +207,74 @@ describe('dist/cli.js entry-point guard', () => {
       fs.rmSync(workspaceDir, { recursive: true, force: true });
     }
   });
+
+  it('installs hooks into CLAUDE_CONFIG_DIR and records it in the standalone config on startup', async () => {
+    skipIfNotBuilt();
+    if (!fs.existsSync(CLI_BUNDLE)) return;
+
+    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-home-'));
+    const customConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-claude-config-'));
+    const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-workspace-'));
+    const port = await getFreePort();
+    const child = spawn(
+      process.execPath,
+      [CLI_BUNDLE, '--port', port.toString(), '--host', '127.0.0.1'],
+      {
+        cwd: workspaceDir,
+        env: {
+          ...process.env,
+          HOME: tmpHome,
+          USERPROFILE: tmpHome,
+          CLAUDE_CONFIG_DIR: customConfigDir,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()));
+    child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()));
+
+    try {
+      await waitForCondition(async () => {
+        if (child.exitCode !== null) {
+          throw new Error(`Bundled CLI exited before startup:\n${output}`);
+        }
+        try {
+          return (await fetch(`http://127.0.0.1:${port.toString()}/api/health`)).ok;
+        } catch {
+          return false;
+        }
+      });
+
+      const installedHook = path.join(tmpHome, '.pixel-agents', 'hooks', 'claude-hook.js');
+      await waitForCondition(() => fs.existsSync(installedHook));
+
+      // Hooks land in CLAUDE_CONFIG_DIR, not the default ~/.claude.
+      const customSettingsPath = path.join(customConfigDir, 'settings.json');
+      await waitForCondition(() => fs.existsSync(customSettingsPath));
+      const customSettings = JSON.parse(fs.readFileSync(customSettingsPath, 'utf-8')) as Record<
+        string,
+        unknown
+      >;
+      expect(JSON.stringify(customSettings)).toContain(installedHook);
+
+      const defaultSettingsPath = path.join(tmpHome, '.claude', 'settings.json');
+      expect(fs.existsSync(defaultSettingsPath)).toBe(false);
+
+      // recordClaudeConfigDirHooksInstalled('standalone') must have run from
+      // main(), proving cli.ts's wiring -- not just that installHooks() itself
+      // works (that's covered separately by claudeConfigDirBoot's own tests).
+      const configPath = path.join(tmpHome, '.pixel-agents', 'config.json');
+      await waitForCondition(() => fs.existsSync(configPath));
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+        standalone?: { claudeConfigDirHooksInstalledAt?: string };
+      };
+      expect(config.standalone?.claudeConfigDirHooksInstalledAt).toBe(customConfigDir);
+    } finally {
+      await stopChild(child);
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+      fs.rmSync(customConfigDir, { recursive: true, force: true });
+      fs.rmSync(workspaceDir, { recursive: true, force: true });
+    }
+  });
 });
