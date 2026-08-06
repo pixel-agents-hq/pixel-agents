@@ -7,7 +7,7 @@ import {
   BASH_COMMAND_DISPLAY_MAX_LENGTH,
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
 } from '../../../constants.js';
-import { getClaudeConfigDir } from './claudeConfigDir.js';
+import { getClaudeConfigDir, getClaudeConfigDirSource } from './claudeConfigDir.js';
 import {
   areHooksInstalled as installerAreHooksInstalled,
   installHooks as installerInstallHooks,
@@ -15,6 +15,7 @@ import {
 } from './claudeHookInstaller.js';
 import { claudeTeamProvider } from './claudeTeamProvider.js';
 import {
+  CLAUDE_CONFIG_DIR_ENV_VAR,
   CLAUDE_LARGE_CONTEXT_WINDOW,
   CLAUDE_SMALL_CONTEXT_MODEL_PATTERN,
   CLAUDE_SMALL_CONTEXT_WINDOW,
@@ -106,7 +107,11 @@ function buildLaunchCommand(
 ): { command: string; args: string[]; env?: Record<string, string> } {
   const args = ['--session-id', sessionId];
   if (opts?.bypassPermissions) args.push('--dangerously-skip-permissions');
-  return { command: 'claude', args, env: { PWD: cwd } };
+  const env: Record<string, string> = { PWD: cwd };
+  if (getClaudeConfigDirSource() !== 'default') {
+    env[CLAUDE_CONFIG_DIR_ENV_VAR] = getClaudeConfigDir();
+  }
+  return { command: 'claude', args, env };
 }
 
 /** Root that holds every Claude session across all workspaces. Used by the

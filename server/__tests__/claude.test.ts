@@ -320,4 +320,28 @@ describe('claudeProvider: config dir precedence', () => {
       expect(roots?.[0]).toBe('/setting/claude/projects');
     });
   });
+
+  describe('buildLaunchCommand', () => {
+    it('does not include CLAUDE_CONFIG_DIR in env when using the default', () => {
+      const launch = claudeProvider.buildLaunchCommand?.('sess-1', '/cwd');
+      expect(launch?.env?.CLAUDE_CONFIG_DIR).toBeUndefined();
+    });
+
+    it('includes CLAUDE_CONFIG_DIR in env when the env var itself is set', () => {
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '/env/claude');
+      const launch = claudeProvider.buildLaunchCommand?.('sess-1', '/cwd');
+      expect(launch?.env?.CLAUDE_CONFIG_DIR).toBe('/env/claude');
+    });
+
+    it('includes CLAUDE_CONFIG_DIR in env when the override is set', () => {
+      setClaudeConfigDirOverride('/setting/claude');
+      const launch = claudeProvider.buildLaunchCommand?.('sess-1', '/cwd');
+      expect(launch?.env?.CLAUDE_CONFIG_DIR).toBe('/setting/claude');
+    });
+
+    it('always includes PWD in env', () => {
+      const launch = claudeProvider.buildLaunchCommand?.('sess-1', '/cwd');
+      expect(launch?.env?.PWD).toBe('/cwd');
+    });
+  });
 });
