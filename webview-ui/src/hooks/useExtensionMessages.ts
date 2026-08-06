@@ -81,6 +81,11 @@ interface ExtensionMessageState {
   /** Distinct folderNames seen across agents this session — source for the Areas folder dropdown. */
   agentFolderNames: string[];
   externalAssetDirectories: string[];
+  claudeConfigDir: string;
+  resolvedClaudeConfigDir: string;
+  resolvedClaudeConfigDirSource: string;
+  resolvedClaudeConfigDirExists: boolean;
+  pendingDirExists: boolean;
   lastSeenVersion: string;
   extensionVersion: string;
   watchAllSessions: boolean;
@@ -137,6 +142,11 @@ export function useExtensionMessages(
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
   const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
   const [showAreas, setShowAreas] = useState(false);
+  const [claudeConfigDir, setClaudeConfigDir] = useState('');
+  const [resolvedClaudeConfigDir, setResolvedClaudeConfigDir] = useState('');
+  const [resolvedClaudeConfigDirSource, setResolvedClaudeConfigDirSource] = useState('default');
+  const [resolvedClaudeConfigDirExists, setResolvedClaudeConfigDirExists] = useState(true);
+  const [pendingDirExists, setPendingDirExists] = useState(true);
 
   // The renderer keeps its own module-level copy (read every rAF frame), so both
   // sources of truth move together — the persisted value on settingsLoaded and
@@ -652,6 +662,21 @@ export function useExtensionMessages(
         if (Array.isArray(msg.externalAssetDirectories)) {
           setExternalAssetDirectories(msg.externalAssetDirectories as string[]);
         }
+        if (typeof msg.claudeConfigDir === 'string') {
+          setClaudeConfigDir(msg.claudeConfigDir);
+        }
+        if (typeof msg.resolvedClaudeConfigDir === 'string') {
+          setResolvedClaudeConfigDir(msg.resolvedClaudeConfigDir);
+        }
+        if (typeof msg.resolvedClaudeConfigDirSource === 'string') {
+          setResolvedClaudeConfigDirSource(msg.resolvedClaudeConfigDirSource);
+        }
+        if (typeof msg.resolvedClaudeConfigDirExists === 'boolean') {
+          setResolvedClaudeConfigDirExists(msg.resolvedClaudeConfigDirExists);
+        }
+        if (typeof msg.pendingDirExists === 'boolean') {
+          setPendingDirExists(msg.pendingDirExists);
+        }
         if (typeof msg.lastSeenVersion === 'string') {
           setLastSeenVersion(msg.lastSeenVersion as string);
         }
@@ -661,6 +686,22 @@ export function useExtensionMessages(
       } else if (msg.type === 'externalAssetDirectoriesUpdated') {
         if (Array.isArray(msg.dirs)) {
           setExternalAssetDirectories(msg.dirs as string[]);
+        }
+      } else if (msg.type === 'claudeConfigDirUpdated') {
+        if (typeof msg.claudeConfigDir === 'string') {
+          setClaudeConfigDir(msg.claudeConfigDir);
+        }
+        if (typeof msg.resolvedClaudeConfigDir === 'string') {
+          setResolvedClaudeConfigDir(msg.resolvedClaudeConfigDir);
+        }
+        if (typeof msg.resolvedClaudeConfigDirSource === 'string') {
+          setResolvedClaudeConfigDirSource(msg.resolvedClaudeConfigDirSource);
+        }
+        if (typeof msg.resolvedClaudeConfigDirExists === 'boolean') {
+          setResolvedClaudeConfigDirExists(msg.resolvedClaudeConfigDirExists);
+        }
+        if (typeof msg.pendingDirExists === 'boolean') {
+          setPendingDirExists(msg.pendingDirExists);
         }
       } else if (msg.type === 'furnitureAssetsLoaded') {
         try {
@@ -722,6 +763,11 @@ export function useExtensionMessages(
     workspaceFolders,
     agentFolderNames,
     externalAssetDirectories,
+    claudeConfigDir,
+    resolvedClaudeConfigDir,
+    resolvedClaudeConfigDirSource,
+    resolvedClaudeConfigDirExists,
+    pendingDirExists,
     lastSeenVersion,
     extensionVersion,
     watchAllSessions,
