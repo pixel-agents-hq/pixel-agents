@@ -1,8 +1,11 @@
 # CLAUDE_CONFIG_DIR support — design spec
 
 **Date:** 2026-08-06
-**Status:** Revised after three rounds of Opus design review, plus a scope
-cut adopted after the third round (see "Third review round" below)
+**Status:** Revised after five rounds of Opus design review (round 3 also
+drove a scope cut — see "Third review round" below; round 4 found and fixed
+a real cross-surface hook-clobbering bug in that cut's first implementation,
+folded inline into §2/§4c rather than a separate table; round 5 confirmed
+no blockers or should-fixes remain and recommended stopping the review loop)
 
 ## Problem
 
@@ -706,6 +709,7 @@ level rather than inside the provider directory because, like
 
 ```ts
 // server/src/claudeConfigDirBoot.ts
+import type { ConfigNamespace } from './configPersistence.js';
 
 /** 1: set the live override. 2: if THIS SURFACE's hooks might still be
  *  sitting in a DIFFERENT directory than the one that's now resolved,
@@ -727,17 +731,20 @@ export function prepareClaudeConfigDirForBoot(namespace: ConfigNamespace): void 
  *  actually succeeded. Call from EVERY installHooks() call site on this
  *  surface, not just boot — see the toggle-path note below. */
 export function recordClaudeConfigDirHooksInstalled(namespace: ConfigNamespace): void {
-  const cfg = readConfig(); // re-read: installHooks() is async, something
-  cfg[namespace].claudeConfigDirHooksInstalledAt = getClaudeConfigDir(); // else may have written config.json meanwhile
+  const cfg = readConfig(); // re-read rather than reuse prepareClaudeConfigDirForBoot()'s cfg
+  cfg[namespace].claudeConfigDirHooksInstalledAt = getClaudeConfigDir();
   writeConfig(cfg);
 }
 ```
 
 `recordClaudeConfigDirHooksInstalled()` re-reads `config.json` rather than
-reusing whatever `prepareClaudeConfigDirForBoot()` already had in scope,
-since `installHooks()` is async and other code may run — and may itself
-write `config.json` — in between; re-reading avoids clobbering a concurrent
-write.
+reusing whatever `prepareClaudeConfigDirForBoot()` already had in scope.
+`claudeProvider.installHooks()` (a thin `Promise.resolve()` wrapper around
+the fully synchronous `installHooks()` in `claudeHookInstaller.ts`) has no
+actual await gap today, so there's no live race this guards against right
+now — but re-reading instead of reusing a stale local variable is correct
+regardless of whether that wrapper ever becomes genuinely async, and costs
+nothing extra to write correctly from the start.
 
 **Every `installHooks()` call site on a surface must call
 `recordClaudeConfigDirHooksInstalled(namespace)` right after, not only the
@@ -751,9 +758,10 @@ it → dir A's hooks are orphaned forever. `cli.ts`'s boot call is `await`ed,
 so recording after it is straightforwardly correct; VS Code's boot call
 (`void claudeProvider.installHooks(...)`, not awaited) records eagerly
 right after the `void` call rather than chaining onto the promise —
-deliberately, since the failure mode of recording slightly early (before
-the write actually lands) only costs a harmless no-op `uninstallHooksAt`
-on a future boot, not a correctness bug.
+`claudeProvider.installHooks()` is a `Promise.resolve()` wrapper around a
+synchronous write, so there's no actual ordering risk today, and even if
+that ever changed, recording slightly early only costs a harmless no-op
+`uninstallHooksAt` on a future boot, not a correctness bug.
 
 This replaces the live per-save cleanup an earlier revision attempted (see
 "Third review round"): the check now runs once, at a point where "the
@@ -780,18 +788,20 @@ placement guarantees the override — and the stale-hook cleanup — happen
 before any code path in the class can reach `installHooks()`.
 
 **Residual cross-surface note.** With `claudeConfigDirHooksInstalledAt`
-namespaced (§2), the cross-surface race an earlier revision of this section
-had is gone by construction — each surface only ever compares against, and
-cleans up, its own record; it's structurally unable to touch hooks the
-other surface installed. What's left is much smaller: if both surfaces
-happen to resolve to the *same* directory (the common case — most users
-don't run divergent `CLAUDE_CONFIG_DIR` values per surface) and one surface
-changes `claudeConfigDir` (the shared setting) while both are running, only
-that surface's *next restart* re-resolves and re-installs; the other
-surface keeps running against whatever it already has until it too
-restarts. That's a staleness window bounded by "until you restart the other
-surface," not a clobbering risk — accepted as a known limitation rather
-than engineered around further (Non-goals).
+namespaced (§2), the specific bug an earlier revision of this section had —
+one surface deciding to uninstall based on the *other* surface's record —
+is gone by construction: each surface only ever compares against, and
+triggers cleanup from, its own record. What's not eliminated: hook entries
+in `~/.claude/settings.json` are not namespaced the way this new field is —
+`isOurHookEntry` matches on the shared hook-script filename, so if both
+surfaces happen to resolve to the *same* directory (the common case — most
+users don't run divergent `CLAUDE_CONFIG_DIR` values per surface) and one
+surface's own record leads it to call `uninstallHooksAt` there, it removes
+the one shared entry the other surface is also relying on. That surface
+degrades to heuristic detection until *its own* next restart re-installs —
+the same interaction that already exists today via the hooks-enabled
+toggle, not a new failure mode this feature introduces. Accepted as a known
+limitation rather than engineered around further (Non-goals).
 
 ### 5. UI
 
