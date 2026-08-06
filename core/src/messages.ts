@@ -34,6 +34,7 @@ export type ServerMessage =
   | CarpetTilesLoaded
   | SettingsLoaded
   | ExternalAssetDirectoriesUpdated
+  | ClaudeConfigDirUpdated
   | AreaMappingsLoaded
   | WorkspaceFolders
   | AgentDiagnostics;
@@ -59,6 +60,7 @@ export type ClientMessage =
   | RemoveExternalAssetDirectory
   | SaveAreaMappings
   | SetShowAreas
+  | SetClaudeConfigDir
   | RequestDiagnostics;
 
 export interface ProviderCapabilities {
@@ -272,11 +274,25 @@ export interface SettingsLoaded {
   hooksInfoShown: boolean;
   externalAssetDirectories: string[];
   showAreas: boolean;
+  claudeConfigDir: string;
+  resolvedClaudeConfigDir: string;
+  resolvedClaudeConfigDirSource: string;
+  resolvedClaudeConfigDirExists: boolean;
+  pendingDirExists: boolean;
 }
 
 export interface ExternalAssetDirectoriesUpdated {
   type: 'externalAssetDirectoriesUpdated';
   dirs: string[];
+}
+
+export interface ClaudeConfigDirUpdated {
+  type: 'claudeConfigDirUpdated';
+  claudeConfigDir: string;
+  resolvedClaudeConfigDir: string;
+  resolvedClaudeConfigDirSource: string;
+  resolvedClaudeConfigDirExists: boolean;
+  pendingDirExists: boolean;
 }
 
 export interface AreaMappingsLoaded {
@@ -399,6 +415,11 @@ export interface SaveAreaMappings {
 export interface SetShowAreas {
   type: 'setShowAreas';
   enabled: boolean;
+}
+
+export interface SetClaudeConfigDir {
+  type: 'setClaudeConfigDir';
+  claudeConfigDir: string;
 }
 
 export interface RequestDiagnostics {

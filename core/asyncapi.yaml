@@ -112,6 +112,7 @@ components:
         # Settings & config
         - $ref: '#/components/schemas/SettingsLoaded'
         - $ref: '#/components/schemas/ExternalAssetDirectoriesUpdated'
+        - $ref: '#/components/schemas/ClaudeConfigDirUpdated'
         - $ref: '#/components/schemas/AreaMappingsLoaded'
         - $ref: '#/components/schemas/WorkspaceFolders'
         # Diagnostics
@@ -140,6 +141,7 @@ components:
         - $ref: '#/components/schemas/RemoveExternalAssetDirectory'
         - $ref: '#/components/schemas/SaveAreaMappings'
         - $ref: '#/components/schemas/SetShowAreas'
+        - $ref: '#/components/schemas/SetClaudeConfigDir'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
 
@@ -641,6 +643,11 @@ components:
         - hooksInfoShown
         - externalAssetDirectories
         - showAreas
+        - claudeConfigDir
+        - resolvedClaudeConfigDir
+        - resolvedClaudeConfigDirSource
+        - resolvedClaudeConfigDirExists
+        - pendingDirExists
       properties:
         type:
           const: settingsLoaded
@@ -666,6 +673,21 @@ components:
             type: string
         showAreas:
           type: boolean
+        claudeConfigDir:
+          type: string
+          description: Raw persisted CLAUDE_CONFIG_DIR override; '' means unset.
+        resolvedClaudeConfigDir:
+          type: string
+          description: What the server actually resolves to right now (setting, env var, or default).
+        resolvedClaudeConfigDirSource:
+          type: string
+          description: Which source produced resolvedClaudeConfigDir -- 'setting', 'env', or 'default'.
+        resolvedClaudeConfigDirExists:
+          type: boolean
+          description: Whether resolvedClaudeConfigDir exists on disk right now.
+        pendingDirExists:
+          type: boolean
+          description: Whether claudeConfigDir would resolve to an existing directory after a restart.
 
     AreaMappingsLoaded:
       description: |
@@ -697,6 +719,33 @@ components:
           type: array
           items:
             type: string
+
+    ClaudeConfigDirUpdated:
+      description: >-
+        Sent in reply to setClaudeConfigDir so the webview refreshes
+        immediately without waiting for the next webviewReady.
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - claudeConfigDir
+        - resolvedClaudeConfigDir
+        - resolvedClaudeConfigDirSource
+        - resolvedClaudeConfigDirExists
+        - pendingDirExists
+      properties:
+        type:
+          const: claudeConfigDirUpdated
+        claudeConfigDir:
+          type: string
+        resolvedClaudeConfigDir:
+          type: string
+        resolvedClaudeConfigDirSource:
+          type: string
+        resolvedClaudeConfigDirExists:
+          type: boolean
+        pendingDirExists:
+          type: boolean
 
     WorkspaceFolders:
       description: Multi-root workspace folders (VS Code only).
@@ -910,6 +959,17 @@ components:
         path:
           type: string
           description: Absolute directory path (standalone browser only; omitted in VS Code).
+
+    SetClaudeConfigDir:
+      description: Set or clear the CLAUDE_CONFIG_DIR settings-modal override. Empty string clears it.
+      type: object
+      additionalProperties: false
+      required: [type, claudeConfigDir]
+      properties:
+        type:
+          const: setClaudeConfigDir
+        claudeConfigDir:
+          type: string
 
     RemoveExternalAssetDirectory:
       description: Remove an external asset directory by path.
