@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -38,4 +39,23 @@ export function getClaudeConfigDirSource(): 'setting' | 'env' | 'default' {
 /** Test-only: reset module state between test files. */
 export function resetClaudeConfigDirOverrideForTests(): void {
   override = undefined;
+}
+
+/** Validates/normalizes settings-modal input: '' clears the override; a
+ *  leading `~/` or `~\` expands to this process's home dir; the result is
+ *  normalized (collapses `..` and trailing separators) and must be
+ *  absolute; a path that already exists but isn't a directory is rejected.
+ *  Returns null to signal "reject, don't persist". */
+export function normalizeClaudeConfigDirInput(raw: string): string | null {
+  if (raw === '') return '';
+  const homeExpanded =
+    raw === '~'
+      ? os.homedir()
+      : raw.startsWith('~/') || raw.startsWith('~\\')
+        ? path.join(os.homedir(), raw.slice(2))
+        : raw;
+  const normalized = path.normalize(homeExpanded);
+  if (!path.isAbsolute(normalized)) return null;
+  if (fs.existsSync(normalized) && !fs.statSync(normalized).isDirectory()) return null;
+  return normalized;
 }

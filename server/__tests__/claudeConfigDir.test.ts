@@ -15,6 +15,7 @@ const {
   resolveClaudeConfigDir,
   resetClaudeConfigDirOverrideForTests,
   setClaudeConfigDirOverride,
+  normalizeClaudeConfigDirInput,
 } = await import('../src/providers/hook/claude/claudeConfigDir.js');
 
 describe('claudeConfigDir: resolution', () => {
@@ -115,5 +116,60 @@ describe('claudeConfigDir: resolution', () => {
       resetClaudeConfigDirOverrideForTests();
       expect(getClaudeConfigDir()).toBe(path.join(tmpHome, '.claude'));
     });
+  });
+});
+
+describe('normalizeClaudeConfigDirInput', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    const fs = require('fs') as typeof import('fs');
+    const osReal = require('os') as typeof import('os');
+    tmpDir = fs.mkdtempSync(path.join(osReal.tmpdir(), 'pxl-normalize-test-'));
+  });
+
+  afterEach(() => {
+    const fs = require('fs') as typeof import('fs');
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns "" unchanged for blank input (clears the override)', () => {
+    expect(normalizeClaudeConfigDirInput('')).toBe('');
+  });
+
+  it('expands a bare ~ to the home directory', () => {
+    expect(normalizeClaudeConfigDirInput('~')).toBe(tmpHome);
+  });
+
+  it('expands ~/foo to <home>/foo', () => {
+    expect(normalizeClaudeConfigDirInput('~/foo')).toBe(path.join(tmpHome, 'foo'));
+  });
+
+  it('expands ~\\foo (Windows tilde form) to <home>/foo', () => {
+    expect(normalizeClaudeConfigDirInput('~\\foo')).toBe(path.join(tmpHome, 'foo'));
+  });
+
+  it('collapses .. segments via path.normalize', () => {
+    expect(normalizeClaudeConfigDirInput('/a/b/../c')).toBe(path.normalize('/a/c'));
+  });
+
+  it('rejects a relative path', () => {
+    expect(normalizeClaudeConfigDirInput('relative/path')).toBeNull();
+  });
+
+  it('accepts an absolute path that does not exist yet', () => {
+    const target = path.join(tmpDir, 'does-not-exist-yet');
+    expect(normalizeClaudeConfigDirInput(target)).toBe(target);
+  });
+
+  it('accepts an absolute path that exists and is a directory', () => {
+    expect(normalizeClaudeConfigDirInput(tmpDir)).toBe(tmpDir);
+  });
+
+  it('rejects a path that exists but is a file, not a directory', () => {
+    const fs = require('fs') as typeof import('fs');
+    const filePath = path.join(tmpDir, 'a-file');
+    fs.writeFileSync(filePath, 'content');
+    expect(normalizeClaudeConfigDirInput(filePath)).toBeNull();
   });
 });
