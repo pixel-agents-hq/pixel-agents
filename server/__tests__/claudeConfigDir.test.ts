@@ -16,6 +16,7 @@ const {
   resetClaudeConfigDirOverrideForTests,
   setClaudeConfigDirOverride,
   normalizeClaudeConfigDirInput,
+  buildClaudeConfigDirFields,
 } = await import('../src/providers/hook/claude/claudeConfigDir.js');
 
 describe('claudeConfigDir: resolution', () => {
@@ -171,5 +172,80 @@ describe('normalizeClaudeConfigDirInput', () => {
     const filePath = path.join(tmpDir, 'a-file');
     fs.writeFileSync(filePath, 'content');
     expect(normalizeClaudeConfigDirInput(filePath)).toBeNull();
+  });
+});
+
+describe('buildClaudeConfigDirFields(rawPersistedValue)', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpHome = '/tmp/pxl-claude-config-dir-test-home';
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '');
+    resetClaudeConfigDirOverrideForTests();
+    const fs = require('fs') as typeof import('fs');
+    const osReal = require('os') as typeof import('os');
+    tmpDir = fs.mkdtempSync(path.join(osReal.tmpdir(), 'pxl-build-fields-test-'));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetClaudeConfigDirOverrideForTests();
+    const fs = require('fs') as typeof import('fs');
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('echoes the raw value into claudeConfigDir unchanged', () => {
+    const fields = buildClaudeConfigDirFields('/some/raw/value');
+    expect(fields.claudeConfigDir).toBe('/some/raw/value');
+  });
+
+  it('resolvedClaudeConfigDir reflects the LIVE override, not the raw value', () => {
+    setClaudeConfigDirOverride('/live/override');
+    const fields = buildClaudeConfigDirFields('/different/raw/value');
+    expect(fields.resolvedClaudeConfigDir).toBe('/live/override');
+  });
+
+  it('resolvedClaudeConfigDirSource matches getClaudeConfigDirSource()', () => {
+    setClaudeConfigDirOverride('/live/override');
+    const fields = buildClaudeConfigDirFields('/raw');
+    expect(fields.resolvedClaudeConfigDirSource).toBe('setting');
+  });
+
+  it('resolvedClaudeConfigDirExists is true only if the LIVE resolved dir exists', () => {
+    setClaudeConfigDirOverride(tmpHome); // tmpHome does not exist on disk (it's a fake path)
+    const fields = buildClaudeConfigDirFields('/raw');
+    expect(fields.resolvedClaudeConfigDirExists).toBe(false);
+  });
+
+  it('pendingDirExists resolves the RAW value through the precedence chain, independent of the live override', () => {
+    setClaudeConfigDirOverride('/live/override'); // live override differs from raw
+    const fields = buildClaudeConfigDirFields(''); // raw = '' -> falls through to env/default
+    // pendingDir resolves '' -> undefined -> env var (unset here) -> default (tmpHome/.claude)
+    expect(fields.pendingDirExists).toBe(false); // tmpHome/.claude doesn't exist on disk
+  });
+
+  it('resolvedClaudeConfigDirExists and pendingDirExists are backed by genuinely different sources', () => {
+    // Asymmetric ground truth: the LIVE override points at a real directory,
+    // while the RAW value points at a different, nonexistent one. If the two
+    // existence checks were ever swapped or conflated, this would catch it --
+    // unlike the other tests in this block, where both sides happen to be
+    // nonexistent paths and a swap would go unnoticed.
+    setClaudeConfigDirOverride(tmpDir); // real directory
+    const fields = buildClaudeConfigDirFields('/definitely/does/not/exist/raw'); // fake path
+    expect(fields.resolvedClaudeConfigDirExists).toBe(true);
+    expect(fields.pendingDirExists).toBe(false);
+  });
+
+  it('returns exactly five fields', () => {
+    const fields = buildClaudeConfigDirFields('/raw');
+    expect(Object.keys(fields).sort()).toEqual(
+      [
+        'claudeConfigDir',
+        'pendingDirExists',
+        'resolvedClaudeConfigDir',
+        'resolvedClaudeConfigDirExists',
+        'resolvedClaudeConfigDirSource',
+      ].sort(),
+    );
   });
 });

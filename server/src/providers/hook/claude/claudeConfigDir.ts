@@ -59,3 +59,34 @@ export function normalizeClaudeConfigDirInput(raw: string): string | null {
   if (fs.existsSync(normalized) && !fs.statSync(normalized).isDirectory()) return null;
   return normalized;
 }
+
+/** The five settingsLoaded/claudeConfigDirUpdated fields, computed together
+ *  so both server-side emitters -- and both messages -- stay in sync by
+ *  construction.
+ *
+ *  `rawPersistedValue` is the caller's `readConfig().claudeConfigDir` --
+ *  passed in rather than read here so this provider-internal module doesn't
+ *  reach up into server-level config persistence. `resolved*` reflects the
+ *  LIVE module override (set once at boot), which can legitimately differ
+ *  from `claudeConfigDir` right after a save -- that gap is what drives the
+ *  "restart to apply" notice in the UI. `pendingDirExists` resolves
+ *  `rawPersistedValue` through the SAME precedence chain (without touching
+ *  the live override) so it describes the directory that WILL be active
+ *  after a restart, not the one that's active now. */
+export function buildClaudeConfigDirFields(rawPersistedValue: string): {
+  claudeConfigDir: string;
+  resolvedClaudeConfigDir: string;
+  resolvedClaudeConfigDirSource: 'setting' | 'env' | 'default';
+  resolvedClaudeConfigDirExists: boolean;
+  pendingDirExists: boolean;
+} {
+  const resolvedClaudeConfigDir = getClaudeConfigDir();
+  const pendingDir = resolveClaudeConfigDir(rawPersistedValue || undefined);
+  return {
+    claudeConfigDir: rawPersistedValue,
+    resolvedClaudeConfigDir,
+    resolvedClaudeConfigDirSource: getClaudeConfigDirSource(),
+    resolvedClaudeConfigDirExists: fs.existsSync(resolvedClaudeConfigDir),
+    pendingDirExists: fs.existsSync(pendingDir),
+  };
+}
