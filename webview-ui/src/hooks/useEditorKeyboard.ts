@@ -28,6 +28,7 @@ export function useEditorKeyboard(
           editorState.selectedFurnitureType !== ''
         ) {
           editorState.selectedFurnitureType = '';
+          editorState.clearPickedItem();
           editorState.clearGhost();
         } else if (editorState.activeTool === EditTool.CARPET_PICK) {
           // First Esc inside carpet sub-flow: drop pick → back to paint

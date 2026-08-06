@@ -30,6 +30,10 @@ export class EditorState {
   // Picked furniture color (copied by pick tool, applied on placement)
   pickedFurnitureColor: ColorValue | null = null;
 
+  // Uid of the placed item grabbed by the pick tool. While set, placement
+  // moves this item instead of stamping a new copy.
+  pickedFurnitureUid: string | null = null;
+
   // Ghost preview position
   ghostCol = -1;
   ghostRow = -1;
@@ -111,6 +115,12 @@ export class EditorState {
     this.ghostValid = false;
   }
 
+  /** Cancel a pick-tool carry (item stays where it was). */
+  clearPickedItem(): void {
+    this.pickedFurnitureUid = null;
+    this.pickedFurnitureColor = null;
+  }
+
   startDrag(
     uid: string,
     startCol: number,
@@ -134,6 +144,8 @@ export class EditorState {
   reset(): void {
     this.activeTool = EditTool.SELECT;
     this.selectedFurnitureUid = null;
+    this.pickedFurnitureUid = null;
+    this.pickedFurnitureColor = null;
     this.ghostCol = -1;
     this.ghostRow = -1;
     this.ghostValid = false;
