@@ -186,9 +186,10 @@ export function setClaudeConfigDirOverride(dir: string | undefined): void {
 /** Shared precedence chain: candidate override -> CLAUDE_CONFIG_DIR env var ->
  *  ~/.claude. Exported (not just used by getClaudeConfigDir) so callers can
  *  resolve a CANDIDATE value — e.g. "what would this resolve to if saved" —
- *  without mutating the live module override (NEW-1: comparing an unresolved
- *  candidate against an always-resolved value was the bug in the first cut
- *  of the hook-cleanup-on-change logic, §4). */
+ *  without mutating the live module override. (Originally added to compare
+ *  candidates in a live hook-cleanup path that no longer exists — see
+ *  "Third review round" — but still needed internally by
+ *  buildClaudeConfigDirFields()'s pendingDirExists computation below.) */
 export function resolveClaudeConfigDir(candidate: string | undefined): string {
   return (
     candidate ||
@@ -329,7 +330,19 @@ Call sites updated to use `getClaudeConfigDir()` instead of
 `claude.ts`'s `buildLaunchCommand()` also gains a call to
 `getClaudeConfigDirSource()`/`getClaudeConfigDir()` — not to relocate a
 hardcoded path (it doesn't touch the filesystem), but to populate the
-`env.CLAUDE_CONFIG_DIR` it returns when an override is active (§4b).
+`env.CLAUDE_CONFIG_DIR` it returns when an override is active (§4b). This
+needs two new imports in `claude.ts`: `getClaudeConfigDir`,
+`getClaudeConfigDirSource` from `./claudeConfigDir.js`, and
+`CLAUDE_CONFIG_DIR_ENV_VAR` folded into the existing `./constants.js`
+import — both same-directory sibling imports, no circularity
+(`claudeConfigDir.ts` imports only `fs`/`os`/`path`/`./constants.js`).
+
+After this change, `os` becomes an unused import in `claude.ts` and
+`claudeTeamProvider.ts` — both files' only other uses of `os.homedir()`
+were the hardcoded paths this spec removes (§1's "Call sites updated"
+list) — so both need the import dropped or `noUnusedLocals` fails the
+build. `claudeHookInstaller.ts` keeps its `os` import (`getHookScriptPath()`
+still uses it for `~/.pixel-agents/hooks/`, untouched by this feature).
 
 `~/.pixel-agents/*` paths (server discovery, hook script destination,
 Pixel Agents' own state) are untouched — they're this project's own
@@ -352,21 +365,52 @@ export interface PixelAgentsConfig {
   standalone: AdapterSettings;
   externalAssetDirectories: string[];
   claudeConfigDir: string; // '' = unset; falls through to env var / default
-  claudeConfigDirHooksInstalledAt: string; // '' = never installed; tracks where hooks currently live (§4c)
 }
 ```
 
-`readConfig()` defensively parses both (default `''` if missing or
-non-string), `writeConfig()` persists them verbatim — same treatment as
-`externalAssetDirectories`.
+`readConfig()` defensively parses `claudeConfigDir` (default `''` if
+missing or non-string), `writeConfig()` persists it verbatim — same
+treatment as `externalAssetDirectories`.
 
-`claudeConfigDirHooksInstalledAt` exists solely to make the boot-time
-cleanup in §4c possible without live-tracking: it records the resolved
-directory hooks were installed into *last time this process (or the other
-surface) ran* `installHooks()`, so the next boot can tell "hooks might still
-be sitting in a directory that's no longer the resolved one" without needing
-to compare against anything live. It is never read or written outside that
-one boot-time check.
+**`claudeConfigDirHooksInstalledAt` belongs on `AdapterSettings`, not here**
+— a fourth-round review caught this: the field records "where did *this
+surface's* last `installHooks()` call put things," which is per-process
+state, not machine-wide state like `claudeConfigDir` genuinely is. Putting
+it in the shared top-level shape (as an earlier revision did) meant VS Code
+and standalone would read *each other's* record at boot and — since their
+resolved directories can legitimately differ (that's the whole reason the
+settings-override half of this feature exists) — each could call
+`uninstallHooksAt` on a directory the *other* surface was actively relying
+on, violating this codebase's own stated invariant ("Running both surfaces
+in parallel never clobbers either") and regressing behavior that worked
+before this feature existed. `hooksEnabled` already lives on
+`AdapterSettings` for exactly this reason; this field follows the same
+pattern:
+
+```ts
+export interface AdapterSettings {
+  soundEnabled: boolean;
+  lastSeenVersion: string;
+  alwaysShowLabels: boolean;
+  ghostHeadlessAgents: boolean;
+  watchAllSessions: boolean;
+  hooksEnabled: boolean;
+  hooksInfoShown: boolean;
+  showAreas: boolean;
+  areaMappings: Record<string, string[]>;
+  claudeConfigDirHooksInstalledAt: string; // '' = this surface has never installed hooks (§4c)
+}
+```
+
+Added to `ADAPTER_SETTING_KEYS`, `DEFAULT_ADAPTER_SETTINGS` (`''`), and
+`parseAdapterSettings` (default `''` on missing/non-string), same as every
+other field there. It exists solely to make the boot-time cleanup in §4c
+possible without live cross-process tracking: it records the resolved
+directory *this surface* installed hooks into last time *it* ran
+`installHooks()`, so *its own* next boot can tell whether hooks might still
+be sitting somewhere stale, without needing to compare against anything the
+other surface did. It is never read or written outside that one boot-time
+check, and never crosses the `vscode`/`standalone` boundary.
 
 ### 3. Protocol (AsyncAPI)
 
@@ -613,9 +657,13 @@ function buildLaunchCommand(
 `agentManager.ts`'s `launchNewTerminal` passes `launch.env` through to
 `vscode.window.createTerminal`, which requires calling `buildLaunchCommand`
 *before* `createTerminal` rather than after (today's order, reversed here
-since `createTerminal` now needs `launch.env`):
+since `createTerminal` now needs `launch.env`). `buildLaunchCommand` needs
+`sessionId`, currently generated (`crypto.randomUUID()`) after
+`createTerminal` today, so that line moves up too — the reorder isn't just
+the two calls in isolation:
 
 ```ts
+const sessionId = crypto.randomUUID(); // moved above createTerminal — buildLaunchCommand needs it
 const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
 if (!launch) throw new Error('claudeProvider.buildLaunchCommand is not implemented');
 const terminal = vscode.window.createTerminal({
@@ -659,25 +707,28 @@ level rather than inside the provider directory because, like
 ```ts
 // server/src/claudeConfigDirBoot.ts
 
-/** 1: set the live override. 2: if hooks might still be sitting in a
- *  DIFFERENT directory than the one that's now resolved, remove them from
- *  there — cheap no-op if there's nothing to clean up. Call once, as early
- *  as possible in boot, before any code path can reach installHooks(). */
-export function prepareClaudeConfigDirForBoot(): void {
+/** 1: set the live override. 2: if THIS SURFACE's hooks might still be
+ *  sitting in a DIFFERENT directory than the one that's now resolved,
+ *  remove them from there — cheap no-op if there's nothing to clean up.
+ *  Call once, as early as possible in boot, before any code path can reach
+ *  installHooks(). `namespace` scopes the installed-at record to this
+ *  surface only (vscode vs standalone) — see §2's per-namespace rationale. */
+export function prepareClaudeConfigDirForBoot(namespace: ConfigNamespace): void {
   const cfg = readConfig();
   setClaudeConfigDirOverride(cfg.claudeConfigDir || undefined);
   const resolvedDir = getClaudeConfigDir();
-  if (cfg.claudeConfigDirHooksInstalledAt && cfg.claudeConfigDirHooksInstalledAt !== resolvedDir) {
-    uninstallHooksAt(cfg.claudeConfigDirHooksInstalledAt);
+  const installedAt = cfg[namespace].claudeConfigDirHooksInstalledAt;
+  if (installedAt && installedAt !== resolvedDir) {
+    uninstallHooksAt(installedAt);
   }
 }
 
-/** 3: record where hooks now live, once installHooks() has actually
- *  succeeded. Call only from the existing hooksEnabled branch in each
- *  entrypoint, right after the existing installHooks() call. */
-export function recordClaudeConfigDirHooksInstalled(): void {
+/** 3: record where THIS SURFACE's hooks now live, once installHooks() has
+ *  actually succeeded. Call from EVERY installHooks() call site on this
+ *  surface, not just boot — see the toggle-path note below. */
+export function recordClaudeConfigDirHooksInstalled(namespace: ConfigNamespace): void {
   const cfg = readConfig(); // re-read: installHooks() is async, something
-  cfg.claudeConfigDirHooksInstalledAt = getClaudeConfigDir(); // else may have written config.json meanwhile
+  cfg[namespace].claudeConfigDirHooksInstalledAt = getClaudeConfigDir(); // else may have written config.json meanwhile
   writeConfig(cfg);
 }
 ```
@@ -686,9 +737,23 @@ export function recordClaudeConfigDirHooksInstalled(): void {
 reusing whatever `prepareClaudeConfigDirForBoot()` already had in scope,
 since `installHooks()` is async and other code may run — and may itself
 write `config.json` — in between; re-reading avoids clobbering a concurrent
-write. Both entrypoints call it exactly where they already call
-`installHooks()` today, inside the existing `if (hooksEnabled)` branch,
-right after that call succeeds.
+write.
+
+**Every `installHooks()` call site on a surface must call
+`recordClaudeConfigDirHooksInstalled(namespace)` right after, not only the
+boot-time one.** Each surface has two: boot (`cli.ts:204`,
+`PixelAgentsViewProvider.ts:214`) and the Settings-modal hooks-enabled
+toggle (`cli.ts:131`, `PixelAgentsViewProvider.ts:307`). Missing the toggle
+path reopens the exact bug §4c exists to fix: boot with hooks off (record
+stays `''`) → toggle hooks on (installs at dir A, unrecorded) → user changes
+`claudeConfigDir` → next boot's cleanup check sees a falsy record and skips
+it → dir A's hooks are orphaned forever. `cli.ts`'s boot call is `await`ed,
+so recording after it is straightforwardly correct; VS Code's boot call
+(`void claudeProvider.installHooks(...)`, not awaited) records eagerly
+right after the `void` call rather than chaining onto the promise —
+deliberately, since the failure mode of recording slightly early (before
+the write actually lands) only costs a harmless no-op `uninstallHooksAt`
+on a future boot, not a correctness bug.
 
 This replaces the live per-save cleanup an earlier revision attempted (see
 "Third review round"): the check now runs once, at a point where "the
@@ -699,34 +764,45 @@ at once.
 
 **Placement — this is where B1 actually lived**, and the fix from the first
 review round is unchanged by the S2 rework: in `server/src/cli.ts`,
-`prepareClaudeConfigDirForBoot()` slots in right next to the existing
-earliest `readConfig()` call (the one that reads `externalAssetDirectories`
-for the asset cache). In `adapters/vscode/PixelAgentsViewProvider.ts`, it
-must run as the **first statement of the constructor**, immediately after
-`this.adapter = adapter;` (line 106) — *before* `this.initServer()` is
-called at the end of the constructor (line 169), which is what triggers
-`installHooks()` asynchronously inside `pixelAgentsServer.start().then(...)`.
-The original draft's claim that the earliest `readConfig()` call (inside the
-`webviewReady` branch, line 411) was early enough is wrong: that branch only
-runs once the panel is actually revealed, which can be well after
-activation or never. Constructor placement guarantees the override — and
-the stale-hook cleanup — happen before any code path in the class can reach
-`installHooks()`.
+`prepareClaudeConfigDirForBoot('standalone')` slots in right next to the
+existing earliest `readConfig()` call (the one that reads
+`externalAssetDirectories` for the asset cache). In
+`adapters/vscode/PixelAgentsViewProvider.ts`,
+`prepareClaudeConfigDirForBoot('vscode')` must run as the **first statement
+of the constructor**, immediately after `this.adapter = adapter;` (line
+106) — *before* `this.initServer()` is called at the end of the constructor
+(line 169), which is what triggers `installHooks()` asynchronously inside
+`pixelAgentsServer.start().then(...)`. The original draft's claim that the
+earliest `readConfig()` call (inside the `webviewReady` branch, line 411)
+was early enough is wrong: that branch only runs once the panel is actually
+revealed, which can be well after activation or never. Constructor
+placement guarantees the override — and the stale-hook cleanup — happen
+before any code path in the class can reach `installHooks()`.
 
-**Residual cross-surface note.** `claudeConfigDirHooksInstalledAt` is shared
-(same `config.json`) but each surface's live override is per-process; if
-VS Code and standalone are both running and one changes the setting, the
-*other* only picks up the cleanup-and-reinstall dance the next time *it*
-restarts — until then it keeps whatever hooks state it booted with. This is
-strictly better than the live-cleanup design's race (where a save from
-either surface could immediately uninstall hooks the other was actively
-depending on) and is accepted as a known limitation rather than engineered
-around further — see Non-goals.
+**Residual cross-surface note.** With `claudeConfigDirHooksInstalledAt`
+namespaced (§2), the cross-surface race an earlier revision of this section
+had is gone by construction — each surface only ever compares against, and
+cleans up, its own record; it's structurally unable to touch hooks the
+other surface installed. What's left is much smaller: if both surfaces
+happen to resolve to the *same* directory (the common case — most users
+don't run divergent `CLAUDE_CONFIG_DIR` values per surface) and one surface
+changes `claudeConfigDir` (the shared setting) while both are running, only
+that surface's *next restart* re-resolves and re-installs; the other
+surface keeps running against whatever it already has until it too
+restarts. That's a staleness window bounded by "until you restart the other
+surface," not a clobbering risk — accepted as a known limitation rather
+than engineered around further (Non-goals).
 
 ### 5. UI
 
-`SettingsModal.tsx` gains a labeled text input, same shape/pattern as the
-external-asset-directory row:
+`SettingsModal.tsx` gains a labeled text input, styled like the
+external-asset-directory row but **unconditional**, not gated behind
+`isBrowserRuntime` the way that row is (`SettingsModal.tsx:116-138` renders
+a native-picker `MenuItem` instead of a text input in VS Code). This field
+needs the same text-input UI on both surfaces — VS Code is, if anything,
+the primary motivating case (§Scope: extension hosts that don't inherit
+shell env vars), so hiding it there the way the asset-directory row does
+would defeat the point.
 
 - Value bound to `claudeConfigDir` (from `settingsLoaded`).
 - Light client-side pre-check before sending at all: blank, or starts with
@@ -822,20 +898,26 @@ same path as `externalAssetDirectories`.
   (this file currently uses the *real* `os.homedir()`, making it more
   exposed to this hazard, not less) plus a case for the overridden path.
 - `server/__tests__/configPersistence.test.ts` (existing or new): read/write
-  round-trip and default-on-malformed-input for `claudeConfigDir` and
-  `claudeConfigDirHooksInstalledAt`.
+  round-trip and default-on-malformed-input for the shared `claudeConfigDir`
+  field, and for `claudeConfigDirHooksInstalledAt` on `AdapterSettings` —
+  including that `vscode` and `standalone` track it independently (setting
+  one namespace's doesn't touch the other's).
 - `server/__tests__/clientMessageHandler.test.ts`: new `setClaudeConfigDir`
   cases against `applySetClaudeConfigDir` directly — a valid absolute path
   persists and returns the five fields; blank persists and clears; a
   non-absolute or existing-file input returns `null` and performs no write.
   No live-uninstall case needed here any more (S2's cleanup moved to boot
   time, below) — this handler now only ever touches `config.json`.
-- New `server/__tests__/claudeConfigDirBoot.test.ts`: `prepareClaudeConfigDirForBoot()`
-  — no-op when `claudeConfigDirHooksInstalledAt` is unset or already matches
-  the resolved dir; calls `uninstallHooksAt` exactly once when they differ.
-  `recordClaudeConfigDirHooksInstalled()` — writes the currently-resolved
-  dir. Together: a same-path resave never triggers cleanup; a genuine
-  override change does, exactly once, at the next boot.
+- New `server/__tests__/claudeConfigDirBoot.test.ts`: `prepareClaudeConfigDirForBoot(namespace)`
+  — no-op when that namespace's `claudeConfigDirHooksInstalledAt` is unset
+  or already matches the resolved dir; calls `uninstallHooksAt` exactly once
+  when they differ; explicitly does NOT fire based on the *other*
+  namespace's record (the cross-surface fix — set `vscode`'s record to
+  something stale, call `prepareClaudeConfigDirForBoot('standalone')`,
+  assert no uninstall). `recordClaudeConfigDirHooksInstalled(namespace)` —
+  writes the currently-resolved dir into only that namespace. Together: a
+  same-path resave never triggers cleanup; a genuine override change does,
+  exactly once, at the next boot, for the surface that actually changed.
 
 **E2E (B3 fix — protective only, see rationale below):**
 
