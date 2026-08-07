@@ -24,6 +24,10 @@ import type { AssetCache, ReloadAssetsSideEffect } from './clientMessageHandler.
 import { grantHooksConsent, readConfig } from './configPersistence.js';
 import { MAX_PORT, MIN_PORT } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
+import {
+  CONSENT_DISCLOSURE,
+  CONSENT_INSTALL_HEADLINE,
+} from './providers/hook/claude/consentCopy.js';
 import { claudeProvider, copyHookScript } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 
@@ -77,30 +81,64 @@ Options:
 
 // ── Hooks consent ─────────────────────────────────────────────
 
-/** First-run consent prompt for modifying ~/.claude/settings.json. Only asks
- *  on an interactive terminal; non-interactive runs (CI, spawned processes)
- *  skip the install until consent is granted elsewhere — interactively or via
- *  the UI hooks toggle. Mirrors the VS Code notification: 'not-now' persists
- *  nothing (ask again next run); only the explicit 'never' turns hooks off. */
-async function promptHooksConsent(): Promise<'granted' | 'not-now' | 'never' | 'skipped'> {
+/** What the user chose.
+ *  - `granted`: consent + install.
+ *  - `never`: persist hooks-off without touching settings.json.
+ *  - `not-now`: change nothing, ask again next run. */
+export type ConsentAnswer = 'granted' | 'not-now' | 'never';
+
+/**
+ * Map a typed CLI answer to an action. Pure and exported so the string handling
+ * is unit-testable without a TTY — the interactive wrapper below is
+ * deliberately thin.
+ *
+ * An empty answer takes the prompt's capitalized default (Y). Anything
+ * unrecognized is 'not-now', the choice that changes nothing — a typo must
+ * never be read as approval.
+ */
+export function interpretConsentAnswer(answer: string): ConsentAnswer {
+  const normalized = answer.trim().toLowerCase();
+  if (normalized === '' || normalized === 'y' || normalized === 'yes') return 'granted';
+  if (normalized === 'never') return 'never';
+  return 'not-now';
+}
+
+/** Prompt text, disclosure included. The prompt is the ONLY place the user
+ *  learns what is written and what data moves, so both facts are stated in
+ *  full — a terminal has no space constraint. */
+export function buildConsentPrompt(): string {
+  return `\n${CONSENT_INSTALL_HEADLINE}\n\n${CONSENT_DISCLOSURE}\n\nInstall hooks? [Y/n/never] `;
+}
+
+/** Consent prompt for modifying ~/.claude/settings.json. Only asks on an
+ *  interactive terminal; non-interactive runs (CI, spawned processes) skip the
+ *  install until consent is granted elsewhere — interactively or via the UI
+ *  hooks toggle. Mirrors the VS Code notification: 'not-now' persists nothing
+ *  (ask again next run); only an explicit 'never' turns hooks off. */
+async function promptHooksConsent(): Promise<ConsentAnswer | 'skipped'> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     return 'skipped';
   }
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = (
-      await rl.question(
-        "To show your agents in real time, Pixel Agents needs to add its hooks to ~/.claude/settings.json. Your existing settings are kept safe, and you can remove Pixel Agents' hooks at any time.\nInstall hooks? [Y/n/never] ",
-      )
-    )
-      .trim()
-      .toLowerCase();
-    if (answer === '' || answer === 'y' || answer === 'yes') return 'granted';
-    if (answer === 'never') return 'never';
-    return 'not-now';
+    return interpretConsentAnswer(await rl.question(buildConsentPrompt()));
   } finally {
     rl.close();
   }
+}
+
+/**
+ * Copy the bundled hook script into ~/.pixel-agents/hooks/, reporting failure.
+ *
+ * Callers run this BEFORE installing the settings.json entries and abort when
+ * it returns false: an entry whose command points at a missing script makes
+ * Claude Code spawn a dead `node` process for every event, which is strictly
+ * worse than no hooks at all.
+ */
+function copyHookScriptOrReport(packageRoot: string, context = ''): boolean {
+  if (copyHookScript(packageRoot)) return true;
+  console.error(`[Pixel Agents] Hooks NOT installed${context}: hook script missing.`);
+  return false;
 }
 
 // ── Main ──────────────────────────────────────────────────────
@@ -160,6 +198,7 @@ async function main(): Promise<void> {
       if (enabled) {
         // An explicit toggle in the UI IS the consent to modify settings.json.
         grantHooksConsent();
+        if (!copyHookScriptOrReport(packageRoot, ' (user toggle)')) return;
         try {
           await claudeProvider.installHooks(
             `http://127.0.0.1:${currentConfig.port}`,
@@ -169,12 +208,7 @@ async function main(): Promise<void> {
           console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
           return;
         }
-        const copied = copyHookScript(packageRoot);
-        console.log(
-          copied
-            ? '[Pixel Agents] Hooks installed (user toggle)'
-            : '[Pixel Agents] Hooks NOT installed (user toggle), hook script missing',
-        );
+        console.log('[Pixel Agents] Hooks installed (user toggle)');
       } else {
         try {
           await claudeProvider.uninstallHooks();
@@ -244,7 +278,13 @@ async function main(): Promise<void> {
     if (runtime.hooksEnabled.current) {
       let consent = readConfig().hooksConsentGiven;
       if (!consent && (await claudeProvider.areHooksInstalled())) {
-        // Hooks already present = consent granted to a pre-consent version.
+        // Our hooks are already installed and already firing — a pre-consent
+        // version put them there. Grant and continue with NO prompt: the
+        // install below is the 14 -> 12 migration, and it only ever REDUCES
+        // scope (it drops UserPromptSubmit and TaskCreated, the two events that
+        // forwarded prompt text and were consumed by nothing). Asking would buy
+        // this user no protection they do not already have, so they are not
+        // asked. A fresh install still is, in full, below.
         grantHooksConsent();
         consent = true;
       }
@@ -267,15 +307,10 @@ async function main(): Promise<void> {
           );
         }
       }
-      if (consent) {
+      if (consent && copyHookScriptOrReport(packageRoot)) {
         try {
           await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
-          const copied = copyHookScript(packageRoot);
-          console.log(
-            copied
-              ? '[Pixel Agents] Hooks installed'
-              : '[Pixel Agents] Hooks NOT installed, hook script missing',
-          );
+          console.log('[Pixel Agents] Hooks installed');
         } catch (err) {
           console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -299,7 +334,18 @@ async function main(): Promise<void> {
       runtime.startStaleCheck();
     }
 
-    console.log(`\n  Pixel Agents server running at http://${args.host}:${config.port}\n`);
+    // The URL the operator opens has to be REACHABLE (a wildcard bind address
+    // is a bind target, not an address you can browse to — `--host 0.0.0.0`
+    // used to print a dead `http://0.0.0.0:PORT`) and has to carry the token,
+    // which is what makes the session it loads privileged enough to approve a
+    // hook install (see standaloneTokenValid in httpServer.ts). Under `--host
+    // 0.0.0.0` the office stays readable from the LAN at this machine's own
+    // address; only the consent-bearing toggle needs the token.
+    const displayHost =
+      args.host === '0.0.0.0' || args.host === '::' || args.host === '' ? '127.0.0.1' : args.host;
+    console.log(
+      `\n  Pixel Agents server running at http://${displayHost}:${config.port}/?token=${config.token}\n`,
+    );
 
     // ── Graceful shutdown ──
     function shutdown(): void {

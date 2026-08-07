@@ -1,10 +1,11 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from '../../fixtures/standalone';
 import { sendHookEvent, sessionEndExit, sessionStartStartup } from '../../helpers/hooks';
 import { expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
 import type { RecordedServerMessage } from '../../helpers/standalone';
-import { setSettings } from '../../helpers/webview';
+import { openSettingsModal, setSettings } from '../../helpers/webview';
 
 test.describe('Standalone / hooks', () => {
   test('propagates hook-driven lifecycle into the browser UI @area:standalone', async ({
@@ -95,5 +96,75 @@ test.describe('Standalone / hooks', () => {
     await expectOverlayCount(page, 0);
     const sessionEndMessages = await standalone.drainMessages();
     expect(sessionEndMessages.some((message) => message.type === 'agentClosed')).toBe(true);
+  });
+
+  /**
+   * The standalone consent path end to end.
+   *
+   * The fixture spawns the CLI without a TTY and without seeded consent, so the
+   * first-run prompt is skipped and NOTHING is installed — while the
+   * `hooksEnabled` preference still defaults to true. That divergence is
+   * exactly what the checkbox used to lie about: it read "on" over an
+   * untouched ~/.claude/settings.json. It must now show the ACTUAL install
+   * state, and clicking it must be the consent grant.
+   */
+  test('the hooks checkbox reflects install state and its click is the consent grant @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    const settingsPath = path.join(standalone.tmpHome, '.claude', 'settings.json');
+    const configPath = path.join(standalone.tmpHome, '.pixel-agents', 'config.json');
+    const readConsent = (): boolean => {
+      try {
+        return (
+          (JSON.parse(fs.readFileSync(configPath, 'utf8')) as { hooksConsentGiven?: boolean })
+            .hooksConsentGiven === true
+        );
+      } catch {
+        return false;
+      }
+    };
+    const ourHookEventCount = (): number => {
+      try {
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as {
+          hooks?: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
+        };
+        return Object.values(settings.hooks ?? {}).filter((entries) =>
+          (entries ?? []).some((entry) =>
+            (entry.hooks ?? []).some((h) =>
+              h.command?.includes('.pixel-agents/hooks/claude-hook.js'),
+            ),
+          ),
+        ).length;
+      } catch {
+        return 0;
+      }
+    };
+
+    // Nothing installed, no consent — but the preference defaults true.
+    expect(fs.existsSync(settingsPath)).toBe(false);
+    expect(readConsent()).toBe(false);
+
+    // Everything below drives ONE open modal: the checkbox is clicked
+    // UNCONDITIONALLY rather than through setSettings(), whose setCheckbox only
+    // clicks when the current state differs from the target — if a hooksStatus
+    // ever raced ahead, that would click nothing and every assertion below
+    // would pass vacuously over a state this test never caused.
+    const settingsModal = await openSettingsModal(page);
+    const hooksCheckbox = settingsModal.locator('button', {
+      hasText: 'Instant Detection (Hooks)',
+    });
+    const isChecked = async (): Promise<boolean> =>
+      ((await hooksCheckbox.locator('span').last().textContent()) ?? '').trim().toLowerCase() ===
+      'x';
+
+    expect(await isChecked()).toBe(false);
+
+    // Clicking it IS the consent grant (the documented non-TTY route).
+    await hooksCheckbox.click();
+
+    await expect.poll(() => readConsent(), { timeout: 15_000 }).toBe(true);
+    await expect.poll(() => ourHookEventCount(), { timeout: 15_000 }).toBe(12);
+    await expect.poll(() => isChecked(), { timeout: 15_000 }).toBe(true);
   });
 });

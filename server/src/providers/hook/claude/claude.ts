@@ -159,7 +159,10 @@ function normalizeHookEvent(
       return { sessionId, event: { kind: 'turnEnd' } };
 
     case 'UserPromptSubmit':
-      // No normalized kind for user prompts yet; silently ignore.
+      // No normalized kind for user prompts yet; silently ignore. No longer
+      // installed (it forwarded the prompt text here only to be dropped), but a
+      // stale install keeps POSTing it until its next install/uninstall runs,
+      // so the drop must stay graceful.
       return null;
 
     case 'SubagentStart': {
@@ -234,7 +237,9 @@ function normalizeHookEvent(
         event: { kind: 'subagentTurnEnd', parentToolId: 'current', reason: 'completed' },
       };
 
-    // TaskCreated is informational; no AgentEvent shape fits it. Drop.
+    // TaskCreated is informational; no AgentEvent shape fits it. Drop. No
+    // longer installed for that reason, but stale installs still POST it —
+    // keep tolerating it here.
     case 'TaskCreated':
     default:
       return null;

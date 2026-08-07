@@ -100,9 +100,13 @@ async function verifyInstalledTarball(tarballPath) {
   const smokeProject = path.join(smokeRoot, 'project');
   fs.mkdirSync(smokeHome, { recursive: true });
   fs.mkdirSync(smokeProject, { recursive: true });
-  // The spawned CLI has no TTY, and without prior consent the first-run gate
-  // (rightly) skips hook installation there — seed consent so the smoke test
-  // can exercise the actual install path (mirrors server/__tests__/cli.test.ts).
+  // The spawned CLI has no TTY, so the first-run consent prompt for modifying
+  // ~/.claude/settings.json (rightly) skips the install and the Hook ON
+  // assertion below would time out forever. Seeding consent in the throwaway
+  // smoke HOME intentionally bypasses the interactive gate — this test verifies
+  // the install MACHINERY ships and works, not the gate (the gate's own
+  // behavior is pinned by server/__tests__/cli.test.ts and the consent e2e
+  // specs). Same shape as server/__tests__/cli.test.ts.
   fs.mkdirSync(path.join(smokeHome, '.pixel-agents'), { recursive: true });
   fs.writeFileSync(
     path.join(smokeHome, '.pixel-agents', 'config.json'),

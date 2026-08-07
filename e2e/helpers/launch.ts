@@ -45,6 +45,13 @@ export interface LaunchOptions {
   seedConfig?: unknown;
   /** Pre-seed `~/.pixel-agents/layout.json` (written before the panel loads). */
   seedLayout?: unknown;
+  /**
+   * Pre-seed `~/.claude/settings.json` (written before the extension activates).
+   * For consent specs that need an EXISTING hook install to be present at the
+   * moment the gate runs — the gate reads it during activation, so a test-body
+   * write would be too late.
+   */
+  seedClaudeSettings?: unknown;
 }
 
 /**
@@ -96,6 +103,19 @@ export async function launchVSCode(
   fs.writeFileSync(path.join(paDir, 'config.json'), JSON.stringify(seedConfig, null, 2));
   if (opts.seedLayout !== undefined) {
     fs.writeFileSync(path.join(paDir, 'layout.json'), JSON.stringify(opts.seedLayout, null, 2));
+  }
+  if (opts.seedClaudeSettings !== undefined) {
+    const claudeHomeDir = path.join(tmpHome, '.claude');
+    fs.mkdirSync(claudeHomeDir, { recursive: true });
+    // A string is written VERBATIM, so a spec can seed a deliberately
+    // unparseable file (JSON.stringify would turn it into a valid quoted
+    // string, i.e. the opposite of what such a test needs).
+    fs.writeFileSync(
+      path.join(claudeHomeDir, 'settings.json'),
+      typeof opts.seedClaudeSettings === 'string'
+        ? opts.seedClaudeSettings
+        : JSON.stringify(opts.seedClaudeSettings, null, 2),
+    );
   }
 
   // Enable Claude Agent Teams in the test workspace. Real Claude Code reads this
