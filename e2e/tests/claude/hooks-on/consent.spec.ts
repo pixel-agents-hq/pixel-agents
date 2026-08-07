@@ -14,9 +14,11 @@ import { getSettingChecked, setSettings } from '../../../helpers/webview';
  * without the key parses to false (server/src/configPersistence.ts), which is
  * exactly what a real first run looks like.
  *
- * The prompt is a non-modal notification, and these specs drive it through the
- * notification CENTER rather than the toast — see openConsentNotification for
- * why the toast is not a usable surface here.
+ * The prompt is a BLOCKING MODAL, so these specs address it directly by its
+ * dialog element — there is no bell and no notification row. It is reachable at
+ * all only because launch.ts seeds `window.dialogStyle: custom`, which renders
+ * VS Code's dialogs in the DOM instead of as native OS dialogs Playwright
+ * cannot see.
  *
  * The gate is the answer to a 1-star Marketplace review: Pixel Agents replaced
  * a user's whole settings.json with no prompt, no backup, and no disclosure.
@@ -31,24 +33,31 @@ const NO_CONSENT_CONFIG = {
 };
 
 /**
- * Open the notifications center (the statusbar bell) and return our consent
- * notification's row.
- *
- * The toast is not a usable surface for these specs, for two independent
- * reasons: the harness hides `.notifications-toasts` for the whole session
- * (video stability, e2e/helpers/webview.ts), and an Info toast auto-purges to
- * the bell after ~10 s anyway, which races multi-second fixture setup. Purging
- * does NOT close the notification — it parks in the center, fully expanded with
- * its buttons, until it is answered. The center is live-bound to the
- * notifications model, so a prompt that fires after the click still shows up.
+ * VS Code's in-DOM modal dialog (`window.dialogStyle: custom`, seeded in
+ * launch.ts). The consent prompt is the only dialog any spec raises.
  */
-async function openConsentNotification(window: Page): Promise<Locator> {
-  await window.locator('.statusbar-item[id="status.notifications"]').click();
-  const row = window
-    .locator('.notifications-center .notification-list-item')
-    .filter({ hasText: 'Pixel Agents' });
-  await expect(row).toBeVisible({ timeout: 30_000 });
-  return row;
+function consentModal(window: Page): Locator {
+  return window.locator('.monaco-dialog-box');
+}
+
+/** Wait for the first-run consent modal and return it. */
+async function openConsentModal(window: Page): Promise<Locator> {
+  const modal = consentModal(window);
+  await expect(modal).toBeVisible({ timeout: 30_000 });
+  return modal;
+}
+
+/**
+ * The dialog's answer buttons, in rendered order.
+ *
+ * Scoped to `.dialog-buttons` on purpose: the dialog also carries a close 'x'
+ * in `.dialog-toolbar` that VS Code marks `role="button"`, so an unscoped
+ * role query counts four and the assertion below could never distinguish a
+ * duplicate answer button from that toolbar affordance. VS Code renders each
+ * answer as an `<a role="button">`, not a `<button>` element.
+ */
+function answerButtons(modal: Locator): Locator {
+  return modal.locator('.dialog-buttons [role="button"]');
 }
 
 function settingsPath(tmpHome: string): string {
@@ -143,8 +152,8 @@ test.describe('Hooks consent gate', () => {
   }) => {
     const { window, frame, tmpHome, narrator } = pixelAgents;
 
-    narrator.step('waiting for the first-run consent notification');
-    const prompt = await openConsentNotification(window);
+    narrator.step('waiting for the first-run consent modal');
+    const prompt = await openConsentModal(window);
 
     // The disclosure is the point: what is written, what data moves, how to undo.
     const text = (await prompt.textContent()) ?? '';
@@ -153,12 +162,39 @@ test.describe('Hooks consent gate', () => {
     expect(text).toContain('.pixel-agents.backup');
     expect(text).toMatch(/tool inputs/);
     expect(text).toContain('127.0.0.1');
-    // The LAST sentence of the disclosure. VS Code truncates a notification
-    // message at 1000 chars with a trailing "...", so asserting the tail is what
-    // proves the whole disclosure reached the decision surface un-clipped —
-    // the property the modal used to make moot.
+    // The LAST sentence of the disclosure — asserted at the tail so a clipped
+    // or half-rendered body fails here rather than passing on its opening.
     expect(text).toContain('Instant Detection (Hooks)');
-    narrator.check('notification discloses event scope, payload destination, and how to remove');
+    // ...and it is in the modal's DETAIL element, not the headline: `detail` is
+    // the slot VS Code renders ONLY for a modal, so this is what proves the
+    // prompt is actually modal rather than a notification wearing the same copy.
+    const detail = (await prompt.locator('.dialog-message-detail').textContent()) ?? '';
+    expect(detail).toContain('.pixel-agents.backup');
+    expect(detail).toContain('Instant Detection (Hooks)');
+    narrator.check('modal discloses event scope, payload destination, and how to remove');
+
+    // Unmissable is the whole reason this is a modal: VS Code wraps the dialog
+    // in a blocking overlay that takes the workbench's pointer events, so the
+    // prompt cannot be ignored or auto-hidden the way a notification can.
+    await expect(window.locator('.monaco-dialog-modal-block')).toBeVisible();
+    narrator.check('the prompt blocks the workbench — it cannot be dismissed by ignoring it');
+
+    // THREE buttons, and exactly these three. VS Code synthesizes its own
+    // Cancel for a modal whose items are all plain strings, which shipped a
+    // fourth button that did precisely what "Not Now" did — two controls, one
+    // behavior, on the surface a Marketplace reviewer reads most closely.
+    // Marking "Not Now" as the close affordance makes VS Code use it AS the
+    // cancel button instead of inventing a duplicate.
+    //
+    // Asserted as an exact SET, not a count: a bare count of 3 still passes if
+    // a later edit swaps one button for another dismissal synonym. Sorted
+    // rather than ordered because the rendered order is platform-dependent —
+    // VS Code's rearrangeButtons reverses for mac/linux (primary last) and
+    // appends the cancel button on Windows, and this suite runs on all three.
+    expect((await answerButtons(prompt).allTextContents()).map((t) => t.trim()).sort()).toEqual(
+      ["Don't Ask Again", 'Install Hooks', 'Not Now'].sort(),
+    );
+    narrator.check('exactly three buttons — no duplicate Cancel beside Not Now');
 
     // Nothing has been written yet — the prompt precedes any modification.
     expect(fs.existsSync(settingsPath(tmpHome))).toBe(false);
@@ -184,11 +220,11 @@ test.describe('Hooks consent gate', () => {
   }) => {
     const { window, frame, tmpHome, narrator } = pixelAgents;
 
-    const prompt = await openConsentNotification(window);
+    const prompt = await openConsentModal(window);
 
     narrator.step('declining with Not Now');
     await prompt.getByRole('button', { name: 'Not Now' }).click();
-    // Answering closes the notification, in the center as well as the toast.
+    // Answering closes the dialog and releases the workbench.
     await expect(prompt).toBeHidden({ timeout: 15_000 });
 
     // Settle: an install, had it happened, would land well inside this window.
@@ -208,7 +244,7 @@ test.describe('Hooks consent gate', () => {
   }) => {
     const { window, tmpHome, narrator } = pixelAgents;
 
-    const prompt = await openConsentNotification(window);
+    const prompt = await openConsentModal(window);
 
     narrator.step("declining permanently with Don't Ask Again");
     await prompt.getByRole('button', { name: "Don't Ask Again" }).click();
@@ -218,6 +254,63 @@ test.describe('Hooks consent gate', () => {
     expect(fs.existsSync(settingsPath(tmpHome))).toBe(false);
     expect(readConsent(tmpHome)).toBe(false);
     narrator.check('hooksEnabled persisted false, settings.json untouched');
+  });
+
+  // Dismissing WITHOUT choosing. This used to be a fourth, synthesized Cancel
+  // button; now "Not Now" is the close affordance, so Escape and the dialog's
+  // close 'x' are the dismissal routes and no duplicate button exists.
+  //
+  // The routing is what makes this load-bearing rather than cosmetic. Marking
+  // an item as the close affordance CHANGES what a dismissal resolves to: VS
+  // Code routes Escape through the dialog's cancelId to that ITEM, so the
+  // handler now receives the "Not Now" object where it once received
+  // `undefined`. A dismissal must still behave like Not Now and NOT like
+  // "Don't Ask Again" — the difference is whether the user is ever asked
+  // again, and a dismissal that silently persisted hooks-off would strand them
+  // with the gate skipped forever.
+  test('dismissing the modal writes nothing, exactly like Not Now @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
+    const { window, tmpHome, narrator } = pixelAgents;
+
+    const prompt = await openConsentModal(window);
+    // No synthesized Cancel: "Not Now" carries the close affordance itself.
+    await expect(prompt.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
+
+    narrator.step('dismissing the modal with Escape — no button chosen');
+    await window.keyboard.press('Escape');
+    await expect(prompt).toBeHidden({ timeout: 15_000 });
+
+    // Settle: an install, had it happened, would land well inside this window.
+    await window.waitForTimeout(3_000);
+    expect(fs.existsSync(settingsPath(tmpHome))).toBe(false);
+    expect(readConsent(tmpHome)).toBe(false);
+    // The load-bearing half: dismissal must NOT persist hooks-off, or the next
+    // startup skips the gate and the user is never asked again.
+    expect(readHooksEnabled(tmpHome)).not.toBe(false);
+    narrator.check('settings.json never created, consent ungranted, hooks-off not persisted');
+  });
+
+  // The other dismissal route, driven separately because it reaches the same
+  // handler by a DIFFERENT path: the toolbar 'x' is its own action, not the
+  // keybinding Escape uses. Both must land on Not Now, so both are exercised —
+  // a close 'x' wired to the wrong index would persist hooks-off silently.
+  test('the close x writes nothing, exactly like Not Now @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
+    const { window, tmpHome, narrator } = pixelAgents;
+
+    const prompt = await openConsentModal(window);
+
+    narrator.step("dismissing the modal with its close 'x' — no button chosen");
+    await prompt.locator('.dialog-toolbar [role="button"]').first().click();
+    await expect(prompt).toBeHidden({ timeout: 15_000 });
+
+    await window.waitForTimeout(3_000);
+    expect(fs.existsSync(settingsPath(tmpHome))).toBe(false);
+    expect(readConsent(tmpHome)).toBe(false);
+    expect(readHooksEnabled(tmpHome)).not.toBe(false);
+    narrator.check('settings.json never created, consent ungranted, hooks-off not persisted');
   });
 });
 
@@ -252,22 +345,19 @@ test.describe('Hooks consent gate / pre-consent install', () => {
     expect(readSettings(tmpHome).permissions).toEqual({ allow: ['Bash(ls:*)'] });
     narrator.check('migrated to 12 events; third-party hook and unrelated keys survived');
 
-    // The whole point: nothing was ever asked. Opening the center is what makes
-    // this a real assertion rather than a check against a surface that is not
-    // there — a consent notification parks in the center, fully expanded, until
-    // it is answered, so an absent row here means no prompt was raised. Matched
-    // on the tail of the shared disclosure block, which EVERY consent variant
-    // carries, so a re-introduced prompt of any wording fails this.
-    narrator.step('checking the notification center for a consent prompt');
-    await window.locator('.statusbar-item[id="status.notifications"]').click();
-    await expect(window.locator('.notifications-center')).toBeVisible({ timeout: 15_000 });
-    await expect(
-      window
-        .locator('.notifications-center .notification-list-item')
-        .filter({ hasText: /remove the hooks at any time/i }),
-    ).toHaveCount(0);
-    narrator.check('no consent notification was ever raised');
-    await window.keyboard.press('Escape'); // the center must not cover the panel
+    // The whole point: nothing was ever asked. A consent modal BLOCKS until it
+    // is answered, so it would still be on screen right now — an absent dialog
+    // here means none was ever raised. Two ways this fails if a prompt comes
+    // back: the dialog assertion below, and the migration poll above, which
+    // could not have reached 12 with the install gated behind an unanswered
+    // prompt. Matched on the dialog element and again on the tail of the shared
+    // disclosure block, which EVERY consent variant carries, so a re-introduced
+    // prompt of any wording fails this.
+    narrator.step('checking for a consent prompt');
+    await expect(consentModal(window)).toHaveCount(0);
+    await expect(window.locator('.monaco-dialog-modal-block')).toHaveCount(0);
+    await expect(window.getByText(/remove the hooks at any time/i)).toHaveCount(0);
+    narrator.check('no consent prompt was ever raised');
 
     // Migrated hooks are live, and the checkbox says so.
     await expect

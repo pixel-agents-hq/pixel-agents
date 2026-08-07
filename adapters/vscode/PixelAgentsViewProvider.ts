@@ -34,7 +34,10 @@ import {
   writeLayoutToFile,
 } from '../../server/src/layoutPersistence.js';
 import { PathSet } from '../../server/src/pathKey.js';
-import { CONSENT_INSTALL_MESSAGE } from '../../server/src/providers/hook/claude/consentCopy.js';
+import {
+  CONSENT_DISCLOSURE,
+  CONSENT_INSTALL_HEADLINE,
+} from '../../server/src/providers/hook/claude/consentCopy.js';
 import { claudeProvider, copyHookScript } from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
@@ -330,34 +333,56 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
    *  nothing they do not already have. (This is deliberately NOT the general
    *  rule: consent for a fresh install is still asked for, in full, below.)
    *
-   *  A non-modal notification, carrying the FULL disclosure in its message. A
-   *  startup consent gate must not block the workbench, and it does not have to:
-   *  a notification with buttons renders permanently expanded (`canCollapse` is
-   *  `!hasActions`) with no line clamp, and truncates only at 1000 characters —
-   *  which the composed message stays under, pinned by consentCopy.test.ts. The
-   *  facts therefore live in the message itself; a "Details" affordance would
-   *  put the disclosure one click away, which is the gap this gate exists to
-   *  close.
+   *  A BLOCKING MODAL, not a notification: this is the one decision that must
+   *  not be missable. A notification can be ignored or auto-hidden to the bell
+   *  and the write it authorizes never questioned again; a modal cannot. The
+   *  headline is the first argument and the full disclosure is `detail` —
+   *  VS Code renders `detail` only for modal messages (MessageOptions), so the
+   *  facts reach the decision surface as the modal's body.
    *
-   *  The Info toast auto-hides after ~10 s WITHOUT closing the notification: it
-   *  parks in the notification bell with its buttons intact and this promise
-   *  still pending. So an unanswered or dismissed prompt writes nothing and
-   *  asks again next startup; only the explicit "Don't Ask Again" persists
-   *  hooks-off. */
+   *  THREE buttons, because "Not Now" is also the close affordance. VS Code
+   *  synthesizes its own Cancel button only when no item claims that role
+   *  (MainThreadMessageService._showModalMessage), and passing three bare
+   *  strings did exactly that: the synthesized Cancel resolved to `undefined`
+   *  and took the Not Now path — a fourth button that did, precisely, what the
+   *  third one did. Marking "Not Now" as the close affordance makes VS Code use
+   *  it AS the cancel button instead of inventing a duplicate.
+   *
+   *  Dismissal still writes nothing, but it no longer arrives as `undefined`.
+   *  Escape resolves through the dialog's cancelId to the close-affordance
+   *  ITEM, so a dismissal now returns the "Not Now" object; `undefined` remains
+   *  reachable (a dialog torn down without an answer). Both are handled by the
+   *  same fail-closed shape below: only an exact match writes, so anything
+   *  else — either dismissal form included — falls through to writing NOTHING
+   *  and asking again next startup. Only "Don't Ask Again" persists hooks-off. */
   private async installHooksWithConsent(port: number, token: string): Promise<void> {
     if (!readConfig().hooksConsentGiven) {
       if (await claudeProvider.areHooksInstalled()) {
         // Already installed and already firing: grant and migrate silently.
         grantHooksConsent();
       } else {
+        // One MessageItem per button, matched by REFERENCE below. The overloads
+        // are homogeneous (`T extends string` | `T extends MessageItem`), so
+        // marking one item forces all three — and identity matching keeps each
+        // title a single literal, with no second copy to drift out of sync.
+        const install = { title: 'Install Hooks' };
+        // `satisfies` is the typo guard on the one property carrying the whole
+        // point of this shape: inference would accept `isCloseAffordence` as
+        // just another field and silently restore the duplicate button.
+        const notNow = {
+          title: 'Not Now',
+          isCloseAffordance: true,
+        } satisfies vscode.MessageItem;
+        const dontAskAgain = { title: "Don't Ask Again" };
         const choice = await vscode.window.showInformationMessage(
-          CONSENT_INSTALL_MESSAGE,
-          'Install Hooks',
-          'Not Now',
-          "Don't Ask Again",
+          CONSENT_INSTALL_HEADLINE,
+          { modal: true, detail: CONSENT_DISCLOSURE },
+          install,
+          notNow,
+          dontAskAgain,
         );
-        if (choice !== 'Install Hooks') {
-          if (choice === "Don't Ask Again") {
+        if (choice !== install) {
+          if (choice === dontAskAgain) {
             this.adapter.setSetting(GLOBAL_KEY_HOOKS_ENABLED, false);
             this.runtime.hooksEnabled.current = false;
           }
