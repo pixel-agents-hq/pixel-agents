@@ -435,7 +435,36 @@ async function setCheckbox(modal: Locator, label: string, checked: boolean): Pro
   }
 }
 
+/**
+ * Width the webview surface needs for the Settings modal to fit inside it.
+ *
+ * The modal is `position: fixed`, centered, and ~440 px wide, so in a narrower
+ * surface it overflows symmetrically and its edges — including the close 'x' —
+ * land OUTSIDE the iframe, where VS Code's editor watermark takes the pointer.
+ * Measured failure: panel 300 px, modal x = -70 px, close button at page
+ * x ≈ 630 against an iframe spanning 300–600.
+ */
+const SETTINGS_MODAL_MIN_SURFACE_WIDTH_PX = 520;
+
+/**
+ * Make sure the Settings modal will fit in the surface before opening it.
+ *
+ * The fixture arranges the layout once, before the test body, but that arrange
+ * can fail to settle (the sash drag is ±px sensitive and gives up after its
+ * repair rounds, warning as it does), leaving the panel narrower than target.
+ * Repair here, at the one seam every Settings interaction passes through,
+ * rather than in each spec. A standalone browser Page is always wide enough,
+ * and an already-arranged panel costs one evaluate.
+ */
+async function ensureSettingsModalFits(surface: WebviewSurface): Promise<void> {
+  if (!('parentFrame' in surface)) return; // a Page: standalone browser, full width
+  const width = await surface.evaluate(() => globalThis.innerWidth);
+  if (width >= SETTINGS_MODAL_MIN_SURFACE_WIDTH_PX) return;
+  await arrangeReviewLayout(surface.page());
+}
+
 export async function openSettingsModal(frame: WebviewSurface): Promise<Locator> {
+  await ensureSettingsModalFits(frame);
   const settingsButton = frame.locator('button', { hasText: 'Settings' });
   await expect(settingsButton).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
   await settingsButton.click();

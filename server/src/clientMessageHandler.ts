@@ -38,6 +38,14 @@ export interface ClientMessageContext {
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
   /** Reload assets after an external-asset-directory change. Needs the dist root, known only to cli.ts. */
   onReloadAssets?: ReloadAssetsSideEffect;
+  /**
+   * Whether this client may send messages that reach OUTSIDE `~/.pixel-agents/`
+   * — today only `setHooksEnabled`, which grants machine-wide consent to modify
+   * `~/.claude/settings.json`. Decided per-connection by the transport
+   * (httpServer's standaloneTokenValid, or the embedded Bearer token); defaults
+   * to false so a caller that forgets to pass it gets the safe answer.
+   */
+  privileged?: boolean;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -160,14 +168,35 @@ export function handleClientMessage(
 
     case 'setHooksEnabled': {
       const enabled = msg.enabled as boolean;
-      adapter?.setSetting(KEY_HOOKS_ENABLED, enabled);
-      if (runtime) runtime.hooksEnabled.current = enabled;
-      // After the install/uninstall side effect settles, report the ACTUAL
-      // install state — the toggle expresses intent, not outcome (the
-      // installer refuses to touch an unparseable settings.json).
+      if (!ctx.privileged) {
+        // No server token on this connection: the toggle would grant durable
+        // consent to modify ~/.claude/settings.json on THIS machine, and only
+        // the operator — who was handed the tokened URL — gets to decide that.
+        // Answer with the truth so the checkbox still shows reality instead of
+        // silently appearing to have worked.
+        console.warn(
+          '[Pixel Agents] Ignoring setHooksEnabled from an untokened client — installing hooks needs approval from this machine (open the tokened URL the CLI printed).',
+        );
+        void claudeProvider
+          .areHooksInstalled()
+          .then((installed) => send({ type: 'hooksStatus', installed }));
+        break;
+      }
+      // The preference is persisted only AFTER the side effect settles, and
+      // only when it agrees. Writing it first strands the user when the
+      // uninstall fails: the entries stay on disk and keep firing, while the
+      // persisted hooks-off makes the next startup skip the consent/install
+      // path entirely — never asked again, no route left to remove them.
       void (async () => {
         await ctx.onSetHooksEnabled?.(enabled);
-        send({ type: 'hooksStatus', installed: await claudeProvider.areHooksInstalled() });
+        const installed = await claudeProvider.areHooksInstalled();
+        if (installed === enabled) {
+          adapter?.setSetting(KEY_HOOKS_ENABLED, enabled);
+          if (runtime) runtime.hooksEnabled.current = enabled;
+        }
+        // Always report the ACTUAL install state — the toggle expresses intent,
+        // not outcome (the installer refuses to touch an unparseable file).
+        send({ type: 'hooksStatus', installed });
       })();
       break;
     }
