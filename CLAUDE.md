@@ -26,8 +26,9 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
   src/
     providers/hook/claude/           Reference HookProvider — only place that knows Claude specifics
       claude.ts                      normalizeHookEvent for 11 Claude events, formatToolStatus, file fallback
-      claudeTeamProvider.ts          TeamProvider: reads ~/.claude/teams/<name>/config.json
-      claudeHookInstaller.ts         Atomic install/uninstall in ~/.claude/settings.json
+      claudeTeamProvider.ts          TeamProvider: reads <config dir>/teams/<name>/config.json
+      claudeHookInstaller.ts         Atomic install/uninstall in <config dir>/settings.json
+      claudeConfigDir.ts             Config dir resolution (setting → CLAUDE_CONFIG_DIR → ~/.claude) + input validation
       constants.ts                   Claude hook event names, script path
       hooks/claude-hook.ts           Hook script (CJS+shebang, bundled to dist/hooks/claude-hook.js)
     providers/index.ts               Provider registry
@@ -41,7 +42,8 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     server.ts                        Top-level composition
     cli.ts                           npx pixel-agents entry (npm bin)
     fileStateAdapter.ts              Namespaced ~/.pixel-agents/ persistence
-    configPersistence.ts             { vscode, standalone, externalAssetDirectories }
+    configPersistence.ts             { vscode, standalone, externalAssetDirectories, claudeConfigDir }
+    claudeConfigDirBoot.ts           Boot-time config dir override + stale-hook cleanup from the old dir
     layoutPersistence.ts             ~/.pixel-agents/layout.json with atomic tmp+rename
     fileWatcher.ts                   Hybrid fs.watch + 500ms polling, JSONL line buffering, /clear detection
     transcriptParser.ts              JSONL parsing for heuristic / file-fallback mode
@@ -223,6 +225,12 @@ export type TransportState = 'connecting' | 'connected' | 'reconnecting' | 'disc
 
 `AgentEvent.kind` values: `toolStart`, `toolEnd`, `turnEnd`, `subagentStart`, `subagentEnd`, `subagentTurnEnd`, `progress`, `permissionRequest`, `sessionStart`, `sessionEnd`. The runtime dispatches on `kind`, never on CLI-specific tool names.
 
+### Claude config directory
+
+Every path the Claude provider reads or writes under `~/.claude` — `projects/` transcripts, `teams/<name>/config.json`, hook entries in `settings.json` — goes through `getClaudeConfigDir()` (`server/src/providers/hook/claude/claudeConfigDir.ts`). Precedence: persisted `claudeConfigDir` setting > `CLAUDE_CONFIG_DIR` env var > `~/.claude`. Set from the Settings modal (blank = fall through to the next source); the typed value is trimmed, a leading `~` expanded, `path.normalize`d, and must be absolute and not an already-existing non-directory — anything else is rejected server-side with no write and no reply. Every `~/.claude` path elsewhere in this document is the default, not a hardcode.
+
+**A change applies on restart, not live.** Saving only persists the value; the live override is set once per process by `prepareClaudeConfigDirForBoot(namespace)` (`server/src/claudeConfigDirBoot.ts`), called before any code path can reach `installHooks()`. That same call uninstalls hooks this surface left in a previously-recorded directory (`claudeConfigDirHooksInstalledAt`, per-namespace so VS Code and standalone never clean up each other's hooks), and `recordClaudeConfigDirHooksInstalled(namespace)` must run after **every** successful `installHooks()` on that surface — boot-time install and the settings-modal hooks toggle both. `buildLaunchCommand` puts `CLAUDE_CONFIG_DIR` in the launched terminal's env whenever the resolved source isn't `default`, so self-launched agents read the same directory Pixel Agents watches.
+
 ### TeamProvider (Lead + Teammates)
 
 Optional extension for CLIs that support team workflows (Claude Agent Teams today). Semantic queries (`discoverTeammates`, `getTeamMembers`, `getTeamMetadataForSession`, `extractTeammateNameFromEvent`, `isTeammateSpawnCall`) — providers choose their own storage strategy.
@@ -308,7 +316,7 @@ Per-agent runtime data: provider reference, session key, transcript-fallback fie
 
 ```
 ~/.pixel-agents/
-  config.json              { vscode, standalone, externalAssetDirectories }
+  config.json              { vscode, standalone, externalAssetDirectories, claudeConfigDir }
   vscode-state.json        { agents, seats }
   standalone-state.json    { agents, seats }
   layout.json              OfficeLayout (shared across surfaces)
@@ -316,7 +324,7 @@ Per-agent runtime data: provider reference, session key, transcript-fallback fie
   hooks/claude-hook.js     Bundled hook script (CJS, shebang)
 ```
 
-`FileStateAdapter({ namespace })` backs both runtimes. Per-namespace settings: `soundEnabled`, `lastSeenVersion`, `alwaysShowLabels`, `watchAllSessions`, `hooksEnabled`, `hooksInfoShown`. Running both surfaces in parallel never clobbers either.
+`FileStateAdapter({ namespace })` backs both runtimes. Per-namespace settings: `soundEnabled`, `lastSeenVersion`, `alwaysShowLabels`, `watchAllSessions`, `hooksEnabled`, `hooksInfoShown`, `claudeConfigDirHooksInstalledAt`. Running both surfaces in parallel never clobbers either.
 
 `migrateVsCodeState` (VS Code adapter only) walks each known legacy key once with **verify-before-clear** semantics: write to file, read back, only then clear the legacy key. While anything remains unmigrated, activation shows a non-blocking warning.
 
@@ -324,7 +332,7 @@ Layout writes are atomic via tmp + rename. Cross-window watching is hybrid (`fs.
 
 ## Agent Status Tracking
 
-JSONL transcripts at `~/.claude/projects/<project-hash>/<session-id>.jsonl`. Project hash = workspace path with `:`/`\`/`/` → `-`.
+JSONL transcripts at `~/.claude/projects/<project-hash>/<session-id>.jsonl` — `<resolved config dir>/projects/...` when the Claude config directory is overridden (see "Claude config directory"). Project hash = workspace path with `:`/`\`/`/` → `-`.
 
 **JSONL record types**: `assistant` (tool_use or thinking), `user` (tool_result or text prompt), `system` with `subtype: "turn_duration"` (reliable turn-end signal), `progress` with `data.type`: `agent_progress` (sub-agent tool_use/tool_result, non-exempt tools trigger permission timers), `bash_progress` (Bash output — restarts permission timer), `mcp_progress` (MCP tool — same timer restart). Also observed but not tracked: `file-history-snapshot`, `queue-operation`.
 
