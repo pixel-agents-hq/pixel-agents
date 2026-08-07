@@ -73,9 +73,11 @@ export function SettingsModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [assetDirDraft, setAssetDirDraft] = useState('');
   const [claudeConfigDirDraft, setClaudeConfigDirDraft] = useState(claudeConfigDir);
+  const [claudeConfigDirError, setClaudeConfigDirError] = useState('');
 
   useEffect(() => {
     setClaudeConfigDirDraft(claudeConfigDir);
+    setClaudeConfigDirError('');
   }, [claudeConfigDir]);
 
   const draftTrimmed = claudeConfigDirDraft.trim();
@@ -87,6 +89,12 @@ export function SettingsModal({
     draftTrimmed === ''
       ? resolvedClaudeConfigDirSource === 'setting'
       : draftTrimmed !== resolvedClaudeConfigDir;
+  // pendingDirExists describes the SAVED value, so it says nothing about a
+  // draft the user is still typing. Suppress the sub-clause until the draft
+  // has been blurred/saved and the server has echoed it back as
+  // claudeConfigDir -- otherwise typing "/" flashes an existence verdict
+  // that belongs to a completely different path.
+  const draftMatchesSaved = draftTrimmed === claudeConfigDir;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings">
@@ -199,27 +207,43 @@ export function SettingsModal({
         <div className="flex items-center gap-4">
           <input
             type="text"
+            aria-label="Claude config directory"
             value={claudeConfigDirDraft}
             placeholder="Claude config directory (blank = default)"
-            onChange={(e) => setClaudeConfigDirDraft(e.target.value)}
+            onChange={(e) => {
+              setClaudeConfigDirDraft(e.target.value);
+              // Clear the rejection notice the moment the user starts fixing it.
+              setClaudeConfigDirError('');
+            }}
             onBlur={() => {
+              // Nothing to save when the field still holds the persisted value;
+              // tabbing through an untouched field shouldn't cost a round trip.
+              if (draftMatchesSaved) {
+                setClaudeConfigDirError('');
+                return;
+              }
               // Light pre-check only -- authoritative validation is server-side
               // (see clientMessageHandler.ts's applySetClaudeConfigDir), since
               // expanding a leading ~ requires knowing the SERVER's home
               // directory, which the browser tab this modal renders in
-              // doesn't have access to.
-              if (
-                draftTrimmed !== '' &&
-                !draftTrimmed.startsWith('/') &&
-                !draftTrimmed.startsWith('~')
-              ) {
+              // doesn't have access to. Accepts POSIX roots, a bare/leading
+              // `~`, a Windows drive letter (`C:\` or `C:/`), and UNC
+              // (`\\server\share`) -- the shapes path.isAbsolute() can call
+              // absolute on either platform.
+              const looksAbsolute = /^(\/|~$|~[/\\]|[A-Za-z]:[/\\]|\\\\)/.test(draftTrimmed);
+              if (draftTrimmed !== '' && !looksAbsolute) {
+                setClaudeConfigDirError('Must be an absolute path');
                 return;
               }
+              setClaudeConfigDirError('');
               transport.send({ type: 'setClaudeConfigDir', claudeConfigDir: draftTrimmed });
             }}
             className="flex-1 min-w-0 text-xs py-2 px-4 bg-bg border-2 border-border rounded-none text-text"
           />
         </div>
+        {claudeConfigDirError !== '' && (
+          <span className="text-xs text-status-error">{claudeConfigDirError}</span>
+        )}
         {resolvedClaudeConfigDir !== '' && (
           <span className="text-xs text-text-muted">
             {resolvedClaudeConfigDirSource === 'setting' &&
@@ -234,7 +258,7 @@ export function SettingsModal({
         {needsRestart && (
           <span className="text-xs text-text-muted">
             Restart Pixel Agents to apply
-            {!pendingDirExists && ' — this directory does not exist yet'}
+            {draftMatchesSaved && !pendingDirExists && ' — this directory does not exist yet'}
           </span>
         )}
       </div>
