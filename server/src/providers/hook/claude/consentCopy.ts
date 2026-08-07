@@ -1,7 +1,12 @@
 /**
  * Disclosure text for the hooks consent gate, shared by both surfaces (the VS
- * Code notification and the standalone CLI prompt) so neither can drift into
- * asking for approval on weaker terms than the other.
+ * Code modal and the standalone CLI prompt) so neither can drift into asking
+ * for approval on weaker terms than the other.
+ *
+ * Two pieces, because a VS Code modal has two slots: the HEADLINE is the
+ * message argument (rendered bold) and the DISCLOSURE is `detail` (the body).
+ * The CLI joins them itself. Both surfaces must render both pieces — every
+ * disclosure fact lives in one or the other, never in a surface's own copy.
  *
  * The event count is interpolated from CLAUDE_HOOK_EVENTS, never written out:
  * a hardcoded number silently becomes a lie the next time the list changes.
@@ -41,24 +46,15 @@ export const CONSENT_FACT_REVERSIBLE =
 export const CONSENT_INSTALL_HEADLINE =
   'To show your agents in real time, Pixel Agents needs to add its hooks to ~/.claude/settings.json.';
 
-/** The three disclosure facts, in order, as one block. */
+/** The three disclosure facts, in order, as one block.
+ *
+ *  This is the modal's `detail` and the body of the CLI prompt. VS Code sets it
+ *  with `innerText` and applies no length cap to a dialog's detail (verified in
+ *  the pinned 1.129.1 bundle), so the block renders in full with its paragraph
+ *  breaks intact — no "Details" affordance, which would put the disclosure one
+ *  click away from the decision it is there to inform. */
 export const CONSENT_DISCLOSURE = [
   CONSENT_FACT_WHAT,
   CONSENT_FACT_DATA,
   CONSENT_FACT_REVERSIBLE,
 ].join('\n\n');
-
-/**
- * The complete non-modal notification message.
- *
- * VS Code flattens newlines to spaces and hard-truncates a notification message
- * at 1000 chars (`NotificationViewItem.MAX_MESSAGE_LENGTH`,
- * src/vs/workbench/common/notifications.ts @ 1.129.1) — and a notification WITH
- * BUTTONS renders permanently expanded (`canCollapse = !hasActions`) with no
- * line clamp, so under that cap the full disclosure is legible at the decision
- * point. That is why the facts live in the message itself rather than behind a
- * modal or a "Details" click: a disclosure one click away is the gap this
- * prompt exists to close. The cap is pinned by consentCopy.test.ts; grow the
- * copy past it and the notification silently ends in "...".
- */
-export const CONSENT_INSTALL_MESSAGE = `${CONSENT_INSTALL_HEADLINE}\n\n${CONSENT_DISCLOSURE}`;
