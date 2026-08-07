@@ -85,7 +85,6 @@ function App() {
     ghostHeadlessAgents,
     setGhostHeadlessAgents,
     hooksEnabled,
-    setHooksEnabled,
     hooksInstalled,
     hooksInfoShown,
     areaMappings,
@@ -532,11 +531,17 @@ function App() {
           setWatchAllSessions(newVal);
           transport.send({ type: 'setWatchAllSessions', enabled: newVal });
         }}
-        hooksEnabled={hooksEnabled}
+        hooksInstalled={hooksInstalled}
         onToggleHooksEnabled={() => {
-          const newVal = !hooksEnabled;
-          setHooksEnabled(newVal);
-          transport.send({ type: 'setHooksEnabled', enabled: newVal });
+          // Toggle the DISPLAYED state (actual install), not the preference:
+          // when the two disagree — preference on, nothing installed because
+          // consent is still pending — toggling the preference would invert
+          // the user's intent and turn hooks OFF when they asked for ON.
+          // Deliberately no local optimistic update: both backends answer with
+          // a truthful hooksStatus, which is the only thing this checkbox
+          // renders, so it lands correct rather than flickering right-then-wrong
+          // when an install fails.
+          transport.send({ type: 'setHooksEnabled', enabled: !hooksInstalled });
         }}
         showAreas={showAreas}
         onToggleShowAreas={onToggleShowAreas}

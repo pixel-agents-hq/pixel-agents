@@ -74,6 +74,14 @@ export const MAX_PORT = 65_535;
  *  tolerate unknown/missing fields (see ServerConfig.debugLog precedent). */
 export const SERVER_REGISTRY_PROTOCOL_VERSION = 1;
 
+// ── WebSocket close codes (application range 4000-4999) ────
+/** Embedded mode: Bearer token missing or wrong. */
+export const WS_CLOSE_UNAUTHORIZED = 4001;
+/** Standalone mode: the handshake's Origin is not this server's own origin.
+ *  WebSocket connects bypass CORS, so this is the only thing standing between
+ *  a drive-by web page and the privileged client-message channel. */
+export const WS_CLOSE_FORBIDDEN_ORIGIN = 4003;
+
 export const HOOK_EVENT_BUFFER_MS = 5_000;
 /** Grace period after SessionEnd(reason=clear/resume) before triggering onSessionEnd.
  *  /clear and /resume fire SessionEnd then SessionStart within ms. This timeout is a

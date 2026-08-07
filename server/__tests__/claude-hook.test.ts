@@ -90,18 +90,15 @@ describe('claude-hook.js integration', () => {
     }
   });
 
-  // Skip if hook script not built
-  function skipIfNotBuilt(): void {
-    if (!fs.existsSync(HOOK_SCRIPT)) {
-      console.warn(`Skipping: ${HOOK_SCRIPT} not found. Run 'npm run compile' first.`);
-    }
-  }
+  /** These tests spawn the BUNDLED hook script, so they need `npm run compile`
+   *  to have run. Reported as a loud skip rather than an early `return`, which
+   *  Vitest shows as PASSED with no message — a false green that hid the fact
+   *  that nothing had been exercised at all. */
+  const notBuilt = !fs.existsSync(HOOK_SCRIPT);
+  const itBuilt = it.skipIf(notBuilt);
 
   // 1. Script reads stdin and POSTs to server
-  it('reads stdin and POSTs to server', async () => {
-    skipIfNotBuilt();
-    if (!fs.existsSync(HOOK_SCRIPT)) return;
-
+  itBuilt('reads stdin and POSTs to server', async () => {
     const received: string[] = [];
     const server = http.createServer((req, res) => {
       let body = '';
@@ -127,10 +124,7 @@ describe('claude-hook.js integration', () => {
   });
 
   // 2. Script exits 0 on missing server.json
-  it('exits 0 when server.json is missing', async () => {
-    skipIfNotBuilt();
-    if (!fs.existsSync(HOOK_SCRIPT)) return;
-
+  itBuilt('exits 0 when server.json is missing', async () => {
     // Don't write server.json
     const { code } = await runHookScript(
       JSON.stringify({ session_id: 'x', hook_event_name: 'Stop' }),
@@ -139,20 +133,14 @@ describe('claude-hook.js integration', () => {
   });
 
   // 5. Script exits 0 on invalid stdin
-  it('exits 0 on invalid stdin', async () => {
-    skipIfNotBuilt();
-    if (!fs.existsSync(HOOK_SCRIPT)) return;
-
+  itBuilt('exits 0 on invalid stdin', async () => {
     writeServerJson(9999, 'tok');
     const { code } = await runHookScript('not json at all!!!');
     expect(code).toBe(0);
   });
 
   // 6. Script handles server timeout
-  it('exits within 5s when server does not respond', async () => {
-    skipIfNotBuilt();
-    if (!fs.existsSync(HOOK_SCRIPT)) return;
-
+  itBuilt('exits within 5s when server does not respond', async () => {
     // Start a server that never responds
     const server = http.createServer(() => {
       // intentionally never respond
@@ -172,10 +160,7 @@ describe('claude-hook.js integration', () => {
   });
 
   // 7. Multi-server fan-out: one event reaches every live registry entry
-  it('fans out to every live server in the registry', async () => {
-    skipIfNotBuilt();
-    if (!fs.existsSync(HOOK_SCRIPT)) return;
-
+  itBuilt('fans out to every live server in the registry', async () => {
     const a = await startRecordingServer();
     const b = await startRecordingServer();
     // Same real PID for both (this test process) is fine -- the registry
@@ -196,10 +181,7 @@ describe('claude-hook.js integration', () => {
   });
 
   // 8. Dead-pid registry entries are skipped, not delivered to, and don't block live ones
-  it('skips a dead-pid registry entry and still delivers to the live one', async () => {
-    skipIfNotBuilt();
-    if (!fs.existsSync(HOOK_SCRIPT)) return;
-
+  itBuilt('skips a dead-pid registry entry and still delivers to the live one', async () => {
     const live = await startRecordingServer();
     writeRegistryEntry(process.pid, live.port, 'token-live');
     // A stale entry for a PID that is certainly not alive. Port 9999 is
@@ -229,10 +211,7 @@ describe('claude-hook.js integration', () => {
   });
 
   // 9. A structurally malformed live-pid entry never poisons healthy fan-out
-  it('skips an invalid live-pid entry and still delivers to the healthy server', async () => {
-    skipIfNotBuilt();
-    if (!fs.existsSync(HOOK_SCRIPT)) return;
-
+  itBuilt('skips an invalid live-pid entry and still delivers to the healthy server', async () => {
     const healthy = await startRecordingServer();
     writeRegistryEntry(process.pid, 70_000, 'invalid-port');
     writeRegistryEntry(process.pid, healthy.port, 'healthy-token');
@@ -255,10 +234,7 @@ describe('claude-hook.js integration', () => {
   });
 
   // 10. Registry present but empty falls back to the legacy server.json
-  it('falls back to legacy server.json when the registry directory is empty', async () => {
-    skipIfNotBuilt();
-    if (!fs.existsSync(HOOK_SCRIPT)) return;
-
+  itBuilt('falls back to legacy server.json when the registry directory is empty', async () => {
     fs.mkdirSync(path.join(tmpBase, '.pixel-agents', 'servers'), { recursive: true });
     const legacy = await startRecordingServer();
     writeServerJson(legacy.port, 'legacy-token');
@@ -274,10 +250,7 @@ describe('claude-hook.js integration', () => {
 
   // 11. Fan-out delivers in parallel, not sequentially: two unresponsive
   // servers must not make the script wait ~2x the per-server timeout.
-  it('fans out to multiple unresponsive servers in parallel, not sequentially', async () => {
-    skipIfNotBuilt();
-    if (!fs.existsSync(HOOK_SCRIPT)) return;
-
+  itBuilt('fans out to multiple unresponsive servers in parallel, not sequentially', async () => {
     const hang = (): Promise<{ port: number; close: () => void }> => {
       const server = http.createServer(() => {
         // intentionally never respond

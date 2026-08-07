@@ -301,6 +301,14 @@ async function getPanelRect(window: Page): Promise<PanelRect | null> {
 export async function arrangeReviewLayout(window: Page): Promise<void> {
   const isDarwin = process.platform === 'darwin';
 
+  // A modal dialog (the first-run consent prompt) owns focus behind a
+  // full-window blocking overlay, so neither the hide chords nor the sash drag
+  // can land — every round churns against the overlay, then reports "did not
+  // settle", which is a FALSE alarm that would mask a real layout failure in
+  // some other spec. Bail out and let ensureSettingsModalFits() repair the
+  // layout once the test body has answered the dialog.
+  if (await isModalDialogOpen(window)) return;
+
   const isPartVisible = (selector: string): Promise<boolean> =>
     window.evaluate((sel) => {
       const el = document.querySelector<HTMLElement>(sel);
@@ -435,7 +443,45 @@ async function setCheckbox(modal: Locator, label: string, checked: boolean): Pro
   }
 }
 
+/** VS Code's custom modal dialog (rendered in-DOM by `window.dialogStyle: custom`). */
+async function isModalDialogOpen(window: Page): Promise<boolean> {
+  return (await window.locator('.monaco-dialog-box').count()) > 0;
+}
+
+/**
+ * Width the webview surface needs for the Settings modal to fit inside it.
+ *
+ * The modal is `position: fixed`, centered, and ~440 px wide, so in a narrower
+ * surface it overflows symmetrically and its edges — including the close 'x' —
+ * land OUTSIDE the iframe, where VS Code's editor watermark takes the pointer.
+ * Measured failure: panel 300 px, modal x = -70 px, close button at page
+ * x ≈ 630 against an iframe spanning 300–600.
+ */
+const SETTINGS_MODAL_MIN_SURFACE_WIDTH_PX = 520;
+
+/**
+ * Make sure the Settings modal will fit in the surface before opening it.
+ *
+ * The fixture arranges the layout once, before the test body, but it can reach
+ * the body un-arranged two ways: the sash drag is ±px sensitive and gives up
+ * after its repair rounds (warning as it does), and a consent spec's modal
+ * makes arrangeReviewLayout bail out entirely. Repair here, at the one seam
+ * every Settings interaction passes through, rather than in each spec. A
+ * standalone browser Page is always wide enough, and an already-arranged panel
+ * costs one evaluate.
+ *
+ * Measured without this: 2 consent specs fail in closeSettingsModal, where
+ * `editor-group-watermark-wrapper` takes the pointer aimed at the close 'x'.
+ */
+async function ensureSettingsModalFits(surface: WebviewSurface): Promise<void> {
+  if (!('parentFrame' in surface)) return; // a Page: standalone browser, full width
+  const width = await surface.evaluate(() => globalThis.innerWidth);
+  if (width >= SETTINGS_MODAL_MIN_SURFACE_WIDTH_PX) return;
+  await arrangeReviewLayout(surface.page());
+}
+
 export async function openSettingsModal(frame: WebviewSurface): Promise<Locator> {
+  await ensureSettingsModalFits(frame);
   const settingsButton = frame.locator('button', { hasText: 'Settings' });
   await expect(settingsButton).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
   await settingsButton.click();

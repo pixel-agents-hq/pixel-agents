@@ -70,11 +70,14 @@ export const test = base.extend<{
   seedConfig: unknown;
   /** Pre-seed `~/.pixel-agents/layout.json` (must carry a high layoutRevision). */
   seedLayout: unknown;
+  /** Pre-seed `~/.claude/settings.json` (e.g. an existing hook install). */
+  seedClaudeSettings: unknown;
   /** Folder basenames for a multi-root workspace (>1 → multi-root). */
   workspaceFolders: string[];
 }>({
   seedConfig: [undefined, { option: true }],
   seedLayout: [undefined, { option: true }],
+  seedClaudeSettings: [undefined, { option: true }],
   workspaceFolders: [[], { option: true }],
   // Auto-fixture: tag every test with Allure epic + feature derived from its
   // @area: annotation and enclosing describe path. Runs before pixelAgents.
@@ -85,10 +88,15 @@ export const test = base.extend<{
     },
     { auto: true },
   ],
-  pixelAgents: async ({ seedConfig, seedLayout, workspaceFolders }, use, testInfo) => {
+  pixelAgents: async (
+    { seedConfig, seedLayout, seedClaudeSettings, workspaceFolders },
+    use,
+    testInfo,
+  ) => {
     const session = await launchVSCode(testInfo.title, {
       seedConfig,
       seedLayout,
+      seedClaudeSettings,
       workspaceFolders,
     });
     const { window, tmpHome, workspaceDir, mockLogFile } = session;

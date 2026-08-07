@@ -11,7 +11,14 @@ import {
 } from '../src/clientMessageHandler.js';
 import { readConfig } from '../src/configPersistence.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
+import { CLAUDE_HOOK_EVENTS } from '../src/providers/hook/claude/constants.js';
 import type { AgentState } from '../src/types.js';
+
+/** Let the setHooksEnabled dispatch's async chain (side effect →
+ *  areHooksInstalled → persist → send) run to completion. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 20));
+}
 
 function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
   return {
@@ -153,17 +160,111 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
 
     it('setHooksEnabled reports the actual outcome after the side effect settles', async () => {
       let sideEffectRan = false;
+      ctx.privileged = true;
       ctx.onSetHooksEnabled = async () => {
         sideEffectRan = true;
       };
       handleClientMessage({ type: 'setHooksEnabled', enabled: true }, (m) => sent.push(m), ctx);
-      await new Promise((r) => setTimeout(r, 0));
+      await settle();
 
       expect(sideEffectRan).toBe(true);
       // The side effect installed nothing (stub), so the truthful answer is false
       // even though the user just toggled the setting ON.
       const status = sent.find((m) => m.type === 'hooksStatus');
       expect(status).toEqual({ type: 'hooksStatus', installed: false });
+    });
+  });
+
+  // ── setHooksEnabled: preference vs reality ───────────────────
+
+  describe('setHooksEnabled persistence', () => {
+    /** Put our command on every installed event, as a real install would. */
+    function seedInstalledHooks(): void {
+      const command = `node "${path.join(tempHome, '.pixel-agents', 'hooks', 'claude-hook.js')}"`;
+      const entry = { matcher: '', hooks: [{ type: 'command', command, timeout: 5 }] };
+      fs.mkdirSync(path.join(tempHome, '.claude'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tempHome, '.claude', 'settings.json'),
+        JSON.stringify({
+          hooks: Object.fromEntries(CLAUDE_HOOK_EVENTS.map((e) => [e, [entry]])),
+        }),
+      );
+    }
+
+    // THE stranding bug: the preference was written BEFORE the uninstall, so a
+    // failed removal left the entries on disk and still firing while the
+    // persisted hooks-off made the next startup skip the consent/install path
+    // entirely — never asked again, no route left to remove them.
+    it('does not persist hooks-off when the uninstall failed', async () => {
+      seedInstalledHooks();
+      ctx.privileged = true;
+      ctx.onSetHooksEnabled = () => {
+        /* the uninstall failed: settings.json still carries our entries */
+      };
+
+      handleClientMessage({ type: 'setHooksEnabled', enabled: false }, (m) => sent.push(m), ctx);
+      await settle();
+
+      // The preference still says ON, so the next startup re-runs the install
+      // path and the user keeps a way to turn hooks off.
+      expect(store.getAdapter()!.getSetting('pixel-agents.hooksEnabled', true)).toBe(true);
+      // ...and the checkbox is told the truth: they are still installed.
+      expect(sent.find((m) => m.type === 'hooksStatus')).toEqual({
+        type: 'hooksStatus',
+        installed: true,
+      });
+    });
+
+    // The mirror case: an install that did not happen must not persist ON.
+    it('does not persist hooks-on when the install failed', async () => {
+      store.getAdapter()!.setSetting('pixel-agents.hooksEnabled', false);
+      ctx.privileged = true;
+      ctx.onSetHooksEnabled = () => {
+        /* the install failed: settings.json stays empty */
+      };
+
+      handleClientMessage({ type: 'setHooksEnabled', enabled: true }, (m) => sent.push(m), ctx);
+      await settle();
+
+      expect(store.getAdapter()!.getSetting('pixel-agents.hooksEnabled', true)).toBe(false);
+    });
+
+    // The happy path still persists, or the toggle would do nothing at all.
+    it('persists the preference when the outcome matches the request', async () => {
+      ctx.privileged = true;
+      ctx.onSetHooksEnabled = () => seedInstalledHooks();
+
+      handleClientMessage({ type: 'setHooksEnabled', enabled: true }, (m) => sent.push(m), ctx);
+      await settle();
+
+      expect(store.getAdapter()!.getSetting('pixel-agents.hooksEnabled', false)).toBe(true);
+      expect(sent.find((m) => m.type === 'hooksStatus')).toEqual({
+        type: 'hooksStatus',
+        installed: true,
+      });
+    });
+
+    // A non-local client (LAN peer, rebound page) never reaches the side effect
+    // at all: granting consent to modify ~/.claude/settings.json is not a
+    // decision a remote peer gets to make. See httpServerWs.test.ts.
+    it('ignores the toggle entirely when the client is not privileged', async () => {
+      let sideEffectRan = false;
+      ctx.privileged = false;
+      ctx.onSetHooksEnabled = () => {
+        sideEffectRan = true;
+      };
+
+      handleClientMessage({ type: 'setHooksEnabled', enabled: true }, (m) => sent.push(m), ctx);
+      await settle();
+
+      expect(sideEffectRan).toBe(false);
+      expect(store.getAdapter()!.getSetting('pixel-agents.hooksEnabled', true)).toBe(true);
+      // It still hears the truth, so a LAN viewer's checkbox shows reality
+      // rather than appearing to have worked.
+      expect(sent.find((m) => m.type === 'hooksStatus')).toEqual({
+        type: 'hooksStatus',
+        installed: false,
+      });
     });
   });
 
