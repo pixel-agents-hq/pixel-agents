@@ -36,7 +36,8 @@ export function getClaudeConfigDirSource(): 'setting' | 'env' | 'default' {
   return 'default';
 }
 
-/** Test-only: reset module state between test files. */
+/** Test-only: reset module state between test files.
+ *  @internal -- exported for tests only; not part of the module's API. */
 export function resetClaudeConfigDirOverrideForTests(): void {
   override = undefined;
 }
