@@ -4,6 +4,7 @@ import fastifyWebsocket from '@fastify/websocket';
 import * as crypto from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
+import * as net from 'net';
 
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
@@ -225,8 +226,33 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
 
 // ── WebSocket Origin Guard ─────────────────────────────────────
 
-/** Hostnames the SPA can legitimately be served from by a loopback-bound server. */
-const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+/**
+ * Hostnames the SPA can legitimately be served from by a loopback-bound server.
+ *
+ * Matched against `URL.hostname`, which brackets IPv6 literals -- `[::1]` is
+ * the form that appears there, the bare `::1` never does.
+ */
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/**
+ * True when `hostname` cannot be re-pointed at the loopback interface by an
+ * attacker's own DNS zone -- i.e. it is a literal IP address, or one of the
+ * fixed loopback names above.
+ *
+ * This is what makes an Origin-equals-Host comparison meaningful. A bare
+ * hostname is NOT safe even if it currently resolves to 127.0.0.1: in a DNS
+ * rebinding attack the attacker serves a page from a name they own and then
+ * re-points that SAME name at 127.0.0.1 with a short TTL. The browser then
+ * genuinely sends `Host: evil.example.com:<port>` and a matching
+ * `Origin: http://evil.example.com:<port>` -- nothing is forged, so the two
+ * agreeing proves nothing about who served the page.
+ */
+function isRebindingSafeHostname(hostname: string): boolean {
+  // `URL.hostname` brackets IPv6 literals; `net.isIP` wants them bare.
+  const bare =
+    hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
+  return net.isIP(bare) !== 0 || LOOPBACK_HOSTNAMES.has(hostname);
+}
 
 /**
  * True when `origin` is the very origin this server serves the SPA from.
@@ -247,12 +273,20 @@ function isAllowedWebSocketOrigin(origin: string, hostHeader: string | undefined
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
 
+  // Necessary condition for everything below: an Origin naming a host that DNS
+  // can move is never trusted, however well it matches. Both branches that
+  // follow rest on the hostname genuinely identifying this machine.
+  if (!isRebindingSafeHostname(url.hostname)) return false;
+
   // Same origin as the URL this very request was addressed to. This is the
   // general case and covers any bind host (`--host 0.0.0.0` reached over a LAN
-  // address included): a browser derives Host from the connection URL and
+  // IP address included): a browser derives Host from the connection URL and
   // Origin from the page URL, and the SPA builds its ws:// URL from
   // window.location, so for a legitimately-served page the two always agree.
-  // A hijacked tab is exactly the case where they don't.
+  // A hijacked tab is exactly the case where they don't -- unless it rebound
+  // DNS, which the check above is what rules out. The cost is that reaching
+  // standalone mode over a LAN *hostname* (rather than a LAN IP) is refused;
+  // an IP literal or a loopback name is the boundary we can actually verify.
   if (hostHeader !== undefined && url.host === hostHeader) return true;
 
   // Fallback for the default loopback deployment, where 127.0.0.1 and

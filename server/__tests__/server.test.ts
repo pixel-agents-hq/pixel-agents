@@ -423,8 +423,10 @@ describe('PixelAgentsServer', () => {
     });
 
     // `--host 0.0.0.0` + browsing from a LAN address: Origin and Host still
-    // agree, because the SPA derives its ws:// URL from window.location.
-    it('accepts a /ws upgrade whose Origin matches a non-loopback Host it was addressed to', async () => {
+    // agree, because the SPA derives its ws:// URL from window.location. The
+    // address has to be an IP LITERAL for that agreement to mean anything --
+    // see the DNS-rebinding test below for the hostname case.
+    it('accepts a /ws upgrade whose Origin matches a non-loopback IP-literal Host', async () => {
       const port = await startStandalone();
       const result = await wsHandshake(port, {
         Host: `192.168.1.5:${port}`,
@@ -432,6 +434,34 @@ describe('PixelAgentsServer', () => {
       });
       expect(result.upgraded).toBe(true);
       expect(result.status).toBe(101);
+    });
+
+    // IPv6 loopback: `URL.hostname` brackets the literal, so the guard has to
+    // recognise `[::1]` -- the bare `::1` form never appears there.
+    it('accepts a /ws upgrade from the IPv6 loopback origin', async () => {
+      const port = await startStandalone();
+      const result = await wsHandshake(port, {
+        Host: `[::1]:${port}`,
+        Origin: `http://[::1]:${port}`,
+      });
+      expect(result.upgraded).toBe(true);
+      expect(result.status).toBe(101);
+    });
+
+    // DNS rebinding: the attacker serves a page from a name they control, then
+    // re-points that name at 127.0.0.1 with a short TTL. The browser then
+    // genuinely sends BOTH `Host: evil.example.com:<port>` and a matching
+    // Origin -- nothing is forged, so an Origin-equals-Host check on its own
+    // waves the attack straight through. A match may only be trusted when the
+    // hostname cannot be re-pointed: an IP literal or a fixed loopback name.
+    it('rejects a /ws upgrade whose Origin matches a rebindable non-loopback Host', async () => {
+      const port = await startStandalone();
+      const result = await wsHandshake(port, {
+        Host: `evil.example.com:${port}`,
+        Origin: `http://evil.example.com:${port}`,
+      });
+      expect(result.upgraded).toBe(false);
+      expect(result.status).toBe(403);
     });
 
     it('rejects a foreign Origin even when addressed via a non-loopback Host', async () => {
