@@ -1,4 +1,6 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +27,43 @@ vi.mock('os', async () => {
 
 // Must import AFTER mock setup
 const { PixelAgentsServer } = await import('../src/server.js');
+const { AgentStateStore } = await import('../src/agentStateStore.js');
+
+/**
+ * Perform a real WebSocket handshake against /ws using only node:http, and
+ * report whether the server upgraded (101) or answered with a plain HTTP
+ * response instead. Avoids pulling in a `ws` client while still exercising the
+ * genuine upgrade path through Fastify's request lifecycle.
+ */
+async function wsHandshake(
+  port: number,
+  headers: Record<string, string> = {},
+): Promise<{ upgraded: boolean; status: number }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      host: '127.0.0.1',
+      port,
+      path: '/ws',
+      headers: {
+        Connection: 'Upgrade',
+        Upgrade: 'websocket',
+        'Sec-WebSocket-Version': '13',
+        'Sec-WebSocket-Key': crypto.randomBytes(16).toString('base64'),
+        ...headers,
+      },
+    });
+    req.on('upgrade', (res, socket) => {
+      socket.destroy();
+      resolve({ upgraded: true, status: res.statusCode ?? 0 });
+    });
+    req.on('response', (res) => {
+      res.resume();
+      resolve({ upgraded: false, status: res.statusCode ?? 0 });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
 
 async function postHook(
   port: number,
@@ -340,5 +379,79 @@ describe('PixelAgentsServer', () => {
     );
 
     expect(received).toHaveLength(0);
+  });
+
+  // 23-25. WebSocket upgrades in standalone mode are Origin-guarded.
+  //
+  // /ws deliberately skips Bearer auth in standalone mode, but WebSocket
+  // handshakes are exempt from the browser's same-origin policy, so any page
+  // the user has open could otherwise connect to 127.0.0.1 and speak the full
+  // ClientMessage protocol (including setClaudeConfigDir, which redirects a
+  // persisted absolute path that later gets mkdir'd and written into).
+  describe('WebSocket origin guard (standalone)', () => {
+    async function startStandalone(): Promise<number> {
+      const config = await server.start({ embedded: false, store: new AgentStateStore() });
+      return config.port;
+    }
+
+    it('rejects a /ws upgrade from a foreign Origin', async () => {
+      const port = await startStandalone();
+      const result = await wsHandshake(port, { Origin: 'https://evil.example.com' });
+      expect(result.upgraded).toBe(false);
+      expect(result.status).toBe(403);
+    });
+
+    it('rejects a /ws upgrade from localhost on a different port', async () => {
+      const port = await startStandalone();
+      const result = await wsHandshake(port, { Origin: `http://127.0.0.1:${port + 1}` });
+      expect(result.upgraded).toBe(false);
+      expect(result.status).toBe(403);
+    });
+
+    it('accepts a /ws upgrade from the origin the SPA is served from', async () => {
+      const port = await startStandalone();
+      const result = await wsHandshake(port, { Origin: `http://127.0.0.1:${port}` });
+      expect(result.upgraded).toBe(true);
+      expect(result.status).toBe(101);
+    });
+
+    it('accepts a /ws upgrade from http://localhost on the served port', async () => {
+      const port = await startStandalone();
+      const result = await wsHandshake(port, { Origin: `http://localhost:${port}` });
+      expect(result.upgraded).toBe(true);
+      expect(result.status).toBe(101);
+    });
+
+    // `--host 0.0.0.0` + browsing from a LAN address: Origin and Host still
+    // agree, because the SPA derives its ws:// URL from window.location.
+    it('accepts a /ws upgrade whose Origin matches a non-loopback Host it was addressed to', async () => {
+      const port = await startStandalone();
+      const result = await wsHandshake(port, {
+        Host: `192.168.1.5:${port}`,
+        Origin: `http://192.168.1.5:${port}`,
+      });
+      expect(result.upgraded).toBe(true);
+      expect(result.status).toBe(101);
+    });
+
+    it('rejects a foreign Origin even when addressed via a non-loopback Host', async () => {
+      const port = await startStandalone();
+      const result = await wsHandshake(port, {
+        Host: `192.168.1.5:${port}`,
+        Origin: 'https://evil.example.com',
+      });
+      expect(result.upgraded).toBe(false);
+      expect(result.status).toBe(403);
+    });
+
+    // Non-browser clients (CLI tools, test harnesses) send no Origin at all;
+    // browsers always do, so its absence is itself evidence of a non-browser
+    // caller. Keeping these working is what preserves compatibility.
+    it('accepts a /ws upgrade with no Origin header at all', async () => {
+      const port = await startStandalone();
+      const result = await wsHandshake(port);
+      expect(result.upgraded).toBe(true);
+      expect(result.status).toBe(101);
+    });
   });
 });

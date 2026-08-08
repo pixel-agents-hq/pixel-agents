@@ -138,9 +138,21 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
 // ── WebSocket ──────────────────────────────────────────────────
 
 function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions): void {
-  app.get('/ws', { websocket: true }, (socket, request) => {
-    // In standalone mode (not embedded), skip auth for WebSocket connections.
-    // The server binds to 127.0.0.1, so only local clients can connect.
+  // Standalone mode skips Bearer auth on /ws (below), so the Origin guard is
+  // what keeps the socket local. Registered as a route-level preValidation --
+  // @fastify/websocket runs the normal request lifecycle before upgrading, so
+  // replying here aborts the handshake with a plain HTTP response instead of
+  // a 101. Embedded (VS Code) mode is untouched: its transport is postMessage.
+  const routeOptions = options.embedded
+    ? { websocket: true as const }
+    : { websocket: true as const, preValidation: websocketOriginGuard(app) };
+
+  app.get('/ws', routeOptions, (socket, request) => {
+    // In standalone mode (not embedded), skip Bearer auth for WebSocket
+    // connections: the SPA is served from this same origin and has no token to
+    // present. Loopback binding alone does NOT make that safe (WebSocket
+    // handshakes ignore the same-origin policy), which is what the
+    // preValidation Origin guard above covers.
     // In embedded mode (VS Code), require Bearer token for security.
     if (options.embedded) {
       const auth = request.headers.authorization ?? '';
@@ -209,6 +221,67 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
       store.off('broadcast', onBroadcast);
     });
   });
+}
+
+// ── WebSocket Origin Guard ─────────────────────────────────────
+
+/** Hostnames the SPA can legitimately be served from by a loopback-bound server. */
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+/**
+ * True when `origin` is the very origin this server serves the SPA from.
+ *
+ * Binding to 127.0.0.1 is NOT sufficient protection for /ws: WebSocket
+ * handshakes are exempt from the browser's same-origin policy, so any page a
+ * user has open can open `ws://127.0.0.1:<port>/ws` and — absent this check —
+ * speak the full ClientMessage protocol to the local server. The port must
+ * match too: another loopback service on a different port is a different
+ * origin and equally untrusted.
+ */
+function isAllowedWebSocketOrigin(origin: string, hostHeader: string | undefined, port: number) {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false; // Opaque origins ("null") and malformed values are never allowed.
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+
+  // Same origin as the URL this very request was addressed to. This is the
+  // general case and covers any bind host (`--host 0.0.0.0` reached over a LAN
+  // address included): a browser derives Host from the connection URL and
+  // Origin from the page URL, and the SPA builds its ws:// URL from
+  // window.location, so for a legitimately-served page the two always agree.
+  // A hijacked tab is exactly the case where they don't.
+  if (hostHeader !== undefined && url.host === hostHeader) return true;
+
+  // Fallback for the default loopback deployment, where 127.0.0.1 and
+  // localhost are interchangeable names for the same served origin.
+  return LOOPBACK_HOSTNAMES.has(url.hostname) && url.port === String(port);
+}
+
+/**
+ * preValidation guard for /ws in standalone mode.
+ *
+ * A request with NO Origin header is allowed through: browsers always send one
+ * on a WebSocket handshake, so its absence is itself evidence that the caller
+ * is not a hijacked browser tab (CLI clients, test harnesses, and other
+ * non-browser consumers of the protocol keep working).
+ */
+function websocketOriginGuard(app: FastifyInstance) {
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const origin = request.headers.origin;
+    if (origin === undefined) return;
+
+    // Read the bound port lazily: with port 0 it isn't known until listen(),
+    // which happens after the route is registered.
+    const address = app.server.address();
+    const port = typeof address === 'object' && address !== null ? address.port : 0;
+
+    if (!isAllowedWebSocketOrigin(origin, request.headers.host, port)) {
+      await reply.code(403).send('forbidden origin');
+    }
+  };
 }
 
 // ── Auth Helper ────────────────────────────────────────────────
