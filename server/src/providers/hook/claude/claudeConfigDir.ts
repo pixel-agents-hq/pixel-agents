@@ -45,8 +45,9 @@ export function resetClaudeConfigDirOverrideForTests(): void {
 /** Validates/normalizes settings-modal input: '' clears the override; a
  *  leading `~/` or `~\` expands to this process's home dir; the result is
  *  normalized (collapses `..` and trailing separators) and must be
- *  absolute; a path that already exists but isn't a directory is rejected.
- *  Returns null to signal "reject, don't persist". */
+ *  absolute; the filesystem root itself and a path that already exists but
+ *  isn't a directory are rejected. Returns null to signal "reject, don't
+ *  persist". */
 export function normalizeClaudeConfigDirInput(raw: string): string | null {
   if (raw === '') return '';
   const homeExpanded =
@@ -57,6 +58,11 @@ export function normalizeClaudeConfigDirInput(raw: string): string | null {
         : raw;
   const normalized = path.normalize(homeExpanded);
   if (!path.isAbsolute(normalized)) return null;
+  // The root passes every other check -- absolute, and an existing directory
+  // -- but taking it would put getClaudeSettingsPath() at /settings.json (or
+  // C:\settings.json) and have the next boot write there. path.parse().root
+  // is the portable "this IS a root", not merely "starts with one".
+  if (path.parse(normalized).root === normalized) return null;
   if (fs.existsSync(normalized) && !fs.statSync(normalized).isDirectory()) return null;
   return normalized;
 }

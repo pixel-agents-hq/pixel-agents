@@ -157,6 +157,20 @@ describe('normalizeClaudeConfigDirInput', () => {
     expect(normalizeClaudeConfigDirInput('relative/path')).toBeNull();
   });
 
+  // The filesystem root passes both of the other checks -- it is absolute and
+  // it is a directory -- but accepting it would make getClaudeSettingsPath()
+  // resolve to /settings.json and have the next boot write there.
+  it('rejects the filesystem root', () => {
+    expect(normalizeClaudeConfigDirInput('/')).toBeNull();
+  });
+
+  // path.normalize collapses a trailing separator, so '/a/..' lands on the
+  // root the same way a bare '/' does. Guards the check against being written
+  // as a literal '/' comparison on the RAW input.
+  it('rejects a path that normalizes down to the filesystem root', () => {
+    expect(normalizeClaudeConfigDirInput('/a/..')).toBeNull();
+  });
+
   it('accepts an absolute path that does not exist yet', () => {
     const target = path.join(tmpDir, 'does-not-exist-yet');
     expect(normalizeClaudeConfigDirInput(target)).toBe(target);
