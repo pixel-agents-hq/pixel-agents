@@ -109,6 +109,11 @@ test.describe('Standalone / settings', () => {
     expect(messages.some((message) => message.type === 'claudeConfigDirUpdated')).toBe(false);
     await expect(input).toHaveValue(RELATIVE_PATH);
 
+    // Nothing was sent, so there is nothing pending to restart for. The error
+    // and the restart notice are mutually exclusive: "this is invalid" and
+    // "restart to apply it" can never be true of the same draft at once.
+    await expect(modal.getByText('Restart Pixel Agents to apply')).toHaveCount(0);
+
     for (const windowsPath of [WINDOWS_BACKSLASH_PATH, WINDOWS_FORWARD_SLASH_PATH]) {
       await input.fill(windowsPath);
       await input.blur();

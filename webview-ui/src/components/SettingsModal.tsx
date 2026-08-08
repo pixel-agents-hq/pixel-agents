@@ -255,7 +255,10 @@ export function SettingsModal({
             {!resolvedClaudeConfigDirExists && ' — does not exist on disk'}
           </span>
         )}
-        {needsRestart && (
+        {/* The error wins: a draft the pre-check rejected was never sent, so
+            there is nothing pending to restart for. Showing "this is invalid"
+            and "restart to apply" side by side just reads as a contradiction. */}
+        {needsRestart && claudeConfigDirError === '' && (
           <span className="text-xs text-text-muted">
             Restart Pixel Agents to apply
             {draftMatchesSaved && !pendingDirExists && ' — this directory does not exist yet'}
