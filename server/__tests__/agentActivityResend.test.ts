@@ -87,6 +87,10 @@ describe('resendAgentActivity', () => {
       1,
       createTestAgent({
         id: 1,
+        // A teamed lead: the webview routes agentToolStart by the parent's
+        // teamName, so the team message has to land before the tool replays or
+        // a background spawn is routed as if the lead had no team.
+        teamName: 'test-team',
         activeToolStatuses: new Map([
           ['bg-unnamed', 'Subtask: Unnamed'],
           ['bg-named', 'Subtask: Named'],
@@ -117,14 +121,27 @@ describe('resendAgentActivity', () => {
     const toolStarts = sent.filter((m) => m.type === 'agentToolStart');
     expect(toolStarts).toHaveLength(2); // unnamed + named, NOT promoted
 
-    // Unnamed: runInBackground=true, no isTeammateSpawn
+    // Team info first: the webview reads the parent's teamName to decide whether
+    // a background agentToolStart becomes a Subtask sub-character, so a replay
+    // that arrives before it is routed against stale team state.
+    const teamIdx = sent.findIndex((m) => m.type === 'agentTeamInfo' && m.id === 1);
+    const firstBgToolIdx = sent.findIndex((m) => m.type === 'agentToolStart' && m.id === 1);
+    expect(teamIdx).toBeGreaterThanOrEqual(0);
+    expect(teamIdx).toBeLessThan(firstBgToolIdx);
+
+    // Unnamed: runInBackground=true, no isTeammateSpawn. toolName is required —
+    // without it the webview cannot recreate the Subtask after agentToolsClear.
     const unnamed = toolStarts.find((t) => t.toolId === 'bg-unnamed');
-    expect(unnamed).toMatchObject({ runInBackground: true });
+    expect(unnamed).toMatchObject({ runInBackground: true, toolName: 'Agent' });
     expect(unnamed?.isTeammateSpawn).toBeUndefined();
 
-    // Named: runInBackground=true, isTeammateSpawn=true
+    // Named: runInBackground=true, isTeammateSpawn=true, toolName present.
     const named = toolStarts.find((t) => t.toolId === 'bg-named');
-    expect(named).toMatchObject({ runInBackground: true, isTeammateSpawn: true });
+    expect(named).toMatchObject({
+      runInBackground: true,
+      isTeammateSpawn: true,
+      toolName: 'Agent',
+    });
   });
 
   it('sends team info for any team field trigger, omits when none present', () => {

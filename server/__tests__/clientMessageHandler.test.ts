@@ -194,6 +194,27 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
       expect(existing.agents).toEqual([1]);
     });
 
+    it('replays agent activity after layoutLoaded so it lands on real characters', () => {
+      // Two things at once, both invisible to the helper's own unit tests:
+      // that handleWebviewReady calls the replay at all, and that it runs AFTER
+      // layoutLoaded. The characters the replay targets only exist once the
+      // layout flush creates them, so an earlier replay is silently dropped and
+      // a reconnecting client shows a working agent as Idle.
+      store.set(1, createTestAgent({ id: 1, isWaiting: true }));
+
+      handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx);
+
+      const types = sent.map((m) => m.type);
+      const iLayout = types.indexOf('layoutLoaded');
+      const iStatus = types.indexOf('agentStatus');
+
+      expect(iLayout).toBeGreaterThanOrEqual(0);
+      expect(iStatus).toBeGreaterThanOrEqual(0);
+      expect(iLayout).toBeLessThan(iStatus);
+
+      expect(sent[iStatus]).toMatchObject({ type: 'agentStatus', id: 1, status: 'waiting' });
+    });
+
     it('emits carpetTilesLoaded after wallTilesLoaded when both are present in the cache', () => {
       // Hex placeholders are test fixtures, not UI tokens — disable the
       // centralized-color rule just for this cache literal.
