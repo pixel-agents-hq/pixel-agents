@@ -51,7 +51,7 @@ describe('AgentRuntime -- D5 foreign-session gate', () => {
 
   it('drops a foreign session (unowned dir, watchAllSessions off): no agent created', () => {
     store = new AgentStateStore();
-    runtime = new AgentRuntime(store, claudeProvider);
+    runtime = new AgentRuntime(store, [claudeProvider]);
     // watchAllSessions defaults to false; this dir was never scanned/owned
     // by this instance -- exactly the "other server's session" scenario
     // fan-out introduces.
@@ -61,7 +61,7 @@ describe('AgentRuntime -- D5 foreign-session gate', () => {
 
   it('adopts a foreign session when watchAllSessions is on', () => {
     store = new AgentStateStore();
-    runtime = new AgentRuntime(store, claudeProvider);
+    runtime = new AgentRuntime(store, [claudeProvider]);
     runtime.watchAllSessions.current = true;
     fireSessionStartThenStop('d5-foreign-on', untrackedDir());
     expect(store.size).toBe(1);
@@ -69,7 +69,7 @@ describe('AgentRuntime -- D5 foreign-session gate', () => {
 
   it('adopts a session under a project dir this instance has scanned, even with watchAllSessions off', () => {
     store = new AgentStateStore();
-    runtime = new AgentRuntime(store, claudeProvider);
+    runtime = new AgentRuntime(store, [claudeProvider]);
     const dir = untrackedDir();
     runtime.startProjectScan(dir); // marks `dir` as owned/tracked
     fireSessionStartThenStop('d5-tracked-dir', dir);

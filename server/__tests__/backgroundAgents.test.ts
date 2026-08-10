@@ -665,7 +665,7 @@ describe('background spawn persistence & derived team lifecycle', () => {
 
   it('drops the LEAD badge when the last teammate leaves', () => {
     const store = new AgentStateStore();
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const runtime = new AgentRuntime(store, [claudeProvider]);
     try {
       const lead = createLeadAgent('/tmp/proj');
       lead.isTeamLead = true;
@@ -693,7 +693,7 @@ describe('background spawn persistence & derived team lifecycle', () => {
 
   it('keeps the LEAD badge while other teammates remain', () => {
     const store = new AgentStateStore();
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const runtime = new AgentRuntime(store, [claudeProvider]);
     try {
       const lead = createLeadAgent('/tmp/proj');
       lead.isTeamLead = true;
@@ -751,7 +751,7 @@ describe('background spawn persistence & derived team lifecycle', () => {
 
     const store = new AgentStateStore();
     store.setAdapter(adapter);
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const runtime = new AgentRuntime(store, [claudeProvider]);
     try {
       runtime.restoreExternalAgents();
 

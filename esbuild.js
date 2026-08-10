@@ -63,6 +63,27 @@ function buildHooks() {
 }
 
 /**
+ * Copy the Hermes plugin's Python source (not TypeScript -- no bundling needed,
+ * it runs inside Hermes's own venv) into dist/hooks/ alongside the compiled
+ * Claude hook script, so both ship in the npm tarball's dist/hooks/ allowlist entry.
+ */
+function copyHermesPlugin() {
+  const src = path.join(
+    __dirname,
+    'server',
+    'src',
+    'providers',
+    'hook',
+    'hermes',
+    'pixel_agents_bridge_plugin.py',
+  );
+  if (!fs.existsSync(src)) return;
+  fs.mkdirSync(path.join(__dirname, 'dist', 'hooks'), { recursive: true });
+  fs.copyFileSync(src, path.join(__dirname, 'dist', 'hooks', 'pixel_agents_bridge_plugin.py'));
+  console.log('✓ Copied hermes plugin → dist/hooks/pixel_agents_bridge_plugin.py');
+}
+
+/**
  * @type {import('esbuild').Plugin}
  */
 const esbuildProblemMatcherPlugin = {
@@ -108,6 +129,7 @@ async function main() {
     // Copy assets and hooks after build
     copyAssets();
     buildHooks();
+    copyHermesPlugin();
     await buildCli();
   }
 }
