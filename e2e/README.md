@@ -248,7 +248,7 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/standalone/settings.spec.ts:29` — Claude config directory reports the resolved default (Standalone / settings)
 - `e2e/standalone/settings.spec.ts:50` — Claude config directory override round-trips and asks for a restart (Standalone / settings)
 - `e2e/standalone/settings.spec.ts:92` — Claude config directory rejects a relative path and accepts Windows paths (Standalone / settings)
-- `e2e/standalone/settings.spec.ts:145` — Claude config directory surfaces a server-side rejection instead of promising a restart (Standalone / settings)
+- `e2e/standalone/settings.spec.ts:144` — Claude config directory surfaces a server-side rejection instead of promising a restart (Standalone / settings)
 - `e2e/standalone/ui.spec.ts:27` — closeAgent despawns the character (Standalone / UI)
 - `e2e/standalone/ui.spec.ts:61` — Debug View renders JSONL diagnostics in standalone (Standalone / UI)
 - `e2e/standalone/ui.spec.ts:95` — adding an external asset directory triggers a live asset reload (Standalone / UI)
