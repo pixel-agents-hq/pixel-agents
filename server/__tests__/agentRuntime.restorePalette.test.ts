@@ -101,7 +101,7 @@ describe('AgentRuntime -- restore preserves palette/hueShift', () => {
     ];
     const store = new AgentStateStore();
     store.setAdapter(createMockAdapter(persisted));
-    runtime = new AgentRuntime(store, claudeProvider);
+    runtime = new AgentRuntime(store, [claudeProvider]);
 
     runtime.restoreExternalAgents();
 
@@ -117,7 +117,7 @@ describe('AgentRuntime -- restore preserves palette/hueShift', () => {
     const storeA = new AgentStateStore();
     const adapterA = createMockAdapter();
     storeA.setAdapter(adapterA);
-    runtime = new AgentRuntime(storeA, claudeProvider);
+    runtime = new AgentRuntime(storeA, [claudeProvider]);
     storeA.set(
       42,
       createTestAgent({
@@ -147,7 +147,7 @@ describe('AgentRuntime -- restore preserves palette/hueShift', () => {
     // wrote. The new adapter hands back exactly what phase 1 persisted.
     const storeB = new AgentStateStore();
     storeB.setAdapter(createMockAdapter(persisted));
-    runtime = new AgentRuntime(storeB, claudeProvider);
+    runtime = new AgentRuntime(storeB, [claudeProvider]);
     runtime.restoreExternalAgents();
 
     const restored = storeB.get(42);
@@ -170,7 +170,7 @@ describe('AgentRuntime -- restore preserves palette/hueShift', () => {
     ];
     const store = new AgentStateStore();
     store.setAdapter(createMockAdapter(persisted));
-    runtime = new AgentRuntime(store, claudeProvider);
+    runtime = new AgentRuntime(store, [claudeProvider]);
 
     runtime.restoreExternalAgents();
 

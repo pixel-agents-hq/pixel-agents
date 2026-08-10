@@ -164,7 +164,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
-    this.runtime = new AgentRuntime(this.store, claudeProvider);
+    this.runtime = new AgentRuntime(this.store, [claudeProvider]);
 
     this.initServer();
   }

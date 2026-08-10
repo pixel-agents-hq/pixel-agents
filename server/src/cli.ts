@@ -22,8 +22,19 @@ import type { AssetCache, ReloadAssetsSideEffect } from './clientMessageHandler.
 import { readConfig } from './configPersistence.js';
 import { MAX_PORT, MIN_PORT } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript } from './providers/index.js';
+import { copyHermesPlugin } from './providers/hook/hermes/hermesHookInstaller.js';
+import {
+  claudeProvider,
+  codexProvider,
+  copyHookScript,
+  hermesProvider,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
+
+/** All providers this standalone server hosts, sharing one office. Claude stays
+ *  first: AgentRuntime treats providers[0] as primary for its file-scanning
+ *  singletons and legacy (no-providerId) call sites -- see agentRuntime.ts. */
+const ALL_PROVIDERS = [claudeProvider, hermesProvider, codexProvider];
 
 // ── Argument parsing ──────────────────────────────────────────
 
@@ -115,12 +126,64 @@ async function main(): Promise<void> {
 
   try {
     // Create runtime first (before server.start, so we can pass it in)
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const runtime = new AgentRuntime(store, ALL_PROVIDERS);
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
       runtime.handleHookEvent(providerId, event);
     });
+
+    // Installs/uninstalls every provider's hooks together. Claude and Hermes each
+    // need a file copied into place first (compiled hook script / plugin source);
+    // Codex has nothing to copy -- installHooks() just starts its in-process
+    // JSONL tailer. A failure in one provider's install is logged and does not
+    // block the others (graceful degradation: one broken provider can't take
+    // down hook delivery for the rest).
+    const installAllHooks = async (serverUrl: string, authToken: string): Promise<void> => {
+      const copied = copyHookScript(packageRoot);
+      try {
+        await claudeProvider.installHooks(serverUrl, authToken);
+        console.log(
+          copied
+            ? '[Pixel Agents] Claude hooks installed'
+            : '[Pixel Agents] Claude hooks NOT installed, hook script missing',
+        );
+      } catch (err) {
+        console.error('[Pixel Agents] Failed to install Claude hooks:', err);
+      }
+      try {
+        const pluginCopied = copyHermesPlugin(packageRoot);
+        await hermesProvider.installHooks(serverUrl, authToken);
+        console.log(
+          pluginCopied
+            ? '[Pixel Agents] Hermes plugin installed (applies to Hermes sessions started from now on -- see README for the already-running-session limitation)'
+            : '[Pixel Agents] Hermes plugin NOT installed, plugin source missing',
+        );
+      } catch (err) {
+        console.error('[Pixel Agents] Failed to install Hermes plugin:', err);
+      }
+      try {
+        await codexProvider.installHooks(serverUrl, authToken);
+        console.log('[Pixel Agents] Codex JSONL tailer started');
+      } catch (err) {
+        console.error('[Pixel Agents] Failed to start Codex tailer:', err);
+      }
+    };
+
+    const uninstallAllHooks = async (): Promise<void> => {
+      await Promise.all([
+        claudeProvider
+          .uninstallHooks()
+          .catch((err) => console.error('[Pixel Agents] Failed to uninstall Claude hooks:', err)),
+        hermesProvider
+          .uninstallHooks()
+          .catch((err) => console.error('[Pixel Agents] Failed to uninstall Hermes plugin:', err)),
+        codexProvider
+          .uninstallHooks()
+          .catch((err) => console.error('[Pixel Agents] Failed to stop Codex tailer:', err)),
+      ]);
+      console.log('[Pixel Agents] Hooks uninstalled');
+    };
 
     // onSetHooksEnabled side effect: install/uninstall hooks when user toggles in UI.
     // Captures config from the outer scope after server.start().
@@ -128,19 +191,9 @@ async function main(): Promise<void> {
     const onSetHooksEnabled = async (enabled: boolean): Promise<void> => {
       if (!currentConfig) return;
       if (enabled) {
-        await claudeProvider.installHooks(
-          `http://127.0.0.1:${currentConfig.port}`,
-          currentConfig.token,
-        );
-        const copied = copyHookScript(packageRoot);
-        console.log(
-          copied
-            ? '[Pixel Agents] Hooks installed (user toggle)'
-            : '[Pixel Agents] Hooks NOT installed (user toggle), hook script missing',
-        );
+        await installAllHooks(`http://127.0.0.1:${currentConfig.port}`, currentConfig.token);
       } else {
-        await claudeProvider.uninstallHooks();
-        console.log('[Pixel Agents] Hooks uninstalled (user toggle)');
+        await uninstallAllHooks();
       }
     };
 
@@ -200,17 +253,7 @@ async function main(): Promise<void> {
 
     // Install hooks on startup if the persisted setting says so
     if (runtime.hooksEnabled.current) {
-      try {
-        await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
-        const copied = copyHookScript(packageRoot);
-        console.log(
-          copied
-            ? '[Pixel Agents] Hooks installed'
-            : '[Pixel Agents] Hooks NOT installed, hook script missing',
-        );
-      } catch (err) {
-        console.error('[Pixel Agents] Failed to install hooks:', err);
-      }
+      await installAllHooks(`http://127.0.0.1:${config.port}`, config.token);
     }
 
     // Start scanning for external sessions (Claude running in user's terminal)
