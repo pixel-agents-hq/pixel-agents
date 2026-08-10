@@ -29,6 +29,10 @@ interface SettingsModalProps {
   resolvedClaudeConfigDirExists: boolean;
   /** Whether claudeConfigDir would resolve to an existing directory after a restart. */
   pendingDirExists: boolean;
+  /** Last server-side rejection of a save. `value` is the trimmed input the
+   *  server turned down; `token` changes on every rejection so re-submitting
+   *  the same bad value re-fires the notice. */
+  claudeConfigDirRejection?: { value: string; token: number };
   watchAllSessions: boolean;
   onToggleWatchAllSessions: () => void;
   hooksEnabled: boolean;
@@ -59,6 +63,7 @@ export function SettingsModal({
   resolvedClaudeConfigDirSource,
   resolvedClaudeConfigDirExists,
   pendingDirExists,
+  claudeConfigDirRejection,
   watchAllSessions,
   onToggleWatchAllSessions,
   hooksEnabled,
@@ -81,6 +86,25 @@ export function SettingsModal({
   }, [claudeConfigDir]);
 
   const draftTrimmed = claudeConfigDirDraft.trim();
+  // The server is the authority, and it turns down inputs the client-side
+  // pre-check lets through (a bare `/`, or a Windows-shaped path on a POSIX
+  // host). Nothing was persisted, so claudeConfigDir never changes and the
+  // draft-vs-live gap that drives needsRestart would otherwise stay open
+  // forever, promising a restart for a value that can never take effect.
+  // Reusing claudeConfigDirError keeps the existing "error wins over the
+  // restart notice" gate as the single mechanism for that.
+  //
+  // Deps are the rejection alone -- it changes identity on every rejection
+  // message via `token`, so a repeat blur on the same bad value re-fires --
+  // while draftTrimmed is read but NOT depended on, so a rejection that
+  // arrives after the user has typed something else is dropped instead of
+  // labelling their new draft invalid.
+  useEffect(() => {
+    if (claudeConfigDirRejection && claudeConfigDirRejection.value === draftTrimmed) {
+      setClaudeConfigDirError('Rejected: not a valid directory');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claudeConfigDirRejection]);
   // A blank draft only needs a restart if a setting-sourced override is
   // CURRENTLY live -- i.e. the user is clearing a previously-active override
   // and that clearing hasn't taken effect yet. A non-blank draft needs a

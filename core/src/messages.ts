@@ -35,6 +35,7 @@ export type ServerMessage =
   | SettingsLoaded
   | ExternalAssetDirectoriesUpdated
   | ClaudeConfigDirUpdated
+  | ClaudeConfigDirRejected
   | AreaMappingsLoaded
   | WorkspaceFolders
   | AgentDiagnostics;
@@ -293,6 +294,11 @@ export interface ClaudeConfigDirUpdated {
   resolvedClaudeConfigDirSource: string;
   resolvedClaudeConfigDirExists: boolean;
   pendingDirExists: boolean;
+}
+
+export interface ClaudeConfigDirRejected {
+  type: 'claudeConfigDirRejected';
+  claudeConfigDir: string;
 }
 
 export interface AreaMappingsLoaded {

@@ -82,6 +82,7 @@ function App() {
     resolvedClaudeConfigDirSource,
     resolvedClaudeConfigDirExists,
     pendingDirExists,
+    claudeConfigDirRejection,
     lastSeenVersion,
     extensionVersion,
     watchAllSessions,
@@ -532,6 +533,7 @@ function App() {
         resolvedClaudeConfigDirSource={resolvedClaudeConfigDirSource}
         resolvedClaudeConfigDirExists={resolvedClaudeConfigDirExists}
         pendingDirExists={pendingDirExists}
+        claudeConfigDirRejection={claudeConfigDirRejection}
         watchAllSessions={watchAllSessions}
         onToggleWatchAllSessions={() => {
           const newVal = !watchAllSessions;

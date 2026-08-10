@@ -54,27 +54,39 @@ const KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
 
+/** Outcome of applySetClaudeConfigDir: either the value was persisted (and
+ *  the caller should send claudeConfigDirUpdated with `fields`) or the
+ *  server's authoritative validation turned it down (and the caller should
+ *  send claudeConfigDirRejected with `claudeConfigDir`). */
+export type ApplySetClaudeConfigDirResult =
+  | { rejected: false; fields: ReturnType<typeof buildClaudeConfigDirFields> }
+  | { rejected: true; claudeConfigDir: string };
+
 /**
- * Validate + persist a setClaudeConfigDir payload, returning the five
- * settingsLoaded/claudeConfigDirUpdated fields on success or null on
- * rejection (non-string payload, or a path normalizeClaudeConfigDirInput
- * rejects as non-absolute/not-a-directory). Rejection is silent by design
- * -- no write, no reply -- matching how addExternalAssetDirectory already
- * handles a missing path. Shared between the WebSocket handler below and
- * the VS Code adapter, so the two surfaces can't drift apart the way the
- * settingsLoaded emitters once did.
+ * Validate + persist a setClaudeConfigDir payload.
+ *
+ * A non-string payload is a protocol violation no real client produces, so
+ * it stays a silent no-op (`null`) -- matching how addExternalAssetDirectory
+ * already handles a missing path. A well-formed string that
+ * normalizeClaudeConfigDirInput turns down (non-absolute for THIS platform,
+ * the filesystem root, or an existing non-directory) is a user-input problem
+ * instead, and comes back as `{ rejected: true }` so the caller can say so.
+ * Silence there would leave the webview's draft differing from the live
+ * value forever, i.e. a permanent "restart to apply" notice for a value
+ * that was never written.
+ *
+ * Shared between the WebSocket handler below and the VS Code adapter, so the
+ * two surfaces can't drift apart the way the settingsLoaded emitters once did.
  */
-export function applySetClaudeConfigDir(
-  raw: unknown,
-): ReturnType<typeof buildClaudeConfigDirFields> | null {
+export function applySetClaudeConfigDir(raw: unknown): ApplySetClaudeConfigDirResult | null {
   const trimmed = typeof raw === 'string' ? raw.trim() : undefined;
   if (trimmed === undefined) return null;
   const newDir = normalizeClaudeConfigDirInput(trimmed);
-  if (newDir === null) return null;
+  if (newDir === null) return { rejected: true, claudeConfigDir: trimmed };
   const cfg = readConfig();
   cfg.claudeConfigDir = newDir;
   writeConfig(cfg);
-  return buildClaudeConfigDirFields(newDir);
+  return { rejected: false, fields: buildClaudeConfigDirFields(newDir) };
 }
 
 /**
@@ -239,8 +251,12 @@ export function handleClientMessage(
     }
 
     case 'setClaudeConfigDir': {
-      const fields = applySetClaudeConfigDir(msg.claudeConfigDir);
-      if (fields) send({ type: 'claudeConfigDirUpdated', ...fields });
+      const result = applySetClaudeConfigDir(msg.claudeConfigDir);
+      if (result?.rejected === false) {
+        send({ type: 'claudeConfigDirUpdated', ...result.fields });
+      } else if (result?.rejected === true) {
+        send({ type: 'claudeConfigDirRejected', claudeConfigDir: result.claudeConfigDir });
+      }
       break;
     }
 

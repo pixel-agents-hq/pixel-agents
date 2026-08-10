@@ -482,36 +482,55 @@ describe('clientMessageHandler: setClaudeConfigDir', () => {
 
   describe('applySetClaudeConfigDir', () => {
     it('persists a valid absolute path and returns the five fields', () => {
-      const fields = applySetClaudeConfigDir('/custom/claude');
-      expect(fields).not.toBeNull();
-      expect(fields?.claudeConfigDir).toBe('/custom/claude');
+      const result = applySetClaudeConfigDir('/custom/claude');
+      expect(result).not.toBeNull();
+      expect(result?.rejected).toBe(false);
+      expect(result?.rejected === false && result.fields.claudeConfigDir).toBe('/custom/claude');
       expect(readConfig().claudeConfigDir).toBe('/custom/claude');
     });
 
     it('persists blank and clears the setting', () => {
       applySetClaudeConfigDir('/custom/claude');
-      const fields = applySetClaudeConfigDir('');
-      expect(fields?.claudeConfigDir).toBe('');
+      const result = applySetClaudeConfigDir('');
+      expect(result?.rejected === false && result.fields.claudeConfigDir).toBe('');
       expect(readConfig().claudeConfigDir).toBe('');
     });
 
-    it('returns null and does not write for a non-absolute path', () => {
+    // A rejection is reported, not swallowed: the webview needs to know the
+    // save failed or its "restart to apply" notice never goes away.
+    it('reports a rejection and does not write for a non-absolute path', () => {
       const before = readConfig().claudeConfigDir;
-      const fields = applySetClaudeConfigDir('relative/path');
-      expect(fields).toBeNull();
+      const result = applySetClaudeConfigDir('relative/path');
+      expect(result).toEqual({ rejected: true, claudeConfigDir: 'relative/path' });
       expect(readConfig().claudeConfigDir).toBe(before);
     });
 
+    // The filesystem root passes the client's light regex but is rejected
+    // server-side (it would put getClaudeSettingsPath() at /settings.json).
+    it('reports a rejection and does not write for the filesystem root', () => {
+      const before = readConfig().claudeConfigDir;
+      const result = applySetClaudeConfigDir('/');
+      expect(result).toEqual({ rejected: true, claudeConfigDir: '/' });
+      expect(readConfig().claudeConfigDir).toBe(before);
+    });
+
+    it('echoes the TRIMMED value in a rejection', () => {
+      const result = applySetClaudeConfigDir('  relative/path  ');
+      expect(result).toEqual({ rejected: true, claudeConfigDir: 'relative/path' });
+    });
+
+    // Unchanged: a non-string payload is a protocol violation no real client
+    // sends, so it stays a silent no-op rather than a user-facing error.
     it('returns null and does not write for a non-string payload', () => {
       const before = readConfig().claudeConfigDir;
-      const fields = applySetClaudeConfigDir(42);
-      expect(fields).toBeNull();
+      const result = applySetClaudeConfigDir(42);
+      expect(result).toBeNull();
       expect(readConfig().claudeConfigDir).toBe(before);
     });
 
     it('trims whitespace before persisting', () => {
-      const fields = applySetClaudeConfigDir('  /custom/claude  ');
-      expect(fields?.claudeConfigDir).toBe('/custom/claude');
+      const result = applySetClaudeConfigDir('  /custom/claude  ');
+      expect(result?.rejected === false && result.fields.claudeConfigDir).toBe('/custom/claude');
     });
   });
 
@@ -542,13 +561,28 @@ describe('clientMessageHandler: setClaudeConfigDir', () => {
       expect(reply?.claudeConfigDir).toBe('/custom/claude');
     });
 
-    it('sends nothing on an invalid save', () => {
+    it('sends claudeConfigDirRejected on an invalid save', () => {
+      const before = readConfig().claudeConfigDir;
       handleClientMessage(
         { type: 'setClaudeConfigDir', claudeConfigDir: 'relative/path' },
         (msg) => sent.push(msg),
         ctx,
       );
+      const reply = sent.find((m) => m.type === 'claudeConfigDirRejected');
+      expect(reply).toBeTruthy();
+      expect(reply?.claudeConfigDir).toBe('relative/path');
       expect(sent.find((m) => m.type === 'claudeConfigDirUpdated')).toBeUndefined();
+      expect(readConfig().claudeConfigDir).toBe(before);
+    });
+
+    it('sends nothing at all on a non-string payload', () => {
+      handleClientMessage(
+        { type: 'setClaudeConfigDir', claudeConfigDir: 42 },
+        (msg) => sent.push(msg),
+        ctx,
+      );
+      expect(sent.find((m) => m.type === 'claudeConfigDirUpdated')).toBeUndefined();
+      expect(sent.find((m) => m.type === 'claudeConfigDirRejected')).toBeUndefined();
     });
   });
 });

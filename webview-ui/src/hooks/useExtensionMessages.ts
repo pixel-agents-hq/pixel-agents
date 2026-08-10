@@ -86,6 +86,12 @@ interface ExtensionMessageState {
   resolvedClaudeConfigDirSource: string;
   resolvedClaudeConfigDirExists: boolean;
   pendingDirExists: boolean;
+  /** Last server-side rejection of a setClaudeConfigDir save, or undefined if
+   *  there hasn't been one. `value` is the trimmed input the server turned
+   *  down, so the UI can ignore a rejection the user has already typed past.
+   *  `token` increments on every rejection message so re-rejecting the SAME
+   *  value still changes identity and re-fires the consumer's effect. */
+  claudeConfigDirRejection?: { value: string; token: number };
   lastSeenVersion: string;
   extensionVersion: string;
   watchAllSessions: boolean;
@@ -147,6 +153,9 @@ export function useExtensionMessages(
   const [resolvedClaudeConfigDirSource, setResolvedClaudeConfigDirSource] = useState('default');
   const [resolvedClaudeConfigDirExists, setResolvedClaudeConfigDirExists] = useState(true);
   const [pendingDirExists, setPendingDirExists] = useState(true);
+  const [claudeConfigDirRejection, setClaudeConfigDirRejection] = useState<
+    { value: string; token: number } | undefined
+  >();
 
   // The renderer keeps its own module-level copy (read every rAF frame), so both
   // sources of truth move together — the persisted value on settingsLoaded and
@@ -703,6 +712,14 @@ export function useExtensionMessages(
         if (typeof msg.pendingDirExists === 'boolean') {
           setPendingDirExists(msg.pendingDirExists);
         }
+      } else if (msg.type === 'claudeConfigDirRejected') {
+        // Nothing was persisted, so none of the claudeConfigDir* state moves —
+        // only the rejection notice. A fresh token every time keeps the
+        // consumer's effect firing when the same bad value is re-submitted.
+        if (typeof msg.claudeConfigDir === 'string') {
+          const value = msg.claudeConfigDir;
+          setClaudeConfigDirRejection((prev) => ({ value, token: (prev?.token ?? 0) + 1 }));
+        }
       } else if (msg.type === 'furnitureAssetsLoaded') {
         try {
           const catalog = msg.catalog as FurnitureAsset[];
@@ -768,6 +785,7 @@ export function useExtensionMessages(
     resolvedClaudeConfigDirSource,
     resolvedClaudeConfigDirExists,
     pendingDirExists,
+    claudeConfigDirRejection,
     lastSeenVersion,
     extensionVersion,
     watchAllSessions,

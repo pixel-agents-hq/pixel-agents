@@ -114,11 +114,65 @@ test.describe('Standalone / settings', () => {
     // "restart to apply it" can never be true of the same draft at once.
     await expect(modal.getByText('Restart Pixel Agents to apply')).toHaveCount(0);
 
+    // Passing the CLIENT pre-check means the value goes on the wire, which is
+    // what this half is guarding. It can't assert "no error at all": on a
+    // POSIX host the SERVER then rejects these shapes and says so inline. So
+    // assert the wire traffic instead, plus that whatever error appears is
+    // never the client-side one.
     for (const windowsPath of [WINDOWS_BACKSLASH_PATH, WINDOWS_FORWARD_SLASH_PATH]) {
       await input.fill(windowsPath);
       await input.blur();
       await page.waitForTimeout(NEGATIVE_SETTLE_MS);
-      await expect(inlineError).toHaveCount(0);
+      const replies = await standalone.drainMessages();
+      expect(
+        replies.some(
+          (message) =>
+            message.type === 'claudeConfigDirUpdated' ||
+            (message.type === 'claudeConfigDirRejected' && message.claudeConfigDir === windowsPath),
+        ),
+      ).toBe(true);
+      await expect(inlineError).not.toHaveText('Must be an absolute path');
     }
+  });
+
+  // The regression this whole message exists for: a bare `/` sails through the
+  // client's `looksAbsolute` regex but the server refuses it (taking the root
+  // would put getClaudeSettingsPath() at /settings.json). Before
+  // claudeConfigDirRejected the reply was silence, so the draft never
+  // reconciled with the live value and the modal promised a restart forever
+  // for something that was never written.
+  test('Claude config directory surfaces a server-side rejection instead of promising a restart @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    const modal = await openSettingsModal(page);
+    const input = modal.getByLabel('Claude config directory');
+    const inlineError = modal.locator('.text-status-error');
+    await standalone.drainMessages();
+
+    await input.fill('/');
+    await input.blur();
+
+    // The server answered, and it answered with a rejection.
+    await expect(inlineError).toHaveText('Rejected: not a valid directory');
+    const messages = await standalone.drainMessages();
+    expect(
+      messages.some(
+        (message) => message.type === 'claudeConfigDirRejected' && message.claudeConfigDir === '/',
+      ),
+    ).toBe(true);
+    expect(messages.some((message) => message.type === 'claudeConfigDirUpdated')).toBe(false);
+
+    // Nothing was persisted, so there is nothing pending to restart for.
+    await expect(modal.getByText('Restart Pixel Agents to apply')).toHaveCount(0);
+
+    // Re-submitting the SAME rejected value must re-raise the notice: the
+    // onChange clears it, and a plain string state wouldn't re-fire the effect
+    // for unchanged content (hence the token in claudeConfigDirRejection).
+    await input.fill('');
+    await input.fill('/');
+    await expect(inlineError).toHaveCount(0);
+    await input.blur();
+    await expect(inlineError).toHaveText('Rejected: not a valid directory');
   });
 });

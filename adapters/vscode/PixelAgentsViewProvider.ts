@@ -345,8 +345,15 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_SHOW_AREAS, enabled);
       } else if (message.type === 'setClaudeConfigDir') {
-        const fields = applySetClaudeConfigDir(message.claudeConfigDir);
-        if (fields) this.sendOrBuffer({ type: 'claudeConfigDirUpdated', ...fields });
+        const result = applySetClaudeConfigDir(message.claudeConfigDir);
+        if (result?.rejected === false) {
+          this.sendOrBuffer({ type: 'claudeConfigDirUpdated', ...result.fields });
+        } else if (result?.rejected === true) {
+          this.sendOrBuffer({
+            type: 'claudeConfigDirRejected',
+            claudeConfigDir: result.claudeConfigDir,
+          });
+        }
       } else if (message.type === 'saveAreaMappings') {
         const mappings = message.mappings as Record<string, string[]>;
         const cfg = readConfig();
