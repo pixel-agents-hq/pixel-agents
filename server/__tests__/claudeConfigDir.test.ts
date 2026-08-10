@@ -171,6 +171,41 @@ describe('normalizeClaudeConfigDirInput', () => {
     expect(normalizeClaudeConfigDirInput('/a/..')).toBeNull();
   });
 
+  // normalizeClaudeConfigDirInput's root-rejection guard
+  // (`path.parse(normalized).root === normalized`) runs through whatever
+  // `path` module Node resolves the bare `path` import to on the host OS.
+  // On this repo's CI, server unit tests only ever run on ubuntu-latest --
+  // Windows-shaped inputs below get rejected earlier, by the isAbsolute
+  // check, before the root check is even reached (see the "rejects a
+  // relative path" test above). Calling normalizeClaudeConfigDirInput
+  // itself would therefore never exercise the root guard's Windows
+  // semantics on this CI. Test the underlying path.win32 invariant
+  // directly instead -- it's what the guard becomes verbatim when Node
+  // actually runs on win32, and it's platform-independent to call from any
+  // host OS. If a future Node upgrade changes what path.win32 considers a
+  // root, this fails loudly instead of shipping a silent regression that
+  // only a Windows user would ever notice.
+  describe('root-rejection guard: win32 path semantics (host-OS-independent)', () => {
+    function win32RootCheck(raw: string): { normalized: string; isRoot: boolean } {
+      const normalized = path.win32.normalize(raw);
+      return { normalized, isRoot: path.win32.parse(normalized).root === normalized };
+    }
+
+    it.each(['C:\\', 'C:/', 'D:\\', '\\\\server\\share'])(
+      '%s normalizes down to its own drive/UNC root',
+      (winRoot) => {
+        expect(win32RootCheck(winRoot).isRoot).toBe(true);
+      },
+    );
+
+    it.each(['C:\\Users\\me', '\\\\server\\share\\folder'])(
+      '%s is NOT its own root (a real subdirectory)',
+      (winPath) => {
+        expect(win32RootCheck(winPath).isRoot).toBe(false);
+      },
+    );
+  });
+
   it('accepts an absolute path that does not exist yet', () => {
     const target = path.join(tmpDir, 'does-not-exist-yet');
     expect(normalizeClaudeConfigDirInput(target)).toBe(target);

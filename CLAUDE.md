@@ -190,8 +190,8 @@ Adding a new CLI integration is one subdirectory under `server/src/providers/hoo
 
 `core/asyncapi.yaml` is the contract. Pinned to **3.0.0** because `@asyncapi/modelina@5.10.1` declares `supportedVersions: ['3.0.0']` only; bumping to 3.1.0 produces `export type Root = any`. Revisit when Modelina ships 3.1.0 support.
 
-- **26 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + context usage, assets, settings + workspace, diagnostics.
-- **18 ClientMessage variants** (client → server): lifecycle (`webviewReady`, `launchAgent`, `focusAgent`, `closeAgent`), layout (`saveAgentSeats`, `saveLayout`, `exportLayout`, `importLayout`), settings (`setSoundEnabled`, `setHooksEnabled`, `setWatchAllSessions`, `setAlwaysShowLabels`, `setHooksInfoShown`, `setLastSeenVersion`), discovery + assets, diagnostics.
+- **31 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + context usage, assets, settings + workspace, diagnostics.
+- **22 ClientMessage variants** (client → server): lifecycle (`webviewReady`, `launchAgent`, `focusAgent`, `closeAgent`), layout (`saveAgentSeats`, `saveLayout`, `exportLayout`, `importLayout`), settings (`setSoundEnabled`, `setHooksEnabled`, `setWatchAllSessions`, `setAlwaysShowLabels`, `setHooksInfoShown`, `setLastSeenVersion`, `setGhostHeadlessAgents`, `setShowAreas`, `setClaudeConfigDir`), discovery + assets, diagnostics.
 
 Both unions use `oneOf` with `discriminator: type`. Every concrete message sets `additionalProperties: false`.
 
@@ -324,7 +324,7 @@ Per-agent runtime data: provider reference, session key, transcript-fallback fie
   hooks/claude-hook.js     Bundled hook script (CJS, shebang)
 ```
 
-`FileStateAdapter({ namespace })` backs both runtimes. Per-namespace settings: `soundEnabled`, `lastSeenVersion`, `alwaysShowLabels`, `watchAllSessions`, `hooksEnabled`, `hooksInfoShown`, `claudeConfigDirHooksInstalledAt`. Running both surfaces in parallel never clobbers either.
+`FileStateAdapter({ namespace })` backs both runtimes. Per-namespace settings: `soundEnabled`, `lastSeenVersion`, `alwaysShowLabels`, `ghostHeadlessAgents`, `watchAllSessions`, `hooksEnabled`, `hooksInfoShown`, `showAreas`, `areaMappings`, `claudeConfigDirHooksInstalledAt`. Running both surfaces in parallel never clobbers either.
 
 `migrateVsCodeState` (VS Code adapter only) walks each known legacy key once with **verify-before-clear** semantics: write to file, read back, only then clear the legacy key. While anything remains unmigrated, activation shows a non-blocking warning.
 
