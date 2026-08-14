@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { HookEventHandler } from '../src/hookEventHandler.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import { providerRegistry } from '../src/providers/index.js';
 import { SessionRouter } from '../src/sessionRouter.js';
 import type { AgentState } from '../src/types.js';
 
@@ -65,7 +66,7 @@ describe('HookEventHandler', () => {
       agents,
       waitingTimers,
       permissionTimers,
-      claudeProvider,
+      { getProvider: () => claudeProvider },
       new SessionRouter(),
     );
   });
@@ -855,6 +856,107 @@ describe('HookEventHandler', () => {
           expect(msg).toBeUndefined();
         }
       }
+    });
+  });
+
+  // ── Multi-provider registry routing (Phase 1 regression guard) ─────────────
+  describe('provider registry routing', () => {
+    it('resolves distinct providerIds to different provider instances and dispatches accordingly', () => {
+      // A minimal second provider with its own (deliberately different) event-name
+      // vocabulary -- proves per-event resolution reaches genuinely different
+      // normalization code, not just the same provider twice. Standing in for a
+      // real second provider (e.g. the planned web/REST provider) until one lands.
+      const fakeProvider = {
+        ...claudeProvider,
+        id: 'fake',
+        normalizeHookEvent: (raw: Record<string, unknown>) => {
+          if (raw.hook_event_name === 'permissionRequest' && typeof raw.session_id === 'string') {
+            return { sessionId: raw.session_id, event: { kind: 'permissionRequest' as const } };
+          }
+          return null;
+        },
+      };
+      const registry = {
+        getProvider: (id: string) => (id === 'fake' ? fakeProvider : claudeProvider),
+      };
+      const registryHandler = new HookEventHandler(
+        agents,
+        waitingTimers,
+        permissionTimers,
+        registry,
+        new SessionRouter(),
+      );
+      const agent = createTestAgent({ id: 1 });
+      agents.set(1, agent);
+      registryHandler.registerAgent('sess-claude', 1);
+
+      registryHandler.handleEvent('claude', {
+        hook_event_name: 'PermissionRequest',
+        session_id: 'sess-claude',
+      });
+      expect(mockWebview.messages.find((m) => m.type === 'agentToolPermission')).toBeTruthy();
+      mockWebview.messages.length = 0;
+
+      const fakeAgent = createTestAgent({ id: 2 });
+      agents.set(2, fakeAgent);
+      registryHandler.registerAgent('sess-fake', 2);
+
+      registryHandler.handleEvent('fake', {
+        hook_event_name: 'permissionRequest',
+        session_id: 'sess-fake',
+      });
+      const fakeMsg = mockWebview.messages.find((m) => m.type === 'agentToolPermission');
+      expect(fakeMsg).toBeTruthy();
+      expect(fakeMsg?.id).toBe(2);
+
+      // Claude's own event name ("PermissionRequest") is meaningless to the fake
+      // provider's normalizeHookEvent (case-sensitive, different vocabulary) --
+      // proving the two providerIds really reach different normalization code,
+      // not just the same one twice.
+      mockWebview.messages.length = 0;
+      registryHandler.handleEvent('fake', {
+        hook_event_name: 'PermissionRequest',
+        session_id: 'sess-fake',
+      });
+      expect(mockWebview.messages.find((m) => m.type === 'agentToolPermission')).toBeUndefined();
+    });
+
+    it('falls back to the default (claude) provider for an unregistered providerId', () => {
+      const registryHandler = new HookEventHandler(
+        agents,
+        waitingTimers,
+        permissionTimers,
+        providerRegistry,
+        new SessionRouter(),
+      );
+      const agent = createTestAgent({ id: 1 });
+      agents.set(1, agent);
+      registryHandler.registerAgent('sess-1', 1);
+
+      registryHandler.handleEvent('some-unregistered-cli', {
+        hook_event_name: 'PermissionRequest', // Claude's vocabulary -- proves fallback to claudeProvider
+        session_id: 'sess-1',
+      });
+      expect(mockWebview.messages.find((m) => m.type === 'agentToolPermission')).toBeTruthy();
+    });
+
+    it('drops events for a provider that reports an unsupported protocolVersion', () => {
+      const registryHandler = new HookEventHandler(
+        agents,
+        waitingTimers,
+        permissionTimers,
+        { getProvider: () => ({ ...claudeProvider, protocolVersion: 999 }) },
+        new SessionRouter(),
+      );
+      const agent = createTestAgent({ id: 1 });
+      agents.set(1, agent);
+      registryHandler.registerAgent('sess-1', 1);
+
+      registryHandler.handleEvent('claude', {
+        hook_event_name: 'PermissionRequest',
+        session_id: 'sess-1',
+      });
+      expect(mockWebview.messages.find((m) => m.type === 'agentToolPermission')).toBeUndefined();
     });
   });
 });

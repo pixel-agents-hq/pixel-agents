@@ -30,7 +30,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
       claudeHookInstaller.ts         Atomic install/uninstall in ~/.claude/settings.json
       constants.ts                   Claude hook event names, script path
       hooks/claude-hook.ts           Hook script (CJS+shebang, bundled to dist/hooks/claude-hook.js)
-    providers/index.ts               Provider registry
+    providers/index.ts               Provider registry: Map<providerId, HookProvider> + getProvider()
     agentRuntime.ts                  Lifecycle core: timers, scanners, HookEventHandler, SessionRouter, DismissalTracker
     agentStateStore.ts               EventEmitter-backed single source of truth (typed mutations + events)
     sessionRouter.ts                 session_id → agent_id mapping, event buffering, pending external sessions
