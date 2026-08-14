@@ -2,7 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from '../../fixtures/standalone';
-import { sendHookEvent, sessionEndExit, sessionStartStartup } from '../../helpers/hooks';
+import {
+  ourHookEvents,
+  sendHookEvent,
+  sessionEndExit,
+  sessionStartStartup,
+} from '../../helpers/hooks';
 import { advanceIntroToConsentStep, finishIntro } from '../../helpers/intro';
 import { expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
 import type { RecordedServerMessage } from '../../helpers/standalone';
@@ -120,21 +125,7 @@ test.describe('Standalone / hooks consent', () => {
   }
 
   function ourHookEventCount(tmpHome: string): number {
-    try {
-      const raw = fs.readFileSync(path.join(tmpHome, '.claude', 'settings.json'), 'utf8');
-      const settings = JSON.parse(raw) as {
-        hooks?: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
-      };
-      return Object.values(settings.hooks ?? {}).filter((entries) =>
-        (entries ?? []).some((entry) =>
-          (entry.hooks ?? []).some((h) =>
-            h.command?.includes('.pixel-agents/hooks/claude-hook.js'),
-          ),
-        ),
-      ).length;
-    } catch {
-      return 0;
-    }
+    return ourHookEvents(tmpHome).length;
   }
 
   // The operator's route: the printed tokened URL loads a privileged session,

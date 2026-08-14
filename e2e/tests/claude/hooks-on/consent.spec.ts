@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { Frame, Locator } from '@playwright/test';
 
 import { expect, test } from '../../../fixtures/pixel-agents';
+import { ourHookEvents } from '../../../helpers/hooks';
 import { advanceIntroToConsentStep, finishIntro } from '../../../helpers/intro';
 import { getSettingChecked, setSettings } from '../../../helpers/webview';
 
@@ -62,19 +63,6 @@ function readSettings(tmpHome: string): {
   } catch {
     return {};
   }
-}
-
-/** Events carrying one of our hook commands. */
-function ourHookEvents(tmpHome: string): string[] {
-  const hooks = readSettings(tmpHome).hooks ?? {};
-  return Object.entries(hooks)
-    .filter(([, entries]) =>
-      (entries ?? []).some((entry) =>
-        (entry.hooks ?? []).some((h) => h.command?.includes('.pixel-agents/hooks/claude-hook.js')),
-      ),
-    )
-    .map(([event]) => event)
-    .sort();
 }
 
 function readConsent(tmpHome: string): boolean {
