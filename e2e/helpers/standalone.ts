@@ -41,6 +41,11 @@ export interface LaunchStandaloneOptions {
   /** Reuse an existing workspace. A supplied directory is never removed by
    *  standalone cleanup. */
   workspaceDir?: string;
+  /** Pre-seed a granted Claude hooksConsent entry so the first-run dialog never
+   *  covers the office (default). The consent specs opt out with `false` —
+   *  they are the only ones that want the dialog. Never overwrites a
+   *  config.json that already exists (a shared HOME was seeded by its owner). */
+  seedHooksConsent?: boolean;
 }
 
 function delay(ms: number): Promise<void> {
@@ -228,6 +233,15 @@ export async function launchStandalone(
     fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-standalone-e2e-workspace-'));
   fs.mkdirSync(tmpHome, { recursive: true });
   fs.mkdirSync(workspaceDir, { recursive: true });
+  // Consent baseline, mirroring the VS Code launch helper: without it the CLI
+  // asks over the tokened /ws handshake and the in-app dialog covers the
+  // office in every spec. Only when the file does not exist yet — a shared
+  // HOME (multi-server) was already seeded by the surface that owns it.
+  const configPath = path.join(tmpHome, '.pixel-agents', 'config.json');
+  if ((options.seedHooksConsent ?? true) && !fs.existsSync(configPath)) {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify({ hooksConsent: { claude: 'granted' } }, null, 2));
+  }
   const hostPort = await getFreePort();
   const hostUrl = `http://127.0.0.1:${hostPort}`;
 

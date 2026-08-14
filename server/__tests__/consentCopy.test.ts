@@ -10,18 +10,12 @@ import {
 } from '../src/providers/hook/claude/constants.js';
 
 /**
- * The consent copy is two pieces because the VS Code prompt is a MODAL: the
- * headline is the message argument and the disclosure is `detail`, which
- * VS Code renders only for a modal (MessageOptions.detail). The CLI joins the
- * same two constants itself.
+ * The consent copy is two pieces: the HEADLINE is the greeter's welcome line
+ * and the DISCLOSURE is the speech-bubble body. Both surfaces render the same
+ * `hooksConsentRequest` payload through the webview's IntroBubble.
  *
  * These tests pin the CONTENT contract — every disclosure fact is present, and
  * it lives in the shared constants rather than in either surface's own copy.
- * They deliberately pin no length cap: `Dialog` sets `.dialog-message-detail`
- * with `innerText = options.detail` and truncates nothing (verified in
- * .vscode-test/vscode-darwin-arm64-1.129.1). The 1000-char
- * `NotificationViewItem.MAX_MESSAGE_LENGTH` applies to notifications, which
- * this prompt is not.
  */
 describe('consent copy', () => {
   // The five facts the 1-star review said were missing: WHICH file is written,
@@ -40,11 +34,12 @@ describe('consent copy', () => {
   });
 
   // Every fact must be in the DISCLOSURE block, not the headline: the headline
-  // is one slot of one surface, while the disclosure is what both surfaces
-  // render as the body. A fact that drifted up into the headline would still
-  // pass the assertion above and still reach the VS Code user, while silently
-  // depending on that surface's shape.
+  // is a title slot (the greeter's welcome), while the disclosure is what both
+  // surfaces render as the body. A fact that drifted up into the headline
+  // would still pass the assertion above while silently depending on how a
+  // surface renders its title.
   it('keeps every disclosure fact in the shared block, not the headline', () => {
+    expect(CONSENT_DISCLOSURE).toContain('~/.claude/settings.json');
     expect(CONSENT_DISCLOSURE).toContain(
       `${CLAUDE_HOOK_EVENTS.length.toString()} Claude Code events`,
     );
@@ -54,19 +49,19 @@ describe('consent copy', () => {
     expect(CONSENT_DISCLOSURE).toContain('Settings → Instant Detection (Hooks)');
   });
 
-  // The headline asks about a FIRST install and nothing else. A user who
-  // already has our hooks is migrated silently, so any "already installed"
-  // wording here would be copy for a surface that no longer exists.
+  // The ask is about a FIRST install and nothing else. A user who already has
+  // our hooks is migrated silently, so any "already installed" wording here
+  // would be copy for a surface that no longer exists. The disclosure asks in
+  // install terms ("adds hooks"), and the headline is a pure welcome.
   it('asks about a first install, the only case that prompts', () => {
-    expect(CONSENT_INSTALL_HEADLINE).toContain('needs to add its hooks');
+    expect(CONSENT_DISCLOSURE).toContain('adds hooks');
     expect(CONSENT_INSTALL_HEADLINE).not.toContain('already installed');
     expect(CONSENT_DISCLOSURE).not.toContain('already installed');
   });
 
-  // The disclosure keeps its paragraph breaks: it is the modal's `detail` and
-  // the CLI prompt's body, and both render newlines. Collapsing it to one run
-  // of prose (the shape a notification forced, since VS Code flattens a
-  // notification message) would be a silent legibility regression here.
+  // The disclosure keeps its paragraph breaks: the bubble splits on the blank
+  // lines and renders one <p> per fact. Collapsing it to one run of prose
+  // would be a silent legibility regression.
   it('is a paragraph-separated block', () => {
     expect(CONSENT_DISCLOSURE.split('\n\n')).toHaveLength(3);
   });

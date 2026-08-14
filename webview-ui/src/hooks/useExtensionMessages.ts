@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { HooksConsentRequest } from '../../../core/src/messages.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
 import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
@@ -90,10 +91,20 @@ interface ExtensionMessageState {
   setGhostHeadlessAgents: (v: boolean) => void;
   hooksEnabled: boolean;
   setHooksEnabled: (v: boolean) => void;
-  /** Actual install state (hooksStatus message) — false while first-run
-   *  consent is pending, unlike hooksEnabled which defaults true. */
-  hooksInstalled: boolean;
+  /** Actual install state per provider (hooksStatus messages) — absent/false
+   *  while first-run consent is pending, unlike hooksEnabled which defaults
+   *  true. Keyed by providerId; today's Settings checkbox reads 'claude'. */
+  hooksInstalled: Record<string, boolean>;
+  /** Bumped per provider on every hooksStatus message. `hooksInstalled` alone cannot say "the server answered": a
+   *  failed install re-reports the `false` already held, so no effect runs. The Intro needs the ARRIVAL to tell a
+   *  pending install from a failed one, per provider — A's status is never a verdict on B's install. */
+  hooksStatusSeq: Record<string, number>;
   hooksInfoShown: boolean;
+  /** First-run consent ask (hooksConsentRequest). Non-null while the server waits on an answer; carries the provider
+   *  and the server's exact disclosure copy, so the consent step renders the terms being approved with no client
+   *  duplicate to drift. Cleared on answer/dismissal, and by a matching provider's hooksStatus installed=true. */
+  consentRequest: HooksConsentRequest | null;
+  dismissConsentRequest: (providerId: string | null) => void;
   // Areas
   areaMappings: Record<string, string[]>;
   setAreaMappings: (m: Record<string, string[]>) => void;
@@ -102,12 +113,7 @@ interface ExtensionMessageState {
 }
 
 function saveAgentSeats(os: OfficeState): void {
-  const seats: Record<number, { palette: number; hueShift: number; seatId: string | null }> = {};
-  for (const ch of os.characters.values()) {
-    if (ch.isSubagent) continue;
-    seats[ch.id] = { palette: ch.palette, hueShift: ch.hueShift, seatId: ch.seatId };
-  }
-  transport.send({ type: 'saveAgentSeats', seats });
+  transport.send({ type: 'saveAgentSeats', seats: os.getPersistableSeats() });
 }
 
 export function useExtensionMessages(
@@ -137,8 +143,14 @@ export function useExtensionMessages(
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [ghostHeadlessAgents, setGhostHeadlessAgentsState] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
-  const [hooksInstalled, setHooksInstalled] = useState(false);
+  const [hooksInstalled, setHooksInstalled] = useState<Record<string, boolean>>({});
+  const [hooksStatusSeq, setHooksStatusSeq] = useState<Record<string, number>>({});
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
+  // FIFO of pending consent asks, at most one per provider (a re-ask replaces that provider's entry in place). The
+  // HEAD is what the Intro renders; answering, dismissing, or mooting it advances to the next provider's ask rather
+  // than dropping it — the server sends one request per provider on the same handshake.
+  const [consentQueue, setConsentQueue] = useState<HooksConsentRequest[]>([]);
+  const consentRequest = consentQueue[0] ?? null;
   const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
   const [showAreas, setShowAreas] = useState(false);
 
@@ -663,8 +675,37 @@ export function useExtensionMessages(
           setExtensionVersion(msg.extensionVersion as string);
         }
       } else if (msg.type === 'hooksStatus') {
-        if (typeof msg.installed === 'boolean') {
-          setHooksInstalled(msg.installed as boolean);
+        if (typeof msg.installed === 'boolean' && typeof msg.providerId === 'string') {
+          const providerId = msg.providerId as string;
+          const installed = msg.installed as boolean;
+          setHooksInstalled((m) => ({ ...m, [providerId]: installed }));
+          setHooksStatusSeq((m) => ({ ...m, [providerId]: (m[providerId] ?? 0) + 1 }));
+          if (installed) {
+            // Moot once THIS provider's hooks are installed — the Settings toggle or another tab granted consent
+            // while the dialog was open. Drop it from the queue (head or queued) rather than let a stale approval
+            // re-install; another provider's status is not about this ask.
+            setConsentQueue((q) => q.filter((r) => r.providerId !== providerId));
+          }
+        }
+      } else if (msg.type === 'hooksConsentRequest') {
+        if (
+          typeof msg.providerId === 'string' &&
+          typeof msg.headline === 'string' &&
+          typeof msg.disclosure === 'string'
+        ) {
+          const request: HooksConsentRequest = {
+            type: 'hooksConsentRequest',
+            providerId: msg.providerId as string,
+            headline: msg.headline as string,
+            disclosure: msg.disclosure as string,
+          };
+          setConsentQueue((q) => {
+            const i = q.findIndex((r) => r.providerId === request.providerId);
+            if (i === -1) return [...q, request];
+            const next = q.slice();
+            next[i] = request; // a re-ask carries the freshest copy
+            return next;
+          });
         }
       } else if (msg.type === 'externalAssetDirectoriesUpdated') {
         if (Array.isArray(msg.dirs)) {
@@ -739,8 +780,21 @@ export function useExtensionMessages(
     setGhostHeadlessAgents: applyGhostHeadlessAgents,
     hooksEnabled,
     hooksInstalled,
+    hooksStatusSeq,
     setHooksEnabled,
     hooksInfoShown,
+    consentRequest,
+    // Called when a tour ends (answer + Let's Go, the X, Escape) with the providerId that tour was ABOUT, removing
+    // that entry so the next provider's ask becomes the head. Keyed by id, not a blind shift: an answered ask's own
+    // installed:true moot may already have removed the head, and a shift would then drop the NEXT provider's ask
+    // unanswered. An aborted ask returns on the next connect; the queue never re-adds it here.
+    dismissConsentRequest: useCallback(
+      (providerId: string | null) =>
+        setConsentQueue((q) =>
+          providerId === null ? q.slice(1) : q.filter((r) => r.providerId !== providerId),
+        ),
+      [],
+    ),
     areaMappings,
     setAreaMappings,
     showAreas,

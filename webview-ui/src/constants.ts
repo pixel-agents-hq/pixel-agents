@@ -206,6 +206,56 @@ export const CHARACTER_HIT_HALF_WIDTH = 8;
 export const CHARACTER_HIT_HEIGHT = 24;
 export const TOOL_OVERLAY_VERTICAL_OFFSET = 32;
 
+// ── Greeter + Intro bubble ──────────────────────────────────
+/** Reserved character id for the Intro's greeter. Far outside both real agent
+ *  ids (positive) and sub-agent ids (small negatives from -1 down). */
+export const GREETER_ID = -1_000_000_000;
+/** Stacking order for the Intro's bubble. Deliberately BELOW the modal stack
+ *  (ui/Modal defaults to 50, ChangelogModal 51, the migration notice z-100): the
+ *  Intro is diegetic furniture over the office, not a modal, so a modal opened
+ *  on top of it must cover it rather than slide underneath. */
+export const INTRO_BUBBLE_Z_INDEX = 45;
+/** The greeter stands this many tiles in from the office's bottom-left corner
+ *  (target tile (margin, rows-1-margin); nearest walkable tile if blocked). */
+export const GREETER_TILE_MARGIN = 3;
+/** World px above the greeter's anchor (feet) where the bubble's bottom sits.
+ *  Kept well above the head target (INTRO_TAIL_TARGET_RISE_WORLD) so the
+ *  tail squares have a visible run between bubble and head. */
+export const INTRO_BUBBLE_ANCHOR_RISE_WORLD = 44;
+/** World px right of the greeter's center where the bubble's left edge starts —
+ *  just clear of the sprite so the tail points down-left at the head. */
+export const INTRO_BUBBLE_OFFSET_X_WORLD = 10;
+/** Bubble width cap (CSS px) and the margin kept from the container edges.
+ *  Wide on purpose: the disclosure reads as three short paragraphs instead of
+ *  a tall column (still clamped to the container on narrow panels). */
+export const INTRO_BUBBLE_MAX_WIDTH_PX = 560;
+export const INTRO_BUBBLE_EDGE_MARGIN_PX = 4;
+/** Where the Intro's Claude Code step sends people who don't have it yet. */
+export const CLAUDE_CODE_URL = 'https://claude.com/claude-code';
+export const CLAUDE_CODE_INSTALL_COMMAND = 'npm install -g @anthropic-ai/claude-code';
+/** Speech-tail squares: placed at fraction `t` along the segment from the
+ *  bubble's nearest edge point to the greeter's head, shrinking toward the
+ *  speaker. Recomputed every frame so the tail stays connected no matter where
+ *  edge-clamping or panning puts the bubble relative to the character. */
+export const INTRO_TAIL_STEPS = [
+  { t: 0.25, size: 12 },
+  { t: 0.55, size: 9 },
+  { t: 0.82, size: 6 },
+] as const;
+/** World px above the greeter's anchor (feet) the tail points at — the head. */
+export const INTRO_TAIL_TARGET_RISE_WORLD = 26;
+/** Camera-offset caps while centering character + bubble. The ideal composition
+ *  assumes the bubble fits beside/above the character; when it can't (narrow or
+ *  short viewports clamp the bubble to the screen), uncapped offsets shove the
+ *  greeter to the viewport edge. Horizontal offset is capped to this fraction
+ *  of the viewport; vertical offset always keeps this many world px of the
+ *  character visible above the bottom edge. */
+export const INTRO_CAMERA_MAX_X_OFFSET_VIEWPORT_FRACTION = 0.25;
+export const INTRO_CAMERA_MIN_CHAR_VISIBLE_WORLD = 48;
+/** Extra downward camera shift (CSS px) so the character+bubble composition
+ *  sits a bit above the vertical center instead of dead-centered. */
+export const INTRO_CAMERA_DOWN_SHIFT_PX = 50;
+
 // ── Context Fuel Gauge ──────────────────────────────────────
 /** Window assumed before the runtime reports one (it always does for agents
  *  that have taken a turn; this only covers characters created ahead of it). */
