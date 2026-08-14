@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { expect, test } from '../../fixtures/standalone';
 import { sendHookEvent, sessionEndExit, sessionStartStartup } from '../../helpers/hooks';
+import { advanceIntroToConsentStep, finishIntro } from '../../helpers/intro';
 import { expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
 import type { RecordedServerMessage } from '../../helpers/standalone';
 import { openSettingsModal, setSettings } from '../../helpers/webview';
@@ -97,53 +98,122 @@ test.describe('Standalone / hooks', () => {
     const sessionEndMessages = await standalone.drainMessages();
     expect(sessionEndMessages.some((message) => message.type === 'agentClosed')).toBe(true);
   });
+});
+
+/**
+ * The standalone consent path end to end. The fixture normally seeds a granted Claude consent; these opt out, so the
+ * CLI starts with nothing installed and the server asks over the tokened /ws handshake — the SAME in-app dialog the
+ * VS Code webview shows (pinned in claude/hooks-on/consent.spec.ts). Here the pins are the standalone-only halves:
+ * the token boundary and the checkbox route.
+ */
+test.describe('Standalone / hooks consent', () => {
+  test.use({ seedHooksConsent: false });
+
+  function readConsentFrom(tmpHome: string): boolean {
+    try {
+      const raw = fs.readFileSync(path.join(tmpHome, '.pixel-agents', 'config.json'), 'utf8');
+      const consent = (JSON.parse(raw) as { hooksConsent?: Record<string, string> }).hooksConsent;
+      return consent?.claude === 'granted';
+    } catch {
+      return false;
+    }
+  }
+
+  function ourHookEventCount(tmpHome: string): number {
+    try {
+      const raw = fs.readFileSync(path.join(tmpHome, '.claude', 'settings.json'), 'utf8');
+      const settings = JSON.parse(raw) as {
+        hooks?: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
+      };
+      return Object.values(settings.hooks ?? {}).filter((entries) =>
+        (entries ?? []).some((entry) =>
+          (entry.hooks ?? []).some((h) =>
+            h.command?.includes('.pixel-agents/hooks/claude-hook.js'),
+          ),
+        ),
+      ).length;
+    } catch {
+      return 0;
+    }
+  }
+
+  // The operator's route: the printed tokened URL loads a privileged session,
+  // the Intro rides the handshake, and Install (on its consent step) writes
+  // the hooks.
+  test('the tokened page shows the Intro and Install writes the hooks @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await advanceIntroToConsentStep(dialog);
+    // The disclosure travels with the request — the browser renders the
+    // server's exact terms.
+    await expect(dialog).toContainText('~/.claude/settings.json');
+    await expect(dialog).toContainText('Instant Detection (Hooks)');
+
+    expect(fs.existsSync(path.join(standalone.tmpHome, '.claude', 'settings.json'))).toBe(false);
+
+    await dialog.getByRole('button', { name: 'Install Hooks' }).click();
+
+    await expect.poll(() => readConsentFrom(standalone.tmpHome), { timeout: 15_000 }).toBe(true);
+    await expect.poll(() => ourHookEventCount(standalone.tmpHome), { timeout: 15_000 }).toBe(12);
+
+    // The install's own hooksStatus broadcast must not yank the closing step.
+    await finishIntro(dialog);
+  });
+
+  // The token boundary, at the browser level: a bare-URL session still watches
+  // the office but is never asked — its answer would be ignored
+  // (server/__tests__/httpServerWs.test.ts pins the wire half), so showing it
+  // the dialog would be a lie.
+  test('an untokened spectator page never sees the consent dialog @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    void standalone;
+    const bareUrl = new URL(page.url());
+    bareUrl.search = '';
+
+    const spectator = await page.context().newPage();
+    try {
+      await spectator.goto(bareUrl.toString());
+      await expect(spectator.getByRole('button', { name: 'Settings' })).toBeVisible({
+        timeout: 30_000,
+      });
+      // Settle before the negative assertion: the dialog, were it coming,
+      // rides the webviewReady handshake that just completed.
+      await spectator.waitForTimeout(2_000);
+      await expect(spectator.getByRole('dialog')).toHaveCount(0);
+    } finally {
+      await spectator.close();
+    }
+  });
 
   /**
-   * The standalone consent path end to end.
-   *
-   * The fixture spawns the CLI without a TTY and without seeded consent, so the
-   * first-run prompt is skipped and NOTHING is installed — while the
-   * `hooksEnabled` preference still defaults to true. That divergence is
-   * exactly what the checkbox used to lie about: it read "on" over an
-   * untouched ~/.claude/settings.json. It must now show the ACTUAL install
-   * state, and clicking it must be the consent grant.
+   * The Settings-checkbox route, for a user who dismissed the dialog: Not Now
+   * writes nothing, the checkbox shows the ACTUAL install state (not the
+   * hooksEnabled preference, which still defaults true), and clicking it is
+   * the consent grant.
    */
   test('the hooks checkbox reflects install state and its click is the consent grant @area:standalone', async ({
     page,
     standalone,
   }) => {
     const settingsPath = path.join(standalone.tmpHome, '.claude', 'settings.json');
-    const configPath = path.join(standalone.tmpHome, '.pixel-agents', 'config.json');
-    const readConsent = (): boolean => {
-      try {
-        return (
-          (JSON.parse(fs.readFileSync(configPath, 'utf8')) as { hooksConsentGiven?: boolean })
-            .hooksConsentGiven === true
-        );
-      } catch {
-        return false;
-      }
-    };
-    const ourHookEventCount = (): number => {
-      try {
-        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as {
-          hooks?: Record<string, Array<{ hooks?: Array<{ command?: string }> }>>;
-        };
-        return Object.values(settings.hooks ?? {}).filter((entries) =>
-          (entries ?? []).some((entry) =>
-            (entry.hooks ?? []).some((h) =>
-              h.command?.includes('.pixel-agents/hooks/claude-hook.js'),
-            ),
-          ),
-        ).length;
-      } catch {
-        return 0;
-      }
-    };
+
+    // First-run Intro is up; decline with Not Now — which writes NOTHING —
+    // and finish the tour.
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await advanceIntroToConsentStep(dialog);
+    await dialog.getByRole('button', { name: 'Not Now' }).click();
+    await finishIntro(dialog);
+    await page.waitForTimeout(1_000);
 
     // Nothing installed, no consent — but the preference defaults true.
     expect(fs.existsSync(settingsPath)).toBe(false);
-    expect(readConsent()).toBe(false);
+    expect(readConsentFrom(standalone.tmpHome)).toBe(false);
 
     // Everything below drives ONE open modal: the checkbox is clicked
     // UNCONDITIONALLY rather than through setSettings(), whose setCheckbox only
@@ -160,11 +230,11 @@ test.describe('Standalone / hooks', () => {
 
     expect(await isChecked()).toBe(false);
 
-    // Clicking it IS the consent grant (the documented non-TTY route).
+    // Clicking it IS the consent grant (the documented route after a decline).
     await hooksCheckbox.click();
 
-    await expect.poll(() => readConsent(), { timeout: 15_000 }).toBe(true);
-    await expect.poll(() => ourHookEventCount(), { timeout: 15_000 }).toBe(12);
+    await expect.poll(() => readConsentFrom(standalone.tmpHome), { timeout: 15_000 }).toBe(true);
+    await expect.poll(() => ourHookEventCount(standalone.tmpHome), { timeout: 15_000 }).toBe(12);
     await expect.poll(() => isChecked(), { timeout: 15_000 }).toBe(true);
   });
 });

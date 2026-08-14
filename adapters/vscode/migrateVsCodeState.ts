@@ -19,15 +19,18 @@ import type { StateAdapter } from '../../core/src/adapter.js';
 import type { PersistedAgent } from '../../core/src/schemas.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../../server/src/layoutPersistence.js';
 
-/** VS Code globalState keys → setting key passed to adapter.getSetting/setSetting. */
+/** VS Code globalState keys → setting key passed to adapter.getSetting/setSetting.
+ *  `pixel-agents.hooksEnabled` is NOT here: a legacy hooks-off is deliberately
+ *  discarded rather than migrated (see the branch below). */
 const SETTINGS_MIGRATIONS: readonly { vscodeKey: string; settingKey: string }[] = [
   { vscodeKey: 'pixel-agents.soundEnabled', settingKey: 'pixel-agents.soundEnabled' },
   { vscodeKey: 'pixel-agents.lastSeenVersion', settingKey: 'pixel-agents.lastSeenVersion' },
   { vscodeKey: 'pixel-agents.alwaysShowLabels', settingKey: 'pixel-agents.alwaysShowLabels' },
   { vscodeKey: 'pixel-agents.watchAllSessions', settingKey: 'pixel-agents.watchAllSessions' },
-  { vscodeKey: 'pixel-agents.hooksEnabled', settingKey: 'pixel-agents.hooksEnabled' },
   { vscodeKey: 'pixel-agents.hooksInfoShown', settingKey: 'pixel-agents.hooksInfoShown' },
 ];
+
+const VSCODE_KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
 
 const WORKSPACE_KEY_AGENTS = 'pixel-agents.agents';
 const WORKSPACE_KEY_AGENT_SEATS = 'pixel-agents.agentSeats';
@@ -52,6 +55,16 @@ export function migrateVsCodeState(context: vscode.ExtensionContext, adapter: St
     } catch {
       pending.push(vscodeKey);
     }
+  }
+
+  // ── Legacy hooks preference (globalState): DISCARDED, not migrated ──
+  // Hooks used to be on by default with a bare toggle to turn them off, so the
+  // only users carrying a stored value are the ones who DISABLED them — never
+  // having been told what hooks add or where the data goes. They get the Intro
+  // and decide with the full disclosure. The key is still cleared, or it counts
+  // as unmigrated forever and warns on every launch.
+  if (context.globalState.get<unknown>(VSCODE_KEY_HOOKS_ENABLED) !== undefined) {
+    void context.globalState.update(VSCODE_KEY_HOOKS_ENABLED, undefined);
   }
 
   // ── Agents (workspaceState) ──

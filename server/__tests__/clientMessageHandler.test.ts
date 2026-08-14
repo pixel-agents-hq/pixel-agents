@@ -9,7 +9,7 @@ import {
   type ClientMessageContext,
   handleClientMessage,
 } from '../src/clientMessageHandler.js';
-import { readConfig } from '../src/configPersistence.js';
+import { getHooksEnabled, readConfig, setHooksEnabled } from '../src/configPersistence.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
 import { CLAUDE_HOOK_EVENTS } from '../src/providers/hook/claude/constants.js';
 import type { AgentState } from '../src/types.js';
@@ -155,7 +155,7 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
       await new Promise((r) => setTimeout(r, 0));
 
       const status = sent.find((m) => m.type === 'hooksStatus');
-      expect(status).toEqual({ type: 'hooksStatus', installed: false });
+      expect(status).toEqual({ type: 'hooksStatus', providerId: 'claude', installed: false });
     });
 
     it('setHooksEnabled reports the actual outcome after the side effect settles', async () => {
@@ -164,14 +164,18 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
       ctx.onSetHooksEnabled = async () => {
         sideEffectRan = true;
       };
-      handleClientMessage({ type: 'setHooksEnabled', enabled: true }, (m) => sent.push(m), ctx);
+      handleClientMessage(
+        { type: 'setHooksEnabled', providerId: 'claude', enabled: true },
+        (m) => sent.push(m),
+        ctx,
+      );
       await settle();
 
       expect(sideEffectRan).toBe(true);
       // The side effect installed nothing (stub), so the truthful answer is false
       // even though the user just toggled the setting ON.
       const status = sent.find((m) => m.type === 'hooksStatus');
-      expect(status).toEqual({ type: 'hooksStatus', installed: false });
+      expect(status).toEqual({ type: 'hooksStatus', providerId: 'claude', installed: false });
     });
   });
 
@@ -202,31 +206,40 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
         /* the uninstall failed: settings.json still carries our entries */
       };
 
-      handleClientMessage({ type: 'setHooksEnabled', enabled: false }, (m) => sent.push(m), ctx);
+      handleClientMessage(
+        { type: 'setHooksEnabled', providerId: 'claude', enabled: false },
+        (m) => sent.push(m),
+        ctx,
+      );
       await settle();
 
       // The preference still says ON, so the next startup re-runs the install
       // path and the user keeps a way to turn hooks off.
-      expect(store.getAdapter()!.getSetting('pixel-agents.hooksEnabled', true)).toBe(true);
+      expect(getHooksEnabled('claude')).toBe(true);
       // ...and the checkbox is told the truth: they are still installed.
       expect(sent.find((m) => m.type === 'hooksStatus')).toEqual({
         type: 'hooksStatus',
+        providerId: 'claude',
         installed: true,
       });
     });
 
     // The mirror case: an install that did not happen must not persist ON.
     it('does not persist hooks-on when the install failed', async () => {
-      store.getAdapter()!.setSetting('pixel-agents.hooksEnabled', false);
+      setHooksEnabled('claude', false);
       ctx.privileged = true;
       ctx.onSetHooksEnabled = () => {
         /* the install failed: settings.json stays empty */
       };
 
-      handleClientMessage({ type: 'setHooksEnabled', enabled: true }, (m) => sent.push(m), ctx);
+      handleClientMessage(
+        { type: 'setHooksEnabled', providerId: 'claude', enabled: true },
+        (m) => sent.push(m),
+        ctx,
+      );
       await settle();
 
-      expect(store.getAdapter()!.getSetting('pixel-agents.hooksEnabled', true)).toBe(false);
+      expect(getHooksEnabled('claude')).toBe(false);
     });
 
     // The happy path still persists, or the toggle would do nothing at all.
@@ -234,12 +247,17 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
       ctx.privileged = true;
       ctx.onSetHooksEnabled = () => seedInstalledHooks();
 
-      handleClientMessage({ type: 'setHooksEnabled', enabled: true }, (m) => sent.push(m), ctx);
+      handleClientMessage(
+        { type: 'setHooksEnabled', providerId: 'claude', enabled: true },
+        (m) => sent.push(m),
+        ctx,
+      );
       await settle();
 
-      expect(store.getAdapter()!.getSetting('pixel-agents.hooksEnabled', false)).toBe(true);
+      expect(getHooksEnabled('claude')).toBe(true);
       expect(sent.find((m) => m.type === 'hooksStatus')).toEqual({
         type: 'hooksStatus',
+        providerId: 'claude',
         installed: true,
       });
     });
@@ -254,15 +272,20 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
         sideEffectRan = true;
       };
 
-      handleClientMessage({ type: 'setHooksEnabled', enabled: true }, (m) => sent.push(m), ctx);
+      handleClientMessage(
+        { type: 'setHooksEnabled', providerId: 'claude', enabled: true },
+        (m) => sent.push(m),
+        ctx,
+      );
       await settle();
 
       expect(sideEffectRan).toBe(false);
-      expect(store.getAdapter()!.getSetting('pixel-agents.hooksEnabled', true)).toBe(true);
+      expect(getHooksEnabled('claude')).toBe(true);
       // It still hears the truth, so a LAN viewer's checkbox shows reality
       // rather than appearing to have worked.
       expect(sent.find((m) => m.type === 'hooksStatus')).toEqual({
         type: 'hooksStatus',
+        providerId: 'claude',
         installed: false,
       });
     });

@@ -11,5 +11,19 @@
  * than reaching into each provider directory directly.
  */
 
-export { claudeProvider } from './hook/claude/claude.js';
+import type { HookProvider } from '../../../core/src/provider.js';
+import { claudeProvider } from './hook/claude/claude.js';
+
+export { claudeProvider };
 export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+
+/** Every bundled hook provider, in registration order. The consent gate loops
+ *  over this at the webviewReady handshake (one ask per provider that needs
+ *  one) and `hooksConsentResponse` resolves its provider id against it. */
+export const hookProviders: readonly HookProvider[] = [claudeProvider];
+
+/** Resolve a wire-supplied provider id, or undefined for an unknown one —
+ *  the caller writes nothing on undefined (fail-closed, like a junk choice). */
+export function hookProviderById(id: unknown): HookProvider | undefined {
+  return typeof id === 'string' ? hookProviders.find((p) => p.id === id) : undefined;
+}

@@ -372,6 +372,94 @@ describe('claudeHookInstaller', () => {
     expect(fs.existsSync(backupPath)).toBe(false);
   });
 
+  // 8c-2. ...and later writes to a file OUR install created still take none.
+  //       The backup preserves the user's pre-Pixel-Agents file; when the only
+  //       content ever in the file is our own install, a backup enshrines our
+  //       output as "the user's original". Observed in a fresh home: the first
+  //       uninstall backed up the install's own 12 entries.
+  it('creates no backup across uninstall/reinstall of a file our install created', async () => {
+    const backupPath = settingsPathFor() + SETTINGS_BACKUP_SUFFIX;
+    await installHooks();
+    await uninstallHooks();
+    expect(fs.existsSync(backupPath)).toBe(false);
+    await installHooks();
+    expect(fs.existsSync(backupPath)).toBe(false);
+  });
+
+  // 8c-3. The skip is content-based, not a permanent waiver: the moment the
+  //       file holds anything user-authored, the next write backs it up —
+  //       capturing the user's addition, not the pre-install void.
+  it('backs up before the next write once user content joins a file we created', async () => {
+    const settingsPath = settingsPathFor();
+    const backupPath = settingsPath + SETTINGS_BACKUP_SUFFIX;
+    await installHooks();
+
+    const withUserKey = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    withUserKey.model = 'opus';
+    fs.writeFileSync(settingsPath, JSON.stringify(withUserKey, null, 2));
+
+    await uninstallHooks();
+    const backedUp = JSON.parse(fs.readFileSync(backupPath, 'utf-8'));
+    expect(backedUp.model).toBe('opus');
+  });
+
+  // 8c-4. A foreign hook inside an otherwise all-ours file counts as user
+  //       content the same way a top-level key does.
+  it('backs up when a foreign hook entry joins a file we created', async () => {
+    const settingsPath = settingsPathFor();
+    const backupPath = settingsPath + SETTINGS_BACKUP_SUFFIX;
+    await installHooks();
+
+    const withForeign = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    withForeign.hooks.Stop.push({
+      matcher: '',
+      hooks: [{ type: 'command', command: 'their-tool --observe' }],
+    });
+    fs.writeFileSync(settingsPath, JSON.stringify(withForeign, null, 2));
+
+    await uninstallHooks();
+    expect(fs.existsSync(backupPath)).toBe(true);
+    const backedUp = JSON.parse(fs.readFileSync(backupPath, 'utf-8'));
+    expect(JSON.stringify(backedUp.hooks.Stop)).toContain('their-tool --observe');
+  });
+
+  // 8c-5. Key order is not part of a value: an editor, a formatter, or a hand
+  //       edit that rewrites our own entries with the keys in a different
+  //       order has changed nothing about what the file SAYS, so the skip must
+  //       still apply.
+  //
+  //       Note what this does and does not pin. Today it passes against a
+  //       stringify-based comparison too, because every field the predicate
+  //       compares is a scalar (`hooks` is compared separately, element by
+  //       element) and scalars serialize identically in any order. The
+  //       key-order sensitivity is a TRAP rather than a live bug — it arms
+  //       itself the day makeHookEntry() grows a field with an object value,
+  //       at which point a reordered copy of our own output would read as user
+  //       content and enshrine it as "the user's original". The predicate
+  //       compares values structurally so that day never arrives; this test is
+  //       the standing guard for it.
+  it('creates no backup when our own entries are re-serialized in another key order', async () => {
+    const settingsPath = settingsPathFor();
+    const backupPath = settingsPath + SETTINGS_BACKUP_SUFFIX;
+    await installHooks();
+
+    const reordered = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    for (const event of Object.keys(reordered.hooks)) {
+      reordered.hooks[event] = reordered.hooks[event].map(
+        (entry: { matcher: string; hooks: Array<Record<string, unknown>> }) => ({
+          // Same values, opposite key order — `hooks` before `matcher`, and
+          // `timeout`/`command`/`type` reversed inside each hook.
+          hooks: entry.hooks.map((h) => ({ timeout: h.timeout, command: h.command, type: h.type })),
+          matcher: entry.matcher,
+        }),
+      );
+    }
+    fs.writeFileSync(settingsPath, JSON.stringify(reordered, null, 2));
+
+    await uninstallHooks();
+    expect(fs.existsSync(backupPath)).toBe(false);
+  });
+
   // ── W1: the write path throws instead of logging ──────────────
   //
   // A swallowed write error used to leave callers logging "Hooks installed"

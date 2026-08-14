@@ -17,6 +17,7 @@ vi.mock('os', async () => {
 
 // Must import AFTER mock setup.
 const { FileStateAdapter } = await import('../src/fileStateAdapter.js');
+const { getHooksEnabled, setHooksEnabled } = await import('../src/configPersistence.js');
 
 describe('FileStateAdapter', () => {
   beforeEach(() => {
@@ -36,22 +37,28 @@ describe('FileStateAdapter', () => {
     expect(adapter.getSetting('pixel-agents.lastSeenVersion', 'x')).toBe('');
   });
 
-  it('round-trips each of the 6 setting keys', () => {
+  it('round-trips each namespaced setting key (hooksEnabled moved to the per-provider map)', () => {
     const adapter = new FileStateAdapter({ namespace: 'standalone' });
 
     adapter.setSetting('pixel-agents.soundEnabled', false);
     adapter.setSetting('pixel-agents.lastSeenVersion', '1.3');
     adapter.setSetting('pixel-agents.alwaysShowLabels', true);
     adapter.setSetting('pixel-agents.watchAllSessions', true);
-    adapter.setSetting('pixel-agents.hooksEnabled', false);
     adapter.setSetting('pixel-agents.hooksInfoShown', true);
 
     expect(adapter.getSetting('pixel-agents.soundEnabled', true)).toBe(false);
     expect(adapter.getSetting('pixel-agents.lastSeenVersion', '')).toBe('1.3');
     expect(adapter.getSetting('pixel-agents.alwaysShowLabels', false)).toBe(true);
     expect(adapter.getSetting('pixel-agents.watchAllSessions', false)).toBe(true);
-    expect(adapter.getSetting('pixel-agents.hooksEnabled', true)).toBe(false);
     expect(adapter.getSetting('pixel-agents.hooksInfoShown', false)).toBe(true);
+
+    // hooksEnabled is deliberately NOT an adapter key any more: it is
+    // per-provider and machine-global, so the adapter ignores it and the
+    // per-provider accessors own it.
+    adapter.setSetting('pixel-agents.hooksEnabled', false);
+    expect(adapter.getSetting('pixel-agents.hooksEnabled', true)).toBe(true);
+    setHooksEnabled('claude', false);
+    expect(getHooksEnabled('claude')).toBe(false);
   });
 
   it('vscode and standalone namespaces are isolated in config.json', () => {

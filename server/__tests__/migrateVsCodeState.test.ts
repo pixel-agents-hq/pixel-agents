@@ -22,6 +22,7 @@ vi.mock('os', async () => {
 });
 
 import { migrateVsCodeState } from '../../adapters/vscode/migrateVsCodeState.js';
+import { getHooksEnabled } from '../src/configPersistence.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../src/layoutPersistence.js';
 
@@ -71,7 +72,7 @@ describe('migrateVsCodeState', () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
-  it('migrates all 6 legacy globalState settings to the vscode namespace and clears them', () => {
+  it('migrates every legacy globalState setting — and DISCARDS the hooks preference', () => {
     const { context, globalStore } = makeContext({
       'pixel-agents.soundEnabled': false,
       'pixel-agents.lastSeenVersion': '1.2.0',
@@ -88,8 +89,14 @@ describe('migrateVsCodeState', () => {
     expect(adapter.getSetting('pixel-agents.lastSeenVersion', '')).toBe('1.2.0');
     expect(adapter.getSetting('pixel-agents.alwaysShowLabels', false)).toBe(true);
     expect(adapter.getSetting('pixel-agents.watchAllSessions', false)).toBe(true);
-    expect(adapter.getSetting('pixel-agents.hooksEnabled', true)).toBe(false);
+    // The legacy hooksEnabled is DISCARDED, not migrated: hooks were on by
+    // default back then, so a stored value means the user turned them OFF
+    // without ever being told what they add — they get the Intro instead. The
+    // provider map keeps its default...
+    expect(getHooksEnabled('claude')).toBe(true);
     expect(adapter.getSetting('pixel-agents.hooksInfoShown', false)).toBe(true);
+    // ...while the stale key is still cleared — left behind it would count as
+    // unmigrated forever and warn on every launch.
     expect(globalStore).toEqual({});
     expect(showWarningMessage).not.toHaveBeenCalled();
   });

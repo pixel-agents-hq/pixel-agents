@@ -233,28 +233,33 @@ export function OfficeCanvas({
           }
         }
 
-        // Camera follow: smoothly center on followed agent
-        if (officeState.cameraFollowId !== null) {
-          const followCh = officeState.characters.get(officeState.cameraFollowId);
-          if (followCh) {
-            const layout = officeState.getLayout();
-            const mapW = layout.cols * TILE_SIZE * zoom;
-            const mapH = layout.rows * TILE_SIZE * zoom;
-            const targetX = mapW / 2 - followCh.x * zoom;
-            const targetY = mapH / 2 - followCh.y * zoom;
-            const dx = targetX - panRef.current.x;
-            const dy = targetY - panRef.current.y;
-            if (
-              Math.abs(dx) < CAMERA_FOLLOW_SNAP_THRESHOLD &&
-              Math.abs(dy) < CAMERA_FOLLOW_SNAP_THRESHOLD
-            ) {
-              panRef.current = { x: targetX, y: targetY };
-            } else {
-              panRef.current = {
-                x: panRef.current.x + dx * CAMERA_FOLLOW_LERP,
-                y: panRef.current.y + dy * CAMERA_FOLLOW_LERP,
-              };
-            }
+        // Camera: smoothly center on the followed agent, or — while the greeter
+        // is speaking the Intro — on the character+bubble center the IntroBubble
+        // overlay feeds via greeterCameraTarget. An explicit follow (clicking an
+        // agent) outranks the greeter target; a manual pan cancels both.
+        const followCh =
+          officeState.cameraFollowId !== null
+            ? officeState.characters.get(officeState.cameraFollowId)
+            : undefined;
+        const cameraFocus = followCh ?? officeState.greeterCameraTarget;
+        if (cameraFocus) {
+          const layout = officeState.getLayout();
+          const mapW = layout.cols * TILE_SIZE * zoom;
+          const mapH = layout.rows * TILE_SIZE * zoom;
+          const targetX = mapW / 2 - cameraFocus.x * zoom;
+          const targetY = mapH / 2 - cameraFocus.y * zoom;
+          const dx = targetX - panRef.current.x;
+          const dy = targetY - panRef.current.y;
+          if (
+            Math.abs(dx) < CAMERA_FOLLOW_SNAP_THRESHOLD &&
+            Math.abs(dy) < CAMERA_FOLLOW_SNAP_THRESHOLD
+          ) {
+            panRef.current = { x: targetX, y: targetY };
+          } else {
+            panRef.current = {
+              x: panRef.current.x + dx * CAMERA_FOLLOW_LERP,
+              y: panRef.current.y + dy * CAMERA_FOLLOW_LERP,
+            };
           }
         }
 
@@ -536,8 +541,9 @@ export function OfficeCanvas({
       // Middle mouse button (button 1) starts panning
       if (e.button === 1) {
         e.preventDefault();
-        // Break camera follow on manual pan
+        // Break camera follow + greeter centering on manual pan
         officeState.cameraFollowId = null;
+        officeState.cancelGreeterCamera();
         isPanningRef.current = true;
         panStartRef.current = {
           mouseX: e.clientX,
@@ -767,20 +773,10 @@ export function OfficeCanvas({
                   officeState.reassignSeat(officeState.selectedAgentId, seatId);
                   officeState.selectedAgentId = null;
                   officeState.cameraFollowId = null;
-                  // Persist seat assignments (exclude sub-agents)
-                  const seats: Record<
-                    number,
-                    { palette: number; hueShift: number; seatId: string | null }
-                  > = {};
-                  for (const ch of officeState.characters.values()) {
-                    if (ch.isSubagent) continue;
-                    seats[ch.id] = {
-                      palette: ch.palette,
-                      hueShift: ch.hueShift,
-                      seatId: ch.seatId,
-                    };
-                  }
-                  transport.send({ type: 'saveAgentSeats', seats });
+                  transport.send({
+                    type: 'saveAgentSeats',
+                    seats: officeState.getPersistableSeats(),
+                  });
                   return;
                 }
               }
@@ -852,6 +848,7 @@ export function OfficeCanvas({
         // Pan via trackpad two-finger scroll or mouse wheel
         const dpr = window.devicePixelRatio || 1;
         officeState.cameraFollowId = null;
+        officeState.cancelGreeterCamera();
         panRef.current = clampPan(
           panRef.current.x - e.deltaX * dpr,
           panRef.current.y - e.deltaY * dpr,

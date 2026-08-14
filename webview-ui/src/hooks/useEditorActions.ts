@@ -5,6 +5,7 @@ import {
   CARPET_DEFAULT_ACCENT_COLOR,
   CARPET_DEFAULT_COLOR,
   LAYOUT_SAVE_DEBOUNCE_MS,
+  ZOOM_DEFAULT_DPR_FACTOR,
   ZOOM_MAX,
   ZOOM_MIN,
 } from '../constants.js';
@@ -35,7 +36,6 @@ import {
   getRotatedType,
   getToggledType,
 } from '../office/layout/furnitureCatalog.js';
-import { defaultZoom } from '../office/toolUtils.js';
 import type {
   EditTool as EditToolType,
   OfficeLayout,
@@ -96,6 +96,15 @@ interface EditorActions {
   handleRemoveArea: (label: string) => void;
   handleRenameArea: (oldLabel: string, newLabel: string) => void;
   handleAreaColorChange: (label: string, color: string) => void;
+}
+
+/** Default integer zoom (device pixels per sprite pixel) for a fresh session.
+ *  Lives here, with the zoom state it seeds, rather than in the office modules:
+ *  it reads `devicePixelRatio`, and a viewport concern in a state module drags
+ *  the DOM into every graph that imports it (OfficeState's included). */
+function defaultZoom(): number {
+  const dpr = window.devicePixelRatio || 1;
+  return Math.max(ZOOM_MIN, Math.round(ZOOM_DEFAULT_DPR_FACTOR * dpr));
 }
 
 export function useEditorActions(

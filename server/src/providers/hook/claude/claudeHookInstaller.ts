@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { isDeepStrictEqual } from 'util';
 
 import { HOOK_SCRIPTS_DIR } from '../../../constants.js';
 import {
@@ -171,7 +172,11 @@ async function mutateClaudeSettings(
  *  same failure wearing a different hat: we modified settings.json with nothing
  *  the user could restore from. So EEXIST is re-verified with a stat that
  *  follows symlinks (a symlink to a real file IS recoverable) and anything that
- *  is not a regular file throws. */
+ *  is not a regular file throws.
+ *
+ *  The caller skips this entirely when the content being replaced is our own
+ *  install's output (settingsHoldOnlyOurHooks) — a backup of what we wrote
+ *  preserves nothing and masquerades as the user's original. */
 function backupClaudeSettingsOnce(settingsPath: string): void {
   if (!fs.existsSync(settingsPath)) return;
   const backupPath = settingsPath + SETTINGS_BACKUP_SUFFIX;
@@ -229,7 +234,22 @@ function writeClaudeSettings(settings: ClaudeSettings, expectedRaw: string | nul
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
-  backupClaudeSettingsOnce(settingsPath);
+  // The backup preserves the user's pre-Pixel-Agents file; when the content
+  // being replaced is entirely of our own writing (typical after our install
+  // CREATED settings.json in a fresh home), there is nothing to preserve and
+  // the copy is skipped. The decision reads expectedRaw — the same content the
+  // verify below pins: if the file gained user content after our read, the
+  // skip is stale but the write aborts before the rename and the retry
+  // re-decides on the fresh content, so a commit never outruns a warranted
+  // backup. expectedRaw === null keeps the call: a file present NOW was
+  // written by someone else, and preserving it costs nothing (the verify
+  // aborts this write anyway). The re-parse of expectedRaw is required, not
+  // redundant: the object mutateClaudeSettings parsed from it has already
+  // been mutated by the callback — it now holds what we are ABOUT to write,
+  // and this decision must be about what we are REPLACING.
+  if (expectedRaw === null || !settingsHoldOnlyOurHooks(parseClaudeSettings(expectedRaw))) {
+    backupClaudeSettingsOnce(settingsPath);
+  }
 
   // Preserve the user's mode: chmod 600 on settings.json is a deliberate choice
   // (the file holds permission rules), and writeFileSync's umask-derived 0644
@@ -395,6 +415,75 @@ function isOurHook(hook: ClaudeHookEntry['hooks'][number]): boolean {
     typeof hook.command === 'string' &&
     isOurHookCommand(hook.command)
   );
+}
+
+/** Whether the parsed settings hold nothing a backup could preserve: every
+ *  top-level key is `hooks`, and everything in it is exactly the shape our
+ *  installer writes, running our script. This is what settings.json looks like
+ *  when OUR install created the file in a home that never had one — and a
+ *  backup taken then would enshrine our own output as "the user's original"
+ *  (observed: a fresh home's first uninstall backed up the install's 12
+ *  entries, a copy that can restore nothing the user wrote).
+ *
+ *  `{"hooks":{}}` and a bare `{}` both qualify: the first is what our
+ *  uninstall leaves after emptying an install of ours before it drops the key,
+ *  the second is what it writes in a home whose file we created (everything
+ *  removed, `hooks` key deleted) — and neither holds a byte a backup could
+ *  restore. Every other deviation — an extra top-level key, a
+ *  non-empty matcher, an unknown field on an entry or hook, a foreign command,
+ *  an event array we would not leave behind — reads as user-authored content,
+ *  and the ordinary backup-before-write rule applies.
+ *
+ *  "Exactly the shape our installer writes" is checked against the WRITER —
+ *  makeHookEntry() is the reference the fields are compared to — not against a
+ *  second hand-written description of it. A hand-rolled twin drifts: the next
+ *  field added to the entries we write would make this predicate read our own
+ *  fresh output as user content, silently reviving the backup-of-our-own-file
+ *  bug for every install after it. Two fields are exempt from the comparison
+ *  because PAST installs legitimately differ in them: `command` (the script
+ *  path moves between homes and versions — identity is isOurHook, the same
+ *  suffix rule used everywhere else) and `timeout`. Deviation in anything
+ *  else, present or added later, reads as the user's. */
+function settingsHoldOnlyOurHooks(settings: ClaudeSettings): boolean {
+  if (Object.keys(settings).some((key) => key !== 'hooks')) return false;
+  if (!('hooks' in settings)) return true;
+  const hooks = settings.hooks;
+  if (hooks === null || typeof hooks !== 'object' || Array.isArray(hooks)) {
+    return false;
+  }
+  const reference = makeHookEntry();
+  // Maps rather than index access: `has` distinguishes "the writer has no such
+  // field" (an unknown field on the entry — not ours) from "the writer's value
+  // is undefined", and neither needs a cast to an index-signature type.
+  const referenceFields = new Map<string, unknown>(Object.entries(reference));
+  const referenceHookFields = new Map<string, unknown>(Object.entries(reference.hooks[0]));
+  // isDeepStrictEqual, not stringify-compare: two objects a user's editor
+  // wrote with keys in a different order are the same VALUE, and key order is
+  // not part of a value.
+  const matchesWriter = (fields: Map<string, unknown>, key: string, value: unknown): boolean =>
+    fields.has(key) && isDeepStrictEqual(value, fields.get(key));
+
+  for (const entries of Object.values(hooks)) {
+    // An empty event array is not ours: install always fills the key it adds,
+    // and uninstall deletes a key its own removal emptied.
+    if (!Array.isArray(entries) || entries.length === 0) return false;
+    for (const entry of entries) {
+      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return false;
+      for (const [key, value] of Object.entries(entry)) {
+        if (key === 'hooks') continue; // compared hook-by-hook below
+        if (!matchesWriter(referenceFields, key, value)) return false;
+      }
+      if (!Array.isArray(entry.hooks) || entry.hooks.length === 0) return false;
+      for (const hook of entry.hooks) {
+        if (!isOurHook(hook)) return false;
+        for (const [key, value] of Object.entries(hook)) {
+          if (key === 'command' || key === 'timeout') continue; // vary across installs
+          if (!matchesWriter(referenceHookFields, key, value)) return false;
+        }
+      }
+    }
+  }
+  return true;
 }
 
 /** "This entry held only our hooks and is now empty — drop it."

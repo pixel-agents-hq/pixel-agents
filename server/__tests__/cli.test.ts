@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 
-import { buildConsentPrompt, CliArgsError, interpretConsentAnswer, parseArgs } from '../src/cli.js';
+import { CliArgsError, parseArgs } from '../src/cli.js';
 import { CLAUDE_HOOK_EVENTS } from '../src/providers/hook/claude/constants.js';
 
 const CLI_BUNDLE = path.join(__dirname, '../../dist/cli.js');
@@ -121,64 +121,13 @@ describe('parseArgs', () => {
   });
 });
 
-/**
- * The consent answer mapping, extracted from the TTY prompt so its string
- * handling is testable without a terminal. `granted` means "modify
- * ~/.claude/settings.json", so the table below is where an accidental
- * approval would show up.
- */
-describe('interpretConsentAnswer', () => {
-  it.each<[string, ReturnType<typeof interpretConsentAnswer>]>([
-    // The capitalized default is Y
-    ['', 'granted'],
-    ['y', 'granted'],
-    ['Y', 'granted'],
-    ['yes', 'granted'],
-    ['  yes  ', 'granted'],
-    ['n', 'not-now'],
-    ['no', 'not-now'],
-    ['never', 'never'],
-    ['NEVER', 'never'],
-    ['wat', 'not-now'],
-  ])('%j -> %s', (answer, expected) => {
-    expect(interpretConsentAnswer(answer)).toBe(expected);
-  });
-
-  // Junk must never be read as approval.
-  it('never grants on an unrecognized answer', () => {
-    for (const junk of ['maybe', 'q', '?', 'yy', 'nope', '-', 'remove', 'r']) {
-      expect(interpretConsentAnswer(junk)).toBe('not-now');
-    }
-  });
-});
-
-/**
- * The prompt is the only place a CLI user learns what is written and what data
- * moves. The 1-star review's two complaints were the silent settings rewrite
- * and the payload forwarding, so both facts are asserted, not assumed.
- */
-describe('buildConsentPrompt', () => {
-  it('discloses what, data, and undo', () => {
-    const prompt = buildConsentPrompt();
-    expect(prompt).toContain('~/.claude/settings.json');
-    // The event COUNT is interpolated, never hardcoded (12 today).
-    expect(prompt).toContain(`${CLAUDE_HOOK_EVENTS.length.toString()} Claude Code events`);
-    expect(prompt).toContain('.pixel-agents.backup');
-    expect(prompt).toContain('tool inputs');
-    expect(prompt).toContain('127.0.0.1');
-    expect(prompt).toMatch(/remove the hooks at any time/i);
-  });
-
-  // One question, for the one population that is asked: a first install. A user
-  // whose hooks a pre-consent version already installed is migrated silently,
-  // so there is no keep/remove wording left to offer.
-  it('asks about a first install and offers install/never', () => {
-    const prompt = buildConsentPrompt();
-    expect(prompt).toContain('[Y/n/never]');
-    expect(prompt).toMatch(/needs to add its hooks/);
-    expect(prompt).not.toMatch(/already installed/);
-  });
-});
+// The TTY consent prompt is gone: first-run consent is asked in the app, as
+// one step of the Intro (the server's hooksConsentRequest → the webview's
+// IntroBubble, whose consent step renders it verbatim). Its two pinned
+// semantics moved with it: "junk must never be read as approval" now lives in
+// consentFlow.test.ts (an unrecognized hooksConsentResponse choice
+// writes nothing), and the disclosure-content pins live in consentCopy.test.ts
+// plus the handshake test asserting the request carries that copy verbatim.
 
 /**
  * These spawn the real bundled dist/cli.js (built by esbuild), not the TS
@@ -317,10 +266,10 @@ describe('dist/cli.js entry-point guard', () => {
     );
   });
 
-  // Without consent AND without a TTY there is no way to ask, so the CLI must
-  // start normally and touch nothing. This is the inverse of the seeded test
-  // below: it pins that the gate actually gates, rather than the install
-  // happening to work.
+  // Without consent the CLI must start normally and touch nothing — the ask
+  // happens in the browser UI, never at startup. This is the inverse of the
+  // seeded test below: it pins that the gate actually gates, rather than the
+  // install happening to work.
   itBuilt('starts without touching settings.json when consent has not been given', async () => {
     const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-noconsent-'));
     await runCliServer(tmpHome, async ({ output }) => {
@@ -339,9 +288,6 @@ describe('dist/cli.js entry-point guard', () => {
   // this user nothing they do not already have. What it must NOT do is take the
   // opportunity to touch anything else: unrelated settings keys and a
   // third-party hook sharing one of our entries both survive intact.
-  //
-  // No TTY here, deliberately: the silent path must not depend on one, and the
-  // 'skipped' branch it replaces is what the fresh-install test below still pins.
   itBuilt('migrates a pre-consent install to 12 events with no prompt', async () => {
     const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-legacy-'));
     const settingsPath = path.join(tmpHome, '.claude', 'settings.json');
@@ -387,9 +333,11 @@ describe('dist/cli.js entry-point guard', () => {
 
       const configPath = path.join(tmpHome, '.pixel-agents', 'config.json');
       const consent = (
-        JSON.parse(fs.readFileSync(configPath, 'utf-8')) as { hooksConsentGiven?: boolean }
-      ).hooksConsentGiven;
-      expect(consent).toBe(true);
+        JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+          hooksConsent?: Record<string, string>;
+        }
+      ).hooksConsent?.claude;
+      expect(consent).toBe('granted');
 
       // ZERO friction: nothing that reads as a question or a deferral was
       // printed. The prompt headline, the [Y/n/never] question, and both
@@ -411,7 +359,7 @@ describe('dist/cli.js entry-point guard', () => {
     fs.mkdirSync(path.join(tmpHome, '.pixel-agents'), { recursive: true });
     fs.writeFileSync(
       path.join(tmpHome, '.pixel-agents', 'config.json'),
-      JSON.stringify({ hooksConsentGiven: true }),
+      JSON.stringify({ hooksConsent: { claude: 'granted' } }),
     );
     // hooks/ is a FILE, so copying into hooks/claude-hook.js fails.
     fs.writeFileSync(path.join(tmpHome, '.pixel-agents', 'hooks'), 'not a directory');
@@ -433,7 +381,7 @@ describe('dist/cli.js entry-point guard', () => {
     fs.mkdirSync(path.join(tmpHome, '.pixel-agents'), { recursive: true });
     fs.writeFileSync(
       path.join(tmpHome, '.pixel-agents', 'config.json'),
-      JSON.stringify({ hooksConsentGiven: true }),
+      JSON.stringify({ hooksConsent: { claude: 'granted' } }),
     );
     const port = await getFreePort();
     const child = spawn(

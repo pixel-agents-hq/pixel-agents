@@ -14,6 +14,7 @@ declare global {
         bubbleType: 'permission' | 'waiting' | null;
         waitingAwaitingInput?: boolean;
         isHeadless?: boolean;
+        isGreeter?: boolean;
       }>;
       /** Effective "Display headless as ghosts" setting the renderer is using. */
       getGhostHeadlessAgents?: () => boolean;
@@ -118,13 +119,16 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
   hooks.getCharacters = () => {
     const os = officeStateRef.current;
     if (!os) return [];
-    return Array.from(os.characters.values()).map((ch) => ({
+    // getCharacters(), not `characters`: e2e asserts on the consent greeter,
+    // which lives outside the agent map and joins only at the render seam.
+    return os.getCharacters().map((ch) => ({
       id: ch.id,
       matrixEffect: ch.matrixEffect,
       agentName: ch.agentName,
       bubbleType: ch.bubbleType,
       waitingAwaitingInput: ch.waitingAwaitingInput,
       isHeadless: ch.isHeadless,
+      isGreeter: ch.isGreeter,
     }));
   };
 

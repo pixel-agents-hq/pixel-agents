@@ -92,14 +92,14 @@ export async function launchVSCode(
   // (buildSeedConfig in layout-seed.ts carries the same baseline).
   const paDir = path.join(tmpHome, '.pixel-agents');
   fs.mkdirSync(paDir, { recursive: true });
-  // hooksConsentGiven is part of the baseline: without it the first-run consent
-  // prompt gates hook installation and every hooks-on spec would stall behind a
-  // blocking modal no test answers. The consent specs opt out via
-  // opts.seedConfig — they are the only ones that want the prompt.
+  // The granted hooksConsent entry is part of the baseline: without it the first-run consent
+  // dialog pops up inside the webview on open, gating hook installation and
+  // overlaying the office UI no test expects to be covered. The consent specs
+  // opt out via opts.seedConfig — they are the only ones that want the dialog.
   const seedConfig = opts.seedConfig ?? {
     vscode: { alwaysShowLabels: true },
     standalone: { alwaysShowLabels: true },
-    hooksConsentGiven: true,
+    hooksConsent: { claude: 'granted' },
   };
   fs.writeFileSync(path.join(paDir, 'config.json'), JSON.stringify(seedConfig, null, 2));
   if (opts.seedLayout !== undefined) {
@@ -257,11 +257,6 @@ export async function launchVSCode(
     'workbench.editor.empty.hint': 'hidden',
     'workbench.secondarySideBar.defaultVisibility': 'hidden',
     'chat.commandCenter.enabled': false,
-    // Render modal dialogs (showInformationMessage({ modal: true })) in the DOM
-    // instead of as a native OS dialog, so Playwright can read and click them.
-    // Only the consent specs need it; harmless everywhere else, where the
-    // seeded hooksConsentGiven means no modal is ever raised.
-    'window.dialogStyle': 'custom',
   };
   if (process.platform === 'darwin') {
     userSettings['terminal.integrated.profiles.osx'] = {

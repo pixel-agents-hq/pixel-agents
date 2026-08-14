@@ -7,6 +7,8 @@ import {
   CHARACTER_SITTING_OFFSET_PX,
   DISMISS_BUBBLE_FAST_FADE_SEC,
   FURNITURE_ANIM_INTERVAL_SEC,
+  GREETER_ID,
+  GREETER_TILE_MARGIN,
   INACTIVE_SEAT_TIMER_MIN_SEC,
   INACTIVE_SEAT_TIMER_RANGE_SEC,
   MAX_PET_ID_LENGTH,
@@ -35,15 +37,9 @@ import type {
   Seat,
   TileType as TileTypeVal,
 } from '../types.js';
-import {
-  CharacterState,
-  Direction,
-  MATRIX_EFFECT_DURATION,
-  PetState,
-  TILE_SIZE,
-} from '../types.js';
+import { CharacterState, Direction, PetState, TILE_SIZE } from '../types.js';
 import { createCharacter, updateCharacter } from './characters.js';
-import { matrixEffectSeeds } from './matrixEffect.js';
+import { advanceMatrixEffect, startMatrixEffect } from './matrixEffectState.js';
 import { createPet, updatePet } from './petEntity.js';
 import { anchorTile, closestFreeSeat } from './seatPlacement.js';
 
@@ -82,6 +78,28 @@ export class OfficeState {
    * `findFreeSeat()` to bias new agents toward seats inside their folder's Area.
    */
   areaMappings: Record<string, string[]> = {};
+
+  /**
+   * The first-run consent greeter, deliberately NOT in `characters`.
+   *
+   * `characters` means "agents": everything that iterates it — seat
+   * assignment, palette diversity, the wander FSM, hit-testing, the seat
+   * payload the webview persists — is asking an agent question the greeter has
+   * no answer to. Holding it here instead of tagging it with a flag makes
+   * every one of those loops correct by default, rather than correct as long
+   * as each remembers an `isGreeter` guard. It is drawn because
+   * `getCharacters()` appends it, and that is the only place it joins the
+   * others.
+   */
+  greeter: Character | null = null;
+
+  /** World-space point the camera drifts to while the greeter is up
+   *  (the bubble overlay recomputes it every frame: the combined center of the
+   *  character and its speech bubble). An explicit cameraFollowId outranks it. */
+  greeterCameraTarget: { x: number; y: number } | null = null;
+  /** Latched by a manual pan during the ask: the user took the camera, so the
+   *  overlay's per-frame updates stop re-centering. Reset on spawn/despawn. */
+  private greeterCameraCancelled = false;
 
   setAreaMappings(mappings: Record<string, string[]>): void {
     this.areaMappings = mappings;
@@ -471,11 +489,65 @@ export class OfficeState {
       ch.folderName = folderName;
     }
     if (!skipSpawnEffect) {
-      ch.matrixEffect = 'spawn';
-      ch.matrixEffectTimer = 0;
-      ch.matrixEffectSeeds = matrixEffectSeeds();
+      startMatrixEffect(ch, 'spawn');
     }
     this.characters.set(id, ch);
+  }
+
+  // ── Greeter ───────────────────────────────────────────────────
+  // The Intro is diegetic: a char_0 character stands near the office's
+  // bottom-left corner and "speaks" the tour through a DOM bubble
+  // (IntroBubble). It is not an agent — see the `greeter` field.
+
+  /** Spawn the greeter near the office's bottom-left corner: target tile
+   *  GREETER_TILE_MARGIN in from the left and bottom edges, falling
+   *  back to the closest walkable tile when the target is a seat, furniture,
+   *  a wall, or VOID (seat tiles are in blockedTiles, so closestFreeWalkableTile
+   *  covers every one of those). Idempotent; a remount mid-despawn (StrictMode)
+   *  revives it. */
+  spawnGreeter(): void {
+    this.greeterCameraCancelled = false;
+    if (this.greeter) {
+      if (this.greeter.matrixEffect === 'despawn') startMatrixEffect(this.greeter, 'spawn');
+      return;
+    }
+    const spawn = this.closestFreeWalkableTile(
+      GREETER_TILE_MARGIN,
+      this.layout.rows - 1 - GREETER_TILE_MARGIN,
+    );
+    if (!spawn) return; // no walkable tile — IntroBubble falls back to a fixed panel
+    const ch = createCharacter(GREETER_ID, 0, null, null, 0);
+    ch.isGreeter = true;
+    ch.state = CharacterState.IDLE;
+    ch.isActive = false;
+    ch.dir = Direction.DOWN;
+    ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
+    ch.y = spawn.row * TILE_SIZE + TILE_SIZE / 2;
+    ch.tileCol = spawn.col;
+    ch.tileRow = spawn.row;
+    startMatrixEffect(ch, 'spawn');
+    this.greeter = ch;
+  }
+
+  /** Start the greeter's despawn effect and release the greeter camera. The
+   *  character is dropped once the effect finishes (see update()).
+   *  Idempotent — every close path (answer, Escape, hooksStatus) funnels here. */
+  despawnGreeter(): void {
+    this.greeterCameraTarget = null;
+    this.greeterCameraCancelled = false;
+    if (!this.greeter || this.greeter.matrixEffect === 'despawn') return;
+    startMatrixEffect(this.greeter, 'despawn');
+  }
+
+  /** Per-frame update from the bubble overlay; ignored once the user panned. */
+  setGreeterCameraTarget(p: { x: number; y: number }): void {
+    if (!this.greeterCameraCancelled) this.greeterCameraTarget = p;
+  }
+
+  /** Manual pan during the ask: stop re-centering until the next spawn. */
+  cancelGreeterCamera(): void {
+    this.greeterCameraTarget = null;
+    this.greeterCameraCancelled = true;
   }
 
   removeAgent(id: number): void {
@@ -490,9 +562,7 @@ export class OfficeState {
     if (this.selectedAgentId === id) this.selectedAgentId = null;
     if (this.cameraFollowId === id) this.cameraFollowId = null;
     // Start despawn animation instead of immediate delete
-    ch.matrixEffect = 'despawn';
-    ch.matrixEffectTimer = 0;
-    ch.matrixEffectSeeds = matrixEffectSeeds();
+    startMatrixEffect(ch, 'despawn');
     ch.bubbleType = null;
   }
 
@@ -643,9 +713,7 @@ export class OfficeState {
     if (parentCh) ch.dir = parentCh.dir;
     ch.isSubagent = true;
     ch.parentAgentId = parentAgentId;
-    ch.matrixEffect = 'spawn';
-    ch.matrixEffectTimer = 0;
-    ch.matrixEffectSeeds = matrixEffectSeeds();
+    startMatrixEffect(ch, 'spawn');
     this.characters.set(id, ch);
 
     this.subagentIdMap.set(key, id);
@@ -672,9 +740,7 @@ export class OfficeState {
         if (seat) seat.assigned = false;
       }
       // Start despawn animation — keep character in map for rendering
-      ch.matrixEffect = 'despawn';
-      ch.matrixEffectTimer = 0;
-      ch.matrixEffectSeeds = matrixEffectSeeds();
+      startMatrixEffect(ch, 'despawn');
       ch.bubbleType = null;
     }
     // Clean up tracking maps immediately so keys don't collide
@@ -703,9 +769,7 @@ export class OfficeState {
             if (seat) seat.assigned = false;
           }
           // Start despawn animation
-          ch.matrixEffect = 'despawn';
-          ch.matrixEffectTimer = 0;
-          ch.matrixEffectSeeds = matrixEffectSeeds();
+          startMatrixEffect(ch, 'despawn');
           ch.bubbleType = null;
         }
         this.subagentMeta.delete(id);
@@ -1031,23 +1095,18 @@ export class OfficeState {
       this.rebuildFurnitureInstances();
     }
 
+    // The greeter materializes and dematerializes like anyone else, but runs
+    // no FSM — it stands where it spawned for as long as the ask is up.
+    if (this.greeter && advanceMatrixEffect(this.greeter, dt) === 'despawned') {
+      this.greeter = null;
+    }
+
     const toDelete: number[] = [];
     for (const ch of this.characters.values()) {
-      // Handle matrix effect animation
-      if (ch.matrixEffect) {
-        ch.matrixEffectTimer += dt;
-        if (ch.matrixEffectTimer >= MATRIX_EFFECT_DURATION) {
-          if (ch.matrixEffect === 'spawn') {
-            // Spawn complete — clear effect, resume normal FSM
-            ch.matrixEffect = null;
-            ch.matrixEffectTimer = 0;
-            ch.matrixEffectSeeds = [];
-          } else {
-            // Despawn complete — mark for deletion
-            toDelete.push(ch.id);
-          }
-        }
-        continue; // skip normal FSM while effect is active
+      const effect = advanceMatrixEffect(ch, dt);
+      if (effect !== 'none') {
+        if (effect === 'despawned') toDelete.push(ch.id);
+        continue; // skip normal FSM while the effect is (or just was) active
       }
 
       // Temporarily unblock own seat so character can pathfind to it
@@ -1084,13 +1143,36 @@ export class OfficeState {
     }
   }
 
-  getCharacters(): Character[] {
-    return Array.from(this.characters.values());
+  /** The `saveAgentSeats` payload: palette, hue and seat for every agent worth
+   *  restoring. Sub-agents are excluded because they are derived state the
+   *  runtime re-materializes, and the greeter never reaches here at all —
+   *  it is not in `characters`. */
+  getPersistableSeats(): Record<
+    number,
+    { palette: number; hueShift: number; seatId: string | null }
+  > {
+    const seats: Record<number, { palette: number; hueShift: number; seatId: string | null }> = {};
+    for (const ch of this.characters.values()) {
+      if (ch.isSubagent) continue;
+      seats[ch.id] = { palette: ch.palette, hueShift: ch.hueShift, seatId: ch.seatId };
+    }
+    return seats;
   }
 
-  /** Get character at pixel position (for hit testing). Returns id or null. */
+  /** Everything the renderer draws: the agents plus, while the first-run ask
+   *  is up, the consent greeter. This is the ONE place the greeter joins the
+   *  agents — every other consumer reads `characters` and gets agents only. */
+  getCharacters(): Character[] {
+    const chars = Array.from(this.characters.values());
+    if (this.greeter) chars.push(this.greeter);
+    return chars;
+  }
+
+  /** Get character at pixel position (for hit testing). Returns id or null.
+   *  Agents only: clicks pass straight through the consent greeter, which is
+   *  a prop, not something to select or follow. */
   getCharacterAt(worldX: number, worldY: number): number | null {
-    const chars = this.getCharacters().sort((a, b) => b.y - a.y);
+    const chars = Array.from(this.characters.values()).sort((a, b) => b.y - a.y);
     for (const ch of chars) {
       // Skip characters that are despawning
       if (ch.matrixEffect === 'despawn') continue;
