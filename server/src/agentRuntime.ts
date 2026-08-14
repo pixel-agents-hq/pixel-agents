@@ -38,6 +38,7 @@ import type { HookEvent } from './hookEventHandler.js';
 import { HookEventHandler } from './hookEventHandler.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { PathSet, pathsMatch } from './pathKey.js';
+import { providerRegistry } from './providers/index.js';
 import { SessionRouter } from './sessionRouter.js';
 import { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -87,6 +88,14 @@ export class AgentRuntime {
 
   constructor(
     private readonly store: AgentStateStore,
+    /** Primary provider for the heuristic/file-fallback and Agent Teams
+     *  singleton wiring below (module-level `setHookProvider`/`setTeamProvider`
+     *  calls) -- those concerns are Claude-specific today (no other provider
+     *  has a file fallback or a `team` extension), so a single "primary"
+     *  provider is still the right shape for them. Hook *dispatch* itself
+     *  (`handleHookEvent`) goes through the shared multi-provider `providerRegistry`
+     *  below, resolving per-event by `providerId` -- so `/api/hooks/web` reaches
+     *  the web provider even though `provider` here stays Claude. */
     provider: HookProvider,
   ) {
     // Wire module-level dependencies
@@ -146,7 +155,7 @@ export class AgentRuntime {
       store,
       this.waitingTimers,
       this.permissionTimers,
-      provider,
+      providerRegistry,
       new SessionRouter(),
       this.watchAllSessions,
     );

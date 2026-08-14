@@ -6,7 +6,7 @@ import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './a
 import { readConfig, writeConfig } from './configPersistence.js';
 import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT } from './constants.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
-import { claudeProvider } from './providers/index.js';
+import { getAllProviders } from './providers/index.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -224,10 +224,12 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const adapter = store.getAdapter();
 
   // 1. Provider capabilities (must arrive before any agent messages)
+  // Union across every registered provider so a non-Claude provider's own
+  // tool vocabulary (if any) still gets classified correctly by the webview.
   send({
     type: 'providerCapabilities',
-    readingTools: [...claudeProvider.readingTools],
-    subagentToolNames: [...claudeProvider.subagentToolNames],
+    readingTools: [...new Set(getAllProviders().flatMap((p) => [...p.readingTools]))],
+    subagentToolNames: [...new Set(getAllProviders().flatMap((p) => [...p.subagentToolNames]))],
   });
 
   // 2. Assets (from server cache, loaded at startup via pngjs)

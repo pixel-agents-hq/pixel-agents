@@ -1,0 +1,131 @@
+# Pixel Agents manual web (REST) provider requests
+#
+# Usage:
+# 1. Start Pixel Agents: `npx pixel-agents --port 3100` (or open the VS Code panel --
+#    the HTTP server always starts regardless of the "hooks enabled" setting).
+# 2. Copy `port` and `token` from `~/.pixel-agents/server.json` into the variables below.
+# 3. Set `cwd` to a workspace folder Pixel Agents knows about, or enable "Watch All
+#    Sessions" -- see docs/web-provider-plan.md, Phase 3 ("Tracking gate").
+# 4. Run the requests in order with a REST client that supports `.http` files.
+#
+# Notes:
+# - Unlike the Claude provider (server/manual-hook-events.http), there is nothing to
+#   install: `POST /api/hooks/web` *is* the hook. `installHooks`/`areHooksInstalled`
+#   are no-ops for this provider.
+# - `sessionStart` only stages a pending external session. A follow-up event such as
+#   `toolStart`, `turnEnd`, or `permissionRequest` is what actually creates the agent.
+# - Tool names are free-form -- this provider has no fixed vocabulary. Reusing one of
+#   Claude's own tool names (e.g. "Read", "Grep") makes the character use the
+#   "reading" animation, since clientMessageHandler unions tool capabilities across
+#   every registered provider.
+# - See docs/web-provider-plan.md, Phase 2a for the full wire-format table.
+
+@host = 127.0.0.1
+@port = 3100
+@token = paste-token-from-~/.pixel-agents/server.json
+@sessionId = manual-web-session-1
+
+###
+# Health check
+GET http://{{host}}:{{port}}/api/health
+
+###
+# Stage a new external session (no overlay yet -- pending confirmation)
+POST http://{{host}}:{{port}}/api/hooks/web
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "sessionStart",
+  "cwd": "/absolute/path/to/your/workspace"
+}
+
+###
+# Confirm the pending session: agent spawns, character starts "typing"
+POST http://{{host}}:{{port}}/api/hooks/web
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "toolStart",
+  "tool_id": "t1",
+  "tool_name": "Build",
+  "input": { "target": "release" },
+  "status": "Building release artifact"
+}
+
+###
+# Show the permission bubble
+POST http://{{host}}:{{port}}/api/hooks/web
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "permissionRequest"
+}
+
+###
+# Spawn a sub-agent character next to the parent
+POST http://{{host}}:{{port}}/api/hooks/web
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "subagentStart",
+  "parent_tool_id": "t1",
+  "tool_id": "t2",
+  "tool_name": "Lint worker"
+}
+
+###
+# Despawn the sub-agent character
+POST http://{{host}}:{{port}}/api/hooks/web
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "subagentEnd",
+  "parent_tool_id": "t1",
+  "tool_id": "t2"
+}
+
+###
+# Tool finished
+POST http://{{host}}:{{port}}/api/hooks/web
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "toolEnd",
+  "tool_id": "t1"
+}
+
+###
+# Mark the agent waiting (turn finished)
+POST http://{{host}}:{{port}}/api/hooks/web
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "turnEnd",
+  "awaiting_input": false
+}
+
+###
+# Despawn the agent
+POST http://{{host}}:{{port}}/api/hooks/web
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "sessionEnd",
+  "reason": "exit"
+}

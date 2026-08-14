@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { HookEventHandler } from '../src/hookEventHandler.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import { webProvider } from '../src/providers/hook/web/web.js';
+import { providerRegistry } from '../src/providers/index.js';
 import { SessionRouter } from '../src/sessionRouter.js';
 import type { AgentState } from '../src/types.js';
 
@@ -65,7 +67,7 @@ describe('HookEventHandler', () => {
       agents,
       waitingTimers,
       permissionTimers,
-      claudeProvider,
+      { getProvider: () => claudeProvider },
       new SessionRouter(),
     );
   });
@@ -855,6 +857,131 @@ describe('HookEventHandler', () => {
           expect(msg).toBeUndefined();
         }
       }
+    });
+  });
+
+  // ── Explicit-id subagentStart/subagentEnd (no-team providers, e.g. web) ────
+  describe('subagentStart/subagentEnd with explicit ids (no team extension)', () => {
+    it('creates and clears a sub-agent character directly via the web provider (no team, no JSONL)', () => {
+      const webHandler = new HookEventHandler(
+        agents,
+        waitingTimers,
+        permissionTimers,
+        { getProvider: () => webProvider },
+        new SessionRouter(),
+      );
+      const agent = createTestAgent({ id: 1 });
+      agents.set(1, agent);
+      webHandler.registerAgent('sess-1', 1);
+
+      webHandler.handleEvent('web', {
+        hook_event_name: 'subagentStart',
+        session_id: 'sess-1',
+        parent_tool_id: 'p1',
+        tool_id: 'sub-1',
+        tool_name: 'Worker',
+      });
+      const startMsg = mockWebview.messages.find((m) => m.type === 'subagentToolStart');
+      expect(startMsg).toBeTruthy();
+      expect(startMsg?.parentToolId).toBe('p1');
+      expect(startMsg?.toolId).toBe('sub-1');
+      expect(agent.activeSubagentToolIds.get('p1')?.has('sub-1')).toBe(true);
+
+      mockWebview.messages.length = 0;
+      webHandler.handleEvent('web', {
+        hook_event_name: 'subagentEnd',
+        session_id: 'sess-1',
+        parent_tool_id: 'p1',
+        tool_id: 'sub-1',
+      });
+      const clearMsg = mockWebview.messages.find((m) => m.type === 'subagentClear');
+      expect(clearMsg).toBeTruthy();
+      expect(clearMsg?.parentToolId).toBe('p1');
+      expect(agent.activeSubagentToolIds.has('p1')).toBe(false);
+    });
+  });
+
+  // ── Multi-provider registry routing (Phase 1 regression guard) ─────────────
+  describe('provider registry routing', () => {
+    it('resolves "claude" and "web" providerIds to different providers and dispatches accordingly', () => {
+      const registryHandler = new HookEventHandler(
+        agents,
+        waitingTimers,
+        permissionTimers,
+        providerRegistry,
+        new SessionRouter(),
+      );
+      const agent = createTestAgent({ id: 1 });
+      agents.set(1, agent);
+      registryHandler.registerAgent('sess-claude', 1);
+
+      registryHandler.handleEvent('claude', {
+        hook_event_name: 'PermissionRequest',
+        session_id: 'sess-claude',
+      });
+      expect(mockWebview.messages.find((m) => m.type === 'agentToolPermission')).toBeTruthy();
+      mockWebview.messages.length = 0;
+
+      const webAgent = createTestAgent({ id: 2 });
+      agents.set(2, webAgent);
+      registryHandler.registerAgent('sess-web', 2);
+
+      registryHandler.handleEvent('web', {
+        hook_event_name: 'permissionRequest',
+        session_id: 'sess-web',
+      });
+      const webMsg = mockWebview.messages.find((m) => m.type === 'agentToolPermission');
+      expect(webMsg).toBeTruthy();
+      expect(webMsg?.id).toBe(2);
+
+      // Claude's own event name ("PermissionRequest") is meaningless to the web
+      // provider's normalizeHookEvent (case-sensitive, different vocabulary) --
+      // proving the two providerIds really reach different normalization code,
+      // not just the same one twice.
+      mockWebview.messages.length = 0;
+      registryHandler.handleEvent('web', {
+        hook_event_name: 'PermissionRequest',
+        session_id: 'sess-web',
+      });
+      expect(mockWebview.messages.find((m) => m.type === 'agentToolPermission')).toBeUndefined();
+    });
+
+    it('falls back to the default (claude) provider for an unregistered providerId', () => {
+      const registryHandler = new HookEventHandler(
+        agents,
+        waitingTimers,
+        permissionTimers,
+        providerRegistry,
+        new SessionRouter(),
+      );
+      const agent = createTestAgent({ id: 1 });
+      agents.set(1, agent);
+      registryHandler.registerAgent('sess-1', 1);
+
+      registryHandler.handleEvent('some-unregistered-cli', {
+        hook_event_name: 'PermissionRequest', // Claude's vocabulary -- proves fallback to claudeProvider
+        session_id: 'sess-1',
+      });
+      expect(mockWebview.messages.find((m) => m.type === 'agentToolPermission')).toBeTruthy();
+    });
+
+    it('drops events for a provider that reports an unsupported protocolVersion', () => {
+      const registryHandler = new HookEventHandler(
+        agents,
+        waitingTimers,
+        permissionTimers,
+        { getProvider: () => ({ ...claudeProvider, protocolVersion: 999 }) },
+        new SessionRouter(),
+      );
+      const agent = createTestAgent({ id: 1 });
+      agents.set(1, agent);
+      registryHandler.registerAgent('sess-1', 1);
+
+      registryHandler.handleEvent('claude', {
+        hook_event_name: 'PermissionRequest',
+        session_id: 'sess-1',
+      });
+      expect(mockWebview.messages.find((m) => m.type === 'agentToolPermission')).toBeUndefined();
     });
   });
 });
