@@ -26,7 +26,7 @@ describe('consent copy', () => {
     const full = `${CONSENT_INSTALL_HEADLINE}\n\n${CONSENT_DISCLOSURE}`;
     expect(full).toContain('~/.claude/settings.json');
     expect(full).toContain(`${CLAUDE_HOOK_EVENTS.length.toString()} Claude Code events`);
-    expect(full).toContain('Your existing settings are kept');
+    expect(full).toContain('your existing settings are kept');
     expect(full).toContain(`settings.json${SETTINGS_BACKUP_SUFFIX}`);
     expect(full).toContain('tool names and tool inputs');
     expect(full).toContain('127.0.0.1');

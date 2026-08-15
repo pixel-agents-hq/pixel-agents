@@ -23,7 +23,7 @@ const SETTINGS_FILE = '~/.claude/settings.json';
 export const CONSENT_FACT_WHAT =
   `To bring your agents to life in real time, Pixel Agents adds hooks for ` +
   `${CLAUDE_HOOK_EVENTS.length} Claude Code events to ${SETTINGS_FILE}. ` +
-  `Your existing settings are kept, with a one-time backup saved as settings.json${SETTINGS_BACKUP_SUFFIX}.`;
+  `Note that your existing settings are kept, and a one-time backup is saved as settings.json${SETTINGS_BACKUP_SUFFIX}.`;
 
 /** WHAT data moves, and where it stops.
  *
@@ -35,8 +35,8 @@ export const CONSENT_FACT_WHAT =
  *  asked to break. */
 export const CONSENT_FACT_DATA =
   'Claude Code will send those events - including tool names and tool inputs - to a Pixel Agents ' +
-  'server on this machine only (by default it listens on 127.0.0.1; starting it with --host ' +
-  'exposes it to your network).';
+  'server on this machine. Everything stays local - the server listens only on 127.0.0.1 - unless ' +
+  'you explicitly start it with --host to expose it on your network.';
 
 /** HOW to undo it. */
 export const CONSENT_FACT_REVERSIBLE =
