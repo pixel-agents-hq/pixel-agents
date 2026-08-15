@@ -62,6 +62,26 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     bodyLimit: MAX_HOOK_BODY_SIZE,
   });
 
+  // Parse JSON with the raw bytes preserved on request.rawBody so the hook
+  // route can verify Hermes' X-Hermes-Signature-256 HMAC, which is computed
+  // over the exact body bytes (GitHub-webhook style). Fastify does not keep
+  // the raw payload after parsing, so the parser stashes the buffer on the
+  // request before handing the parsed object downstream. The parse-error path
+  // mirrors Fastify's default JSON parser (statusCode 400).
+  app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (request, body, done) => {
+    try {
+      // parseAs: 'buffer' guarantees a Buffer at runtime despite the wider
+      // parser callback type.
+      const raw = body as Buffer;
+      (request as FastifyRequest & { rawBody?: Buffer }).rawBody = raw;
+      done(null, JSON.parse(raw.toString('utf8')));
+    } catch (err) {
+      const error = err as Error & { statusCode?: number };
+      error.statusCode = 400;
+      done(error, undefined);
+    }
+  });
+
   await app.register(fastifyCors, { origin: true });
   await app.register(fastifyWebsocket);
 
@@ -111,7 +131,7 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
   }>(
     `${HOOK_API_PREFIX}/:providerId`,
     {
-      preHandler: bearerAuth(options.token),
+      preHandler: hookAuth(options.token),
       schema: {
         params: {
           type: 'object',
@@ -213,15 +233,52 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
 
 // ── Auth Helper ────────────────────────────────────────────────
 
-function bearerAuth(expectedToken: string) {
+/** Constant-time string equality, safe for untrusted-length inputs. */
+function safeEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  return aBuf.length === bBuf.length && crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+/** Constant-time buffer equality, safe for untrusted-length inputs. */
+function safeEqualBuf(a: Buffer, b: Buffer): boolean {
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * Auth for POST /api/hooks/:providerId. Accepts either:
+ *
+ *  1. The existing Bearer contract: `Authorization: Bearer <token>` — used by
+ *     the bundled Claude hook script and WebSocket clients.
+ *  2. Hermes-style HMAC: `X-Hermes-Signature-256: sha256=<hex>` — Hermes
+ *     outbound webhooks sign the raw body with HMAC-SHA256 (GitHub-webhook
+ *     style, agent/outbound_webhooks.py) using the same token as the secret,
+ *     so the seam verifies it against request.rawBody. No Bearer header is
+ *     ever sent by Hermes.
+ *
+ * Either credential authenticates; both failures return 401.
+ */
+function hookAuth(expectedToken: string) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
+    // 1. Bearer token
     const auth = request.headers.authorization ?? '';
-    const expected = `Bearer ${expectedToken}`;
-    const authBuf = Buffer.from(auth);
-    const expectedBuf = Buffer.from(expected);
-    if (authBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(authBuf, expectedBuf)) {
-      reply.code(401).send('unauthorized');
+    if (safeEqual(auth, `Bearer ${expectedToken}`)) return;
+
+    // 2. Hermes HMAC signature over the raw body
+    const signature = request.headers['x-hermes-signature-256'];
+    const prefix = 'sha256=';
+    if (typeof signature === 'string' && signature.startsWith(prefix)) {
+      const hex = signature.slice(prefix.length);
+      if (/^[0-9a-f]{64}$/i.test(hex)) {
+        const raw = (request as FastifyRequest & { rawBody?: Buffer }).rawBody;
+        if (raw) {
+          const expectedSig = crypto.createHmac('sha256', expectedToken).update(raw).digest();
+          if (safeEqualBuf(Buffer.from(hex, 'hex'), expectedSig)) return;
+        }
+      }
     }
+
+    reply.code(401).send('unauthorized');
   };
 }
 
