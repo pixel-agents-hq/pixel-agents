@@ -1,5 +1,7 @@
 import type * as vscode from 'vscode';
 
+import type { AgentTask } from '../../core/src/messages.js';
+
 export interface AgentState {
   id: number;
   sessionId: string;
@@ -57,6 +59,13 @@ export interface AgentState {
   /** True once this transcript produced a main-chain turn, after which
    *  sidechain records belong to sub-agents and stop moving the gauge. */
   sawMainChainUsage?: boolean;
+
+  // -- Task board (provider.extractTasks) --
+  /** The agent's task list as of its last revision, replaced wholesale each
+   *  time. Deliberately NOT persisted: a board restored from disk describes a
+   *  turn that already ended, and an empty board is the honest state until the
+   *  agent revises its list again. */
+  tasks?: AgentTask[];
 
   // -- Agent Teams --
   teamName?: string;

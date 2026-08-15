@@ -40,6 +40,15 @@ export const CLAUDE_HOOK_EVENTS = [
   'TaskCompleted',
 ] as const;
 
+/** The tool Claude Code rewrites its task list through. Every call carries the
+ *  WHOLE list, so each one replaces the board rather than amending it. */
+export const CLAUDE_TASK_TOOL = 'TodoWrite';
+
+/** Task states Claude Code emits, and the only ones the office renders. An
+ *  entry in an unrecognized state is dropped rather than coerced: a task shown
+ *  under the wrong heading reads as progress that did not happen. */
+export const CLAUDE_TASK_STATUSES = ['pending', 'in_progress', 'completed'] as const;
+
 /** Suffix of the one-time pre-modification backup of settings.json. Brand-named
  *  rather than a generic `.backup`, which collides with other tools' backup
  *  convention: a foreign `.backup` sitting next to settings.json must not make

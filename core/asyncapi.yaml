@@ -100,6 +100,8 @@ components:
         - $ref: '#/components/schemas/AgentTeamInfo'
         # Context window
         - $ref: '#/components/schemas/AgentContextUsage'
+        # Tasks
+        - $ref: '#/components/schemas/AgentTasks'
         # Layout
         - $ref: '#/components/schemas/LayoutLoaded'
         # Assets
@@ -441,6 +443,53 @@ components:
           type: integer
         maxContextTokens:
           type: integer
+
+    AgentTask:
+      description: |
+        One item on an agent's task list, as the agent itself declared it. The
+        wording is the agent's, not ours — providers normalize the shape, never
+        the text.
+      type: object
+      additionalProperties: false
+      required: [content, status]
+      properties:
+        content:
+          type: string
+          description: The task as written by the agent (e.g. "Add the taskboard panel").
+        status:
+          $ref: '#/components/schemas/AgentTaskStatus'
+        activeForm:
+          type: string
+          description: >-
+            Present-tense phrasing the agent supplies for the in-progress state
+            (e.g. "Adding the taskboard panel"). Optional — not every provider
+            distinguishes the two forms.
+
+    AgentTaskStatus:
+      description: Progress state of a single task.
+      type: string
+      enum: [pending, in_progress, completed]
+
+    AgentTasks:
+      description: |
+        The agent's full task list, replacing whatever was shown before — agents
+        rewrite the whole list rather than patching entries, so this is a
+        snapshot and never a delta. An empty array means the agent has no tasks
+        (sent on session start to clear a stale board). Only agents with a
+        session of their own report tasks; sub-agents never do. Not persisted:
+        after a reload the board is empty until the agent next revises its list.
+      type: object
+      additionalProperties: false
+      required: [type, id, tasks]
+      properties:
+        type:
+          const: agentTasks
+        id:
+          type: integer
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentTask'
 
     LayoutLoaded:
       description: |

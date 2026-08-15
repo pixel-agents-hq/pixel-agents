@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import type { AgentTask, AgentTaskStatus } from '../../../../../core/src/messages.js';
 import { normalizeProjectPath } from '../../../../../core/src/normalizeProjectPath.js';
 import type { AgentEvent, HookProvider } from '../../../../../core/src/provider.js';
 import {
@@ -19,6 +20,8 @@ import {
   CLAUDE_LARGE_CONTEXT_WINDOW,
   CLAUDE_SMALL_CONTEXT_MODEL_PATTERN,
   CLAUDE_SMALL_CONTEXT_WINDOW,
+  CLAUDE_TASK_STATUSES,
+  CLAUDE_TASK_TOOL,
   CLAUDE_TERMINAL_NAME_PREFIX,
 } from './constants.js';
 
@@ -70,6 +73,36 @@ export function formatToolStatus(toolName: string, input?: unknown): string {
     default:
       return `Using ${toolName}`;
   }
+}
+
+// ── extractTasks: TodoWrite -> the office's task board ──
+//
+// Claude states its plan by rewriting a whole todo list through one tool, so a
+// single PreToolUse payload holds the entire board. Entries are validated
+// individually and bad ones dropped, because the alternative — rejecting the
+// call — would blank a board over one malformed row.
+
+function extractTasks(toolName: string, input?: unknown): AgentTask[] | null {
+  if (toolName !== CLAUDE_TASK_TOOL) return null;
+  const todos = (input as Record<string, unknown> | undefined)?.['todos'];
+  if (!Array.isArray(todos)) return null;
+
+  const tasks: AgentTask[] = [];
+  for (const todo of todos) {
+    if (typeof todo !== 'object' || todo === null) continue;
+    const { content, status, activeForm } = todo as Record<string, unknown>;
+    if (typeof content !== 'string' || content === '') continue;
+    if (typeof status !== 'string') continue;
+    if (!(CLAUDE_TASK_STATUSES as readonly string[]).includes(status)) continue;
+    tasks.push({
+      content,
+      status: status as AgentTaskStatus,
+      ...(typeof activeForm === 'string' && activeForm !== '' ? { activeForm } : {}),
+    });
+  }
+  // An empty list is a real state (the agent cleared its todos), so return it
+  // rather than null — null means "this call was not about tasks at all".
+  return tasks;
 }
 
 // ── Session dir + launch command ──
@@ -304,6 +337,7 @@ export const claudeProvider: HookProvider = {
   consentDisclosure,
 
   formatToolStatus,
+  extractTasks,
   permissionExemptTools: new Set(['Task', 'Agent', 'AskUserQuestion']),
   subagentToolNames: new Set(['Task', 'Agent']),
   readingTools: new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']),

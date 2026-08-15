@@ -12,6 +12,11 @@ interface BottomToolbarProps {
   onToggleEditMode: () => void;
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
+  isTaskBoardOpen: boolean;
+  onToggleTaskBoard: () => void;
+  /** False while no agent has published a task list — the button is pointless
+   *  then, and a toggle that reveals nothing reads as broken. */
+  hasTasks: boolean;
   workspaceFolders: WorkspaceFolder[];
 }
 
@@ -21,6 +26,9 @@ export function BottomToolbar({
   onToggleEditMode,
   isSettingsOpen,
   onToggleSettings,
+  isTaskBoardOpen,
+  onToggleTaskBoard,
+  hasTasks,
   workspaceFolders,
 }: BottomToolbarProps) {
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
@@ -127,6 +135,15 @@ export function BottomToolbar({
       >
         Layout
       </Button>
+      {hasTasks && (
+        <Button
+          variant={isTaskBoardOpen ? 'active' : 'default'}
+          onClick={onToggleTaskBoard}
+          title="Show what each agent is working through"
+        >
+          Tasks
+        </Button>
+      )}
       <Button
         variant={isSettingsOpen ? 'active' : 'default'}
         onClick={onToggleSettings}

@@ -221,6 +221,11 @@ export class HookEventHandler {
               );
               this.sessionRouter.unregister(agent.sessionId);
               this.registerAgent(event.session_id, id);
+              // The board belonged to the session that just ended. Clearing it
+              // explicitly (rather than leaving the last list up) keeps the
+              // office from showing finished work as if it were pending; the
+              // agent republishes on its next revision.
+              this.clearTasks(agent, id);
               this.lifecycleCallbacks.onSessionClear?.(id, event.session_id, transcriptPath);
               return;
             }
@@ -426,6 +431,15 @@ export class HookEventHandler {
     agent.currentHookIsTeammateSpawn =
       this.provider.team?.isTeammateSpawnCall(toolName, toolInput) ?? false;
 
+    // A task-list revision rides in on an ordinary tool call. Handled ABOVE the
+    // inline-teammate return on purpose: that guard suppresses ambiguous tool
+    // DISPLAY on a lead whose teammates share its session_id, and the same
+    // ambiguity applies here -- the list may be the lead's or a teammate's. But
+    // a suppressed board shows nothing at all, while a possibly-misattributed
+    // one still shows the work the session is doing, so this trades exact
+    // attribution for a board that exists.
+    this.applyTaskUpdate(toolName, toolInput, agent, agentId);
+
     // When a lead has inline teammates, hook tool events are ambiguous (could be
     // from the lead or any teammate -- they share session_id). Suppress hook-originated
     // tool display on the lead. Both lead and teammate tools display via JSONL polling.
@@ -456,6 +470,34 @@ export class HookEventHandler {
       id: agentId,
       status: 'active',
     });
+  }
+
+  /**
+   * Publish the agent's task list when a tool call carried one. The provider
+   * decides which tool that is; nothing here knows the tool's name.
+   *
+   * The list is always sent whole. Providers hand back the agent's complete
+   * board, so the webview replaces rather than merges, and a client that missed
+   * an update is corrected by the next one instead of drifting.
+   */
+  private applyTaskUpdate(
+    toolName: string,
+    toolInput: Record<string, unknown>,
+    agent: AgentState,
+    agentId: number,
+  ): void {
+    const tasks = this.provider.extractTasks?.(toolName, toolInput);
+    if (!tasks) return;
+    agent.tasks = tasks;
+    this.agents.broadcast({ type: 'agentTasks', id: agentId, tasks });
+  }
+
+  /** Empty an agent's board. Sent even when it was already empty: the client
+   *  may hold a list this server never saw (a reconnect mid-session), and an
+   *  empty array is the only message that can retract one. */
+  private clearTasks(agent: AgentState, agentId: number): void {
+    agent.tasks = undefined;
+    this.agents.broadcast({ type: 'agentTasks', id: agentId, tasks: [] });
   }
 
   /**

@@ -9,6 +9,7 @@ import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { SettingsModal } from './components/SettingsModal.js';
+import { TaskBoard } from './components/TaskBoard.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
@@ -73,6 +74,7 @@ function App() {
     agentStatuses,
     subagentTools,
     subagentCharacters,
+    agentTasks,
     layoutReady,
     layoutWasReset,
     loadedAssets,
@@ -107,6 +109,9 @@ function App() {
   const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
+  // Open by default: a board only exists once an agent published one, so there
+  // is nothing to reveal until there is something worth seeing.
+  const [isTaskBoardOpen, setIsTaskBoardOpen] = useState(true);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
@@ -160,6 +165,14 @@ function App() {
   // The Settings surface renders one provider today; its checkbox binds to
   // the Claude row of the per-provider install-state map.
   const claudeHooksInstalled = hooksInstalled['claude'] === true;
+
+  // Gated on hooksInstalled (the hooksStatus message), NOT the hooksEnabled
+  // preference: hooksEnabled defaults true while first-run consent is still
+  // pending, and announcing "Instant Detection Active" before anything is
+  // installed would be a lie. Read twice — the tooltip renders it, the task
+  // board dodges it.
+  const hooksTooltipVisible =
+    hooksEnabled && claudeHooksInstalled && !hooksInfoShown && !hooksTooltipDismissed;
 
   // Mutate folder→Area mappings locally + send to server. Updates OfficeState in
   // the same tick so a follow-up agentCreated picks up the new mapping.
@@ -356,6 +369,16 @@ function App() {
         <>
           <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
 
+          {/* Hidden in edit mode: the layout tools own the right side there. */}
+          {isTaskBoardOpen && !editor.isEditMode && (
+            <TaskBoard
+              agentTasks={agentTasks}
+              selectedAgent={selectedAgent}
+              onFocusAgent={handleClick}
+              belowTooltip={hooksTooltipVisible}
+            />
+          )}
+
           {/* Vignette overlay */}
           <div
             className="absolute inset-0 pointer-events-none"
@@ -450,11 +473,8 @@ function App() {
         />
       )}
 
-      {/* Hooks first-run tooltip. Gated on hooksInstalled (the hooksStatus
-          message), NOT the hooksEnabled preference: hooksEnabled defaults true
-          while first-run consent is still pending, and announcing "Instant
-          Detection Active" before anything is installed would be a lie. */}
-      {hooksEnabled && claudeHooksInstalled && !hooksInfoShown && !hooksTooltipDismissed && (
+      {/* Hooks first-run tooltip — see hooksTooltipVisible for the gating. */}
+      {hooksTooltipVisible && (
         <Tooltip
           title="Instant Detection Active"
           position="top-right"
@@ -517,6 +537,9 @@ function App() {
         onToggleEditMode={editor.handleToggleEditMode}
         isSettingsOpen={isSettingsOpen}
         onToggleSettings={() => setIsSettingsOpen((v) => !v)}
+        isTaskBoardOpen={isTaskBoardOpen}
+        onToggleTaskBoard={() => setIsTaskBoardOpen((v) => !v)}
+        hasTasks={Object.keys(agentTasks).length > 0}
         workspaceFolders={workspaceFolders}
       />
 

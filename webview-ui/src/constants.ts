@@ -275,6 +275,19 @@ export const CONTEXT_GAUGE_BG = '#222';
 export const TEAM_LEAD_COLOR = '#ffd700';
 export const TEAM_ROLE_COLOR = '#66aaff';
 
+// ── Task Board ──────────────────────────────────────────────
+/** Order the board groups tasks in — what is running now first, finished work
+ *  last. Deliberately not the agent's own ordering: the board is glanced at,
+ *  and the in-progress row is the reason to glance. */
+export const TASK_BOARD_STATUS_ORDER = ['in_progress', 'pending', 'completed'] as const;
+/** Inset from the top-right corner, matching the other overlays. */
+export const TASK_BOARD_MARGIN_PX = 8;
+/** Top inset while the first-run hooks tooltip owns the corner — clears its
+ *  tallest rendering rather than overlapping it. */
+export const TASK_BOARD_TOOLTIP_CLEARANCE_PX = 104;
+/** Space kept free below the board so a long list never runs into the toolbar. */
+export const TASK_BOARD_BOTTOM_CLEARANCE_PX = 56;
+
 // ── Pets ────────────────────────────────────────────────────────
 /** Walking speed in world pixels per second (matches character walk speed visually but slower). */
 export const PET_WALK_SPEED_PX_PER_SEC = 32;
