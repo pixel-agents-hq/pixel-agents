@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.4.1
+
+### Features
+
+- **Render headless agents as ghosts** ([#369](https://github.com/pixel-agents-hq/pixel-agents/pull/369)) — Agents adopted from outside the office (`claude -p`, Watch All Sessions) have no terminal to focus; a new **Display Headless as Ghosts** setting renders them translucent so they read differently from clickable agents. Off by default.
+
+### Fixes
+
+- **Never overwrite user settings** ([#378](https://github.com/pixel-agents-hq/pixel-agents/pull/378)) — The hook installer now aborts instead of rewriting `~/.claude/settings.json` when the file is unparseable or holds shapes it did not author, takes a one-time backup before the first write, verifies every write, and serializes consent answers. Closes [#377](https://github.com/pixel-agents-hq/pixel-agents/issues/377).
+- **Sync agent state on standalone webview connect** ([#371](https://github.com/pixel-agents-hq/pixel-agents/pull/371)) — A standalone browser client that connects while agents are mid-work now receives active tool statuses, waiting status, and team metadata instead of showing every agent as idle until its next update.
+- **Consistent palette and hue for every client** ([#370](https://github.com/pixel-agents-hq/pixel-agents/pull/370)) — Character palette and hue shift are now assigned server-side at agent creation, so every connecting webview (including read-only viewers) sees the same colors instead of each connection rolling its own.
+
+### Maintenance
+
+- Dependency updates: Vitest 4, ESLint 10, and GitHub Actions bumps, with the accompanying test and lint fixes.
+
+### Contributors
+
+Thank you to the contributors who made this release possible:
+
+- [@giawa](https://github.com/giawa) — Standalone connect state sync and server-side palette assignment
+- [@pablodelucca](https://github.com/pablodelucca) — Merge-safe hook installer and headless-agent ghosts
+- [@florintimbuc](https://github.com/florintimbuc) — Merge-safe hook installer review and fixes
+
 ## v1.4.0
 
 ### Features
