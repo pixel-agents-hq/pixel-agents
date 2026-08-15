@@ -101,6 +101,36 @@ test('declines never arm the verdict wait', () => {
   }
 });
 
+test('the pending window is exactly install-click to verdict-arrival', () => {
+  // The consent step HOLDS off awaitingOutcome (useIntroTour's
+  // installPending) — buttons disabled, Install reading "Installing..." — and
+  // advances to the closing step when the window closes, so that step only
+  // ever renders with a verdict. Advancing on the click flashed a verdict the
+  // tour did not yet have.
+  const armed = play(
+    { kind: 'requestChanged', request: REQUEST },
+    { kind: 'choiceSent', choice: 'install' },
+  );
+  assert.equal(armed.awaitingOutcome, true, 'install opens the pending window');
+  assert.equal(armed.installFailed, false, 'no verdict is claimed while pending');
+
+  const settled = reduceIntroTour(armed, {
+    kind: 'statusArrived',
+    providerId: 'claude',
+    installed: false,
+  });
+  assert.equal(settled.awaitingOutcome, false, 'the verdict closes the window');
+
+  // A decline has no outcome to wait on — it must never hold the step.
+  for (const choice of ['notNow', 'never'] as const) {
+    const declined = play(
+      { kind: 'requestChanged', request: REQUEST },
+      { kind: 'choiceSent', choice },
+    );
+    assert.equal(declined.awaitingOutcome, false, `${choice} must not hold the consent step`);
+  }
+});
+
 test('a Back-and-revised choice clears the earlier verdict', () => {
   // Install fails, the user walks Back and picks Not Now: the failure banner
   // must not survive onto the revised answer's closing step.

@@ -152,6 +152,7 @@ function App() {
   const {
     intro,
     installFailed,
+    installPending,
     onChoice: handleConsentChoice,
     onClose: handleIntroClose,
   } = useIntroTour({ consentRequest, hooksInstalled, hooksStatusSeq, dismissConsentRequest });
@@ -587,6 +588,7 @@ function App() {
           zoom={editor.zoom}
           panRef={editor.panRef}
           installFailed={installFailed}
+          installPending={installPending}
           onChoice={handleConsentChoice}
           onClose={handleIntroClose}
           escapeSuppressed={

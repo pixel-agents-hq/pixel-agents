@@ -27,12 +27,18 @@ interface IntroBubbleProps {
   zoom: number;
   panRef: React.RefObject<{ x: number; y: number }>;
   /** The closing step's verdict: the install this tour asked for FAILED. The
-   *  tour must not congratulate a user whose install failed. False both while
-   *  no verdict has arrived (still optimistic — the overwhelmingly common
-   *  case is success, and a "working…" flash on every install would be worse
-   *  than a late correction) and after a success. Owned by useIntroTour,
-   *  which sees `hooksStatus` arrive and knows what this tour sent. */
+   *  tour must not congratulate a user whose install failed. Owned by
+   *  useIntroTour, which sees `hooksStatus` arrive and knows what this tour
+   *  sent. */
   installFailed: boolean;
+  /** An install was sent and no verdict has arrived: the consent step HOLDS —
+   *  buttons disabled, Install reading "Installing..." — and only advances to
+   *  the closing step when the verdict lands (see `choose`). Advancing on the
+   *  click was tried twice: the success title flashed the wrong verdict when
+   *  the install failed, and a neutral "Installing hooks..." title still
+   *  flashed on every success. Holding means the closing step only ever
+   *  renders WITH its verdict. */
+  installPending: boolean;
   /** A consent-step button click: sends the choice to the server and the tour
    *  moves on. Does NOT close the tour — the caller must keep this component
    *  mounted after a choice so the closing step can show. */
@@ -95,6 +101,7 @@ export function IntroBubble({
   zoom,
   panRef,
   installFailed,
+  installPending,
   onChoice,
   onClose,
   escapeSuppressed,
@@ -150,6 +157,15 @@ export function IntroBubble({
     return () => cancelAnimationFrame(rafId);
   }, [officeState, zoom, containerRef, panRef]);
 
+  // The held install's verdict arrived (installPending fell): move on to the
+  // closing step. Back is disabled while pending, so the fall can only ever
+  // happen with the consent step on screen.
+  const prevPendingRef = useRef(false);
+  useEffect(() => {
+    if (prevPendingRef.current && !installPending) setStep(CLOSING_STEP);
+    prevPendingRef.current = installPending;
+  }, [installPending]);
+
   const el = containerRef.current;
   if (!el) return null;
 
@@ -194,7 +210,10 @@ export function IntroBubble({
   const forward = (): void => setStep((s) => Math.min(CLOSING_STEP, s + 1));
   const choose = (choice: ConsentChoice): void => {
     onChoice(choice);
-    setStep(CLOSING_STEP);
+    // A decline has no outcome to wait on, so it advances immediately. An
+    // install holds this step (buttons disabled via installPending) and
+    // advances when its verdict arrives — the pending-fall effect above.
+    if (choice !== 'install') setStep(CLOSING_STEP);
   };
 
   const titles = [
@@ -264,8 +283,8 @@ export function IntroBubble({
 
         {step === WELCOME_STEP && (
           <p className="text-sm m-0 mb-8">
-            Your AI agents become tiny characters in a pixel office: they type at their desks while
-            they work, wander off when they're done, and speak up when they need you.
+            In this office, your AI agents become tiny pixel characters: they type at their desks
+            while they work, wander off when they're done, and speak up when they need you.
           </p>
         )}
 
@@ -273,12 +292,13 @@ export function IntroBubble({
           <>
             <p className="text-sm m-0 mb-8">
               The office watches your Claude Code sessions and brings them to life in here. New to
-              Claude Code? Grab it first:
+              Claude Code? Download it first:
             </p>
             <div className="text-sm bg-btn-bg border-2 border-border py-4 px-8 mb-8 select-all">
               {CLAUDE_CODE_INSTALL_COMMAND}
             </div>
             <p className="text-sm m-0 mb-8">
+              For more info, visit{' '}
               <a
                 href={CLAUDE_CODE_URL}
                 target="_blank"
@@ -303,15 +323,15 @@ export function IntroBubble({
             {installFailed ? (
               <p className="text-sm m-0 mb-8">
                 Something went wrong writing to your Claude Code settings, so the office will watch
-                your sessions the slower way instead. Everything still works. You can retry any time
-                from Settings.
+                your sessions the slower way instead. No worries, everything still works and you can
+                retry activating them any time from Settings.
               </p>
             ) : null}
             <p className="text-sm m-0 mb-8">
               Enjoy your new office! Questions, ideas, or pixel art to show off? Come hang out in
               our Discord.
             </p>
-            <p className="text-sm m-0 mb-8">
+            <p className="text-base text-center m-0 mt-12 mb-12">
               <a
                 href={DISCORD_INVITE_URL}
                 target="_blank"
@@ -331,21 +351,43 @@ export function IntroBubble({
           {step === WELCOME_STEP ? (
             <span />
           ) : (
-            <Button variant="ghost" size="sm" onClick={back}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={installPending}
+              className={installPending ? 'opacity-[var(--btn-disabled-opacity)]' : ''}
+              onClick={back}
+            >
               Back
             </Button>
           )}
 
           {step === CONSENT_STEP ? (
             <div className="flex items-center justify-end gap-6 flex-wrap">
-              <Button variant="ghost" size="sm" onClick={() => choose('never')}>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={installPending}
+                className={installPending ? 'opacity-[var(--btn-disabled-opacity)]' : ''}
+                onClick={() => choose('never')}
+              >
                 Don't Ask Again
               </Button>
-              <Button variant="default" size="sm" onClick={() => choose('notNow')}>
+              <Button
+                variant={installPending ? 'disabled' : 'default'}
+                size="sm"
+                disabled={installPending}
+                onClick={() => choose('notNow')}
+              >
                 Not Now
               </Button>
-              <Button variant="accent" size="sm" onClick={() => choose('install')}>
-                Install Hooks
+              <Button
+                variant={installPending ? 'disabled' : 'accent'}
+                size="sm"
+                disabled={installPending}
+                onClick={() => choose('install')}
+              >
+                {installPending ? 'Installing...' : 'Install Hooks'}
               </Button>
             </div>
           ) : step === CLOSING_STEP ? (

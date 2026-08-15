@@ -22,6 +22,10 @@ export function useIntroTour(args: {
   intro: HooksConsentRequest | null;
   /** The closing step's verdict: the install this tour asked for failed. */
   installFailed: boolean;
+  /** An install was sent and its verdict hasn't arrived yet: the consent step
+   *  holds with its buttons disabled until this falls, so the closing step
+   *  only ever renders with a verdict — never one it does not have. */
+  installPending: boolean;
   /** A consent-step button click: sends the choice, arms the verdict wait. */
   onChoice: (choice: ConsentChoice) => void;
   /** Every way the tour ends. Sends NOTHING — an unanswered ask must return
@@ -77,5 +81,11 @@ export function useIntroTour(args: {
     dismissConsentRequest(providerIdRef.current);
   }, [dismissConsentRequest]);
 
-  return { intro: state.intro, installFailed: state.installFailed, onChoice, onClose };
+  return {
+    intro: state.intro,
+    installFailed: state.installFailed,
+    installPending: state.awaitingOutcome,
+    onChoice,
+    onClose,
+  };
 }
