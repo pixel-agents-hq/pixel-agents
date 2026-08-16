@@ -123,6 +123,71 @@ export async function expectContextGauge(
   );
 }
 
+export interface TaskBoardRow {
+  status: 'in_progress' | 'pending' | 'completed';
+  text: string;
+}
+
+/** All per-agent task-board cards currently rendered. Zero cards == no board:
+ *  the panel renders null when no agent has published a list. */
+export function getTaskBoardCards(frame: OverlaySurface): Locator {
+  return frame.locator('[data-testid="task-board-agent"]');
+}
+
+export function getTaskBoardForAgent(frame: OverlaySurface, agentId: number): Locator {
+  return frame.locator(`[data-testid="task-board-agent"][data-agent-id="${agentId}"]`);
+}
+
+/** Rows of one agent's card, in DOM order (the board's grouped order:
+ *  in_progress -> pending -> completed). */
+export function getTaskBoardRows(frame: OverlaySurface, agentId: number): Locator {
+  return getTaskBoardForAgent(frame, agentId).locator('[data-testid="task-board-task"]');
+}
+
+/** Poll until the agent's card shows exactly `expected`, in order. */
+export async function expectTaskBoardRows(
+  frame: OverlaySurface,
+  agentId: number,
+  expected: TaskBoardRow[],
+  timeout = OVERLAY_TIMEOUT_MS,
+): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        getTaskBoardRows(frame, agentId).evaluateAll((elements) =>
+          elements.map((element) => ({
+            status: element.getAttribute('data-status') ?? '',
+            text:
+              element.querySelector('[data-testid="task-board-task-text"]')?.textContent?.trim() ??
+              '',
+          })),
+        ),
+      {
+        message: `Expected agent ${agentId}'s task board rows to equal ${JSON.stringify(expected)}`,
+        timeout,
+      },
+    )
+    .toEqual(expected);
+}
+
+/** Poll until the card header reads `${completed}/${total}`. */
+export async function expectTaskBoardProgress(
+  frame: OverlaySurface,
+  agentId: number,
+  progress: string,
+  timeout = OVERLAY_TIMEOUT_MS,
+): Promise<void> {
+  await expect(
+    getTaskBoardForAgent(frame, agentId).locator('[data-testid="task-board-progress"]'),
+  ).toHaveText(progress, { timeout });
+}
+
+/** Negative assertion: no task board card anywhere. Short default timeout, per the
+ *  file's wait-strategy conventions (rule 2). */
+export async function expectNoTaskBoard(frame: OverlaySurface, timeout = 1_000): Promise<void> {
+  await expect(getTaskBoardCards(frame)).toHaveCount(0, { timeout });
+}
+
 export async function readAgentOverlayIds(frame: OverlaySurface): Promise<number[]> {
   const rawIds = await getAgentOverlays(frame).evaluateAll((elements) =>
     elements.map((element) => element.getAttribute('data-agent-id')),

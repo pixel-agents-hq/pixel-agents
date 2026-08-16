@@ -55,6 +55,7 @@ export function TaskBoard({
 
   return (
     <div
+      data-testid="task-board"
       className="absolute right-8 z-10 flex flex-col gap-4 w-[320px] overflow-y-auto"
       style={{
         top: belowTooltip ? TASK_BOARD_TOOLTIP_CLEARANCE_PX : TASK_BOARD_MARGIN_PX,
@@ -64,6 +65,8 @@ export function TaskBoard({
       {boards.map(({ id, tasks }) => (
         <div
           key={id}
+          data-testid="task-board-agent"
+          data-agent-id={id}
           className={`pixel-panel p-8 text-xs select-none cursor-pointer ${
             id === selectedAgent ? 'border-accent-bright!' : ''
           }`}
@@ -71,7 +74,7 @@ export function TaskBoard({
         >
           <div className="flex justify-between items-baseline gap-4 mb-4">
             <span className="truncate">Agent {id}</span>
-            <span className="text-text-muted shrink-0">
+            <span data-testid="task-board-progress" className="text-text-muted shrink-0">
               {tasks.filter((t) => t.status === 'completed').length}/{tasks.length}
             </span>
           </div>
@@ -80,13 +83,18 @@ export function TaskBoard({
               tasks
                 .filter((task) => task.status === status)
                 .map((task, i) => (
-                  <li key={`${status}-${i}`} className={`flex gap-4 ${STATUS_TEXT_CLASS[status]}`}>
+                  <li
+                    key={`${status}-${i}`}
+                    data-testid="task-board-task"
+                    data-status={status}
+                    className={`flex gap-4 ${STATUS_TEXT_CLASS[status]}`}
+                  >
                     <span aria-hidden="true" className="shrink-0">
                       {STATUS_MARKER[status]}
                     </span>
                     {/* activeForm is the agent's present-tense phrasing, and
                         only reads correctly while the task is running. */}
-                    <span>
+                    <span data-testid="task-board-task-text">
                       {status === 'in_progress' && task.activeForm ? task.activeForm : task.content}
                     </span>
                   </li>

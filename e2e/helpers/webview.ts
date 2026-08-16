@@ -424,6 +424,18 @@ export async function clickAddAgent(frame: Frame): Promise<void> {
   await btn.click();
 }
 
+/** The bottom-toolbar "Tasks" button. Rendered only once some agent has
+ *  published a task list, so its presence is itself an assertion. */
+export function getTasksToggle(frame: WebviewSurface): Locator {
+  return frame.locator('button', { hasText: 'Tasks' });
+}
+
+export async function clickTasksToggle(frame: WebviewSurface): Promise<void> {
+  const button = getTasksToggle(frame);
+  await expect(button).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
+  await button.click();
+}
+
 async function setCheckbox(modal: Locator, label: string, checked: boolean): Promise<void> {
   const button = modal.locator('button', { hasText: label });
   await expect(button).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
