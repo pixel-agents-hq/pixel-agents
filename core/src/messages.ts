@@ -25,6 +25,7 @@ export type ServerMessage =
   | SubagentToolPermission
   | AgentTeamInfo
   | AgentContextUsage
+  | AgentTasks
   | LayoutLoaded
   | FurnitureAssetsLoaded
   | CharacterSpritesLoaded
@@ -187,6 +188,21 @@ export interface AgentContextUsage {
   contextTokens: number;
   maxContextTokens: number;
 }
+
+export interface AgentTasks {
+  type: 'agentTasks';
+  id: number;
+  tasks: AgentTask[];
+  replay?: boolean;
+}
+
+export interface AgentTask {
+  content: string;
+  status: AgentTaskStatus;
+  activeForm?: string;
+}
+
+export type AgentTaskStatus = 'pending' | 'in_progress' | 'completed';
 
 export interface LayoutLoaded {
   type: 'layoutLoaded';

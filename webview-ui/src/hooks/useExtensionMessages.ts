@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { HooksConsentRequest } from '../../../core/src/messages.js';
+import type { AgentTask, HooksConsentRequest } from '../../../core/src/messages.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
 import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
@@ -70,11 +70,30 @@ export interface WorkspaceFolder {
 
 interface ExtensionMessageState {
   agents: number[];
+  /**
+   * The agent the UI considers selected.
+   *
+   * Written from three places: the `agentSelected` message, `agentCreated`
+   * auto-select, and — since the office canvas owns its own imperative
+   * `officeState.selectedAgentId` — the canvas click handler, mirrored in via
+   * `setSelectedAgent`. Keeping one React value means DOM panels beside the
+   * canvas (the task board) and the canvas itself cannot disagree about who is
+   * selected.
+   */
   selectedAgent: number | null;
+  /** Mirror a selection made outside React (canvas click) or drive one from a
+   *  DOM panel. Callers that change the canvas must set `selectedAgentId` on
+   *  OfficeState too — this only updates the React half. */
+  setSelectedAgent: (id: number | null) => void;
   agentTools: Record<number, ToolActivity[]>;
   agentStatuses: Record<number, string>;
   subagentTools: Record<number, Record<string, ToolActivity[]>>;
   subagentCharacters: SubagentCharacter[];
+  /** Per-agent task list, keyed by agent id. Replaced wholesale on every
+   *  agentTasks message; an agent with an empty list is dropped from the map so
+   *  "has a board" is just presence. Unlike tool activity this is React state,
+   *  not OfficeState: the board is DOM, and nothing on the canvas reads it. */
+  agentTasks: Record<number, AgentTask[]>;
   layoutReady: boolean;
   layoutWasReset: boolean;
   loadedAssets?: { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> };
@@ -129,6 +148,7 @@ export function useExtensionMessages(
     Record<number, Record<string, ToolActivity[]>>
   >({});
   const [subagentCharacters, setSubagentCharacters] = useState<SubagentCharacter[]>([]);
+  const [agentTasks, setAgentTasks] = useState<Record<number, AgentTask[]>>({});
   const [layoutReady, setLayoutReady] = useState(false);
   const [layoutWasReset, setLayoutWasReset] = useState(false);
   const [loadedAssets, setLoadedAssets] = useState<
@@ -307,6 +327,12 @@ export function useExtensionMessages(
           return next;
         });
         setSubagentTools((prev) => {
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        setAgentTasks((prev) => {
           if (!(id in prev)) return prev;
           const next = { ...prev };
           delete next[id];
@@ -735,6 +761,24 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentContextUsage') {
         const id = msg.id as number;
         os.setAgentContext(id, msg.contextTokens as number, msg.maxContextTokens as number);
+      } else if (msg.type === 'agentTasks') {
+        const id = msg.id as number;
+        const tasks = msg.tasks as AgentTask[];
+        // Empty means the agent has no board, so drop the key entirely rather
+        // than keeping an empty array the panel would have to special-case.
+        setAgentTasks((prev) => {
+          if (tasks.length > 0) return { ...prev, [id]: tasks };
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        // Walk the character over to the office board to write the revision up.
+        // Skipped for an empty list (a retraction from /clear or a resumed
+        // session — nothing to go and write) and for a replay, which is this
+        // client catching up on a list published before it connected rather
+        // than the agent actually re-planning.
+        if (tasks.length > 0 && msg.replay !== true) os.visitTaskBoard(id);
       }
     };
     const unsubscribe = transport.onMessage(handler);
@@ -761,10 +805,12 @@ export function useExtensionMessages(
   return {
     agents,
     selectedAgent,
+    setSelectedAgent,
     agentTools,
     agentStatuses,
     subagentTools,
     subagentCharacters,
+    agentTasks,
     layoutReady,
     layoutWasReset,
     loadedAssets,

@@ -14,6 +14,8 @@ import {
   MAX_PET_ID_LENGTH,
   PET_HIT_HALF_WIDTH,
   PET_HIT_HEIGHT,
+  TASK_BOARD_FURNITURE_TYPE,
+  TASK_BOARD_VISIT_COOLDOWN_SEC,
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
@@ -43,6 +45,18 @@ import { advanceMatrixEffect, startMatrixEffect } from './matrixEffectState.js';
 import { createPet, updatePet } from './petEntity.js';
 import { anchorTile, closestFreeSeat } from './seatPlacement.js';
 
+/** Furniture ids carry a ":left" mirror suffix and may carry an orientation
+ *  suffix ("_FRONT"); both name the same object. Strip to the base id. */
+function baseFurnitureType(type: string): string {
+  return type.split(':')[0];
+}
+
+/** Whether a placed item is the office's task board. */
+function isTaskBoard(type: string): boolean {
+  const base = baseFurnitureType(type);
+  return base === TASK_BOARD_FURNITURE_TYPE || base.startsWith(`${TASK_BOARD_FURNITURE_TYPE}_`);
+}
+
 /** Internal helper: facing-tile coords for a seat. Returns null for invalid direction. */
 function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } {
   if (direction === Direction.RIGHT) return { dCol: 1, dRow: 0 };
@@ -71,6 +85,15 @@ export class OfficeState {
   /** Reverse lookup: sub-agent character ID → parent info */
   subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }> = new Map();
   private nextSubagentId = -1;
+
+  /** Tiles an agent can stand on to write on the task board, nearest side
+   *  first, each with the direction it faces from there. Empty when the office
+   *  holds no board — the whole errand is then inert, which is the honest state
+   *  for a layout without one. Several are kept because a board is usually more
+   *  than one tile wide, and two agents writing at once should stand apart. */
+  private boardApproaches: Array<{ col: number; row: number; dir: Direction }> = [];
+  /** agentId → epoch ms of its last board visit, for the revision cooldown. */
+  private lastBoardVisit: Map<number, number> = new Map();
 
   /**
    * folderName → list of Area labels that workspace folder belongs to.
@@ -112,8 +135,64 @@ export class OfficeState {
     this.blockedTiles = getBlockedTiles(this.layout.furniture);
     this.furniture = layoutToFurnitureInstances(this.layout.furniture);
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles);
+    this.computeBoardApproach();
     // Pets are built last because they need walkableTiles populated for spawn.
     this.rebuildPetsFromLayout(this.layout);
+  }
+
+  /**
+   * Collect the tiles an agent can stand on to use the task board.
+   *
+   * Sides are tried nearest-first: below the footprint (the only reachable side
+   * of a wall-mounted board), then above, then the two flanks. Unwalkable
+   * candidates are dropped, so a board boxed in by furniture yields an empty
+   * list and the errand simply never fires.
+   */
+  private computeBoardApproach(): void {
+    this.boardApproaches = [];
+    for (const item of this.layout.furniture) {
+      if (!isTaskBoard(item.type)) continue;
+      const entry = getCatalogEntry(item.type);
+      const fw = entry?.footprintW ?? 1;
+      const fh = entry?.footprintH ?? 1;
+      const candidates: Array<{ col: number; row: number; dir: Direction }> = [];
+      for (let dc = 0; dc < fw; dc++) {
+        candidates.push({ col: item.col + dc, row: item.row + fh, dir: Direction.UP });
+      }
+      for (let dc = 0; dc < fw; dc++) {
+        candidates.push({ col: item.col + dc, row: item.row - 1, dir: Direction.DOWN });
+      }
+      for (let dr = 0; dr < fh; dr++) {
+        candidates.push({ col: item.col - 1, row: item.row + dr, dir: Direction.RIGHT });
+        candidates.push({ col: item.col + fw, row: item.row + dr, dir: Direction.LEFT });
+      }
+      const walkable = candidates.filter((c) =>
+        isWalkable(c.col, c.row, this.tileMap, this.blockedTiles),
+      );
+      // First board with any reachable side wins; a second board in the office
+      // is decoration as far as the errand is concerned.
+      if (walkable.length > 0) {
+        this.boardApproaches = walkable;
+        return;
+      }
+    }
+  }
+
+  /** Board-side tile for this visit: the first one no other character is
+   *  standing on or already walking to, so two agents writing at the same time
+   *  stand side by side instead of overlapping. Falls back to the nearest tile
+   *  when every side is taken — overlapping beats not going at all. */
+  private pickBoardApproach(agentId: number): { col: number; row: number; dir: Direction } | null {
+    if (this.boardApproaches.length === 0) return null;
+    const taken = new Set<string>();
+    for (const [id, other] of this.characters) {
+      if (id === agentId) continue;
+      taken.add(`${other.tileCol},${other.tileRow}`);
+      if (other.errand) taken.add(`${other.errand.col},${other.errand.row}`);
+    }
+    return (
+      this.boardApproaches.find((c) => !taken.has(`${c.col},${c.row}`)) ?? this.boardApproaches[0]
+    );
   }
 
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
@@ -125,6 +204,8 @@ export class OfficeState {
     this.blockedTiles = getBlockedTiles(layout.furniture);
     this.rebuildFurnitureInstances();
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles);
+    // The board may have been moved, added, or deleted by the layout edit.
+    this.computeBoardApproach();
 
     // Shift character positions when grid expands left/up
     if (shift && (shift.col !== 0 || shift.row !== 0)) {
@@ -136,6 +217,10 @@ export class OfficeState {
         // Clear path since tile coords changed
         ch.path = [];
         ch.moveProgress = 0;
+        // The errand's target was recorded in pre-shift coords, and the board
+        // itself may no longer exist. Drop it rather than walk to a stale tile.
+        ch.errand = null;
+        ch.errandTimer = 0;
       }
     }
 
@@ -561,6 +646,7 @@ export class OfficeState {
     }
     if (this.selectedAgentId === id) this.selectedAgentId = null;
     if (this.cameraFollowId === id) this.cameraFollowId = null;
+    this.lastBoardVisit.delete(id);
     // Start despawn animation instead of immediate delete
     startMatrixEffect(ch, 'despawn');
     ch.bubbleType = null;
@@ -681,6 +767,64 @@ export class OfficeState {
     ch.path = path;
     ch.moveProgress = 0;
     ch.state = CharacterState.WALK;
+    ch.frame = 0;
+    ch.frameTimer = 0;
+    return true;
+  }
+
+  /**
+   * Send an agent to the office task board to write up a revised task list.
+   *
+   * Called on every revision the agent publishes, but agents revise their list
+   * far more often than they finish a task — without the cooldown an agent
+   * spends the session in transit and never appears to work at its desk. A
+   * visit already under way is never restarted for the same reason.
+   *
+   * Returns true when a visit was started, for tests and callers that care.
+   */
+  visitTaskBoard(agentId: number): boolean {
+    if (this.boardApproaches.length === 0) return false; // no board in this office
+    const ch = this.characters.get(agentId);
+    // Sub-agents keep no task list of their own, so they have nothing to write.
+    if (!ch || ch.isSubagent) return false;
+    if (ch.errand) return false; // already walking there or writing
+
+    const now = Date.now();
+    const last = this.lastBoardVisit.get(agentId);
+    if (last !== undefined && now - last < TASK_BOARD_VISIT_COOLDOWN_SEC * 1000) return false;
+
+    const approach = this.pickBoardApproach(agentId);
+    if (!approach) return false;
+
+    const alreadyThere = ch.tileCol === approach.col && ch.tileRow === approach.row;
+    const path = alreadyThere
+      ? []
+      : this.withOwnSeatUnblocked(ch, () =>
+          findPath(
+            ch.tileCol,
+            ch.tileRow,
+            approach.col,
+            approach.row,
+            this.tileMap,
+            this.blockedTiles,
+          ),
+        );
+    // No path and not standing there: the approach tile is occupied or walled
+    // off. Skip the visit entirely rather than latch an errand that can't run.
+    if (!alreadyThere && path.length === 0) return false;
+
+    this.lastBoardVisit.set(agentId, now);
+    ch.errand = { col: approach.col, row: approach.row, dir: approach.dir };
+    ch.errandTimer = 0; // the dwell starts on arrival, not on departure
+    if (path.length > 0) {
+      ch.path = path;
+      ch.moveProgress = 0;
+      ch.state = CharacterState.WALK;
+    } else {
+      // Standing on the tile already — IDLE turns the errand into a dwell on
+      // its next tick, so the transition lives in exactly one place.
+      ch.state = CharacterState.IDLE;
+    }
     ch.frame = 0;
     ch.frameTimer = 0;
     return true;

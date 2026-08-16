@@ -169,6 +169,24 @@ export function preToolUseBash(sessionId: string, command: string): HookEventPay
   };
 }
 
+export interface TodoWriteTask {
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  activeForm?: string;
+}
+
+/** PreToolUse for the tool Claude rewrites its task list through. Every call
+ *  carries the WHOLE list, so each one replaces the office's task board. An
+ *  empty array is a real state: it retracts the board. */
+export function preToolUseTodoWrite(sessionId: string, todos: TodoWriteTask[]): HookEventPayload {
+  return {
+    session_id: sessionId,
+    hook_event_name: 'PreToolUse',
+    tool_name: 'TodoWrite',
+    tool_input: { todos },
+  };
+}
+
 export function preToolUseAgent(
   sessionId: string,
   description: string,

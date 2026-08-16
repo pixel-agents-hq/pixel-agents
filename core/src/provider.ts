@@ -7,6 +7,7 @@
  * speculation.
  */
 
+import type { AgentTask } from './messages.js';
 import type { TeamProvider } from './teamProvider.js';
 
 // ── Normalized Events (all provider types produce these) ──────
@@ -96,6 +97,15 @@ export interface HookProvider {
 
   /** Format tool status for display (e.g., "Read" -> "Reading foo.ts") */
   formatToolStatus(toolName: string, input?: unknown): string;
+  /** Extract the agent's task list from a tool call, for CLIs that express
+   *  tasks through a tool (Claude: TodoWrite). Return null when this call
+   *  carries no list — including for every tool that isn't the task tool.
+   *  Same shape as formatToolStatus for the same reason: the tool name is the
+   *  provider's vocabulary, so the runtime hands it over rather than branching
+   *  on it. A returned list REPLACES the agent's previous one; agents rewrite
+   *  the whole list rather than patching it, so there is no delta form.
+   *  Omit for CLIs with no task concept — the office simply shows no board. */
+  extractTasks?(toolName: string, input?: unknown): AgentTask[] | null;
   /** Tools that don't trigger permission timers */
   readonly permissionExemptTools: ReadonlySet<string>;
   /** Tools that spawn sub-agent characters */

@@ -484,6 +484,129 @@ describe('HookEventHandler', () => {
     expect(agent.currentHookToolId).toBeTruthy();
   });
 
+  // ── Task board ───────────────────────────────────────────────
+
+  it('PreToolUse(TodoWrite) broadcasts agentTasks and stores the list', () => {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'TodoWrite',
+      tool_input: {
+        todos: [
+          { content: 'Build it', status: 'in_progress', activeForm: 'Building it' },
+          { content: 'Test it', status: 'pending' },
+        ],
+      },
+    });
+
+    const msg = mockWebview.messages.find((m) => m.type === 'agentTasks');
+    expect(msg).toBeTruthy();
+    expect(msg?.id).toBe(1);
+    expect(msg?.tasks).toEqual([
+      { content: 'Build it', status: 'in_progress', activeForm: 'Building it' },
+      { content: 'Test it', status: 'pending' },
+    ]);
+    expect(agent.tasks).toEqual(msg?.tasks);
+  });
+
+  it('a later TodoWrite replaces the board rather than appending to it', () => {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+
+    const send = (todos: unknown) =>
+      handler.handleEvent('claude', {
+        hook_event_name: 'PreToolUse',
+        session_id: 'sess-1',
+        tool_name: 'TodoWrite',
+        tool_input: { todos },
+      });
+
+    send([{ content: 'Build it', status: 'in_progress' }]);
+    send([{ content: 'Build it', status: 'completed' }]);
+
+    expect(agent.tasks).toEqual([{ content: 'Build it', status: 'completed' }]);
+  });
+
+  it('a non-task tool leaves an existing board untouched', () => {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'TodoWrite',
+      tool_input: { todos: [{ content: 'Build it', status: 'pending' }] },
+    });
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'Read',
+      tool_input: { file_path: '/src/server.ts' },
+    });
+
+    expect(agent.tasks).toEqual([{ content: 'Build it', status: 'pending' }]);
+    expect(mockWebview.messages.filter((m) => m.type === 'agentTasks')).toHaveLength(1);
+  });
+
+  // The inline-teammate guard suppresses ambiguous tool DISPLAY on a lead whose
+  // teammates share its session_id. The board is published anyway: a
+  // possibly-misattributed list still shows the work, a suppressed one shows
+  // nothing. See handlePreToolUse.
+  it('publishes the board even when the lead has inline teammates', () => {
+    const lead = createTestAgent({ id: 1 });
+    agents.set(1, lead);
+    agents.set(2, createTestAgent({ id: 2, leadAgentId: 1 }));
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'TodoWrite',
+      tool_input: { todos: [{ content: 'Build it', status: 'pending' }] },
+    });
+
+    expect(mockWebview.messages.find((m) => m.type === 'agentTasks')).toBeTruthy();
+    // ...while tool display stays suppressed, as it was before.
+    expect(mockWebview.messages.find((m) => m.type === 'agentToolStart')).toBeUndefined();
+  });
+
+  // The board described the session that just ended. Left up, finished work
+  // would read as pending against a session that never queued it.
+  it('/clear reassignment empties the board', () => {
+    const agent = createTestAgent({ id: 1, sessionId: 'old-sess', projectDir: '/projects/test' });
+    agents.set(1, agent);
+    handler.registerAgent('old-sess', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'old-sess',
+      tool_name: 'TodoWrite',
+      tool_input: { todos: [{ content: 'Build it', status: 'completed' }] },
+    });
+    handler.handleEvent('claude', {
+      hook_event_name: 'SessionEnd',
+      session_id: 'old-sess',
+      reason: 'clear',
+    });
+    handler.handleEvent('claude', {
+      hook_event_name: 'SessionStart',
+      session_id: 'new-sess',
+      source: 'clear',
+      transcript_path: '/projects/test/new-sess.jsonl',
+      cwd: '/projects/test',
+    });
+
+    expect(agent.tasks).toBeUndefined();
+    const taskMsgs = mockWebview.messages.filter((m) => m.type === 'agentTasks');
+    expect(taskMsgs.at(-1)?.tasks).toEqual([]);
+  });
+
   it('PreToolUse marks agent active and cancels waiting', () => {
     const agent = createTestAgent({ id: 1, isWaiting: true });
     agents.set(1, agent);

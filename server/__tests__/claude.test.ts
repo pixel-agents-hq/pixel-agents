@@ -258,4 +258,69 @@ describe('claudeProvider', () => {
       expect(claudeProvider.formatToolStatus('Read', undefined)).toBe('Reading ');
     });
   });
+
+  describe('extractTasks', () => {
+    const extract = (toolName: string, input?: unknown) =>
+      claudeProvider.extractTasks?.(toolName, input);
+
+    it('extracts a TodoWrite list, preserving order and activeForm', () => {
+      expect(
+        extract('TodoWrite', {
+          todos: [
+            { content: 'Write the spec', status: 'completed', activeForm: 'Writing the spec' },
+            { content: 'Build the panel', status: 'in_progress', activeForm: 'Building the panel' },
+            { content: 'Test it', status: 'pending', activeForm: 'Testing it' },
+          ],
+        }),
+      ).toEqual([
+        { content: 'Write the spec', status: 'completed', activeForm: 'Writing the spec' },
+        { content: 'Build the panel', status: 'in_progress', activeForm: 'Building the panel' },
+        { content: 'Test it', status: 'pending', activeForm: 'Testing it' },
+      ]);
+    });
+
+    it('omits activeForm when the todo has none', () => {
+      expect(extract('TodoWrite', { todos: [{ content: 'Ship it', status: 'pending' }] })).toEqual([
+        { content: 'Ship it', status: 'pending' },
+      ]);
+    });
+
+    it('returns an empty list when the agent cleared its todos', () => {
+      expect(extract('TodoWrite', { todos: [] })).toEqual([]);
+    });
+
+    // null means "not a task call at all" and leaves the board untouched, which
+    // is what every non-task tool must do — the board outlives one tool call.
+    it('returns null for any other tool', () => {
+      expect(extract('Read', { file_path: '/a/b.ts' })).toBeNull();
+      expect(extract('Write', { todos: [{ content: 'x', status: 'pending' }] })).toBeNull();
+    });
+
+    it('returns null when todos is missing or not an array', () => {
+      expect(extract('TodoWrite', {})).toBeNull();
+      expect(extract('TodoWrite', undefined)).toBeNull();
+      expect(extract('TodoWrite', { todos: 'nope' })).toBeNull();
+    });
+
+    // One malformed row must not blank a board that is otherwise fine.
+    it('drops unusable entries and keeps the rest', () => {
+      expect(
+        extract('TodoWrite', {
+          todos: [
+            { content: 'Good', status: 'pending' },
+            null,
+            'not an object',
+            { status: 'pending' },
+            { content: '', status: 'pending' },
+            { content: 'No status' },
+            { content: 'Unknown state', status: 'blocked' },
+            { content: 'Also good', status: 'completed' },
+          ],
+        }),
+      ).toEqual([
+        { content: 'Good', status: 'pending' },
+        { content: 'Also good', status: 'completed' },
+      ]);
+    });
+  });
 });

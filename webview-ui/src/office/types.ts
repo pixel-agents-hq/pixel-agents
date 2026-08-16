@@ -211,6 +211,14 @@ export interface Character {
   bubbleTimer: number;
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */
   seatTimer: number;
+  /** Task-board errand in progress, or null. Set when the agent revises its task
+   *  list: the character walks to `col,row`, faces `dir`, and writes for
+   *  `errandTimer` seconds. While this is set the FSM must not repath the
+   *  character to its seat, or an active agent would be dragged back mid-walk. */
+  errand: { col: number; row: number; dir: Direction } | null;
+  /** Seconds left writing at the board. Only counts down once the character has
+   *  arrived, so travel time never eats into the dwell. */
+  errandTimer: number;
   /** Whether this character represents a sub-agent (spawned by Task tool) */
   isSubagent: boolean;
   /** Parent agent ID if this is a sub-agent, null otherwise */

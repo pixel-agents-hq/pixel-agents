@@ -275,6 +275,32 @@ export const CONTEXT_GAUGE_BG = '#222';
 export const TEAM_LEAD_COLOR = '#ffd700';
 export const TEAM_ROLE_COLOR = '#66aaff';
 
+// ── Task Board ──────────────────────────────────────────────
+/** Order the board groups tasks in — what is running now first, finished work
+ *  last. Deliberately not the agent's own ordering: the board is glanced at,
+ *  and the in-progress row is the reason to glance. */
+export const TASK_BOARD_STATUS_ORDER = ['in_progress', 'pending', 'completed'] as const;
+/** Inset from the top-right corner, matching the other overlays. */
+export const TASK_BOARD_MARGIN_PX = 8;
+/** Top inset while the first-run hooks tooltip owns the corner — clears its
+ *  tallest rendering rather than overlapping it. */
+export const TASK_BOARD_TOOLTIP_CLEARANCE_PX = 104;
+/** Space kept free below the board so a long list never runs into the toolbar. */
+export const TASK_BOARD_BOTTOM_CLEARANCE_PX = 56;
+
+/** Furniture type an agent walks to when it revises its task list. The office
+ *  may hold several; the first one found is the board everyone uses. */
+export const TASK_BOARD_FURNITURE_TYPE = 'WHITEBOARD';
+/** Seconds an agent stands at the board writing before returning to its seat.
+ *  A task revision is one instantaneous tool call, so the dwell is synthetic —
+ *  long enough to read as "updating the board", short enough not to strand the
+ *  agent away from its desk. */
+export const TASK_BOARD_DWELL_SEC = 4;
+/** Minimum seconds between one agent's board visits. Agents revise their todo
+ *  list far more often than they finish a task, and without this an agent
+ *  spends the whole session in transit and never appears to work at its desk. */
+export const TASK_BOARD_VISIT_COOLDOWN_SEC = 20;
+
 // ── Pets ────────────────────────────────────────────────────────
 /** Walking speed in world pixels per second (matches character walk speed visually but slower). */
 export const PET_WALK_SPEED_PX_PER_SEC = 32;
