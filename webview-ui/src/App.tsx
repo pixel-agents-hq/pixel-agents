@@ -148,17 +148,16 @@ function App() {
     transport.send({ type: 'setGhostHeadlessAgents', enabled: next });
   }, [ghostHeadlessAgents, setGhostHeadlessAgents]);
 
-  const handleSelectAgent = useCallback((id: number) => {
-    transport.send({ type: 'focusAgent', id });
-  }, []);
-
   /**
-   * Select an agent from a DOM panel beside the canvas (the task board).
+   * Select an agent from a DOM panel rather than the canvas — the task board's
+   * tabs and cards, and the Debug View's agent cards.
    *
    * The canvas keeps its selection imperatively on OfficeState, so a panel has
    * to set BOTH halves: the office one drives the character outline and the
    * camera, the React one drives the panels. Setting only the React half would
-   * switch the board while leaving the office highlighting nobody.
+   * switch the board while leaving the office highlighting nobody — and setting
+   * neither is what left a Debug View card rendering "selected" styling that its
+   * own click could never trigger.
    */
   const handleSelectAgentFromPanel = useCallback(
     (id: number) => {
@@ -498,7 +497,7 @@ function App() {
           agentStatuses={agentStatuses}
           subagentTools={subagentTools}
           officeState={officeState}
-          onSelectAgent={handleSelectAgent}
+          onSelectAgent={handleSelectAgentFromPanel}
         />
       )}
 
