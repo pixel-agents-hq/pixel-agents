@@ -1,4 +1,4 @@
-import { test } from '../../fixtures/standalone';
+import { expect, test } from '../../fixtures/standalone';
 import {
   preToolUseBash,
   preToolUseTodoWrite,
@@ -17,6 +17,9 @@ import { setSettings } from '../../helpers/webview';
 const RESEND_TASK = 'Survive a panel reload';
 const RESEND_TASK_ACTIVE = 'Surviving a panel reload';
 const REPLAY_TASK = 'Replay without walking';
+/** One token, no spaces — the shape a URL or file path takes in a task title. */
+const UNBROKEN_TASK =
+  'Supercalifragilisticexpialidociousandthensomemoreletterswithoutanyspacesatallwhatsoever';
 
 test.describe('Standalone / task board', () => {
   test('the board survives a page reload and the replay does not send the agent walking @area:standalone', async ({
@@ -117,5 +120,45 @@ test.describe('Standalone / task board', () => {
     // before the negative assertion (rule 2).
     await page.waitForTimeout(1_500);
     await expectNoTaskBoard(page, 2_000);
+  });
+
+  test('a task title with no spaces wraps instead of scrolling the board sideways @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    await setSettings(page, { alwaysShowLabels: true, watchAllSessions: true });
+    await standalone.drainMessages();
+
+    const sessionId = 'standalone-taskboard-overflow';
+    await sendHookEvent(
+      standalone.hookServerConfig,
+      sessionStartStartup(sessionId, standalone.workspaceDir),
+    );
+    await sendHookEvent(standalone.hookServerConfig, preToolUseBash(sessionId, 'npm test'));
+    const agentId = await expectSingleAgentOverlay(page);
+
+    // A URL, a file path or a long identifier in a task title is one unbroken
+    // token. A flex child will not shrink below its content width, so without
+    // an explicit break this pushed the row wider than the 320px panel and put
+    // a horizontal scrollbar across the whole board.
+    await sendHookEvent(
+      standalone.hookServerConfig,
+      preToolUseTodoWrite(sessionId, [
+        { content: UNBROKEN_TASK, status: 'pending' },
+        { content: 'A perfectly ordinary task title that wraps on spaces', status: 'pending' },
+      ]),
+    );
+    await expectTaskBoardRows(page, agentId, [
+      { status: 'pending', text: UNBROKEN_TASK },
+      { status: 'pending', text: 'A perfectly ordinary task title that wraps on spaces' },
+    ]);
+
+    const overflow = await page.evaluate(() => {
+      const card = document.querySelector('[data-testid="task-board-agent"]');
+      if (!card) return null;
+      return { scrollWidth: card.scrollWidth, clientWidth: card.clientWidth };
+    });
+    expect(overflow).not.toBeNull();
+    expect(overflow!.scrollWidth).toBeLessThanOrEqual(overflow!.clientWidth);
   });
 });

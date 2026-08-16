@@ -161,8 +161,13 @@ export function TaskBoard({
                       {STATUS_MARKER[status]}
                     </span>
                     {/* activeForm is the agent's present-tense phrasing, and
-                      only reads correctly while the task is running. */}
-                    <span data-testid="task-board-task-text">
+                      only reads correctly while the task is running.
+                      `min-w-0 break-words`: a flex child will not shrink below
+                      its content width, so one long unbroken token — a URL, a
+                      path, an identifier, all plausible in a task title — used
+                      to push the row wider than the panel and put a horizontal
+                      scrollbar across the whole board. */}
+                    <span data-testid="task-board-task-text" className="min-w-0 break-words">
                       {status === 'in_progress' && task.activeForm ? task.activeForm : task.content}
                     </span>
                   </li>
