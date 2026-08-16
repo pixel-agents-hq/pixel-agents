@@ -235,7 +235,13 @@ test.describe('Hooks ON / task board — office errand and selection', () => {
     const publisher = ids[0]!;
     const boardless = ids[1]!;
 
-    narrator.step('waiting for the publisher to put its board up');
+    // Select the publisher explicitly rather than relying on whoever the last
+    // `agentCreated` auto-selected. The panel is already open while these
+    // agents spawn, so the boardless one is auto-selected and the board is
+    // legitimately hidden — starting from that state would make this test
+    // depend on spawn order rather than on the rule it is checking.
+    narrator.step(`selecting agent ${publisher} and waiting for its board`);
+    await selectCharacter(panelFrame, publisher);
     await expectTaskBoardRows(panelFrame, publisher, [
       { status: 'in_progress', text: PLAN_TASK_ACTIVE },
     ]);
