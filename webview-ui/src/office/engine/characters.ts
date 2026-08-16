@@ -2,6 +2,7 @@ import {
   DEFAULT_MAX_CONTEXT_TOKENS,
   SEAT_REST_MAX_SEC,
   SEAT_REST_MIN_SEC,
+  TASK_BOARD_DWELL_SEC,
   TYPE_FRAME_DURATION_SEC,
   WALK_FRAME_DURATION_SEC,
   WALK_SPEED_PX_PER_SEC,
@@ -79,6 +80,8 @@ export function createCharacter(
     bubbleType: null,
     bubbleTimer: 0,
     seatTimer: 0,
+    errand: null,
+    errandTimer: 0,
     isSubagent: false,
     parentAgentId: null,
     matrixEffect: null,
@@ -105,6 +108,24 @@ export function updateCharacter(
         ch.frameTimer -= TYPE_FRAME_DURATION_SEC;
         ch.frame = (ch.frame + 1) % 2;
       }
+      // Writing at the task board. Checked above the inactive branch so a turn
+      // ending mid-visit cannot stand the character up before it has finished:
+      // the dwell is only a few seconds, and a visit cut short reads as a glitch
+      // rather than as the agent moving on.
+      if (ch.errandTimer > 0) {
+        ch.errandTimer -= dt;
+        if (ch.errandTimer <= 0) {
+          ch.errandTimer = 0;
+          ch.errand = null;
+          // Hand back to IDLE rather than deciding here — its existing branches
+          // already send an active character to its seat and an inactive one off
+          // to wander, so the errand needs no exit rule of its own.
+          ch.state = CharacterState.IDLE;
+          ch.frame = 0;
+          ch.frameTimer = 0;
+        }
+        break;
+      }
       // If no longer active, stand up and start wandering (after seatTimer expires)
       if (!ch.isActive) {
         if (ch.seatTimer > 0) {
@@ -126,6 +147,38 @@ export function updateCharacter(
       // No idle animation — static pose
       ch.frame = 0;
       if (ch.seatTimer < 0) ch.seatTimer = 0; // clear turn-end sentinel
+      // A pending errand outranks both seat-return and wandering.
+      if (ch.errand) {
+        if (ch.tileCol === ch.errand.col && ch.tileRow === ch.errand.row) {
+          ch.state = CharacterState.TYPE;
+          ch.dir = ch.errand.dir;
+          ch.errandTimer = TASK_BOARD_DWELL_SEC;
+          ch.frame = 0;
+          ch.frameTimer = 0;
+          break;
+        }
+        const path = findPath(
+          ch.tileCol,
+          ch.tileRow,
+          ch.errand.col,
+          ch.errand.row,
+          tileMap,
+          blockedTiles,
+        );
+        if (path.length > 0) {
+          ch.path = path;
+          ch.moveProgress = 0;
+          ch.state = CharacterState.WALK;
+          ch.frame = 0;
+          ch.frameTimer = 0;
+        } else {
+          // Unreachable — the board was moved behind furniture, or another
+          // character is standing on the only approach tile. Drop the errand
+          // rather than retrying every frame and freezing the character here.
+          ch.errand = null;
+        }
+        break;
+      }
       // If became active, pathfind to seat
       if (ch.isActive) {
         if (!ch.seatId) {
@@ -223,6 +276,21 @@ export function updateCharacter(
         ch.x = center.x;
         ch.y = center.y;
 
+        // Arrived at the board — start writing before seat logic gets a say.
+        if (ch.errand) {
+          if (ch.tileCol === ch.errand.col && ch.tileRow === ch.errand.row) {
+            ch.state = CharacterState.TYPE;
+            ch.dir = ch.errand.dir;
+            ch.errandTimer = TASK_BOARD_DWELL_SEC;
+          } else {
+            // Landed somewhere else (the walk predated the errand) — IDLE repaths.
+            ch.state = CharacterState.IDLE;
+          }
+          ch.frame = 0;
+          ch.frameTimer = 0;
+          break;
+        }
+
         if (ch.isActive) {
           if (!ch.seatId) {
             // No seat — type in place
@@ -290,8 +358,10 @@ export function updateCharacter(
         ch.moveProgress = 0;
       }
 
-      // If became active while wandering, repath to seat
-      if (ch.isActive && ch.seatId) {
+      // If became active while wandering, repath to seat. An errand outranks
+      // this — the character is walking to the board deliberately, and without
+      // the guard the next active turn would drag it back mid-walk.
+      if (ch.isActive && ch.seatId && !ch.errand) {
         const seat = seats.get(ch.seatId);
         if (seat) {
           const lastStep = ch.path[ch.path.length - 1];

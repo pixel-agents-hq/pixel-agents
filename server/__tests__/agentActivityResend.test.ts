@@ -231,4 +231,48 @@ describe('resendAgentActivity', () => {
     expect(sent[0]).toMatchObject({ type: 'agentToolStart', id: 1 });
     expect(sent[1]).toMatchObject({ type: 'agentStatus', id: 2, status: 'waiting' });
   });
+
+  it('replays the task board so it survives a panel reload', () => {
+    const store = new AgentStateStore();
+    store.set(
+      1,
+      createTestAgent({
+        id: 1,
+        tasks: [
+          { content: 'Ship it', status: 'in_progress', activeForm: 'Shipping it' },
+          { content: 'Write it up', status: 'pending' },
+        ],
+      }),
+    );
+    const sent: Array<Record<string, unknown>> = [];
+    resendAgentActivity((msg) => sent.push(msg), store);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toEqual({
+      type: 'agentTasks',
+      id: 1,
+      tasks: [
+        { content: 'Ship it', status: 'in_progress', activeForm: 'Shipping it' },
+        { content: 'Write it up', status: 'pending' },
+      ],
+      // The office reacts to a task REVISION by walking the agent to the
+      // whiteboard. A replay carries the same list but is not a revision, so
+      // without this flag every agent would march to the board on reconnect.
+      replay: true,
+    });
+  });
+
+  it('says nothing about agents with no board, rather than retracting one', () => {
+    // `agentTasks: []` is the RETRACTION message (/clear, resumed session). A
+    // reconnecting client has no board to retract, so replaying an empty list
+    // would be a statement about something that never existed.
+    const store = new AgentStateStore();
+    store.set(1, createTestAgent({ id: 1 })); // never published a list
+    store.set(2, createTestAgent({ id: 2, tasks: [] })); // published, then retracted
+
+    const sent: Array<Record<string, unknown>> = [];
+    resendAgentActivity((msg) => sent.push(msg), store);
+
+    expect(sent.filter((m) => m.type === 'agentTasks')).toHaveLength(0);
+  });
 });

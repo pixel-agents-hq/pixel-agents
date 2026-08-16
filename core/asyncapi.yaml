@@ -476,8 +476,11 @@ components:
         rewrite the whole list rather than patching entries, so this is a
         snapshot and never a delta. An empty array means the agent has no tasks
         (sent on session start to clear a stale board). Only agents with a
-        session of their own report tasks; sub-agents never do. Not persisted:
-        after a reload the board is empty until the agent next revises its list.
+        session of their own report tasks; sub-agents never do. Never persisted
+        to disk — a board reloaded from a previous run describes a turn that
+        already ended — but the running server does hold the last list and
+        replays it to a reconnecting client, so the board survives a panel
+        reload within a session.
       type: object
       additionalProperties: false
       required: [type, id, tasks]
@@ -490,6 +493,16 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AgentTask'
+        replay:
+          type: boolean
+          description: |
+            True when this is a state replay to a reconnecting client rather
+            than a fresh revision the agent just published. The two carry the
+            same list but mean different things: a revision is an event the
+            office reacts to (the agent walks to the task board to write it
+            up), while a replay is only the client catching up on state it
+            already missed. Without the distinction every agent with a board
+            would march to the whiteboard on every panel reload.
 
     LayoutLoaded:
       description: |

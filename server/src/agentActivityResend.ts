@@ -84,5 +84,28 @@ export function resendAgentActivity(
         maxContextTokens: agent.maxContextTokens,
       });
     }
+
+    // 6. Task board. The list is NOT persisted to disk on purpose — a board
+    // reloaded from a previous run describes a turn that already ended. But a
+    // reconnect is not a new session: this process still holds the list the
+    // agent published, and the client that just dropped is the only thing that
+    // forgot it. Resending is what makes the board survive a panel reload
+    // instead of staying blank until the agent's next revision.
+    //
+    // Empty is not sent: an agent with no board and an agent whose board was
+    // retracted look the same to a fresh client, and `agentTasks: []` is the
+    // retraction message — replaying it would be a statement about a board the
+    // client never had.
+    if (agent.tasks && agent.tasks.length > 0) {
+      send({
+        type: 'agentTasks',
+        id,
+        tasks: agent.tasks,
+        // Not a revision: the agent published this list earlier and has not
+        // touched it since. Marks it so the office does not send every agent
+        // walking to the whiteboard on reconnect.
+        replay: true,
+      });
+    }
   }
 }

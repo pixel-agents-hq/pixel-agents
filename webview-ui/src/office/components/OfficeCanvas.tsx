@@ -29,6 +29,11 @@ import { computeNormalModeCursor } from './officeCanvasCursor.js';
 interface OfficeCanvasProps {
   officeState: OfficeState;
   onClick: (agentId: number) => void;
+  /** Character selection changed on the canvas (click to select, click again or
+   *  click away to deselect). The canvas owns `officeState.selectedAgentId`
+   *  imperatively, so DOM panels beside it can only follow along if the change
+   *  is announced — without this the task board never learns who was picked. */
+  onAgentSelectionChange?: (agentId: number | null) => void;
   isEditMode: boolean;
   editorState: EditorState;
   onEditorTileAction: (col: number, row: number) => void;
@@ -50,6 +55,7 @@ interface OfficeCanvasProps {
 export function OfficeCanvas({
   officeState,
   onClick,
+  onAgentSelectionChange,
   isEditMode,
   editorState,
   onEditorTileAction,
@@ -735,6 +741,7 @@ export function OfficeCanvas({
           officeState.selectedAgentId = hitId;
           officeState.cameraFollowId = hitId;
         }
+        onAgentSelectionChange?.(officeState.selectedAgentId);
         onClick(hitId); // still focus terminal
         return;
       }
@@ -767,12 +774,14 @@ export function OfficeCanvas({
                   officeState.sendToSeat(officeState.selectedAgentId);
                   officeState.selectedAgentId = null;
                   officeState.cameraFollowId = null;
+                  onAgentSelectionChange?.(null);
                   return;
                 } else if (!seat.assigned) {
                   // Clicked available seat — reassign
                   officeState.reassignSeat(officeState.selectedAgentId, seatId);
                   officeState.selectedAgentId = null;
                   officeState.cameraFollowId = null;
+                  onAgentSelectionChange?.(null);
                   transport.send({
                     type: 'saveAgentSeats',
                     seats: officeState.getPersistableSeats(),
@@ -786,9 +795,10 @@ export function OfficeCanvas({
         // Clicked empty space — deselect
         officeState.selectedAgentId = null;
         officeState.cameraFollowId = null;
+        onAgentSelectionChange?.(null);
       }
     },
-    [officeState, onClick, screenToWorld, screenToTile, isEditMode],
+    [officeState, onClick, onAgentSelectionChange, screenToWorld, screenToTile, isEditMode],
   );
 
   const handleMouseLeave = useCallback(() => {

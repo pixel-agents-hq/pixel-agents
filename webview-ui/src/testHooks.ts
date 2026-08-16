@@ -15,6 +15,11 @@ declare global {
         waitingAwaitingInput?: boolean;
         isHeadless?: boolean;
         isGreeter?: boolean;
+        /** Task-board errand state: 'walking' while on the way to the office
+         *  whiteboard after a task revision, 'writing' while standing at it,
+         *  null otherwise. The walk is pure canvas motion with no DOM of its
+         *  own, so this is the only way a spec can see it happen. */
+        taskBoardErrand: 'walking' | 'writing' | null;
       }>;
       /** Effective "Display headless as ghosts" setting the renderer is using. */
       getGhostHeadlessAgents?: () => boolean;
@@ -87,6 +92,12 @@ declare global {
         parentToolId?: string;
       }>;
       selectAgent?: (id: number) => void;
+      /** Registered by App so `selectAgent` updates the React half of selection
+       *  too. The canvas owns `officeState.selectedAgentId` imperatively, so
+       *  setting only that produces a split state a real click never creates —
+       *  the office would highlight the agent while DOM panels beside it (the
+       *  task board) still showed someone else. */
+      selectionSync?: (id: number | null) => void;
     };
   }
 }
@@ -129,6 +140,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       waitingAwaitingInput: ch.waitingAwaitingInput,
       isHeadless: ch.isHeadless,
       isGreeter: ch.isGreeter,
+      taskBoardErrand: ch.errand ? (ch.errandTimer > 0 ? 'writing' : 'walking') : null,
     }));
   };
 
@@ -139,6 +151,9 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
   hooks.selectAgent = (id) => {
     const os = officeStateRef.current;
     if (os) os.selectedAgentId = id;
+    // Mirror the React half too, exactly as the canvas click handler does.
+    // Without this the hook creates a state no real interaction can produce.
+    hooks.selectionSync?.(id);
   };
 
   // Point-in-time snapshot of every live pet. Pets render only on the canvas
