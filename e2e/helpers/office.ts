@@ -188,6 +188,90 @@ export async function expectNoTaskBoard(frame: OverlaySurface, timeout = 1_000):
   await expect(getTaskBoardCards(frame)).toHaveCount(0, { timeout });
 }
 
+/**
+ * Assert which agent the office considers selected, via the one user-visible
+ * consequence of selection: only the selected top-level agent's overlay shows
+ * the "Close agent" (×) button (ToolOverlay gates it on `isSelected`).
+ *
+ * That makes it the right probe for "did the task board select this agent" —
+ * it reads what the office actually renders rather than the flag behind it.
+ */
+export async function expectAgentSelected(
+  frame: OverlaySurface,
+  agentId: number,
+  selected = true,
+  timeout = OVERLAY_TIMEOUT_MS,
+): Promise<void> {
+  const closeButton = getOverlayByAgentId(frame, agentId)
+    .first()
+    .locator('button[title="Close agent"]');
+  if (selected) {
+    await expect(closeButton).toBeVisible({ timeout });
+  } else {
+    await expect(closeButton).toHaveCount(0, { timeout });
+  }
+  narrate.check(`agent ${agentId} is ${selected ? 'selected' : 'not selected'}`);
+}
+
+/** Tabs of the task board strip — one per agent that has published a list. */
+export function getTaskBoardTabs(frame: OverlaySurface): Locator {
+  return frame.locator('[data-testid="task-board-tab"]');
+}
+
+export function getTaskBoardTab(frame: OverlaySurface, agentId: number): Locator {
+  return frame.locator(`[data-testid="task-board-tab"][data-agent-id="${agentId}"]`);
+}
+
+/** The tab currently marked active, by agent id — null when none is (which is
+ *  the state while a selected agent has no board of its own). */
+export async function getActiveTaskBoardTabId(frame: OverlaySurface): Promise<number | null> {
+  const active = frame.locator('[data-testid="task-board-tab"][data-active="true"]');
+  if ((await active.count()) === 0) return null;
+  const id = await active.first().getAttribute('data-agent-id');
+  return id === null ? null : Number(id);
+}
+
+/**
+ * Poll until a character reaches the given task-board errand phase.
+ *
+ * The walk to the office whiteboard is pure canvas motion — no DOM of its own —
+ * so this reads the character's errand state through the test hooks, the same
+ * rationale as getCharacters/getPets. 'writing' means it has arrived and is
+ * standing at the board; 'walking' means it is still on the way.
+ */
+export async function expectTaskBoardErrand(
+  frame: OverlaySurface,
+  agentId: number,
+  phase: 'walking' | 'writing' | null,
+  timeout = OVERLAY_TIMEOUT_MS,
+): Promise<void> {
+  await expect
+    .poll(
+      async () =>
+        await frame.evaluate((id) => {
+          interface ErrandHooks {
+            getCharacters?: () => Array<{
+              id: number;
+              taskBoardErrand: 'walking' | 'writing' | null;
+            }>;
+          }
+          const hooks = (window as { __pixelAgentsTestHooks?: ErrandHooks }).__pixelAgentsTestHooks;
+          const character = (hooks?.getCharacters?.() ?? []).find((c) => c.id === id);
+          return character ? character.taskBoardErrand : 'no-such-character';
+        }, agentId),
+      {
+        message: `Expected agent ${agentId} task-board errand to be ${phase}`,
+        timeout,
+      },
+    )
+    .toBe(phase);
+  narrate.check(
+    phase === null
+      ? `agent ${agentId} is not on a task-board errand`
+      : `agent ${agentId} is ${phase} at the task board`,
+  );
+}
+
 export async function readAgentOverlayIds(frame: OverlaySurface): Promise<number[]> {
   const rawIds = await getAgentOverlays(frame).evaluateAll((elements) =>
     elements.map((element) => element.getAttribute('data-agent-id')),
