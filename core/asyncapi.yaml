@@ -86,6 +86,7 @@ components:
         - $ref: '#/components/schemas/ExistingAgents'
         # Agent status / tool activity
         - $ref: '#/components/schemas/AgentStatus'
+        - $ref: '#/components/schemas/AgentModel'
         - $ref: '#/components/schemas/AgentToolStart'
         - $ref: '#/components/schemas/AgentToolDone'
         - $ref: '#/components/schemas/AgentToolsClear'
@@ -190,6 +191,9 @@ components:
         hueShift:
           type: integer
           description: Server-assigned hue shift in degrees (0-360).
+        modelName:
+          type: string
+          description: Last requested or resolved model reported by the provider.
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -242,6 +246,19 @@ components:
           description: Map of agent ID (string) to external flag.
           additionalProperties:
             type: boolean
+
+    AgentModel:
+      description: The requested or resolved model for an agent session.
+      type: object
+      additionalProperties: false
+      required: [type, id, modelName]
+      properties:
+        type:
+          const: agentModel
+        id:
+          type: integer
+        modelName:
+          type: string
 
     AgentStatus:
       description: Active vs waiting state for an agent (drives character animation).
@@ -1079,6 +1096,8 @@ components:
         hueShift:
           type: integer
         seatId:
+          type: string
+        modelName:
           type: string
 
     SeatAssignment:

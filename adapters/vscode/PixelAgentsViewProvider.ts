@@ -45,7 +45,10 @@ import { PathSet } from '../../server/src/pathKey.js';
 import type { ConsentEffects } from '../../server/src/providers/hook/consentExecutor.js';
 import { applyConsentChoice } from '../../server/src/providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from '../../server/src/providers/hook/consentGate.js';
+import { vscodeCopilotProvider } from '../../server/src/providers/hook/vscode-copilot/copilot.js';
+import { CopilotOtelTailer } from '../../server/src/providers/hook/vscode-copilot/copilotOtelTailer.js';
 import {
+  agentProviders,
   claudeProvider,
   copyHookScript,
   hookProviderById,
@@ -113,6 +116,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   // Auto-spawn guard: ensures the startup spawn fires at most once per VS Code
   // session, even though webviewReady fires on every panel focus.
   private autoSpawnAttempted = false;
+  private copilotOtelTailer: CopilotOtelTailer | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -131,6 +135,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         parentAgentId: agent.leadAgentId,
         teamName: agent.teamName,
         hooksOnly: agent.hooksOnly || undefined,
+        modelName: agent.modelName,
+        providerId: agent.providerId,
         palette: agent.palette,
         hueShift: agent.hueShift,
       });
@@ -179,7 +185,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
-    this.runtime = new AgentRuntime(this.store, claudeProvider);
+    this.runtime = new AgentRuntime(this.store, [...agentProviders]);
 
     this.initServer();
   }
@@ -230,11 +236,29 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         if (hooksEnabled) {
           void this.installHooksIfConsented(config.port, config.token);
         }
+        this.startCopilotOtelTailer();
         console.log(`[Pixel Agents] Server: ready on port ${config.port}`);
       })
       .catch((e) => {
         console.error(`[Pixel Agents] Failed to start server: ${e}`);
       });
+  }
+
+  private startCopilotOtelTailer(): void {
+    const configured = vscode.workspace
+      .getConfiguration('github.copilot.chat.otel')
+      .get<string>('outfile');
+    const filePath = configured || process.env['COPILOT_OTEL_FILE_EXPORTER_PATH'];
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!filePath || !cwd) return;
+    const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
+    this.copilotOtelTailer?.stop();
+    this.copilotOtelTailer = new CopilotOtelTailer(
+      resolved,
+      (event) => this.runtime.handleHookEvent(vscodeCopilotProvider.id, event),
+    );
+    this.copilotOtelTailer.start();
+    console.log(`[Pixel Agents] Copilot OTel: watching ${resolved}`);
   }
 
   /** Copy the hook script, THEN install the settings.json entries, surfacing
@@ -552,8 +576,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // from the first frame.
         this.webview?.postMessage({
           type: 'providerCapabilities',
-          readingTools: [...claudeProvider.readingTools],
-          subagentToolNames: [...claudeProvider.subagentToolNames],
+          readingTools: [...new Set(agentProviders.flatMap((p) => [...p.readingTools]))],
+          subagentToolNames: [...new Set(agentProviders.flatMap((p) => [...p.subagentToolNames]))],
         });
 
         // Settings + folder→Area mappings MUST be dispatched BEFORE restoreAgents
@@ -1038,6 +1062,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   }
 
   dispose() {
+    this.copilotOtelTailer?.stop();
+    this.copilotOtelTailer = undefined;
     this.pixelAgentsServer?.stop();
     this.pixelAgentsServer = null;
     this.runtime.dispose();

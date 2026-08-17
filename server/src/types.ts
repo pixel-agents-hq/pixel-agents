@@ -34,6 +34,8 @@ export interface AgentState {
   hooksOnly?: boolean;
   /** Provider that created this agent (defaults to 'claude') */
   providerId?: string;
+  /** Last requested/resolved model reported by the provider. */
+  modelName?: string;
   /** Set when SessionEnd(reason=clear) fires; cleared when SessionStart(source=clear) reassigns */
   pendingClear?: boolean;
   /** Hook-generated tool ID for PreToolUse/PostToolUse correlation */
@@ -98,6 +100,9 @@ export interface PersistedAgent {
   projectDir: string;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+  modelName?: string;
+  providerId?: string;
+  hooksOnly?: boolean;
 
   // -- Agent Teams --
   teamName?: string;

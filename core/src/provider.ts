@@ -32,6 +32,14 @@ export type AgentEvent =
       awaitingInput?: boolean;
     }
   | {
+      kind: 'turnStart';
+      modelName?: string;
+    }
+  | {
+      kind: 'modelUpdate';
+      modelName: string;
+    }
+  | {
       kind: 'subagentStart';
       parentToolId: string;
       toolId: string;
@@ -59,6 +67,8 @@ export type AgentEvent =
       /** Working directory the session was started in. Used to match pending
        *  external sessions against known workspace folders. */
       cwd?: string;
+      /** Requested or resolved model reported by the provider. */
+      modelName?: string;
     }
   | { kind: 'sessionEnd'; reason?: string };
 

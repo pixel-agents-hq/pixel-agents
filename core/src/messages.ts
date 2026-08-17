@@ -14,6 +14,7 @@ export type ServerMessage =
   | AgentSelected
   | ExistingAgents
   | AgentStatus
+  | AgentModel
   | AgentToolStart
   | AgentToolDone
   | AgentToolsClear
@@ -77,6 +78,7 @@ export interface AgentCreated {
   isExternal?: boolean;
   palette?: number;
   hueShift?: number;
+  modelName?: string;
 }
 
 export interface AgentClosed {
@@ -101,6 +103,7 @@ export interface AgentSeatMeta {
   palette?: number;
   hueShift?: number;
   seatId?: string;
+  modelName?: string;
 }
 
 export interface AgentStatus {
@@ -111,6 +114,12 @@ export interface AgentStatus {
 }
 
 export type AgentActivityStatus = 'active' | 'waiting';
+
+export interface AgentModel {
+  type: 'agentModel';
+  id: number;
+  modelName: string;
+}
 
 export interface AgentToolStart {
   type: 'agentToolStart';

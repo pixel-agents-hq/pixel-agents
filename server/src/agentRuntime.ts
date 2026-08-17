@@ -82,27 +82,52 @@ export class AgentRuntime {
   readonly dismissalTracker = new DismissalTracker();
   /** Shadow-store watcher for unnamed background spawns (sub-agents). */
   readonly subagentWatch: SubagentWatch;
-  private hookEventHandler: HookEventHandler;
+  /** One HookEventHandler per registered provider, keyed by HookProvider.id ('claude',
+   *  'hermes', 'codex', ...). Each handler is scoped to exactly one provider so there is
+   *  no shared mutable "current provider" field -- concurrent events from different
+   *  providers can never race each other. All handlers share this runtime's
+   *  store/timers/SessionRouter seam so every provider's agents render in one office. */
+  private readonly hookEventHandlers = new Map<string, HookEventHandler>();
+  /** id of providers[0] (Claude by convention). Default target for call sites that
+   *  predate multi-provider support and don't know their agent's providerId. */
+  private readonly primaryProviderId: string;
   private lifecycleCallbacks: RuntimeLifecycleCallbacks = {};
 
   constructor(
     private readonly store: AgentStateStore,
-    provider: HookProvider,
+    providers: HookProvider | HookProvider[],
   ) {
-    // Wire module-level dependencies
+    providers = Array.isArray(providers) ? providers : [providers];
+    if (providers.length === 0) {
+      throw new Error('AgentRuntime requires at least one HookProvider');
+    }
+    // The primary provider (first in the list, Claude by convention) owns the
+    // module-level file-watcher/team-resolution singletons in fileWatcher.ts and
+    // transcriptParser.ts. Those singletons predate multi-provider support and are
+    // only consulted by the project-dir/external JSONL scanners -- the scanning
+    // heuristic Claude uses when hooks aren't installed. Providers that never rely
+    // on that scanner (Hermes: live hook push; Codex: its own JSONL tailer that
+    // POSTs synthesized events) don't need it, so binding it to providers[0] only
+    // preserves Claude's exact existing behavior with zero risk of cross-provider
+    // interference.
+    const [primaryProvider] = providers;
+    this.primaryProviderId = primaryProvider.id;
     setDismissalTracker(this.dismissalTracker);
-    setHookProvider(provider);
-    setFileWatcherHookProvider(provider);
+    setHookProvider(primaryProvider);
+    setFileWatcherHookProvider(primaryProvider);
     this.subagentWatch = new SubagentWatch(store);
     setSubagentWatch(this.subagentWatch);
-    if (provider.team) {
-      setTeamProvider(provider.team);
+    if (primaryProvider.team) {
+      setTeamProvider(primaryProvider.team);
     }
     setAgentRemovalCallback((id) => this.removeAgent(id));
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
     // New-style teammates run their own sessions; registering routes their hook
     // events (PreToolUse, Stop, SessionEnd) directly to the teammate agent.
-    setTeammateRegisterCallback((sessionId, agentId) => this.registerAgent(sessionId, agentId));
+    // Teams are a primary-provider-only feature (Claude Agent Teams today).
+    setTeammateRegisterCallback((sessionId, agentId) =>
+      this.registerAgent(sessionId, agentId, primaryProvider.id),
+    );
     // Background spawns (teams OFF): classify by sidecar name on spawn (named
     // -> teammate character, unnamed -> shadow-watched sub-agent), remove when
     // the completion queue-operation lands on the lead.
@@ -142,142 +167,159 @@ export class AgentRuntime {
       }
     });
 
-    this.hookEventHandler = new HookEventHandler(
-      store,
-      this.waitingTimers,
-      this.permissionTimers,
-      provider,
-      new SessionRouter(),
-      this.watchAllSessions,
-    );
+    // One HookEventHandler + SessionRouter per provider, all sharing this runtime's
+    // store/timer Maps so agents from every provider render in the same office.
+    for (const provider of providers) {
+      const handler = new HookEventHandler(
+        store,
+        this.waitingTimers,
+        this.permissionTimers,
+        provider,
+        new SessionRouter(),
+        this.watchAllSessions,
+      );
+      this.hookEventHandlers.set(provider.id, handler);
 
-    // Wire hook lifecycle callbacks to shared agent operations
-    this.hookEventHandler.setLifecycleCallbacks({
-      onExternalSessionDetected: (sessionId, transcriptPath, cwd) => {
-        const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
-        // Teammate session of a tracked lead? Attach it as a teammate character
-        // instead of adopting a generic external agent -- and regardless of the
-        // Watch All Sessions setting: tracking the lead is the opt-in for its
-        // team. (Newer harnesses run every spawned agent as an independent
-        // top-level session that fires its own hooks.)
-        if (transcriptPath) {
-          const teamMeta = provider.team?.getTeamMetadataForSession(transcriptPath);
-          if (teamMeta?.teamName && teamMeta.agentName) {
-            for (const [leadId, lead] of this.store) {
-              if (lead.teamName !== teamMeta.teamName || lead.leadAgentId !== undefined) continue;
-              console.log(
-                `[Pixel Agents] Hook: session ${sessionId.slice(0, 8)}... is teammate "${teamMeta.agentName}" of Agent ${leadId}, attaching`,
-              );
-              scanForTeammateFiles(
-                lead.projectDir,
-                lead.sessionId,
-                leadId,
-                this.store.nextAgentId,
-                this.store,
-                this.fileWatchers,
-                this.pollingTimers,
-                this.waitingTimers,
-                this.permissionTimers,
-                () => this.store.persist(),
-                undefined,
-              );
-              break;
-            }
-            // Done only if discovery actually adopted this transcript. Old-style
-            // tmux teammates (non-UUID transcript names outside discovery's scan)
-            // fall through to normal external adoption and self-identify from
-            // their record tags.
-            for (const a of this.store.values()) {
-              if (pathsMatch(a.jsonlFile, transcriptPath)) return;
+      // Wire hook lifecycle callbacks to shared agent operations
+      handler.setLifecycleCallbacks({
+        onExternalSessionDetected: (sessionId, transcriptPath, cwd, modelName) => {
+          const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
+          // Teammate session of a tracked lead? Attach it as a teammate character
+          // instead of adopting a generic external agent -- and regardless of the
+          // Watch All Sessions setting: tracking the lead is the opt-in for its
+          // team. (Newer harnesses run every spawned agent as an independent
+          // top-level session that fires its own hooks.)
+          if (transcriptPath) {
+            const teamMeta = provider.team?.getTeamMetadataForSession(transcriptPath);
+            if (teamMeta?.teamName && teamMeta.agentName) {
+              for (const [leadId, lead] of this.store) {
+                if (lead.teamName !== teamMeta.teamName || lead.leadAgentId !== undefined) continue;
+                console.log(
+                  `[Pixel Agents] Hook: session ${sessionId.slice(0, 8)}... is teammate "${teamMeta.agentName}" of Agent ${leadId}, attaching`,
+                );
+                scanForTeammateFiles(
+                  lead.projectDir,
+                  lead.sessionId,
+                  leadId,
+                  this.store.nextAgentId,
+                  this.store,
+                  this.fileWatchers,
+                  this.pollingTimers,
+                  this.waitingTimers,
+                  this.permissionTimers,
+                  () => this.store.persist(),
+                  undefined,
+                );
+                break;
+              }
+              // Done only if discovery actually adopted this transcript. Old-style
+              // tmux teammates (non-UUID transcript names outside discovery's scan)
+              // fall through to normal external adoption and self-identify from
+              // their record tags.
+              for (const a of this.store.values()) {
+                if (pathsMatch(a.jsonlFile, transcriptPath)) return;
+              }
             }
           }
-        }
-        if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
-          console.log(
-            `[Pixel Agents] Hook: external session ${sessionId.slice(0, 8)}... not adopted ` +
-              `(project untracked, Watch All Sessions off)`,
-          );
-          return;
-        }
-        adoptExternalSessionFromHook(
-          sessionId,
-          transcriptPath,
-          cwd,
-          this.knownJsonlFiles,
-          this.store.nextAgentId,
-          this.store,
-          this.fileWatchers,
-          this.pollingTimers,
-          this.waitingTimers,
-          this.permissionTimers,
-          () => this.store.persist(),
-          (agent) => this.registerAgent(agent.sessionId, agent.id),
-        );
-      },
-      onSessionClear: (agentId, newSessionId, newTranscriptPath) => {
-        if (newTranscriptPath) {
-          this.knownJsonlFiles.add(newTranscriptPath);
-          reassignAgentToFile(
-            agentId,
-            newTranscriptPath,
+          if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
+            console.log(
+              `[Pixel Agents] Hook: external session ${sessionId.slice(0, 8)}... not adopted ` +
+                `(project untracked, Watch All Sessions off)`,
+            );
+            return;
+          }
+          adoptExternalSessionFromHook(
+            sessionId,
+            transcriptPath,
+            cwd,
+            this.knownJsonlFiles,
+            this.store.nextAgentId,
             this.store,
             this.fileWatchers,
             this.pollingTimers,
             this.waitingTimers,
             this.permissionTimers,
             () => this.store.persist(),
+            (agent) => {
+              // adoptExternalSessionFromHook predates multi-provider support and
+              // never stamps providerId; without this, every non-primary-provider
+              // agent's later unregisterAgent/removeAgent calls would default to
+              // the primary provider's handler and silently leak a stale
+              // SessionRouter entry in the correct one.
+              agent.providerId = provider.id;
+              agent.modelName = modelName;
+              this.registerAgent(agent.sessionId, agent.id, provider.id);
+              if (modelName) {
+                this.store.broadcast({ type: 'agentModel', id: agent.id, modelName });
+              }
+            },
           );
-        }
-        const agent = this.store.get(agentId);
-        if (agent) {
-          this.unregisterAgent(agent.sessionId);
-          agent.sessionId = newSessionId;
-          this.registerAgent(agent.sessionId, agent.id);
-        }
-      },
-      onSessionResume: (transcriptPath) => {
-        this.dismissalTracker.clearDismissal(transcriptPath);
-        this.dismissalTracker.clearSeededMtime(transcriptPath);
-        this.knownJsonlFiles.delete(transcriptPath);
-      },
-      onTeammateDetected: (parentAgentId, sessionId, _agentType) => {
-        const parentAgent = this.store.get(parentAgentId);
-        if (!parentAgent) return;
-        scanForTeammateFiles(
-          parentAgent.projectDir,
-          sessionId,
-          parentAgentId,
-          this.store.nextAgentId,
-          this.store,
-          this.fileWatchers,
-          this.pollingTimers,
-          this.waitingTimers,
-          this.permissionTimers,
-          () => this.store.persist(),
-          // Don't register inline teammates: they share the lead's sessionId
-          // and registering them would overwrite the lead in the session router.
-          undefined,
-        );
-      },
-      onTeammateRemoved: (teammateAgentId) => {
-        this.removeTeammate(teammateAgentId, 'hooks');
-      },
-      onSessionEnd: (agentId) => {
-        const agent = this.store.get(agentId);
-        if (!agent) return;
-        this.dismissalTracker.clearSeededMtime(agent.jsonlFile);
-        this.dismissalTracker.dismiss(agent.jsonlFile);
-        // Covers real team leads AND leads of background teammates (which
-        // have children but no teamName). No-op when childless.
-        this.removeTeammates(agentId);
-        // Unnamed background spawns die with their lead's session too.
-        this.subagentWatch.removeByLead(agentId);
-        if (agent.isExternal) {
-          this.unregisterAgent(agent.sessionId);
-          this.removeAgent(agentId);
-        }
-      },
-    });
+        },
+        onSessionClear: (agentId, newSessionId, newTranscriptPath) => {
+          if (newTranscriptPath) {
+            this.knownJsonlFiles.add(newTranscriptPath);
+            reassignAgentToFile(
+              agentId,
+              newTranscriptPath,
+              this.store,
+              this.fileWatchers,
+              this.pollingTimers,
+              this.waitingTimers,
+              this.permissionTimers,
+              () => this.store.persist(),
+            );
+          }
+          const agent = this.store.get(agentId);
+          if (agent) {
+            this.unregisterAgent(agent.sessionId, provider.id);
+            agent.sessionId = newSessionId;
+            this.registerAgent(agent.sessionId, agent.id, provider.id);
+          }
+        },
+        onSessionResume: (transcriptPath) => {
+          this.dismissalTracker.clearDismissal(transcriptPath);
+          this.dismissalTracker.clearSeededMtime(transcriptPath);
+          this.knownJsonlFiles.delete(transcriptPath);
+        },
+        onTeammateDetected: (parentAgentId, sessionId, _agentType) => {
+          const parentAgent = this.store.get(parentAgentId);
+          if (!parentAgent) return;
+          scanForTeammateFiles(
+            parentAgent.projectDir,
+            sessionId,
+            parentAgentId,
+            this.store.nextAgentId,
+            this.store,
+            this.fileWatchers,
+            this.pollingTimers,
+            this.waitingTimers,
+            this.permissionTimers,
+            () => this.store.persist(),
+            // Don't register inline teammates: they share the lead's sessionId
+            // and registering them would overwrite the lead in the session router.
+            undefined,
+          );
+        },
+        onTeammateRemoved: (teammateAgentId) => {
+          this.removeTeammate(teammateAgentId, 'hooks');
+        },
+        onSessionEnd: (agentId) => {
+          const agent = this.store.get(agentId);
+          if (!agent) return;
+          this.dismissalTracker.clearSeededMtime(agent.jsonlFile);
+          this.dismissalTracker.dismiss(agent.jsonlFile);
+          // Covers real team leads AND leads of background teammates (which
+          // have children but no teamName). No-op when childless.
+          this.removeTeammates(agentId);
+          // Unnamed background spawns die with their lead's session too.
+          this.subagentWatch.removeByLead(agentId);
+          if (agent.isExternal) {
+            this.unregisterAgent(agent.sessionId, provider.id);
+            this.removeAgent(agentId);
+          }
+        },
+      });
+    }
   }
 
   /** Register adapter-specific lifecycle callbacks. */
@@ -287,19 +329,33 @@ export class AgentRuntime {
 
   // ── Hook event routing ──
 
-  /** Route an incoming hook event to the appropriate agent. */
+  /** Route an incoming hook event to the handler for the provider that sent it. Drops
+   *  the event (with a log) if providerId doesn't match any registered provider --
+   *  this is the only place an unknown providerId can surface, since the HTTP layer
+   *  accepts any :providerId in the URL. */
   handleHookEvent(providerId: string, event: Record<string, unknown>): void {
-    this.hookEventHandler.handleEvent(providerId, event as HookEvent);
+    const handler = this.hookEventHandlers.get(providerId);
+    if (!handler) {
+      console.warn(`[Pixel Agents] Dropping event from unknown provider "${providerId}"`);
+      return;
+    }
+    handler.handleEvent(providerId, event as HookEvent);
   }
 
-  /** Register an agent with the hook event handler for session->agent mapping. */
-  registerAgent(sessionId: string, agentId: number): void {
-    this.hookEventHandler.registerAgent(sessionId, agentId);
+  /** Register an agent with its provider's hook event handler for session->agent
+   *  mapping. providerId defaults to the primary provider for call sites that predate
+   *  multi-provider support (all of which are Claude-only scan/restore paths). */
+  registerAgent(
+    sessionId: string,
+    agentId: number,
+    providerId: string = this.primaryProviderId,
+  ): void {
+    this.hookEventHandlers.get(providerId)?.registerAgent(sessionId, agentId);
   }
 
-  /** Unregister an agent from the hook event handler. */
-  unregisterAgent(sessionId: string): void {
-    this.hookEventHandler.unregisterAgent(sessionId);
+  /** Unregister an agent from its provider's hook event handler. */
+  unregisterAgent(sessionId: string, providerId: string = this.primaryProviderId): void {
+    this.hookEventHandlers.get(providerId)?.unregisterAgent(sessionId);
   }
 
   // ── Agent removal (shared cleanup) ──
@@ -346,7 +402,7 @@ export class AgentRuntime {
     // Background teammates (spawnToolUseId set) share the LEAD's session id;
     // unregistering it would knock the lead itself out of the session router.
     if (!agent.spawnToolUseId) {
-      this.unregisterAgent(agent.sessionId);
+      this.unregisterAgent(agent.sessionId, agent.providerId);
     }
     this.lifecycleCallbacks.onTeammateRemoved?.(teammateId, agent, source);
     this.removeAgent(teammateId);
@@ -390,7 +446,7 @@ export class AgentRuntime {
         console.log(`[Pixel Agents] Removing teammate ${id} (lead ${leadId} closed)`);
         this.dismissalTracker.dismiss(agent.jsonlFile);
         if (!agent.spawnToolUseId) {
-          this.unregisterAgent(agent.sessionId);
+          this.unregisterAgent(agent.sessionId, agent.providerId);
         }
         this.removeAgent(id);
       }
@@ -507,6 +563,9 @@ export class AgentRuntime {
         linesProcessed: 0,
         seenUnknownRecordTypes: new Set(),
         folderName: p.folderName,
+        modelName: p.modelName,
+        providerId: p.providerId,
+        hooksOnly: p.hooksOnly,
         hookDelivered: false,
         contextTokens: 0,
         maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
@@ -539,7 +598,7 @@ export class AgentRuntime {
         /* ignore stat errors on restore */
       }
 
-      this.registerAgent(agent.sessionId, agent.id);
+      this.registerAgent(agent.sessionId, agent.id, agent.providerId);
 
       if (p.id > maxId) maxId = p.id;
       console.log(
@@ -558,7 +617,9 @@ export class AgentRuntime {
 
   /** Clean up all scanners, timers, and agents. Called on shutdown. */
   dispose(): void {
-    this.hookEventHandler.dispose();
+    for (const handler of this.hookEventHandlers.values()) {
+      handler.dispose();
+    }
     this.subagentWatch.dispose();
 
     if (this.projectScanTimer.current) {

@@ -234,6 +234,7 @@ export function useExtensionMessages(
         for (const p of pendingAgents) {
           os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
           if (p.isHeadless) os.setHeadless(p.id, true);
+          os.setAgentModel(p.id, p.modelName);
         }
         pendingAgents = [];
         layoutReadyRef.current = true;
@@ -284,6 +285,7 @@ export function useExtensionMessages(
           const palette = msg.palette as number | undefined;
           const hueShift = msg.hueShift as number | undefined;
           os.addAgent(id, palette, hueShift, undefined, undefined, folderName);
+          os.setAgentModel(id, msg.modelName as string | undefined);
           noteFolderName(folderName);
           if (isHeadlessAgent(msg.isExternal as boolean | undefined)) {
             os.setHeadless(id, true);
@@ -471,6 +473,8 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentSelected') {
         const id = msg.id as number;
         setSelectedAgent(id);
+      } else if (msg.type === 'agentModel') {
+        os.setAgentModel(msg.id as number, msg.modelName as string | undefined);
       } else if (msg.type === 'agentStatus') {
         const id = msg.id as number;
         const status = msg.status as string;
