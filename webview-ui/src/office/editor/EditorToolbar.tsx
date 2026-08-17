@@ -57,6 +57,7 @@ interface EditorToolbarProps {
   pickedFurnitureColor: ColorValue | null;
   onPickedFurnitureColorChange: (color: ColorValue | null) => void;
   onFurnitureTypeChange: (type: string) => void;
+  onDeleteSelected: () => void;
   loadedAssets?: LoadedAssetData;
   activePetTypes: number[];
   petCount: number;
@@ -105,6 +106,7 @@ export function EditorToolbar({
   pickedFurnitureColor,
   onPickedFurnitureColorChange,
   onFurnitureTypeChange,
+  onDeleteSelected,
   loadedAssets,
   activePetTypes,
   petCount,
@@ -659,6 +661,14 @@ export function EditorToolbar({
                 Clear
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onDeleteSelected}
+              title="Delete selected furniture (Del)"
+            >
+              Delete
+            </Button>
           </div>
           {showFurnitureColor && (
             <ColorPicker
