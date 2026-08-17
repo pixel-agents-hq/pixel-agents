@@ -878,6 +878,11 @@ export class OfficeState {
     }
   }
 
+  setAgentModel(id: number, modelName: string | undefined): void {
+    const ch = this.characters.get(id);
+    if (ch) ch.modelName = modelName;
+  }
+
   showPermissionBubble(id: number): void {
     const ch = this.characters.get(id);
     if (ch) {

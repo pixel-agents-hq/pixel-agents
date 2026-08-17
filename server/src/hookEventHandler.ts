@@ -37,6 +37,7 @@ interface SessionLifecycleCallbacks {
     sessionId: string,
     transcriptPath: string | undefined,
     cwd: string,
+    modelName?: string,
   ) => void;
   /** Called when /clear is detected via hooks (SessionEnd reason=clear + SessionStart source=clear). */
   onSessionClear?: (
@@ -182,6 +183,7 @@ export class HookEventHandler {
         const agent = this.agents.get(existingAgentId);
         if (agent) {
           agent.hookDelivered = true;
+          if (normEvent.modelName) this.updateModelName(agent, existingAgentId, normEvent.modelName);
         }
         if (debug)
           console.log(
@@ -271,11 +273,21 @@ export class HookEventHandler {
         console.log(
           `[Pixel Agents] Hook: ${eventName} confirmed external session ${event.session_id.slice(0, 8)}..., notifying host`,
         );
-      this.lifecycleCallbacks.onExternalSessionDetected?.(
-        pending.sessionId,
-        pending.transcriptPath,
-        pending.cwd,
-      );
+      const modelName = normEvent.kind === 'turnStart' ? normEvent.modelName : undefined;
+      if (modelName) {
+        this.lifecycleCallbacks.onExternalSessionDetected?.(
+          pending.sessionId,
+          pending.transcriptPath,
+          pending.cwd,
+          modelName,
+        );
+      } else {
+        this.lifecycleCallbacks.onExternalSessionDetected?.(
+          pending.sessionId,
+          pending.transcriptPath,
+          pending.cwd,
+        );
+      }
       // Re-process this event now that the agent exists
       this.handleEvent(_providerId, event);
       return;
@@ -333,7 +345,7 @@ export class HookEventHandler {
         // Both PostToolUse and PostToolUseFailure normalize to toolEnd. Distinguishing
         // them inside handlers would require extra info; the existing behavior was
         // identical for both (agentToolDone + clear currentHookToolId), so one branch suffices.
-        return this.handlePostToolUse(agent, agentId);
+        return this.handlePostToolUse(normEvent, agent, agentId);
       case 'subagentStart':
         return this.provider.team ? this.handleSubagentStart(event, agent, agentId) : undefined;
       case 'subagentEnd':
@@ -347,6 +359,10 @@ export class HookEventHandler {
         // awaitingInput discriminates them: idle_prompt sets it (-> "Waiting for
         // input"), Stop leaves it absent (-> "Done").
         return this.handleStop(agent, agentId, normEvent.awaitingInput === true);
+      case 'turnStart':
+        return this.handleTurnStart(agent, agentId, normEvent.modelName);
+      case 'modelUpdate':
+        return this.updateModelName(agent, agentId, normEvent.modelName);
       case 'subagentTurnEnd':
         // Handles TeammateIdle AND TaskCompleted -- both normalize here. The normalized
         // `reason` field discriminates; the team-provider's extractTeammateNameFromEvent(raw)
@@ -416,7 +432,7 @@ export class HookEventHandler {
     const toolName = normEvent.toolName;
     const toolInput = (normEvent.input as Record<string, unknown> | undefined) ?? {};
     const status = this.provider.formatToolStatus(toolName, toolInput);
-    const hookToolId = `hook-${Date.now()}`;
+    const hookToolId = normEvent.toolId || `hook-${Date.now()}`;
 
     // Track for PostToolUse/SubagentStart correlation (always, even if suppressed below).
     // currentHookIsTeammateSpawn is the authoritative teammate-vs-subagent discriminator.
@@ -463,7 +479,18 @@ export class HookEventHandler {
    * Stop hook handles the idle transition. This is here for completeness and
    * to serve as a confirmation event for pending external sessions.
    */
-  private handlePostToolUse(agent: AgentState, agentId: number): void {
+  private handlePostToolUse(
+    normEvent: Extract<AgentEvent, { kind: 'toolEnd' }>,
+    agent: AgentState,
+    agentId: number,
+  ): void {
+    if (normEvent.toolId !== 'current') {
+      this.agents.broadcast({ type: 'agentToolDone', id: agentId, toolId: normEvent.toolId });
+      agent.activeToolIds.delete(normEvent.toolId);
+      agent.activeToolStatuses.delete(normEvent.toolId);
+      agent.activeToolNames.delete(normEvent.toolId);
+      return;
+    }
     if (agent.currentHookToolId) {
       // Suppress tool display when lead has inline teammates (see handlePreToolUse)
       if (!hasInlineTeammates(agentId, this.agents)) {
@@ -637,6 +664,23 @@ export class HookEventHandler {
   /** Handle Stop: Claude finished responding, mark agent as waiting. */
   private handleStop(agent: AgentState, agentId: number, awaitingInput = false): void {
     this.markAgentWaiting(agent, agentId, awaitingInput);
+  }
+
+  /** OTel emits a turn boundary without a Claude-style prompt hook. */
+  private handleTurnStart(agent: AgentState, agentId: number, modelName?: string): void {
+    cancelWaitingTimer(agentId, this.waitingTimers);
+    agent.isWaiting = false;
+    agent.permissionSent = false;
+    agent.hadToolsInTurn = false;
+    if (modelName) this.updateModelName(agent, agentId, modelName);
+    this.agents.broadcast({ type: 'agentStatus', id: agentId, status: 'active' });
+  }
+
+  private updateModelName(agent: AgentState, agentId: number, modelName: string): void {
+    if (!modelName || agent.modelName === modelName) return;
+    agent.modelName = modelName;
+    this.agents.broadcast({ type: 'agentModel', id: agentId, modelName });
+    this.agents.persist();
   }
 
   /**

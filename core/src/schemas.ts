@@ -20,6 +20,9 @@ export interface PersistedAgent {
   jsonlFile: string;
   projectDir: string;
   folderName?: string;
+  modelName?: string;
+  providerId?: string;
+  hooksOnly?: boolean;
   teamName?: string;
   agentName?: string;
   isTeamLead?: boolean;
