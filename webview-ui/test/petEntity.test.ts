@@ -76,6 +76,7 @@ function makeChar(id: number, col: number, row: number): Character {
     wanderLimit: 5,
     isActive: false,
     seatId: null,
+    loungeId: null,
     bubbleType: null,
     bubbleTimer: 0,
     seatTimer: 0,

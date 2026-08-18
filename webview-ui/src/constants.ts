@@ -186,6 +186,13 @@ export const PERMISSION_VOLUME = 0.12;
 // ── Furniture Animation ─────────────────────────────────────
 export const FURNITURE_ANIM_INTERVAL_SEC = 0.2;
 
+// ── Lounge / Break Area ──────────────────────────────────────
+/** Area label (see AreaDefinition) that marks a zone as break-room seating.
+ *  Chairs whose seat tile falls inside an Area with this exact label become
+ *  lounge spots instead of work seats — idle agents path there when not
+ *  actively working, instead of periodically sitting back at their desk. */
+export const LOUNGE_AREA_LABEL = 'Lounge';
+
 // ── Version Notice ──────────────────────────────────────────
 export const WHATS_NEW_AUTO_CLOSE_MS = 20000;
 export const WHATS_NEW_FADE_MS = 1000;

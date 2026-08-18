@@ -1,4 +1,5 @@
 import type { ColorValue } from '../../components/ui/types.js';
+import { LOUNGE_AREA_LABEL } from '../../constants.js';
 import { getColorizedSprite } from '../colorize.js';
 import type {
   FurnitureInstance,
@@ -228,6 +229,37 @@ export function layoutToSeats(furniture: PlacedFurniture[]): Map<string, Seat> {
   }
 
   return seats;
+}
+
+/** Returns true if the given tile falls inside an Area labeled LOUNGE_AREA_LABEL. */
+function isLoungeAreaTile(layout: OfficeLayout, col: number, row: number): boolean {
+  const tiles = layout.areaTiles;
+  if (!tiles || tiles.length === 0) return false;
+  const idx = row * layout.cols + col;
+  if (idx < 0 || idx >= tiles.length) return false;
+  return tiles[idx] === LOUNGE_AREA_LABEL;
+}
+
+/**
+ * Split chair-derived seats into work seats and lounge spots based on whether each
+ * seat's tile falls inside the Lounge Area. Chairs/sofas/benches placed in the break
+ * room become chill-only spots — never assigned as a work desk seat — while identical
+ * furniture placed elsewhere (e.g. a bench under a desk) still works as a normal seat.
+ */
+export function partitionSeatsByLoungeArea(
+  seats: Map<string, Seat>,
+  layout: OfficeLayout,
+): { seats: Map<string, Seat>; loungeSpots: Map<string, Seat> } {
+  const workSeats = new Map<string, Seat>();
+  const loungeSpots = new Map<string, Seat>();
+  for (const [uid, seat] of seats) {
+    if (isLoungeAreaTile(layout, seat.seatCol, seat.seatRow)) {
+      loungeSpots.set(uid, seat);
+    } else {
+      workSeats.set(uid, seat);
+    }
+  }
+  return { seats: workSeats, loungeSpots };
 }
 
 /** Get the set of tiles occupied by seats (so they can be excluded from blocked tiles)

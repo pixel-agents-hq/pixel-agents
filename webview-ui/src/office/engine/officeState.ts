@@ -22,6 +22,7 @@ import {
   layoutToFurnitureInstances,
   layoutToSeats,
   layoutToTileMap,
+  partitionSeatsByLoungeArea,
 } from '../layout/layoutSerializer.js';
 import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
 import { getPetCount, getPetName } from '../sprites/petSpriteData.js';
@@ -59,6 +60,9 @@ export class OfficeState {
   layout: OfficeLayout;
   tileMap: TileTypeVal[][];
   seats: Map<string, Seat>;
+  /** Break-area seats derived from chairs placed inside the Lounge Area — never
+   *  used as work seats. Idle (non-working) agents path here instead of their desk. */
+  loungeSpots: Map<string, Seat>;
   blockedTiles: Set<string>;
   furniture: FurnitureInstance[];
   walkableTiles: Array<{ col: number; row: number }>;
@@ -90,7 +94,12 @@ export class OfficeState {
   constructor(layout?: OfficeLayout) {
     this.layout = layout || createDefaultLayout();
     this.tileMap = layoutToTileMap(this.layout);
-    this.seats = layoutToSeats(this.layout.furniture);
+    const partitioned = partitionSeatsByLoungeArea(
+      layoutToSeats(this.layout.furniture),
+      this.layout,
+    );
+    this.seats = partitioned.seats;
+    this.loungeSpots = partitioned.loungeSpots;
     this.blockedTiles = getBlockedTiles(this.layout.furniture);
     this.furniture = layoutToFurnitureInstances(this.layout.furniture);
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles);
@@ -103,10 +112,18 @@ export class OfficeState {
   rebuildFromLayout(layout: OfficeLayout, shift?: { col: number; row: number }): void {
     this.layout = layout;
     this.tileMap = layoutToTileMap(layout);
-    this.seats = layoutToSeats(layout.furniture);
+    const partitioned = partitionSeatsByLoungeArea(layoutToSeats(layout.furniture), layout);
+    this.seats = partitioned.seats;
+    this.loungeSpots = partitioned.loungeSpots;
     this.blockedTiles = getBlockedTiles(layout.furniture);
     this.rebuildFurnitureInstances();
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles);
+
+    // Lounge spots aren't identity-preserved across layout edits (unlike seats) —
+    // idle characters simply reclaim a free one on their next decision tick.
+    for (const ch of this.characters.values()) {
+      ch.loungeId = null;
+    }
 
     // Shift character positions when grid expands left/up
     if (shift && (shift.col !== 0 || shift.row !== 0)) {
@@ -240,12 +257,23 @@ export class OfficeState {
     return `${seat.seatCol},${seat.seatRow}`;
   }
 
-  /** Temporarily unblock a character's own seat, run fn, then re-block */
+  /** Get the blocked-tile key for a character's claimed lounge spot, or null */
+  private ownLoungeKey(ch: Character): string | null {
+    if (!ch.loungeId) return null;
+    const spot = this.loungeSpots.get(ch.loungeId);
+    if (!spot) return null;
+    return `${spot.seatCol},${spot.seatRow}`;
+  }
+
+  /** Temporarily unblock a character's own seat and/or claimed lounge spot, run fn, then re-block */
   private withOwnSeatUnblocked<T>(ch: Character, fn: () => T): T {
-    const key = this.ownSeatKey(ch);
-    if (key) this.blockedTiles.delete(key);
+    const seatKey = this.ownSeatKey(ch);
+    const loungeKey = this.ownLoungeKey(ch);
+    if (seatKey) this.blockedTiles.delete(seatKey);
+    if (loungeKey && loungeKey !== seatKey) this.blockedTiles.delete(loungeKey);
     const result = fn();
-    if (key) this.blockedTiles.add(key);
+    if (seatKey) this.blockedTiles.add(seatKey);
+    if (loungeKey && loungeKey !== seatKey) this.blockedTiles.add(loungeKey);
     return result;
   }
 
@@ -463,10 +491,14 @@ export class OfficeState {
     const ch = this.characters.get(id);
     if (!ch) return;
     if (ch.matrixEffect === 'despawn') return; // already despawning
-    // Free seat and clear selection immediately
+    // Free seat/lounge spot and clear selection immediately
     if (ch.seatId) {
       const seat = this.seats.get(ch.seatId);
       if (seat) seat.assigned = false;
+    }
+    if (ch.loungeId) {
+      const spot = this.loungeSpots.get(ch.loungeId);
+      if (spot) spot.assigned = false;
     }
     if (this.selectedAgentId === id) this.selectedAgentId = null;
     if (this.cameraFollowId === id) this.cameraFollowId = null;
@@ -642,6 +674,10 @@ export class OfficeState {
         const seat = this.seats.get(ch.seatId);
         if (seat) seat.assigned = false;
       }
+      if (ch.loungeId) {
+        const spot = this.loungeSpots.get(ch.loungeId);
+        if (spot) spot.assigned = false;
+      }
       // Start despawn animation — keep character in map for rendering
       ch.matrixEffect = 'despawn';
       ch.matrixEffectTimer = 0;
@@ -672,6 +708,10 @@ export class OfficeState {
           if (ch.seatId) {
             const seat = this.seats.get(ch.seatId);
             if (seat) seat.assigned = false;
+          }
+          if (ch.loungeId) {
+            const spot = this.loungeSpots.get(ch.loungeId);
+            if (spot) spot.assigned = false;
           }
           // Start despawn animation
           ch.matrixEffect = 'despawn';
@@ -1001,9 +1041,17 @@ export class OfficeState {
         continue; // skip normal FSM while effect is active
       }
 
-      // Temporarily unblock own seat so character can pathfind to it
+      // Temporarily unblock own seat/lounge spot so character can pathfind to it
       this.withOwnSeatUnblocked(ch, () =>
-        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles),
+        updateCharacter(
+          ch,
+          dt,
+          this.walkableTiles,
+          this.seats,
+          this.tileMap,
+          this.blockedTiles,
+          this.loungeSpots,
+        ),
       );
 
       // Tick bubble timer for waiting bubbles

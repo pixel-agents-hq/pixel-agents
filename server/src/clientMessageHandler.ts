@@ -3,7 +3,7 @@ import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './assetLoader.js';
 import { readConfig, writeConfig } from './configPersistence.js';
-import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
+import { loadLayout, writeLayoutToFile } from './layoutPersistence.js';
 import { claudeProvider } from './providers/index.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
@@ -285,7 +285,12 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   });
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents
-  // into characters once seats are rebuilt.
-  const savedLayout = readLayoutFromFile();
-  send({ type: 'layoutLoaded', layout: savedLayout ?? cache?.defaultLayout ?? null });
+  // into characters once seats are rebuilt. loadLayout() resets to the bundled
+  // default when a newer layoutRevision has shipped since the file was saved.
+  const result = loadLayout(cache?.defaultLayout ?? null);
+  send({
+    type: 'layoutLoaded',
+    layout: result?.layout ?? cache?.defaultLayout ?? null,
+    wasReset: result?.wasReset ?? false,
+  });
 }

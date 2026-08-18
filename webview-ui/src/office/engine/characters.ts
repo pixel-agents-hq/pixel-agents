@@ -75,6 +75,7 @@ export function createCharacter(
     wanderLimit: randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX),
     isActive: true,
     seatId,
+    loungeId: null,
     bubbleType: null,
     bubbleTimer: 0,
     seatTimer: 0,
@@ -88,6 +89,26 @@ export function createCharacter(
   };
 }
 
+/** Pick and claim a random free lounge spot. Returns its uid, or null if none are free. */
+function claimFreeLoungeSpot(loungeSpots: Map<string, Seat>): string | null {
+  const free: string[] = [];
+  for (const [uid, spot] of loungeSpots) {
+    if (!spot.assigned) free.push(uid);
+  }
+  if (free.length === 0) return null;
+  const uid = free[Math.floor(Math.random() * free.length)];
+  loungeSpots.get(uid)!.assigned = true;
+  return uid;
+}
+
+/** Release a character's claimed lounge spot, if any. */
+function releaseLoungeSpot(ch: Character, loungeSpots: Map<string, Seat>): void {
+  if (!ch.loungeId) return;
+  const spot = loungeSpots.get(ch.loungeId);
+  if (spot) spot.assigned = false;
+  ch.loungeId = null;
+}
+
 export function updateCharacter(
   ch: Character,
   dt: number,
@@ -95,6 +116,7 @@ export function updateCharacter(
   seats: Map<string, Seat>,
   tileMap: TileTypeVal[][],
   blockedTiles: Set<string>,
+  loungeSpots: Map<string, Seat>,
 ): void {
   ch.frameTimer += dt;
 
@@ -125,8 +147,9 @@ export function updateCharacter(
       // No idle animation — static pose
       ch.frame = 0;
       if (ch.seatTimer < 0) ch.seatTimer = 0; // clear turn-end sentinel
-      // If became active, pathfind to seat
+      // If became active, give up any lounge spot and pathfind to seat
       if (ch.isActive) {
+        releaseLoungeSpot(ch, loungeSpots);
         if (!ch.seatId) {
           // No seat assigned — type in place
           ch.state = CharacterState.TYPE;
@@ -160,31 +183,57 @@ export function updateCharacter(
         }
         break;
       }
-      // Countdown wander timer
+
+      // Inactive: not working, so stay away from the desk — head to (and stay at) a
+      // free lounge/break-area spot rather than periodically sitting back down.
+      if (ch.loungeId) {
+        const spot = loungeSpots.get(ch.loungeId);
+        if (!spot) {
+          // Spot vanished (e.g. layout edited) — drop the stale claim.
+          ch.loungeId = null;
+        } else if (ch.tileCol === spot.seatCol && ch.tileRow === spot.seatRow) {
+          // Arrived — chill in place, facing into the lounge, until active again.
+          ch.dir = spot.facingDir;
+          break;
+        } else {
+          // Claimed on a prior tick — the spot's tile is unblocked for us this tick
+          // (see OfficeState.withOwnSeatUnblocked), so pathfinding to it now works.
+          const path = findPath(
+            ch.tileCol,
+            ch.tileRow,
+            spot.seatCol,
+            spot.seatRow,
+            tileMap,
+            blockedTiles,
+          );
+          if (path.length > 0) {
+            ch.path = path;
+            ch.moveProgress = 0;
+            ch.state = CharacterState.WALK;
+            ch.frame = 0;
+            ch.frameTimer = 0;
+          } else {
+            // Unreachable — release and fall back to ordinary wandering.
+            spot.assigned = false;
+            ch.loungeId = null;
+          }
+          break;
+        }
+      }
+
+      // No lounge spot claimed — countdown, then claim one, or wander in the meantime.
       ch.wanderTimer -= dt;
       if (ch.wanderTimer <= 0) {
-        // Check if we've wandered enough — return to seat for a rest
-        if (ch.wanderCount >= ch.wanderLimit && ch.seatId) {
-          const seat = seats.get(ch.seatId);
-          if (seat) {
-            const path = findPath(
-              ch.tileCol,
-              ch.tileRow,
-              seat.seatCol,
-              seat.seatRow,
-              tileMap,
-              blockedTiles,
-            );
-            if (path.length > 0) {
-              ch.path = path;
-              ch.moveProgress = 0;
-              ch.state = CharacterState.WALK;
-              ch.frame = 0;
-              ch.frameTimer = 0;
-              break;
-            }
-          }
+        ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
+
+        const claimed = claimFreeLoungeSpot(loungeSpots);
+        if (claimed) {
+          // Path is computed on the next tick, once the tile is unblocked for us.
+          ch.loungeId = claimed;
+          break;
         }
+
+        // No lounge spot available/reachable — wander like before.
         if (walkableTiles.length > 0) {
           const target = walkableTiles[Math.floor(Math.random() * walkableTiles.length)];
           const path = findPath(
@@ -204,7 +253,6 @@ export function updateCharacter(
             ch.wanderCount++;
           }
         }
-        ch.wanderTimer = randomRange(WANDER_PAUSE_MIN_SEC, WANDER_PAUSE_MAX_SEC);
       }
       break;
     }
@@ -289,7 +337,11 @@ export function updateCharacter(
         ch.moveProgress = 0;
       }
 
-      // If became active while wandering, repath to seat
+      // If became active while wandering/heading to the lounge, drop any lounge
+      // claim and repath to seat instead.
+      if (ch.isActive) {
+        releaseLoungeSpot(ch, loungeSpots);
+      }
       if (ch.isActive && ch.seatId) {
         const seat = seats.get(ch.seatId);
         if (seat) {
