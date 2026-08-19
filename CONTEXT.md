@@ -82,6 +82,16 @@ _Avoid_: track
 **Focus**:
 Bring an agent's terminal to the front. Reserved exclusively for terminals — never the in-office highlight.
 
+## First Run
+
+**Intro**:
+The four-step first-run tour the Greeter speaks: welcome, Claude Code, hooks consent, all set. The hooks consent ask is one step of it, not a separate dialog.
+_Avoid_: onboarding, tutorial, wizard, consent modal
+
+**Greeter**:
+The character that speaks the Intro. Not an agent and not a Pet: it has no session, takes no seat, never wanders, and exists exactly as long as the Intro is open.
+_Avoid_: mascot, tutorial character
+
 ## Agent Status
 
 **Active**:

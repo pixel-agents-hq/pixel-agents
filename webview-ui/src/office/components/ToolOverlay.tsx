@@ -19,8 +19,9 @@ import {
 } from '../../constants.js';
 import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
 import type { OfficeState } from '../engine/officeState.js';
+import { overlayProjection } from '../projection.js';
 import type { ToolActivity } from '../types.js';
-import { CharacterState, TILE_SIZE } from '../types.js';
+import { CharacterState } from '../types.js';
 
 // Both turn-end states show the green checkmark bubble. A finished turn (Stop)
 // shows ONLY the checkmark (the label falls through to its normal idle text);
@@ -105,15 +106,13 @@ export function ToolOverlay({
 
   const el = containerRef.current;
   if (!el) return null;
-  const rect = el.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const canvasW = Math.round(rect.width * dpr);
-  const canvasH = Math.round(rect.height * dpr);
-  const layout = officeState.getLayout();
-  const mapW = layout.cols * TILE_SIZE * zoom;
-  const mapH = layout.rows * TILE_SIZE * zoom;
-  const deviceOffsetX = Math.floor((canvasW - mapW) / 2) + Math.round(panRef.current.x);
-  const deviceOffsetY = Math.floor((canvasH - mapH) / 2) + Math.round(panRef.current.y);
+  const project = overlayProjection(
+    officeState.getLayout(),
+    el.getBoundingClientRect(),
+    zoom,
+    panRef.current,
+    window.devicePixelRatio || 1,
+  );
 
   const selectedId = officeState.selectedAgentId;
   const hoveredId = officeState.hoveredAgentId;
@@ -136,9 +135,8 @@ export function ToolOverlay({
 
         // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
-        const screenX = (deviceOffsetX + ch.x * zoom) / dpr;
-        const screenY =
-          (deviceOffsetY + (ch.y + sittingOffset - TOOL_OVERLAY_VERTICAL_OFFSET) * zoom) / dpr;
+        const screenX = project.toScreenX(ch.x);
+        const screenY = project.toScreenY(ch.y + sittingOffset - TOOL_OVERLAY_VERTICAL_OFFSET);
 
         // A "Done" agent (finished turn: waiting bubble without awaitingInput)
         // shows ONLY its floating green checkmark bubble, never the label panel

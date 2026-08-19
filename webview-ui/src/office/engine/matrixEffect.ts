@@ -24,16 +24,6 @@ function flickerVisible(col: number, row: number, time: number): boolean {
   return hash < MATRIX_FLICKER_VISIBILITY_THRESHOLD;
 }
 
-function generateSeeds(): number[] {
-  const seeds: number[] = [];
-  for (let i = 0; i < MATRIX_SPRITE_COLS; i++) {
-    seeds.push(Math.random());
-  }
-  return seeds;
-}
-
-export { generateSeeds as matrixEffectSeeds };
-
 /**
  * Render a character with a Matrix-style digital rain spawn/despawn effect.
  * Per-pixel rendering: each column sweeps top-to-bottom with a bright head and fading green trail.

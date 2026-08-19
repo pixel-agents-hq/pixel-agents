@@ -6,6 +6,7 @@ import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
+import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { Tooltip } from './components/Tooltip.js';
@@ -15,6 +16,7 @@ import { ZoomControls } from './components/ZoomControls.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
+import { useIntroTour } from './hooks/useIntroTour.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -91,8 +93,11 @@ function App() {
     ghostHeadlessAgents,
     setGhostHeadlessAgents,
     hooksEnabled,
-    setHooksEnabled,
+    hooksInstalled,
+    hooksStatusSeq,
     hooksInfoShown,
+    consentRequest,
+    dismissConsentRequest,
     areaMappings,
     setAreaMappings,
     showAreas,
@@ -146,6 +151,21 @@ function App() {
   const handleSelectAgent = useCallback((id: number) => {
     transport.send({ type: 'focusAgent', id });
   }, []);
+
+  // The Intro's wire-facing state machine — which asks survive being mooted,
+  // when a hooksStatus is this tour's install verdict — lives in useIntroTour
+  // (pure reducer in introTourState.ts); the App only wires it to the bubble.
+  const {
+    intro,
+    installFailed,
+    installPending,
+    onChoice: handleConsentChoice,
+    onClose: handleIntroClose,
+  } = useIntroTour({ consentRequest, hooksInstalled, hooksStatusSeq, dismissConsentRequest });
+
+  // The Settings surface renders one provider today; its checkbox binds to
+  // the Claude row of the per-provider install-state map.
+  const claudeHooksInstalled = hooksInstalled['claude'] === true;
 
   // Mutate folder→Area mappings locally + send to server. Updates OfficeState in
   // the same tick so a follow-up agentCreated picks up the new mapping.
@@ -436,8 +456,11 @@ function App() {
         />
       )}
 
-      {/* Hooks first-run tooltip */}
-      {!hooksInfoShown && !hooksTooltipDismissed && (
+      {/* Hooks first-run tooltip. Gated on hooksInstalled (the hooksStatus
+          message), NOT the hooksEnabled preference: hooksEnabled defaults true
+          while first-run consent is still pending, and announcing "Instant
+          Detection Active" before anything is installed would be a lie. */}
+      {hooksEnabled && claudeHooksInstalled && !hooksInfoShown && !hooksTooltipDismissed && (
         <Tooltip
           title="Instant Detection Active"
           position="top-right"
@@ -540,11 +563,22 @@ function App() {
           setWatchAllSessions(newVal);
           transport.send({ type: 'setWatchAllSessions', enabled: newVal });
         }}
-        hooksEnabled={hooksEnabled}
+        hooksInstalled={claudeHooksInstalled}
         onToggleHooksEnabled={() => {
-          const newVal = !hooksEnabled;
-          setHooksEnabled(newVal);
-          transport.send({ type: 'setHooksEnabled', enabled: newVal });
+          // Toggle the DISPLAYED state (actual install), not the preference: when the two disagree — preference on,
+          // nothing installed while consent is pending — toggling the preference would turn hooks OFF for a user
+          // asking for ON. No optimistic local update either; both backends answer with the truthful hooksStatus this
+          // checkbox renders, so it lands correct instead of flickering when an install fails. The providerId is
+          // ECHOED from that row (never originated here), so nothing sends until the row has arrived.
+          const [rowProviderId] =
+            Object.entries(hooksInstalled).find(([id]) => id === 'claude') ?? [];
+          if (rowProviderId !== undefined) {
+            transport.send({
+              type: 'setHooksEnabled',
+              providerId: rowProviderId,
+              enabled: !claudeHooksInstalled,
+            });
+          }
         }}
         showAreas={showAreas}
         onToggleShowAreas={onToggleShowAreas}
@@ -555,6 +589,28 @@ function App() {
 
       {showMigrationNotice && (
         <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />
+      )}
+
+      {intro && (
+        <IntroBubble
+          officeState={officeState}
+          headline={intro.headline}
+          disclosure={intro.disclosure}
+          containerRef={containerRef}
+          zoom={editor.zoom}
+          panRef={editor.panRef}
+          installFailed={installFailed}
+          installPending={installPending}
+          onChoice={handleConsentChoice}
+          onClose={handleIntroClose}
+          escapeSuppressed={
+            isSettingsOpen ||
+            isChangelogOpen ||
+            isHooksInfoOpen ||
+            showMigrationNotice ||
+            editor.isEditMode
+          }
+        />
       )}
     </div>
   );

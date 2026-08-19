@@ -3,7 +3,19 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { parseAreaMappings, readConfig, writeConfig } from '../src/configPersistence.js';
+import {
+  clearHooksAnswer,
+  clearHooksEnabled,
+  getHooksConsent,
+  getHooksEnabled,
+  grantHooksConsent,
+  parseAreaMappings,
+  readConfig,
+  recordHooksDecline,
+  resetHooksConfig,
+  setHooksEnabled,
+  writeConfig,
+} from '../src/configPersistence.js';
 
 describe('configPersistence: areas', () => {
   let tempHome: string;
@@ -79,6 +91,129 @@ describe('configPersistence: areas', () => {
     it('preserves empty arrays as a deliberate "folder has no preferred area" signal', () => {
       const input = { frontend: [] };
       expect(parseAreaMappings(input)).toEqual({ frontend: [] });
+    });
+  });
+
+  // ── per-provider hooks consent + preference ──────────────────
+
+  describe('hooksConsent / hooksEnabled maps', () => {
+    it('defaults to unanswered/enabled when the config file is missing or predates the maps', () => {
+      expect(getHooksConsent('claude')).toBe('unanswered');
+      expect(getHooksEnabled('claude')).toBe(true);
+      writeConfig(readConfig()); // full config on disk...
+      const raw = JSON.parse(
+        fs.readFileSync(path.join(tempHome, '.pixel-agents', 'config.json'), 'utf-8'),
+      );
+      delete raw.hooksConsent; // ...from an older shape
+      delete raw.hooksEnabled;
+      fs.writeFileSync(
+        path.join(tempHome, '.pixel-agents', 'config.json'),
+        JSON.stringify(raw, null, 2),
+      );
+      expect(getHooksConsent('claude')).toBe('unanswered');
+      expect(getHooksEnabled('claude')).toBe(true);
+    });
+
+    it('drops junk values from hand-edited maps instead of crashing or trusting them', () => {
+      fs.mkdirSync(path.join(tempHome, '.pixel-agents'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tempHome, '.pixel-agents', 'config.json'),
+        JSON.stringify({
+          hooksConsent: { claude: 'GRANTED', other: 'declined', junk: 42 },
+          hooksEnabled: { claude: 'yes', other: false },
+        }),
+      );
+      // Only exact values survive; everything else degrades to the default.
+      expect(getHooksConsent('claude')).toBe('unanswered');
+      expect(getHooksConsent('other')).toBe('declined');
+      expect(getHooksConsent('junk')).toBe('unanswered');
+      expect(getHooksEnabled('claude')).toBe(true);
+      expect(getHooksEnabled('other')).toBe(false);
+    });
+
+    it('grantHooksConsent persists per provider and is idempotent', () => {
+      grantHooksConsent('claude');
+      expect(getHooksConsent('claude')).toBe('granted');
+      expect(getHooksConsent('other')).toBe('unanswered');
+      grantHooksConsent('claude');
+      expect(getHooksConsent('claude')).toBe('granted');
+    });
+
+    it('recordHooksDecline writes consent + preference in ONE cycle; clearHooksAnswer undoes both', () => {
+      grantHooksConsent('claude');
+      recordHooksDecline('claude');
+      expect(getHooksConsent('claude')).toBe('declined');
+      expect(getHooksEnabled('claude')).toBe(false);
+      clearHooksAnswer('claude');
+      expect(getHooksConsent('claude')).toBe('unanswered');
+      expect(getHooksEnabled('claude')).toBe(true);
+      // Both keys are genuinely gone — "never answered" and "answered and
+      // reverted" must be indistinguishable on disk.
+      const raw = JSON.parse(
+        fs.readFileSync(path.join(tempHome, '.pixel-agents', 'config.json'), 'utf-8'),
+      );
+      expect('claude' in (raw.hooksConsent ?? {})).toBe(false);
+      expect('claude' in (raw.hooksEnabled ?? {})).toBe(false);
+    });
+
+    // Review finding I1 (sol): never→install(fails)→notNow stranded the ask.
+    // Install is an absolute state command, so a grant REPLACING a decline
+    // deletes the decline's hooks-off remnant in the same write — a failed
+    // install then leaves granted + default-enabled, which a later notNow
+    // revert fully takes back (the ask returns).
+    it('a grant replacing a decline clears the decline preference remnant', () => {
+      recordHooksDecline('claude');
+      expect(getHooksEnabled('claude')).toBe(false);
+      grantHooksConsent('claude');
+      expect(getHooksConsent('claude')).toBe('granted');
+      expect(getHooksEnabled('claude')).toBe(true);
+      const raw = JSON.parse(
+        fs.readFileSync(path.join(tempHome, '.pixel-agents', 'config.json'), 'utf-8'),
+      );
+      expect('claude' in (raw.hooksEnabled ?? {})).toBe(false);
+    });
+
+    // A grant must NOT clobber a Settings toggle-off: the preference delete is
+    // scoped to replacing a DECLINE, whose hooks-off was the answer's write.
+    it('a repeat grant leaves a toggle-written preference alone', () => {
+      grantHooksConsent('claude');
+      setHooksEnabled('claude', false); // the Settings toggle, not an answer
+      grantHooksConsent('claude'); // idempotent repeat
+      expect(getHooksEnabled('claude')).toBe(false);
+    });
+
+    it('clearHooksEnabled removes the key so the default (true) applies again', () => {
+      setHooksEnabled('claude', false);
+      expect(getHooksEnabled('claude')).toBe(false);
+      clearHooksEnabled('claude');
+      expect(getHooksEnabled('claude')).toBe(true);
+      // The key is genuinely gone, not written back as true: "never answered"
+      // and "answered and reverted" must be indistinguishable on disk.
+      const raw = JSON.parse(
+        fs.readFileSync(path.join(tempHome, '.pixel-agents', 'config.json'), 'utf-8'),
+      );
+      expect('claude' in (raw.hooksEnabled ?? {})).toBe(false);
+    });
+
+    it('resetHooksConfig returns all hooks choices to factory state (uninstall → ask again)', () => {
+      grantHooksConsent('claude');
+      recordHooksDecline('other');
+      setHooksEnabled('claude', false); // a persisted "off" must not survive uninstall,
+      setHooksEnabled('other', false); // or the next install never prompts
+      const cfg = readConfig();
+      cfg.vscode.hooksInfoShown = true;
+      cfg.standalone.hooksInfoShown = true;
+      writeConfig(cfg);
+
+      resetHooksConfig();
+
+      expect(getHooksConsent('claude')).toBe('unanswered');
+      expect(getHooksConsent('other')).toBe('unanswered');
+      expect(getHooksEnabled('claude')).toBe(true);
+      expect(getHooksEnabled('other')).toBe(true);
+      const reset = readConfig();
+      expect(reset.vscode.hooksInfoShown).toBe(false);
+      expect(reset.standalone.hooksInfoShown).toBe(false);
     });
   });
 

@@ -100,6 +100,19 @@ async function verifyInstalledTarball(tarballPath) {
   const smokeProject = path.join(smokeRoot, 'project');
   fs.mkdirSync(smokeHome, { recursive: true });
   fs.mkdirSync(smokeProject, { recursive: true });
+  // Without recorded consent the CLI (rightly) starts with no hooks installed
+  // — the first-run ask happens in the browser UI, which this smoke never
+  // opens — so the Hook ON assertion below would time out forever. Seeding
+  // consent in the throwaway smoke HOME intentionally bypasses the gate: this
+  // test verifies the install MACHINERY ships and works, not the gate (the
+  // gate's own behavior is pinned by server/__tests__/cli.test.ts,
+  // consentFlow.test.ts, and the consent e2e specs). Same shape as
+  // server/__tests__/cli.test.ts.
+  fs.mkdirSync(path.join(smokeHome, '.pixel-agents'), { recursive: true });
+  fs.writeFileSync(
+    path.join(smokeHome, '.pixel-agents', 'config.json'),
+    JSON.stringify({ hooksConsent: { claude: 'granted' } }),
+  );
   fs.writeFileSync(
     path.join(smokeProject, 'package.json'),
     JSON.stringify({ name: 'pixel-agents-package-smoke', private: true }, null, 2),

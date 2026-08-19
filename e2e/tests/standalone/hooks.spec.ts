@@ -1,10 +1,17 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from '../../fixtures/standalone';
-import { sendHookEvent, sessionEndExit, sessionStartStartup } from '../../helpers/hooks';
+import {
+  ourHookEvents,
+  sendHookEvent,
+  sessionEndExit,
+  sessionStartStartup,
+} from '../../helpers/hooks';
+import { advanceIntroToConsentStep, finishIntro } from '../../helpers/intro';
 import { expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
 import type { RecordedServerMessage } from '../../helpers/standalone';
-import { setSettings } from '../../helpers/webview';
+import { openSettingsModal, setSettings } from '../../helpers/webview';
 
 test.describe('Standalone / hooks', () => {
   test('propagates hook-driven lifecycle into the browser UI @area:standalone', async ({
@@ -95,5 +102,130 @@ test.describe('Standalone / hooks', () => {
     await expectOverlayCount(page, 0);
     const sessionEndMessages = await standalone.drainMessages();
     expect(sessionEndMessages.some((message) => message.type === 'agentClosed')).toBe(true);
+  });
+});
+
+/**
+ * The standalone consent path end to end. The fixture normally seeds a granted Claude consent; these opt out, so the
+ * CLI starts with nothing installed and the server asks over the tokened /ws handshake — the SAME in-app dialog the
+ * VS Code webview shows (pinned in claude/hooks-on/consent.spec.ts). Here the pins are the standalone-only halves:
+ * the token boundary and the checkbox route.
+ */
+test.describe('Standalone / hooks consent', () => {
+  test.use({ seedHooksConsent: false });
+
+  function readConsentFrom(tmpHome: string): boolean {
+    try {
+      const raw = fs.readFileSync(path.join(tmpHome, '.pixel-agents', 'config.json'), 'utf8');
+      const consent = (JSON.parse(raw) as { hooksConsent?: Record<string, string> }).hooksConsent;
+      return consent?.claude === 'granted';
+    } catch {
+      return false;
+    }
+  }
+
+  function ourHookEventCount(tmpHome: string): number {
+    return ourHookEvents(tmpHome).length;
+  }
+
+  // The operator's route: the printed tokened URL loads a privileged session,
+  // the Intro rides the handshake, and Install (on its consent step) writes
+  // the hooks.
+  test('the tokened page shows the Intro and Install writes the hooks @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await advanceIntroToConsentStep(dialog);
+    // The disclosure travels with the request — the browser renders the
+    // server's exact terms.
+    await expect(dialog).toContainText('~/.claude/settings.json');
+    await expect(dialog).toContainText('Instant Detection (Hooks)');
+
+    expect(fs.existsSync(path.join(standalone.tmpHome, '.claude', 'settings.json'))).toBe(false);
+
+    await dialog.getByRole('button', { name: 'Install Hooks' }).click();
+
+    await expect.poll(() => readConsentFrom(standalone.tmpHome), { timeout: 15_000 }).toBe(true);
+    await expect.poll(() => ourHookEventCount(standalone.tmpHome), { timeout: 15_000 }).toBe(12);
+
+    // The install's own hooksStatus broadcast must not yank the closing step.
+    await finishIntro(dialog);
+  });
+
+  // The token boundary, at the browser level: a bare-URL session still watches
+  // the office but is never asked — its answer would be ignored
+  // (server/__tests__/httpServerWs.test.ts pins the wire half), so showing it
+  // the dialog would be a lie.
+  test('an untokened spectator page never sees the consent dialog @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    void standalone;
+    const bareUrl = new URL(page.url());
+    bareUrl.search = '';
+
+    const spectator = await page.context().newPage();
+    try {
+      await spectator.goto(bareUrl.toString());
+      await expect(spectator.getByRole('button', { name: 'Settings' })).toBeVisible({
+        timeout: 30_000,
+      });
+      // Settle before the negative assertion: the dialog, were it coming,
+      // rides the webviewReady handshake that just completed.
+      await spectator.waitForTimeout(2_000);
+      await expect(spectator.getByRole('dialog')).toHaveCount(0);
+    } finally {
+      await spectator.close();
+    }
+  });
+
+  /**
+   * The Settings-checkbox route, for a user who dismissed the dialog: Not Now
+   * writes nothing, the checkbox shows the ACTUAL install state (not the
+   * hooksEnabled preference, which still defaults true), and clicking it is
+   * the consent grant.
+   */
+  test('the hooks checkbox reflects install state and its click is the consent grant @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    const settingsPath = path.join(standalone.tmpHome, '.claude', 'settings.json');
+
+    // First-run Intro is up; decline with Not Now — which writes NOTHING —
+    // and finish the tour.
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await advanceIntroToConsentStep(dialog);
+    await dialog.getByRole('button', { name: 'Not Now' }).click();
+    await finishIntro(dialog);
+    await page.waitForTimeout(1_000);
+
+    // Nothing installed, no consent — but the preference defaults true.
+    expect(fs.existsSync(settingsPath)).toBe(false);
+    expect(readConsentFrom(standalone.tmpHome)).toBe(false);
+
+    // Everything below drives ONE open modal: the checkbox is clicked
+    // UNCONDITIONALLY rather than through setSettings(), whose setCheckbox only
+    // clicks when the current state differs from the target — if a hooksStatus
+    // ever raced ahead, that would click nothing and every assertion below
+    // would pass vacuously over a state this test never caused.
+    const settingsModal = await openSettingsModal(page);
+    const hooksCheckbox = settingsModal.locator('button', {
+      hasText: 'Instant Detection (Hooks)',
+    });
+    const isChecked = async (): Promise<boolean> =>
+      ((await hooksCheckbox.locator('span').last().textContent()) ?? '').trim().toLowerCase() ===
+      'x';
+
+    expect(await isChecked()).toBe(false);
+
+    // Clicking it IS the consent grant (the documented route after a decline).
+    await hooksCheckbox.click();
+
+    await expect.poll(() => readConsentFrom(standalone.tmpHome), { timeout: 15_000 }).toBe(true);
+    await expect.poll(() => ourHookEventCount(standalone.tmpHome), { timeout: 15_000 }).toBe(12);
+    await expect.poll(() => isChecked(), { timeout: 15_000 }).toBe(true);
   });
 });

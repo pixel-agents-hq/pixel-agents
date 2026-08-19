@@ -43,7 +43,15 @@ async function attachText(
   }
 }
 
-export const test = base.extend<{ standalone: StandaloneContext; _allureLabels: void }>({
+export const test = base.extend<{
+  standalone: StandaloneContext;
+  _allureLabels: void;
+  /** Seed a granted Claude hooksConsent entry in the isolated HOME (default). The
+   *  consent specs opt out via `test.use({ seedHooksConsent: false })` so the
+   *  first-run dialog shows — they are the only ones that want it. */
+  seedHooksConsent: boolean;
+}>({
+  seedHooksConsent: [true, { option: true }],
   // Auto-fixture: tag every test with Allure epic + feature derived from its
   // @area: annotation and enclosing describe path. Runs before standalone.
   _allureLabels: [
@@ -53,8 +61,8 @@ export const test = base.extend<{ standalone: StandaloneContext; _allureLabels: 
     },
     { auto: true },
   ],
-  standalone: async ({ page }, use, testInfo) => {
-    const standalone = await launchStandalone(page);
+  standalone: async ({ page, seedHooksConsent }, use, testInfo) => {
+    const standalone = await launchStandalone(page, { seedHooksConsent });
 
     try {
       await use(standalone);
