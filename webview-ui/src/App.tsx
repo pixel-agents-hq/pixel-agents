@@ -79,6 +79,12 @@ function App() {
     workspaceFolders,
     agentFolderNames,
     externalAssetDirectories,
+    claudeConfigDir,
+    resolvedClaudeConfigDir,
+    resolvedClaudeConfigDirSource,
+    resolvedClaudeConfigDirExists,
+    pendingDirExists,
+    claudeConfigDirRejection,
     lastSeenVersion,
     extensionVersion,
     watchAllSessions,
@@ -545,6 +551,12 @@ function App() {
         ghostHeadlessAgents={ghostHeadlessAgents}
         onToggleGhostHeadlessAgents={handleToggleGhostHeadlessAgents}
         externalAssetDirectories={externalAssetDirectories}
+        claudeConfigDir={claudeConfigDir}
+        resolvedClaudeConfigDir={resolvedClaudeConfigDir}
+        resolvedClaudeConfigDirSource={resolvedClaudeConfigDirSource}
+        resolvedClaudeConfigDirExists={resolvedClaudeConfigDirExists}
+        pendingDirExists={pendingDirExists}
+        claudeConfigDirRejection={claudeConfigDirRejection}
         watchAllSessions={watchAllSessions}
         onToggleWatchAllSessions={() => {
           const newVal = !watchAllSessions;

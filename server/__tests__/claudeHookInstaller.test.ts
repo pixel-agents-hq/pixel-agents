@@ -46,17 +46,19 @@ vi.mock('fs', async () => {
   };
 });
 
-const { areHooksInstalled, installHooks, uninstallHooks, copyHookScript } =
+const { areHooksInstalled, installHooks, uninstallHooks, uninstallHooksAt, copyHookScript } =
   await import('../src/providers/hook/claude/claudeHookInstaller.js');
+const { resetClaudeConfigDirOverrideForTests } =
+  await import('../src/providers/hook/claude/claudeConfigDir.js');
 const { CLAUDE_HOOK_EVENTS, SETTINGS_BACKUP_SUFFIX, SETTINGS_TMP_SUFFIX } =
   await import('../src/providers/hook/claude/constants.js');
 
-function settingsPathFor(): string {
-  return path.join(tmpBase, '.claude', 'settings.json');
+function settingsPathFor(base: string = tmpBase): string {
+  return path.join(base, '.claude', 'settings.json');
 }
 
-function readSettings(): Record<string, unknown> {
-  return JSON.parse(fs.readFileSync(settingsPathFor(), 'utf-8'));
+function readSettings(base: string = tmpBase): Record<string, unknown> {
+  return JSON.parse(fs.readFileSync(settingsPathFor(base), 'utf-8'));
 }
 
 /** The command string our installer writes, for the current fake homedir. */
@@ -79,9 +81,16 @@ describe('claudeHookInstaller', () => {
   beforeEach(() => {
     tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-hook-test-'));
     fs.mkdirSync(path.join(tmpBase, '.claude'), { recursive: true });
+    // An inherited CLAUDE_CONFIG_DIR on a developer machine would otherwise
+    // defeat the os.homedir() mock above -- this file's isolation depends
+    // on both being neutralized.
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '');
+    resetClaudeConfigDirOverrideForTests();
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
+    resetClaudeConfigDirOverrideForTests();
     try {
       fs.rmSync(tmpBase, { recursive: true, force: true });
     } catch {
@@ -684,7 +693,7 @@ describe('claudeHookInstaller', () => {
     const original = JSON.stringify({ permissions: { allow: ['Bash(ls:*)'] }, hooks: value });
     fs.writeFileSync(settingsPath, original);
 
-    await expect(installHooks()).rejects.toThrow(/hooks in ~\/\.claude\/settings\.json/);
+    await expect(installHooks()).rejects.toThrow(/hooks in <CLAUDE_CONFIG_DIR>\/settings\.json/);
     await expect(installHooks()).rejects.toThrow(/hooks not installed/);
 
     expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(original);
@@ -1013,5 +1022,59 @@ describe('claudeHookInstaller', () => {
 
     expect(copyHookScript(mockExtPath)).toBe(false);
     expect(fs.existsSync(dst)).toBe(false);
+  });
+
+  // ── uninstallHooksAt(explicitDir) ─────────────────────────────
+
+  describe('uninstallHooksAt(explicitDir)', () => {
+    it('removes hook entries from the explicit directory, not the ambient one', async () => {
+      const altDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-hook-alt-'));
+      fs.mkdirSync(altDir, { recursive: true });
+      // Install at the ambient (mocked-homedir) location first.
+      await installHooks();
+      expect(areHooksInstalled()).toBe(true);
+      // Manually seed hook entries at the alt dir too, mimicking a previous install there.
+      await installHooks(); // still at tmpBase; now write the same shape into altDir directly
+      fs.writeFileSync(path.join(altDir, 'settings.json'), JSON.stringify(readSettings()), 'utf-8');
+
+      await uninstallHooksAt(altDir);
+
+      const altSettings = JSON.parse(fs.readFileSync(path.join(altDir, 'settings.json'), 'utf-8'));
+      expect(altSettings.hooks).toBeUndefined();
+      // The ambient location is untouched.
+      expect(areHooksInstalled()).toBe(true);
+
+      fs.rmSync(altDir, { recursive: true, force: true });
+    });
+
+    it('is a no-op, not an error, when nothing is installed at explicitDir', async () => {
+      const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-hook-empty-'));
+      await expect(uninstallHooksAt(emptyDir)).resolves.toBeUndefined();
+      fs.rmSync(emptyDir, { recursive: true, force: true });
+    });
+  });
+
+  // ── install/uninstall targeting an overridden CLAUDE_CONFIG_DIR ──
+
+  describe('with CLAUDE_CONFIG_DIR set', () => {
+    it('installHooks writes to the env var directory, not the mocked homedir', async () => {
+      const envDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-hook-env-'));
+      vi.stubEnv('CLAUDE_CONFIG_DIR', envDir);
+
+      await installHooks();
+
+      // CLAUDE_CONFIG_DIR resolves directly to the config dir (no nested
+      // .claude, per claudeConfigDir.ts's own precedence-chain tests) --
+      // unlike readSettings(base)'s tmpBase default, which stands in for a
+      // homedir and expects the .claude nesting.
+      const settings = JSON.parse(
+        fs.readFileSync(path.join(envDir, 'settings.json'), 'utf-8'),
+      ) as Record<string, unknown>;
+      expect(settings.hooks).toBeTruthy();
+      // tmpBase (the mocked homedir) never got a settings.json written to it.
+      expect(fs.existsSync(path.join(tmpBase, '.claude', 'settings.json'))).toBe(false);
+
+      fs.rmSync(envDir, { recursive: true, force: true });
+    });
   });
 });

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { isDeepStrictEqual } from 'util';
 
 import { HOOK_SCRIPTS_DIR } from '../../../constants.js';
+import { getClaudeConfigDir } from './claudeConfigDir.js';
 import {
   CLAUDE_HOOK_EVENTS,
   CLAUDE_HOOK_SCRIPT_NAME,
@@ -15,7 +16,7 @@ import {
   SETTINGS_TMP_SUFFIX,
 } from './constants.js';
 
-/** A single hook entry in Claude Code's ~/.claude/settings.json hooks config. */
+/** A single hook entry in Claude Code's <CLAUDE_CONFIG_DIR>/settings.json hooks config. */
 interface ClaudeHookEntry {
   matcher: string;
   hooks: Array<{
@@ -25,29 +26,31 @@ interface ClaudeHookEntry {
   }>;
 }
 
-/** Partial shape of ~/.claude/settings.json (only the hooks field is relevant). */
+/** Partial shape of <CLAUDE_CONFIG_DIR>/settings.json (only the hooks field is relevant). */
 interface ClaudeSettings {
   hooks?: Record<string, ClaudeHookEntry[]>;
   [key: string]: unknown;
 }
 
-/** Returns the absolute path to ~/.claude/settings.json. */
-function getClaudeSettingsPath(): string {
-  return path.join(os.homedir(), '.claude', 'settings.json');
+/** Returns the absolute path to <dir>/settings.json, defaulting to the
+ *  currently-resolved Claude config directory. */
+function getClaudeSettingsPath(dir: string = getClaudeConfigDir()): string {
+  return path.join(dir, 'settings.json');
 }
 
-/** Returns the destination path for the hook script (~/.pixel-agents/hooks/claude-hook.js). */
+/** Returns the destination path for the hook script (~/.pixel-agents/hooks/claude-hook.js).
+ *  Always under Pixel Agents' own namespace -- unrelated to Claude's config dir. */
 function getHookScriptPath(): string {
   return path.join(os.homedir(), HOOK_SCRIPTS_DIR, CLAUDE_HOOK_SCRIPT_NAME);
 }
 
 /** Surfaced to the user when settings.json exists but cannot be parsed. The
  *  operation (install/uninstall) appends its own outcome suffix. */
-export const SETTINGS_UNPARSEABLE_MESSAGE = "Couldn't parse ~/.claude/settings.json";
+export const SETTINGS_UNPARSEABLE_MESSAGE = "Couldn't parse <CLAUDE_CONFIG_DIR>/settings.json";
 
 /** Surfaced when settings.json keeps changing under us across all retry attempts. */
 export const SETTINGS_CONCURRENT_WRITE_MESSAGE =
-  '~/.claude/settings.json is being modified by another process';
+  '<CLAUDE_CONFIG_DIR>/settings.json is being modified by another process';
 
 /** The one write failure the mutate loop retries. A dedicated class rather than
  *  a message-string comparison: retrying an EACCES or ENOSPC just delays the
@@ -65,7 +68,7 @@ class ConcurrentWriteError extends Error {
  *  we used to do) silently destroys hand-written config, which is the same
  *  class of bug as rewriting an unparseable file. Refuse instead. */
 export function settingsNonArrayEventMessage(event: string): string {
-  return `hooks.${event} in ~/.claude/settings.json is not an array — fix or remove it`;
+  return `hooks.${event} in <CLAUDE_CONFIG_DIR>/settings.json is not an array — fix or remove it`;
 }
 
 /** Surfaced when `hooks` itself is not an object (an array or a scalar). Same
@@ -73,11 +76,12 @@ export function settingsNonArrayEventMessage(event: string): string {
  *  silently (string keys on an array do not survive JSON.stringify) or crash
  *  with a raw TypeError. */
 export const SETTINGS_HOOKS_NOT_OBJECT_MESSAGE =
-  'hooks in ~/.claude/settings.json is not an object — fix or remove it';
+  'hooks in <CLAUDE_CONFIG_DIR>/settings.json is not an object — fix or remove it';
 
-/** Raw file content, or null when the file does not exist. Throws on read errors. */
-function readRawClaudeSettings(): string | null {
-  const settingsPath = getClaudeSettingsPath();
+/** Raw file content at <dir>/settings.json, or null when the file does not
+ *  exist. Throws on read errors. */
+function readRawClaudeSettings(dir?: string): string | null {
+  const settingsPath = getClaudeSettingsPath(dir);
   if (!fs.existsSync(settingsPath)) {
     return null;
   }
@@ -99,9 +103,9 @@ function parseClaudeSettings(raw: string | null): ClaudeSettings {
   }
 }
 
-/** Read and parse ~/.claude/settings.json (see parseClaudeSettings for the throw contract). */
-function readClaudeSettings(): ClaudeSettings {
-  return parseClaudeSettings(readRawClaudeSettings());
+/** Read and parse <dir>/settings.json (see parseClaudeSettings for the throw contract). */
+function readClaudeSettings(dir?: string): ClaudeSettings {
+  return parseClaudeSettings(readRawClaudeSettings(dir));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -109,9 +113,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Guarded read-modify-write cycle for settings.json. `mutate` edits the parsed
- * settings in place and returns whether anything changed; returns whether a
- * write happened.
+ * Guarded read-modify-write cycle for <dir>/settings.json. `mutate` edits the
+ * parsed settings in place and returns whether anything changed; returns
+ * whether a write happened.
  *
  * Two failure modes retry up to SETTINGS_MUTATE_ATTEMPTS times, then throw:
  * - a torn read (Claude Code mid-write parses like a corrupt file) — a retry
@@ -127,6 +131,7 @@ function sleep(ms: number): Promise<void> {
  */
 async function mutateClaudeSettings(
   mutate: (settings: ClaudeSettings) => boolean,
+  dir?: string,
 ): Promise<boolean> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < SETTINGS_MUTATE_ATTEMPTS; attempt++) {
@@ -136,7 +141,7 @@ async function mutateClaudeSettings(
     let raw: string | null;
     let settings: ClaudeSettings;
     try {
-      raw = readRawClaudeSettings();
+      raw = readRawClaudeSettings(dir);
       settings = parseClaudeSettings(raw);
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
@@ -146,7 +151,7 @@ async function mutateClaudeSettings(
       return false;
     }
     try {
-      writeClaudeSettings(settings, raw);
+      writeClaudeSettings(settings, raw, dir);
       return true;
     } catch (e) {
       if (!(e instanceof ConcurrentWriteError)) throw e;
@@ -209,7 +214,7 @@ export function settingsUnusableBackupMessage(backupPath: string): string {
 }
 
 /**
- * Write settings back to ~/.claude/settings.json via atomic tmp + rename.
+ * Write settings back to <dir>/settings.json via atomic tmp + rename.
  *
  * `expectedRaw` is the exact file content the caller's mutation was based on
  * (null = the file did not exist). The final re-read verify sits immediately
@@ -222,17 +227,21 @@ export function settingsUnusableBackupMessage(backupPath: string): string {
  * swallowed: a caller that hears no error installs an entry pointing at a file
  * that was never written.
  */
-function writeClaudeSettings(settings: ClaudeSettings, expectedRaw: string | null): void {
-  const settingsPath = getClaudeSettingsPath();
-  const dir = path.dirname(settingsPath);
+function writeClaudeSettings(
+  settings: ClaudeSettings,
+  expectedRaw: string | null,
+  dir?: string,
+): void {
+  const settingsPath = getClaudeSettingsPath(dir);
+  const settingsDir = path.dirname(settingsPath);
   const tmpPath = settingsPath + SETTINGS_TMP_SUFFIX;
 
   // A tmp file left by a crashed earlier run would make the rename below write
   // stale content on a platform where rename is not the commit we assume.
   removeIfPresent(tmpPath);
 
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  if (!fs.existsSync(settingsDir)) {
+    fs.mkdirSync(settingsDir, { recursive: true, mode: 0o700 });
   }
   // The backup preserves the user's pre-Pixel-Agents file; when the content
   // being replaced is entirely of our own writing (typical after our install
@@ -269,7 +278,7 @@ function writeClaudeSettings(settings: ClaudeSettings, expectedRaw: string | nul
       mode: SETTINGS_FRESH_FILE_MODE,
     });
     fs.chmodSync(tmpPath, mode);
-    if (readRawClaudeSettings() !== expectedRaw) {
+    if (readRawClaudeSettings(dir) !== expectedRaw) {
       throw new ConcurrentWriteError();
     }
     fs.renameSync(tmpPath, settingsPath);
@@ -547,7 +556,8 @@ function makeHookEntry(): ClaudeHookEntry {
 }
 
 /**
- * Whether ANY Pixel Agents hook command is present in ~/.claude/settings.json.
+ * Whether ANY Pixel Agents hook command is present in the resolved
+ * <CLAUDE_CONFIG_DIR>/settings.json.
  *
  * "Any", not "all 12", and the difference is the whole point. Every caller asks
  * this question for one of two reasons — "are our hooks firing right now?"
@@ -586,9 +596,9 @@ export function areHooksInstalled(): boolean {
 }
 
 /**
- * Install Pixel Agents hook entries into ~/.claude/settings.json for
- * Notification, Stop, and PermissionRequest events. Idempotent: removes
- * any existing Pixel Agents entries before adding fresh ones.
+ * Install Pixel Agents hook entries into the resolved
+ * <CLAUDE_CONFIG_DIR>/settings.json. Idempotent: removes any existing Pixel
+ * Agents entries before adding fresh ones.
  *
  * Rejects (before any write) when settings.json exists but cannot be parsed or
  * keeps changing concurrently — callers surface the error to the user instead
@@ -604,7 +614,7 @@ export async function installHooks(): Promise<void> {
     });
   }
   if (wrote) {
-    console.log('[Pixel Agents] Hooks installed in ~/.claude/settings.json');
+    console.log(`[Pixel Agents] Hooks installed in ${getClaudeSettingsPath()}`);
   }
 }
 
@@ -676,12 +686,30 @@ function installEntries(): Promise<boolean> {
   });
 }
 
-/** Remove all Pixel Agents hook entries from ~/.claude/settings.json. Cleans up empty objects.
- *  Rejects (before any write) when the file cannot be parsed — same protection
- *  as install: never rewrite a file we could not read. Callers surface the
- *  error; claiming success after an aborted uninstall is how a "removed"
- *  log line ends up next to entries that are still live. */
+/** Remove all Pixel Agents hook entries from the resolved
+ *  <CLAUDE_CONFIG_DIR>/settings.json. Cleans up empty objects. Rejects (before
+ *  any write) when the file cannot be parsed — same protection as install:
+ *  never rewrite a file we could not read. Callers surface the error;
+ *  claiming success after an aborted uninstall is how a "removed" log line
+ *  ends up next to entries that are still live. */
 export async function uninstallHooks(): Promise<void> {
+  return uninstallHooksAt(getClaudeConfigDir());
+}
+
+/** Remove all Pixel Agents hook entries from <dir>/settings.json. Cleans up
+ *  empty objects. A no-op (not an error) if nothing is installed there. Used
+ *  directly (rather than always going through the ambient uninstallHooks())
+ *  by the boot-time stale-hook cleanup in claudeConfigDirBoot.ts, which needs
+ *  to target a specific PREVIOUS directory, not wherever the live override
+ *  currently resolves to.
+ *
+ *  Shares the same guarded mutate/backup/retry machinery as the ambient path
+ *  (mutateClaudeSettings) rather than a separate simpler implementation: a
+ *  previous config directory can still hold a settings.json a user (or
+ *  another Claude Code process) is actively editing, and "we're about to stop
+ *  using this directory" is not a reason to relax the "never destroy user
+ *  settings" guarantee for it. */
+export async function uninstallHooksAt(dir: string): Promise<void> {
   let wrote: boolean;
   try {
     wrote = await mutateClaudeSettings((settings) => {
@@ -710,14 +738,14 @@ export async function uninstallHooks(): Promise<void> {
         delete settings.hooks;
       }
       return changed;
-    });
+    }, dir);
   } catch (e) {
     throw new Error(`${e instanceof Error ? e.message : String(e)} — hook entries left in place.`, {
       cause: e,
     });
   }
   if (wrote) {
-    console.log('[Pixel Agents] Hooks removed from ~/.claude/settings.json');
+    console.log(`[Pixel Agents] Hooks removed from ${getClaudeSettingsPath(dir)}`);
   }
 }
 

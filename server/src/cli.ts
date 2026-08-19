@@ -18,6 +18,10 @@ import {
   loadAllFurniture,
   loadAllPets,
 } from './assetReload.js';
+import {
+  prepareClaudeConfigDirForBoot,
+  recordClaudeConfigDirHooksInstalled,
+} from './claudeConfigDirBoot.js';
 import type { AssetCache, ReloadAssetsSideEffect } from './clientMessageHandler.js';
 import {
   getHooksConsent,
@@ -117,6 +121,12 @@ async function main(): Promise<void> {
   const packageRoot = path.dirname(distRoot);
   const staticDir = path.join(distRoot, 'webview');
 
+  // Must run before anything that could call claudeProvider.installHooks() --
+  // sets the live CLAUDE_CONFIG_DIR override and cleans up any stale hook
+  // install from a previous directory, both before hooks get (re)installed
+  // below.
+  prepareClaudeConfigDirForBoot('standalone');
+
   // ── Load assets on startup (same pipeline as VS Code extension) ──
   // External asset directories are merged at startup too, so directories added
   // in a previous session survive a restart. buildAssetCache is the shared
@@ -178,6 +188,11 @@ async function main(): Promise<void> {
         } catch (err) {
           console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
           return;
+        }
+        // claudeConfigDirHooksInstalledAt is Claude-specific bookkeeping (see
+        // claudeConfigDirBoot.ts) -- only meaningful for that provider.
+        if (provider.id === claudeProvider.id) {
+          recordClaudeConfigDirHooksInstalled('standalone');
         }
         console.log('[Pixel Agents] Hooks installed (user toggle)');
       } else {
@@ -269,6 +284,7 @@ async function main(): Promise<void> {
       } else if (copyHookScriptOrReport(packageRoot)) {
         try {
           await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+          recordClaudeConfigDirHooksInstalled('standalone');
           console.log('[Pixel Agents] Hooks installed');
         } catch (err) {
           console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
