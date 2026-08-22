@@ -620,6 +620,9 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentSelected') {
         const id = msg.id as number;
         setSelectedAgent(id);
+        // Mirror a canvas click so the label panel opens on the office view too
+        // (setSelectedAgent alone only drives <DebugView>).
+        os.selectedAgentId = id;
       } else if (msg.type === 'agentStatus') {
         const id = msg.id as number;
         const status = msg.status as string;
