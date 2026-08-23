@@ -12,6 +12,7 @@ export type ServerMessage =
   | AgentCreated
   | AgentClosed
   | AgentSelected
+  | AgentDeselected
   | ExistingAgents
   | AgentStatus
   | AgentToolStart
@@ -75,6 +76,7 @@ export interface AgentCreated {
   id: number;
   folderName?: string;
   isExternal?: boolean;
+  isHeadless?: boolean;
   palette?: number;
   hueShift?: number;
 }
@@ -89,12 +91,18 @@ export interface AgentSelected {
   id: number;
 }
 
+export interface AgentDeselected {
+  type: 'agentDeselected';
+  id: number;
+}
+
 export interface ExistingAgents {
   type: 'existingAgents';
   agents: number[];
   agentMeta: Record<string, AgentSeatMeta>;
   folderNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
+  headlessAgents?: Record<string, boolean>;
 }
 
 export interface AgentSeatMeta {

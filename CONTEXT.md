@@ -30,7 +30,7 @@ The animated pixel-art figure representing an agent in the office. An agent has 
 _Avoid_: avatar, sprite (a sprite is the image asset, not the figure)
 
 **Ghost**:
-A character drawn translucent because its agent is headless — the visual shorthand for "nothing to focus here". Opt-in: off unless the user turns on "Display Headless as Ghosts", and never used in adapters without terminals, where every agent would qualify and the cue would say nothing. Teammates and sub-agents are never ghosts; clicking one reaches its lead's or parent's terminal.
+A character drawn translucent because its agent is headless — the visual shorthand for "nothing to focus here". Opt-in: off unless the user turns on "Display Headless as Ghosts". By default not used in adapters without terminals, where every agent would otherwise qualify and the cue would say nothing — but a producer may override this per agent (`AgentCreated.isHeadless` / `ExistingAgents.headlessAgents`, core/asyncapi.yaml), e.g. a third-party backend mixing real coding-agent sessions with mirrored/adopted ones in the same browser client. Teammates and sub-agents are never ghosts; clicking one reaches its lead's or parent's terminal.
 _Avoid_: faded, dimmed, transparent, inactive (that's a status)
 
 **Sub-agent**:

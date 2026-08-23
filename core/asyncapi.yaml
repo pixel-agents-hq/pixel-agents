@@ -83,6 +83,7 @@ components:
         - $ref: '#/components/schemas/AgentCreated'
         - $ref: '#/components/schemas/AgentClosed'
         - $ref: '#/components/schemas/AgentSelected'
+        - $ref: '#/components/schemas/AgentDeselected'
         - $ref: '#/components/schemas/ExistingAgents'
         # Agent status / tool activity
         - $ref: '#/components/schemas/AgentStatus'
@@ -184,6 +185,18 @@ components:
           type: string
         isExternal:
           type: boolean
+        isHeadless:
+          type: boolean
+          description: |
+            Explicit override for the "headless" render cue (translucent
+            character, no terminal to focus). When omitted, the client falls
+            back to a heuristic (isExternal on a non-browser/IDE client only —
+            a plain browser client assumes every agent is externally-driven,
+            so the cue wouldn't distinguish anything there). Set this
+            explicitly to opt an agent into (or out of) the cue regardless of
+            that heuristic — e.g. a third-party backend running its own
+            standalone-shaped server, mixing real coding-agent sessions with
+            mirrored/adopted ones in the same browser client.
         palette:
           type: integer
           description: Server-assigned character palette index.
@@ -203,13 +216,34 @@ components:
           type: integer
 
     AgentSelected:
-      description: An agent's terminal was focused (VS Code only). UI should highlight it.
+      description: |
+        An agent should be highlighted/focused in the UI. Sent by adapters/vscode
+        on terminal focus, and by any backend implementing this protocol (e.g. a
+        Discord bridge forcing its label panel open for an incoming message) —
+        not VS Code-only. Only sets selection; does not imply camera-follow,
+        bubble dismissal, or toggle-off-on-repeat the way a canvas click does.
       type: object
       additionalProperties: false
       required: [type, id]
       properties:
         type:
           const: agentSelected
+        id:
+          type: integer
+
+    AgentDeselected:
+      description: |
+        Clears a selection previously set by agentSelected, if it still points
+        at this id (a stale deselect for an id that's no longer selected is a
+        no-op — avoids racing a newer selection). Producers: adapters/vscode's
+        terminal-switch-away handler, and third-party backends implementing
+        this protocol once they're done pointing at an agent.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentDeselected
         id:
           type: integer
 
@@ -240,6 +274,15 @@ components:
         externalAgents:
           type: object
           description: Map of agent ID (string) to external flag.
+          additionalProperties:
+            type: boolean
+        headlessAgents:
+          type: object
+          description: |
+            Map of agent ID (string) to the explicit headless override — see
+            AgentCreated.isHeadless. Optional; an id absent here falls back to
+            that message's heuristic. Omit the whole field to use the
+            heuristic for every restored agent.
           additionalProperties:
             type: boolean
 
