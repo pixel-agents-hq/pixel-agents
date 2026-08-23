@@ -103,6 +103,7 @@ export interface AgentCreated {
   id: number;
   directoryName?: string;
   isExternal?: boolean;
+  isHeadless?: boolean;
   palette?: number;
   repeat?: number;
   seatId?: string;
@@ -129,6 +130,7 @@ export interface ExistingAgents {
   agentMeta: Record<string, AgentSeatMeta>;
   directoryNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
+  headlessAgents?: Record<string, boolean>;
 }
 
 export interface AgentSeatMeta {

@@ -214,6 +214,18 @@ components:
           type: string
         isExternal:
           type: boolean
+        isHeadless:
+          type: boolean
+          description: |
+            Explicit override for the "headless" render cue (translucent
+            character, no terminal to focus). When omitted, the client falls
+            back to a heuristic (isExternal on a non-browser/IDE client only —
+            a plain browser client assumes every agent is externally-driven,
+            so the cue wouldn't distinguish anything there). Set this
+            explicitly to opt an agent into (or out of) the cue regardless of
+            that heuristic — e.g. a third-party backend running its own
+            standalone-shaped server, mixing real coding-agent sessions with
+            mirrored/adopted ones in the same browser client.
         palette:
           type: integer
           description: Server-assigned character palette index.
@@ -297,6 +309,15 @@ components:
         externalAgents:
           type: object
           description: Map of agent ID (string) to external flag.
+          additionalProperties:
+            type: boolean
+        headlessAgents:
+          type: object
+          description: |
+            Map of agent ID (string) to the explicit headless override — see
+            AgentCreated.isHeadless. Optional; an id absent here falls back to
+            that message's heuristic. Omit the whole field to use the
+            heuristic for every restored agent.
           additionalProperties:
             type: boolean
 
