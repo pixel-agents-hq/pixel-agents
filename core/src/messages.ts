@@ -12,6 +12,7 @@ export type ServerMessage =
   | AgentCreated
   | AgentClosed
   | AgentSelected
+  | AgentDeselected
   | ExistingAgents
   | AgentStatus
   | AgentToolStart
@@ -114,6 +115,11 @@ export interface AgentClosed {
 
 export interface AgentSelected {
   type: 'agentSelected';
+  id: number;
+}
+
+export interface AgentDeselected {
+  type: 'agentDeselected';
   id: number;
 }
 

@@ -620,9 +620,18 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentSelected') {
         const id = msg.id as number;
         setSelectedAgent(id);
-        // Mirror a canvas click so the label panel opens on the office view too
-        // (setSelectedAgent alone only drives <DebugView>).
+        // <DebugView> reads the `selectedAgent` state above; <ToolOverlay> on the
+        // office canvas reads officeState.selectedAgentId instead (set only by
+        // canvas clicks otherwise). Set both so external selection (e.g. a
+        // Discord-bridge backend implementing this protocol) opens the label
+        // panel there too. Unlike a real click, this does NOT set cameraFollowId,
+        // dismiss bubbles, or toggle off on a repeat id — it's a raw selection
+        // write, not a full click.
         os.selectedAgentId = id;
+      } else if (msg.type === 'agentDeselected') {
+        const id = msg.id as number;
+        setSelectedAgent((prev) => (prev === id ? null : prev));
+        if (os.selectedAgentId === id) os.selectedAgentId = null;
       } else if (msg.type === 'agentStatus') {
         const id = msg.id as number;
         const status = msg.status as string;
