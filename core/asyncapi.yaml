@@ -169,6 +169,29 @@ components:
           items:
             type: string
           description: Tool names that spawn sub-agent characters (e.g. Task, Agent).
+        providers:
+          type: array
+          description: Provider-scoped tool taxonomies. Legacy flat fields remain Claude's values.
+          items:
+            $ref: '#/components/schemas/ProviderCapability'
+
+    ProviderCapability:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, readingTools, subagentToolNames]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        readingTools:
+          type: array
+          items:
+            type: string
+        subagentToolNames:
+          type: array
+          items:
+            type: string
 
     AgentCreated:
       description: A new agent has appeared in the office.
@@ -184,6 +207,8 @@ components:
           type: string
         isExternal:
           type: boolean
+        providerId:
+          type: string
         palette:
           type: integer
           description: Server-assigned character palette index.
@@ -1079,6 +1104,8 @@ components:
         hueShift:
           type: integer
         seatId:
+          type: string
+        providerId:
           type: string
 
     SeatAssignment:

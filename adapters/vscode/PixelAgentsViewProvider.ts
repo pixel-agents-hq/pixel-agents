@@ -126,6 +126,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         id,
         folderName: agent.folderName,
         isExternal: agent.isExternal || undefined,
+        providerId: agent.providerId,
         isTeammate: agent.leadAgentId !== undefined || undefined,
         teammateName: agent.agentName,
         parentAgentId: agent.leadAgentId,
@@ -179,7 +180,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
-    this.runtime = new AgentRuntime(this.store, claudeProvider);
+    this.runtime = new AgentRuntime(this.store, hookProviders);
 
     this.initServer();
   }
@@ -225,11 +226,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // Only hook installation/script-copy is gated by the toggle. The
         // runtime's single hooksEnabled ref follows the Claude provider until
         // the scanners grow per-provider awareness with the Settings UI.
-        const hooksEnabled = getHooksEnabled(claudeProvider.id);
-        this.runtime.hooksEnabled.current = hooksEnabled;
-        if (hooksEnabled) {
-          void this.installHooksIfConsented(config.port, config.token);
-        }
+        this.runtime.hooksEnabled.current = getHooksEnabled(claudeProvider.id);
+        void this.installHooksIfConsented(config.port, config.token);
         console.log(`[Pixel Agents] Server: ready on port ${config.port}`);
       })
       .catch((e) => {
@@ -364,19 +362,19 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
    *  the office is opened, which also means hooks are not installed until the
    *  panel is first viewed. Fail-closed by construction: no answer, no write. */
   private async installHooksIfConsented(port: number, token: string): Promise<void> {
-    if (getHooksConsent(claudeProvider.id) !== 'granted') {
-      if (!(await claudeProvider.areHooksInstalled())) {
-        return; // fresh install — the webview consent dialog owns this ask
+    for (const provider of hookProviders) {
+      if (!getHooksEnabled(provider.id)) continue;
+      if (getHooksConsent(provider.id) !== 'granted') {
+        if (provider.id !== claudeProvider.id || !(await provider.areHooksInstalled())) {
+          continue; // fresh install — the webview consent dialog owns this ask
+        }
+        // Already installed Claude hooks are a legacy migration whose scope
+        // only shrinks; no equivalent silent grant applies to new providers.
+        grantHooksConsent(provider.id);
       }
-      // Already installed and already firing: grant and migrate silently.
-      grantHooksConsent(claudeProvider.id);
+      await this.installHooksAndScript(provider, port, token);
+      await this.reportHooksStatus(provider);
     }
-    await this.installHooksAndScript(claudeProvider, port, token);
-    // Truthful success report for THIS path: a webviewReady handshake that
-    // raced the install read the pre-install state, and installHooksAndScript
-    // itself no longer sends an optimistic status (its other caller,
-    // setHooksEnabled, re-derives on its own).
-    await this.reportHooksStatus(claudeProvider);
   }
 
   /** This surface's half of carrying out a consent answer for one provider. The choice→action rule and the write
@@ -554,6 +552,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           type: 'providerCapabilities',
           readingTools: [...claudeProvider.readingTools],
           subagentToolNames: [...claudeProvider.subagentToolNames],
+          providers: hookProviders.map((provider) => ({
+            id: provider.id,
+            displayName: provider.displayName,
+            readingTools: [...provider.readingTools],
+            subagentToolNames: [...provider.subagentToolNames],
+          })),
         });
 
         // Settings + folder→Area mappings MUST be dispatched BEFORE restoreAgents

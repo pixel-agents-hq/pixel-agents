@@ -54,6 +54,14 @@ interface SessionLifecycleCallbacks {
   /** Called when a teammate should be removed (e.g. no longer in team config members).
    *  Removes the teammate agent from the office. */
   onTeammateRemoved?: (teammateAgentId: number) => void;
+  /** Called when a provider reports an independently observable child session. */
+  onIndependentSubagentStart?: (
+    parentAgentId: number,
+    childSessionId: string,
+    role: string,
+  ) => void;
+  /** Called when an independently observable child session finishes. */
+  onIndependentSubagentEnd?: (childSessionId: string) => void;
 }
 
 export class HookEventHandler {
@@ -89,6 +97,11 @@ export class HookEventHandler {
       ]);
     }
     return this.provider.subagentToolNames;
+  }
+
+  /** Legacy agents predate providerId and belong to the Claude provider. */
+  private ownsAgent(agent: AgentState): boolean {
+    return (agent.providerId ?? 'claude') === this.provider.id;
   }
 
   /** Check if a session is tracked (in workspace project dir, or Watch All Sessions ON). */
@@ -142,6 +155,9 @@ export class HookEventHandler {
     // cwd for external-session adoption; event-specific teammate identity for routing).
     const normalized = this.provider.normalizeHookEvent(event);
     if (!normalized) return; // unknown / uninteresting event -- silently drop
+    // Providers such as Hermes may carry the route identity in a nested field
+    // (for example approval session_key). Normalization is authoritative.
+    event.session_id = normalized.sessionId;
     const normEvent = normalized.event;
     const eventName = event.hook_event_name; // retained for logs only
     // CI / e2e diagnostic: see agentStateStore.ts debugLogBroadcast comment.
@@ -191,7 +207,7 @@ export class HookEventHandler {
       }
       // Check auto-discovery (agent exists but not yet registered for hooks)
       for (const [id, agent] of this.agents) {
-        if (agent.sessionId === event.session_id) {
+        if (this.ownsAgent(agent) && agent.sessionId === event.session_id) {
           this.registerAgent(agent.sessionId, id);
           agent.hookDelivered = true;
           if (debug)
@@ -211,6 +227,7 @@ export class HookEventHandler {
             // Normalize paths for cross-platform comparison (separators + case-insensitive
             // for Windows where drive letter casing differs: c:\ vs C:\).
             const isMatch =
+              this.ownsAgent(agent) &&
               agent.pendingClear &&
               path.resolve(agent.projectDir).toLowerCase() ===
                 path.resolve(projectDir).toLowerCase();
@@ -230,7 +247,14 @@ export class HookEventHandler {
       // Unknown session -- store as pending, create only when a confirmation event
       // arrives (Stop, Notification, PermissionRequest). This filters transient sessions
       // from Claude Code Extension which fire SessionStart + SessionEnd without any activity.
-      if (transcriptPath || cwd) {
+      if (this.provider.adoptOnSessionStart && cwd) {
+        this.lifecycleCallbacks.onExternalSessionDetected?.(event.session_id, transcriptPath, cwd);
+        const adoptedAgentId = this.sessionRouter.resolve(event.session_id);
+        if (adoptedAgentId !== undefined) {
+          const adopted = this.agents.get(adoptedAgentId);
+          if (adopted) adopted.hookDelivered = true;
+        }
+      } else if (transcriptPath || cwd) {
         // For --resume, clear dismissals so the file can be re-adopted
         if (normEvent.source === 'resume' && transcriptPath) {
           this.lifecycleCallbacks.onSessionResume?.(transcriptPath);
@@ -284,7 +308,7 @@ export class HookEventHandler {
     let agentId = this.sessionRouter.resolve(event.session_id);
     if (agentId === undefined) {
       for (const [id, agent] of this.agents) {
-        if (agent.sessionId === event.session_id) {
+        if (this.ownsAgent(agent) && agent.sessionId === event.session_id) {
           this.registerAgent(agent.sessionId, id);
           agentId = id;
           break;
@@ -300,7 +324,7 @@ export class HookEventHandler {
       const isPending = this.sessionRouter.hasPending(event.session_id);
       const hasBuffered = this.sessionRouter.hasBuffered(event.session_id);
       const hasUnregisteredAgents = [...this.agents.values()].some(
-        (a) => a.sessionId && !this.sessionRouter.hasSession(a.sessionId),
+        (a) => this.ownsAgent(a) && a.sessionId && !this.sessionRouter.hasSession(a.sessionId),
       );
       if (isPending || hasBuffered || hasUnregisteredAgents) {
         if (debug)
@@ -333,15 +357,27 @@ export class HookEventHandler {
         // Both PostToolUse and PostToolUseFailure normalize to toolEnd. Distinguishing
         // them inside handlers would require extra info; the existing behavior was
         // identical for both (agentToolDone + clear currentHookToolId), so one branch suffices.
-        return this.handlePostToolUse(agent, agentId);
+        return this.handlePostToolUse(normEvent, agent, agentId);
       case 'subagentStart':
+        if (normEvent.childSessionId) {
+          return this.lifecycleCallbacks.onIndependentSubagentStart?.(
+            agentId,
+            normEvent.childSessionId,
+            normEvent.toolName,
+          );
+        }
         return this.provider.team ? this.handleSubagentStart(event, agent, agentId) : undefined;
       case 'subagentEnd':
+        if (normEvent.childSessionId) {
+          return this.lifecycleCallbacks.onIndependentSubagentEnd?.(normEvent.childSessionId);
+        }
         return this.provider.team ? this.handleSubagentStop(agent, agentId) : undefined;
       case 'permissionRequest':
         // Handles BOTH the PermissionRequest hook AND the Notification(permission_prompt)
         // hook -- normalizeHookEvent collapses them into one event kind.
         return this.handlePermissionRequest(agent, agentId);
+      case 'permissionResolved':
+        return this.handlePermissionResolved(agent, agentId);
       case 'turnEnd':
         // Handles Stop AND Notification(idle_prompt) -- both normalize to turnEnd.
         // awaitingInput discriminates them: idle_prompt sets it (-> "Waiting for
@@ -416,7 +452,7 @@ export class HookEventHandler {
     const toolName = normEvent.toolName;
     const toolInput = (normEvent.input as Record<string, unknown> | undefined) ?? {};
     const status = this.provider.formatToolStatus(toolName, toolInput);
-    const hookToolId = `hook-${Date.now()}`;
+    const hookToolId = normEvent.toolId || `hook-${Date.now()}`;
 
     // Track for PostToolUse/SubagentStart correlation (always, even if suppressed below).
     // currentHookIsTeammateSpawn is the authoritative teammate-vs-subagent discriminator.
@@ -436,6 +472,11 @@ export class HookEventHandler {
     agent.isWaiting = false;
     agent.permissionSent = false;
     agent.hadToolsInTurn = true;
+    if (agent.hooksOnly) {
+      agent.activeToolIds.add(hookToolId);
+      agent.activeToolStatuses.set(hookToolId, status);
+      agent.activeToolNames.set(hookToolId, toolName);
+    }
 
     // Send tool start + active state to webview (instant, no 500ms JSONL delay).
     // Skip for Task/Agent tools — their sub-agent characters need the stable JSONL
@@ -463,18 +504,31 @@ export class HookEventHandler {
    * Stop hook handles the idle transition. This is here for completeness and
    * to serve as a confirmation event for pending external sessions.
    */
-  private handlePostToolUse(agent: AgentState, agentId: number): void {
-    if (agent.currentHookToolId) {
+  private handlePostToolUse(
+    normEvent: Extract<AgentEvent, { kind: 'toolEnd' }>,
+    agent: AgentState,
+    agentId: number,
+  ): void {
+    const completedToolId =
+      normEvent.toolId && normEvent.toolId !== 'current'
+        ? normEvent.toolId
+        : agent.currentHookToolId;
+    if (completedToolId) {
       // Suppress tool display when lead has inline teammates (see handlePreToolUse)
       if (!hasInlineTeammates(agentId, this.agents)) {
         this.agents.broadcast({
           type: 'agentToolDone',
           id: agentId,
-          toolId: agent.currentHookToolId,
+          toolId: completedToolId,
         });
       }
-      agent.currentHookToolId = undefined;
-      agent.currentHookToolName = undefined;
+      agent.activeToolIds.delete(completedToolId);
+      agent.activeToolStatuses.delete(completedToolId);
+      agent.activeToolNames.delete(completedToolId);
+      if (agent.currentHookToolId === completedToolId || normEvent.toolId === 'current') {
+        agent.currentHookToolId = undefined;
+        agent.currentHookToolName = undefined;
+      }
     }
   }
 
@@ -632,6 +686,13 @@ export class HookEventHandler {
         parentToolId,
       });
     }
+  }
+
+  /** Clear an approval bubble as soon as the provider reports a decision. */
+  private handlePermissionResolved(agent: AgentState, agentId: number): void {
+    cancelPermissionTimer(agentId, this.permissionTimers);
+    agent.permissionSent = false;
+    this.agents.broadcast({ type: 'agentToolPermissionClear', id: agentId });
   }
 
   /** Handle Stop: Claude finished responding, mark agent as waiting. */

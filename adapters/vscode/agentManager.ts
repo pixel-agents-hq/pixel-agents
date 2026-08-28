@@ -535,12 +535,16 @@ export function sendExistingAgents(
   agentIds.sort((a, b) => a - b);
 
   // Include persisted palette/seatId from separate key
-  const agentMeta = adapter.loadSeats();
+  const agentMeta: Record<
+    number,
+    { palette?: number; hueShift?: number; seatId?: string; providerId?: string }
+  > = adapter.loadSeats();
 
   // Include folderName and isExternal per agent
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   for (const [id, agent] of agents) {
+    agentMeta[id] = { ...agentMeta[id], providerId: agent.providerId };
     if (agent.folderName) {
       folderNames[id] = agent.folderName;
     }

@@ -364,6 +364,12 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     type: 'providerCapabilities',
     readingTools: [...claudeProvider.readingTools],
     subagentToolNames: [...claudeProvider.subagentToolNames],
+    providers: hookProviders.map((provider) => ({
+      id: provider.id,
+      displayName: provider.displayName,
+      readingTools: [...provider.readingTools],
+      subagentToolNames: [...provider.subagentToolNames],
+    })),
   });
 
   // 2. Assets (from server cache, loaded at startup via pngjs)
@@ -482,7 +488,10 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   const persistedSeats = adapter?.loadSeats() ?? {};
-  const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
+  const agentMeta: Record<
+    number,
+    { palette?: number; hueShift?: number; seatId?: string; providerId?: string }
+  > = {};
   for (const [id, agent] of store) {
     agentIds.push(id);
     if (agent.folderName) {
@@ -496,6 +505,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
       palette: agent.palette,
       hueShift: agent.hueShift,
       seatId: persisted?.seatId,
+      providerId: agent.providerId,
     };
   }
   send({

@@ -24,10 +24,13 @@ export function extractToolName(status: string): string | null {
 // Modules classifying tools (character animation, subagent creation gate) read
 // from here instead of hardcoding Claude-specific tool names.
 
-const providerCaps: {
+type ToolCapabilities = {
   readingTools: Set<string>;
   subagentToolNames: Set<string>;
-} = {
+};
+
+const providerCaps = new Map<string, ToolCapabilities>();
+let legacyCaps: ToolCapabilities = {
   readingTools: new Set(),
   subagentToolNames: new Set(),
 };
@@ -35,15 +38,33 @@ const providerCaps: {
 export function setProviderCapabilities(caps: {
   readingTools: string[];
   subagentToolNames: string[];
+  providers?: Array<{
+    id: string;
+    readingTools: string[];
+    subagentToolNames: string[];
+  }>;
 }): void {
-  providerCaps.readingTools = new Set(caps.readingTools);
-  providerCaps.subagentToolNames = new Set(caps.subagentToolNames);
+  legacyCaps = {
+    readingTools: new Set(caps.readingTools),
+    subagentToolNames: new Set(caps.subagentToolNames),
+  };
+  providerCaps.clear();
+  for (const provider of caps.providers ?? []) {
+    providerCaps.set(provider.id, {
+      readingTools: new Set(provider.readingTools),
+      subagentToolNames: new Set(provider.subagentToolNames),
+    });
+  }
 }
 
-export function isReadingToolName(name: string | null | undefined): boolean {
-  return typeof name === 'string' && providerCaps.readingTools.has(name);
+function capabilities(providerId?: string): ToolCapabilities {
+  return (providerId && providerCaps.get(providerId)) || legacyCaps;
 }
 
-export function isSubagentToolName(name: string | null | undefined): boolean {
-  return typeof name === 'string' && providerCaps.subagentToolNames.has(name);
+export function isReadingToolName(name: string | null | undefined, providerId?: string): boolean {
+  return typeof name === 'string' && capabilities(providerId).readingTools.has(name);
+}
+
+export function isSubagentToolName(name: string | null | undefined, providerId?: string): boolean {
+  return typeof name === 'string' && capabilities(providerId).subagentToolNames.has(name);
 }

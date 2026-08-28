@@ -25,8 +25,8 @@ interface SettingsModalProps {
    *  preference. The preference defaults to true while first-run consent is
    *  still pending, so binding the checkbox to it renders "on" over an empty
    *  ~/.claude/settings.json. */
-  hooksInstalled: boolean;
-  onToggleHooksEnabled: () => void;
+  hookProviders: Array<{ id: string; displayName: string; installed: boolean }>;
+  onToggleHooksEnabled: (providerId: string, installed: boolean) => void;
   /** Whether the areas overlay is rendered outside of the Areas edit tool. */
   showAreas: boolean;
   onToggleShowAreas: () => void;
@@ -50,7 +50,7 @@ export function SettingsModal({
   externalAssetDirectories,
   watchAllSessions,
   onToggleWatchAllSessions,
-  hooksInstalled,
+  hookProviders,
   onToggleHooksEnabled,
   showAreas,
   onToggleShowAreas,
@@ -184,11 +184,14 @@ export function SettingsModal({
         checked={watchAllSessions}
         onChange={onToggleWatchAllSessions}
       />
-      <Checkbox
-        label="Instant Detection (Hooks)"
-        checked={hooksInstalled}
-        onChange={onToggleHooksEnabled}
-      />
+      {hookProviders.map((provider) => (
+        <Checkbox
+          key={provider.id}
+          label={`${provider.displayName} Instant Detection`}
+          checked={provider.installed}
+          onChange={() => onToggleHooksEnabled(provider.id, provider.installed)}
+        />
+      ))}
       <Checkbox
         label="Always Show Labels"
         checked={alwaysShowOverlay}

@@ -2,7 +2,7 @@ import fastifyCors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import * as crypto from 'crypto';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import Fastify from 'fastify';
 
 import type { AgentRuntime } from './agentRuntime.js';
@@ -14,6 +14,8 @@ import type {
 } from './clientMessageHandler.js';
 import { handleClientMessage } from './clientMessageHandler.js';
 import {
+  HERMES_DELIVERY_MAX_AGE_MS,
+  HERMES_REPLAY_CACHE_MAX,
   HOOK_API_PREFIX,
   MAX_HOOK_BODY_SIZE,
   WS_CLOSE_FORBIDDEN_ORIGIN,
@@ -67,6 +69,14 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     bodyLimit: MAX_HOOK_BODY_SIZE,
   });
 
+  // Preserve exact JSON bytes for provider-specific signatures. The hook
+  // route parses the buffer only after Bearer or HMAC authentication succeeds.
+  app.addContentTypeParser(
+    'application/json',
+    { parseAs: 'buffer', bodyLimit: MAX_HOOK_BODY_SIZE },
+    (_request, body, done) => done(null, body),
+  );
+
   await app.register(fastifyCors, { origin: true });
   await app.register(fastifyWebsocket);
 
@@ -110,13 +120,13 @@ function registerHealthRoute(app: FastifyInstance): void {
 // ── Hook Events ────────────────────────────────────────────────
 
 function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): void {
+  const seenHermesDeliveries = new Map<string, number>();
   app.post<{
     Params: { providerId: string };
-    Body: Record<string, unknown>;
+    Body: Buffer;
   }>(
     `${HOOK_API_PREFIX}/:providerId`,
     {
-      preHandler: bearerAuth(options.token),
       schema: {
         params: {
           type: 'object',
@@ -129,14 +139,55 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
     },
     async (request, reply) => {
       const { providerId } = request.params;
-      const event = request.body;
+      const rawBody = request.body;
+      const bearerValid = timingSafeStringEqual(
+        request.headers.authorization ?? '',
+        `Bearer ${options.token}`,
+      );
+      let event: Record<string, unknown>;
+      try {
+        const parsed = JSON.parse(rawBody.toString('utf8')) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
+        event = parsed as Record<string, unknown>;
+      } catch {
+        reply.code(400).send('invalid json');
+        return;
+      }
 
-      if (event.session_id && event.hook_event_name) {
+      if (!bearerValid) {
+        if (
+          providerId !== 'hermes' ||
+          !verifyHermesDelivery(
+            rawBody,
+            event,
+            request.headers['x-hermes-signature-256'],
+            request.headers['x-hermes-delivery'],
+            options.token,
+            seenHermesDeliveries,
+          )
+        ) {
+          reply.code(401).send('unauthorized');
+          return;
+        }
+      }
+
+      if (event.hook_event_name && eventHasSessionIdentity(event)) {
         options.onHookEvent?.(providerId, event);
       }
 
       reply.send('ok');
     },
+  );
+}
+
+function eventHasSessionIdentity(event: Record<string, unknown>): boolean {
+  if (typeof event.session_id === 'string' && event.session_id.length > 0) return true;
+  const extra = event.extra;
+  if (!extra || typeof extra !== 'object' || Array.isArray(extra)) return false;
+  const fields = extra as Record<string, unknown>;
+  return (
+    (typeof fields.session_id === 'string' && fields.session_id.length > 0) ||
+    (typeof fields.session_key === 'string' && fields.session_key.length > 0)
   );
 }
 
@@ -175,6 +226,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
         id,
         folderName: agent.folderName,
         isExternal: agent.isExternal || undefined,
+        providerId: agent.providerId,
         isTeammate: agent.leadAgentId !== undefined || undefined,
         teammateName: agent.agentName,
         parentAgentId: agent.leadAgentId,
@@ -311,12 +363,40 @@ function timingSafeStringEqual(actual: string, expected: string): boolean {
   return actualBuf.length === expectedBuf.length && crypto.timingSafeEqual(actualBuf, expectedBuf);
 }
 
-function bearerAuth(expectedToken: string) {
-  return async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!timingSafeStringEqual(request.headers.authorization ?? '', `Bearer ${expectedToken}`)) {
-      reply.code(401).send('unauthorized');
-    }
-  };
+function headerValue(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+}
+
+function verifyHermesDelivery(
+  rawBody: Buffer,
+  event: Record<string, unknown>,
+  signatureHeader: string | string[] | undefined,
+  deliveryHeader: string | string[] | undefined,
+  secret: string,
+  seen: Map<string, number>,
+): boolean {
+  const signature = headerValue(signatureHeader);
+  const expectedSignature = `sha256=${crypto.createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+  if (!timingSafeStringEqual(signature, expectedSignature)) return false;
+
+  const deliveryId = headerValue(deliveryHeader);
+  if (!deliveryId || event.delivery_id !== deliveryId) return false;
+  const timestamp = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : Number.NaN;
+  const now = Date.now();
+  if (!Number.isFinite(timestamp) || Math.abs(now - timestamp) > HERMES_DELIVERY_MAX_AGE_MS) {
+    return false;
+  }
+
+  for (const [id, acceptedAt] of seen) {
+    if (now - acceptedAt > HERMES_DELIVERY_MAX_AGE_MS) seen.delete(id);
+  }
+  if (seen.has(deliveryId)) return false;
+  if (seen.size >= HERMES_REPLAY_CACHE_MAX) {
+    const oldest = seen.keys().next().value as string | undefined;
+    if (oldest) seen.delete(oldest);
+  }
+  seen.set(deliveryId, now);
+  return true;
 }
 
 // ── Utilities ──────────────────────────────────────────────────

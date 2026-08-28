@@ -103,6 +103,92 @@ test.describe('Standalone / hooks', () => {
     const sessionEndMessages = await standalone.drainMessages();
     expect(sessionEndMessages.some((message) => message.type === 'agentClosed')).toBe(true);
   });
+
+  test('renders native Hermes lifecycle, concurrent tools, approval, and child sessions @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    await setSettings(page, { alwaysShowLabels: true, watchAllSessions: true });
+    await standalone.drainMessages();
+    const sessionId = 'hermes-browser-session';
+    const sendHermes = async (event: Record<string, unknown>) =>
+      sendHookEvent(
+        standalone.hookServerConfig,
+        event as { session_id: string; hook_event_name: string },
+        'hermes',
+      );
+
+    await sendHermes({
+      hook_event_name: 'on_session_start',
+      session_id: sessionId,
+      cwd: standalone.workspaceDir,
+    });
+    await expectOverlayCount(page, 1);
+
+    for (const [toolCallId, toolName, toolInput] of [
+      ['read-1', 'read_file', { path: 'one.ts' }],
+      ['write-1', 'write_file', { path: 'two.ts' }],
+    ] as const) {
+      await sendHermes({
+        hook_event_name: 'pre_tool_call',
+        session_id: sessionId,
+        tool_name: toolName,
+        tool_input: toolInput,
+        extra: { tool_call_id: toolCallId },
+      });
+    }
+    await expectOverlayVisible(page, 'Editing two.ts');
+    let messages = await standalone.drainMessages();
+    expect(
+      messages
+        .filter((message) => message.type === 'agentToolStart')
+        .map((message) => message.toolId),
+    ).toEqual(expect.arrayContaining(['read-1', 'write-1']));
+
+    await sendHermes({
+      hook_event_name: 'post_tool_call',
+      session_id: sessionId,
+      extra: { tool_call_id: 'read-1' },
+    });
+    messages = await standalone.drainMessages();
+    expect(messages).toContainEqual(
+      expect.objectContaining({ type: 'agentToolDone', toolId: 'read-1' }),
+    );
+
+    await sendHermes({
+      hook_event_name: 'pre_approval_request',
+      session_id: sessionId,
+      extra: { command: 'must not cross the normalized boundary' },
+    });
+    await expectOverlayVisible(page, 'Needs approval');
+    await sendHermes({
+      hook_event_name: 'post_approval_response',
+      session_id: sessionId,
+      extra: { decision: 'must not cross the normalized boundary' },
+    });
+    messages = await standalone.drainMessages();
+    expect(messages.some((message) => message.type === 'agentToolPermissionClear')).toBe(true);
+
+    for (const childSessionId of ['hermes-child-a', 'hermes-child-b']) {
+      await sendHermes({
+        hook_event_name: 'subagent_start',
+        session_id: sessionId,
+        extra: { child_session_id: childSessionId, child_role: 'researcher' },
+      });
+    }
+    await expectOverlayCount(page, 3);
+    await sendHermes({
+      hook_event_name: 'subagent_stop',
+      session_id: sessionId,
+      extra: { child_session_id: 'hermes-child-a' },
+    });
+    await expectOverlayCount(page, 2);
+
+    await sendHermes({ hook_event_name: 'on_session_end', session_id: sessionId });
+    await expectOverlayVisible(page, 'Waiting for input');
+    await sendHermes({ hook_event_name: 'on_session_finalize', session_id: sessionId });
+    await expectOverlayCount(page, 0);
+  });
 });
 
 /**

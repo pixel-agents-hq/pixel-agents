@@ -17,6 +17,8 @@ export interface PersistedAgent {
   sessionId?: string;
   terminalName: string;
   isExternal?: boolean;
+  /** Provider that created the agent. Missing legacy values migrate to Claude. */
+  providerId?: string;
   jsonlFile: string;
   projectDir: string;
   folderName?: string;

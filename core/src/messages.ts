@@ -68,6 +68,14 @@ export interface ProviderCapabilities {
   type: 'providerCapabilities';
   readingTools: string[];
   subagentToolNames: string[];
+  providers?: ProviderCapability[];
+}
+
+export interface ProviderCapability {
+  id: string;
+  displayName: string;
+  readingTools: string[];
+  subagentToolNames: string[];
 }
 
 export interface AgentCreated {
@@ -75,6 +83,7 @@ export interface AgentCreated {
   id: number;
   folderName?: string;
   isExternal?: boolean;
+  providerId?: string;
   palette?: number;
   hueShift?: number;
 }
@@ -101,6 +110,7 @@ export interface AgentSeatMeta {
   palette?: number;
   hueShift?: number;
   seatId?: string;
+  providerId?: string;
 }
 
 export interface AgentStatus {
