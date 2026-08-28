@@ -227,7 +227,7 @@ test.describe('Standalone / hooks consent', () => {
     // The disclosure travels with the request — the browser renders the
     // server's exact terms.
     await expect(dialog).toContainText('~/.claude/settings.json');
-    await expect(dialog).toContainText('Instant Detection (Hooks)');
+    await expect(dialog).toContainText('Claude Code Instant Detection');
 
     expect(fs.existsSync(path.join(standalone.tmpHome, '.claude', 'settings.json'))).toBe(false);
 
@@ -299,7 +299,7 @@ test.describe('Standalone / hooks consent', () => {
     // would pass vacuously over a state this test never caused.
     const settingsModal = await openSettingsModal(page);
     const hooksCheckbox = settingsModal.locator('button', {
-      hasText: 'Instant Detection (Hooks)',
+      hasText: 'Claude Code Instant Detection',
     });
     const isChecked = async (): Promise<boolean> =>
       ((await hooksCheckbox.locator('span').last().textContent()) ?? '').trim().toLowerCase() ===

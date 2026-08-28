@@ -169,7 +169,7 @@ test.describe('Hooks consent gate', () => {
     expect(text).toContain('127.0.0.1');
     // The LAST sentence of the disclosure — asserted at the tail so a clipped
     // or half-rendered body fails here rather than passing on its opening.
-    expect(text).toContain('Instant Detection (Hooks)');
+    expect(text).toContain('Claude Code Instant Detection');
     narrator.check(
       'the consent step discloses event scope, payload destination, and how to remove',
     );
@@ -209,7 +209,7 @@ test.describe('Hooks consent gate', () => {
 
     // The checkbox reflects ACTUAL install state, fed by the hooksStatus message.
     await expect
-      .poll(() => getSettingChecked(frame, 'Instant Detection (Hooks)'), { timeout: 15_000 })
+      .poll(() => getSettingChecked(frame, 'Claude Code Instant Detection'), { timeout: 15_000 })
       .toBe(true);
     narrator.check('Settings shows Instant Detection ON');
   });
@@ -237,7 +237,7 @@ test.describe('Hooks consent gate', () => {
     expect(readHooksEnabled(tmpHome)).not.toBe(false);
     narrator.check('settings.json never created, consent still ungranted');
 
-    expect(await getSettingChecked(frame, 'Instant Detection (Hooks)')).toBe(false);
+    expect(await getSettingChecked(frame, 'Claude Code Instant Detection')).toBe(false);
     narrator.check('Settings shows Instant Detection OFF — the checkbox tells the truth');
   });
 
@@ -322,7 +322,7 @@ test.describe('Hooks consent gate', () => {
 
     await finishIntro(dialog);
     // The checkbox tells the truth about the revised state.
-    expect(await getSettingChecked(frame, 'Instant Detection (Hooks)')).toBe(false);
+    expect(await getSettingChecked(frame, 'Claude Code Instant Detection')).toBe(false);
     narrator.check('Settings shows Instant Detection OFF');
   });
 
@@ -491,13 +491,13 @@ test.describe('Hooks consent gate / pre-consent install', () => {
 
     // Migrated hooks are live, and the checkbox says so.
     await expect
-      .poll(() => getSettingChecked(frame, 'Instant Detection (Hooks)'), { timeout: 15_000 })
+      .poll(() => getSettingChecked(frame, 'Claude Code Instant Detection'), { timeout: 15_000 })
       .toBe(true);
     narrator.check('Settings shows Instant Detection ON');
   });
 
   // The undo route the disclosure PROMISES ("You can remove the hooks at any
-  // time from Settings → Instant Detection (Hooks)"), driven for exactly the
+  // time from Settings → Claude Code Instant Detection"), driven for exactly the
   // population that gets no prompt. With the Remove Hooks button gone this is
   // their ONLY removal route, so it is asserted end-to-end — toggle off,
   // entries gone from disk — rather than assumed from the toggle existing.
@@ -509,10 +509,10 @@ test.describe('Hooks consent gate / pre-consent install', () => {
     // The silent migration lands first, so the toggle below is a genuine state
     // change over live hooks rather than a no-op click.
     await expect.poll(() => ourHookEvents(tmpHome).length, { timeout: 30_000 }).toBe(12);
-    expect(await getSettingChecked(frame, 'Instant Detection (Hooks)')).toBe(true);
+    expect(await getSettingChecked(frame, 'Claude Code Instant Detection')).toBe(true);
     narrator.check('migrated hooks installed and the checkbox reads ON');
 
-    narrator.step('toggling Instant Detection (Hooks) OFF');
+    narrator.step('toggling Claude Code Instant Detection OFF');
     await setSettings(frame, { hooksEnabled: false });
 
     await expect.poll(() => ourHookEvents(tmpHome).length, { timeout: 15_000 }).toBe(0);
@@ -523,7 +523,7 @@ test.describe('Hooks consent gate / pre-consent install', () => {
     expect(readConsent(tmpHome)).toBe(true);
     narrator.check('our entries gone, third-party hook kept, hooks persisted off');
 
-    expect(await getSettingChecked(frame, 'Instant Detection (Hooks)')).toBe(false);
+    expect(await getSettingChecked(frame, 'Claude Code Instant Detection')).toBe(false);
     narrator.check('Settings shows Instant Detection OFF');
   });
 });
@@ -558,7 +558,7 @@ test.describe('Hooks consent gate / toggle-off failure', () => {
     // Startup installed for real (consent seeded), so the checkbox is ON and
     // the toggle below is a genuine state change rather than a no-op click.
     await expect.poll(() => ourHookEvents(tmpHome).length, { timeout: 30_000 }).toBe(12);
-    expect(await getSettingChecked(frame, 'Instant Detection (Hooks)')).toBe(true);
+    expect(await getSettingChecked(frame, 'Claude Code Instant Detection')).toBe(true);
     narrator.check('hooks installed and the checkbox reads ON');
 
     const before = fs.readFileSync(settingsPath(tmpHome), 'utf8');
