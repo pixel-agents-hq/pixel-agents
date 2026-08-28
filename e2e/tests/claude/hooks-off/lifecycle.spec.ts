@@ -321,7 +321,8 @@ test.describe('Hooks OFF / lifecycle', () => {
     await spawnInternalAgentAndWait(panelFrame, tmpHome, mockLogFile);
     await expectOverlayCount(panelFrame, 2, 12_000);
     const clearingAgentId = otherOverlayId(await readAgentOverlayIds(panelFrame), siblingAgentId);
-    narrator.check('captured the clearing character id before its terminal moves');
+    await expectOverlayVisibleForAgent(panelFrame, clearingAgentId, 'Running: npm run moved-clear');
+    narrator.check('captured the clearing character after its replacement session was adopted');
     const terminalTab = window.getByText(/Claude Code #\d+/).last();
     await expect(terminalTab).toBeVisible({ timeout: 15_000 });
     await terminalTab.click();
