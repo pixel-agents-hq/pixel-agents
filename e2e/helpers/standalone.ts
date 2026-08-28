@@ -239,9 +239,15 @@ export async function launchStandalone(
   // office in every spec. Only when the file does not exist yet — a shared
   // HOME (multi-server) was already seeded by the surface that owns it.
   const configPath = path.join(tmpHome, '.pixel-agents', 'config.json');
-  if ((options.seedHooksConsent ?? true) && !fs.existsSync(configPath)) {
+  if (!fs.existsSync(configPath)) {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    fs.writeFileSync(configPath, JSON.stringify({ hooksConsent: { claude: 'granted' } }, null, 2));
+    const hooksConsent = options.seedHooksConsent ?? true
+      ? { claude: 'granted', hermes: 'declined' }
+      : { hermes: 'declined' };
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ hooksConsent, hooksEnabled: { hermes: false } }, null, 2),
+    );
   }
   const hostPort = await getFreePort();
   const hostUrl = `http://127.0.0.1:${hostPort}`;

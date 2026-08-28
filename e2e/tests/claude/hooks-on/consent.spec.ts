@@ -22,7 +22,10 @@ import { getSettingChecked, setSettings } from '../../../helpers/webview';
 const NO_CONSENT_CONFIG = {
   vscode: { alwaysShowLabels: true },
   standalone: { alwaysShowLabels: true },
-  // hooksConsent deliberately absent -> parses to unanswered -> dialog shows.
+  // Claude deliberately absent -> parses to unanswered -> its dialog shows.
+  // Hermes is answered independently so this suite exercises one provider.
+  hooksConsent: { hermes: 'declined' },
+  hooksEnabled: { hermes: false },
 };
 
 /** The in-app Intro. IntroBubble is the only role="dialog" element
@@ -544,7 +547,11 @@ test.describe('Hooks consent gate / pre-consent install', () => {
  */
 test.describe('Hooks consent gate / toggle-off failure', () => {
   test.use({
-    seedConfig: { vscode: { alwaysShowLabels: true }, hooksConsent: { claude: 'granted' } },
+    seedConfig: {
+      vscode: { alwaysShowLabels: true },
+      hooksConsent: { claude: 'granted', hermes: 'declined' },
+      hooksEnabled: { hermes: false },
+    },
   });
 
   test.skip(process.platform === 'win32', 'chmod-based write failure is not meaningful on Windows');
