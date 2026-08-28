@@ -527,6 +527,7 @@ function adoptTerminalForFile(
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
     hookDelivered: false,
+    providerId: 'claude',
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };
@@ -738,6 +739,7 @@ export function scanForTeammateFiles(
       // (agentToolStart messages). Permission events are routed from the lead's
       // hooks via handlePermissionRequest forwarding.
       hookDelivered: false,
+      providerId: 'claude',
       lastDataAt: Date.now(),
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
@@ -895,6 +897,7 @@ export function scanForBackgroundAgentFiles(
       permissionSent: false,
       hadToolsInTurn: false,
       hookDelivered: false,
+      providerId: 'claude',
       lastDataAt: Date.now(),
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
@@ -1136,6 +1139,7 @@ export function adoptExternalSessionFromHook(
       hadToolsInTurn: false,
       hookDelivered: true,
       hooksOnly: true,
+      providerId: 'claude',
       lastDataAt: Date.now(),
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
@@ -1217,6 +1221,7 @@ function adoptExternalSession(
     permissionSent: false,
     hadToolsInTurn: false,
     hookDelivered: false,
+    providerId: 'claude',
     lastDataAt: Date.now(),
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),

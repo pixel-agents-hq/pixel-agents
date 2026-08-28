@@ -117,6 +117,7 @@ export async function launchNewTerminal(
     seenUnknownRecordTypes: new Set(),
     folderName,
     hookDelivered: false,
+    providerId: 'claude',
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };
@@ -284,6 +285,7 @@ export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): v
       sessionId: agent.sessionId,
       terminalName: agent.terminalRef?.name ?? '',
       isExternal: agent.isExternal || undefined,
+      providerId: agent.providerId ?? 'claude',
       jsonlFile: agent.jsonlFile,
       projectDir: agent.projectDir,
       folderName: agent.folderName,
@@ -382,6 +384,7 @@ export function restoreAgents(
       seenUnknownRecordTypes: new Set(),
       folderName: p.folderName,
       hookDelivered: false,
+      providerId: p.providerId ?? 'claude',
       contextTokens: 0,
       maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       teamName: p.teamName,
@@ -544,7 +547,7 @@ export function sendExistingAgents(
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   for (const [id, agent] of agents) {
-    agentMeta[id] = { ...agentMeta[id], providerId: agent.providerId };
+    agentMeta[id] = { ...agentMeta[id], providerId: agent.providerId ?? 'claude' };
     if (agent.folderName) {
       folderNames[id] = agent.folderName;
     }

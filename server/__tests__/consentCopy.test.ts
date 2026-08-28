@@ -8,6 +8,7 @@ import {
   CLAUDE_HOOK_EVENTS,
   SETTINGS_BACKUP_SUFFIX,
 } from '../src/providers/hook/claude/constants.js';
+import { hermesConsentDisclosure } from '../src/providers/hook/hermes/consentCopy.js';
 
 /**
  * The consent copy is two pieces: the HEADLINE is the greeter's welcome line
@@ -64,5 +65,18 @@ describe('consent copy', () => {
   // would be a silent legibility regression.
   it('is a paragraph-separated block', () => {
     expect(CONSENT_DISCLOSURE.split('\n\n')).toHaveLength(3);
+  });
+});
+
+describe('Hermes consent copy', () => {
+  it('truthfully discloses every sensitive payload class received locally', () => {
+    const { disclosure } = hermesConsentDisclosure();
+    expect(disclosure).toContain('working-directory metadata');
+    expect(disclosure).toContain('tool names, inputs, results, and errors');
+    expect(disclosure).toContain('role, and goal metadata');
+    expect(disclosure).toContain('raw commands and choices');
+    expect(disclosure).toContain('without retaining command, result, error, or decision payloads');
+    expect(disclosure).toContain('127.0.0.1');
+    expect(disclosure).toContain('cannot approve actions or write back to Hermes');
   });
 });

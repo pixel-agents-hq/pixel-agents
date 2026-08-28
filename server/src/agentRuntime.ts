@@ -335,8 +335,12 @@ export class AgentRuntime {
   }
 
   /** Unregister an agent from the hook event handler. */
-  unregisterAgent(sessionId: string, providerId: string = this.primaryProviderId): void {
-    this.hookEventHandlers.get(providerId)?.unregisterAgent(sessionId);
+  unregisterAgent(
+    sessionId: string,
+    providerId: string = this.primaryProviderId,
+    agentId?: number,
+  ): void {
+    this.hookEventHandlers.get(providerId)?.unregisterAgent(sessionId, agentId);
   }
 
   /** Adopt a provider-reported child that runs as its own hook-only session. */
@@ -428,6 +432,10 @@ export class AgentRuntime {
   removeAgent(id: number): void {
     const agent = this.store.get(id);
     if (!agent) return;
+
+    // Remove this exact agent's route. The compare-and-delete guard preserves
+    // a lead mapping when a derived teammate shares its session ID.
+    this.unregisterAgent(agent.sessionId, agent.providerId ?? this.primaryProviderId, id);
 
     // Stop JSONL poll timer
     const jpTimer = this.jsonlPollTimers.get(id);

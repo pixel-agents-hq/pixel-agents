@@ -164,7 +164,7 @@ export class AgentStateStore {
         sessionId: agent.sessionId,
         terminalName: agent.terminalRef?.name ?? '',
         isExternal: agent.isExternal || undefined,
-        providerId: agent.providerId,
+        providerId: agent.providerId ?? 'claude',
         jsonlFile: agent.jsonlFile,
         projectDir: agent.projectDir,
         folderName: agent.folderName,

@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -198,15 +199,22 @@ function updateOutboundTargets(targets: readonly HermesOutboundTarget[] | null):
     throw new Error('Hermes config changed during installation; retry without overwriting it');
   }
 
-  const tempPath = `${configPath}.pixel-agents.tmp`;
+  // A unique exclusive file in the destination directory makes the final
+  // rename atomic without following or truncating an attacker-controlled
+  // deterministic symlink.
+  const tempPath = `${configPath}.pixel-agents.${process.pid}.${crypto.randomUUID()}.tmp`;
   const mode = before.exists ? Math.min(before.mode, 0o600) : 0o600;
   let fd: number | undefined;
   try {
-    fd = fs.openSync(tempPath, 'w', mode);
+    fd = fs.openSync(tempPath, 'wx', mode);
     fs.writeFileSync(fd, document.toString(), 'utf8');
     fs.fsyncSync(fd);
     fs.closeSync(fd);
     fd = undefined;
+    const beforeRename = readSource(configPath);
+    if (beforeRename.source !== before.source || beforeRename.exists !== before.exists) {
+      throw new Error('Hermes config changed during installation; retry without overwriting it');
+    }
     fs.renameSync(tempPath, configPath);
     fs.chmodSync(configPath, mode);
   } catch (error) {

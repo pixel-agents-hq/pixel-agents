@@ -146,4 +146,19 @@ describe('AgentRuntime multi-provider isolation', () => {
     expect(JSON.stringify(agent)).not.toContain('secret command');
     expect(JSON.stringify(agent)).not.toContain('approved');
   });
+
+  it('unregisters a manually removed Hermes route so the live session can be adopted again', () => {
+    const { store, runtime, cwd } = create();
+    adoptHermes(runtime, 'reopen-session', cwd);
+    const first = [...store.values()][0]!;
+
+    runtime.removeAgent(first.id);
+    expect(store.size).toBe(0);
+
+    adoptHermes(runtime, 'reopen-session', cwd);
+    const replacement = [...store.values()][0]!;
+    expect(replacement.sessionId).toBe('reopen-session');
+    expect(replacement.providerId).toBe('hermes');
+    expect(replacement.id).not.toBe(first.id);
+  });
 });

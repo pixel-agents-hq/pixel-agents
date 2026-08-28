@@ -505,7 +505,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
       palette: agent.palette,
       hueShift: agent.hueShift,
       seatId: persisted?.seatId,
-      providerId: agent.providerId,
+      providerId: agent.providerId ?? 'claude',
     };
   }
   send({

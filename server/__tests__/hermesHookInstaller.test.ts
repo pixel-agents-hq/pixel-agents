@@ -6,6 +6,19 @@ import { parse } from 'yaml';
 
 let tempHome: string;
 
+const fsyncControl = vi.hoisted(() => ({ afterSync: undefined as (() => void) | undefined }));
+
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('fs')>('fs');
+  return {
+    ...actual,
+    fsyncSync: (fd: number) => {
+      actual.fsyncSync(fd);
+      fsyncControl.afterSync?.();
+    },
+  };
+});
+
 vi.mock('os', async () => {
   const actual = await vi.importActual<typeof import('os')>('os');
   return { ...actual, homedir: () => tempHome };
@@ -21,6 +34,7 @@ describe('Hermes hook installer', () => {
   });
 
   afterEach(() => {
+    fsyncControl.afterSync = undefined;
     delete process.env['HERMES_HOME'];
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
@@ -85,5 +99,44 @@ describe('Hermes hook installer', () => {
     await expect(installHooks('https://agents.example.com', 'secret')).rejects.toThrow(
       'restricted to loopback',
     );
+  });
+
+  it('refuses a config edit that lands after the temporary file is synced', async () => {
+    const configPath = path.join(process.env['HERMES_HOME']!, 'config.yaml');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, 'model: before\n', { mode: 0o600 });
+    let edited = false;
+    fsyncControl.afterSync = () => {
+      if (!edited) {
+        edited = true;
+        fs.writeFileSync(configPath, 'model: concurrent\n', { mode: 0o600 });
+      }
+    };
+
+    await expect(installHooks('http://127.0.0.1:43123', 'local-secret')).rejects.toThrow(
+      'changed during installation',
+    );
+    fsyncControl.afterSync = undefined;
+
+    expect(fs.readFileSync(configPath, 'utf8')).toBe('model: concurrent\n');
+    expect(
+      fs.readdirSync(path.dirname(configPath)).filter((name) => name.endsWith('.tmp')),
+    ).toEqual([]);
+  });
+
+  it('does not follow a stale deterministic temporary-file symlink', async () => {
+    const configPath = path.join(process.env['HERMES_HOME']!, 'config.yaml');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, 'model: before\n', { mode: 0o600 });
+    const victimPath = path.join(tempHome, 'victim.txt');
+    fs.writeFileSync(victimPath, 'leave me alone');
+    const legacyTempPath = `${configPath}.pixel-agents.tmp`;
+    fs.symlinkSync(victimPath, legacyTempPath);
+
+    await installHooks('http://127.0.0.1:43123', 'local-secret');
+
+    expect(fs.readFileSync(victimPath, 'utf8')).toBe('leave me alone');
+    expect(fs.lstatSync(legacyTempPath).isSymbolicLink()).toBe(true);
+    expect(await areHooksInstalled()).toBe(true);
   });
 });

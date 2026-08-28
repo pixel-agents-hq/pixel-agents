@@ -132,8 +132,8 @@ export class HookEventHandler {
   }
 
   /** Remove an agent's session mapping (called on agent removal/terminal close). */
-  unregisterAgent(sessionId: string): void {
-    this.sessionRouter.unregister(sessionId);
+  unregisterAgent(sessionId: string, agentId?: number): void {
+    this.sessionRouter.unregister(sessionId, agentId);
   }
 
   /**

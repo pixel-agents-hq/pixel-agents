@@ -367,7 +367,7 @@ function headerValue(value: string | string[] | undefined): string {
   return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
 }
 
-function verifyHermesDelivery(
+export function verifyHermesDelivery(
   rawBody: Buffer,
   event: Record<string, unknown>,
   signatureHeader: string | string[] | undefined,
@@ -391,10 +391,9 @@ function verifyHermesDelivery(
     if (now - acceptedAt > HERMES_DELIVERY_MAX_AGE_MS) seen.delete(id);
   }
   if (seen.has(deliveryId)) return false;
-  if (seen.size >= HERMES_REPLAY_CACHE_MAX) {
-    const oldest = seen.keys().next().value as string | undefined;
-    if (oldest) seen.delete(oldest);
-  }
+  // Never weaken the freshness guarantee by evicting a still-live delivery.
+  // At capacity, fail closed until an accepted ID ages out.
+  if (seen.size >= HERMES_REPLAY_CACHE_MAX) return false;
   seen.set(deliveryId, now);
   return true;
 }
