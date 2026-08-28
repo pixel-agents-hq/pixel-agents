@@ -116,6 +116,7 @@ function spawnStandaloneHost(args: {
         ...process.env,
         HOME: args.homeDir,
         USERPROFILE: args.homeDir,
+        HERMES_HOME: path.join(args.homeDir, '.hermes'),
       },
       stdio: 'pipe',
     },
