@@ -345,11 +345,14 @@ export function restoreAgents(
     const isExternal = p.isExternal ?? false;
 
     if (isExternal) {
-      // External agents — restore if JSONL file still exists on disk
-      try {
-        if (!fs.existsSync(p.jsonlFile)) continue;
-      } catch {
-        continue;
+      // Hooks-only agents (Cursor, etc.) persist with an empty jsonlFile.
+      // The existence gate is for file-backed sessions that vanished on disk.
+      if (p.jsonlFile.length > 0) {
+        try {
+          if (!fs.existsSync(p.jsonlFile)) continue;
+        } catch {
+          continue;
+        }
       }
     } else {
       // Terminal agents — find matching terminal by name
@@ -382,6 +385,7 @@ export function restoreAgents(
       seenUnknownRecordTypes: new Set(),
       folderName: p.folderName,
       hookDelivered: false,
+      hooksOnly: p.jsonlFile.length === 0 || undefined,
       contextTokens: 0,
       maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       teamName: p.teamName,
@@ -397,10 +401,14 @@ export function restoreAgents(
 
     assignPaletteIfNeeded(agent, store);
     store.set(p.id, agent);
-    knownJsonlFiles.add(p.jsonlFile);
+    if (p.jsonlFile.length > 0) {
+      knownJsonlFiles.add(p.jsonlFile);
+    }
     if (isExternal) {
       console.log(
-        `[Pixel Agents] Terminal: Agent ${p.id} - restored external → ${path.basename(p.jsonlFile)}`,
+        p.jsonlFile.length === 0
+          ? `[Pixel Agents] Terminal: Agent ${p.id} - restored hooks-only external${p.folderName ? ` (${p.folderName})` : ''}`
+          : `[Pixel Agents] Terminal: Agent ${p.id} - restored external → ${path.basename(p.jsonlFile)}`,
       );
     } else {
       console.log(
@@ -419,9 +427,10 @@ export function restoreAgents(
 
     restoredProjectDir = p.projectDir;
 
-    // Start file watching if JSONL exists, skipping to end of file
+    // Start file watching if JSONL exists, skipping to end of file.
+    // Hooks-only agents have no transcript — don't poll for an empty path.
     try {
-      if (fs.existsSync(p.jsonlFile)) {
+      if (p.jsonlFile.length > 0 && fs.existsSync(p.jsonlFile)) {
         const stat = fs.statSync(p.jsonlFile);
         agent.fileOffset = stat.size;
         startFileWatching(
@@ -433,7 +442,7 @@ export function restoreAgents(
           waitingTimers,
           permissionTimers,
         );
-      } else {
+      } else if (p.jsonlFile.length > 0) {
         // Poll for the file to appear
         const pollTimer = setInterval(() => {
           try {

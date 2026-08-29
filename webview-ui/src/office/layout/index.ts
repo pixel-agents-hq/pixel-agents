@@ -10,4 +10,5 @@ export {
   layoutToTileMap,
   serializeLayout,
 } from './layoutSerializer.js';
+export { getLoungeTiles, isLoungeFurnitureType } from './loungeTiles.js';
 export { findPath, getWalkableTiles, isWalkable } from './tileMap.js';

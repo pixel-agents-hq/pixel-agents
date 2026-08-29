@@ -27,7 +27,13 @@ import {
 } from './configPersistence.js';
 import { MAX_PORT, MIN_PORT } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import {
+  claudeProvider,
+  copyHookScript,
+  copyProviderHookScript,
+  hookProviderById,
+  hookProviders,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -101,6 +107,18 @@ function copyHookScriptOrReport(packageRoot: string, context = ''): boolean {
   return false;
 }
 
+function copyProviderHookScriptOrReport(
+  packageRoot: string,
+  providerId: string,
+  context = '',
+): boolean {
+  if (copyProviderHookScript(packageRoot, providerId)) return true;
+  console.error(
+    `[Pixel Agents] Hooks NOT installed${context}: hook script missing for provider ${providerId}.`,
+  );
+  return false;
+}
+
 // ── Main ──────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -164,10 +182,7 @@ async function main(): Promise<void> {
         // to the Claude provider alone; another provider's install must
         // neither copy it nor be blocked by it.
         grantHooksConsent(provider.id);
-        if (
-          provider.id === claudeProvider.id &&
-          !copyHookScriptOrReport(packageRoot, ' (user toggle)')
-        ) {
+        if (!copyProviderHookScriptOrReport(packageRoot, provider.id, ' (user toggle)')) {
           return;
         }
         try {
@@ -282,8 +297,27 @@ async function main(): Promise<void> {
       );
     }
 
+    // Re-install any other already-consented hook providers (Cursor, etc.).
+    // Fresh Cursor consent is asked in the UI; this only repairs a prior grant.
+    for (const provider of hookProviders) {
+      if (provider.id === claudeProvider.id) continue;
+      if (getHooksEnabled(provider.id) && getHooksConsent(provider.id) === 'granted') {
+        if (copyProviderHookScriptOrReport(packageRoot, provider.id)) {
+          try {
+            await provider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+            console.log(`[Pixel Agents] ${provider.displayName} hooks installed`);
+          } catch (err) {
+            console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      }
+    }
+
     // Start scanning for external sessions (Claude running in user's terminal)
     const cwd = process.cwd();
+    // Cursor (and other cwd-based providers) report the workspace path, not
+    // Claude's hashed transcript dir. Own it so mid-session hooks are adopted.
+    runtime.ownWorkspace(cwd);
     const dirs = claudeProvider.getSessionDirs?.(cwd);
     if (dirs && dirs[0]) {
       const projectDir = dirs[0];

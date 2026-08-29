@@ -84,6 +84,8 @@ interface ExtensionMessageState {
   externalAssetDirectories: string[];
   lastSeenVersion: string;
   extensionVersion: string;
+  /** Connected editor / surface label (VS Code, Cursor, Standalone). */
+  editorName: string;
   watchAllSessions: boolean;
   setWatchAllSessions: (v: boolean) => void;
   alwaysShowLabels: boolean;
@@ -139,6 +141,7 @@ export function useExtensionMessages(
   const [externalAssetDirectories, setExternalAssetDirectories] = useState<string[]>([]);
   const [lastSeenVersion, setLastSeenVersion] = useState('');
   const [extensionVersion, setExtensionVersion] = useState('');
+  const [editorName, setEditorName] = useState('');
   const [watchAllSessions, setWatchAllSessions] = useState(false);
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [ghostHeadlessAgents, setGhostHeadlessAgentsState] = useState(false);
@@ -674,6 +677,9 @@ export function useExtensionMessages(
         if (typeof msg.extensionVersion === 'string') {
           setExtensionVersion(msg.extensionVersion as string);
         }
+        if (typeof msg.editorName === 'string') {
+          setEditorName(msg.editorName as string);
+        }
       } else if (msg.type === 'hooksStatus') {
         if (typeof msg.installed === 'boolean' && typeof msg.providerId === 'string') {
           const providerId = msg.providerId as string;
@@ -773,6 +779,7 @@ export function useExtensionMessages(
     externalAssetDirectories,
     lastSeenVersion,
     extensionVersion,
+    editorName,
     watchAllSessions,
     setWatchAllSessions,
     alwaysShowLabels,

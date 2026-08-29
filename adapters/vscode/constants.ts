@@ -38,5 +38,9 @@ export const CONFIG_KEY_AUTO_SPAWN_AGENT = 'pixel-agents.autoSpawnAgent';
 
 // ── VS Code Identifiers ─────────────────────────────────────
 export const VIEW_ID = 'pixel-agents.panelView';
+
+/** vscode.env.appName for stock VS Code — shortened for the office footer. */
+export const VS_CODE_APP_NAME = 'Visual Studio Code';
+export const VS_CODE_EDITOR_DISPLAY_NAME = 'VS Code';
 export const COMMAND_SHOW_PANEL = 'pixel-agents.showPanel';
 export const COMMAND_EXPORT_DEFAULT_LAYOUT = 'pixel-agents.exportDefaultLayout';

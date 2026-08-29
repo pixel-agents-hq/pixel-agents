@@ -254,14 +254,31 @@ export function readNewLines(
 // Track all project directories to scan (supports multi-root workspaces)
 const trackedProjectDirs = new Set<string>();
 
-/** Check if a project dir is tracked by the workspace scanner. */
-export function isTrackedProjectDir(dir: string): boolean {
-  if (trackedProjectDirs.has(dir)) return true;
+/** Workspace folders this server owns (the real project path, not a CLI transcript dir).
+ *  Cursor hooks report workspace_roots; Claude's scanner tracks ~/.claude/projects/<hash>.
+ *  Without this set, a Cursor session in the same workspace is treated as foreign. */
+const ownedWorkspaceDirs = new Set<string>();
+
+function dirIsListed(dir: string, list: Set<string>): boolean {
+  if (list.has(dir)) return true;
   // Case-insensitive fallback for Windows (drive letter casing: c:\ vs C:\)
-  for (const tracked of trackedProjectDirs) {
+  for (const tracked of list) {
     if (pathsMatch(tracked, dir)) return true;
   }
   return false;
+}
+
+/** Mark a workspace folder as owned by this server so hook adoption can match
+ *  a provider's cwd / workspace_roots against it. Does not scan for JSONL. */
+export function trackOwnedWorkspace(dir: string): void {
+  if (!dir) return;
+  ownedWorkspaceDirs.add(path.resolve(dir));
+}
+
+/** Check if a project dir is tracked by the workspace scanner or owned as a workspace. */
+export function isTrackedProjectDir(dir: string): boolean {
+  if (!dir) return false;
+  return dirIsListed(dir, trackedProjectDirs) || dirIsListed(path.resolve(dir), ownedWorkspaceDirs);
 }
 
 /**

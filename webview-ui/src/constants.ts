@@ -17,6 +17,8 @@ export const WANDER_MOVES_BEFORE_REST_MIN = 3;
 export const WANDER_MOVES_BEFORE_REST_MAX = 6;
 export const SEAT_REST_MIN_SEC = 120.0;
 export const SEAT_REST_MAX_SEC = 240.0;
+/** Furniture type prefixes that seed the idle hangout (cafe / lounge) region. */
+export const LOUNGE_FURNITURE_TYPE_PREFIXES: readonly string[] = ['SOFA', 'COFFEE_TABLE'];
 
 // ── Matrix Effect ────────────────────────────────────────────
 export const MATRIX_EFFECT_DURATION_SEC = 0.3;
@@ -191,6 +193,16 @@ export const FURNITURE_ANIM_INTERVAL_SEC = 0.2;
 // ── Version Notice ──────────────────────────────────────────
 export const WHATS_NEW_AUTO_CLOSE_MS = 20000;
 export const WHATS_NEW_FADE_MS = 1000;
+
+// ── Connected editor footer ─────────────────────────────────
+/** Mirrors server STANDALONE_EDITOR_NAME. Used to detect the browser surface. */
+export const STANDALONE_EDITOR_NAME = 'Standalone';
+/** Hook providers that are editors (not CLIs). Shown instead of Standalone. */
+export const EDITOR_PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  cursor: 'Cursor',
+};
+/** Joiner when more than one editor provider is installed. */
+export const CONNECTED_EDITOR_JOIN = ' · ';
 
 // ── Game Logic ───────────────────────────────────────────────
 export const MAX_DELTA_TIME_SEC = 0.1;

@@ -319,8 +319,9 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
       expect(iSettings).toBeLessThan(iAreaMappings);
       expect(iAreaMappings).toBeLessThan(iExistingAgents);
 
-      const settings = sent[iSettings] as { showAreas?: boolean };
+      const settings = sent[iSettings] as { showAreas?: boolean; editorName?: string };
       expect(settings.showAreas).toBe(true);
+      expect(settings.editorName).toBe('Standalone');
 
       const mappings = sent[iAreaMappings] as { mappings?: Record<string, string[]> };
       expect(mappings.mappings).toEqual({ frontend: ['Engineering'] });

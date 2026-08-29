@@ -75,4 +75,38 @@ describe('AgentRuntime -- D5 foreign-session gate', () => {
     fireSessionStartThenStop('d5-tracked-dir', dir);
     expect(store.size).toBe(1);
   });
+
+  it('adopts a Cursor mid-session event when the workspace is owned (no sessionStart)', () => {
+    store = new AgentStateStore();
+    runtime = new AgentRuntime(store, claudeProvider);
+    const workspace = untrackedDir();
+    runtime.ownWorkspace(workspace);
+    runtime.handleHookEvent('cursor', {
+      hook_event_name: 'preToolUse',
+      session_id: 'd5-cursor-mid',
+      conversation_id: 'd5-cursor-mid',
+      tool_name: 'Read',
+      tool_input: { path: `${workspace}/a.ts` },
+      workspace_roots: [workspace],
+    });
+    expect(store.size).toBe(1);
+    const agent = [...store.values()][0];
+    expect(agent.hooksOnly).toBe(true);
+    expect(agent.sessionId).toBe('d5-cursor-mid');
+    expect(agent.projectDir).toBe(workspace);
+  });
+
+  it('drops a Cursor mid-session event for an unowned workspace', () => {
+    store = new AgentStateStore();
+    runtime = new AgentRuntime(store, claudeProvider);
+    runtime.handleHookEvent('cursor', {
+      hook_event_name: 'preToolUse',
+      session_id: 'd5-cursor-foreign',
+      conversation_id: 'd5-cursor-foreign',
+      tool_name: 'Read',
+      tool_input: { path: '/tmp/a.ts' },
+      workspace_roots: [untrackedDir()],
+    });
+    expect(store.size).toBe(0);
+  });
 });

@@ -233,6 +233,77 @@ describe('HookEventHandler', () => {
     expect(mockWebview.messages).toHaveLength(0);
   });
 
+  it('adopts an unknown session from a mid-session event that carries location', () => {
+    const onExternalSessionDetected = vi.fn();
+    handler.setLifecycleCallbacks({ onExternalSessionDetected });
+    onExternalSessionDetected.mockImplementation((sessionId: string) => {
+      const agent = createTestAgent({
+        id: 3,
+        sessionId,
+        projectDir: '/Users/x/work',
+      } as Partial<AgentState>);
+      agents.set(3, agent);
+      handler.registerAgent(sessionId, 3);
+    });
+
+    handler.handleEvent('cursor', {
+      hook_event_name: 'preToolUse',
+      session_id: 'mid-sess',
+      conversation_id: 'mid-sess',
+      tool_name: 'Read',
+      tool_input: { path: '/Users/x/work/a.ts' },
+      workspace_roots: ['/Users/x/work'],
+    });
+
+    expect(onExternalSessionDetected).toHaveBeenCalledWith('mid-sess', undefined, '/Users/x/work');
+    const toolMsg = mockWebview.messages.find((m) => m.type === 'agentToolStart');
+    expect(toolMsg).toBeTruthy();
+    expect(toolMsg?.status).toBe('Reading a.ts');
+  });
+
+  it('does not adopt an unknown session from sessionEnd even when location is present', () => {
+    const onExternalSessionDetected = vi.fn();
+    handler.setLifecycleCallbacks({ onExternalSessionDetected });
+
+    handler.handleEvent('cursor', {
+      hook_event_name: 'sessionEnd',
+      session_id: 'transient-sess',
+      workspace_roots: ['/Users/x/work'],
+      reason: 'user_close',
+    });
+
+    expect(onExternalSessionDetected).not.toHaveBeenCalled();
+    expect(mockWebview.messages).toHaveLength(0);
+  });
+
+  it('adopts an unknown Claude session from Stop when cwd is on the payload', () => {
+    const onExternalSessionDetected = vi.fn();
+    handler.setLifecycleCallbacks({ onExternalSessionDetected });
+    onExternalSessionDetected.mockImplementation((sessionId: string) => {
+      const agent = createTestAgent({
+        id: 4,
+        sessionId,
+        projectDir: '/projects/test',
+      } as Partial<AgentState>);
+      agents.set(4, agent);
+      handler.registerAgent(sessionId, 4);
+    });
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'Stop',
+      session_id: 'restart-sess',
+      cwd: '/projects/test',
+      transcript_path: '/projects/test/restart-sess.jsonl',
+    });
+
+    expect(onExternalSessionDetected).toHaveBeenCalledWith(
+      'restart-sess',
+      '/projects/test/restart-sess.jsonl',
+      '/projects/test',
+    );
+    expect(agents.get(4)?.isWaiting).toBe(true);
+  });
+
   it('buffers events when unregistered agents exist (internal agent race)', () => {
     // Agent exists in map but not yet registered for hooks
     const agent = createTestAgent({ id: 1, sessionId: 'sess-1' } as Partial<AgentState>);
@@ -856,5 +927,41 @@ describe('HookEventHandler', () => {
         }
       }
     });
+  });
+
+  it('cursor preToolUse uses Cursor normalize and formatToolStatus', () => {
+    const agent = createTestAgent({ id: 1, isWaiting: true });
+    agents.set(1, agent);
+    handler.registerAgent('cursor-sess-1', 1);
+
+    handler.handleEvent('cursor', {
+      hook_event_name: 'preToolUse',
+      session_id: 'cursor-sess-1',
+      tool_name: 'Read',
+      tool_input: { path: '/src/office.ts' },
+      tool_use_id: 'tu-1',
+    });
+
+    const toolMsg = mockWebview.messages.find((m) => m.type === 'agentToolStart');
+    expect(toolMsg).toBeTruthy();
+    expect(toolMsg?.toolName).toBe('Read');
+    expect(toolMsg?.status).toBe('Reading office.ts');
+    expect(agent.hookDelivered).toBe(true);
+  });
+
+  it('unknown providerId is dropped without touching Claude agents', () => {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('not-a-provider', {
+      hook_event_name: 'preToolUse',
+      session_id: 'sess-1',
+      tool_name: 'Read',
+      tool_input: { path: '/src/office.ts' },
+    });
+
+    expect(mockWebview.messages).toHaveLength(0);
+    expect(agent.hookDelivered).toBe(false);
   });
 });

@@ -33,6 +33,7 @@ import {
   startExternalSessionScanning,
   startFileWatching,
   startStaleExternalAgentCheck,
+  trackOwnedWorkspace,
 } from './fileWatcher.js';
 import type { HookEvent } from './hookEventHandler.js';
 import { HookEventHandler } from './hookEventHandler.js';
@@ -399,6 +400,13 @@ export class AgentRuntime {
 
   // ── Scanning ──
 
+  /** Mark a workspace folder as owned so Cursor (and other cwd-based) hooks
+   *  can be adopted without Watch All. Claude's scanner tracks transcript
+   *  dirs; this tracks the real project path those transcripts belong to. */
+  ownWorkspace(dir: string): void {
+    trackOwnedWorkspace(dir);
+  }
+
   /** Start project-level scanning for a directory. */
   startProjectScan(projectDir: string, onAgentCreated?: (agent: AgentState) => void): void {
     ensureProjectScan(
@@ -472,10 +480,15 @@ export class AgentRuntime {
       // is live. Restoring them directly would resurrect immortal characters
       // (also skips stale entries written by older builds that persisted them).
       if (p.leadAgentId !== undefined && !p.teamName) continue;
-      try {
-        if (!fs.existsSync(p.jsonlFile)) continue;
-      } catch {
-        continue;
+      // Hooks-only agents (Cursor, etc.) persist with an empty jsonlFile.
+      // The existence gate is for file-backed sessions that vanished on disk.
+      const hooksOnly = p.jsonlFile.length === 0;
+      if (!hooksOnly) {
+        try {
+          if (!fs.existsSync(p.jsonlFile)) continue;
+        } catch {
+          continue;
+        }
       }
       if (this.store.has(p.id)) {
         this.knownJsonlFiles.add(p.jsonlFile);
@@ -508,6 +521,7 @@ export class AgentRuntime {
         seenUnknownRecordTypes: new Set(),
         folderName: p.folderName,
         hookDelivered: false,
+        hooksOnly: hooksOnly || undefined,
         contextTokens: 0,
         maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
         teamName: p.teamName,
@@ -521,29 +535,32 @@ export class AgentRuntime {
 
       assignPaletteIfNeeded(agent, this.store);
       this.store.set(p.id, agent);
-      this.knownJsonlFiles.add(p.jsonlFile);
-
-      try {
-        const stat = fs.statSync(p.jsonlFile);
-        agent.fileOffset = stat.size;
-        startFileWatching(
-          p.id,
-          p.jsonlFile,
-          this.store,
-          this.fileWatchers,
-          this.pollingTimers,
-          this.waitingTimers,
-          this.permissionTimers,
-        );
-      } catch {
-        /* ignore stat errors on restore */
+      if (!hooksOnly) {
+        this.knownJsonlFiles.add(p.jsonlFile);
+        try {
+          const stat = fs.statSync(p.jsonlFile);
+          agent.fileOffset = stat.size;
+          startFileWatching(
+            p.id,
+            p.jsonlFile,
+            this.store,
+            this.fileWatchers,
+            this.pollingTimers,
+            this.waitingTimers,
+            this.permissionTimers,
+          );
+        } catch {
+          /* ignore stat errors on restore */
+        }
       }
 
       this.registerAgent(agent.sessionId, agent.id);
 
       if (p.id > maxId) maxId = p.id;
       console.log(
-        `[Pixel Agents] Restored external agent ${p.id} -> ${path.basename(p.jsonlFile)}`,
+        hooksOnly
+          ? `[Pixel Agents] Restored hooks-only external agent ${p.id} (${p.folderName ?? p.sessionId ?? p.id})`
+          : `[Pixel Agents] Restored external agent ${p.id} -> ${path.basename(p.jsonlFile)}`,
       );
     }
 

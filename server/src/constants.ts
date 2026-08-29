@@ -107,3 +107,6 @@ export const PALETTE_COUNT = 6;
  *  clientMessageHandler to guard saveAgentSeats payloads from a remote or
  *  hand-edited source corrupting the stored values with out-of-range values. */
 export const HUE_SHIFT_MAX_DEG = 360;
+
+/** Display name of the standalone (browser) surface, sent as settingsLoaded.editorName. */
+export const STANDALONE_EDITOR_NAME = 'Standalone';

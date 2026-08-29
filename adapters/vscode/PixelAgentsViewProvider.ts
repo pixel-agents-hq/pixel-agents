@@ -47,9 +47,10 @@ import { applyConsentChoice } from '../../server/src/providers/hook/consentExecu
 import { hooksConsentRequest } from '../../server/src/providers/hook/consentGate.js';
 import {
   claudeProvider,
-  copyHookScript,
+  copyProviderHookScript,
   hookProviderById,
   hookProviders,
+  mergedProviderCapabilities,
 } from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
@@ -71,8 +72,16 @@ import {
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
+  VS_CODE_APP_NAME,
+  VS_CODE_EDITOR_DISPLAY_NAME,
 } from './constants.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
+
+/** Office footer label: Cursor / Windsurf keep their appName; stock VS Code is shortened. */
+function connectedEditorName(): string {
+  const appName = vscode.env.appName;
+  return appName === VS_CODE_APP_NAME ? VS_CODE_EDITOR_DISPLAY_NAME : appName;
+}
 
 /** Cap on the pending-broadcast queue. If we exceed this, something has gone
  *  wrong (webviewReady never arriving) — log and drop the oldest. */
@@ -252,7 +261,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   ): Promise<void> {
     // The bundled claude-hook.js script belongs to the Claude provider alone;
     // another provider's install must neither copy it nor be blocked by it.
-    if (provider.id === claudeProvider.id && !copyHookScript(this.context.extensionPath)) {
+    if (!copyProviderHookScript(this.context.extensionPath, provider.id)) {
       vscode.window.showErrorMessage(
         'Pixel Agents: could not install the hook script — hooks not installed.',
       );
@@ -552,8 +561,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // from the first frame.
         this.webview?.postMessage({
           type: 'providerCapabilities',
-          readingTools: [...claudeProvider.readingTools],
-          subagentToolNames: [...claudeProvider.subagentToolNames],
+          ...mergedProviderCapabilities(),
         });
 
         // Settings + folder→Area mappings MUST be dispatched BEFORE restoreAgents
@@ -591,6 +599,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           soundEnabled,
           lastSeenVersion,
           extensionVersion,
+          editorName: connectedEditorName(),
           watchAllSessions,
           alwaysShowLabels,
           ghostHeadlessAgents,
@@ -722,6 +731,17 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
         // Start external session scanning (detects VS Code extension panel sessions)
         this.runtime.startExternalScanning(projectDir);
+
+        // Cursor hooks report workspace_roots (the real folder), not Claude's
+        // hashed transcript dir. Own every workspace folder so those sessions
+        // are adopted without Watch All.
+        if (wsFolders) {
+          for (const folder of wsFolders) {
+            this.runtime.ownWorkspace(folder.uri.fsPath);
+          }
+        } else if (workspaceRoot) {
+          this.runtime.ownWorkspace(workspaceRoot);
+        }
 
         // In multi-root workspaces, also scan project dirs for all other folders
         // so agents running in any workspace folder are discovered

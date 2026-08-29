@@ -268,6 +268,7 @@ export interface SettingsLoaded {
   soundEnabled: boolean;
   lastSeenVersion: string;
   extensionVersion: string;
+  editorName: string;
   watchAllSessions: boolean;
   alwaysShowLabels: boolean;
   ghostHeadlessAgents: boolean;

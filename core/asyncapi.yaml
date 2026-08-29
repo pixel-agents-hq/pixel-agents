@@ -637,6 +637,7 @@ components:
         - soundEnabled
         - lastSeenVersion
         - extensionVersion
+        - editorName
         - watchAllSessions
         - alwaysShowLabels
         - ghostHeadlessAgents
@@ -653,6 +654,11 @@ components:
           type: string
         extensionVersion:
           type: string
+        editorName:
+          type: string
+          description: >
+            Display name of the connected editor or surface (e.g. VS Code,
+            Cursor, Standalone). Shown as muted text at the bottom of the office.
         watchAllSessions:
           type: boolean
         alwaysShowLabels:

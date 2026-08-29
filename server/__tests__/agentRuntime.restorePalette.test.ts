@@ -156,6 +156,34 @@ describe('AgentRuntime -- restore preserves palette/hueShift', () => {
     expect(restored?.hueShift).toBe(270);
   });
 
+  it('restoreExternalAgents restores a hooks-only agent with an empty jsonlFile', () => {
+    const persisted: PersistedAgent[] = [
+      {
+        id: 11,
+        sessionId: 'cursor-sess',
+        terminalName: '',
+        isExternal: true,
+        jsonlFile: '',
+        projectDir: tmpDir,
+        folderName: 'pixel-agents',
+        palette: 2,
+        hueShift: 0,
+      },
+    ];
+    const store = new AgentStateStore();
+    store.setAdapter(createMockAdapter(persisted));
+    runtime = new AgentRuntime(store, claudeProvider);
+
+    runtime.restoreExternalAgents();
+
+    const agent = store.get(11);
+    expect(agent).toBeDefined();
+    expect(agent?.hooksOnly).toBe(true);
+    expect(agent?.sessionId).toBe('cursor-sess');
+    expect(agent?.folderName).toBe('pixel-agents');
+    expect(agent?.palette).toBe(2);
+  });
+
   it('assigns a fresh palette when the persisted record has no palette', () => {
     const persisted: PersistedAgent[] = [
       {

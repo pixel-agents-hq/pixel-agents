@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toMajorMinor } from './changelogData.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
+import { ConnectedEditorLabel } from './components/ConnectedEditorLabel.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
@@ -81,6 +82,7 @@ function App() {
     externalAssetDirectories,
     lastSeenVersion,
     extensionVersion,
+    editorName,
     watchAllSessions,
     setWatchAllSessions,
     alwaysShowLabels,
@@ -526,6 +528,8 @@ function App() {
         onDismiss={handleWhatsNewDismiss}
         onOpenChangelog={handleOpenChangelog}
       />
+
+      <ConnectedEditorLabel editorName={editorName} hooksInstalled={hooksInstalled} />
 
       <ConnectionIndicator />
 
