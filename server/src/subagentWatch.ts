@@ -89,6 +89,7 @@ export class SubagentWatch {
       permissionSent: false,
       hadToolsInTurn: false,
       hookDelivered: false,
+      providerId: 'claude',
       lastDataAt: Date.now(),
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),

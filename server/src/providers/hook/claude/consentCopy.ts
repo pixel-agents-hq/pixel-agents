@@ -40,7 +40,7 @@ export const CONSENT_FACT_DATA =
 
 /** HOW to undo it. */
 export const CONSENT_FACT_REVERSIBLE =
-  'You can remove the hooks at any time from Settings → Instant Detection (Hooks).';
+  'You can remove the hooks at any time from Settings → Claude Code Instant Detection.';
 
 /** Headline for the first-run gate — the only population that is asked. A user
  *  whose hooks a pre-consent version already installed is migrated silently

@@ -175,7 +175,12 @@ describe('dist/cli.js entry-point guard', () => {
     const port = await getFreePort();
     const child = spawn(process.execPath, [CLI_BUNDLE, '--port', port.toString(), '--host', host], {
       cwd: workspaceDir,
-      env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome },
+      env: {
+        ...process.env,
+        HOME: tmpHome,
+        USERPROFILE: tmpHome,
+        HERMES_HOME: path.join(tmpHome, '.hermes'),
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '';
@@ -272,12 +277,13 @@ describe('dist/cli.js entry-point guard', () => {
   // install happening to work.
   itBuilt('starts without touching settings.json when consent has not been given', async () => {
     const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-noconsent-'));
-    await runCliServer(tmpHome, async ({ output }) => {
-      // Give the startup consent/install path time to have run (it is awaited
-      // before the "server running" line, which health readiness follows).
+    await runCliServer(tmpHome, async () => {
+      // Give both provider startup paths time to run. The contract under test
+      // is the absence of configuration writes; consent copy is covered by the
+      // provider consent and browser-handshake tests.
       await new Promise((resolve) => setTimeout(resolve, 500));
       expect(fs.existsSync(path.join(tmpHome, '.claude', 'settings.json'))).toBe(false);
-      expect(output()).toContain('needs one-time approval');
+      expect(fs.existsSync(path.join(tmpHome, '.hermes', 'config.yaml'))).toBe(false);
     });
   });
 

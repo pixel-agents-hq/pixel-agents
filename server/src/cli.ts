@@ -27,7 +27,12 @@ import {
 } from './configPersistence.js';
 import { MAX_PORT, MIN_PORT } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import {
+  claudeProvider,
+  copyHookScript,
+  hookProviderById,
+  hookProviders,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -143,7 +148,7 @@ async function main(): Promise<void> {
 
   try {
     // Create runtime first (before server.start, so we can pass it in)
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const runtime = new AgentRuntime(store, hookProviders);
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
@@ -246,11 +251,15 @@ async function main(): Promise<void> {
     runtime.hooksEnabled.current = getHooksEnabled(claudeProvider.id);
     runtime.watchAllSessions.current = adapter.getSetting('pixel-agents.watchAllSessions', false);
 
-    // Install hooks on startup if the persisted setting says so — gated on the
-    // one-time consent to modify ~/.claude/settings.json.
-    if (runtime.hooksEnabled.current) {
-      let consent = getHooksConsent(claudeProvider.id) === 'granted';
-      if (!consent && (await claudeProvider.areHooksInstalled())) {
+    // Refresh every consented provider on startup. Fresh providers remain
+    // untouched until the in-app consent gate is answered.
+    for (const provider of hookProviders) {
+      if (!getHooksEnabled(provider.id)) {
+        console.log(`[Pixel Agents] ${provider.displayName} hooks disabled`);
+        continue;
+      }
+      let consent = getHooksConsent(provider.id) === 'granted';
+      if (!consent && provider.id === claudeProvider.id && (await provider.areHooksInstalled())) {
         // Our hooks are already installed and already firing — a pre-consent
         // version put them there. Grant and continue with NO prompt: the
         // install below is the 14 -> 12 migration, and it only ever REDUCES
@@ -259,27 +268,22 @@ async function main(): Promise<void> {
         // this user no protection they do not already have, so they are not
         // asked. A fresh install still is, in full — in the browser UI, when a
         // tokened client connects (clientMessageHandler's webviewReady).
-        grantHooksConsent(claudeProvider.id);
+        grantHooksConsent(provider.id);
         consent = true;
       }
       if (!consent) {
         console.log(
-          '[Pixel Agents] Hooks not installed: modifying ~/.claude/settings.json needs one-time approval — open the URL below to review and approve it.',
+          `[Pixel Agents] ${provider.displayName} hooks need one-time approval — open the URL below to review them.`,
         );
-      } else if (copyHookScriptOrReport(packageRoot)) {
-        try {
-          await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
-          console.log('[Pixel Agents] Hooks installed');
-        } catch (err) {
-          console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
-        }
+        continue;
       }
-    } else {
-      // Without this line, a persisted hooks-off makes startup skip the entire
-      // consent/install flow with zero output — indistinguishable from a bug.
-      console.log(
-        '[Pixel Agents] Hooks disabled — enable "Instant Detection (Hooks)" in the UI settings to install them.',
-      );
+      if (provider.id === claudeProvider.id && !copyHookScriptOrReport(packageRoot)) continue;
+      try {
+        await provider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+        console.log(`[Pixel Agents] ${provider.displayName} hooks installed`);
+      } catch (err) {
+        console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
 
     // Start scanning for external sessions (Claude running in user's terminal)

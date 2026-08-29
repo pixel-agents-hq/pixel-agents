@@ -37,7 +37,8 @@ export class SessionRouter {
     return this.flushBuffered(sessionId);
   }
 
-  unregister(sessionId: string): void {
+  unregister(sessionId: string, agentId?: number): void {
+    if (agentId !== undefined && this.sessionToAgentId.get(sessionId) !== agentId) return;
     this.sessionToAgentId.delete(sessionId);
   }
 

@@ -33,6 +33,7 @@ function settle(): Promise<void> {
 describe('clientMessageHandler: hooks consent flow', () => {
   let tempHome: string;
   let originalHome: string | undefined;
+  let originalHermesHome: string | undefined;
   let store: AgentStateStore;
   let sent: Array<Record<string, unknown>>;
   let ctx: ClientMessageContext;
@@ -76,7 +77,9 @@ describe('clientMessageHandler: hooks consent flow', () => {
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-consent-flow-'));
     originalHome = process.env.HOME;
+    originalHermesHome = process.env.HERMES_HOME;
     process.env.HOME = tempHome;
+    process.env.HERMES_HOME = path.join(tempHome, '.hermes');
 
     store = new AgentStateStore();
     store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
@@ -89,6 +92,11 @@ describe('clientMessageHandler: hooks consent flow', () => {
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalHermesHome === undefined) {
+      delete process.env.HERMES_HOME;
+    } else {
+      process.env.HERMES_HOME = originalHermesHome;
     }
     store.dispose();
     fs.rmSync(tempHome, { recursive: true, force: true });
@@ -122,14 +130,18 @@ describe('clientMessageHandler: hooks consent flow', () => {
       ctx.privileged = false;
       await connect();
 
-      expect(sent.find((m) => m.type === 'hooksConsentRequest')).toBeUndefined();
+      expect(
+        sent.find((m) => m.type === 'hooksConsentRequest' && m.providerId === 'claude'),
+      ).toBeUndefined();
     });
 
     it('never asks once consent is recorded', async () => {
       grantHooksConsent('claude');
       await connect();
 
-      expect(sent.find((m) => m.type === 'hooksConsentRequest')).toBeUndefined();
+      expect(
+        sent.find((m) => m.type === 'hooksConsentRequest' && m.providerId === 'claude'),
+      ).toBeUndefined();
     });
 
     // The silent-grant population (a pre-consent version's install, migrated at
@@ -139,7 +151,9 @@ describe('clientMessageHandler: hooks consent flow', () => {
       seedInstalledHooks();
       await connect();
 
-      expect(sent.find((m) => m.type === 'hooksConsentRequest')).toBeUndefined();
+      expect(
+        sent.find((m) => m.type === 'hooksConsentRequest' && m.providerId === 'claude'),
+      ).toBeUndefined();
     });
 
     it('never asks while the hooks preference is off', async () => {
@@ -148,7 +162,9 @@ describe('clientMessageHandler: hooks consent flow', () => {
       setHooksEnabled('claude', false);
       await connect();
 
-      expect(sent.find((m) => m.type === 'hooksConsentRequest')).toBeUndefined();
+      expect(
+        sent.find((m) => m.type === 'hooksConsentRequest' && m.providerId === 'claude'),
+      ).toBeUndefined();
     });
 
     // Not-now writes nothing, so the gate must still be open on the next

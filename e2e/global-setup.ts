@@ -146,7 +146,10 @@ export default async function globalSetup(): Promise<void> {
 
       console.log('[e2e] Ensuring VS Code is downloaded...');
       const downloadedPath = await downloadAndUnzipVSCode({
-        version: 'stable',
+        // Keep the browser gate deterministic and aligned with the extension's
+        // declared minimum. A moving `stable` archive can change its macOS
+        // executable contract independently of this exact source revision.
+        version: '1.105.0',
         cachePath: VSCODE_CACHE_DIR,
       });
       console.log(`[e2e] VS Code executable: ${downloadedPath}`);

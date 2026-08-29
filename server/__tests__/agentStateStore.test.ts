@@ -168,6 +168,7 @@ describe('AgentStateStore', () => {
       expect(saved[0].folderName).toBe('my-folder');
       expect(saved[0].teamName).toBe('team-a');
       expect(saved[0].isTeamLead).toBe(true);
+      expect(saved[0].providerId).toBe('claude');
     });
 
     it('persist without adapter is a no-op', () => {

@@ -156,11 +156,15 @@ export class AgentStateStore {
       // them from sidecars after a restore. Persisting them would resurrect
       // immortal characters whose completion signal never comes.
       if (agent.spawnToolUseId) continue;
+      // Independent hook-only children are derived from provider lifecycle
+      // events and must not be resurrected after their parent process is gone.
+      if (agent.hooksOnly && agent.leadAgentId !== undefined) continue;
       persisted.push({
         id: agent.id,
         sessionId: agent.sessionId,
         terminalName: agent.terminalRef?.name ?? '',
         isExternal: agent.isExternal || undefined,
+        providerId: agent.providerId ?? 'claude',
         jsonlFile: agent.jsonlFile,
         projectDir: agent.projectDir,
         folderName: agent.folderName,

@@ -88,6 +88,7 @@ function App() {
     setGhostHeadlessAgents,
     hooksEnabled,
     hooksInstalled,
+    providers,
     hooksStatusSeq,
     hooksInfoShown,
     consentRequest,
@@ -156,10 +157,6 @@ function App() {
     onChoice: handleConsentChoice,
     onClose: handleIntroClose,
   } = useIntroTour({ consentRequest, hooksInstalled, hooksStatusSeq, dismissConsentRequest });
-
-  // The Settings surface renders one provider today; its checkbox binds to
-  // the Claude row of the per-provider install-state map.
-  const claudeHooksInstalled = hooksInstalled['claude'] === true;
 
   // Mutate folder→Area mappings locally + send to server. Updates OfficeState in
   // the same tick so a follow-up agentCreated picks up the new mapping.
@@ -454,30 +451,33 @@ function App() {
           message), NOT the hooksEnabled preference: hooksEnabled defaults true
           while first-run consent is still pending, and announcing "Instant
           Detection Active" before anything is installed would be a lie. */}
-      {hooksEnabled && claudeHooksInstalled && !hooksInfoShown && !hooksTooltipDismissed && (
-        <Tooltip
-          title="Instant Detection Active"
-          position="top-right"
-          onDismiss={() => {
-            setHooksTooltipDismissed(true);
-            transport.send({ type: 'setHooksInfoShown' });
-          }}
-        >
-          <span className="text-sm text-text leading-none">
-            Your agents now respond in real-time.{' '}
-            <span
-              className="text-accent cursor-pointer underline"
-              onClick={() => {
-                setIsHooksInfoOpen(true);
-                setHooksTooltipDismissed(true);
-                transport.send({ type: 'setHooksInfoShown' });
-              }}
-            >
-              View more
+      {hooksEnabled &&
+        hooksInstalled['claude'] === true &&
+        !hooksInfoShown &&
+        !hooksTooltipDismissed && (
+          <Tooltip
+            title="Instant Detection Active"
+            position="top-right"
+            onDismiss={() => {
+              setHooksTooltipDismissed(true);
+              transport.send({ type: 'setHooksInfoShown' });
+            }}
+          >
+            <span className="text-sm text-text leading-none">
+              Your agents now respond in real-time.{' '}
+              <span
+                className="text-accent cursor-pointer underline"
+                onClick={() => {
+                  setIsHooksInfoOpen(true);
+                  setHooksTooltipDismissed(true);
+                  transport.send({ type: 'setHooksInfoShown' });
+                }}
+              >
+                View more
+              </span>
             </span>
-          </span>
-        </Tooltip>
-      )}
+          </Tooltip>
+        )}
 
       {/* Hooks info modal */}
       <Modal
@@ -551,22 +551,17 @@ function App() {
           setWatchAllSessions(newVal);
           transport.send({ type: 'setWatchAllSessions', enabled: newVal });
         }}
-        hooksInstalled={claudeHooksInstalled}
-        onToggleHooksEnabled={() => {
-          // Toggle the DISPLAYED state (actual install), not the preference: when the two disagree — preference on,
-          // nothing installed while consent is pending — toggling the preference would turn hooks OFF for a user
-          // asking for ON. No optimistic local update either; both backends answer with the truthful hooksStatus this
-          // checkbox renders, so it lands correct instead of flickering when an install fails. The providerId is
-          // ECHOED from that row (never originated here), so nothing sends until the row has arrived.
-          const [rowProviderId] =
-            Object.entries(hooksInstalled).find(([id]) => id === 'claude') ?? [];
-          if (rowProviderId !== undefined) {
-            transport.send({
-              type: 'setHooksEnabled',
-              providerId: rowProviderId,
-              enabled: !claudeHooksInstalled,
-            });
-          }
+        hookProviders={providers.map((provider) => ({
+          id: provider.id,
+          displayName: provider.displayName,
+          installed: hooksInstalled[provider.id] === true,
+        }))}
+        onToggleHooksEnabled={(providerId, installed) => {
+          transport.send({
+            type: 'setHooksEnabled',
+            providerId,
+            enabled: !installed,
+          });
         }}
         showAreas={showAreas}
         onToggleShowAreas={onToggleShowAreas}
