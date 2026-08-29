@@ -229,8 +229,8 @@ export class AgentRuntime {
             this.waitingTimers,
             this.permissionTimers,
             () => this.store.persist(),
+            hookProvider.id,
             (agent) => {
-              agent.providerId = hookProvider.id;
               this.registerAgent(agent.sessionId, agent.id, hookProvider.id);
             },
           );

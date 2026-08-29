@@ -1072,6 +1072,7 @@ export function adoptExternalSessionFromHook(
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
 
   persistAgents: () => void,
+  providerId = 'claude',
   onAgentCreated?: (agent: AgentState) => void,
 ): void {
   if (transcriptPath) {
@@ -1139,7 +1140,7 @@ export function adoptExternalSessionFromHook(
       hadToolsInTurn: false,
       hookDelivered: true,
       hooksOnly: true,
-      providerId: 'claude',
+      providerId,
       lastDataAt: Date.now(),
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),

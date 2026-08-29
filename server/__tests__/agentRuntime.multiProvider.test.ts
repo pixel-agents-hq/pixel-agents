@@ -64,6 +64,26 @@ describe('AgentRuntime multi-provider isolation', () => {
     ]);
   });
 
+  it('persists an adopted Hermes parent with its provider identity', () => {
+    const { store, runtime, cwd } = create();
+    let savedProviderIds: Array<string | undefined> = [];
+    store.setAdapter({
+      loadAgents: () => [],
+      saveAgents: (agents) => {
+        savedProviderIds = agents.map((agent) => agent.providerId);
+      },
+      loadSeats: () => ({}),
+      saveSeats: () => {},
+      getSetting: (_key, defaultValue) => defaultValue,
+      setSetting: () => {},
+    });
+
+    adoptHermes(runtime, 'persisted-hermes', cwd);
+
+    expect([...store.values()][0]?.providerId).toBe('hermes');
+    expect(savedProviderIds).toEqual(['hermes']);
+  });
+
   it('correlates simultaneous tools exactly and accepts out-of-order completion', () => {
     const { store, runtime, cwd } = create();
     adoptHermes(runtime, 'tools', cwd);
