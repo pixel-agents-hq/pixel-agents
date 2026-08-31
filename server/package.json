@@ -7,9 +7,9 @@
   },
   "devDependencies": {
     "@types/ws": "^8.18.1",
-    "allure-vitest": "^3.9.0",
-    "vitest": "^4.1.10",
-    "ws": "^8.18.0"
+    "allure-vitest": "^3.11.0",
+    "vitest": "^4.1.11",
+    "ws": "^8.21.3"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
