@@ -20,6 +20,7 @@ export const REQUIRED_PACKAGE_FILES = [
   'dist/cli.js',
   'dist/extension.js',
   'dist/hooks/claude-hook.js',
+  'dist/bridge/pixel-agents-bridge.ts',
   'dist/webview/index.html',
   'icon.png',
   'package.json',
