@@ -37,6 +37,7 @@
     "dist/cli.js",
     "dist/extension.js",
     "dist/hooks/claude-hook.js",
+    "dist/bridge/pixel-agents-bridge.ts",
     "dist/uninstall.js",
     "dist/assets/",
     "dist/webview/",

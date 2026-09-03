@@ -63,6 +63,32 @@ function buildHooks() {
 }
 
 /**
+ * Copy the OpenCode bridge plugin source verbatim to dist/bridge. No bundling:
+ * OpenCode loads the plugin directly with Bun, so the shipped file must stay a
+ * plain dependency-free TypeScript module (see bridge/pixel-agents-bridge.ts).
+ */
+function copyBridge() {
+  const src = path.join(
+    __dirname,
+    'server',
+    'src',
+    'providers',
+    'hook',
+    'opencode',
+    'bridge',
+    'pixel-agents-bridge.ts',
+  );
+  if (!fs.existsSync(src)) {
+    console.log('ℹ️  bridge source not found (optional)');
+    return;
+  }
+  const dstDir = path.join(__dirname, 'dist', 'bridge');
+  fs.mkdirSync(dstDir, { recursive: true });
+  fs.cpSync(src, path.join(dstDir, 'pixel-agents-bridge.ts'));
+  console.log('✓ Copied bridge/ → dist/bridge/');
+}
+
+/**
  * @type {import('esbuild').Plugin}
  */
 const esbuildProblemMatcherPlugin = {
@@ -108,6 +134,7 @@ async function main() {
     // Copy assets and hooks after build
     copyAssets();
     buildHooks();
+    copyBridge();
     await buildCli();
     await buildUninstall();
   }
