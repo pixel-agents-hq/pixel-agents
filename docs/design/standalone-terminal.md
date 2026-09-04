@@ -1,6 +1,6 @@
 # Standalone Terminal
 
-Status: implemented (`feat/standalone-terminal`)
+Status: implemented (`feat/mobile-web-app`, landing together with the mobile shell and Directories)
 
 ## Goal
 
@@ -382,12 +382,12 @@ dispose`) that both surfaces implement, or stay the VS Code adoption helper it i
 3. **A test seam to force PTY-unavailable** (e.g. `PIXEL_AGENTS_DISABLE_PTY=1`) would make the
    module-failure degradation path e2e-testable. Today only the `--no-terminal` path is covered
    end to end, and the probe has no override.
-4. **Should `+ Agent` in standalone offer a folder picker?** VS Code uses `workspaceFolders`;
-   standalone has none, so it always launches in the server's `process.cwd()`. A `--cwd` flag or
-   a UI picker may be wanted.
 
 Resolved since the first draft:
 
 - **`/ws` privilege.** `/ws` separates connecting (same-origin viewers) from acting (the
   `?token=` the CLI printed), and the terminal rides that same privilege bit — see "One privilege
   model with `/ws`".
+- **Directory picker.** `+ Agent` opens the launch drawer on both hosts; standalone contributes
+  its start directory as a host Directory, and user-defined Directories are shared machine-wide
+  (`server/src/directories.ts`).

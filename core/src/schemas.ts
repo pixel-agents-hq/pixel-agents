@@ -19,7 +19,7 @@ export interface PersistedAgent {
   isExternal?: boolean;
   jsonlFile: string;
   projectDir: string;
-  folderName?: string;
+  directoryName?: string;
   teamName?: string;
   agentName?: string;
   isTeamLead?: boolean;

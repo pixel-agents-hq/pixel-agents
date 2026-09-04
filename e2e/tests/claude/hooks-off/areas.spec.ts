@@ -11,12 +11,13 @@ import { buildSeedConfig, buildSeedLayout } from '../../../helpers/layout-seed';
  * Single-folder e2e coverage for Areas.
  *
  * The Areas EDITOR (paint tool, CRUD, folder mapping) is gated on
- * workspaceFolders > 0 (EditorToolbar.tsx) and the Show Areas settings toggle on
- * the same gate (App.tsx), so a single-folder window cannot reach them — those
- * are covered in areas-multiroot.spec.ts. What a single folder CAN verify:
+ * mappable directories > 0 (EditorToolbar.tsx) and the Show Areas settings toggle on
+ * the same gate (App.tsx); the folder→area→seat loop itself is covered in
+ * areas-multiroot.spec.ts. What a single folder CAN verify:
  *   - seeded area data loads into OfficeState (areas + areaTiles round-trip), and
  *   - the seeded showAreas state drives the effective overlay gate, and
- *   - the Areas tool button is correctly hidden without workspace folders.
+ *   - both routes into the gate: the host's own workspace folder, and a seeded
+ *     layout that already defines areas.
  * Area overlay/labels are canvas-only, so we assert state, not pixels (the same
  * tradeoff the pets fixture makes).
  */
@@ -68,15 +69,16 @@ test.describe('Areas (single-folder)', () => {
     });
   });
 
-  test('the Areas tool button is hidden without workspace folders @area:areas', async ({
+  test('the host-contributed workspace folder makes the Areas tool reachable @area:areas', async ({
     pixelAgents,
   }) => {
     const { frame, narrator } = pixelAgents;
-    narrator.step('opening the layout editor with no workspace folders configured');
+    narrator.step('opening the layout editor in a single-folder window');
+    // The VS Code host contributes every workspace folder as a Directory, the
+    // single-root one included, so there is always something to map.
     await enterEditMode(frame);
-    // Single-folder fixture sends no workspaceFolders → the Areas button is gated off.
-    await expect(frame.locator('button[title*="Define folder-bound areas"]')).toHaveCount(0);
-    narrator.check('no Areas tool button — the tool is gated on having folders to map');
+    await expect(frame.locator('button[title*="Define folder-bound areas"]')).toHaveCount(1);
+    narrator.check('the Areas tool button is visible — the workspace folder is mappable');
   });
 
   test.describe('seeded areas layout (positive gate)', () => {
@@ -93,9 +95,10 @@ test.describe('Areas (single-folder)', () => {
       const { frame, narrator } = pixelAgents;
       narrator.step('opening the seeded layout editor to check the Areas tool gate');
       await enterEditMode(frame);
-      // areasAvailable is now (layout.areas?.length ?? 0) > 0 || <folders>, so a
-      // seeded single-folder layout with areas makes the button visible even
-      // without workspace folders.
+      // areasAvailable is (layout.areas?.length ?? 0) > 0 || <mappable directories>.
+      // A window always has at least the host's own workspace folder, so this
+      // asserts the gate is satisfied, not that the layout route alone satisfies
+      // it — the layout arm is exercised in isolation by webview code only.
       await expect(frame.locator('button[title*="Define folder-bound areas"]')).toHaveCount(1);
       narrator.check('the Areas tool button is visible because the seeded layout has an area');
     });

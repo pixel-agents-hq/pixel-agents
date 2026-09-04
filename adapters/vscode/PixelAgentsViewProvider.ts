@@ -34,7 +34,13 @@ import {
   setHooksEnabled as persistHooksEnabled,
   writeConfig,
 } from '../../server/src/configPersistence.js';
-import { setFolderNameResolver, setTerminalAdapter } from '../../server/src/fileWatcher.js';
+import {
+  handleDirectoryClientMessage,
+  type HostDirectoryEntry,
+  listDirectories,
+} from '../../server/src/directories.js';
+import { collectDirectorySuggestions } from '../../server/src/directorySuggestions.js';
+import { setDirectoryNameResolver, setTerminalAdapter } from '../../server/src/fileWatcher.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
 import {
   readLayoutFromFile,
@@ -64,6 +70,7 @@ import {
   CONFIG_KEY_AUTO_SHOW_PANEL,
   CONFIG_KEY_AUTO_SPAWN_AGENT,
   GLOBAL_KEY_ALWAYS_SHOW_LABELS,
+  GLOBAL_KEY_BYPASS_PERMISSIONS,
   GLOBAL_KEY_GHOST_HEADLESS_AGENTS,
   GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
@@ -72,6 +79,7 @@ import {
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
 } from './constants.js';
+import { workspaceDirectories } from './hostDirectories.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
 
 /** Cap on the pending-broadcast queue. If we exceed this, something has gone
@@ -124,7 +132,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       this.sendOrBuffer({
         type: 'agentCreated',
         id,
-        folderName: agent.folderName,
+        directoryName: agent.directoryName,
         isExternal: agent.isExternal || undefined,
         isTeammate: agent.leadAgentId !== undefined || undefined,
         teammateName: agent.agentName,
@@ -144,9 +152,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     setTerminalAdapter(new VscodeTerminalAdapter());
 
-    // Map an external agent's cwd/projectDir to its WorkspaceFolder.name — the
-    // identity areaMappings is keyed on — so in-area seat placement works. Multi-root only.
-    setFolderNameResolver(({ cwd, projectDir }) => {
+    // Map an external agent's cwd/projectDir to its Directory name (here, the
+    // owning workspace folder's name) — the identity areaMappings is keyed on — so
+    // in-area seat placement works. Multi-root only.
+    setDirectoryNameResolver(({ cwd, projectDir }) => {
       const folders = vscode.workspace.workspaceFolders;
       if (!folders || folders.length <= 1) return undefined;
       // Prefer a real cwd: most specific containing folder wins (nested folders).
@@ -209,6 +218,22 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       this.pendingBroadcasts.shift();
     }
     this.pendingBroadcasts.push(message);
+  }
+
+  /** This host's Directory contribution: every workspace folder, read-only in
+   *  the office. Shared with the launch path, which needs the same union to
+   *  name the agents it creates (adapters/vscode/hostDirectories.ts). */
+  private hostDirectories(): HostDirectoryEntry[] {
+    return workspaceDirectories();
+  }
+
+  /** Send the current union (user-defined + workspace folders) to the office.
+   *  Also the success signal for a Directory mutation. */
+  private sendDirectories(): void {
+    this.sendOrBuffer({
+      type: 'directoriesLoaded',
+      directories: listDirectories(this.hostDirectories()),
+    });
   }
 
   private initServer(): void {
@@ -432,8 +457,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.runtime.jsonlPollTimers,
           this.runtime.projectScanTimer,
           () => this.store.persist(),
-          message.folderPath as string | undefined,
-          message.bypassPermissions as boolean | undefined,
+          // Every launch comes from a drawer row and carries its Directory's
+          // path; no directoryPath leaves launchNewTerminal's own fallback —
+          // the first workspace folder — exactly as it was.
+          message.directoryPath as string | undefined,
+          // Permission posture is a persisted per-host setting, never a
+          // per-launch field: the webview sends only where to launch.
+          this.adapter.getSetting<boolean>(GLOBAL_KEY_BYPASS_PERMISSIONS, false),
         );
         // Register newly created agent(s) with hook handler
         for (const [id, agent] of this.store) {
@@ -497,6 +527,22 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       } else if (message.type === 'setShowAreas') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_SHOW_AREAS, enabled);
+      } else if (
+        message.type === 'saveDirectory' ||
+        message.type === 'removeDirectory' ||
+        message.type === 'requestDirectorySuggestions'
+      ) {
+        // Shared with the standalone host: same validation, same union, same
+        // machine-wide config. This surface has a single office, so the
+        // rebroadcast and the point-to-point reply are the same channel.
+        handleDirectoryClientMessage(message as Record<string, unknown>, {
+          hostDirectories: () => this.hostDirectories(),
+          broadcast: (m) => this.sendOrBuffer(m),
+          reply: (m) => this.sendOrBuffer(m),
+          suggestions: () => collectDirectorySuggestions(claudeProvider, this.hostDirectories()),
+        });
+      } else if (message.type === 'setBypassPermissions') {
+        this.adapter.setSetting(GLOBAL_KEY_BYPASS_PERMISSIONS, message.enabled as boolean);
       } else if (message.type === 'saveAreaMappings') {
         const mappings = message.mappings as Record<string, string[]>;
         const cfg = readConfig();
@@ -556,10 +602,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           subagentToolNames: [...claudeProvider.subagentToolNames],
         });
 
-        // Settings + folder→Area mappings MUST be dispatched BEFORE restoreAgents
+        // Settings + Directory→Area mappings MUST be dispatched BEFORE restoreAgents
         // and the auto-spawn path. Both paths emit `agentCreated` postMessages via
         // AgentStateStore events; the webview's handler routes each agent through
-        // OfficeState.findFreeSeat(folderName), which depends on `areaMappings`.
+        // OfficeState.findFreeSeat(directoryName), which depends on `areaMappings`.
         // If we restore agents first, Stage-1 (in-Area) is silently skipped for
         // restored / auto-spawned agents and their preferred Area placement is lost.
         const soundEnabled = this.adapter.getSetting<boolean>(GLOBAL_KEY_SOUND_ENABLED, true);
@@ -585,6 +631,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         const hooksEnabled = getHooksEnabled(claudeProvider.id);
         const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
         const showAreas = this.adapter.getSetting<boolean>(GLOBAL_KEY_SHOW_AREAS, false);
+        const bypassPermissions = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_BYPASS_PERMISSIONS,
+          false,
+        );
         const config = readConfig();
         this.webview?.postMessage({
           type: 'settingsLoaded',
@@ -598,6 +648,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           hooksInfoShown,
           externalAssetDirectories: config.externalAssetDirectories,
           showAreas,
+          bypassPermissions,
         });
 
         // One status + at most one consent ask PER PROVIDER. Install state is distinct from the hooksEnabled
@@ -633,7 +684,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           if (consentRequest) this.webview?.postMessage(consentRequest);
         }
 
-        // Folder→Area mappings (must arrive before any agentCreated/existingAgents
+        // Directory→Area mappings (must arrive before any agentCreated/existingAgents
         // so OfficeState.findFreeSeat has the dict when characters are placed).
         this.webview?.postMessage({
           type: 'areaMappingsLoaded',
@@ -689,7 +740,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             this.runtime.projectScanTimer,
             () => this.store.persist(),
             undefined,
-            undefined,
+            // Auto-spawn is a launch like any other, so it runs under the same
+            // persisted permission posture.
+            bypassPermissions,
             autoShowPanel,
           );
           for (const [id, agent] of this.store) {
@@ -703,16 +756,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.autoSpawnAttempted = true;
         }
 
-        // Send workspace folders to webview (only when multi-root)
-        const wsFolders = vscode.workspace.workspaceFolders;
-        if (wsFolders && wsFolders.length > 1) {
-          this.webview?.postMessage({
-            type: 'workspaceFolders',
-            folders: wsFolders.map((f) => ({ name: f.name, path: f.uri.fsPath })),
-          });
-        }
+        // Contribute the host's native context as read-only Directories — every
+        // workspace folder, single-root included (the counterpart of standalone
+        // contributing its start directory) — merged with the user-defined ones
+        // from the machine-wide config. Sent unconditionally: user-defined
+        // Directories exist even in a window with no folder open. What a plain
+        // "+ Agent" tap does depends on the Default directory — see BottomToolbar.
+        this.sendDirectories();
 
         // Ensure project scan runs even with no restored agents (to adopt external terminals)
+        const wsFolders = vscode.workspace.workspaceFolders;
         const projectDir = getProjectDirPath();
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         console.log(`[Pixel Agents] Debug: Platform: ${process.platform}, arch: ${process.arch}`);
