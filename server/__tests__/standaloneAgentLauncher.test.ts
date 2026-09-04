@@ -109,7 +109,7 @@ describe('launchStandaloneAgent', () => {
     const cwd = path.join(tempDir, 'workspace');
     fs.mkdirSync(cwd);
 
-    const id = launch(harness, { folderPath: cwd });
+    const id = launch(harness, { directoryPath: cwd });
 
     expect(id).toBe(1);
     const agent = store.get(1);

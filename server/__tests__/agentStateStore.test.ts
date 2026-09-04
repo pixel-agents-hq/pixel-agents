@@ -147,7 +147,7 @@ describe('AgentStateStore', () => {
           sessionId: 'sess-1',
           projectDir: '/proj',
           jsonlFile: '/proj/sess-1.jsonl',
-          folderName: 'my-folder',
+          directoryName: 'my-directory',
           teamName: 'team-a',
           agentName: undefined,
           isTeamLead: true,
@@ -165,7 +165,7 @@ describe('AgentStateStore', () => {
       expect(saved[0].terminalName).toBe('');
       expect(saved[0].projectDir).toBe('/proj');
       expect(saved[0].jsonlFile).toBe('/proj/sess-1.jsonl');
-      expect(saved[0].folderName).toBe('my-folder');
+      expect(saved[0].directoryName).toBe('my-directory');
       expect(saved[0].teamName).toBe('team-a');
       expect(saved[0].isTeamLead).toBe(true);
     });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { Directory } from '../hooks/useExtensionMessages.js';
 import type { TerminalDrawerController } from '../hooks/useTerminalDrawer.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 
@@ -13,8 +14,9 @@ export interface MobileShellController {
   toggleView: () => void;
   /** A tap on an agent card. */
   selectCard: (agentId: number) => void;
-  /** The + card: launch, then slide over once the new terminal appears. */
-  launch: () => void;
+  /** A Directory picked from the + card's drawer: launch into it, then
+   *  slide over once the new terminal appears. */
+  launch: (directory: Directory) => void;
 }
 
 interface MobileShellInputs {
@@ -22,7 +24,7 @@ interface MobileShellInputs {
   terminalAgentIds: number[];
   drawer: TerminalDrawerController;
   focusedAgentId: number | null;
-  launchAgent: () => void;
+  launchAgent: (directory: Directory) => void;
 }
 
 /**
@@ -51,10 +53,13 @@ export function useMobileShell({
     pendingLaunchRef.current = false;
   }, [lastOpened]);
 
-  const launch = useCallback(() => {
-    pendingLaunchRef.current = true;
-    launchAgent();
-  }, [launchAgent]);
+  const launch = useCallback(
+    (directory: Directory) => {
+      pendingLaunchRef.current = true;
+      launchAgent(directory);
+    },
+    [launchAgent],
+  );
 
   const showTerminal = useCallback(() => setView('terminal'), []);
 

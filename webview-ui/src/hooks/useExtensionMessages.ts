@@ -63,9 +63,20 @@ interface FurnitureAsset {
   frame?: number;
 }
 
-export interface WorkspaceFolder {
+export interface Directory {
   name: string;
   path: string;
+  /** Where the entry came from. Host-contributed entries (VS Code's workspace
+   *  folders, standalone's start directory) are read-only in the office. */
+  source: 'user' | 'host';
+}
+
+/** A refused saveDirectory, shown inline in the Directory modal. `seq` rises
+ *  with every rejection so a repeat of the same one still reads as new. */
+export interface DirectoryRejection {
+  path: string;
+  reason: string;
+  seq: number;
 }
 
 interface ExtensionMessageState {
@@ -82,9 +93,15 @@ interface ExtensionMessageState {
   layoutReady: boolean;
   layoutWasReset: boolean;
   loadedAssets?: { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> };
-  workspaceFolders: WorkspaceFolder[];
-  /** Distinct folderNames seen across agents this session — source for the Areas folder dropdown. */
-  agentFolderNames: string[];
+  directories: Directory[];
+  /** Last refused saveDirectory. The Directory modal shows it inline; the next
+   *  directoriesLoaded is what tells it a save went through instead. */
+  directoryRejection: DirectoryRejection | null;
+  /** Paths the host recovered from past sessions, offered as taps in the
+   *  Directory modal. Refreshed every time the modal asks. */
+  directorySuggestions: string[];
+  /** Distinct directoryNames seen across agents this session — source for the Areas Directory dropdown. */
+  agentDirectoryNames: string[];
   externalAssetDirectories: string[];
   lastSeenVersion: string;
   extensionVersion: string;
@@ -114,6 +131,9 @@ interface ExtensionMessageState {
   setAreaMappings: (m: Record<string, string[]>) => void;
   showAreas: boolean;
   setShowAreas: (v: boolean) => void;
+  /** Persisted permission posture for this host; the host applies it at launch. */
+  bypassPermissions: boolean;
+  setBypassPermissions: (v: boolean) => void;
   // Terminal (standalone only; always false/empty under VS Code, which owns its
   // own terminals and never sends these messages)
   terminalAvailable: boolean;
@@ -157,8 +177,10 @@ export function useExtensionMessages(
   const [loadedAssets, setLoadedAssets] = useState<
     { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> } | undefined
   >();
-  const [workspaceFolders, setWorkspaceFolders] = useState<WorkspaceFolder[]>([]);
-  const [agentFolderNames, setAgentFolderNames] = useState<string[]>([]);
+  const [directories, setDirectories] = useState<Directory[]>([]);
+  const [directoryRejection, setDirectoryRejection] = useState<DirectoryRejection | null>(null);
+  const [directorySuggestions, setDirectorySuggestions] = useState<string[]>([]);
+  const [agentDirectoryNames, setAgentDirectoryNames] = useState<string[]>([]);
   const [externalAssetDirectories, setExternalAssetDirectories] = useState<string[]>([]);
   const [lastSeenVersion, setLastSeenVersion] = useState('');
   const [extensionVersion, setExtensionVersion] = useState('');
@@ -176,6 +198,7 @@ export function useExtensionMessages(
   const consentRequest = consentQueue[0] ?? null;
   const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
   const [showAreas, setShowAreas] = useState(false);
+  const [bypassPermissions, setBypassPermissions] = useState(false);
   // Terminal control plane (standalone only; the server never sends these in
   // VS Code mode, so terminalAvailable stays false and no terminal UI renders).
   const [terminalAvailable, setTerminalAvailable] = useState(false);
@@ -204,12 +227,12 @@ export function useExtensionMessages(
     // Buffer agents from existingAgents until layout is loaded
     let pendingAgents: PendingAgent[] = [];
 
-    // Accumulate distinct folderNames seen across agents (never removed during the
-    // session): the source for the Areas folder-mapping dropdown, so a folder stays
+    // Accumulate distinct directoryNames seen across agents (never removed during the
+    // session): the source for the Areas Directory-mapping dropdown, so a Directory stays
     // editable even after its agents close.
-    const noteFolderName = (name?: string) => {
+    const noteDirectoryName = (name?: string) => {
       if (!name) return;
-      setAgentFolderNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      setAgentDirectoryNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -281,7 +304,7 @@ export function useExtensionMessages(
         }
         // Add buffered agents now that layout (and seats) are correct
         for (const p of pendingAgents) {
-          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
+          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.directoryName);
           if (p.isHeadless) os.setHeadless(p.id, true);
         }
         pendingAgents = [];
@@ -295,7 +318,7 @@ export function useExtensionMessages(
         }
       } else if (msg.type === 'agentCreated') {
         const id = msg.id as number;
-        const folderName = msg.folderName as string | undefined;
+        const directoryName = msg.directoryName as string | undefined;
         const isTeammate = msg.isTeammate as boolean | undefined;
         const teammateName = msg.teammateName as string | undefined;
         const teammateParentId = msg.parentAgentId as number | undefined;
@@ -306,7 +329,7 @@ export function useExtensionMessages(
           setSelectedAgent(id);
         }
         if (isTeammate && teammateParentId !== undefined) {
-          // Teammate: inherit parent's palette and workspace folderName (teammate runs
+          // Teammate: inherit parent's palette and workspace directoryName (teammate runs
           // in the same workspace as the lead). Name shown via agentName (teamRoleLabel).
           // Seat them at the free seat closest to the lead so the team clusters.
           const parentCh = os.characters.get(teammateParentId);
@@ -318,10 +341,10 @@ export function useExtensionMessages(
             hueShift,
             undefined,
             undefined,
-            parentCh?.folderName,
+            parentCh?.directoryName,
             teammateParentId,
           );
-          noteFolderName(parentCh?.folderName);
+          noteDirectoryName(parentCh?.directoryName);
           // Set team metadata on the character
           const ch = os.characters.get(id);
           if (ch) {
@@ -332,8 +355,8 @@ export function useExtensionMessages(
         } else {
           const palette = msg.palette as number | undefined;
           const hueShift = msg.hueShift as number | undefined;
-          os.addAgent(id, palette, hueShift, undefined, undefined, folderName);
-          noteFolderName(folderName);
+          os.addAgent(id, palette, hueShift, undefined, undefined, directoryName);
+          noteDirectoryName(directoryName);
           if (isHeadlessAgent(msg.isExternal as boolean | undefined)) {
             os.setHeadless(id, true);
           }
@@ -360,11 +383,11 @@ export function useExtensionMessages(
       } else if (msg.type === 'existingAgents') {
         const incoming = msg.agents as number[];
         const meta = (msg.agentMeta || {}) as Record<number, ExistingAgentMeta>;
-        const folderNames = (msg.folderNames || {}) as Record<number, string>;
+        const directoryNames = (msg.directoryNames || {}) as Record<number, string>;
         const externalAgents = (msg.externalAgents || {}) as Record<number, boolean>;
         const headlessAgents: Record<number, boolean> = {};
         for (const id of incoming) {
-          noteFolderName(folderNames[id]);
+          noteDirectoryName(directoryNames[id]);
           if (isHeadlessAgent(externalAgents[id])) headlessAgents[id] = true;
         }
         // Order-independent restore: add agents now if the layout (and its seats)
@@ -376,7 +399,7 @@ export function useExtensionMessages(
             os,
             incoming,
             meta,
-            folderNames,
+            directoryNames,
             layoutReadyRef.current,
             pendingAgents,
             headlessAgents,
@@ -678,9 +701,17 @@ export function useExtensionMessages(
         const mappings = (msg.mappings ?? {}) as Record<string, string[]>;
         setAreaMappings(mappings);
         os.setAreaMappings(mappings);
-      } else if (msg.type === 'workspaceFolders') {
-        const folders = msg.folders as WorkspaceFolder[];
-        setWorkspaceFolders(folders);
+      } else if (msg.type === 'directoriesLoaded') {
+        const directories = msg.directories as Directory[];
+        setDirectories(directories);
+      } else if (msg.type === 'directorySuggestions') {
+        setDirectorySuggestions((msg.paths ?? []) as string[]);
+      } else if (msg.type === 'directoryRejected') {
+        setDirectoryRejection((prev) => ({
+          path: msg.path as string,
+          reason: msg.reason as string,
+          seq: (prev?.seq ?? 0) + 1,
+        }));
       } else if (msg.type === 'settingsLoaded') {
         const soundOn = msg.soundEnabled as boolean;
         setSoundEnabled(soundOn);
@@ -701,6 +732,9 @@ export function useExtensionMessages(
         }
         if (typeof msg.showAreas === 'boolean') {
           setShowAreas(msg.showAreas as boolean);
+        }
+        if (typeof msg.bypassPermissions === 'boolean') {
+          setBypassPermissions(msg.bypassPermissions as boolean);
         }
         if (Array.isArray(msg.externalAssetDirectories)) {
           setExternalAssetDirectories(msg.externalAssetDirectories as string[]);
@@ -807,8 +841,10 @@ export function useExtensionMessages(
     layoutReady,
     layoutWasReset,
     loadedAssets,
-    workspaceFolders,
-    agentFolderNames,
+    directories,
+    directoryRejection,
+    directorySuggestions,
+    agentDirectoryNames,
     externalAssetDirectories,
     lastSeenVersion,
     extensionVersion,
@@ -838,6 +874,8 @@ export function useExtensionMessages(
     setAreaMappings,
     showAreas,
     setShowAreas,
+    bypassPermissions,
+    setBypassPermissions,
     terminalAvailable,
     terminalUnavailableReason,
     terminalAgentIds,

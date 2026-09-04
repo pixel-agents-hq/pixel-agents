@@ -73,8 +73,8 @@ interface EditorToolbarProps {
   // Area state + handlers
   areas: AreaDefinition[];
   selectedAreaLabel: string | null;
-  workspaceFolders: { name: string; path: string }[];
-  /** Whether the Areas tool is offered (layout has areas OR some folder is mappable). */
+  directories: { name: string; path: string }[];
+  /** Whether the Areas tool is offered (layout has areas OR some Directory is mappable). */
   areasAvailable: boolean;
   areaMappings: Record<string, string[]>;
   onSelectArea: (label: string | null) => void;
@@ -82,7 +82,7 @@ interface EditorToolbarProps {
   onRemoveArea: (label: string) => void;
   onRenameArea: (oldLabel: string, newLabel: string) => void;
   onAreaColorChange: (label: string, color: string) => void;
-  onAreaMappingChange: (folderName: string, areaLabel: string, action: 'add' | 'remove') => void;
+  onAreaMappingChange: (directoryName: string, areaLabel: string, action: 'add' | 'remove') => void;
 }
 
 const THUMB_ZOOM = 2;
@@ -120,7 +120,7 @@ export function EditorToolbar({
   onCarpetAccentColorChange,
   areas,
   selectedAreaLabel,
-  workspaceFolders,
+  directories,
   areasAvailable,
   areaMappings,
   onSelectArea,
@@ -455,7 +455,7 @@ export function EditorToolbar({
                   onRename={(newLabel) => onRenameArea(area.label, newLabel)}
                   onRemove={() => onRemoveArea(area.label)}
                   onColorChange={(c) => onAreaColorChange(area.label, c)}
-                  workspaceFolders={workspaceFolders}
+                  directories={directories}
                   areaMappings={areaMappings}
                   onAreaMappingChange={onAreaMappingChange}
                 />
@@ -752,7 +752,7 @@ function AreaCard({
   onRename,
   onRemove,
   onColorChange,
-  workspaceFolders,
+  directories,
   areaMappings,
   onAreaMappingChange,
 }: {
@@ -762,9 +762,9 @@ function AreaCard({
   onRename: (newLabel: string) => void;
   onRemove: () => void;
   onColorChange: (color: string) => void;
-  workspaceFolders: { name: string; path: string }[];
+  directories: { name: string; path: string }[];
   areaMappings: Record<string, string[]>;
-  onAreaMappingChange: (folderName: string, areaLabel: string, action: 'add' | 'remove') => void;
+  onAreaMappingChange: (directoryName: string, areaLabel: string, action: 'add' | 'remove') => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState(area.label);
@@ -778,8 +778,8 @@ function AreaCard({
     [areaMappings, area.label],
   );
   const availableFolders = useMemo(
-    () => workspaceFolders.filter((f) => !mappedFolders.includes(f.name)),
-    [workspaceFolders, mappedFolders],
+    () => directories.filter((f) => !mappedFolders.includes(f.name)),
+    [directories, mappedFolders],
   );
 
   const commitRename = () => {

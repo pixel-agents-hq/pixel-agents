@@ -10,6 +10,7 @@ import {
   getHooksEnabled,
   grantHooksConsent,
   parseAreaMappings,
+  parseUserDirectories,
   readConfig,
   recordHooksDecline,
   resetHooksConfig,
@@ -88,7 +89,7 @@ describe('configPersistence: areas', () => {
       });
     });
 
-    it('preserves empty arrays as a deliberate "folder has no preferred area" signal', () => {
+    it('preserves empty arrays as a deliberate "directory has no preferred area" signal', () => {
       const input = { frontend: [] };
       expect(parseAreaMappings(input)).toEqual({ frontend: [] });
     });
@@ -262,6 +263,76 @@ describe('configPersistence: areas', () => {
       // showAreas: true is valid; areaMappings.frontend: 'broken' is not an array → dropped
       expect(cfg.standalone.showAreas).toBe(true);
       expect(cfg.standalone.areaMappings).toEqual({});
+    });
+
+    it('defaults bypassPermissions off and coerces a non-boolean back to it', () => {
+      expect(readConfig().standalone.bypassPermissions).toBe(false);
+
+      const configDir = path.join(tempHome, '.pixel-agents');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.json'),
+        JSON.stringify({
+          vscode: { bypassPermissions: 'sure' },
+          standalone: { bypassPermissions: true },
+        }),
+        'utf-8',
+      );
+
+      const cfg = readConfig();
+      expect(cfg.vscode.bypassPermissions).toBe(false);
+      expect(cfg.standalone.bypassPermissions).toBe(true);
+    });
+
+    it('defaults the Directory tier to an empty list', () => {
+      const cfg = readConfig();
+      expect(cfg.directories).toEqual([]);
+    });
+
+    it('round-trips user-defined Directories (shared, not per-namespace)', () => {
+      const cfg = readConfig();
+      cfg.directories = [
+        { name: 'Frontend', path: '/tmp/frontend' },
+        { name: 'Backend', path: '/tmp/backend' },
+      ];
+      writeConfig(cfg);
+
+      const reloaded = readConfig();
+      expect(reloaded.directories).toEqual([
+        { name: 'Frontend', path: '/tmp/frontend' },
+        { name: 'Backend', path: '/tmp/backend' },
+      ]);
+    });
+
+    it('coerces a hand-edited config.json with malformed Directory entries', () => {
+      const configDir = path.join(tempHome, '.pixel-agents');
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(configDir, 'config.json'),
+        JSON.stringify({
+          directories: [
+            { name: 'Good', path: '/tmp/good' },
+            { name: 'Nameless' },
+            { path: '/tmp/pathless-name-missing' },
+            { name: 42, path: '/tmp/bad-name' },
+            'not-an-object',
+            null,
+          ],
+        }),
+        'utf-8',
+      );
+
+      const cfg = readConfig();
+      expect(cfg.directories).toEqual([{ name: 'Good', path: '/tmp/good' }]);
+    });
+
+    it('parseUserDirectories drops anything that is not a named path', () => {
+      expect(parseUserDirectories(null)).toEqual([]);
+      expect(parseUserDirectories({ name: 'x', path: '/tmp' })).toEqual([]);
+      expect(parseUserDirectories([{ name: 'x', path: '' }])).toEqual([]);
+      expect(parseUserDirectories([{ name: 'x', path: '/tmp' }])).toEqual([
+        { name: 'x', path: '/tmp' },
+      ]);
     });
 
     it('keeps namespaces isolated when only one writes mappings', () => {

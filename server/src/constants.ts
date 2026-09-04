@@ -47,6 +47,20 @@ export const GLOBAL_SCAN_ACTIVE_MIN_SIZE = 3_072; // 3KB
 /** Only adopt global JSONL files modified within this window */
 export const GLOBAL_SCAN_ACTIVE_MAX_AGE_MS = 600_000; // 10 minutes
 
+// ── Directory Suggestions ───────────────────────────────────
+/** How much of a session transcript is read to recover the working directory it
+ *  records. The cwd sits on the first records, so the head is enough — whole
+ *  transcripts run to megabytes and there is one per session on the machine. */
+export const DIRECTORY_SUGGESTION_HEAD_BYTES = 8_192;
+/** Transcripts tried per session directory before moving on. Every session in
+ *  one directory shares a cwd (the directory name encodes it), so the extra
+ *  attempts only cover empty or half-written files. */
+export const DIRECTORY_SUGGESTION_FILES_PER_SESSION_DIR = 5;
+/** Upper bound on suggestions returned, so a long agent history can't flood the
+ *  Directory modal on a phone. The newest survive the cut — the list is ordered
+ *  by when a session last ran there. */
+export const DIRECTORY_SUGGESTION_LIMIT = 10;
+
 // ── Display Truncation + Pixel Agents Server paths ──────────
 // Centralized in core/src/constants.ts; re-exported here for back-compat.
 export {

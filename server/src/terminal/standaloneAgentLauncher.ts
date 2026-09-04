@@ -20,7 +20,9 @@ import type { AgentRuntime } from '../agentRuntime.js';
 import { createAgentState } from '../agentState.js';
 import type { AgentStateStore } from '../agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../constants.js';
+import { directoryNameForLaunch } from '../directories.js';
 import { startFileWatching } from '../fileWatcher.js';
+import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import type { AgentState } from '../types.js';
 import type { PtySessionManager } from './ptySessionManager.js';
@@ -33,9 +35,11 @@ export interface LaunchStandaloneAgentDeps {
 }
 
 export interface LaunchStandaloneAgentOptions {
-  /** Working directory for the agent. Defaults to the server's cwd -- standalone
-   *  has no workspace-folder concept (see design doc open question 4). */
-  folderPath?: string;
+  /** Path of the Directory to launch into. Defaults to the server's cwd, which
+   *  is also the Directory standalone contributes as its host entry. */
+  directoryPath?: string;
+  /** Read from the host's persisted permission posture by the caller; never a
+   *  per-launch choice made in the office. */
   bypassPermissions?: boolean;
   cols?: number;
   rows?: number;
@@ -56,7 +60,7 @@ export function launchStandaloneAgent(
     return null;
   }
 
-  const cwd = options.folderPath ?? process.cwd();
+  const cwd = options.directoryPath ?? process.cwd();
   const sessionId = crypto.randomUUID();
 
   const launch = provider.buildLaunchCommand?.(sessionId, cwd, {
@@ -108,6 +112,12 @@ export function launchStandaloneAgent(
     isExternal: false,
     projectDir,
     jsonlFile: expectedFile,
+    // The character's origin label (and its Area-mapping key): the name of the
+    // Directory it was launched into, as the user named it — so an entry called
+    // "Side Project" labels its agents that, not "side-project", and the Areas
+    // it was assigned in the modal actually match. Falls back to the basename
+    // for a cwd that is no Directory at all.
+    directoryName: directoryNameForLaunch(cwd, [hostDirectory()]) ?? directoryNameFor(cwd),
     providerId: provider.id,
   });
 

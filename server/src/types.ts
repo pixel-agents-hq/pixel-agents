@@ -20,8 +20,8 @@ export interface AgentState {
   isWaiting: boolean;
   permissionSent: boolean;
   hadToolsInTurn: boolean;
-  /** Workspace folder name (only set for multi-root workspaces) */
-  folderName?: string;
+  /** Directory name — the agent's origin label (only set for multi-root workspaces) */
+  directoryName?: string;
   /** Timestamp of last JSONL data received (ms since epoch) */
   lastDataAt: number;
   /** Total JSONL lines processed for this agent */
@@ -96,8 +96,8 @@ export interface PersistedAgent {
   isExternal?: boolean;
   jsonlFile: string;
   projectDir: string;
-  /** Workspace folder name (only set for multi-root workspaces) */
-  folderName?: string;
+  /** Directory name — the agent's origin label (only set for multi-root workspaces) */
+  directoryName?: string;
 
   // -- Agent Teams --
   teamName?: string;

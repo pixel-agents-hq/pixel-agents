@@ -6,6 +6,7 @@ import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
+import { DirectoryModal } from './components/DirectoryModal.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
@@ -17,8 +18,10 @@ import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
 import { OFFICE_CANVAS_TEST_ID } from './constants.js';
+import { useDirectoryEditor } from './hooks/useDirectoryEditor.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
+import type { Directory } from './hooks/useExtensionMessages.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useIntroTour } from './hooks/useIntroTour.js';
 import { useIsMobile } from './hooks/useIsMobile.js';
@@ -88,8 +91,10 @@ function App() {
     layoutReady,
     layoutWasReset,
     loadedAssets,
-    workspaceFolders,
-    agentFolderNames,
+    directories,
+    directoryRejection,
+    directorySuggestions,
+    agentDirectoryNames,
     externalAssetDirectories,
     lastSeenVersion,
     extensionVersion,
@@ -108,6 +113,8 @@ function App() {
     setAreaMappings,
     showAreas,
     setShowAreas,
+    bypassPermissions,
+    setBypassPermissions,
     terminalAvailable,
     terminalUnavailableReason,
     terminalAgentIds,
@@ -152,12 +159,15 @@ function App() {
     agentSeenActivity,
   });
 
+  const launchIntoDirectory = useCallback((directory: Directory) => {
+    transport.send({ type: 'launchAgent', directoryPath: directory.path });
+  }, []);
   const mobileShell = useMobileShell({
     getOfficeState,
     terminalAgentIds,
     drawer: terminalDrawer,
     focusedAgentId,
-    launchAgent: editor.handleOpenClaude,
+    launchAgent: launchIntoDirectory,
   });
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
@@ -175,6 +185,14 @@ function App() {
   useEffect(() => {
     setAlwaysShowOverlay(alwaysShowLabels);
   }, [alwaysShowLabels]);
+
+  const directoryEditor = useDirectoryEditor({
+    directories,
+    directoryRejection,
+    areaMappings,
+    setAreaMappings,
+    getOfficeState,
+  });
 
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), []);
   const handleToggleAlwaysShowOverlay = useCallback(() => {
@@ -212,11 +230,11 @@ function App() {
   // the Claude row of the per-provider install-state map.
   const claudeHooksInstalled = hooksInstalled['claude'] === true;
 
-  // Mutate folder→Area mappings locally + send to server. Updates OfficeState in
+  // Mutate Directory→Area mappings locally + send to server. Updates OfficeState in
   // the same tick so a follow-up agentCreated picks up the new mapping.
   const handleAreaMappingChange = useCallback(
-    (folderName: string, areaLabel: string, action: 'add' | 'remove') => {
-      const current = areaMappings[folderName] ?? [];
+    (directoryName: string, areaLabel: string, action: 'add' | 'remove') => {
+      const current = areaMappings[directoryName] ?? [];
       let nextLabels: string[];
       if (action === 'add') {
         if (current.includes(areaLabel)) return;
@@ -226,9 +244,9 @@ function App() {
       }
       const next = { ...areaMappings };
       if (nextLabels.length === 0) {
-        delete next[folderName];
+        delete next[directoryName];
       } else {
-        next[folderName] = nextLabels;
+        next[directoryName] = nextLabels;
       }
       setAreaMappings(next);
       getOfficeState().setAreaMappings(next);
@@ -344,23 +362,30 @@ function App() {
 
   const officeState = getOfficeState();
 
-  // Merged set of folders the Areas dropdown can map: real workspace folders plus
-  // every distinct folder an agent has run in this session (deduped by name; name
+  // Merged set of Directories the Areas dropdown can map: host-contributed ones plus
+  // every distinct Directory an agent has run in this session (deduped by name; name
   // is the areaMappings key / seat-bias identity, path is only the React list key).
-  const areaFolders = useMemo(() => {
+  const areaDirectories = useMemo(() => {
     const byName = new Map<string, { name: string; path: string }>();
-    for (const f of workspaceFolders) byName.set(f.name, f);
-    for (const name of agentFolderNames) {
+    for (const f of directories) byName.set(f.name, f);
+    for (const name of agentDirectoryNames) {
       if (!byName.has(name)) byName.set(name, { name, path: name });
     }
     return [...byName.values()];
-  }, [workspaceFolders, agentFolderNames]);
+  }, [directories, agentDirectoryNames]);
+
+  // The Areas the office defines, offered as a multi-select in the Directory
+  // modal. Read straight off the layout (imperative state) on each render, so a
+  // layout that loaded — or an Area just added in the editor — is in the list
+  // the next time the modal opens.
+  const areaLabels = (officeState.getLayout().areas ?? []).map((area) => area.label);
 
   // Areas authoring is available when the layout already defines areas, or when
-  // there is at least one mappable folder. Decouples the Areas UI from VS Code
+  // there is at least one mappable Directory. Decouples the Areas UI from VS Code
   // multi-root workspaces (fixes single-root VS Code AND standalone, where
-  // workspaceFolders is always empty).
-  const areasAvailable = (officeState.getLayout().areas?.length ?? 0) > 0 || areaFolders.length > 0;
+  // directories is always empty).
+  const areasAvailable =
+    (officeState.getLayout().areas?.length ?? 0) > 0 || areaDirectories.length > 0;
 
   const handleExportLayout = useCallback(() => {
     exportLayoutToFile(getOfficeState().getLayout());
@@ -525,7 +550,7 @@ function App() {
                   onCarpetAccentColorChange={editor.handleCarpetAccentColorChange}
                   areas={officeState.getLayout().areas ?? []}
                   selectedAreaLabel={editor.selectedAreaLabel}
-                  workspaceFolders={areaFolders}
+                  directories={areaDirectories}
                   areasAvailable={areasAvailable}
                   areaMappings={areaMappings}
                   onSelectArea={editor.handleSelectArea}
@@ -595,11 +620,12 @@ function App() {
       {!isMobile && (
         <BottomToolbar
           isEditMode={editor.isEditMode}
-          onOpenClaude={editor.handleOpenClaude}
           onToggleEditMode={editor.handleToggleEditMode}
           isSettingsOpen={isSettingsOpen}
           onToggleSettings={() => setIsSettingsOpen((v) => !v)}
-          workspaceFolders={workspaceFolders}
+          directories={directories}
+          onAddDirectory={directoryEditor.add}
+          onEditDirectory={directoryEditor.edit}
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
         />
@@ -673,6 +699,9 @@ function App() {
           focusedAgentId={focusedAgentId}
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
+          directories={directories}
+          onAddDirectory={directoryEditor.add}
+          onEditDirectory={directoryEditor.edit}
           onCloseAgent={handleCloseAgent}
           keyboardOpen={keyboard.keyboardOpen}
         />
@@ -752,6 +781,20 @@ function App() {
           </p>
         </div>
       </Modal>
+      {/* Rendered at the composition root, not inside a launch surface: the
+          drawer that opens it lives in BottomToolbar on desktop and
+          MobileAgentBar on mobile, and both close as soon as it appears. */}
+      <DirectoryModal
+        isOpen={directoryEditor.modal.open}
+        editing={directoryEditor.modal.editing}
+        error={directoryEditor.error}
+        suggestions={directorySuggestions}
+        areas={areaLabels}
+        assignedAreas={directoryEditor.assignedAreas}
+        onSubmit={directoryEditor.submit}
+        onDelete={directoryEditor.remove}
+        onClose={directoryEditor.close}
+      />
 
       <ChangelogModal
         isOpen={isChangelogOpen}
@@ -795,6 +838,12 @@ function App() {
         showAreas={showAreas}
         onToggleShowAreas={onToggleShowAreas}
         showAreasAvailable={areasAvailable}
+        bypassPermissions={bypassPermissions}
+        onToggleBypassPermissions={() => {
+          const newVal = !bypassPermissions;
+          setBypassPermissions(newVal);
+          transport.send({ type: 'setBypassPermissions', enabled: newVal });
+        }}
         onExportLayout={handleExportLayout}
         onImportLayout={handleImportLayout}
       />
