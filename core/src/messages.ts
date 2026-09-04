@@ -38,6 +38,9 @@ export type ServerMessage =
   | ExternalAssetDirectoriesUpdated
   | AreaMappingsLoaded
   | WorkspaceFolders
+  | TerminalAvailability
+  | TerminalSessionOpened
+  | TerminalSessionClosed
   | AgentDiagnostics;
 
 export type ClientMessage =
@@ -308,6 +311,23 @@ export interface WorkspaceFolders {
 export interface WorkspaceFolder {
   name: string;
   path: string;
+}
+
+export interface TerminalAvailability {
+  type: 'terminalAvailability';
+  available: boolean;
+  reason?: string;
+}
+
+export interface TerminalSessionOpened {
+  type: 'terminalSessionOpened';
+  agentId: number;
+}
+
+export interface TerminalSessionClosed {
+  type: 'terminalSessionClosed';
+  agentId: number;
+  exitCode?: number;
 }
 
 export interface AgentDiagnostics {

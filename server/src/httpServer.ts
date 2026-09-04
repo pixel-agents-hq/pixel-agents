@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 
+import { TERMINAL_WS_PROTOCOL } from '../../core/src/constants.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type {
@@ -19,6 +20,8 @@ import {
   WS_CLOSE_FORBIDDEN_ORIGIN,
   WS_CLOSE_UNAUTHORIZED,
 } from './constants.js';
+import type { PtySessionManager } from './terminal/ptySessionManager.js';
+import { registerTerminalRoutes } from './terminalRoutes.js';
 import type { AgentState } from './types.js';
 
 /** Options for creating the HTTP + WebSocket server. */
@@ -45,6 +48,9 @@ export interface HttpServerOptions {
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
   /** Invoked when an external asset directory is added/removed. Standalone reloads + re-broadcasts assets here. */
   onReloadAssets?: ReloadAssetsSideEffect;
+  /** PTY terminals for standalone-launched agents. Absent = terminal feature off
+   *  (VS Code embedded mode, where the editor owns terminals). */
+  ptyManager?: PtySessionManager;
 }
 
 /** Result of createHttpServer(). */
@@ -68,7 +74,19 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
   });
 
   await app.register(fastifyCors, { origin: true });
-  await app.register(fastifyWebsocket);
+  await app.register(fastifyWebsocket, {
+    options: {
+      // The terminal socket carries its auth token as the second subprotocol
+      // value (see terminal/terminalProtocol.ts). A browser fails the connection
+      // unless the server echoes back one of the offered protocols, so select
+      // the protocol NAME -- never the token, which must not be reflected. A
+      // /ws client offers no subprotocol and is left exactly as it was.
+      handleProtocols: (protocols: Set<string>) => {
+        if (protocols.has(TERMINAL_WS_PROTOCOL)) return TERMINAL_WS_PROTOCOL;
+        return false;
+      },
+    },
+  });
 
   // Static SPA serving (standalone mode only)
   if (!options.embedded && options.staticDir) {
@@ -87,6 +105,11 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
   registerHealthRoute(app);
   registerHookRoute(app, options);
   registerWebSocketRoute(app, options);
+  registerTerminalRoutes(app, {
+    token: options.token,
+    host: options.host ?? '127.0.0.1',
+    ptyManager: options.ptyManager,
+  });
 
   // ── Listen ──────────────────────────────────────────────────
 
@@ -139,6 +162,8 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
     },
   );
 }
+
+// ── Control session (standalone token handoff) ─────────────────
 
 // ── WebSocket ──────────────────────────────────────────────────
 
@@ -211,6 +236,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
           onSetHooksEnabled: options.onSetHooksEnabled,
           onReloadAssets: options.onReloadAssets,
           privileged,
+          ptyManager: options.ptyManager,
         });
       } catch {
         // Malformed JSON, ignore

@@ -25,10 +25,12 @@ import {
   grantHooksConsent,
   readConfig,
 } from './configPersistence.js';
-import { MAX_PORT, MIN_PORT } from './constants.js';
+import { MAX_PORT, MIN_PORT, TERMINAL_DISABLED_BY_FLAG_REASON } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
+import { PtySessionManager } from './terminal/ptySessionManager.js';
+import { isLoopbackHost } from './terminal/terminalProtocol.js';
 
 // ── Argument parsing ──────────────────────────────────────────
 
@@ -37,6 +39,9 @@ export interface CliArgs {
    *  can run at once without a collision. --port picks a fixed one. */
   port?: number;
   host: string;
+  /** False when --no-terminal was passed: the office only watches agents; the
+   *  browser can neither launch them nor attach to their terminals. */
+  terminal: boolean;
 }
 
 /** Thrown by parseArgs on an invalid --port. Kept separate from process.exit so
@@ -45,7 +50,7 @@ export interface CliArgs {
 export class CliArgsError extends Error {}
 
 export function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { host: '127.0.0.1' };
+  const args: CliArgs = { host: '127.0.0.1', terminal: true };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port' || argv[i] === '-p') {
       const raw = argv[i + 1];
@@ -65,12 +70,16 @@ export function parseArgs(argv: string[]): CliArgs {
     } else if (argv[i] === '--host' && argv[i + 1]) {
       args.host = argv[i + 1];
       i++;
+    } else if (argv[i] === '--no-terminal') {
+      args.terminal = false;
     } else if (argv[i] === '--help') {
       console.log(`Usage: pixel-agents [options]
 
 Options:
   --port, -p <number>   Port to listen on (default: OS-assigned ephemeral port)
   --host <string>       Host to bind to (default: 127.0.0.1)
+  --no-terminal         Disable the embedded terminal (watch agents only; no
+                        launching or attaching from the browser)
   --help                Show this help message`);
       process.exit(0);
     }
@@ -99,6 +108,52 @@ function copyHookScriptOrReport(packageRoot: string, context = ''): boolean {
   if (copyHookScript(packageRoot)) return true;
   console.error(`[Pixel Agents] Hooks NOT installed${context}: hook script missing.`);
   return false;
+}
+
+// ── Terminal status reporting ─────────────────────────────────
+
+/**
+ * Log one clear line about terminal availability, plus a security warning when
+ * a working terminal is bound to a non-loopback address.
+ *
+ * The reason string matters: the most likely failure (npm >=11.16 gating
+ * node-pty's install scripts, so it imports but can't spawn) is invisible
+ * otherwise -- the user would just see a + Agent button that does nothing.
+ *
+ * Opting out with --no-terminal is not a failure, so it gets a quiet
+ * confirmation instead of the reinstall hint, and skips the non-loopback shell
+ * warning (there is no shell surface to warn about).
+ */
+function reportTerminalStatus(
+  ptyManager: PtySessionManager,
+  host: string,
+  enabledByFlag: boolean,
+): void {
+  if (!enabledByFlag) {
+    console.log(
+      '[Pixel Agents] Terminal disabled (--no-terminal): agents can be watched but not launched from the browser.',
+    );
+    return;
+  }
+
+  if (!ptyManager.isAvailable()) {
+    console.warn(
+      `[Pixel Agents] Terminal disabled: ${ptyManager.unavailableReason()}\n` +
+        `[Pixel Agents] The office still works; you just can't launch agents from the browser.\n` +
+        `[Pixel Agents] To enable it, reinstall so the optional PTY module is present.`,
+    );
+    return;
+  }
+
+  console.log(`[Pixel Agents] Terminal enabled (via ${ptyManager.moduleId()})`);
+
+  if (!isLoopbackHost(host)) {
+    console.warn(
+      `[Pixel Agents] WARNING: bound to ${host}, not loopback. The terminal is a shell:\n` +
+        `[Pixel Agents] anyone who can reach this port AND has the auth token can run commands\n` +
+        `[Pixel Agents] as you. Use --host 127.0.0.1 unless you specifically intend this.`,
+    );
+  }
 }
 
 // ── Main ──────────────────────────────────────────────────────
@@ -140,6 +195,15 @@ async function main(): Promise<void> {
 
   // ── Create server ──
   const server = new PixelAgentsServer();
+
+  // Terminals for agents this server launches. Construction is cheap -- the
+  // native module is resolved (and probed) lazily on first use, so a user who
+  // never opens a terminal never pays for it. With --no-terminal, a disabled
+  // manager reports "unavailable" through the same plumbing (availability
+  // broadcast, session route, launcher), so nothing downstream special-cases it.
+  const ptyManager = args.terminal
+    ? new PtySessionManager()
+    : PtySessionManager.disabled(TERMINAL_DISABLED_BY_FLAG_REASON);
 
   try {
     // Create runtime first (before server.start, so we can pass it in)
@@ -237,8 +301,11 @@ async function main(): Promise<void> {
       assetCache,
       onSetHooksEnabled,
       onReloadAssets,
+      ptyManager,
     });
     currentConfig = { port: config.port, token: config.token };
+
+    reportTerminalStatus(ptyManager, args.host, args.terminal);
 
     // Sync runtime refs with persisted settings BEFORE first scan tick. The
     // runtime's single hooksEnabled ref follows the Claude provider until the
@@ -309,6 +376,9 @@ async function main(): Promise<void> {
     // ── Graceful shutdown ──
     function shutdown(): void {
       console.log('\nShutting down...');
+      // Kill child terminals before the runtime tears their agents down, so we
+      // never leave an orphaned Claude process attached to a dead server.
+      ptyManager.disposeAll();
       runtime.dispose();
       server.stop();
       process.exit(0);
