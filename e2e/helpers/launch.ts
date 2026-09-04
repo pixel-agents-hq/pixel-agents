@@ -37,7 +37,7 @@ export interface LaunchOptions {
    * Folder basenames to open as a multi-root workspace. When length > 1, a
    * `.code-workspace` listing these (as subdirs of the workspace) is opened
    * instead of a single folder, so `vscode.workspace.workspaceFolders.length > 1`
-   * and agents launched per-folder get a `folderName`. Length <= 1 is ignored
+   * and agents launched per-folder get a `directoryName`. Length <= 1 is ignored
    * (single-folder default is unchanged).
    */
   workspaceFolders?: string[];

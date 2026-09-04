@@ -19,7 +19,9 @@ import type { HookProvider } from '../../../core/src/provider.js';
 import type { AgentRuntime } from '../agentRuntime.js';
 import type { AgentStateStore } from '../agentStateStore.js';
 import { DEFAULT_MAX_CONTEXT_TOKENS, JSONL_POLL_INTERVAL_MS } from '../constants.js';
+import { directoryNameForLaunch } from '../directories.js';
 import { startFileWatching } from '../fileWatcher.js';
+import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import type { AgentState } from '../types.js';
 import type { PtySessionManager } from './ptySessionManager.js';
 
@@ -31,9 +33,11 @@ export interface LaunchStandaloneAgentDeps {
 }
 
 export interface LaunchStandaloneAgentOptions {
-  /** Working directory for the agent. Defaults to the server's cwd -- standalone
-   *  has no workspace-folder concept (see design doc open question 4). */
-  folderPath?: string;
+  /** Path of the Directory to launch into. Defaults to the server's cwd, which
+   *  is also the Directory standalone contributes as its host entry. */
+  directoryPath?: string;
+  /** Read from the host's persisted permission posture by the caller; never a
+   *  per-launch choice made in the office. */
   bypassPermissions?: boolean;
   cols?: number;
   rows?: number;
@@ -54,7 +58,7 @@ export function launchStandaloneAgent(
     return null;
   }
 
-  const cwd = options.folderPath ?? process.cwd();
+  const cwd = options.directoryPath ?? process.cwd();
   const sessionId = crypto.randomUUID();
 
   const launch = provider.buildLaunchCommand?.(sessionId, cwd, {
@@ -121,6 +125,12 @@ export function launchStandaloneAgent(
     lastDataAt: 0,
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
+    // The character's origin label (and its Area-mapping key): the name of the
+    // Directory it was launched into, as the user named it — so an entry called
+    // "Side Project" labels its agents that, not "side-project", and the Areas
+    // it was assigned in the modal actually match. Falls back to the basename
+    // for a cwd that is no Directory at all.
+    directoryName: directoryNameForLaunch(cwd, [hostDirectory()]) ?? directoryNameFor(cwd),
     hookDelivered: false,
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,

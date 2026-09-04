@@ -45,6 +45,7 @@ describe('FileStateAdapter', () => {
     adapter.setSetting('pixel-agents.alwaysShowLabels', true);
     adapter.setSetting('pixel-agents.watchAllSessions', true);
     adapter.setSetting('pixel-agents.hooksInfoShown', true);
+    adapter.setSetting('pixel-agents.bypassPermissions', true);
 
     expect(adapter.getSetting('pixel-agents.soundEnabled', true)).toBe(false);
     expect(adapter.getSetting('pixel-agents.lastSeenVersion', '')).toBe('1.3');
@@ -59,6 +60,19 @@ describe('FileStateAdapter', () => {
     expect(adapter.getSetting('pixel-agents.hooksEnabled', true)).toBe(true);
     setHooksEnabled('claude', false);
     expect(getHooksEnabled('claude')).toBe(false);
+    expect(adapter.getSetting('pixel-agents.bypassPermissions', false)).toBe(true);
+  });
+
+  it('defaults bypassPermissions to off and keeps it per-namespace', () => {
+    const vscode = new FileStateAdapter({ namespace: 'vscode' });
+    const standalone = new FileStateAdapter({ namespace: 'standalone' });
+
+    expect(standalone.getSetting('pixel-agents.bypassPermissions', true)).toBe(false);
+
+    standalone.setSetting('pixel-agents.bypassPermissions', true);
+
+    expect(standalone.getSetting('pixel-agents.bypassPermissions', false)).toBe(true);
+    expect(vscode.getSetting('pixel-agents.bypassPermissions', true)).toBe(false);
   });
 
   it('vscode and standalone namespaces are isolated in config.json', () => {

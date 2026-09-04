@@ -97,7 +97,7 @@ const DEFAULT_ADAPTER_SETTINGS = {
 };
 
 export interface SeedConfigOptions {
-  /** Folder name → Area labels (written into the vscode namespace). */
+  /** Directory name → Area labels (written into the vscode namespace). */
   areaMappings?: Record<string, string[]>;
   /** Persisted Show Areas state for the vscode namespace. */
   showAreas?: boolean;

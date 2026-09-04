@@ -137,7 +137,7 @@ export interface CarpetTile {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AREAS — translucent named overlays for workspace folder ↔ seat preference.
+// AREAS — translucent named overlays for Directory ↔ seat preference.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface AreaDefinition {
@@ -223,8 +223,8 @@ export interface Character {
   matrixEffectTimer: number;
   /** Per-column random seeds (16 values) for staggered rain timing */
   matrixEffectSeeds: number[];
-  /** Workspace folder name (only set for multi-root workspaces) */
-  folderName?: string;
+  /** Directory name — the agent's origin label (only set for multi-root workspaces) */
+  directoryName?: string;
   /** Headless agent: adopted from outside the office, so there is no terminal to
    *  focus. Rendered translucent. Teammates and sub-agents are never headless —
    *  clicking them reaches their lead's / parent's terminal. */

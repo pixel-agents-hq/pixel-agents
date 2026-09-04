@@ -506,7 +506,7 @@ export class AgentRuntime {
         lastDataAt: 0,
         linesProcessed: 0,
         seenUnknownRecordTypes: new Set(),
-        folderName: p.folderName,
+        directoryName: p.directoryName,
         hookDelivered: false,
         contextTokens: 0,
         maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,

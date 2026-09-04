@@ -8,6 +8,8 @@ import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
+import type { DirectoryModalValues } from './components/DirectoryModal.js';
+import { DirectoryModal } from './components/DirectoryModal.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
@@ -34,6 +36,7 @@ import {
 } from './constants.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
+import type { Directory } from './hooks/useExtensionMessages.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useIntroTour } from './hooks/useIntroTour.js';
 import { useIsMobile } from './hooks/useIsMobile.js';
@@ -56,6 +59,33 @@ import { transport } from './transport/index.js';
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
 const editorState = new EditorState();
+
+/** The Area mapping a Directory save still owes once the host accepts it. */
+interface DirectoryAreaMapping {
+  /** Directory name the mapping is stored under. */
+  key: string;
+  /** Name the entry had before this save; dropped when it differs (a rename). */
+  previousKey?: string;
+  areas: string[];
+}
+
+/** A Directory mutation waiting for the host's answer. `mapping` is absent for
+ *  a delete, which has nothing left to write. */
+interface PendingDirectorySave {
+  mapping?: DirectoryAreaMapping;
+}
+
+/**
+ * The name the host will store this entry under — the key its Area mapping
+ * hangs on and the label its agents will wear. Mirrors the host's own fallback
+ * (server/src/directories.ts): an empty name becomes the path's basename.
+ */
+function directoryKeyFor(values: { name: string; path: string }): string {
+  if (values.name.length > 0) return values.name;
+  const trimmed = values.path.replace(/[/\\]+$/, '');
+  const lastSeparator = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  return lastSeparator === -1 ? trimmed : trimmed.slice(lastSeparator + 1);
+}
 
 // Test-only observability hooks (message/sound logs, addAgent wrapper, selectAgent).
 // Installed only under the e2e harness so they never patch prototypes or grow
@@ -100,8 +130,10 @@ function App() {
     layoutReady,
     layoutWasReset,
     loadedAssets,
-    workspaceFolders,
-    agentFolderNames,
+    directories,
+    directoryRejection,
+    directorySuggestions,
+    agentDirectoryNames,
     externalAssetDirectories,
     lastSeenVersion,
     extensionVersion,
@@ -120,6 +152,8 @@ function App() {
     setAreaMappings,
     showAreas,
     setShowAreas,
+    bypassPermissions,
+    setBypassPermissions,
     terminalAvailable,
     terminalUnavailableReason,
     terminalAgentIds,
@@ -242,12 +276,118 @@ function App() {
     pendingMobileLaunchRef.current = false;
   }, [terminalAgentIds]);
 
-  // The + card in the mobile bar: launch, then slide to the new terminal when
-  // the server announces it (see the effect above).
-  const handleMobileLaunch = useCallback(() => {
+  // A Directory picked from the + card's drawer: launch, then slide to the new
+  // terminal when the server announces it (see the effect above).
+  const handleMobileLaunchDirectory = useCallback((directory: Directory) => {
     pendingMobileLaunchRef.current = true;
-    editor.handleOpenClaude();
-  }, [editor.handleOpenClaude]);
+    transport.send({ type: 'launchAgent', directoryPath: directory.path });
+  }, []);
+
+  // ── Directory management (the drawer's + / pencil) ──────
+  //
+  // The host owns validation, so a save is a round trip: send, then wait. The
+  // rebroadcast Directory list is the success signal (it also arrives when
+  // another office mutates, which is equally a reason to stop editing), and
+  // directoryRejected is the failure one. pendingDirectorySaveRef is what
+  // distinguishes "our save came back" from the list simply loading.
+  const [directoryModal, setDirectoryModal] = useState<{
+    open: boolean;
+    editing: Directory | null;
+  }>({ open: false, editing: null });
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const pendingDirectorySaveRef = useRef<PendingDirectorySave | null>(null);
+
+  // The Area mapping half of a save. It only lands once the host has accepted
+  // the Directory — a refused path must not leave a mapping keyed to a
+  // Directory that was never created.
+  const applyDirectoryAreaMapping = useCallback(
+    (mapping: DirectoryAreaMapping) => {
+      const next = { ...areaMappings };
+      // A rename carries the mapping to the new name rather than orphaning it
+      // under the old one (seat placement is keyed by Directory name).
+      if (mapping.previousKey !== undefined && mapping.previousKey !== mapping.key) {
+        delete next[mapping.previousKey];
+      }
+      if (mapping.areas.length === 0) {
+        delete next[mapping.key];
+      } else {
+        next[mapping.key] = mapping.areas;
+      }
+      if (JSON.stringify(next) === JSON.stringify(areaMappings)) return;
+      setAreaMappings(next);
+      getOfficeState().setAreaMappings(next);
+      transport.send({ type: 'saveAreaMappings', mappings: next });
+    },
+    [areaMappings, setAreaMappings],
+  );
+
+  useEffect(() => {
+    const pending = pendingDirectorySaveRef.current;
+    if (pending === null) return;
+    pendingDirectorySaveRef.current = null;
+    if (pending.mapping) applyDirectoryAreaMapping(pending.mapping);
+    setDirectoryModal({ open: false, editing: null });
+    setDirectoryError(null);
+  }, [directories, applyDirectoryAreaMapping]);
+
+  useEffect(() => {
+    if (directoryRejection === null || pendingDirectorySaveRef.current === null) return;
+    pendingDirectorySaveRef.current = null;
+    setDirectoryError(directoryRejection.reason);
+  }, [directoryRejection]);
+
+  const handleAddDirectory = useCallback(() => {
+    setDirectoryError(null);
+    setDirectoryModal({ open: true, editing: null });
+    // Asked per opening, not once at boot: the answer is whatever sessions are
+    // on disk right now, minus the Directories that exist right now.
+    transport.send({ type: 'requestDirectorySuggestions' });
+  }, []);
+
+  const handleEditDirectory = useCallback((directory: Directory) => {
+    setDirectoryError(null);
+    setDirectoryModal({ open: true, editing: directory });
+    transport.send({ type: 'requestDirectorySuggestions' });
+  }, []);
+
+  const handleCloseDirectoryModal = useCallback(() => {
+    pendingDirectorySaveRef.current = null;
+    setDirectoryModal({ open: false, editing: null });
+    setDirectoryError(null);
+  }, []);
+
+  const handleSubmitDirectory = useCallback(
+    (values: DirectoryModalValues) => {
+      const editing = directoryModal.editing;
+      pendingDirectorySaveRef.current = {
+        mapping: {
+          key: directoryKeyFor(values),
+          previousKey: editing?.name,
+          areas: values.areas,
+        },
+      };
+      setDirectoryError(null);
+      transport.send({
+        type: 'saveDirectory',
+        name: values.name,
+        path: values.path,
+        // Identifies the entry being edited, so a re-pointed path replaces it
+        // instead of adding a second Directory.
+        ...(editing ? { previousPath: editing.path } : {}),
+      });
+    },
+    [directoryModal.editing],
+  );
+
+  const handleDeleteDirectory = useCallback(() => {
+    const editing = directoryModal.editing;
+    if (!editing) return;
+    // No mapping work: a deleted Directory's mapping is inert (nothing launches
+    // with that name any more) and keeping it means an entry re-added under the
+    // same name comes back to its Areas.
+    pendingDirectorySaveRef.current = {};
+    transport.send({ type: 'removeDirectory', path: editing.path });
+  }, [directoryModal.editing]);
 
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), []);
   const handleToggleAlwaysShowOverlay = useCallback(() => {
@@ -285,11 +425,11 @@ function App() {
   // the Claude row of the per-provider install-state map.
   const claudeHooksInstalled = hooksInstalled['claude'] === true;
 
-  // Mutate folder→Area mappings locally + send to server. Updates OfficeState in
+  // Mutate Directory→Area mappings locally + send to server. Updates OfficeState in
   // the same tick so a follow-up agentCreated picks up the new mapping.
   const handleAreaMappingChange = useCallback(
-    (folderName: string, areaLabel: string, action: 'add' | 'remove') => {
-      const current = areaMappings[folderName] ?? [];
+    (directoryName: string, areaLabel: string, action: 'add' | 'remove') => {
+      const current = areaMappings[directoryName] ?? [];
       let nextLabels: string[];
       if (action === 'add') {
         if (current.includes(areaLabel)) return;
@@ -299,9 +439,9 @@ function App() {
       }
       const next = { ...areaMappings };
       if (nextLabels.length === 0) {
-        delete next[folderName];
+        delete next[directoryName];
       } else {
-        next[folderName] = nextLabels;
+        next[directoryName] = nextLabels;
       }
       setAreaMappings(next);
       getOfficeState().setAreaMappings(next);
@@ -741,23 +881,30 @@ function App() {
     [mobileConnStatuses, terminalAgentIds, getAgentActivity],
   );
 
-  // Merged set of folders the Areas dropdown can map: real workspace folders plus
-  // every distinct folder an agent has run in this session (deduped by name; name
+  // Merged set of Directories the Areas dropdown can map: host-contributed ones plus
+  // every distinct Directory an agent has run in this session (deduped by name; name
   // is the areaMappings key / seat-bias identity, path is only the React list key).
-  const areaFolders = useMemo(() => {
+  const areaDirectories = useMemo(() => {
     const byName = new Map<string, { name: string; path: string }>();
-    for (const f of workspaceFolders) byName.set(f.name, f);
-    for (const name of agentFolderNames) {
+    for (const f of directories) byName.set(f.name, f);
+    for (const name of agentDirectoryNames) {
       if (!byName.has(name)) byName.set(name, { name, path: name });
     }
     return [...byName.values()];
-  }, [workspaceFolders, agentFolderNames]);
+  }, [directories, agentDirectoryNames]);
+
+  // The Areas the office defines, offered as a multi-select in the Directory
+  // modal. Read straight off the layout (imperative state) on each render, so a
+  // layout that loaded — or an Area just added in the editor — is in the list
+  // the next time the modal opens.
+  const areaLabels = (officeState.getLayout().areas ?? []).map((area) => area.label);
 
   // Areas authoring is available when the layout already defines areas, or when
-  // there is at least one mappable folder. Decouples the Areas UI from VS Code
+  // there is at least one mappable Directory. Decouples the Areas UI from VS Code
   // multi-root workspaces (fixes single-root VS Code AND standalone, where
-  // workspaceFolders is always empty).
-  const areasAvailable = (officeState.getLayout().areas?.length ?? 0) > 0 || areaFolders.length > 0;
+  // directories is always empty).
+  const areasAvailable =
+    (officeState.getLayout().areas?.length ?? 0) > 0 || areaDirectories.length > 0;
 
   const handleExportLayout = useCallback(() => {
     exportLayoutToFile(getOfficeState().getLayout());
@@ -923,7 +1070,7 @@ function App() {
                   onCarpetAccentColorChange={editor.handleCarpetAccentColorChange}
                   areas={officeState.getLayout().areas ?? []}
                   selectedAreaLabel={editor.selectedAreaLabel}
-                  workspaceFolders={areaFolders}
+                  directories={areaDirectories}
                   areasAvailable={areasAvailable}
                   areaMappings={areaMappings}
                   onSelectArea={editor.handleSelectArea}
@@ -1025,11 +1172,12 @@ function App() {
       {!isMobile && (
         <BottomToolbar
           isEditMode={editor.isEditMode}
-          onOpenClaude={editor.handleOpenClaude}
           onToggleEditMode={editor.handleToggleEditMode}
           isSettingsOpen={isSettingsOpen}
           onToggleSettings={() => setIsSettingsOpen((v) => !v)}
-          workspaceFolders={workspaceFolders}
+          directories={directories}
+          onAddDirectory={handleAddDirectory}
+          onEditDirectory={handleEditDirectory}
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
         />
@@ -1147,7 +1295,10 @@ function App() {
             view={mobileView}
             onSelectAgent={handleMobileCardSelect}
             onCloseAgent={handleCloseAgent}
-            onLaunch={handleMobileLaunch}
+            onLaunchDirectory={handleMobileLaunchDirectory}
+            directories={directories}
+            onAddDirectory={handleAddDirectory}
+            onEditDirectory={handleEditDirectory}
             canLaunch={terminalAvailable}
             launchUnavailableReason={terminalUnavailableReason}
             getAppearance={getAgentAppearance}
@@ -1202,6 +1353,23 @@ function App() {
         </>
       )}
 
+      {/* Rendered at the composition root, not inside a launch surface: the
+          drawer that opens it lives in BottomToolbar on desktop and
+          MobileAgentBar on mobile, and both close as soon as it appears. */}
+      <DirectoryModal
+        isOpen={directoryModal.open}
+        editing={directoryModal.editing}
+        error={directoryError}
+        suggestions={directorySuggestions}
+        areas={areaLabels}
+        assignedAreas={
+          directoryModal.editing ? (areaMappings[directoryModal.editing.name] ?? []) : []
+        }
+        onSubmit={handleSubmitDirectory}
+        onDelete={handleDeleteDirectory}
+        onClose={handleCloseDirectoryModal}
+      />
+
       <ChangelogModal
         isOpen={isChangelogOpen}
         onClose={() => setIsChangelogOpen(false)}
@@ -1244,6 +1412,12 @@ function App() {
         showAreas={showAreas}
         onToggleShowAreas={onToggleShowAreas}
         showAreasAvailable={areasAvailable}
+        bypassPermissions={bypassPermissions}
+        onToggleBypassPermissions={() => {
+          const newVal = !bypassPermissions;
+          setBypassPermissions(newVal);
+          transport.send({ type: 'setBypassPermissions', enabled: newVal });
+        }}
         onExportLayout={handleExportLayout}
         onImportLayout={handleImportLayout}
       />

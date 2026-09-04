@@ -7,6 +7,7 @@ import type { StateAdapter } from '../../core/src/adapter.js';
 import { resendAgentActivity } from '../../server/src/agentActivityResend.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { DEFAULT_MAX_CONTEXT_TOKENS, JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
+import { directoryNameForLaunch } from '../../server/src/directories.js';
 import {
   ensureProjectScan,
   readNewLines,
@@ -19,6 +20,7 @@ import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/cla
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
 import type { AgentState, PersistedAgent } from '../../server/src/types.js';
+import { workspaceDirectories } from './hostDirectories.js';
 
 export function getProjectDirPath(cwd?: string): string {
   // Fall back to home directory when no workspace folder is open (common on Linux/macOS
@@ -47,7 +49,7 @@ export async function launchNewTerminal(
   jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
   projectScanTimerRef: { current: ReturnType<typeof setInterval> | null },
   persistAgents: () => void,
-  folderPath?: string,
+  directoryPath?: string,
   bypassPermissions?: boolean,
   suppressShow?: boolean,
 ): Promise<void> {
@@ -55,7 +57,7 @@ export async function launchNewTerminal(
   // Use home directory as fallback cwd when no workspace is open (common on Linux/macOS).
   // This ensures the terminal starts in a predictable location that matches the project
   // dir hash Claude Code will use for JSONL transcript files.
-  const cwd = folderPath || folders?.[0]?.uri.fsPath || os.homedir();
+  const cwd = directoryPath || folders?.[0]?.uri.fsPath || os.homedir();
   const isMultiRoot = !!(folders && folders.length > 1);
   const idx = nextTerminalIndexRef.current++;
   const terminal = vscode.window.createTerminal({
@@ -85,15 +87,25 @@ export async function launchNewTerminal(
 
   // Create agent immediately (before JSONL file exists)
   const id = nextAgentIdRef.current++;
-  // areaMappings is keyed by WorkspaceFolder.name, which can differ from the dir
-  // basename, so seat placement needs that name. Pick the most specific containing
-  // folder (longest path wins for nested folders).
+  // The character's origin label, and the key areaMappings is looked up by.
+  //
+  // A launch the office aimed somewhere (a Directory row, or the Default
+  // directory the caller resolved — both arrive as directoryPath) wears that
+  // Directory's name as the user wrote it, so "Side Project" doesn't come out
+  // as "side-project" and the Areas assigned to it in the modal match.
+  //
+  // Everything else keeps the old multi-root rule: the most specific containing
+  // workspace folder (longest path wins for nested folders), and nothing at all
+  // in a single-root window, where an origin label would say what the whole
+  // office already says.
+  const chosenDirectoryName =
+    directoryPath === undefined ? undefined : directoryNameForLaunch(cwd, workspaceDirectories());
   const owningFolder = (folders ?? [])
     .filter((f) => cwd === f.uri.fsPath || cwd.startsWith(f.uri.fsPath + path.sep))
     .sort((a, b) => b.uri.fsPath.length - a.uri.fsPath.length)[0];
-  const folderName = isMultiRoot
-    ? (owningFolder?.name ?? (cwd ? path.basename(cwd) : undefined))
-    : undefined;
+  const directoryName =
+    chosenDirectoryName ??
+    (isMultiRoot ? (owningFolder?.name ?? (cwd ? path.basename(cwd) : undefined)) : undefined);
   const agent: AgentState = {
     id,
     sessionId,
@@ -115,7 +127,7 @@ export async function launchNewTerminal(
     lastDataAt: 0,
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
-    folderName,
+    directoryName,
     hookDelivered: false,
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
@@ -286,7 +298,7 @@ export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): v
       isExternal: agent.isExternal || undefined,
       jsonlFile: agent.jsonlFile,
       projectDir: agent.projectDir,
-      folderName: agent.folderName,
+      directoryName: agent.directoryName,
       teamName: agent.teamName,
       agentName: agent.agentName,
       isTeamLead: agent.isTeamLead,
@@ -380,7 +392,7 @@ export function restoreAgents(
       lastDataAt: 0,
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
-      folderName: p.folderName,
+      directoryName: p.directoryName,
       hookDelivered: false,
       contextTokens: 0,
       maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
@@ -537,12 +549,12 @@ export function sendExistingAgents(
   // Include persisted palette/seatId from separate key
   const agentMeta = adapter.loadSeats();
 
-  // Include folderName and isExternal per agent
-  const folderNames: Record<number, string> = {};
+  // Include directoryName and isExternal per agent
+  const directoryNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   for (const [id, agent] of agents) {
-    if (agent.folderName) {
-      folderNames[id] = agent.folderName;
+    if (agent.directoryName) {
+      directoryNames[id] = agent.directoryName;
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
@@ -556,7 +568,7 @@ export function sendExistingAgents(
     type: 'existingAgents',
     agents: agentIds,
     agentMeta,
-    folderNames,
+    directoryNames,
     externalAgents,
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded

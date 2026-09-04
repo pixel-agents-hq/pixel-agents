@@ -637,17 +637,23 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     }
   }
 
-  function workingPtyManager(): { manager: PtySessionManager; spawned: FakePty[] } {
+  function workingPtyManager(): {
+    manager: PtySessionManager;
+    spawned: FakePty[];
+    spawnArgs: string[][];
+  } {
     const spawned: FakePty[] = [];
+    const spawnArgs: string[][] = [];
     const module: PtyModule = {
-      spawn: () => {
+      spawn: (_file, args) => {
+        spawnArgs.push([...args]);
         const pty = new FakePty();
         spawned.push(pty);
         return pty;
       },
     };
     const manager = new PtySessionManager(() => ({ module, moduleId: 'fake-pty', reason: null }));
-    return { manager, spawned };
+    return { manager, spawned, spawnArgs };
   }
 
   /** Minimal store agent; only identity fields matter to the control plane. */
@@ -807,6 +813,155 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
 
     expect(store.size).toBe(0);
     expect(broadcasts).toHaveLength(0);
+  });
+
+  it('launchAgent applies the persisted permission posture, not a per-launch field', () => {
+    const { manager, spawnArgs } = workingPtyManager();
+
+    // Posture off: no flag, and a stale client field cannot turn it on — the
+    // launch message carries no bypass field any more.
+    dispatch(
+      { type: 'launchAgent', bypassPermissions: true },
+      ctx({ runtime, ptyManager: manager }),
+    );
+    expect(spawnArgs[0]).not.toContain('--dangerously-skip-permissions');
+
+    // Posture on: every launch gets the flag without the client saying so.
+    dispatch({ type: 'setBypassPermissions', enabled: true }, ctx());
+    dispatch({ type: 'launchAgent' }, ctx({ runtime, ptyManager: manager }));
+    expect(spawnArgs[1]).toContain('--dangerously-skip-permissions');
+  });
+
+  it('setBypassPermissions persists via the adapter (standalone namespace)', () => {
+    dispatch({ type: 'setBypassPermissions', enabled: true }, ctx());
+    const adapter = store.getAdapter()!;
+    expect(adapter.getSetting('pixel-agents.bypassPermissions', false)).toBe(true);
+
+    dispatch({ type: 'setBypassPermissions', enabled: false }, ctx());
+    expect(adapter.getSetting('pixel-agents.bypassPermissions', true)).toBe(false);
+  });
+
+  it('webviewReady reports the persisted permission posture in settingsLoaded', () => {
+    dispatch({ type: 'setBypassPermissions', enabled: true }, ctx());
+    sent = [];
+
+    dispatch({ type: 'webviewReady' }, ctx());
+
+    const settings = sent.find((m) => m.type === 'settingsLoaded');
+    expect(settings?.bypassPermissions).toBe(true);
+  });
+
+  // ── webviewReady: the host's own Directory ───────────────────
+
+  it('webviewReady contributes the server start directory as a host Directory', () => {
+    const { manager } = workingPtyManager();
+
+    dispatch({ type: 'webviewReady' }, ctx({ ptyManager: manager }));
+
+    const directories = sent.find((m) => m.type === 'directoriesLoaded');
+    expect(directories?.directories).toEqual([
+      { name: path.basename(process.cwd()), path: process.cwd(), source: 'host' },
+    ]);
+  });
+
+  it('webviewReady contributes no Directory without a ptyManager (VS Code mode)', () => {
+    dispatch({ type: 'webviewReady' }, ctx());
+
+    expect(sent.map((m) => m.type)).not.toContain('directoriesLoaded');
+  });
+
+  // ── user-defined Directories ─────────────────────────────────
+
+  it('saveDirectory persists and rebroadcasts the union to every office', () => {
+    const { manager } = workingPtyManager();
+    const target = path.join(tempHome, 'side-project');
+    fs.mkdirSync(target);
+
+    dispatch(
+      { type: 'saveDirectory', name: 'Side Project', path: target },
+      ctx({ ptyManager: manager }),
+    );
+
+    // The rebroadcast (not a point-to-point reply) is the success signal.
+    expect(sent).toEqual([]);
+    expect(broadcasts).toHaveLength(1);
+    expect(broadcasts[0].type).toBe('directoriesLoaded');
+    expect(broadcasts[0].directories).toContainEqual({
+      name: 'Side Project',
+      path: target,
+      source: 'user',
+    });
+    expect(readConfig().directories).toEqual([{ name: 'Side Project', path: target }]);
+  });
+
+  it('saveDirectory with an invalid path replies directoryRejected and persists nothing', () => {
+    const { manager } = workingPtyManager();
+    const missing = path.join(tempHome, 'not-there');
+
+    dispatch(
+      { type: 'saveDirectory', name: 'Broken', path: missing },
+      ctx({ ptyManager: manager }),
+    );
+
+    expect(broadcasts).toEqual([]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].type).toBe('directoryRejected');
+    expect(sent[0].path).toBe(missing);
+    expect(String(sent[0].reason)).toContain(missing);
+    expect(readConfig().directories).toEqual([]);
+  });
+
+  it('removeDirectory drops the entry and rebroadcasts', () => {
+    const { manager } = workingPtyManager();
+    const target = path.join(tempHome, 'side-project');
+    fs.mkdirSync(target);
+    dispatch(
+      { type: 'saveDirectory', name: 'Side Project', path: target },
+      ctx({ ptyManager: manager }),
+    );
+    broadcasts = [];
+
+    dispatch({ type: 'removeDirectory', path: target }, ctx({ ptyManager: manager }));
+
+    expect(readConfig().directories).toEqual([]);
+    expect(broadcasts).toHaveLength(1);
+    expect(broadcasts[0].directories).not.toContainEqual(
+      expect.objectContaining({ path: target }) as unknown,
+    );
+  });
+
+  it('launchAgent with a directoryPath labels the agent with its Directory name', () => {
+    const { manager, spawned } = workingPtyManager();
+    const target = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-launch-dir-')));
+    try {
+      dispatch(
+        { type: 'saveDirectory', name: 'Side Project', path: target },
+        ctx({ ptyManager: manager }),
+      );
+
+      dispatch(
+        { type: 'launchAgent', directoryPath: target },
+        ctx({ runtime, ptyManager: manager }),
+      );
+
+      expect(spawned).toHaveLength(1);
+      const id = [...store][0][0];
+      // Labelled with the Directory's NAME, not the launch path's basename:
+      // that is what the user called it, and what its Area mapping is keyed by
+      // (directoryNameForLaunch in server/src/directories.ts).
+      expect(store.get(id)?.directoryName).toBe('Side Project');
+    } finally {
+      fs.rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it('launchAgent falls back to the server cwd when no directoryPath is sent', () => {
+    const { manager } = workingPtyManager();
+
+    dispatch({ type: 'launchAgent' }, ctx({ runtime, ptyManager: manager }));
+
+    const id = [...store][0][0];
+    expect(store.get(id)?.directoryName).toBe(path.basename(process.cwd()));
   });
 
   it('launchAgent is ignored without a ptyManager', () => {

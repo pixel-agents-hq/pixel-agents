@@ -608,17 +608,20 @@ export function setHookProvider(provider: HookProvider): void {
 }
 
 /**
- * Resolves an external agent's `cwd`/`projectDir` to its `WorkspaceFolder.name` —
- * the label the Areas UI keys on. Registered by the VS Code adapter; unset in
- * standalone, which falls back to basename.
+ * Resolves an external agent's `cwd`/`projectDir` to its Directory name —
+ * the label the Areas UI keys on. Registered by the VS Code adapter (which maps
+ * it to a workspace folder name); unset in standalone, which falls back to basename.
  */
-export type FolderNameResolver = (ctx: { cwd?: string; projectDir?: string }) => string | undefined;
+export type DirectoryNameResolver = (ctx: {
+  cwd?: string;
+  projectDir?: string;
+}) => string | undefined;
 
-let folderNameResolver: FolderNameResolver | null = null;
+let directoryNameResolver: DirectoryNameResolver | null = null;
 
-/** Register the host's cwd/projectDir → WorkspaceFolder.name resolver (VS Code only). */
-export function setFolderNameResolver(resolver: FolderNameResolver): void {
-  folderNameResolver = resolver;
+/** Register the host's cwd/projectDir → Directory name resolver (VS Code only). */
+export function setDirectoryNameResolver(resolver: DirectoryNameResolver): void {
+  directoryNameResolver = resolver;
 }
 
 /**
@@ -1084,9 +1087,9 @@ export function adoptExternalSessionFromHook(
 
     knownJsonlFiles.add(transcriptPath);
     const projectDir = path.dirname(transcriptPath);
-    const folderName =
-      folderNameResolver?.({ cwd, projectDir }) ??
-      folderNameFromProjectDir(path.basename(projectDir));
+    const directoryName =
+      directoryNameResolver?.({ cwd, projectDir }) ??
+      directoryNameFromProjectDir(path.basename(projectDir));
 
     adoptExternalSession(
       transcriptPath,
@@ -1098,13 +1101,13 @@ export function adoptExternalSessionFromHook(
       waitingTimers,
       permissionTimers,
       persistAgents,
-      folderName,
+      directoryName,
     );
 
     const adoptedAgent = [...agents.values()].find((a) => pathsMatch(a.jsonlFile, transcriptPath));
     if (adoptedAgent && debug) {
       console.log(
-        `[Pixel Agents] Hook: Agent ${adoptedAgent.id} - detected external session ${path.basename(transcriptPath)}${adoptedAgent.folderName ? ` (${adoptedAgent.folderName})` : ''}`,
+        `[Pixel Agents] Hook: Agent ${adoptedAgent.id} - detected external session ${path.basename(transcriptPath)}${adoptedAgent.directoryName ? ` (${adoptedAgent.directoryName})` : ''}`,
       );
     }
     if (adoptedAgent) {
@@ -1115,7 +1118,8 @@ export function adoptExternalSessionFromHook(
   } else {
     // Hooks-only provider (OpenCode, Copilot): no transcript file, all state from hooks
     const id = nextAgentIdRef.current++;
-    const folderName = folderNameResolver?.({ cwd }) ?? (cwd ? path.basename(cwd) : undefined);
+    const directoryName =
+      directoryNameResolver?.({ cwd }) ?? (cwd ? path.basename(cwd) : undefined);
     const agent: AgentState = {
       id,
       sessionId,
@@ -1139,7 +1143,7 @@ export function adoptExternalSessionFromHook(
       lastDataAt: Date.now(),
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
-      folderName,
+      directoryName,
       contextTokens: 0,
       maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
     };
@@ -1148,7 +1152,7 @@ export function adoptExternalSessionFromHook(
     persistAgents();
     if (debug) {
       console.log(
-        `[Pixel Agents] Hook: Agent ${id} - detected hooks-only external session${folderName ? ` (${folderName})` : ''}`,
+        `[Pixel Agents] Hook: Agent ${id} - detected hooks-only external session${directoryName ? ` (${directoryName})` : ''}`,
       );
     }
     onAgentCreated?.(agent);
@@ -1166,7 +1170,7 @@ function adoptExternalSession(
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
 
   persistAgents: () => void,
-  folderName?: string,
+  directoryName?: string,
 ): void {
   const id = nextAgentIdRef.current++;
   // Decide whether to replay the existing file content or skip to its end.
@@ -1220,7 +1224,7 @@ function adoptExternalSession(
     lastDataAt: Date.now(),
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
-    folderName,
+    directoryName,
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };
@@ -1465,8 +1469,8 @@ export function scanExternalDir(
   }
 }
 
-/** Derive a readable folder name from the Claude project dir hash. */
-function folderNameFromProjectDir(dirName: string): string {
+/** Derive a readable Directory name from the Claude project dir hash. */
+function directoryNameFromProjectDir(dirName: string): string {
   const parts = dirName.replace(/^-+/, '').split('-');
   return parts[parts.length - 1] || dirName;
 }
@@ -1533,12 +1537,12 @@ function scanGlobalProjectDirs(
         continue;
       }
 
-      const folderName =
-        folderNameResolver?.({ projectDir: dirPath }) ??
-        folderNameFromProjectDir(path.basename(dirPath));
+      const directoryName =
+        directoryNameResolver?.({ projectDir: dirPath }) ??
+        directoryNameFromProjectDir(path.basename(dirPath));
       knownJsonlFiles.add(file);
       console.log(
-        `[Pixel Agents] Watcher: detected global session ${path.basename(file)} (${folderName})`,
+        `[Pixel Agents] Watcher: detected global session ${path.basename(file)} (${directoryName})`,
       );
       adoptExternalSession(
         file,
@@ -1550,7 +1554,7 @@ function scanGlobalProjectDirs(
         waitingTimers,
         permissionTimers,
         persistAgents,
-        folderName,
+        directoryName,
       );
     }
   }

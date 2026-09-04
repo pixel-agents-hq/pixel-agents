@@ -76,9 +76,9 @@ Most of this is still ahead. See [Issues](https://github.com/pixel-agents-hq/pix
 
 1. Install Pixel Agents from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) or [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents).
 2. Open the **Pixel Agents** panel beside the terminal.
-3. Click **+ Agent** to launch Claude Code. In a multi-root workspace, select the folder first.
+3. Click **+ Agent** to launch Claude Code. Hover **+ Agent** (long-press on a phone) to open its drawer and pick the directory to launch into — every workspace folder is listed there.
 
-To use Claude with `--dangerously-skip-permissions`, hover over **+ Agent** to find the **Skip permissions mode** button. Only use this when you accept the security implications.
+To use Claude with `--dangerously-skip-permissions`, turn on **Settings → Skip Permissions**. It stays on for every agent launched from that host until you turn it off. Only use this when you accept the security implications.
 
 Pixel Agents also detects Claude sessions started outside the extension. Turn on **Settings → Watch All Sessions** to include sessions from other workspaces.
 
