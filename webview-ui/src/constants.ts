@@ -384,3 +384,91 @@ export const TERMINAL_THEME = {
   brightCyan: '#7fe8e8',
   brightWhite: '#ffffff',
 } as const;
+
+// ── Mobile shell ─────────────────────────────────────────────
+// Below this the app swaps the desktop drawer layout for the mobile shell:
+// office and terminal as full-screen pages in a sliding track, with the agent
+// cards in a bottom scroller. Phones match the first clause in either
+// orientation; the second catches touch tablets (iPad portrait/landscape)
+// where the drag-to-resize drawer is unusable anyway.
+export const MOBILE_MEDIA_QUERY = '(max-width: 768px), ((pointer: coarse) and (max-width: 1024px))';
+/** Slide duration between the office and terminal pages. */
+export const MOBILE_VIEW_TRANSITION_MS = 300;
+/** Width of the screen-edge strips that arm the view-switch swipe: right
+ *  edge in office view (swipe left → terminal), left edge in terminal view
+ *  (swipe right → office). */
+export const MOBILE_EDGE_SWIPE_ZONE_PX = 24;
+/** Horizontal movement that claims an armed edge touch as a view swipe; it
+ *  must also dominate the vertical axis, or the touch is handed back. */
+export const MOBILE_EDGE_SWIPE_SLOP_PX = 8;
+/** Fraction of the page width past which a released swipe commits. */
+export const MOBILE_EDGE_SWIPE_COMMIT_RATIO = 0.35;
+/** Release velocity (px/ms) that commits a swipe regardless of distance. */
+export const MOBILE_EDGE_SWIPE_COMMIT_VELOCITY = 0.3;
+/** Slightly smaller than the desktop 13px: a 390px phone fits ~46 columns at
+ *  13px but ~50 at 12px, and Claude Code's TUI degrades below ~45 columns. */
+export const MOBILE_TERMINAL_FONT_SIZE_PX = 12;
+
+// ── Touch input (OfficeCanvas) ───────────────────────────────
+/** Finger slop: a touch that moves less than this stays a tap (selects an
+ *  agent); beyond it the gesture becomes a one-finger pan. */
+export const TOUCH_TAP_MAX_MOVE_PX = 10;
+/** A press longer than this is not a tap even if the finger never moved. */
+export const TOUCH_TAP_MAX_DURATION_MS = 350;
+/** Hold a finger within the tap slop for this long on the terminal to start
+ *  text selection instead of scrolling: the word under the finger is
+ *  selected, and dragging then extends the selection cell by cell. */
+export const TERMINAL_LONG_PRESS_MS = 500;
+/** Vertical gap between the selection's top row and the floating copy pill
+ *  hovering above it (clears the start handle's knob). */
+export const TERMINAL_COPY_PILL_GAP_PX = 56;
+/** Flick decay after a terminal touch-scroll release, applied per millisecond
+ *  of frame time (0.998 ≈ iOS UIScrollView's normal deceleration rate). */
+export const TERMINAL_FLICK_DECAY_PER_MS = 0.998;
+/** Release velocity (px/ms) below which no flick starts and at which a
+ *  running flick stops. */
+export const TERMINAL_FLICK_MIN_VELOCITY_PX_PER_MS = 0.05;
+/** Holding a card motionless this long arms drag-to-reorder in the mobile bar. */
+export const CARD_REORDER_LONG_PRESS_MS = 400;
+/** localStorage key for the mobile bar's custom card order (per device — a
+ *  presentation preference, deliberately not synced through the server). */
+export const MOBILE_CARD_ORDER_STORAGE_KEY = 'pixel-agents.mobileCardOrder';
+/** Breathing room kept between a card and the scroller edge when the bar
+ *  auto-scrolls the focused agent's card into view. */
+export const CARD_SCROLL_INTO_VIEW_MARGIN_PX = 8;
+/** Accessory keys shown above the iOS keyboard in terminal view — the keys a
+ *  Claude Code TUI needs that the software keyboard lacks. `sequence` is the
+ *  raw bytes written to the PTY: shift+tab is CSI Z (back-tab). */
+export const TERMINAL_SEQ_ARROW_UP = '\x1b[A';
+export const TERMINAL_SEQ_ARROW_DOWN = '\x1b[B';
+export const TERMINAL_SEQ_ARROW_RIGHT = '\x1b[C';
+export const TERMINAL_SEQ_ARROW_LEFT = '\x1b[D';
+export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{
+  label: string;
+  /** Byte sequence a tap writes to the PTY. Absent on the trackpad key — a
+   *  plain tap there deliberately does nothing. */
+  sequence?: string;
+  /** Press-hold-slide emits arrow keys with the finger in all four
+   *  directions, echoing the iOS space-bar trackpad (whose real caret
+   *  gesture can't reach xterm — its textarea must stay empty for input
+   *  diffing). Drives Claude Code's TUI menus (/resume, /model) and the
+   *  input-line cursor; the iOS keyboard has no arrows of its own. */
+  trackpad?: boolean;
+}> = [
+  { label: '/', sequence: '/' },
+  { label: 'shift+tab', sequence: '\x1b[Z' },
+  { label: 'esc', sequence: '\x1b' },
+  { label: '✜', trackpad: true },
+  // Line break without submitting: Claude Code's backslash+Enter escape —
+  // its universal form (shift+enter needs a /terminal-setup rebind that
+  // can't exist on a phone keyboard).
+  { label: '↵', sequence: '\\\r' },
+];
+/** Finger travel per emitted arrow while sliding on the trackpad key. */
+export const MOBILE_TRACKPAD_STEP_PX = 16;
+/** visualViewport.height within this many px of innerHeight = keyboard closed
+ *  (the two disagree by sub-pixel rounding on some devices). */
+export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
+/** Load the app with ?touchdebug to overlay live gesture counters on screen —
+ *  for diagnosing touch-scroll stalls from a phone with no devtools. */
+export const TOUCH_DEBUG_QUERY_PARAM = 'touchdebug';

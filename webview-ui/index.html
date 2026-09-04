@@ -2,8 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="/icons/icon-256.png" />
+    <!-- viewport-fit=cover: draw under the iPhone notch/home bar (safe-area
+         insets pad the card bar back out). user-scalable=no: pinch belongs to
+         the office canvas zoom, not page zoom. interactive-widget: Android
+         resizes the layout when the keyboard opens, so xterm re-fits. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content"
+    />
+    <meta name="theme-color" content="#1e1e2e" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- iOS "Add to Home Screen": standalone chrome-less launch -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Pixel Agents" />
+    <link rel="apple-touch-icon" href="/icons/icon-256.png" />
     <title>Pixel Agents</title>
   </head>
   <body>

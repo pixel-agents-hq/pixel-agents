@@ -62,7 +62,19 @@ export class OfficeState {
   pets: Pet[] = [];
   /** Accumulated time for furniture animation frame cycling */
   furnitureAnimTimer = 0;
-  selectedAgentId: number | null = null;
+  private _selectedAgentId: number | null = null;
+  /** Notified whenever selectedAgentId changes. React (the mobile card bar)
+   *  subscribes so imperative canvas selection can drive card highlights —
+   *  everything else about selection stays out of React state. */
+  onSelectionChange: ((id: number | null) => void) | null = null;
+  get selectedAgentId(): number | null {
+    return this._selectedAgentId;
+  }
+  set selectedAgentId(id: number | null) {
+    if (this._selectedAgentId === id) return;
+    this._selectedAgentId = id;
+    this.onSelectionChange?.(id);
+  }
   cameraFollowId: number | null = null;
   hoveredAgentId: number | null = null;
   hoveredTile: { col: number; row: number } | null = null;
