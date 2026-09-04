@@ -90,7 +90,7 @@ export function TerminalDrawer({
           <AgentCard
             key={agentId}
             agentId={agentId}
-            isActive={agentId === activeId}
+            variant={agentId === activeId ? 'active' : 'default'}
             appearance={getAppearance(agentId) ?? { palette: 0, hueShift: 0 }}
             status={statusFor(agentId)}
             onSelect={onSelectAgent}
@@ -132,15 +132,15 @@ export function TerminalDrawer({
           </Button>
         </div>
 
-        {/* Panes: all mounted, only the active one shown. The wrapper hides
-            too, not just the pane: each one is absolutely stacked over the
-            same box, so a visible empty wrapper later in the list would sit on
-            top of the active terminal and swallow its mouse input. */}
+        {/* Panes: all mounted, only the active one shown. Inactive wrappers
+            must not hit-test — they are full-size transparent overlays in DOM
+            order, so a later tab's empty wrapper would swallow clicks (text
+            selection, focus) meant for an earlier active pane. */}
         <div className="relative flex-1 min-h-0 p-4">
           {agentIds.map((agentId) => (
             <div
               key={agentId}
-              className={`absolute inset-4 ${agentId === activeId ? '' : 'hidden'}`}
+              className={`absolute inset-4 ${agentId === activeId ? '' : 'pointer-events-none'}`}
             >
               <TerminalPane
                 agentId={agentId}

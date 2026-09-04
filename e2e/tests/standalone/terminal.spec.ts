@@ -105,9 +105,10 @@ test.describe('Standalone / terminal', () => {
     await page.keyboard.type('first-tab-input');
     await expect(first).toContainText('first-tab-input', { timeout: 10_000 });
 
-    // A phone-width window: the drawer gives way so the office keeps its card
-    // bar, and the panel's own close button stays on screen.
-    await page.setViewportSize({ width: 390, height: 800 });
+    // The narrowest window that still gets the desktop drawer (below it the
+    // mobile shell takes over): the drawer gives way so the office keeps its
+    // card bar, and the panel's own close button stays on screen.
+    await page.setViewportSize({ width: 800, height: 800 });
     await expect(page.getByTitle('Close terminal')).toBeInViewport({ ratio: 1 });
     await expect(page.getByTitle('Agent 1')).toBeInViewport({ ratio: 1 });
     await expect(page.getByTitle('Agent 2')).toBeInViewport({ ratio: 1 });

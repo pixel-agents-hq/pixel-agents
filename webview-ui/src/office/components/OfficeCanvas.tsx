@@ -4,6 +4,8 @@ import {
   CAMERA_FOLLOW_LERP,
   CAMERA_FOLLOW_SNAP_THRESHOLD,
   PAN_MARGIN_FRACTION,
+  TOUCH_TAP_MAX_DURATION_MS,
+  TOUCH_TAP_MAX_MOVE_PX,
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_SCROLL_THRESHOLD,
@@ -45,6 +47,11 @@ interface OfficeCanvasProps {
   showAreas: boolean;
   /** Currently-selected area label in the editor (alpha-bumped overlay). null otherwise. */
   activeAreaLabel: string | null;
+  /** Mobile two-step tap: the first tap on a character selects it (camera
+   *  follow + status label), and only a second tap on the already-selected
+   *  character fires onClick (opens its terminal). Desktop keeps single-click
+   *  focus with tap-again-to-deselect. */
+  tapSelectsFirst?: boolean;
 }
 
 export function OfficeCanvas({
@@ -64,6 +71,7 @@ export function OfficeCanvas({
   panRef,
   showAreas,
   activeAreaLabel,
+  tapSelectsFirst = false,
 }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +86,27 @@ export function OfficeCanvas({
   const isEraseDraggingRef = useRef(false);
   // Zoom scroll accumulator for trackpad pinch sensitivity
   const zoomAccumulatorRef = useRef(0);
+  // Touch gesture state (one-finger pan / two-finger pinch / tap detection).
+  // 'pending-tap' promotes to 'pan' once the finger travels past the slop.
+  const touchRef = useRef<{
+    mode: 'none' | 'pending-tap' | 'pan' | 'pinch';
+    startX: number;
+    startY: number;
+    startTime: number;
+    panX: number;
+    panY: number;
+    pinchStartDist: number;
+    pinchStartZoom: number;
+  }>({
+    mode: 'none',
+    startX: 0,
+    startY: 0,
+    startTime: 0,
+    panX: 0,
+    panY: 0,
+    pinchStartDist: 0,
+    pinchStartZoom: 1,
+  });
 
   // Clamp pan so the map edge can't go past a margin inside the viewport
   const clampPan = useCallback(
@@ -717,16 +746,29 @@ export function OfficeCanvas({
     [editorState, isEditMode, officeState, onDragMove, onEditorSelectionChange],
   );
 
-  const handleClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (isEditMode) return; // handled by mouseDown/mouseUp
-      const pos = screenToWorld(e.clientX, e.clientY);
+  // Shared by mouse click and touch tap — both resolve a viewport point to a
+  // character / pet / seat interaction.
+  const performTap = useCallback(
+    (clientX: number, clientY: number) => {
+      const pos = screenToWorld(clientX, clientY);
       if (!pos) return;
 
       const hitId = officeState.getCharacterAt(pos.worldX, pos.worldY);
       if (hitId !== null) {
         // Dismiss any active bubble on click
         officeState.dismissBubble(hitId);
+        // Two-step (mobile): first tap selects + follows so the status label
+        // shows; only a repeat tap on the same character opens its terminal.
+        // Deselection is tapping empty floor, as ever.
+        if (tapSelectsFirst) {
+          if (officeState.selectedAgentId === hitId) {
+            onClick(hitId);
+          } else {
+            officeState.selectedAgentId = hitId;
+            officeState.cameraFollowId = hitId;
+          }
+          return;
+        }
         // Toggle selection: click same agent deselects, different agent selects
         if (officeState.selectedAgentId === hitId) {
           officeState.selectedAgentId = null;
@@ -756,7 +798,7 @@ export function OfficeCanvas({
         const selectedCh = officeState.characters.get(officeState.selectedAgentId);
         // Skip seat reassignment for sub-agents
         if (selectedCh && !selectedCh.isSubagent) {
-          const tile = screenToTile(e.clientX, e.clientY);
+          const tile = screenToTile(clientX, clientY);
           if (tile) {
             const seatId = officeState.getSeatAtTile(tile.col, tile.row);
             if (seatId) {
@@ -788,7 +830,15 @@ export function OfficeCanvas({
         officeState.cameraFollowId = null;
       }
     },
-    [officeState, onClick, screenToWorld, screenToTile, isEditMode],
+    [officeState, onClick, screenToWorld, screenToTile, tapSelectsFirst],
+  );
+
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (isEditMode) return; // handled by mouseDown/mouseUp
+      performTap(e.clientX, e.clientY);
+    },
+    [isEditMode, performTap],
   );
 
   const handleMouseLeave = useCallback(() => {
@@ -867,6 +917,131 @@ export function OfficeCanvas({
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, [handleWheel]);
 
+  // Touch: one-finger pan, two-finger pinch zoom, short tap = click. Native
+  // listeners for the same reason as wheel — React registers touch handlers
+  // passively, and we must preventDefault so the browser neither scrolls nor
+  // synthesizes a duplicate mouse click after our own tap handling.
+  //
+  // Edit mode is deliberately left to the browser's synthesized mouse events:
+  // a tap there lands as mousedown/mouseup and drives select/paint through the
+  // existing handlers. (Touch *drags* don't paint — mobile hides the editor.)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const touchDist = (a: Touch, b: Touch) =>
+      Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+    const midpoint = (a: Touch, b: Touch) => ({
+      clientX: (a.clientX + b.clientX) / 2,
+      clientY: (a.clientY + b.clientY) / 2,
+    });
+
+    const anchorPan = (t: { clientX: number; clientY: number }) => {
+      const touch = touchRef.current;
+      touch.startX = t.clientX;
+      touch.startY = t.clientY;
+      touch.panX = panRef.current.x;
+      touch.panY = panRef.current.y;
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      unlockAudio();
+      if (isEditMode) return;
+      e.preventDefault();
+      const touch = touchRef.current;
+      if (e.touches.length === 1) {
+        touch.mode = 'pending-tap';
+        touch.startTime = performance.now();
+        anchorPan(e.touches[0]);
+      } else if (e.touches.length === 2) {
+        // Second finger down: any pending tap/pan becomes a pinch.
+        touch.mode = 'pinch';
+        touch.pinchStartDist = touchDist(e.touches[0], e.touches[1]);
+        touch.pinchStartZoom = zoom;
+        anchorPan(midpoint(e.touches[0], e.touches[1]));
+      }
+    };
+
+    const applyTouchPan = (clientX: number, clientY: number) => {
+      const touch = touchRef.current;
+      const dpr = window.devicePixelRatio || 1;
+      panRef.current = clampPan(
+        touch.panX + (clientX - touch.startX) * dpr,
+        touch.panY + (clientY - touch.startY) * dpr,
+      );
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (isEditMode) return;
+      e.preventDefault();
+      const touch = touchRef.current;
+
+      if (touch.mode === 'pinch' && e.touches.length >= 2) {
+        const dist = touchDist(e.touches[0], e.touches[1]);
+        const proposed = Math.round(touch.pinchStartZoom * (dist / touch.pinchStartDist));
+        const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, proposed));
+        if (newZoom !== zoom) onZoomChange(newZoom);
+        // Two-finger drag also pans, tracked from the midpoint.
+        const mid = midpoint(e.touches[0], e.touches[1]);
+        applyTouchPan(mid.clientX, mid.clientY);
+        return;
+      }
+
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (touch.mode === 'pending-tap') {
+        const moved = Math.hypot(t.clientX - touch.startX, t.clientY - touch.startY);
+        if (moved > TOUCH_TAP_MAX_MOVE_PX) {
+          touch.mode = 'pan';
+          officeState.cameraFollowId = null;
+        }
+      }
+      if (touch.mode === 'pan') {
+        applyTouchPan(t.clientX, t.clientY);
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (isEditMode) return;
+      e.preventDefault();
+      const touch = touchRef.current;
+
+      if (e.touches.length === 0) {
+        if (
+          touch.mode === 'pending-tap' &&
+          performance.now() - touch.startTime <= TOUCH_TAP_MAX_DURATION_MS
+        ) {
+          const t = e.changedTouches[0];
+          if (t) performTap(t.clientX, t.clientY);
+        }
+        touch.mode = 'none';
+        return;
+      }
+
+      // Pinch finger lifted: continue as a plain pan from the remaining finger.
+      if (e.touches.length === 1) {
+        touch.mode = 'pan';
+        anchorPan(e.touches[0]);
+      }
+    };
+
+    const onTouchCancel = () => {
+      touchRef.current.mode = 'none';
+    };
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', onTouchCancel);
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', onTouchEnd);
+      canvas.removeEventListener('touchcancel', onTouchCancel);
+    };
+  }, [isEditMode, zoom, onZoomChange, clampPan, panRef, officeState, performTap]);
+
   // Prevent default middle-click browser behavior (auto-scroll)
   const handleAuxClick = useCallback((e: React.MouseEvent) => {
     if (e.button === 1) e.preventDefault();
@@ -883,7 +1058,7 @@ export function OfficeCanvas({
         onAuxClick={handleAuxClick}
         onMouseLeave={handleMouseLeave}
         onContextMenu={handleContextMenu}
-        className="block"
+        className="block touch-none"
       />
     </div>
   );

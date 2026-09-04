@@ -7,9 +7,11 @@ interface TooltipProps {
   children: ReactNode;
 }
 
+// Top offsets ride the safe-area inset: in a Home-Screen PWA the page starts
+// under the iOS status bar (env is 0 in browser tabs and on desktop).
 const positionStyles: Record<string, React.CSSProperties> = {
-  'top-right': { top: 8, right: 52 },
-  'top-left': { top: 8, left: 8 },
+  'top-right': { top: 'calc(env(safe-area-inset-top, 0px) + 8px)', right: 52 },
+  'top-left': { top: 'calc(env(safe-area-inset-top, 0px) + 8px)', left: 8 },
   'bottom-right': { bottom: 8, right: 52 },
   'bottom-left': { bottom: 8, left: 8 },
 };

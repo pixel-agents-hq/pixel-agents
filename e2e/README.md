@@ -34,6 +34,10 @@ The `npx pixel-agents` CLI path: hook-driven lifecycle propagates from the local
 
 The animated pets feature, which has no hook dependency. Pet sprites load and the `petSpritesLoaded` broadcast arrives with manifest display names; placing a pet from the Pets-tab carousel toggles it on/off and persists across a panel reload via `~/.pixel-agents/layout.json`; clicking a pet shows a heart bubble that auto-dismisses and dismisses again on re-click. Pets render only on the canvas, so live state is read through the `getPets` / `petClick` e2e test hooks. FSM internals, pathfinding, FOLLOW, z-sort, and legacy-layout migration are covered by webview unit tests, not e2e.
 
+### Layout editor (`@area:editor`)
+
+Erase semantics and stroke-based undo in the layout editor. The erase tool clears a tile to VOID **and** deletes any furniture whose footprint the stroke passes through (left-click and right-drag entry points both covered, plus the negative case where an item away from the stroke survives). Undo is stroke-scoped: one click-drag of floor paint, wall paint, or erase collapses to a single undo entry, and a mouse-up splits consecutive strokes into separate entries. Tiles render only on the canvas, so state is read through the `getTiles` / `getFurniture` e2e test hooks; stroke boundaries go through a real canvas `mouseup` rather than a hook, since "every edit collapses into one undo entry" is the regression being guarded. Carpet's equivalent stroke-undo test lives in `@area:carpet`.
+
 ## What's NOT covered (gaps + deferred)
 
 Scenarios that exist as product behavior but are not in the automated suite. PRs that close a gap should remove the corresponding row.
@@ -260,7 +264,7 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/standalone/multi-server-hooks.spec.ts:31` — extension and standalone both stay hook-driven without cross-contamination (Standalone / multi-server hooks)
 - `e2e/standalone/terminal.spec.ts:26` — browser-launched agent gets a PTY terminal, hooks route to its character, close cleans up (Standalone / terminal)
 - `e2e/standalone/terminal.spec.ts:82` — every tab takes mouse input, and a narrow window keeps the cards and close reachable (Standalone / terminal)
-- `e2e/standalone/terminal.spec.ts:120` — --no-terminal keeps the office watch-only: launch disabled, hook-driven agents still render (Standalone / terminal disabled)
+- `e2e/standalone/terminal.spec.ts:121` — --no-terminal keeps the office watch-only: launch disabled, hook-driven agents still render (Standalone / terminal disabled)
 - `e2e/standalone/ui.spec.ts:27` — closeAgent despawns the character (Standalone / UI)
 - `e2e/standalone/ui.spec.ts:61` — Debug View renders JSONL diagnostics in standalone (Standalone / UI)
 - `e2e/standalone/ui.spec.ts:95` — adding an external asset directory triggers a live asset reload (Standalone / UI)

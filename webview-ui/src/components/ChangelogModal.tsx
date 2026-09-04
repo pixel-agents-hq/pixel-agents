@@ -50,7 +50,9 @@ export function ChangelogModal({ isOpen, onClose, currentVersion }: ChangelogMod
       onClose={onClose}
       title={<span className="text-4xl">What's New in v{entry.version}</span>}
       zIndex={51}
-      className="min-w-sm!"
+      // Wider minimum than Modal's, still yielding to narrow screens (100% =
+      // Modal's sizing wrapper minus its margin padding).
+      className="min-w-[min(384px,100%)]!"
     >
       {/* Body */}
       <div className="py-4 px-10 max-h-[60vh] overflow-y-auto">
