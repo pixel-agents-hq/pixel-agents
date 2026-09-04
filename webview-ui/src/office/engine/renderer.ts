@@ -9,8 +9,6 @@ import {
   AREA_LABEL_SHADOW_COLOR,
   AREA_OVERLAY_ALPHA,
   BUBBLE_FADE_DURATION_SEC,
-  BUBBLE_SITTING_OFFSET_PX,
-  BUBBLE_VERTICAL_OFFSET_PX,
   BUTTON_ICON_COLOR,
   BUTTON_ICON_SIZE_FACTOR,
   BUTTON_LINE_WIDTH_MIN,
@@ -53,12 +51,7 @@ import {
 } from '../sprites/carpetTiles.js';
 import { getPetSprites } from '../sprites/petSpriteData.js';
 import { getCachedSprite, getOutlineSprite } from '../sprites/spriteCache.js';
-import {
-  BUBBLE_HEART_SPRITE,
-  BUBBLE_PERMISSION_SPRITE,
-  BUBBLE_WAITING_SPRITE,
-  getCharacterSprites,
-} from '../sprites/spriteData.js';
+import { BUBBLE_HEART_SPRITE, getCharacterSprites } from '../sprites/spriteData.js';
 import type {
   AreaDefinition,
   CarpetTile,
@@ -764,46 +757,10 @@ function renderRotateButton(
 }
 
 // ── Speech bubbles ──────────────────────────────────────────────
-
-function renderBubbles(
-  ctx: CanvasRenderingContext2D,
-  characters: Character[],
-  offsetX: number,
-  offsetY: number,
-  zoom: number,
-): void {
-  for (const ch of characters) {
-    if (!ch.bubbleType) continue;
-    // The green checkmark bubble only represents "done" (turn finished). The
-    // idle "Waiting for input" state communicates via its overlay label, not a
-    // bubble, so skip the bubble for it.
-    if (ch.bubbleType === 'waiting' && ch.waitingAwaitingInput) continue;
-
-    const sprite =
-      ch.bubbleType === 'permission' ? BUBBLE_PERMISSION_SPRITE : BUBBLE_WAITING_SPRITE;
-
-    // Compute opacity: permission = full, waiting = fade in last 0.5s
-    let alpha = 1.0;
-    if (ch.bubbleType === 'waiting' && ch.bubbleTimer < BUBBLE_FADE_DURATION_SEC) {
-      alpha = ch.bubbleTimer / BUBBLE_FADE_DURATION_SEC;
-    }
-
-    const cached = getCachedSprite(sprite, zoom);
-    // Position: centered above the character's head
-    // Character is anchored bottom-center at (ch.x, ch.y), sprite is 16x24
-    // Place bubble above head with a small gap; follow sitting offset
-    const sittingOff = ch.state === CharacterState.TYPE ? BUBBLE_SITTING_OFFSET_PX : 0;
-    const bubbleX = Math.round(offsetX + ch.x * zoom - cached.width / 2);
-    const bubbleY = Math.round(
-      offsetY + (ch.y + sittingOff - BUBBLE_VERTICAL_OFFSET_PX) * zoom - cached.height - 1 * zoom,
-    );
-
-    ctx.save();
-    if (alpha < 1.0) ctx.globalAlpha = alpha;
-    ctx.drawImage(cached, bubbleX, bubbleY);
-    ctx.restore();
-  }
-}
+// Character bubbles (permission dots / done checkmark) are rendered by
+// ToolOverlay as DOM elements so they stack ABOVE the DOM status labels —
+// canvas content can never out-paint the DOM overlay. Pet heart bubbles stay
+// here: pets have no overlay labels to collide with.
 
 function renderPetBubbles(
   ctx: CanvasRenderingContext2D,
@@ -856,6 +813,11 @@ export interface EditorRenderState {
   ghostCol: number;
   ghostRow: number;
   ghostValid: boolean;
+  /**
+   * Extra ghost sprites drawn on top of the main one, sharing its validity tint
+   * — the stuff riding a dragged desk, so the preview shows the whole group.
+   */
+  ghostExtras: Array<{ sprite: SpriteData; col: number; row: number; mirrored: boolean }>;
   selectedCol: number;
   selectedRow: number;
   selectedW: number;
@@ -961,9 +923,8 @@ export function renderFrame(
     pets ?? [],
   );
 
-  // Speech bubbles (always on top of characters)
-  renderBubbles(ctx, characters, offsetX, offsetY, zoom);
-  // Pet heart bubbles (same overlay pass)
+  // Character speech bubbles render in ToolOverlay (DOM, above the labels).
+  // Pet heart bubbles (canvas overlay pass)
   if (pets && pets.length > 0) {
     renderPetBubbles(ctx, pets, offsetX, offsetY, zoom);
   }
@@ -1002,6 +963,20 @@ export function renderFrame(
         zoom,
         editor.ghostMirrored,
       );
+      // Riders last so they sit on top of the surface they're being carried on.
+      for (const extra of editor.ghostExtras) {
+        renderGhostPreview(
+          ctx,
+          extra.sprite,
+          extra.col,
+          extra.row,
+          editor.ghostValid,
+          offsetX,
+          offsetY,
+          zoom,
+          extra.mirrored,
+        );
+      }
     }
     if (editor.hasSelection) {
       renderSelectionHighlight(

@@ -8,7 +8,7 @@
  * petClick, see webview-ui/src/testHooks.ts). Selectors are read from the live
  * EditorToolbar.tsx; prefer titles over text so they survive copy changes.
  */
-import type { Frame } from '@playwright/test';
+import type { Frame, Locator } from '@playwright/test';
 import { expect } from '@playwright/test';
 
 /** The carpet/area observability surface installed under the isE2E guard. */
@@ -42,9 +42,17 @@ export interface TestHooksWindow extends Window {
     }>;
     editorTileAction?: (col: number, row: number) => void;
     editorEraseAction?: (col: number, row: number) => void;
+    editorDragMove?: (uid: string, col: number, row: number) => void;
+    editorDragDuplicate?: (uid: string, col: number, row: number) => void;
+    getTiles?: () => { cols: number; rows: number; tiles: number[] };
+    getFurniture?: () => Array<{ uid: string; type: string; col: number; row: number }>;
+    getFurnitureCount?: () => number;
     messageLog?: Array<{ type: string }>;
   };
 }
+
+/** TileType values mirrored from webview-ui/src/office/types.ts. */
+export const TILE = { WALL: 0, FLOOR_1: 1, FLOOR_2: 2, VOID: 255 } as const;
 
 /**
  * Dismiss the first-run tooltips ("Instant Detection Active", "Updated to vN")
@@ -84,9 +92,46 @@ export async function selectCarpetVariant(frame: Frame, variant: number): Promis
   await frame.locator(`[title="Carpet ${variant + 1}"]`).click();
 }
 
-/** Switch to the carpet eyedropper (CARPET_PICK). */
+/** Switch to the carpet eyedropper (CARPET_PICK — the "Copy" button). */
 export async function selectCarpetPickTool(frame: Frame): Promise<void> {
-  await frame.locator('button[title*="Pick carpet"]').click();
+  await frame.locator('button[title*="Copy carpet"]').click();
+}
+
+/** Select the floor paint tool (TILE_PAINT). */
+export async function selectFloorTool(frame: Frame): Promise<void> {
+  await frame.locator('button[title="Paint floor tiles"]').click();
+}
+
+/** Select a floor pattern by TileType value (thumbnails are titled "Floor N"). */
+export async function selectFloorPattern(frame: Frame, tileType: number): Promise<void> {
+  await frame.locator(`[title="Floor ${tileType}"]`).click();
+}
+
+/** Select the wall paint tool (WALL_PAINT). */
+export async function selectWallTool(frame: Frame): Promise<void> {
+  await frame.locator('button[title="Paint walls (click to toggle)"]').click();
+}
+
+/** Select the erase tool (ERASE — clears tiles to VOID and deletes furniture). */
+export async function selectEraseTool(frame: Frame): Promise<void> {
+  await frame.locator('button[title="Erase tiles to void"]').click();
+}
+
+/**
+ * End the current paint/erase stroke the way a user does — by releasing the
+ * mouse over the canvas. Goes through OfficeCanvas's real onMouseUp handler
+ * (which calls editorState.endStroke()), so the next tile starts a fresh undo
+ * entry. Tile targeting bypasses canvas geometry, but stroke boundaries must
+ * not: collapsing every edit into one undo entry is exactly the regression
+ * these specs guard.
+ */
+export async function endStroke(frame: Frame): Promise<void> {
+  await frame.locator('canvas').first().dispatchEvent('mouseup', { button: 0 });
+}
+
+/** Click Undo in the EditActionBar (only visible while the editor is dirty). */
+export async function undo(frame: Frame): Promise<void> {
+  await frame.locator('button', { hasText: 'Undo' }).click();
 }
 
 /** Select the Areas tool (button is gated on workspaceFolders > 0 → multi-root). */
@@ -121,11 +166,104 @@ export async function eraseTile(frame: Frame, col: number, row: number): Promise
   );
 }
 
+/** Open the Furniture panel (FURNITURE_PLACE with no catalog item picked yet). */
+export async function selectFurnitureTool(frame: Frame): Promise<void> {
+  await frame.locator('button[title="Place furniture"]').click();
+}
+
+/**
+ * The Furniture sub-panel's own Copy button — rendered only while that panel is
+ * open, so its visibility stands in for "the panel is open" without reaching
+ * into class names.
+ */
+export function furniturePanel(frame: Frame): Locator {
+  return frame.locator('button[title="Copy furniture type from placed item"]');
+}
+
+/**
+ * Select a placed item by clicking its tile. Real selection path: both SELECT
+ * and the Furniture panel (with no catalog item picked) resolve the click to
+ * the furniture under the tile in handleEditorTileAction.
+ */
+export async function selectFurnitureAt(frame: Frame, col: number, row: number): Promise<void> {
+  await paintTile(frame, col, row);
+}
+
+/**
+ * Press an editor shortcut (R rotates, T toggles state) as a real keydown on
+ * the webview window — useEditorKeyboard listens there.
+ */
+export async function pressEditorKey(frame: Frame, key: string): Promise<void> {
+  await frame.locator('body').press(key);
+}
+
+/**
+ * Drop a dragged item at (col,row) through the real drag-move handler. Bypasses
+ * the mouse gesture only — moveFurniture still decides what comes along (items
+ * on a desk's surface) and whether the group fits.
+ */
+export async function dragFurnitureTo(
+  frame: Frame,
+  uid: string,
+  col: number,
+  row: number,
+): Promise<void> {
+  await frame.evaluate(
+    ([u, c, r]) =>
+      (window as TestHooksWindow).__pixelAgentsTestHooks?.editorDragMove?.(
+        u as string,
+        c as number,
+        r as number,
+      ),
+    [uid, col, row] as const,
+  );
+}
+
+/**
+ * Drop an Alt-drag copy at (col,row) through the real duplicate handler. Same
+ * bypass as dragFurnitureTo — the altKey gesture is the only thing skipped;
+ * duplicateFurniture still decides what is copied and whether the copy fits.
+ */
+export async function duplicateFurnitureTo(
+  frame: Frame,
+  uid: string,
+  col: number,
+  row: number,
+): Promise<void> {
+  await frame.evaluate(
+    ([u, c, r]) =>
+      (window as TestHooksWindow).__pixelAgentsTestHooks?.editorDragDuplicate?.(
+        u as string,
+        c as number,
+        r as number,
+      ),
+    [uid, col, row] as const,
+  );
+}
+
 /** Save the layout via the EditActionBar (only visible while the editor is dirty). */
 export async function saveLayout(frame: Frame): Promise<void> {
   const saveBtn = frame.locator('button', { hasText: 'Save' });
   await expect(saveBtn).toBeVisible({ timeout: 5_000 });
   await saveBtn.click();
+}
+
+/** Read the TileType values at the given (col,row) pairs, in order. */
+export async function readTilesAt(frame: Frame, cells: Array<[number, number]>): Promise<number[]> {
+  return frame.evaluate((pairs) => {
+    const grid = (window as TestHooksWindow).__pixelAgentsTestHooks?.getTiles?.();
+    if (!grid) return [];
+    return pairs.map(([c, r]) => grid.tiles[r * grid.cols + c]);
+  }, cells);
+}
+
+/** Read placed furniture (uid + type + grid coords) from the test hook. */
+export async function readFurniture(
+  frame: Frame,
+): Promise<Array<{ uid: string; type: string; col: number; row: number }>> {
+  return frame.evaluate(
+    () => (window as TestHooksWindow).__pixelAgentsTestHooks?.getFurniture?.() ?? [],
+  );
 }
 
 /** Read the painted carpet tiles from the test hook. */

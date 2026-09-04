@@ -121,6 +121,11 @@ function browserMockAssetsPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [tailwindcss(), react(), browserMockAssetsPlugin()],
+  server: {
+    // Dev-only: allow reaching `vite --host` from another device on a
+    // Tailscale network (Vite rejects non-localhost Host headers by default).
+    allowedHosts: ['.ts.net'],
+  },
   build: {
     outDir: '../dist/webview',
     emptyOutDir: true,

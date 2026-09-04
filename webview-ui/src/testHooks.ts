@@ -42,6 +42,12 @@ declare global {
       /** Count of placed furniture instances — lets a spec assert furniture
        *  placed onto a carpet tile (surface placement) without it being blocked. */
       getFurnitureCount?: () => number;
+      /** The layout's tile grid — lets a spec assert floor paint / erase (which
+       *  render only on the canvas) and that one undo reverts a whole stroke. */
+      getTiles?: () => { cols: number; rows: number; tiles: number[] };
+      /** Placed furniture with grid coords, so a spec can assert exactly which
+       *  item an erase stroke removed (getFurnitureCount only gives a total). */
+      getFurniture?: () => Array<{ uid: string; type: string; col: number; row: number }>;
       /** Seated top-level agents with the area their seat falls in (or null). */
       getAgentSeats?: () => Array<{
         id: number;
@@ -62,6 +68,12 @@ declare global {
        *  bypassing only canvas pixel→tile geometry (mirrors petClick). */
       editorTileAction?: (col: number, row: number) => void;
       editorEraseAction?: (col: number, row: number) => void;
+      /** Drop a dragged item at (col,row) via the real drag-move handler —
+       *  bypasses the mouse gesture, not the move rules (group validity, riders). */
+      editorDragMove?: (uid: string, col: number, row: number) => void;
+      /** Drop an Alt-drag copy at (col,row) via the real duplicate handler —
+       *  same bypass as editorDragMove, minus only the altKey gesture. */
+      editorDragDuplicate?: (uid: string, col: number, row: number) => void;
       getPets?: () => Array<{
         id: string;
         name: string;
@@ -242,6 +254,27 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
     const os = officeStateRef.current;
     if (!os) return 0;
     return os.furniture.length;
+  };
+
+  hooks.getTiles = () => {
+    const os = officeStateRef.current;
+    if (!os) return { cols: 0, rows: 0, tiles: [] };
+    const layout = os.getLayout();
+    return { cols: layout.cols, rows: layout.rows, tiles: [...layout.tiles] };
+  };
+
+  // Read from the layout (the persisted PlacedFurniture list), not os.furniture
+  // — the latter holds render instances (walls, auto-state swaps) that don't map
+  // 1:1 to what the editor placed.
+  hooks.getFurniture = () => {
+    const os = officeStateRef.current;
+    if (!os) return [];
+    return os.getLayout().furniture.map((f) => ({
+      uid: f.uid,
+      type: f.type,
+      col: f.col,
+      row: f.row,
+    }));
   };
 
   hooks.getAgentSeats = () => {
