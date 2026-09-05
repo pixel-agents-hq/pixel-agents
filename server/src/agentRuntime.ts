@@ -492,7 +492,7 @@ export class AgentRuntime {
         // Live spawn ids survive the restart so the 1s scan can re-adopt the
         // spawns' transcripts and the completion queue-op still matches.
         backgroundAgentToolIds: new Set(p.backgroundAgentToolIds ?? []),
-        directoryName: p.directoryName,
+        directoryName: p.directoryName ?? p.folderName,
         teamName: p.teamName,
         agentName: p.agentName,
         isTeamLead: p.isTeamLead,
