@@ -17,7 +17,7 @@ const USABLE_TOKEN = /^[A-Za-z0-9-]{16,128}$/;
  * see httpServer.ts standaloneTokenValid), and it reaches the browser inside
  * the URL the CLI prints. A per-process token would invalidate that URL on
  * every restart, so a bookmark or a home-screen web app pointing at a
- * long-running server (a LaunchAgent, a Tailscale-served Mac mini) would need a
+ * long-running server (a background service on an always-on machine) would need a
  * fresh copy each time. Persisting it keeps the printed URL stable.
  *
  * Stored on its own, mode 0600, beside server.json -- never in config.json,

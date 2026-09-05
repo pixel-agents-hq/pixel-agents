@@ -1,7 +1,6 @@
 # Standalone Terminal
 
-Status: proposed (branch `feat/standalone-terminal`)
-Author: implementation agent, for review by @pablodelucca
+Status: implemented (`feat/standalone-terminal`)
 
 ## Goal
 
@@ -77,7 +76,7 @@ concept standalone doesn't have (there is no "focused" terminal server-side; foc
 UI concern).
 
 So this branch leaves `ITerminalAdapter` alone and introduces `PtySessionManager` as the
-standalone terminal-lifecycle owner. **Open question for Pablo below.**
+standalone terminal-lifecycle owner. **See open question 2 below.**
 
 ## Dependency strategy: node-pty (the important part)
 
@@ -85,7 +84,7 @@ A PTY is non-negotiable for this feature: Claude Code is a full-screen TUI. `chi
 with pipes gives no TTY, no resize, no line discipline, and Claude renders unusably. `node-pty` is
 the standard, but it is a **native module**, which is a real concern for `npx pixel-agents`.
 
-### What I measured (npm 11.16.0, Node 26.3.1, darwin-arm64)
+### Measurements (npm 11.16.0, Node 26.3.1, darwin-arm64)
 
 | Package                          | Install | Result                                                           |
 | -------------------------------- | ------- | ---------------------------------------------------------------- |
@@ -337,24 +336,20 @@ reload reattaches to a still-running Claude session.
   flex column would fix it properly and touches OfficeCanvas sizing — deliberately
   out of scope here.
 
-## Suggested e2e coverage (not implemented on this branch)
+## E2E coverage
 
-Per instructions, no Playwright tests were added. Worth adding, in `e2e/tests/standalone/`:
+`e2e/tests/standalone/terminal.spec.ts` covers the browser-launched path end to end: `+ Agent`
+spawns a PTY, hooks route to the new character, mock-claude output renders in the drawer, a
+reload reattaches to the still-running PTY (replay), and close cleans up. A second scenario
+pins the `--no-terminal` degradation (launch disabled with its reason, hook-driven agents still
+render). Both skip on Windows, where spawning the `.cmd` mock shim through a PTY is untested.
 
-1. `terminal.spec.ts` — `+ Agent` in standalone opens the drawer, a tab appears, mock-claude's
-   output renders in xterm; typing sends input (assert via the mock's log, honoring the
-   process-boundary rule in `e2e/README.md`).
-2. Clicking a character focuses that agent's drawer tab (mirrors the VS Code focus test).
-3. Closing an agent from the overlay X removes the tab and kills the process (assert the mock
-   process exits).
-4. Reload mid-session replays scrollback: prior output still visible, no blank terminal.
-5. Degradation: force the PTY module to fail (e.g. `PIXEL_AGENTS_DISABLE_PTY=1`) and assert
-   `+ Agent` is hidden and the reason is shown — this needs a test seam; today the probe has no
-   override. Flagged as an open question.
-6. Auth negative test: a WS to `/terminal/1` without the subprotocol token is rejected (4401),
-   and `launchAgent` over an untokened `/ws` connection spawns nothing.
-
-Note (5) and (6) are the ones I'd prioritize — they're the security- and support-relevant paths.
+The security negatives are pinned at the unit level, against a real server where a socket is
+involved: `terminalRoutes.test.ts` (no token, wrong token, same-length token, valid token from a
+foreign origin, DNS-rebound attach, attach to an agent with no terminal) and
+`clientMessageHandler.test.ts` (`launchAgent` / `closeAgent` from an untokened `/ws` client do
+nothing, and `webviewReady` tells that client why). Not covered end to end: the module-failure
+degradation path (see open question 3).
 
 ## Risks
 
@@ -372,20 +367,24 @@ Note (5) and (6) are the ones I'd prioritize — they're the security- and suppo
 - **Probe cost.** The availability probe spawns and kills a real PTY once per process. It runs
   lazily on first use, not at boot, so a user who never opens a terminal never pays it.
 
-## Open questions for Pablo
+## Open questions
 
 1. **`@lydell/node-pty` (beta fork, all 6 platforms prebuilt, no install scripts) vs `node-pty`
-   (Microsoft, no Linux prebuilds, broken under npm ≥11.16's script gating)?** I chose the fork
-   with the official package as a fallback candidate. This is the single biggest call in the
-   branch and is easy to reverse.
-2. ~~Should `/ws` also require its token in standalone?~~ Resolved: `/ws` separates connecting
-   (same-origin viewers) from acting (the `?token=` the CLI printed), and the terminal rides that
-   same privilege bit — see "One privilege model with `/ws`" above.
-3. **Should `ITerminalAdapter` grow into a real terminal-lifecycle seam** (`launch/write/resize/
-dispose`) that both surfaces implement, or stay the VS Code adoption helper it is today? I
-   assumed the latter and put the lifecycle in `PtySessionManager`.
+   (Microsoft, no Linux prebuilds, broken under npm ≥11.16's script gating)?** The fork is the
+   primary candidate with the official package as a fallback. This is the single biggest call in
+   the branch and is easy to reverse.
+2. **Should `ITerminalAdapter` grow into a real terminal-lifecycle seam** (`launch/write/resize/
+dispose`) that both surfaces implement, or stay the VS Code adoption helper it is today? The
+   branch assumes the latter and puts the lifecycle in `PtySessionManager`.
+3. **A test seam to force PTY-unavailable** (e.g. `PIXEL_AGENTS_DISABLE_PTY=1`) would make the
+   module-failure degradation path e2e-testable. Today only the `--no-terminal` path is covered
+   end to end, and the probe has no override.
 4. **Should `+ Agent` in standalone offer a folder picker?** VS Code uses `workspaceFolders`;
    standalone has none, so it always launches in the server's `process.cwd()`. A `--cwd` flag or
    a UI picker may be wanted.
-5. **Do you want a test seam to force PTY-unavailable** (e.g. `PIXEL_AGENTS_DISABLE_PTY=1`)? It'd
-   make the degradation path e2e-testable; I didn't add one unprompted.
+
+Resolved since the first draft:
+
+- **`/ws` privilege.** `/ws` separates connecting (same-origin viewers) from acting (the
+  `?token=` the CLI printed), and the terminal rides that same privilege bit — see "One privilege
+  model with `/ws`".

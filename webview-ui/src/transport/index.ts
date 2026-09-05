@@ -26,8 +26,8 @@ function createTransport(): MessageTransport {
   ws.connect();
   // Vite dev only: there is no server to connect to, so `browserMock` injects
   // ServerMessages as `window` 'message' events. Bridge them into the transport
-  // and DON'T open a real socket — the session-token fetch would hit the Vite
-  // dev server (no such route) and loop on reconnect. Guarded by DEV so it's
+  // and DON'T open a real socket — there is no /ws on the Vite dev server, so
+  // the transport would loop on reconnect. Guarded by DEV so it's
   // tree-shaken out of the production standalone build.
   if (import.meta.env.DEV) {
     window.addEventListener('message', (e: MessageEvent) => {
