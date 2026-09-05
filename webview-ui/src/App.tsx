@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
 import type { TabStatus } from './components/AgentCard.js';
+import { AgentCardBar } from './components/AgentCardBar.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
@@ -349,6 +350,19 @@ function App() {
     },
     [terminalAgentIds, isMobile, revealTerminal],
   );
+
+  // Card click when there is no terminal pane to switch (VS Code, or a
+  // watch-only standalone session): ask the host to raise the agent's own
+  // terminal — VS Code shows the editor terminal, standalone has nothing to
+  // show — and select its character so the office follows the click.
+  const handleCardSelect = useCallback((agentId: number) => {
+    transport.send({ type: 'focusAgent', id: agentId });
+    const os = getOfficeState();
+    if (os.characters.has(agentId)) {
+      os.selectedAgentId = agentId;
+      os.cameraFollowId = agentId;
+    }
+  }, []);
 
   // Input handles handed up by each mobile TerminalPane, so the key bar can
   // inject bytes or paste into whichever pane is showing. A ref, not state:
@@ -1082,11 +1096,16 @@ function App() {
         <>
           {officeRegion}
 
-          {/* Standalone only: terminalAvailable is only ever true when the server
-              reports a working PTY to a tokened session, which VS Code's surface
-              never does. In flow as a flex sibling so the office region reflows
-              beside it instead of being overlaid. */}
-          {terminalAvailable && (
+          {/* Standalone with a terminal: terminalAvailable is only ever true when
+              the server reports a working PTY to a tokened session, which VS
+              Code's surface never does. In flow as a flex sibling so the office
+              region reflows beside it instead of being overlaid.
+
+              Otherwise (VS Code, or a watch-only standalone session) the card
+              bar stands alone with every agent in the office, external sessions
+              included — the at-a-glance "who needs attention" strip, with a
+              click raising the agent's editor terminal where there is one. */}
+          {terminalAvailable ? (
             <TerminalDrawer
               agentIds={terminalAgentIds}
               activeAgentId={terminalDrawer.activeAgentId}
@@ -1099,6 +1118,17 @@ function App() {
               getAppearance={terminalDrawer.getAppearance}
               getActivity={terminalDrawer.getActivity}
             />
+          ) : (
+            !isDebugMode && (
+              <AgentCardBar
+                agentIds={agents}
+                focusedAgentId={focusedAgentId}
+                getAppearance={terminalDrawer.getAppearance}
+                statusFor={terminalDrawer.getActivity}
+                onSelect={handleCardSelect}
+                onClose={handleCloseAgent}
+              />
+            )
           )}
         </>
       )}
