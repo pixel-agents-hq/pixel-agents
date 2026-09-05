@@ -98,6 +98,11 @@ export interface PersistedAgent {
   projectDir: string;
   /** Directory name — the agent's origin label (only set for multi-root workspaces) */
   directoryName?: string;
+  /** Pre-Directory spelling of `directoryName`, written by releases up to
+   *  v1.4.x. Read as a fallback on restore so an upgrade doesn't strip the
+   *  label (and the Area-mapping key) off every agent from the previous
+   *  session; never written — the next persist rewrites it as directoryName. */
+  folderName?: string;
 
   // -- Agent Teams --
   teamName?: string;
