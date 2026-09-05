@@ -363,7 +363,7 @@ export function restoreAgents(
       // Live spawn ids survive the reload so the 1s scan can re-adopt the
       // spawns' transcripts and the completion queue-op still matches.
       backgroundAgentToolIds: new Set(p.backgroundAgentToolIds ?? []),
-      directoryName: p.directoryName,
+      directoryName: p.directoryName ?? p.folderName,
       teamName: p.teamName,
       agentName: p.agentName,
       // A named agent is a teammate; never restore it as a lead (guards against

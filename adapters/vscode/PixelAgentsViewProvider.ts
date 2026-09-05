@@ -128,6 +128,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   ) {
     this.adapter = adapter;
     this.store.setAdapter(this.adapter);
+    // Workspace folders are this host's Directory contribution, so a folder
+    // added to or removed from the workspace changes the union the drawer
+    // shows. Registered once here (not per resolveWebviewView) and buffered
+    // when no webview is attached, so the next open sees the current list.
+    this.context.subscriptions.push(
+      vscode.workspace.onDidChangeWorkspaceFolders(() => this.sendDirectories()),
+    );
     this.store.on('agentAdded', (id, agent) => {
       this.sendOrBuffer({
         type: 'agentCreated',
