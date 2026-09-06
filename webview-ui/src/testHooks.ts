@@ -35,7 +35,7 @@ declare global {
       getAreas?: () => Array<{ label: string; color: string }>;
       /** Sparse list of area-painted tiles with their grid coords. */
       getAreaTiles?: () => Array<{ col: number; row: number; label: string }>;
-      /** Folder→Area mappings received by OfficeState. */
+      /** Directory→Area mappings received by OfficeState. */
       getAreaMappings?: () => Record<string, string[]>;
       /** Effective show-areas gate (settings toggle OR active area edit). */
       getShowAreas?: () => boolean;
@@ -53,7 +53,7 @@ declare global {
         id: number;
         seatId: string | null;
         areaLabel: string | null;
-        folderName?: string;
+        directoryName?: string;
       }>;
       /** All seats with grid coords + the area their tile falls in — lets a spec
        *  paint an Area over a known seat without hardcoding layout coordinates. */
@@ -286,7 +286,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
         id: ch.id,
         seatId: ch.seatId,
         areaLabel: ch.seatId ? os.seatZone(ch.seatId) : null,
-        folderName: ch.folderName,
+        directoryName: ch.directoryName,
       }));
   };
 
@@ -309,7 +309,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
     preferredHueShift,
     preferredSeatId,
     skipSpawnEffect,
-    folderName,
+    directoryName,
     nearAgentId,
   ) {
     origAddAgent.call(
@@ -319,7 +319,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       preferredHueShift,
       preferredSeatId,
       skipSpawnEffect,
-      folderName,
+      directoryName,
       nearAgentId,
     );
     const ch = this.characters.get(id);

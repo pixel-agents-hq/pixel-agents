@@ -31,7 +31,7 @@ export interface TestHooksWindow extends Window {
       id: number;
       seatId: string | null;
       areaLabel: string | null;
-      folderName?: string;
+      directoryName?: string;
     }>;
     getSeats?: () => Array<{
       uid: string;
@@ -74,6 +74,12 @@ export async function dismissFirstRunTooltips(frame: Frame): Promise<void> {
 /** Enter the layout editor (idempotent-ish: only clicks the Layout button). */
 export async function enterEditMode(frame: Frame): Promise<void> {
   await dismissFirstRunTooltips(frame);
+  await frame.locator('button[title="Edit office layout"]').click();
+}
+
+/** Leave the layout editor — the same Layout button toggles it. Save first:
+ *  this makes no attempt to handle unsaved edits. */
+export async function exitEditMode(frame: Frame): Promise<void> {
   await frame.locator('button[title="Edit office layout"]').click();
 }
 
@@ -134,7 +140,7 @@ export async function undo(frame: Frame): Promise<void> {
   await frame.locator('button', { hasText: 'Undo' }).click();
 }
 
-/** Select the Areas tool (button is gated on workspaceFolders > 0 → multi-root). */
+/** Select the Areas tool (button is gated on mappable directories > 0 → multi-root). */
 export async function selectAreaTool(frame: Frame): Promise<void> {
   await frame.locator('button[title*="Define folder-bound areas"]').click();
 }
@@ -325,7 +331,7 @@ export async function readSeats(
 export async function readAgentSeats(
   frame: Frame,
 ): Promise<
-  Array<{ id: number; seatId: string | null; areaLabel: string | null; folderName?: string }>
+  Array<{ id: number; seatId: string | null; areaLabel: string | null; directoryName?: string }>
 > {
   return frame.evaluate(
     () => (window as TestHooksWindow).__pixelAgentsTestHooks?.getAgentSeats?.() ?? [],

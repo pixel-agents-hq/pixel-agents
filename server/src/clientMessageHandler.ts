@@ -12,6 +12,13 @@ import {
   writeConfig,
 } from './configPersistence.js';
 import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT, TERMINAL_REQUIRES_TOKEN_REASON } from './constants.js';
+import {
+  handleDirectoryClientMessage,
+  type HostDirectoryEntry,
+  listDirectories,
+} from './directories.js';
+import { collectDirectorySuggestions } from './directorySuggestions.js';
+import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
@@ -75,6 +82,17 @@ const KEY_GHOST_HEADLESS_AGENTS = 'pixel-agents.ghostHeadlessAgents';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
+const KEY_BYPASS_PERMISSIONS = 'pixel-agents.bypassPermissions';
+
+/**
+ * This host's own Directory contribution: the directory the server was started
+ * from. Gated on ptyManager for the same reason directoriesLoaded is — no
+ * ptyManager means VS Code embedded mode, whose adapter contributes its
+ * workspace folders instead and must not have this server's cwd added to them.
+ */
+function hostDirectoriesFor(ctx: ClientMessageContext): HostDirectoryEntry[] {
+  return ctx.ptyManager ? [hostDirectory()] : [];
+}
 
 /**
  * Handle incoming ClientMessage from a WebSocket client.
@@ -109,11 +127,15 @@ export function handleClientMessage(
         );
         break;
       }
+      // Permission posture is a persisted per-host setting, never a per-launch
+      // field: the client sends only where to launch. Every launch comes from a
+      // drawer row and carries its Directory's path; no directoryPath falls
+      // back to the server cwd (launchStandaloneAgent's own default).
       launchStandaloneAgent(
         { store, runtime, ptyManager: ctx.ptyManager, provider: claudeProvider },
         {
-          folderPath: msg.folderPath as string | undefined,
-          bypassPermissions: msg.bypassPermissions as boolean | undefined,
+          directoryPath: msg.directoryPath as string | undefined,
+          bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
         },
       );
       break;
@@ -313,6 +335,27 @@ export function handleClientMessage(
       break;
     }
 
+    case 'setBypassPermissions': {
+      const enabled = msg.enabled as boolean;
+      adapter?.setSetting(KEY_BYPASS_PERMISSIONS, enabled);
+      break;
+    }
+
+    case 'saveDirectory':
+    case 'removeDirectory':
+    case 'requestDirectorySuggestions':
+      // Shared with the VS Code adapter: same validation, same union, same
+      // machine-wide config. Success rebroadcasts to every connected office
+      // (store.broadcast fans out to all sockets); a rejection — and the
+      // suggestion list — answers only the client that asked.
+      handleDirectoryClientMessage(msg, {
+        hostDirectories: () => hostDirectoriesFor(ctx),
+        broadcast: (message) => store.broadcast(message),
+        reply: send,
+        suggestions: () => collectDirectorySuggestions(claudeProvider, hostDirectoriesFor(ctx)),
+      });
+      break;
+
     default:
       // focusAgent is handled entirely client-side in standalone (it focuses the
       // drawer tab, which the server has no say in). exportLayout / importLayout
@@ -485,6 +528,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
     externalAssetDirectories: cfg.externalAssetDirectories,
     showAreas,
+    bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
   });
 
   // 4a. Actual install state, distinct from the hooksEnabled preference —
@@ -523,12 +567,22 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
       });
   }
 
-  // 4b. Folder→Area mappings (must arrive before existingAgents so the
+  // 4b. Directory→Area mappings (must arrive before existingAgents so the
   // webview seat-preference logic has the dict when characters are created).
   send({
     type: 'areaMappingsLoaded',
     mappings: cfg.standalone.areaMappings ?? {},
   });
+
+  // 4c. Directories: the user-defined ones from the shared config merged with
+  // standalone's native context, the directory the server was started from —
+  // one read-only host entry, the counterpart of VS Code contributing its
+  // workspace folders. Gated on ptyManager for the same reason
+  // terminalAvailability is: no ptyManager means VS Code embedded mode, whose
+  // adapter contributes its own Directories.
+  if (ctx.ptyManager) {
+    send({ type: 'directoriesLoaded', directories: listDirectories(hostDirectoriesFor(ctx)) });
+  }
 
   // Sync runtime refs with the persisted settings so scanners behave correctly
   // from the first tick after a server restart.
@@ -542,14 +596,14 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
 
   // 6. Existing agents (either just restored, or from VS Code adapter if present)
   const agentIds: number[] = [];
-  const folderNames: Record<number, string> = {};
+  const directoryNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   const persistedSeats = adapter?.loadSeats() ?? {};
   const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
   for (const [id, agent] of store) {
     agentIds.push(id);
-    if (agent.folderName) {
-      folderNames[id] = agent.folderName;
+    if (agent.directoryName) {
+      directoryNames[id] = agent.directoryName;
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
@@ -565,7 +619,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     type: 'existingAgents',
     agents: agentIds,
     agentMeta,
-    folderNames,
+    directoryNames,
     externalAgents,
   });
 

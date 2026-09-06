@@ -6,7 +6,7 @@ import {
   waitForClaudeHookSetup,
 } from '../../helpers/mock-claude';
 import { expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
-import { setSettings } from '../../helpers/webview';
+import { clickAddAgent, setSettings } from '../../helpers/webview';
 
 /**
  * The standalone embedded terminal: browser "+ Agent" → server-side PTY running
@@ -42,9 +42,9 @@ test.describe('Standalone / terminal', () => {
         .build(),
     );
 
-    // Launch from the browser. Single workspace folder, so the click sends
-    // launchAgent directly.
-    await page.getByRole('button', { name: '+ Agent' }).click();
+    // Launch from the browser: the press opens the Directory drawer, and the
+    // click on its single row (the server's start directory) sends launchAgent.
+    await clickAddAgent(page);
 
     // Control plane: terminalSessionOpened -> an agent card (the drawer tab).
     const agentCard = page.getByTitle('Agent 1');

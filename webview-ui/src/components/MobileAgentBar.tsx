@@ -7,8 +7,10 @@ import {
   MOBILE_CARD_ORDER_STORAGE_KEY,
   TOUCH_TAP_MAX_MOVE_PX,
 } from '../constants.js';
+import type { Directory } from '../hooks/useExtensionMessages.js';
 import type { AgentAppearance, CardVariant, TabStatus } from './AgentCard.js';
 import { AgentCard } from './AgentCard.js';
+import { LaunchDrawer } from './LaunchDrawer.js';
 
 interface MobileAgentBarProps {
   /** Every top-level office agent (launched and external), in creation order. */
@@ -20,7 +22,14 @@ interface MobileAgentBarProps {
   view: 'office' | 'terminal';
   onSelectAgent: (agentId: number) => void;
   onCloseAgent: (agentId: number) => void;
-  onLaunch: () => void;
+  /** Launch into a Directory picked from the + card's drawer. */
+  onLaunchDirectory: (directory: Directory) => void;
+  /** Directories offered by the launch drawer (tap on the + card). */
+  directories: Directory[];
+  /** Drawer's pinned `+ Directory` row — opens the Directory modal empty. */
+  onAddDirectory: () => void;
+  /** Pencil on a user-defined row — opens the modal pre-filled. */
+  onEditDirectory: (directory: Directory) => void;
   /** False when the server has no working PTY — the + card shows disabled. */
   canLaunch: boolean;
   launchUnavailableReason: string | null;
@@ -83,7 +92,10 @@ export function MobileAgentBar({
   view,
   onSelectAgent,
   onCloseAgent,
-  onLaunch,
+  onLaunchDirectory,
+  directories,
+  onAddDirectory,
+  onEditDirectory,
   canLaunch,
   launchUnavailableReason,
   getAppearance,
@@ -93,7 +105,10 @@ export function MobileAgentBar({
   const displayIds = useMemo(() => mergeOrder(savedOrder, agentIds), [savedOrder, agentIds]);
   const [draggingId, setDraggingId] = useState<number | null>(null);
 
+  const [isLaunchDrawerOpen, setIsLaunchDrawerOpen] = useState(false);
+
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const launchRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef(new Map<number, HTMLDivElement>());
   const dragRef = useRef<DragState>({ phase: 'idle', id: 0, startX: 0, startY: 0, timer: null });
   // The native touch handlers below are attached once but need the current
@@ -118,6 +133,25 @@ export function MobileAgentBar({
       setDraggingId(id);
     }, CARD_REORDER_LONG_PRESS_MS);
   };
+
+  // ── Launch card: a tap opens the launch drawer ──────────
+  // A plain press never launches: it opens the drawer, and the launch happens
+  // from a Directory row (the mobile counterpart of desktop's + Agent click).
+  const handleLaunchClick = () => {
+    setIsLaunchDrawerOpen(true);
+  };
+
+  // Close the drawer on a press anywhere outside the launch card.
+  useEffect(() => {
+    if (!isLaunchDrawerOpen) return;
+    const handlePress = (e: PointerEvent) => {
+      if (launchRef.current && !launchRef.current.contains(e.target as Node)) {
+        setIsLaunchDrawerOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePress);
+    return () => document.removeEventListener('pointerdown', handlePress);
+  }, [isLaunchDrawerOpen]);
 
   // Native (non-passive) listeners: React registers touch handlers passively,
   // and a drag must preventDefault so the bar doesn't also scroll and the
@@ -250,19 +284,41 @@ export function MobileAgentBar({
     // layout viewport while the keyboard is up).
     <div className="shrink-0 bg-bg border-t-2 border-border touch-pan-x">
       <div className="flex items-stretch gap-6 px-8 py-6">
-        {/* Launch card pinned on the left; only the agent cards scroll. */}
-        <button
-          onClick={canLaunch ? onLaunch : undefined}
-          disabled={!canLaunch}
-          title={canLaunch ? 'Launch agent' : (launchUnavailableReason ?? 'Terminal unavailable')}
-          className={`flex items-center justify-center shrink-0 px-14 border-2 rounded-none text-2xl leading-none ${
-            canLaunch
-              ? 'bg-accent border-accent text-white cursor-pointer active:bg-accent-bright'
-              : 'bg-btn-bg border-border text-text-muted cursor-default opacity-(--btn-disabled-opacity)'
-          }`}
-        >
-          +
-        </button>
+        {/* Launch card pinned on the left; only the agent cards scroll.
+            A tap opens the launch drawer above it — so the wrapper is the
+            positioning context and the outside-press boundary. */}
+        <div ref={launchRef} className="relative shrink-0 flex">
+          <button
+            onClick={canLaunch ? handleLaunchClick : undefined}
+            // A long press must not open the OS callout menu over the drawer.
+            onContextMenu={(e) => e.preventDefault()}
+            disabled={!canLaunch}
+            title={canLaunch ? 'Launch agent' : (launchUnavailableReason ?? 'Terminal unavailable')}
+            className={`flex items-center justify-center shrink-0 px-14 border-2 rounded-none text-2xl leading-none select-none ${
+              canLaunch
+                ? 'bg-accent border-accent text-white cursor-pointer active:bg-accent-bright'
+                : 'bg-btn-bg border-border text-text-muted cursor-default opacity-(--btn-disabled-opacity)'
+            }`}
+          >
+            +
+          </button>
+          <LaunchDrawer
+            isOpen={isLaunchDrawerOpen}
+            directories={directories}
+            onSelect={(directory) => {
+              setIsLaunchDrawerOpen(false);
+              onLaunchDirectory(directory);
+            }}
+            onAddDirectory={() => {
+              setIsLaunchDrawerOpen(false);
+              onAddDirectory();
+            }}
+            onEditDirectory={(directory) => {
+              setIsLaunchDrawerOpen(false);
+              onEditDirectory(directory);
+            }}
+          />
+        </div>
         <div
           ref={scrollerRef}
           className="flex items-stretch gap-6 overflow-x-auto no-scrollbar flex-1 min-w-0"

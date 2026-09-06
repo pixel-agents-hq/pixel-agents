@@ -117,7 +117,7 @@ export const CARPET_DEFAULT_ACCENT_COLOR: ColorValue = {
 /** Keyboard key that switches from CARPET_PAINT to CARPET_PICK while editing. */
 export const KEY_CARPET_PICK = 'p';
 
-// ── Areas (named, colored workspace-folder zones) ────────────
+// ── Areas (named, colored Directory zones) ───────────────────
 /** Color palette assigned to new Areas in rotation (cycles when more areas exist). */
 export const AREA_DEFAULT_COLORS: readonly string[] = [
   '#ff6b6b',
@@ -434,6 +434,11 @@ export const TERMINAL_FLICK_DECAY_PER_MS = 0.998;
 export const TERMINAL_FLICK_MIN_VELOCITY_PX_PER_MS = 0.05;
 /** Holding a card motionless this long arms drag-to-reorder in the mobile bar. */
 export const CARD_REORDER_LONG_PRESS_MS = 400;
+/** Holding a drawer's Directory row this long opens its edit modal — the touch
+ *  stand-in for the pencil, which only exists where rows can be hovered. */
+export const DRAWER_EDIT_LONG_PRESS_MS = 500;
+/** Finger slop for that hold: moving beyond this is a scroll, not a press. */
+export const DRAWER_EDIT_LONG_PRESS_MAX_MOVE_PX = 10;
 /** localStorage key for the mobile bar's custom card order (per device — a
  *  presentation preference, deliberately not synced through the server). */
 export const MOBILE_CARD_ORDER_STORAGE_KEY = 'pixel-agents.mobileCardOrder';

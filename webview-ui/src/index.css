@@ -1,4 +1,9 @@
 @import 'tailwindcss';
+/* Material Symbols Sharp, weight 700 (the single-weight package keeps the
+   FILL/GRAD/opsz axes variable). Imported into the base layer: the package's
+   own rules are unlayered and would otherwise outrank every Tailwind utility
+   (its font-size: 24px silently beat text-[...] sizing). */
+@import '@material-symbols/font-700/sharp.css' layer(base);
 
 @font-face {
   font-family: 'FS Pixel Sans';
@@ -261,6 +266,18 @@
   .pixel-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: var(--color-border) var(--color-bg-dark);
+  }
+
+  /* Material Symbols defaults for this project: Sharp style (imported in
+     main.tsx at weight 700), FILL 1, GRAD 0, opsz 24. The package CSS pins
+     font-size to 24px; 1em instead, so an icon tracks the text beside it. */
+  .material-symbols-sharp {
+    font-variation-settings:
+      'FILL' 1,
+      'GRAD' 0,
+      'opsz' 24;
+    font-size: 1em;
+    line-height: 1;
   }
 }
 
