@@ -82,6 +82,11 @@ test.describe('Hooks ON / spawn paths', () => {
     await expect(terminalTab.first()).toBeVisible({ timeout: 15_000 });
     narrator.check('a real "Claude Code #N" terminal tab is open');
 
+    // The agent-card bar is not a terminal feature: the extension gets it too,
+    // one card per agent (sub-characters get none, see the count-1 below).
+    await expect(panelFrame.getByTitle(/^Agent \d+$/)).toHaveCount(1);
+    narrator.check('one agent card in the right-edge bar');
+
     // The terminal above is exactly what makes this agent NOT headless: it has
     // one to focus, so it renders fully opaque (contrast: the adopted external
     // session in the next test).

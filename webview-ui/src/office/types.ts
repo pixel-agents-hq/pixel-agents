@@ -87,6 +87,8 @@ export const EditTool = {
   CARPET_PAINT: 'carpet_paint',
   CARPET_PICK: 'carpet_pick',
   AREA_PAINT: 'area_paint',
+  /** Colour-only eyedropper: takes a placed item's colour, leaves its type alone. */
+  COLOR_PICK: 'color_pick',
 } as const;
 export type EditTool = (typeof EditTool)[keyof typeof EditTool];
 

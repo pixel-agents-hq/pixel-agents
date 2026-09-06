@@ -18,6 +18,9 @@ interface TerminalDrawerInputs {
   agentStatuses: Record<number, string>;
   agentAwaitingInput: Record<number, boolean>;
   agentSeenActivity: Record<number, boolean>;
+  /** Fired when a terminal the drawer hadn't seen appears (launch answered,
+   *  or a reload re-announcing live sessions), after it became the active tab. */
+  onNewTerminal?: (agentId: number) => void;
 }
 
 export interface TerminalDrawerController {
@@ -49,8 +52,12 @@ export function useTerminalDrawer({
   agentStatuses,
   agentAwaitingInput,
   agentSeenActivity,
+  onNewTerminal,
 }: TerminalDrawerInputs): TerminalDrawerController {
   const [activeAgentId, setActiveAgentId] = useState<number | null>(null);
+  // Latest callback in a ref so the reveal effect stays keyed on the id list only.
+  const onNewTerminalRef = useRef(onNewTerminal);
+  onNewTerminalRef.current = onNewTerminal;
   const [isOpen, setIsOpen] = useState(false);
   const [widthPx, setWidthPx] = useState(TERMINAL_DRAWER_DEFAULT_WIDTH_PX);
 
@@ -64,8 +71,10 @@ export function useTerminalDrawer({
     const added = terminalAgentIds.filter((id) => !knownIdsRef.current.includes(id));
     knownIdsRef.current = terminalAgentIds;
     if (added.length === 0) return;
-    setActiveAgentId(added[added.length - 1]);
+    const newest = added[added.length - 1];
+    setActiveAgentId(newest);
     setIsOpen(true);
+    onNewTerminalRef.current?.(newest);
   }, [terminalAgentIds]);
 
   const reveal = useCallback(

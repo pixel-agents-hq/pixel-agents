@@ -4,6 +4,8 @@ import {
   CAMERA_FOLLOW_LERP,
   CAMERA_FOLLOW_SNAP_THRESHOLD,
   PAN_MARGIN_FRACTION,
+  TOUCH_TAP_MAX_DURATION_MS,
+  TOUCH_TAP_MAX_MOVE_PX,
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_SCROLL_THRESHOLD,
@@ -11,7 +13,11 @@ import {
 import { unlockAudio } from '../../notificationSound.js';
 import { transport } from '../../transport/index.js';
 import { getColorizedSprite } from '../colorize.js';
-import { canPlaceFurniture, getWallPlacementRow } from '../editor/editorActions.js';
+import {
+  canPlaceFurniture,
+  getWallPlacementRow,
+  planFurnitureMove,
+} from '../editor/editorActions.js';
 import type { EditorState } from '../editor/editorState.js';
 import { startGameLoop } from '../engine/gameLoop.js';
 import type { OfficeState } from '../engine/officeState.js';
@@ -37,6 +43,8 @@ interface OfficeCanvasProps {
   onDeleteSelected: () => void;
   onRotateSelected: () => void;
   onDragMove: (uid: string, newCol: number, newRow: number) => void;
+  /** Alt-drag drop: copy the item (and its surface riders) to (newCol,newRow). */
+  onDragDuplicate: (uid: string, newCol: number, newRow: number) => void;
   editorTick: number;
   zoom: number;
   onZoomChange: (zoom: number) => void;
@@ -45,6 +53,11 @@ interface OfficeCanvasProps {
   showAreas: boolean;
   /** Currently-selected area label in the editor (alpha-bumped overlay). null otherwise. */
   activeAreaLabel: string | null;
+  /** Mobile two-step tap: the first tap on a character selects it (camera
+   *  follow + status label), and only a second tap on the already-selected
+   *  character fires onClick (opens its terminal). Desktop keeps single-click
+   *  focus with tap-again-to-deselect. */
+  tapSelectsFirst?: boolean;
 }
 
 export function OfficeCanvas({
@@ -58,12 +71,14 @@ export function OfficeCanvas({
   onDeleteSelected,
   onRotateSelected,
   onDragMove,
+  onDragDuplicate,
   editorTick: _editorTick,
   zoom,
   onZoomChange,
   panRef,
   showAreas,
   activeAreaLabel,
+  tapSelectsFirst = false,
 }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +93,27 @@ export function OfficeCanvas({
   const isEraseDraggingRef = useRef(false);
   // Zoom scroll accumulator for trackpad pinch sensitivity
   const zoomAccumulatorRef = useRef(0);
+  // Touch gesture state (one-finger pan / two-finger pinch / tap detection).
+  // 'pending-tap' promotes to 'pan' once the finger travels past the slop.
+  const touchRef = useRef<{
+    mode: 'none' | 'pending-tap' | 'pan' | 'pinch';
+    startX: number;
+    startY: number;
+    startTime: number;
+    panX: number;
+    panY: number;
+    pinchStartDist: number;
+    pinchStartZoom: number;
+  }>({
+    mode: 'none',
+    startX: 0,
+    startY: 0,
+    startTime: 0,
+    panX: 0,
+    panY: 0,
+    pinchStartDist: 0,
+    pinchStartZoom: 1,
+  });
 
   // Clamp pan so the map edge can't go past a margin inside the viewport
   const clampPan = useCallback(
@@ -147,6 +183,7 @@ export function OfficeCanvas({
             ghostCol: editorState.ghostCol,
             ghostRow: editorState.ghostRow,
             ghostValid: editorState.ghostValid,
+            ghostExtras: [],
             selectedCol: 0,
             selectedRow: 0,
             selectedW: 0,
@@ -168,7 +205,7 @@ export function OfficeCanvas({
                 editorState.selectedFurnitureType,
                 editorState.ghostRow,
               );
-              const pickedColor = editorState.pickedFurnitureColor;
+              const pickedColor = editorState.placementColor();
               editorRender.ghostSprite = pickedColor
                 ? getColorizedSprite(
                     `ghost-${editorState.selectedFurnitureType}-${pickedColor.h}-${pickedColor.s}-${pickedColor.b}-${pickedColor.c}-${pickedColor.colorize ?? ''}`,
@@ -188,29 +225,38 @@ export function OfficeCanvas({
             }
           }
 
-          // Ghost preview for drag-to-move
+          // Ghost preview for drag-to-move — the dragged item plus whatever is
+          // riding on it, previewed as the one group that will be dropped. With
+          // Alt held the same group previews as a copy, so the originals still
+          // block it and the ghost turns red over them.
           if (editorState.isDragMoving && editorState.dragUid && editorState.ghostCol >= 0) {
-            const draggedItem = officeState
-              .getLayout()
-              .furniture.find((f) => f.uid === editorState.dragUid);
-            if (draggedItem) {
-              const entry = getCatalogEntry(draggedItem.type);
-              if (entry) {
-                const ghostCol = editorState.ghostCol - editorState.dragOffsetCol;
-                const ghostRow = editorState.ghostRow - editorState.dragOffsetRow;
-                editorRender.ghostSprite = entry.sprite;
-                editorRender.ghostCol = ghostCol;
-                editorRender.ghostRow = ghostRow;
-                editorRender.ghostMirrored =
-                  !!entry.mirrorSide && draggedItem.type.endsWith(':left');
-                editorRender.ghostValid = canPlaceFurniture(
-                  officeState.getLayout(),
-                  draggedItem.type,
-                  ghostCol,
-                  ghostRow,
-                  editorState.dragUid,
-                );
-              }
+            const plan = planFurnitureMove(
+              officeState.getLayout(),
+              editorState.dragUid,
+              editorState.ghostCol - editorState.dragOffsetCol,
+              editorState.ghostRow - editorState.dragOffsetRow,
+              { duplicate: editorState.dragDuplicate },
+            );
+            const [dragged, ...riders] = plan?.items ?? [];
+            const entry = dragged ? getCatalogEntry(dragged.type) : undefined;
+            if (plan && dragged && entry) {
+              editorRender.ghostSprite = entry.sprite;
+              editorRender.ghostCol = dragged.col;
+              editorRender.ghostRow = dragged.row;
+              editorRender.ghostMirrored = !!entry.mirrorSide && dragged.type.endsWith(':left');
+              editorRender.ghostValid = plan.valid;
+              editorRender.ghostExtras = riders.flatMap((rider) => {
+                const riderEntry = getCatalogEntry(rider.type);
+                if (!riderEntry) return [];
+                return [
+                  {
+                    sprite: riderEntry.sprite,
+                    col: rider.col,
+                    row: rider.row,
+                    mirrored: !!riderEntry.mirrorSide && rider.type.endsWith(':left'),
+                  },
+                ];
+              });
             }
           }
 
@@ -399,16 +445,23 @@ export function OfficeCanvas({
           editorState.ghostRow = tile.row;
 
           // Drag-to-move: check if cursor moved to different tile
-          if (editorState.dragUid && !editorState.isDragMoving) {
-            if (tile.col !== editorState.dragStartCol || tile.row !== editorState.dragStartRow) {
+          if (editorState.dragUid) {
+            // Alt is sampled every move, so it can be pressed or released
+            // part-way through a drag and the ghost follows.
+            editorState.dragDuplicate = e.altKey;
+            if (
+              !editorState.isDragMoving &&
+              (tile.col !== editorState.dragStartCol || tile.row !== editorState.dragStartRow)
+            ) {
               editorState.isDragMoving = true;
             }
           }
 
           // Paint on drag (paint-style tools only, not during furniture drag).
           // Carpet + Area paint join the drag set so a single click-drag stamps
-          // every tile under the cursor — stroke-based undo lives in
-          // useEditorActions for carpet, per-tile undo for area.
+          // every tile under the cursor — stroke-based undo (one undo per
+          // click-drag) lives in useEditorActions for floor/wall/erase/carpet;
+          // area paint stays per-tile.
           if (
             editorState.isDragging &&
             (editorState.activeTool === EditTool.TILE_PAINT ||
@@ -449,7 +502,8 @@ export function OfficeCanvas({
         const canvas = canvasRef.current;
         if (canvas) {
           if (editorState.isDragMoving) {
-            canvas.style.cursor = 'grabbing';
+            // 'copy' is the platform's own duplicate-drag affordance.
+            canvas.style.cursor = editorState.dragDuplicate ? 'copy' : 'grabbing';
           } else {
             const pos = screenToWorld(e.clientX, e.clientY);
             if (
@@ -458,8 +512,12 @@ export function OfficeCanvas({
                 hitTestRotateButton(pos.deviceX, pos.deviceY))
             ) {
               canvas.style.cursor = 'pointer';
-            } else if (editorState.activeTool === EditTool.FURNITURE_PICK && tile) {
-              // Pick mode: show pointer over furniture, crosshair elsewhere
+            } else if (
+              (editorState.activeTool === EditTool.FURNITURE_PICK ||
+                editorState.activeTool === EditTool.COLOR_PICK) &&
+              tile
+            ) {
+              // Copy modes (type or colour): pointer over furniture, crosshair elsewhere
               const layout = officeState.getLayout();
               const hitFurniture = layout.furniture.find((f) => {
                 const entry = getCatalogEntry(f.type);
@@ -613,13 +671,15 @@ export function OfficeCanvas({
           }
         }
         if (hitFurniture) {
-          // Start drag — record offset from furniture's top-left
+          // Start drag — record offset from furniture's top-left. Alt at press
+          // time means "drag out a copy"; mousemove keeps it in sync after that.
           editorState.startDrag(
             hitFurniture.uid,
             tile.col,
             tile.row,
             tile.col - hitFurniture.col,
             tile.row - hitFurniture.row,
+            e.altKey,
           );
           return;
         } else {
@@ -662,42 +722,44 @@ export function OfficeCanvas({
       }
       if (e.button === 2) {
         isEraseDraggingRef.current = false;
-        // Close any in-progress carpet / area stroke so the next stroke
-        // starts a fresh undo entry instead of bundling into this one.
-        editorState.carpetStrokeInitialLayout = null;
-        editorState.carpetDragErasing = null;
-        editorState.areaDragErasing = null;
+        // Close the in-progress stroke so the next stroke starts a fresh undo
+        // entry instead of bundling into this one.
+        editorState.endStroke();
         return;
       }
 
       // Handle drag-to-move completion
       if (editorState.dragUid) {
         if (editorState.isDragMoving) {
-          // Compute target position
+          // Compute target position — validity covers the whole group (the item
+          // plus anything on its surface), matching the ghost preview.
+          const duplicating = editorState.dragDuplicate;
           const ghostCol = editorState.ghostCol - editorState.dragOffsetCol;
           const ghostRow = editorState.ghostRow - editorState.dragOffsetRow;
-          const draggedItem = officeState
-            .getLayout()
-            .furniture.find((f) => f.uid === editorState.dragUid);
-          if (draggedItem) {
-            const valid = canPlaceFurniture(
-              officeState.getLayout(),
-              draggedItem.type,
-              ghostCol,
-              ghostRow,
-              editorState.dragUid,
-            );
-            if (valid) {
+          const plan = planFurnitureMove(
+            officeState.getLayout(),
+            editorState.dragUid,
+            ghostCol,
+            ghostRow,
+            { duplicate: duplicating },
+          );
+          if (plan?.valid) {
+            if (duplicating) {
+              onDragDuplicate(editorState.dragUid, ghostCol, ghostRow);
+            } else {
               onDragMove(editorState.dragUid, ghostCol, ghostRow);
             }
           }
-          editorState.clearSelection();
+          // A committed copy leaves itself selected (onDragDuplicate sets it),
+          // so only drop the selection when nothing new was created.
+          if (!duplicating || !plan?.valid) editorState.clearSelection();
         } else {
-          // Click (no movement) — toggle selection
+          // Click (no movement) — toggle selection. Selecting also collapses
+          // the open tool tab, so the toolbar shows the item's own controls.
           if (editorState.selectedFurnitureUid === editorState.dragUid) {
             editorState.clearSelection();
           } else {
-            editorState.selectedFurnitureUid = editorState.dragUid;
+            editorState.selectPlacedFurniture(editorState.dragUid);
           }
         }
         editorState.clearDrag();
@@ -708,25 +770,36 @@ export function OfficeCanvas({
       }
 
       editorState.isDragging = false;
-      editorState.wallDragAdding = null;
-      // Close the current carpet stroke so the next click starts a fresh undo entry.
-      editorState.carpetStrokeInitialLayout = null;
-      editorState.carpetDragErasing = null;
-      editorState.areaDragErasing = null;
+      // Releasing the mouse ends the stroke, so the next click starts a fresh
+      // undo entry — one click-drag collapses to a single undo.
+      editorState.endStroke();
     },
-    [editorState, isEditMode, officeState, onDragMove, onEditorSelectionChange],
+    [editorState, isEditMode, officeState, onDragMove, onDragDuplicate, onEditorSelectionChange],
   );
 
-  const handleClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (isEditMode) return; // handled by mouseDown/mouseUp
-      const pos = screenToWorld(e.clientX, e.clientY);
+  // Shared by mouse click and touch tap — both resolve a viewport point to a
+  // character / pet / seat interaction.
+  const performTap = useCallback(
+    (clientX: number, clientY: number) => {
+      const pos = screenToWorld(clientX, clientY);
       if (!pos) return;
 
       const hitId = officeState.getCharacterAt(pos.worldX, pos.worldY);
       if (hitId !== null) {
         // Dismiss any active bubble on click
         officeState.dismissBubble(hitId);
+        // Two-step (mobile): first tap selects + follows so the status label
+        // shows; only a repeat tap on the same character opens its terminal.
+        // Deselection is tapping empty floor, as ever.
+        if (tapSelectsFirst) {
+          if (officeState.selectedAgentId === hitId) {
+            onClick(hitId);
+          } else {
+            officeState.selectedAgentId = hitId;
+            officeState.cameraFollowId = hitId;
+          }
+          return;
+        }
         // Toggle selection: click same agent deselects, different agent selects
         if (officeState.selectedAgentId === hitId) {
           officeState.selectedAgentId = null;
@@ -756,7 +829,7 @@ export function OfficeCanvas({
         const selectedCh = officeState.characters.get(officeState.selectedAgentId);
         // Skip seat reassignment for sub-agents
         if (selectedCh && !selectedCh.isSubagent) {
-          const tile = screenToTile(e.clientX, e.clientY);
+          const tile = screenToTile(clientX, clientY);
           if (tile) {
             const seatId = officeState.getSeatAtTile(tile.col, tile.row);
             if (seatId) {
@@ -788,17 +861,22 @@ export function OfficeCanvas({
         officeState.cameraFollowId = null;
       }
     },
-    [officeState, onClick, screenToWorld, screenToTile, isEditMode],
+    [officeState, onClick, screenToWorld, screenToTile, tapSelectsFirst],
+  );
+
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (isEditMode) return; // handled by mouseDown/mouseUp
+      performTap(e.clientX, e.clientY);
+    },
+    [isEditMode, performTap],
   );
 
   const handleMouseLeave = useCallback(() => {
     isPanningRef.current = false;
     isEraseDraggingRef.current = false;
     editorState.isDragging = false;
-    editorState.wallDragAdding = null;
-    editorState.carpetStrokeInitialLayout = null;
-    editorState.carpetDragErasing = null;
-    editorState.areaDragErasing = null;
+    editorState.endStroke();
     editorState.clearDrag();
     editorState.ghostCol = -1;
     editorState.ghostRow = -1;
@@ -813,6 +891,23 @@ export function OfficeCanvas({
       }
     }
   }, [officeState, editorState, isEditMode]);
+
+  // Alt tapped or released with the mouse already down flips the in-flight drag
+  // between move and copy without waiting for the next mouse move — the rAF
+  // loop redraws the ghost from editorState every frame, so no re-render here.
+  useEffect(() => {
+    if (!isEditMode) return;
+    const syncAlt = (e: KeyboardEvent) => {
+      if (e.key !== 'Alt' || !editorState.dragUid) return;
+      editorState.dragDuplicate = e.type === 'keydown';
+    };
+    window.addEventListener('keydown', syncAlt);
+    window.addEventListener('keyup', syncAlt);
+    return () => {
+      window.removeEventListener('keydown', syncAlt);
+      window.removeEventListener('keyup', syncAlt);
+    };
+  }, [isEditMode, editorState]);
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
@@ -867,6 +962,131 @@ export function OfficeCanvas({
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, [handleWheel]);
 
+  // Touch: one-finger pan, two-finger pinch zoom, short tap = click. Native
+  // listeners for the same reason as wheel — React registers touch handlers
+  // passively, and we must preventDefault so the browser neither scrolls nor
+  // synthesizes a duplicate mouse click after our own tap handling.
+  //
+  // Edit mode is deliberately left to the browser's synthesized mouse events:
+  // a tap there lands as mousedown/mouseup and drives select/paint through the
+  // existing handlers. (Touch *drags* don't paint — mobile hides the editor.)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const touchDist = (a: Touch, b: Touch) =>
+      Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+    const midpoint = (a: Touch, b: Touch) => ({
+      clientX: (a.clientX + b.clientX) / 2,
+      clientY: (a.clientY + b.clientY) / 2,
+    });
+
+    const anchorPan = (t: { clientX: number; clientY: number }) => {
+      const touch = touchRef.current;
+      touch.startX = t.clientX;
+      touch.startY = t.clientY;
+      touch.panX = panRef.current.x;
+      touch.panY = panRef.current.y;
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      unlockAudio();
+      if (isEditMode) return;
+      e.preventDefault();
+      const touch = touchRef.current;
+      if (e.touches.length === 1) {
+        touch.mode = 'pending-tap';
+        touch.startTime = performance.now();
+        anchorPan(e.touches[0]);
+      } else if (e.touches.length === 2) {
+        // Second finger down: any pending tap/pan becomes a pinch.
+        touch.mode = 'pinch';
+        touch.pinchStartDist = touchDist(e.touches[0], e.touches[1]);
+        touch.pinchStartZoom = zoom;
+        anchorPan(midpoint(e.touches[0], e.touches[1]));
+      }
+    };
+
+    const applyTouchPan = (clientX: number, clientY: number) => {
+      const touch = touchRef.current;
+      const dpr = window.devicePixelRatio || 1;
+      panRef.current = clampPan(
+        touch.panX + (clientX - touch.startX) * dpr,
+        touch.panY + (clientY - touch.startY) * dpr,
+      );
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (isEditMode) return;
+      e.preventDefault();
+      const touch = touchRef.current;
+
+      if (touch.mode === 'pinch' && e.touches.length >= 2) {
+        const dist = touchDist(e.touches[0], e.touches[1]);
+        const proposed = Math.round(touch.pinchStartZoom * (dist / touch.pinchStartDist));
+        const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, proposed));
+        if (newZoom !== zoom) onZoomChange(newZoom);
+        // Two-finger drag also pans, tracked from the midpoint.
+        const mid = midpoint(e.touches[0], e.touches[1]);
+        applyTouchPan(mid.clientX, mid.clientY);
+        return;
+      }
+
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (touch.mode === 'pending-tap') {
+        const moved = Math.hypot(t.clientX - touch.startX, t.clientY - touch.startY);
+        if (moved > TOUCH_TAP_MAX_MOVE_PX) {
+          touch.mode = 'pan';
+          officeState.cameraFollowId = null;
+        }
+      }
+      if (touch.mode === 'pan') {
+        applyTouchPan(t.clientX, t.clientY);
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (isEditMode) return;
+      e.preventDefault();
+      const touch = touchRef.current;
+
+      if (e.touches.length === 0) {
+        if (
+          touch.mode === 'pending-tap' &&
+          performance.now() - touch.startTime <= TOUCH_TAP_MAX_DURATION_MS
+        ) {
+          const t = e.changedTouches[0];
+          if (t) performTap(t.clientX, t.clientY);
+        }
+        touch.mode = 'none';
+        return;
+      }
+
+      // Pinch finger lifted: continue as a plain pan from the remaining finger.
+      if (e.touches.length === 1) {
+        touch.mode = 'pan';
+        anchorPan(e.touches[0]);
+      }
+    };
+
+    const onTouchCancel = () => {
+      touchRef.current.mode = 'none';
+    };
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvas.addEventListener('touchcancel', onTouchCancel);
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', onTouchEnd);
+      canvas.removeEventListener('touchcancel', onTouchCancel);
+    };
+  }, [isEditMode, zoom, onZoomChange, clampPan, panRef, officeState, performTap]);
+
   // Prevent default middle-click browser behavior (auto-scroll)
   const handleAuxClick = useCallback((e: React.MouseEvent) => {
     if (e.button === 1) e.preventDefault();
@@ -883,7 +1103,7 @@ export function OfficeCanvas({
         onAuxClick={handleAuxClick}
         onMouseLeave={handleMouseLeave}
         onContextMenu={handleContextMenu}
-        className="block"
+        className="block touch-none"
       />
     </div>
   );

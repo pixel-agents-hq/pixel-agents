@@ -176,5 +176,17 @@
   },
   "optionalDependencies": {
     "@lydell/node-pty": "^1.2.0-beta.12"
+  },
+  "allowScripts": {
+    "esbuild@0.28.0": true,
+    "esbuild@0.27.7": true,
+    "protobufjs@7.5.7": true,
+    "puppeteer@24.43.0": true,
+    "yarn@1.22.22": true,
+    "@asyncapi/cli@6.0.0": true,
+    "@hyperjump/pact@0.2.5": true,
+    "@hyperjump/json-schema-core@0.28.5": true,
+    "@hyperjump/json-pointer@0.9.8": true,
+    "@hyperjump/json-schema@0.23.5": true
   }
 }
