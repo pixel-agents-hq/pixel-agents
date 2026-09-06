@@ -23,12 +23,13 @@ function createTransport(): MessageTransport {
     serverToken ? `?token=${encodeURIComponent(serverToken)}` : ''
   }`;
   const ws = new WebSocketTransport(wsUrl);
-  ws.connect();
   // Vite dev only: there is no server to connect to, so `browserMock` injects
   // ServerMessages as `window` 'message' events. Bridge them into the transport
   // and DON'T open a real socket — there is no /ws on the Vite dev server, so
-  // the transport would loop on reconnect. Guarded by DEV so it's
-  // tree-shaken out of the production standalone build.
+  // the transport would loop on reconnect. Guarded by DEV so it's tree-shaken
+  // out of the production standalone build. Exactly ONE connect() call must
+  // remain: WebSocketTransport has no guard, and a second call orphans a live
+  // socket whose handlers keep delivering every broadcast a second time.
   if (import.meta.env.DEV) {
     window.addEventListener('message', (e: MessageEvent) => {
       const data = e.data as unknown;

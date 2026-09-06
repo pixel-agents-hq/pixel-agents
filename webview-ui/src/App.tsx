@@ -1,8 +1,6 @@
-import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
-import type { AgentActivity } from './components/AgentCard.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
@@ -16,15 +14,11 @@ import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
-import {
-  TERMINAL_DRAWER_DEFAULT_WIDTH_PX,
-  TERMINAL_DRAWER_MAX_WIDTH_RATIO,
-  TERMINAL_DRAWER_MIN_WIDTH_PX,
-} from './constants.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useIntroTour } from './hooks/useIntroTour.js';
+import { useTerminalDrawer } from './hooks/useTerminalDrawer.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -121,36 +115,15 @@ function App() {
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
-  const [activeTerminalAgentId, setActiveTerminalAgentId] = useState<number | null>(null);
-  const [isTerminalOpen, setIsTerminalOpen] = useState(false);
-  const [terminalWidthPx, setTerminalWidthPx] = useState(TERMINAL_DRAWER_DEFAULT_WIDTH_PX);
-
-  // Drag the panel's left edge to resize. The office region is flex-1 beside it,
-  // so it reflows to fill whatever width is left — the canvas ResizeObserver
-  // repaints and re-centres the camera on the smaller region automatically.
-  const handleTerminalResizeStart = useCallback(
-    (e: ReactMouseEvent) => {
-      e.preventDefault();
-      const startX = e.clientX;
-      const startWidth = terminalWidthPx;
-      const maxWidth = window.innerWidth * TERMINAL_DRAWER_MAX_WIDTH_RATIO;
-      const onMove = (ev: MouseEvent) => {
-        // Dragging left (smaller clientX) widens the panel.
-        const next = startWidth + (startX - ev.clientX);
-        setTerminalWidthPx(Math.max(TERMINAL_DRAWER_MIN_WIDTH_PX, Math.min(maxWidth, next)));
-      };
-      const onUp = () => {
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
-        document.body.style.userSelect = '';
-      };
-      // Suppress text selection while dragging over the terminal/office.
-      document.body.style.userSelect = 'none';
-      window.addEventListener('mousemove', onMove);
-      window.addEventListener('mouseup', onUp);
-    },
-    [terminalWidthPx],
-  );
+  // Standalone only: every input here stays false/empty under VS Code.
+  const terminalDrawer = useTerminalDrawer({
+    terminalAgentIds,
+    getOfficeState,
+    agentTools,
+    agentStatuses,
+    agentAwaitingInput,
+    agentSeenActivity,
+  });
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -167,20 +140,6 @@ function App() {
   useEffect(() => {
     setAlwaysShowOverlay(alwaysShowLabels);
   }, [alwaysShowLabels]);
-
-  // Reveal a newly-opened terminal. Launching is async — the toolbar sends
-  // launchAgent and the server answers with terminalSessionOpened once the PTY
-  // is up — so "open the drawer on launch" is expressed as "open it when a
-  // terminal we hadn't seen appears". This also restores the drawer after a
-  // reload, when webviewReady re-announces the live sessions.
-  const knownTerminalIdsRef = useRef<number[]>([]);
-  useEffect(() => {
-    const added = terminalAgentIds.filter((id) => !knownTerminalIdsRef.current.includes(id));
-    knownTerminalIdsRef.current = terminalAgentIds;
-    if (added.length === 0) return;
-    setActiveTerminalAgentId(added[added.length - 1]);
-    setIsTerminalOpen(true);
-  }, [terminalAgentIds]);
 
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), []);
   const handleToggleAlwaysShowOverlay = useCallback(() => {
@@ -289,6 +248,7 @@ function App() {
     transport.send({ type: 'closeAgent', id });
   }, []);
 
+  const { reveal: revealTerminal } = terminalDrawer;
   const handleClick = useCallback(
     (agentId: number) => {
       // If clicked agent is a sub-agent, focus the parent's terminal instead
@@ -297,55 +257,13 @@ function App() {
       const focusId = meta ? meta.parentAgentId : agentId;
       transport.send({ type: 'focusAgent', id: focusId });
       // Standalone: focusAgent is a no-op server-side (there's no editor to
-      // raise a panel in), so focus is resolved here — select the agent's tab
-      // and open the drawer, mirroring VS Code's terminalRef.show().
-      if (terminalAgentIds.includes(focusId)) {
-        setActiveTerminalAgentId(focusId);
-        setIsTerminalOpen(true);
-      }
+      // raise a panel in), so focus is resolved here by revealing the tab.
+      revealTerminal(focusId);
     },
-    [terminalAgentIds],
+    [revealTerminal],
   );
-
-  const handleSelectTerminal = useCallback((agentId: number) => {
-    setActiveTerminalAgentId(agentId);
-    setIsTerminalOpen(true);
-    // Mirror a character click in the office: select the agent's character and
-    // follow it with the camera, so the card and the office stay in sync.
-    const os = getOfficeState();
-    if (os.characters.has(agentId)) {
-      os.selectedAgentId = agentId;
-      os.cameraFollowId = agentId;
-    }
-  }, []);
 
   const officeState = getOfficeState();
-
-  // A terminal tab shows the agent's character (front-facing mug shot), so it
-  // reads the same palette/hueShift the office assigned that character.
-  const getAgentAppearance = useCallback(
-    (id: number) => {
-      const ch = officeState.characters.get(id);
-      return ch ? { palette: ch.palette, hueShift: ch.hueShift } : null;
-    },
-    [officeState],
-  );
-
-  // Activity for the tab status dot (green idle / blue working / yellow needs
-  // attention). null until the agent's first activity, so the dot stays empty.
-  // Connection-broken (red) is layered on top by the drawer itself.
-  const getAgentActivity = useCallback(
-    (id: number): AgentActivity | null => {
-      if (!agentSeenActivity[id]) return null;
-      const tools = agentTools[id];
-      if (tools?.some((t) => t.permissionWait && !t.done)) return 'attention';
-      if (tools?.some((t) => !t.done)) return 'working';
-      if (agentAwaitingInput[id]) return 'attention';
-      if (agentStatuses[id] === 'waiting') return 'idle';
-      return 'working';
-    },
-    [agentSeenActivity, agentTools, agentStatuses, agentAwaitingInput],
-  );
 
   // Merged set of folders the Areas dropdown can map: real workspace folders plus
   // every distinct folder an agent has run in this session (deduped by name; name
@@ -648,15 +566,15 @@ function App() {
       {terminalAvailable && (
         <TerminalDrawer
           agentIds={terminalAgentIds}
-          activeAgentId={activeTerminalAgentId}
-          onSelectAgent={handleSelectTerminal}
+          activeAgentId={terminalDrawer.activeAgentId}
+          onSelectAgent={terminalDrawer.select}
           onCloseAgent={handleCloseAgent}
-          isOpen={isTerminalOpen}
-          onClosePanel={() => setIsTerminalOpen(false)}
-          widthPx={terminalWidthPx}
-          onResizeStart={handleTerminalResizeStart}
-          getAppearance={getAgentAppearance}
-          getActivity={getAgentActivity}
+          isOpen={terminalDrawer.isOpen}
+          onClosePanel={terminalDrawer.close}
+          widthPx={terminalDrawer.widthPx}
+          onResizeStart={terminalDrawer.onResizeStart}
+          getAppearance={terminalDrawer.getAppearance}
+          getActivity={terminalDrawer.getActivity}
         />
       )}
 

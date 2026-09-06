@@ -17,9 +17,11 @@ import * as path from 'path';
 
 import type { HookProvider } from '../../../core/src/provider.js';
 import type { AgentRuntime } from '../agentRuntime.js';
+import { createAgentState } from '../agentState.js';
 import type { AgentStateStore } from '../agentStateStore.js';
-import { DEFAULT_MAX_CONTEXT_TOKENS, JSONL_POLL_INTERVAL_MS } from '../constants.js';
+import { JSONL_POLL_INTERVAL_MS } from '../constants.js';
 import { startFileWatching } from '../fileWatcher.js';
+import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import type { AgentState } from '../types.js';
 import type { PtySessionManager } from './ptySessionManager.js';
 
@@ -97,38 +99,25 @@ export function launchStandaloneAgent(
   const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
   runtime.knownJsonlFiles.add(expectedFile);
 
-  const agent: AgentState = {
+  const agent = createAgentState({
     id,
     sessionId,
-    terminalRef: undefined,
     // Not external: this server owns the process. External agents are the ones
     // adopted from someone else's terminal, and they're what the stale-check and
     // restore paths act on -- a PTY agent must be excluded from both.
     isExternal: false,
     projectDir,
     jsonlFile: expectedFile,
-    fileOffset: 0,
-    lineBuffer: '',
-    activeToolIds: new Set(),
-    activeToolStatuses: new Map(),
-    activeToolNames: new Map(),
-    activeSubagentToolIds: new Map(),
-    activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
-    isWaiting: false,
-    permissionSent: false,
-    hadToolsInTurn: false,
-    lastDataAt: 0,
-    linesProcessed: 0,
-    seenUnknownRecordTypes: new Set(),
-    hookDelivered: false,
-    contextTokens: 0,
-    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
     providerId: provider.id,
-  };
+  });
 
+  // Server-side, like every other creation path: the palette rides the
+  // agentCreated broadcast and is persisted with the agent, so a reload
+  // restores the same character without the webview having to save it back.
+  assignPaletteIfNeeded(agent, store);
   store.set(id, agent);
   runtime.activeAgentId.current = id;
+
   runtime.registerAgent(sessionId, id);
   store.persist();
 

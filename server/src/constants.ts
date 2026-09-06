@@ -75,12 +75,18 @@ export const MAX_PORT = 65_535;
 export const SERVER_REGISTRY_PROTOCOL_VERSION = 1;
 
 // ── WebSocket close codes (application range 4000-4999) ────
-/** Embedded mode: Bearer token missing or wrong. */
+/** The handshake's token is missing or wrong: the embedded `/ws` Bearer header,
+ *  or the `?token=` query on `/terminal/:agentId` (an untokened standalone `/ws`
+ *  still connects, unprivileged -- see wsAuth.ts). */
 export const WS_CLOSE_UNAUTHORIZED = 4001;
+
 /** Standalone mode: the handshake's Origin is not this server's own origin.
  *  WebSocket connects bypass CORS, so this is the only thing standing between
  *  a drive-by web page and the privileged client-message channel. */
 export const WS_CLOSE_FORBIDDEN_ORIGIN = 4003;
+/** Terminal socket: the agent has no PTY on this server (never spawned, or
+ *  already exited). The route only ever attaches; it cannot start one. */
+export const WS_CLOSE_NO_SESSION = 4004;
 
 export const HOOK_EVENT_BUFFER_MS = 5_000;
 /** Grace period after SessionEnd(reason=clear/resume) before triggering onSessionEnd.
@@ -98,6 +104,12 @@ export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
  *  means anyone who prefers the Microsoft package can just install it.
  *  See docs/design/standalone-terminal.md. */
 export const PTY_MODULE_CANDIDATES = ['@lydell/node-pty', 'node-pty'] as const;
+/** Loopback hostnames. Used both to warn when the server binds off-loopback and
+ *  as the anti-DNS-rebinding allowlist for the terminal's Host header: a rebound
+ *  page reaches 127.0.0.1 but its Host header is still the attacker's domain, so
+ *  a loopback-bound server can safely refuse any non-loopback Host. */
+export const LOOPBACK_HOSTNAMES = ['127.0.0.1', 'localhost', '::1'] as const;
+
 /** Scrollback lines the per-session headless-xterm mirror retains. Matches the
  *  browser's TERMINAL_SCROLLBACK_LINES so a reattach replays the same depth the
  *  client would have kept. Bounds the serialized replay snapshot. */

@@ -313,7 +313,13 @@ export const EMPTY_SPRITE_THUMBNAIL_BG = '#333';
 /** Maximum string length for a PlacedPet.id (defends against pathologically-long layout entries). */
 export const MAX_PET_ID_LENGTH = 128;
 
+// ── WebSocket reconnect (standalone only) ────────────────────
+/** Reconnect backoff ladder shared by the /ws transport and every terminal
+ *  socket (transport/reconnectBackoff.ts). The last rung repeats. */
+export const WS_RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000, 4_000] as const;
+
 // ── Terminal drawer (standalone only) ────────────────────────
+
 // This file is the one place inline colors are allowed (see eslint.config.js),
 // which is why xterm's theme lives here rather than next to the component.
 
@@ -357,8 +363,6 @@ export const TERMINAL_FONT_SIZE_PX = 13;
 export const TERMINAL_SCROLLBACK_LINES = 5_000;
 /** Debounce for propagating a resize to the PTY (fit on every frame thrashes it). */
 export const TERMINAL_RESIZE_DEBOUNCE_MS = 100;
-/** WebSocket reconnect backoff, mirroring webSocketTransport's ladder. */
-export const TERMINAL_RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000, 4_000];
 
 /** xterm theme, matched to the office palette (index.css :root). */
 export const TERMINAL_THEME = {

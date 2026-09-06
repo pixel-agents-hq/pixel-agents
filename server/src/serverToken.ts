@@ -22,8 +22,12 @@ const USABLE_TOKEN = /^[A-Za-z0-9-]{16,128}$/;
  *
  * Stored on its own, mode 0600, beside server.json -- never in config.json,
  * which is world-readable and rewritten wholesale by every settings change.
- * Falls back to a per-process token when the file cannot be written, so a
- * read-only HOME still gets a working (if unstable) server.
+ * The file's own mode is the protection: ~/.pixel-agents is usually created
+ * earlier by config or layout persistence with the default directory mode, and
+ * mkdir never tightens an existing directory. Falls back to a per-process
+ * token when the file cannot be written, so a read-only HOME still gets a
+ * working (if unstable) server.
+
  */
 export function loadOrCreateStandaloneToken(): string {
   const dir = path.join(os.homedir(), SERVER_JSON_DIR);

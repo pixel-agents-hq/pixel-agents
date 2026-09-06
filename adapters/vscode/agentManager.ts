@@ -5,8 +5,9 @@ import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
 import { resendAgentActivity } from '../../server/src/agentActivityResend.js';
+import { createAgentState } from '../../server/src/agentState.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
-import { DEFAULT_MAX_CONTEXT_TOKENS, JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
+import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
 import {
   ensureProjectScan,
   readNewLines,
@@ -18,7 +19,7 @@ import { assignPaletteIfNeeded } from '../../server/src/paletteAssigner.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
-import type { AgentState, PersistedAgent } from '../../server/src/types.js';
+import type { PersistedAgent } from '../../server/src/types.js';
 
 export function getProjectDirPath(cwd?: string): string {
   // Fall back to home directory when no workspace folder is open (common on Linux/macOS
@@ -94,32 +95,15 @@ export async function launchNewTerminal(
   const folderName = isMultiRoot
     ? (owningFolder?.name ?? (cwd ? path.basename(cwd) : undefined))
     : undefined;
-  const agent: AgentState = {
+  const agent = createAgentState({
     id,
     sessionId,
     terminalRef: terminal,
     isExternal: false,
     projectDir,
     jsonlFile: expectedFile,
-    fileOffset: 0,
-    lineBuffer: '',
-    activeToolIds: new Set(),
-    activeToolStatuses: new Map(),
-    activeToolNames: new Map(),
-    activeSubagentToolIds: new Map(),
-    activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
-    isWaiting: false,
-    permissionSent: false,
-    hadToolsInTurn: false,
-    lastDataAt: 0,
-    linesProcessed: 0,
-    seenUnknownRecordTypes: new Set(),
     folderName,
-    hookDelivered: false,
-    contextTokens: 0,
-    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
-  };
+  });
 
   assignPaletteIfNeeded(agent, agents);
   agents.set(id, agent);
@@ -357,33 +341,17 @@ export function restoreAgents(
       if (!terminal) continue;
     }
 
-    const agent: AgentState = {
+    const agent = createAgentState({
       id: p.id,
       sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
       terminalRef: terminal,
       isExternal,
       projectDir: p.projectDir,
       jsonlFile: p.jsonlFile,
-      fileOffset: 0,
-      lineBuffer: '',
-      activeToolIds: new Set(),
-      activeToolStatuses: new Map(),
-      activeToolNames: new Map(),
-      activeSubagentToolIds: new Map(),
-      activeSubagentToolNames: new Map(),
       // Live spawn ids survive the reload so the 1s scan can re-adopt the
       // spawns' transcripts and the completion queue-op still matches.
       backgroundAgentToolIds: new Set(p.backgroundAgentToolIds ?? []),
-      isWaiting: false,
-      permissionSent: false,
-      hadToolsInTurn: false,
-      lastDataAt: 0,
-      linesProcessed: 0,
-      seenUnknownRecordTypes: new Set(),
       folderName: p.folderName,
-      hookDelivered: false,
-      contextTokens: 0,
-      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       teamName: p.teamName,
       agentName: p.agentName,
       // A named agent is a teammate; never restore it as a lead (guards against
@@ -393,7 +361,7 @@ export function restoreAgents(
       teamUsesTmux: p.teamUsesTmux,
       palette: p.palette,
       hueShift: p.hueShift,
-    };
+    });
 
     assignPaletteIfNeeded(agent, store);
     store.set(p.id, agent);

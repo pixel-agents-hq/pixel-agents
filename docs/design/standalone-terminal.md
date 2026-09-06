@@ -193,19 +193,19 @@ The terminal is the second privileged surface, and it follows that model exactly
 - `launchAgent` and `closeAgent` for a PTY-backed agent are honoured only on a privileged `/ws`
   connection (`clientMessageHandler.ts`). An untokened client is told the terminal is unavailable,
   with the reason, so the **+ Agent** button explains itself instead of silently doing nothing.
-- **`GET /terminal/:agentId`** requires the same token, in both modes, via the
-  **`Sec-WebSocket-Protocol` header**: the client connects with
-  `new WebSocket(url, ['pixel-agents.terminal.v1', <token>])`, and the server compares the second
-  value with `crypto.timingSafeEqual`, then echoes the first back via `handleProtocols`. WebSocket
-  connections are exempt from CORS, so without the token any page the user visits could open
-  `ws://127.0.0.1:<port>/terminal/1` and get a shell; port-scanning localhost from a web page is a
-  well-known, practical attack.
+- **`GET /terminal/:agentId`** requires the same token, carried the same way as `/ws`: in the
+  handshake's `?token=` query, checked by the same `standaloneTokenValid` in
+  `server/src/wsAuth.ts` (constant-time compare, length-guarded). One predicate, one carry, one
+  thing to audit. WebSocket connections are exempt from CORS, so without the token any page the
+  user visits could open `ws://127.0.0.1:<port>/terminal/1` and get a shell; port-scanning
+  localhost from a web page is a well-known, practical attack.
 
-  _Why the subprotocol and not `?token=`:_ standalone runs Fastify with `logger: true`
-  (`logger: !options.embedded`), which logs `req.url` for every request. A query-param token on
-  every terminal connection would be written to stdout/log files. The subprotocol header is not
-  logged, and it's the standard way to authenticate a browser WebSocket. (The one `?token=` on
-  the `/ws` handshake is a documented, accepted leak — the printed URL is treated as a secret.)
+  _Why `?token=` is safe to log-adjacent code:_ standalone runs Fastify with a request logger,
+  which would write `req.url` for every handshake. The logger's request serializer redacts the
+  token value before the line is written (`redactTokenQuery`), so neither `/ws` nor the terminal
+  socket ever puts the secret in stdout or a log file. An earlier iteration carried the terminal
+  token as a `Sec-WebSocket-Protocol` value to dodge the log instead; that left `/ws` leaking and
+  gave the same secret two carry mechanisms and two comparison paths, so it was replaced.
 
 ### How the token reaches the browser
 
@@ -216,19 +216,22 @@ it from a same-origin `GET /api/terminal/session` guarded by `Origin`/`Host` che
 attacker-supplied headers the gate, and it was dropped in favour of the `/ws` model when the two
 were reconciled.
 
-The terminal WS still applies `isTrustedTerminalRequest` (same-origin, plus a loopback-`Host`
-allowlist when bound to loopback) **before** it attaches to any PTY — as defence in depth on top
+The terminal WS still applies `isTrustedTerminalRequest` (`server/src/terminal/terminalGuard.ts`:
+the shared same-origin check, plus a loopback-`Host` allowlist when bound to loopback) **before**
+it attaches to any PTY — as defence in depth on top
 of the token, never as the gate. It blunts DNS rebinding cheaply: a rebound page sends
 `Host: evil.com`, never a loopback literal. When the operator has deliberately bound off-loopback
 (a warned, opt-in exposure), the loopback-`Host` clause is skipped and the token alone is the guard.
 
 ### Other properties
 
-- The standalone token is persisted in `~/.pixel-agents/standalone-token` (mode `0o600`, in the
-  `0o700` directory beside `server.json`) so the printed URL survives restarts — a bookmark or
+- The standalone token is persisted in `~/.pixel-agents/standalone-token` (mode `0o600`; the
+  directory itself is usually created earlier by config/layout persistence with the default mode,
+  so the file's own mode is the protection) so the printed URL survives restarts — a bookmark or
   home-screen web app pointing at a long-running server keeps working. The embedded (VS Code)
   server still mints a `crypto.randomUUID()` per process.
-- Comparisons use `crypto.timingSafeEqual` with a length pre-check, matching `bearerAuth`.
+- Every token comparison in the server -- hook Bearer, embedded `/ws` Bearer, standalone `/ws`
+  and terminal `?token=` -- goes through the one `timingSafeStringEqual` in `wsAuth.ts`.
 - The PTY inherits the server's uid/gid — no privilege boundary is claimed or implied. This
   feature does not make a local shell _more_ reachable to a local user; it makes it reachable
   to a _browser page_, which is exactly what the token prevents.

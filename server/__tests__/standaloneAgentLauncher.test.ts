@@ -118,8 +118,14 @@ describe('launchStandaloneAgent', () => {
     expect(agent?.projectDir).toBe(projectDir);
     expect(agent?.providerId).toBe(claudeProvider.id);
     expect(agent?.jsonlFile).toBe(path.join(projectDir, `${agent?.sessionId}.jsonl`));
+    // Palette is assigned server-side like every other creation path, so the
+    // agentCreated broadcast carries it and a reload restores the same look
+    // without the webview having to persist a client-side pick.
+    expect(agent?.palette).toBeTypeOf('number');
+    expect(agent?.hueShift).toBeTypeOf('number');
 
     // The real claude launch command, spawned in the requested cwd.
+
     expect(harness.spawnArgs).toHaveLength(1);
     expect(harness.spawnArgs[0].file).toBe('claude');
     expect(harness.spawnArgs[0].args).toEqual(['--session-id', agent?.sessionId]);

@@ -5,36 +5,31 @@
  * process. It is arbitrary code execution and is the most sensitive surface in
  * this codebase.
  *
- * The route requires the server token in BOTH modes. WebSocket connections are
- * exempt from CORS, so any page the user visits can open
- * ws://127.0.0.1:<port>/terminal/1 -- the same-origin policy stops the browser
- * from READING a cross-origin HTTP response, but never stops the socket from
- * connecting; scanning localhost ports from a web page is a known, practical
- * attack. The token is the same out-of-band secret that privileges the /ws
- * control socket (httpServer.ts standaloneTokenValid): it reaches the browser
- * ONLY inside the URL the CLI printed, is never handed out by an HTTP route,
- * and rides here as the second Sec-WebSocket-Protocol value so it stays out of
- * the request log. The same-origin + loopback-Host check is defence in depth on
- * top of it (it blunts DNS rebinding); it is never the gate on its own. See
+ * The route requires the server token. WebSocket connections are exempt from
+ * CORS, so any page the user visits can open ws://127.0.0.1:<port>/terminal/1
+ * -- the same-origin policy stops the browser from READING a cross-origin HTTP
+ * response, but never stops the socket from connecting; scanning localhost
+ * ports from a web page is a known, practical attack. The token is the same
+ * out-of-band secret that privileges the /ws control socket, carried the same
+ * way (`?token=`, checked by the same wsAuth.standaloneTokenValid) so there is
+ * exactly one privilege gate to audit; the request logger redacts it. The
+ * same-origin + loopback-Host check (terminalGuard.ts) is defence in depth on
+ * top of it; it is never the gate on its own. See
  * docs/design/standalone-terminal.md ("Security model").
  */
 
 import type { FastifyInstance } from 'fastify';
 
+import { TERMINAL_WS_PREFIX } from '../../../core/src/constants.js';
+import { encodeTerminalFrame, parseClientFrame } from '../../../core/src/terminalFrames.js';
 import {
-  TERMINAL_CLOSE_NO_SESSION,
-  TERMINAL_CLOSE_UNAUTHORIZED,
-  TERMINAL_WS_PREFIX,
-} from '../../core/src/constants.js';
-import type { PtySessionManager } from './terminal/ptySessionManager.js';
-import {
-  encodeServerFrame,
-  extractTokenFromProtocolHeader,
-  isLoopbackHost,
-  isTrustedTerminalRequest,
-  isValidToken,
-  parseClientFrame,
-} from './terminal/terminalProtocol.js';
+  WS_CLOSE_FORBIDDEN_ORIGIN,
+  WS_CLOSE_NO_SESSION,
+  WS_CLOSE_UNAUTHORIZED,
+} from '../constants.js';
+import { standaloneTokenValid } from '../wsAuth.js';
+import type { PtySessionManager } from './ptySessionManager.js';
+import { isLoopbackHost, isTrustedTerminalRequest } from './terminalGuard.js';
 
 export interface TerminalRoutesOptions {
   token: string;
@@ -66,15 +61,6 @@ export function registerTerminalRoutes(app: FastifyInstance, options: TerminalRo
   // warned); their legitimate Host is a LAN name we can't enumerate.
   const enforceLoopbackHost = isLoopbackHost(options.host);
 
-  registerTerminalSocketRoute(app, options.token, ptyManager, enforceLoopbackHost);
-}
-
-function registerTerminalSocketRoute(
-  app: FastifyInstance,
-  token: string,
-  ptyManager: PtySessionManager,
-  enforceLoopbackHost: boolean,
-): void {
   app.get<{ Params: { agentId: string } }>(
     `${TERMINAL_WS_PREFIX}/:agentId`,
     {
@@ -89,15 +75,14 @@ function registerTerminalSocketRoute(
     },
     (socket: TerminalSocket, request) => {
       // ── Auth (before anything else touches a process) ──
-      const provided = extractTokenFromProtocolHeader(request.headers['sec-websocket-protocol']);
-      if (!isValidToken(provided, token)) {
-        socket.close(TERMINAL_CLOSE_UNAUTHORIZED, 'unauthorized');
+      if (!standaloneTokenValid(request.url, options.token)) {
+        socket.close(WS_CLOSE_UNAUTHORIZED, 'unauthorized');
         return;
       }
       if (
         !isTrustedTerminalRequest(request.headers.origin, request.headers.host, enforceLoopbackHost)
       ) {
-        socket.close(TERMINAL_CLOSE_UNAUTHORIZED, 'forbidden origin');
+        socket.close(WS_CLOSE_FORBIDDEN_ORIGIN, 'forbidden origin');
         return;
       }
 
@@ -105,7 +90,7 @@ function registerTerminalSocketRoute(
       const session = ptyManager.get(agentId);
       if (!session) {
         // Only attaches to PTYs this server spawned -- it can never start one.
-        socket.close(TERMINAL_CLOSE_NO_SESSION, 'no terminal for agent');
+        socket.close(WS_CLOSE_NO_SESSION, 'no terminal for agent');
         return;
       }
 
@@ -128,15 +113,17 @@ function registerTerminalSocketRoute(
       };
 
       const offData = session.onData((chunk) => {
-        forward(encodeServerFrame({ type: 'output', data: chunk }));
+        forward(encodeTerminalFrame({ type: 'output', data: chunk }));
       });
 
       const offExit = session.onExit((exit) => {
-        forward(encodeServerFrame({ type: 'exit', exitCode: exit.exitCode, signal: exit.signal }));
+        forward(
+          encodeTerminalFrame({ type: 'exit', exitCode: exit.exitCode, signal: exit.signal }),
+        );
       });
 
       void session.snapshot().then((data) => {
-        send(encodeServerFrame({ type: 'replay', data, cols: session.cols, rows: session.rows }));
+        send(encodeTerminalFrame({ type: 'replay', data, cols: session.cols, rows: session.rows }));
         replaySent = true;
         for (const frame of preReplay) send(frame);
         preReplay.length = 0;

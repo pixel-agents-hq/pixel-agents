@@ -9,8 +9,9 @@
  * use. See docs/design/standalone-terminal.md.
  */
 
-import { TERMINAL_WS_PREFIX, TERMINAL_WS_PROTOCOL } from '../../../core/src/constants.js';
-import { TERMINAL_RECONNECT_DELAYS_MS } from '../constants.js';
+import { TERMINAL_WS_PREFIX } from '../../../core/src/constants.js';
+import { parseServerFrame } from '../../../core/src/terminalFrames.js';
+import { reconnectDelayMs } from '../transport/reconnectBackoff.js';
 import { serverToken } from '../transport/serverToken.js';
 
 export interface TerminalConnectionHandlers {
@@ -66,13 +67,13 @@ export class TerminalConnection {
       return;
     }
 
+    // The token rides the handshake query exactly as it does on /ws (the
+    // server's request log redacts it), so both sockets pass the same gate.
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${window.location.host}${TERMINAL_WS_PREFIX}/${String(this.agentId)}`;
-
-    // The token rides as the second subprotocol value: the WebSocket API can't
-    // set an Authorization header, and a ?token= query param would be written to
-    // the server's request log on every connection.
-    const socket = new WebSocket(url, [TERMINAL_WS_PROTOCOL, serverToken]);
+    const url = `${protocol}//${window.location.host}${TERMINAL_WS_PREFIX}/${String(
+      this.agentId,
+    )}?token=${encodeURIComponent(serverToken)}`;
+    const socket = new WebSocket(url);
     this.socket = socket;
 
     socket.onopen = () => {
@@ -98,8 +99,9 @@ export class TerminalConnection {
 
     socket.onclose = (event: CloseEvent) => {
       if (this.disposed || this.exited) return;
-      // 4401/4404 are terminal (bad token, or no such session): retrying can't
-      // fix either, and hammering an auth-rejecting endpoint is pointless.
+      // An application close code (bad token, forbidden origin, no such
+      // session) is final: retrying can't fix any of them, and hammering an
+      // auth-rejecting endpoint is pointless.
       if (event.code >= 4000 && event.code < 5000) {
         console.error(
           `[Webview] Terminal: agent ${String(this.agentId)} rejected (${String(event.code)}: ${event.reason})`,
@@ -118,9 +120,9 @@ export class TerminalConnection {
   private scheduleReconnect(): void {
     if (this.disposed || this.exited || this.reconnectTimer) return;
     this.handlers.onStatusChange('reconnecting');
-    const delay =
-      TERMINAL_RECONNECT_DELAYS_MS[Math.min(this.attempt, TERMINAL_RECONNECT_DELAYS_MS.length - 1)];
+    const delay = reconnectDelayMs(this.attempt);
     this.attempt++;
+
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       void this.connect();
@@ -159,32 +161,4 @@ export class TerminalConnection {
       this.socket = null;
     }
   }
-}
-
-type ServerFrame =
-  | { type: 'replay'; data: string; cols: number; rows: number }
-  | { type: 'output'; data: string }
-  | { type: 'exit'; exitCode: number };
-
-function parseServerFrame(raw: string): ServerFrame | null {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    if (parsed.type === 'output' && typeof parsed.data === 'string') {
-      return { type: 'output', data: parsed.data };
-    }
-    if (
-      parsed.type === 'replay' &&
-      typeof parsed.data === 'string' &&
-      typeof parsed.cols === 'number' &&
-      typeof parsed.rows === 'number'
-    ) {
-      return { type: 'replay', data: parsed.data, cols: parsed.cols, rows: parsed.rows };
-    }
-    if (parsed.type === 'exit') {
-      return { type: 'exit', exitCode: typeof parsed.exitCode === 'number' ? parsed.exitCode : 0 };
-    }
-  } catch {
-    // Malformed frame — ignore rather than break the stream.
-  }
-  return null;
 }

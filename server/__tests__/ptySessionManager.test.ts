@@ -147,38 +147,32 @@ describe('PtySessionManager lifecycle', () => {
     expect(manager.size).toBe(1);
   });
 
-  it('routes write and resize to the right session', () => {
+  it('routes write and resize to the session they were issued on', () => {
     const { manager, spawned } = harness();
     create(manager, 1);
     create(manager, 2);
-    manager.write(1, 'ls\r');
-    manager.resize(2, 100, 50);
+    manager.get(1)!.write('ls\r');
+    manager.get(2)!.resize(100, 50);
     expect(spawned[0].written).toEqual(['ls\r']);
     expect(spawned[1].resizes).toEqual([{ cols: 100, rows: 50 }]);
     expect(spawned[1].written).toEqual([]);
   });
 
-  it('ignores writes and resizes for unknown agents', () => {
-    const { manager } = harness();
-    expect(() => manager.write(99, 'x')).not.toThrow();
-    expect(() => manager.resize(99, 80, 24)).not.toThrow();
-  });
-
   it('rejects nonsensical resize dimensions', () => {
     const { manager, spawned } = harness();
-    create(manager, 1);
-    manager.resize(1, 0, 24);
-    manager.resize(1, 80, -5);
-    manager.resize(1, 80.5, 24);
-    manager.resize(1, 99_999, 24);
+    const session = create(manager, 1);
+    session.resize(0, 24);
+    session.resize(80, -5);
+    session.resize(80.5, 24);
+    session.resize(99_999, 24);
     expect(spawned[0].resizes).toEqual([]);
   });
 
   it('survives a resize that throws on a dying pty', () => {
     const { manager, spawned } = harness();
-    create(manager, 1);
+    const session = create(manager, 1);
     spawned[0].resizeThrows = true;
-    expect(() => manager.resize(1, 80, 24)).not.toThrow();
+    expect(() => session.resize(80, 24)).not.toThrow();
   });
 
   it('dispose kills the process and forgets the session', () => {

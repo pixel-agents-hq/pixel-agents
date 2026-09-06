@@ -280,15 +280,8 @@ export class PtySessionManager {
     return this.sessions.has(agentId);
   }
 
-  write(agentId: number, data: string): void {
-    this.sessions.get(agentId)?.write(data);
-  }
-
-  resize(agentId: number, cols: number, rows: number): void {
-    this.sessions.get(agentId)?.resize(cols, rows);
-  }
-
   /** Kill and forget an agent's terminal. No-op when there isn't one. */
+
   dispose(agentId: number): void {
     const session = this.sessions.get(agentId);
     if (!session) return;

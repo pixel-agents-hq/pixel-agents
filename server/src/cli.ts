@@ -30,7 +30,7 @@ import { FileStateAdapter } from './fileStateAdapter.js';
 import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
-import { isLoopbackHost } from './terminal/terminalProtocol.js';
+import { isLoopbackHost } from './terminal/terminalGuard.js';
 
 // ── Argument parsing ──────────────────────────────────────────
 

@@ -122,6 +122,15 @@ interface ExtensionMessageState {
   terminalAgentIds: number[];
 }
 
+/** Drop one key from a keyed-by-agent record without touching identity when
+ *  the key is absent (so React skips the re-render). */
+function omitKey<T>(record: Record<number, T>, id: number): Record<number, T> {
+  if (!(id in record)) return record;
+  const next = { ...record };
+  delete next[id];
+  return next;
+}
+
 function saveAgentSeats(os: OfficeState): void {
   transport.send({ type: 'saveAgentSeats', seats: os.getPersistableSeats() });
 }
@@ -338,36 +347,11 @@ export function useExtensionMessages(
         // an agent can be removed without its PTY ever reporting an exit (e.g.
         // stale cleanup), and a tab for a gone agent would attach to nothing.
         setTerminalAgentIds((prev) => prev.filter((a) => a !== id));
-        setAgentTools((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setAgentStatuses((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setAgentAwaitingInput((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setAgentSeenActivity((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setSubagentTools((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
+        setAgentTools((prev) => omitKey(prev, id));
+        setAgentStatuses((prev) => omitKey(prev, id));
+        setAgentAwaitingInput((prev) => omitKey(prev, id));
+        setAgentSeenActivity((prev) => omitKey(prev, id));
+        setSubagentTools((prev) => omitKey(prev, id));
         // Remove all sub-agent characters belonging to this agent
         delete backgroundParentToolIdsRef.current[id];
         os.removeAllSubagents(id);
@@ -398,11 +382,6 @@ export function useExtensionMessages(
             headlessAgents,
           )
         ) {
-          saveAgentSeats(os);
-        }
-        // Persist palettes/seats picked just now for agents that had none, so
-        // the next reload restores the same look (mirrors the layoutLoaded flush).
-        if (layoutReadyRef.current && os.characters.size > 0) {
           saveAgentSeats(os);
         }
         setAgents((prev) => {
@@ -483,12 +462,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentToolsClear') {
         const id = msg.id as number;
         const bgSet = backgroundParentToolIdsRef.current[id];
-        setAgentTools((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
+        setAgentTools((prev) => omitKey(prev, id));
         // Keep sub-tool rows of live background spawns: their sub-characters
         // survive the parent's turn end and stay animated by their own activity.
         setSubagentTools((prev) => {
@@ -538,12 +512,7 @@ export function useExtensionMessages(
         const status = msg.status as string;
         markSeenActivity(id);
         setAgentStatuses((prev) => {
-          if (status === 'active') {
-            if (!(id in prev)) return prev;
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          }
+          if (status === 'active') return omitKey(prev, id);
           return { ...prev, [id]: status };
         });
         setAgentAwaitingInput((prev) => {
