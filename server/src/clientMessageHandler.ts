@@ -11,12 +11,14 @@ import {
   setHooksEnabled,
   writeConfig,
 } from './configPersistence.js';
-import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT } from './constants.js';
+import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT, TERMINAL_REQUIRES_TOKEN_REASON } from './constants.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
+import type { PtySessionManager } from './terminal/ptySessionManager.js';
+import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -60,6 +62,9 @@ export interface ClientMessageContext {
    * to false so a caller that forgets to pass it gets the safe answer.
    */
   privileged?: boolean;
+  /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
+   *  mode, where the editor owns terminal lifecycle. */
+  ptyManager?: PtySessionManager;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -91,14 +96,52 @@ export function handleClientMessage(
       handleWebviewReady(send, ctx);
       break;
 
+    case 'launchAgent': {
+      // Standalone can launch: the agent runs in a server-side PTY streamed to
+      // the browser drawer. That PTY is a shell running as the operator, so only
+      // a privileged (tokened) connection may open one -- the same rule as the
+      // hooks toggle, for the same reason: an untokened viewer on the network
+      // may watch the office, not act on this machine.
+      if (!runtime || !ctx.ptyManager) break;
+      if (!ctx.privileged) {
+        console.warn(
+          '[Pixel Agents] Ignoring launchAgent from an untokened client — launching a terminal needs the tokened URL the CLI printed.',
+        );
+        break;
+      }
+      launchStandaloneAgent(
+        { store, runtime, ptyManager: ctx.ptyManager, provider: claudeProvider },
+        {
+          folderPath: msg.folderPath as string | undefined,
+          bypassPermissions: msg.bypassPermissions as boolean | undefined,
+        },
+      );
+      break;
+    }
+
     case 'closeAgent': {
-      // Standalone agents are always external (no terminal), so mirror the VS
-      // Code external-agent branch: dismiss the file (so the external scanner
-      // doesn't re-adopt it) then remove. removeAgent fires the agentRemoved
-      // store event, which httpServer maps to an agentClosed broadcast.
+      // Two shapes now: a PTY-backed agent we launched (kill the process -- the
+      // counterpart of VS Code's terminalRef.dispose()), or an external agent we
+      // merely observed (dismiss the file so the scanner doesn't re-adopt it,
+      // then remove). removeAgent fires agentRemoved, which httpServer maps to
+      // an agentClosed broadcast.
       const id = msg.id as number;
       const agent = store.get(id);
       if (agent && runtime) {
+        // Killing a PTY we launched is an action on this machine, gated like
+        // launching it was. Dismissing a merely-observed agent only touches
+        // ~/.pixel-agents/ state and stays open to every viewer.
+        if (ctx.ptyManager?.has(id) && !ctx.privileged) {
+          console.warn(
+            '[Pixel Agents] Ignoring closeAgent for a PTY-backed agent from an untokened client.',
+          );
+          break;
+        }
+        // dispose() is a no-op for agents with no terminal, so this is safe for
+        // both shapes. The PTY's onExit handler does the store cleanup for
+        // PTY-backed agents; do it here too so external agents (and a PTY that
+        // never exits) are still removed promptly.
+        ctx.ptyManager?.dispose(id);
         runtime.dismissalTracker.dismiss(agent.jsonlFile);
         runtime.removeAgent(id);
       }
@@ -271,8 +314,9 @@ export function handleClientMessage(
     }
 
     default:
-      // focusAgent, exportLayout, importLayout
-      // require IDE-specific handling (not yet implemented for standalone)
+      // focusAgent is handled entirely client-side in standalone (it focuses the
+      // drawer tab, which the server has no say in). exportLayout / importLayout
+      // still require IDE-specific handling.
       break;
   }
 }
@@ -365,6 +409,25 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     readingTools: [...claudeProvider.readingTools],
     subagentToolNames: [...claudeProvider.subagentToolNames],
   });
+
+  // 1b. Terminal availability. Gates the whole terminal UI (the + Agent button
+  // and the drawer), so it must land before the client can act on agents.
+  // Absent ptyManager = VS Code embedded mode, which owns its own terminals and
+  // must not be told the standalone terminal is unavailable.
+  // Availability is per CONNECTION, not per server: an untokened client is told
+  // the terminal is unavailable (with the reason) because launchAgent and the
+  // terminal socket would refuse it anyway -- better a disabled button that
+  // says why than one that silently does nothing.
+  if (ctx.ptyManager) {
+    const privileged = ctx.privileged === true;
+    send({
+      type: 'terminalAvailability',
+      available: privileged && ctx.ptyManager.isAvailable(),
+      reason:
+        ctx.ptyManager.unavailableReason() ??
+        (privileged ? undefined : TERMINAL_REQUIRES_TOKEN_REASON),
+    });
+  }
 
   // 2. Assets (from server cache, loaded at startup via pngjs)
   if (cache) {
@@ -515,4 +578,17 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // exist once the layout flush creates them. Without this a reconnecting
   // client shows bare characters until each agent takes another turn.
   resendAgentActivity(send, store);
+
+  // 9. Re-announce live terminals AFTER existingAgents, so a browser that
+  // reloaded (or a second tab) rebuilds its drawer tabs. The PTY outlives the
+  // socket, so these sessions are still attachable and their scrollback replays
+  // on connect. Privileged connections only: an untokened client was told the
+  // terminal is unavailable and could not attach anyway.
+  if (ctx.ptyManager && ctx.privileged) {
+    for (const id of agentIds) {
+      if (ctx.ptyManager.has(id)) {
+        send({ type: 'terminalSessionOpened', agentId: id });
+      }
+    }
+  }
 }

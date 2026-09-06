@@ -73,6 +73,10 @@ interface ExtensionMessageState {
   selectedAgent: number | null;
   agentTools: Record<number, ToolActivity[]>;
   agentStatuses: Record<number, string>;
+  /** Agents whose last turn ended awaiting user input (vs a plain done). */
+  agentAwaitingInput: Record<number, boolean>;
+  /** Latch: true once an agent has had any activity (first tool or status). */
+  agentSeenActivity: Record<number, boolean>;
   subagentTools: Record<number, Record<string, ToolActivity[]>>;
   subagentCharacters: SubagentCharacter[];
   layoutReady: boolean;
@@ -110,6 +114,21 @@ interface ExtensionMessageState {
   setAreaMappings: (m: Record<string, string[]>) => void;
   showAreas: boolean;
   setShowAreas: (v: boolean) => void;
+  // Terminal (standalone only; always false/empty under VS Code, which owns its
+  // own terminals and never sends these messages)
+  terminalAvailable: boolean;
+  terminalUnavailableReason: string | null;
+  /** Agent ids with a live server-side PTY, in the order they opened. */
+  terminalAgentIds: number[];
+}
+
+/** Drop one key from a keyed-by-agent record without touching identity when
+ *  the key is absent (so React skips the re-render). */
+function omitKey<T>(record: Record<number, T>, id: number): Record<number, T> {
+  if (!(id in record)) return record;
+  const next = { ...record };
+  delete next[id];
+  return next;
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -125,6 +144,10 @@ export function useExtensionMessages(
   const [selectedAgent, setSelectedAgent] = useState<number | null>(null);
   const [agentTools, setAgentTools] = useState<Record<number, ToolActivity[]>>({});
   const [agentStatuses, setAgentStatuses] = useState<Record<number, string>>({});
+  const [agentAwaitingInput, setAgentAwaitingInput] = useState<Record<number, boolean>>({});
+  const [agentSeenActivity, setAgentSeenActivity] = useState<Record<number, boolean>>({});
+  const markSeenActivity = (id: number) =>
+    setAgentSeenActivity((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
   const [subagentTools, setSubagentTools] = useState<
     Record<number, Record<string, ToolActivity[]>>
   >({});
@@ -153,6 +176,12 @@ export function useExtensionMessages(
   const consentRequest = consentQueue[0] ?? null;
   const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
   const [showAreas, setShowAreas] = useState(false);
+  // Terminal control plane (standalone only; the server never sends these in
+  // VS Code mode, so terminalAvailable stays false and no terminal UI renders).
+  const [terminalAvailable, setTerminalAvailable] = useState(false);
+  const [terminalUnavailableReason, setTerminalUnavailableReason] = useState<string | null>(null);
+  /** Agent ids with a live PTY, in the order their terminals opened. */
+  const [terminalAgentIds, setTerminalAgentIds] = useState<number[]>([]);
 
   // The renderer keeps its own module-level copy (read every rAF frame), so both
   // sources of truth move together — the persisted value on settingsLoaded and
@@ -212,6 +241,26 @@ export function useExtensionMessages(
           readingTools: msg.readingTools,
           subagentToolNames: msg.subagentToolNames,
         });
+        return;
+      }
+
+      if (msg.type === 'terminalAvailability') {
+        setTerminalAvailable(msg.available as boolean);
+        setTerminalUnavailableReason((msg.reason as string | undefined) ?? null);
+        return;
+      }
+
+      if (msg.type === 'terminalSessionOpened') {
+        // Deduped: webviewReady re-announces every live session so a reloaded
+        // client rebuilds its tabs, and that can race a live agentCreated.
+        const agentId = msg.agentId as number;
+        setTerminalAgentIds((prev) => (prev.includes(agentId) ? prev : [...prev, agentId]));
+        return;
+      }
+
+      if (msg.type === 'terminalSessionClosed') {
+        const agentId = msg.agentId as number;
+        setTerminalAgentIds((prev) => prev.filter((id) => id !== agentId));
         return;
       }
 
@@ -294,24 +343,15 @@ export function useExtensionMessages(
         const id = msg.id as number;
         setAgents((prev) => prev.filter((a) => a !== id));
         setSelectedAgent((prev) => (prev === id ? null : prev));
-        setAgentTools((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setAgentStatuses((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setSubagentTools((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
+        // Drop the drawer tab too. terminalSessionClosed normally does this, but
+        // an agent can be removed without its PTY ever reporting an exit (e.g.
+        // stale cleanup), and a tab for a gone agent would attach to nothing.
+        setTerminalAgentIds((prev) => prev.filter((a) => a !== id));
+        setAgentTools((prev) => omitKey(prev, id));
+        setAgentStatuses((prev) => omitKey(prev, id));
+        setAgentAwaitingInput((prev) => omitKey(prev, id));
+        setAgentSeenActivity((prev) => omitKey(prev, id));
+        setSubagentTools((prev) => omitKey(prev, id));
         // Remove all sub-agent characters belonging to this agent
         delete backgroundParentToolIdsRef.current[id];
         os.removeAllSubagents(id);
@@ -359,6 +399,7 @@ export function useExtensionMessages(
         const toolId = msg.toolId as string;
         const status = msg.status as string;
         const permissionActive = msg.permissionActive as boolean | undefined;
+        markSeenActivity(id);
         setAgentTools((prev) => {
           const list = prev[id] || [];
           if (list.some((t) => t.toolId === toolId)) return prev;
@@ -421,12 +462,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentToolsClear') {
         const id = msg.id as number;
         const bgSet = backgroundParentToolIdsRef.current[id];
-        setAgentTools((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
+        setAgentTools((prev) => omitKey(prev, id));
         // Keep sub-tool rows of live background spawns: their sub-characters
         // survive the parent's turn end and stay animated by their own activity.
         setSubagentTools((prev) => {
@@ -474,14 +510,15 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentStatus') {
         const id = msg.id as number;
         const status = msg.status as string;
+        markSeenActivity(id);
         setAgentStatuses((prev) => {
-          if (status === 'active') {
-            if (!(id in prev)) return prev;
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          }
+          if (status === 'active') return omitKey(prev, id);
           return { ...prev, [id]: status };
+        });
+        setAgentAwaitingInput((prev) => {
+          const awaiting = status === 'waiting' && msg.awaitingInput === true;
+          if ((prev[id] ?? false) === awaiting) return prev;
+          return { ...prev, [id]: awaiting };
         });
         os.setAgentActive(id, status === 'active');
         if (status === 'waiting') {
@@ -763,6 +800,8 @@ export function useExtensionMessages(
     selectedAgent,
     agentTools,
     agentStatuses,
+    agentAwaitingInput,
+    agentSeenActivity,
     subagentTools,
     subagentCharacters,
     layoutReady,
@@ -799,5 +838,8 @@ export function useExtensionMessages(
     setAreaMappings,
     showAreas,
     setShowAreas,
+    terminalAvailable,
+    terminalUnavailableReason,
+    terminalAgentIds,
   };
 }

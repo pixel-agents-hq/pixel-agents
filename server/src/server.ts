@@ -20,6 +20,8 @@ import {
 import { createHttpServer } from './httpServer.js';
 import type { ServerConfig } from './serverConfig.js';
 import { isServerConfig, isServerTarget } from './serverConfig.js';
+import { loadOrCreateStandaloneToken } from './serverToken.js';
+import type { PtySessionManager } from './terminal/ptySessionManager.js';
 
 export type { ServerConfig } from './serverConfig.js';
 
@@ -69,6 +71,7 @@ export class PixelAgentsServer {
     assetCache?: AssetCache;
     onSetHooksEnabled?: SetHooksEnabledSideEffect;
     onReloadAssets?: ReloadAssetsSideEffect;
+    ptyManager?: PtySessionManager;
   }): Promise<ServerConfig> {
     const embedded = options?.embedded ?? true;
     const wantsSpa = !embedded;
@@ -91,7 +94,10 @@ export class PixelAgentsServer {
     }
 
     // Start our own server
-    const token = crypto.randomUUID();
+    // Standalone keeps one token across restarts so the tokened URL the CLI
+    // prints stays valid; embedded hands its token to the webview in-process and
+    // gains nothing from persistence.
+    const token = embedded ? crypto.randomUUID() : loadOrCreateStandaloneToken();
     const store = options?.store;
 
     const { app, port } = await createHttpServer({
@@ -106,6 +112,7 @@ export class PixelAgentsServer {
       onHookEvent: (providerId, event) => this.callback?.(providerId, event),
       onSetHooksEnabled: options?.onSetHooksEnabled,
       onReloadAssets: options?.onReloadAssets,
+      ptyManager: options?.ptyManager,
     });
 
     this.app = app;

@@ -30,10 +30,10 @@ const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 import type { HookProvider } from '../../core/src/provider.js';
 import type { TeamProvider } from '../../core/src/teamProvider.js';
 import type { ITerminalAdapter } from '../../core/src/terminalAdapter.js';
+import { createAgentState } from './agentState.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import {
   CLEAR_IDLE_THRESHOLD_MS,
-  DEFAULT_MAX_CONTEXT_TOKENS,
   EXTERNAL_ACTIVE_THRESHOLD_MS,
   EXTERNAL_SCAN_INTERVAL_MS,
   EXTERNAL_STALE_CHECK_INTERVAL_MS,
@@ -505,7 +505,7 @@ function adoptTerminalForFile(
   } catch {
     /* start from beginning if stat fails */
   }
-  const agent: AgentState = {
+  const agent = createAgentState({
     id,
     sessionId,
     terminalRef: terminal,
@@ -513,23 +513,7 @@ function adoptTerminalForFile(
     projectDir,
     jsonlFile,
     fileOffset,
-    lineBuffer: '',
-    activeToolIds: new Set(),
-    activeToolStatuses: new Map(),
-    activeToolNames: new Map(),
-    activeSubagentToolIds: new Map(),
-    activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
-    isWaiting: false,
-    permissionSent: false,
-    hadToolsInTurn: false,
-    lastDataAt: 0,
-    linesProcessed: 0,
-    seenUnknownRecordTypes: new Set(),
-    hookDelivered: false,
-    contextTokens: 0,
-    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
-  };
+  });
 
   assignPaletteIfNeeded(agent, agents);
   agents.set(id, agent);
@@ -716,39 +700,23 @@ export function scanForTeammateFiles(
     const id = nextAgentIdRef.current++;
     // Read from start -- teammate JSONL is usually small and we want full tool history
     // New-style teammates carry their own session id; inline teammates share the lead's.
-    const agent: AgentState = {
+    const agent = createAgentState({
       id,
       sessionId: ownSessionId ?? sessionId,
-      terminalRef: undefined,
       isExternal: true,
       projectDir,
       jsonlFile: file,
-      fileOffset: 0,
-      lineBuffer: '',
-      activeToolIds: new Set(),
-      activeToolStatuses: new Map(),
-      activeToolNames: new Map(),
-      activeSubagentToolIds: new Map(),
-      activeSubagentToolNames: new Map(),
-      backgroundAgentToolIds: new Set(),
-      isWaiting: false,
-      permissionSent: false,
-      hadToolsInTurn: false,
       // Keep hookDelivered false: teammates need JSONL-based tool tracking
       // (agentToolStart messages). Permission events are routed from the lead's
       // hooks via handlePermissionRequest forwarding.
       hookDelivered: false,
       lastDataAt: Date.now(),
-      linesProcessed: 0,
-      seenUnknownRecordTypes: new Set(),
-      contextTokens: 0,
-      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       // Agent Teams fields
       agentName: teammateName,
       leadAgentId: parentAgentId,
       teamName: parentAgent?.teamName,
       teamUsesTmux: parentAgent?.teamUsesTmux,
-    };
+    });
 
     if (parentAgent?.palette !== undefined) {
       agent.palette = parentAgent.palette;
@@ -874,37 +842,20 @@ export function scanForBackgroundAgentFiles(
 
     // Named spawn = Teammate.
     const id = nextAgentIdRef.current++;
-    const agent: AgentState = {
+    const agent = createAgentState({
       id,
       // In-process: shares the lead's session (like an inline teammate). Never
       // registered with the session router -- it would overwrite the lead.
       sessionId: lead.sessionId,
-      terminalRef: undefined,
       isExternal: true,
       projectDir: lead.projectDir,
       jsonlFile: entry.jsonlPath,
-      fileOffset: 0,
-      lineBuffer: '',
-      activeToolIds: new Set(),
-      activeToolStatuses: new Map(),
-      activeToolNames: new Map(),
-      activeSubagentToolIds: new Map(),
-      activeSubagentToolNames: new Map(),
-      backgroundAgentToolIds: new Set(),
-      isWaiting: false,
-      permissionSent: false,
-      hadToolsInTurn: false,
-      hookDelivered: false,
       lastDataAt: Date.now(),
-      linesProcessed: 0,
-      seenUnknownRecordTypes: new Set(),
-      contextTokens: 0,
-      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       // Teammate-like linkage, but NO teamName: config polling must not touch these.
       agentName: entry.name,
       leadAgentId: leadId,
       spawnToolUseId: entry.toolUseId,
-    };
+    });
 
     if (lead.palette !== undefined) {
       agent.palette = lead.palette;
@@ -1116,33 +1067,17 @@ export function adoptExternalSessionFromHook(
     // Hooks-only provider (OpenCode, Copilot): no transcript file, all state from hooks
     const id = nextAgentIdRef.current++;
     const folderName = folderNameResolver?.({ cwd }) ?? (cwd ? path.basename(cwd) : undefined);
-    const agent: AgentState = {
+    const agent = createAgentState({
       id,
       sessionId,
-      terminalRef: undefined,
       isExternal: true,
       projectDir: cwd,
       jsonlFile: '',
-      fileOffset: 0,
-      lineBuffer: '',
-      activeToolIds: new Set(),
-      activeToolStatuses: new Map(),
-      activeToolNames: new Map(),
-      activeSubagentToolIds: new Map(),
-      activeSubagentToolNames: new Map(),
-      backgroundAgentToolIds: new Set(),
-      isWaiting: false,
-      permissionSent: false,
-      hadToolsInTurn: false,
       hookDelivered: true,
       hooksOnly: true,
       lastDataAt: Date.now(),
-      linesProcessed: 0,
-      seenUnknownRecordTypes: new Set(),
       folderName,
-      contextTokens: 0,
-      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
-    };
+    });
     assignPaletteIfNeeded(agent, agents);
     agents.set(id, agent);
     persistAgents();
@@ -1198,32 +1133,16 @@ function adoptExternalSession(
   } catch {
     /* start from beginning if stat fails */
   }
-  const agent: AgentState = {
+  const agent = createAgentState({
     id,
     sessionId: path.basename(jsonlFile, '.jsonl'),
-    terminalRef: undefined,
     isExternal: true,
     projectDir,
     jsonlFile,
     fileOffset,
-    lineBuffer: '',
-    activeToolIds: new Set(),
-    activeToolStatuses: new Map(),
-    activeToolNames: new Map(),
-    activeSubagentToolIds: new Map(),
-    activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
-    isWaiting: false,
-    permissionSent: false,
-    hadToolsInTurn: false,
-    hookDelivered: false,
     lastDataAt: Date.now(),
-    linesProcessed: 0,
-    seenUnknownRecordTypes: new Set(),
     folderName,
-    contextTokens: 0,
-    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
-  };
+  });
 
   assignPaletteIfNeeded(agent, agents);
   agents.set(id, agent);

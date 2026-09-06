@@ -18,6 +18,17 @@ export const HOOK_SCRIPTS_DIR = '.pixel-agents/hooks';
 export const BASH_COMMAND_DISPLAY_MAX_LENGTH = 30;
 export const TASK_DESCRIPTION_DISPLAY_MAX_LENGTH = 40;
 
+// ── Terminal (standalone embedded terminal) ──────────────────
+// The raw PTY byte stream deliberately lives OUTSIDE the AsyncAPI contract --
+// it is a data plane (unstructured, high-frequency), not a control plane.
+// Only the terminal's control-plane facts (availability, session open/close)
+// are AsyncAPI ServerMessages. See docs/design/standalone-terminal.md.
+
+/** Path prefix for the per-agent terminal WebSocket: `/terminal/:agentId`. The
+ *  handshake carries the server token as `?token=`, exactly like `/ws` (see
+ *  server/src/wsAuth.ts); the frame shapes are in terminalFrames.ts. */
+export const TERMINAL_WS_PREFIX = '/terminal';
+
 // ── Transport ────────────────────────────────────────────────
 // Connection-state names for the MessageTransport state machine.
 
