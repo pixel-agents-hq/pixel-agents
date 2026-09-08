@@ -34,6 +34,8 @@ interface AddAgentCall {
   seatId?: string;
   skipSpawnEffect?: boolean;
   folderName?: string;
+  nearAgentId?: number;
+  areaLabel?: string;
 }
 
 /** A fake office that records addAgent calls, mirroring how officeCanvasCursor
@@ -48,9 +50,27 @@ function fakeOffice(
     calls,
     headless,
     characters: { has: (id: number) => ids.has(id) },
-    addAgent: (id, palette, hueShift, seatId, skipSpawnEffect, folderName) => {
+    addAgent: (
+      id,
+      palette,
+      hueShift,
+      seatId,
+      skipSpawnEffect,
+      folderName,
+      nearAgentId,
+      areaLabel,
+    ) => {
       ids.add(id);
-      calls.push({ id, palette, hueShift, seatId, skipSpawnEffect, folderName });
+      calls.push({
+        id,
+        palette,
+        hueShift,
+        seatId,
+        skipSpawnEffect,
+        folderName,
+        nearAgentId,
+        areaLabel,
+      });
     },
     setHeadless: (id, isHeadless) => {
       if (isHeadless) headless.push(id);
@@ -81,6 +101,8 @@ test('layout ready: adds restored agents immediately with their seat metadata', 
       seatId: 'seat-a',
       skipSpawnEffect: true,
       folderName: 'alpha',
+      nearAgentId: undefined,
+      areaLabel: undefined,
     },
   ]);
 });
@@ -100,7 +122,15 @@ test('layout not ready: buffers restored agents for the later layoutLoaded flush
   assert.equal(addedDirectly, false);
   assert.equal(os.calls.length, 0, 'no agent should be added before the layout is ready');
   assert.deepEqual(pending, [
-    { id: 5, palette: 2, hueShift: 90, seatId: 'seat-a', folderName: 'alpha', isHeadless: false },
+    {
+      id: 5,
+      palette: 2,
+      hueShift: 90,
+      seatId: 'seat-a',
+      folderName: 'alpha',
+      areaLabel: undefined,
+      isHeadless: false,
+    },
   ]);
 });
 
@@ -174,6 +204,63 @@ test('layout ready: agent with no metadata is still added with undefined fields'
       seatId: undefined,
       skipSpawnEffect: true,
       folderName: undefined,
+      nearAgentId: undefined,
+      areaLabel: undefined,
     },
   ]);
+});
+
+// ── areaLabel (PIXEL_AGENTS_AREA explicit area override) ────────
+
+test('layout ready: areaLabel is threaded through to addAgent', () => {
+  const os = fakeOffice();
+  const pending: PendingAgent[] = [];
+  const meta: Record<number, ExistingAgentMeta> = {
+    8: { palette: 1, hueShift: 0, seatId: undefined },
+  };
+  const folderNames: Record<number, string> = {};
+  const areaLabels: Record<number, string> = { 8: 'research' };
+
+  const addedDirectly = reconcileExistingAgents(
+    os,
+    [8],
+    meta,
+    folderNames,
+    true,
+    pending,
+    {},
+    areaLabels,
+  );
+
+  assert.equal(addedDirectly, true);
+  assert.deepEqual(os.calls, [
+    {
+      id: 8,
+      palette: 1,
+      hueShift: 0,
+      seatId: undefined,
+      skipSpawnEffect: true,
+      folderName: undefined,
+      nearAgentId: undefined,
+      areaLabel: 'research',
+    },
+  ]);
+});
+
+test('layout not ready: areaLabel rides along on the buffered agent', () => {
+  const os = fakeOffice();
+  const pending: PendingAgent[] = [];
+  const meta: Record<number, ExistingAgentMeta> = {
+    9: { palette: 0, hueShift: 0, seatId: undefined },
+  };
+  const folderNames: Record<number, string> = {};
+  const areaLabels: Record<number, string> = { 9: 'engineering' };
+
+  reconcileExistingAgents(os, [9], meta, folderNames, false, pending, {}, areaLabels);
+
+  assert.equal(os.calls.length, 0);
+  assert.deepEqual(
+    pending.map((p) => [p.id, p.areaLabel]),
+    [[9, 'engineering']],
+  );
 });

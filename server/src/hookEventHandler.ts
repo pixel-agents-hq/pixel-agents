@@ -32,11 +32,13 @@ export interface HookEvent {
 /** Callback for session lifecycle events detected via hooks. */
 interface SessionLifecycleCallbacks {
   /** Called when an external session is detected (unknown session_id in SessionStart).
-   *  transcriptPath is undefined for providers without transcripts (OpenCode, Copilot). */
+   *  transcriptPath is undefined for providers without transcripts (OpenCode, Copilot).
+   *  areaLabel is the optional PIXEL_AGENTS_AREA override from the agent process. */
   onExternalSessionDetected?: (
     sessionId: string,
     transcriptPath: string | undefined,
     cwd: string,
+    areaLabel?: string,
   ) => void;
   /** Called when /clear is detected via hooks (SessionEnd reason=clear + SessionStart source=clear). */
   onSessionClear?: (
@@ -243,6 +245,7 @@ export class HookEventHandler {
           sessionId: event.session_id,
           transcriptPath,
           cwd: cwd ?? '',
+          areaLabel: normEvent.areaLabel,
         });
       } else {
         if (debug && tracked)
@@ -275,6 +278,7 @@ export class HookEventHandler {
         pending.sessionId,
         pending.transcriptPath,
         pending.cwd,
+        pending.areaLabel,
       );
       // Re-process this event now that the agent exists
       this.handleEvent(_providerId, event);

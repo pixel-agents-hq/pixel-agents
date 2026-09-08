@@ -179,7 +179,7 @@ export class OfficeState {
     // Second pass: assign remaining characters to free seats
     for (const ch of this.characters.values()) {
       if (ch.seatId) continue;
-      const seatId = this.findFreeSeat(ch.folderName);
+      const seatId = this.findFreeSeat(ch.folderName, ch.areaLabel);
       if (seatId) {
         this.seats.get(seatId)!.assigned = true;
         ch.seatId = seatId;
@@ -346,18 +346,21 @@ export class OfficeState {
   /**
    * 3-stage seat picker for top-level agents.
    *
-   *   Stage 1: If `folderName` is given and `areaMappings[folderName]` lists
-   *            Area labels, prefer free seats whose tile is labeled with one
-   *            of those areas.
+   *   Stage 1: If `areaLabel` is given directly, use it as the target Area
+   *            (bypasses the folderName→areaMappings lookup entirely).
+   *            Otherwise, if `folderName` is given and `areaMappings[folderName]`
+   *            lists Area labels, prefer free seats whose tile is labeled with
+   *            one of those areas.
    *   Stage 2: Prefer free seats whose tile has NO area label (unzoned).
    *   Stage 3: Any free seat.
    *
    * Each stage routes through `pickFromSeats` for the PC-bias rule. Returns
-   * null only when every seat is already occupied. Passing `undefined`
-   * preserves pre-Areas single-stage behavior (skips Stage 1; Stage 2 picks
-   * unzoned seats from a layout without `areaTiles`, which is every seat).
+   * null only when every seat is already occupied. Passing `undefined` for
+   * both args preserves pre-Areas single-stage behavior (skips Stage 1;
+   * Stage 2 picks unzoned seats from a layout without `areaTiles`, which is
+   * every seat).
    */
-  private findFreeSeat(folderName?: string): string | null {
+  private findFreeSeat(folderName?: string, areaLabel?: string): string | null {
     const electronicsTiles = this.buildElectronicsTileSet();
     const freeSeats: string[] = [];
     for (const [uid, seat] of this.seats) {
@@ -365,7 +368,14 @@ export class OfficeState {
     }
     if (freeSeats.length === 0) return null;
 
-    const areaLabels = folderName ? this.areaMappings[folderName] : undefined;
+    // areaLabel wins over the folderName→areaMappings lookup when set.
+    const resolvedAreaLabels: string[] | undefined = areaLabel
+      ? [areaLabel]
+      : folderName
+        ? this.areaMappings[folderName]
+        : undefined;
+    // Keep using the local `areaLabels` name for Stage 1 to avoid changing the rest.
+    const areaLabels = resolvedAreaLabels;
 
     // Stage 1 — in-area seats for the folder's mapped Area labels.
     if (areaLabels && areaLabels.length > 0) {
@@ -430,6 +440,7 @@ export class OfficeState {
     skipSpawnEffect?: boolean,
     folderName?: string,
     nearAgentId?: number,
+    areaLabel?: string,
   ): void {
     if (this.characters.has(id)) return;
 
@@ -461,7 +472,7 @@ export class OfficeState {
       seatId = closestFreeSeat(this.seats, anchorAt.col, anchorAt.row);
     }
     if (!seatId) {
-      seatId = this.findFreeSeat(folderName);
+      seatId = this.findFreeSeat(folderName, areaLabel);
     }
 
     let ch: Character;
@@ -487,6 +498,9 @@ export class OfficeState {
 
     if (folderName) {
       ch.folderName = folderName;
+    }
+    if (areaLabel) {
+      ch.areaLabel = areaLabel;
     }
     if (!skipSpawnEffect) {
       startMatrixEffect(ch, 'spawn');

@@ -1070,6 +1070,7 @@ export function adoptExternalSessionFromHook(
 
   persistAgents: () => void,
   onAgentCreated?: (agent: AgentState) => void,
+  areaLabel?: string,
 ): void {
   if (transcriptPath) {
     // File-based provider (Claude, Codex): adopt with JSONL file watching
@@ -1099,6 +1100,7 @@ export function adoptExternalSessionFromHook(
       permissionTimers,
       persistAgents,
       folderName,
+      areaLabel,
     );
 
     const adoptedAgent = [...agents.values()].find((a) => pathsMatch(a.jsonlFile, transcriptPath));
@@ -1140,6 +1142,7 @@ export function adoptExternalSessionFromHook(
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
       folderName,
+      areaLabel,
       contextTokens: 0,
       maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
     };
@@ -1167,6 +1170,7 @@ function adoptExternalSession(
 
   persistAgents: () => void,
   folderName?: string,
+  areaLabel?: string,
 ): void {
   const id = nextAgentIdRef.current++;
   // Decide whether to replay the existing file content or skip to its end.
@@ -1221,6 +1225,7 @@ function adoptExternalSession(
     linesProcessed: 0,
     seenUnknownRecordTypes: new Set(),
     folderName,
+    areaLabel,
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };

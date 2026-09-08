@@ -6,6 +6,10 @@ export interface PendingExternalSession {
   /** Transcript file path. Undefined for providers without transcripts (OpenCode, Copilot). */
   transcriptPath: string | undefined;
   cwd: string;
+  /** Explicit Area label from the PIXEL_AGENTS_AREA env var on the agent process.
+   *  When present, the agent is seated in this named Area instead of resolving
+   *  the area via the folderName→areaMappings path. */
+  areaLabel?: string;
 }
 
 /** An event waiting to be dispatched once its agent registers. */

@@ -20,6 +20,9 @@ export interface PersistedAgent {
   jsonlFile: string;
   projectDir: string;
   folderName?: string;
+  /** Explicit Area label from PIXEL_AGENTS_AREA env var. Persisted so the agent
+   *  returns to the same Area after a server restart. */
+  areaLabel?: string;
   teamName?: string;
   agentName?: string;
   isTeamLead?: boolean;

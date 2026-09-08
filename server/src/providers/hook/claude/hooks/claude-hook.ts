@@ -163,6 +163,14 @@ async function main(): Promise<void> {
   const eventName = (data.hook_event_name as string | undefined) ?? '?';
   const sid = (data.session_id as string | undefined)?.slice(0, 8) ?? '?';
 
+  // For SessionStart events, propagate the PIXEL_AGENTS_AREA env var so that
+  // external orchestrators can seat agents in a named Area without relying on
+  // the workspace-folder mapping.
+  const areaLabel = process.env['PIXEL_AGENTS_AREA'];
+  if (eventName === 'SessionStart' && areaLabel) {
+    data = { ...data, area_label: areaLabel };
+  }
+
   // Multi-server fan-out (D4): deliver to every live server in the registry.
   // Falls back to the single legacy server.json when the registry has no live
   // entries -- e.g. a server on disk that predates the registry (A1/A2).

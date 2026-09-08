@@ -59,6 +59,11 @@ export type AgentEvent =
       /** Working directory the session was started in. Used to match pending
        *  external sessions against known workspace folders. */
       cwd?: string;
+      /** Explicit Area label for this session. When set, the agent character is
+       *  seated in this named Area regardless of the folderName→areaMappings
+       *  lookup. Sourced from the PIXEL_AGENTS_AREA env var on the agent process
+       *  and injected by the hook script into the SessionStart payload. */
+      areaLabel?: string;
     }
   | { kind: 'sessionEnd'; reason?: string };
 

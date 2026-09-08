@@ -74,6 +74,7 @@ export interface AgentCreated {
   type: 'agentCreated';
   id: number;
   folderName?: string;
+  areaLabel?: string;
   isExternal?: boolean;
   palette?: number;
   hueShift?: number;
@@ -94,6 +95,7 @@ export interface ExistingAgents {
   agents: number[];
   agentMeta: Record<string, AgentSeatMeta>;
   folderNames: Record<string, string>;
+  areaLabels?: Record<string, string>;
   externalAgents: Record<string, boolean>;
 }
 

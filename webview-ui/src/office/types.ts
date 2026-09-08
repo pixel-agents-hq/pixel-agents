@@ -223,6 +223,10 @@ export interface Character {
   matrixEffectSeeds: number[];
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+  /** Explicit Area label from PIXEL_AGENTS_AREA env var on the agent process.
+   *  When set, the character was seated in this named Area at creation and will
+   *  be re-seated there on layout rebuilds. */
+  areaLabel?: string;
   /** Headless agent: adopted from outside the office, so there is no terminal to
    *  focus. Rendered translucent. Teammates and sub-agents are never headless —
    *  clicking them reaches their lead's / parent's terminal. */

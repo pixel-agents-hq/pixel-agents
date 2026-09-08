@@ -187,6 +187,34 @@ describe('claudeProvider', () => {
         expect(result.event.source).toBe('startup');
         expect(result.event.transcriptPath).toBe('/Users/x/.claude/projects/foo/sess-1.jsonl');
         expect(result.event.cwd).toBe('/Users/x/work');
+        expect(result.event.areaLabel).toBeUndefined();
+      }
+    });
+
+    it('normalizes SessionStart with area_label from PIXEL_AGENTS_AREA hook injection', () => {
+      const result = claudeProvider.normalizeHookEvent({
+        hook_event_name: 'SessionStart',
+        session_id: 'sess-2',
+        source: 'startup',
+        transcript_path: '/Users/x/.claude/projects/foo/sess-2.jsonl',
+        cwd: '/Users/x/work',
+        area_label: 'research',
+      });
+      expect(result?.event.kind).toBe('sessionStart');
+      if (result?.event.kind === 'sessionStart') {
+        expect(result.event.areaLabel).toBe('research');
+      }
+    });
+
+    it('ignores empty area_label in SessionStart', () => {
+      const result = claudeProvider.normalizeHookEvent({
+        hook_event_name: 'SessionStart',
+        session_id: 'sess-3',
+        area_label: '',
+      });
+      expect(result?.event.kind).toBe('sessionStart');
+      if (result?.event.kind === 'sessionStart') {
+        expect(result.event.areaLabel).toBeUndefined();
       }
     });
 

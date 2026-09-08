@@ -576,10 +576,43 @@ describe('HookEventHandler', () => {
       'ext-sess',
       '/projects/test/ext-sess.jsonl',
       '/projects/test',
+      undefined,
     );
     // Stop was re-processed after agent creation
     const agent = agents.get(2);
     expect(agent?.isWaiting).toBe(true);
+  });
+
+  it('SessionStart with area_label threads areaLabel to onExternalSessionDetected', () => {
+    const onExternalSessionDetected = vi.fn();
+    handler.setLifecycleCallbacks({ onExternalSessionDetected });
+
+    onExternalSessionDetected.mockImplementation((sessionId: string) => {
+      const agent = createTestAgent({ id: 2, sessionId, projectDir: '/projects/test' });
+      agents.set(2, agent);
+      handler.registerAgent(sessionId, 2);
+    });
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'SessionStart',
+      session_id: 'area-sess',
+      transcript_path: '/projects/test/area-sess.jsonl',
+      cwd: '/projects/test',
+      area_label: 'research',
+    });
+
+    // Not created yet — confirm with Stop
+    handler.handleEvent('claude', {
+      hook_event_name: 'Stop',
+      session_id: 'area-sess',
+    });
+
+    expect(onExternalSessionDetected).toHaveBeenCalledWith(
+      'area-sess',
+      '/projects/test/area-sess.jsonl',
+      '/projects/test',
+      'research',
+    );
   });
 
   // ── Resume ──────────────────────────────────────────────────
@@ -721,6 +754,7 @@ describe('HookEventHandler', () => {
       'no-transcript-sess',
       undefined,
       '/projects/test',
+      undefined,
     );
   });
 

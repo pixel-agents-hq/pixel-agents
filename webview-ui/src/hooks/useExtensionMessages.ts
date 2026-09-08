@@ -232,7 +232,16 @@ export function useExtensionMessages(
         }
         // Add buffered agents now that layout (and seats) are correct
         for (const p of pendingAgents) {
-          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
+          os.addAgent(
+            p.id,
+            p.palette,
+            p.hueShift,
+            p.seatId,
+            true,
+            p.folderName,
+            undefined,
+            p.areaLabel,
+          );
           if (p.isHeadless) os.setHeadless(p.id, true);
         }
         pendingAgents = [];
@@ -247,6 +256,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentCreated') {
         const id = msg.id as number;
         const folderName = msg.folderName as string | undefined;
+        const areaLabel = msg.areaLabel as string | undefined;
         const isTeammate = msg.isTeammate as boolean | undefined;
         const teammateName = msg.teammateName as string | undefined;
         const teammateParentId = msg.parentAgentId as number | undefined;
@@ -283,7 +293,16 @@ export function useExtensionMessages(
         } else {
           const palette = msg.palette as number | undefined;
           const hueShift = msg.hueShift as number | undefined;
-          os.addAgent(id, palette, hueShift, undefined, undefined, folderName);
+          os.addAgent(
+            id,
+            palette,
+            hueShift,
+            undefined,
+            undefined,
+            folderName,
+            undefined,
+            areaLabel,
+          );
           noteFolderName(folderName);
           if (isHeadlessAgent(msg.isExternal as boolean | undefined)) {
             os.setHeadless(id, true);
@@ -321,6 +340,7 @@ export function useExtensionMessages(
         const incoming = msg.agents as number[];
         const meta = (msg.agentMeta || {}) as Record<number, ExistingAgentMeta>;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
+        const areaLabels = (msg.areaLabels || {}) as Record<number, string>;
         const externalAgents = (msg.externalAgents || {}) as Record<number, boolean>;
         const headlessAgents: Record<number, boolean> = {};
         for (const id of incoming) {
@@ -340,6 +360,7 @@ export function useExtensionMessages(
             layoutReadyRef.current,
             pendingAgents,
             headlessAgents,
+            areaLabels,
           )
         ) {
           saveAgentSeats(os);

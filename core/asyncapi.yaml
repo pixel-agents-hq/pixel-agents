@@ -182,6 +182,12 @@ components:
           type: integer
         folderName:
           type: string
+        areaLabel:
+          type: string
+          description: |
+            Explicit Area label from PIXEL_AGENTS_AREA env var. When present, the
+            agent character is seated in this named Area instead of resolving via
+            the folderName→areaMappings path.
         isExternal:
           type: boolean
         palette:
@@ -235,6 +241,13 @@ components:
         folderNames:
           type: object
           description: Map of agent ID (string) to workspace folder name.
+          additionalProperties:
+            type: string
+        areaLabels:
+          type: object
+          description: |
+            Map of agent ID (string) to explicit Area label (from PIXEL_AGENTS_AREA).
+            Only present for agents that have an area label set.
           additionalProperties:
             type: string
         externalAgents:

@@ -22,6 +22,10 @@ export interface AgentState {
   hadToolsInTurn: boolean;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+  /** Explicit Area label from PIXEL_AGENTS_AREA env var on the agent process.
+   *  When set, the agent character is seated in this named Area instead of
+   *  resolving via the folderName→areaMappings path. */
+  areaLabel?: string;
   /** Timestamp of last JSONL data received (ms since epoch) */
   lastDataAt: number;
   /** Total JSONL lines processed for this agent */
@@ -98,6 +102,9 @@ export interface PersistedAgent {
   projectDir: string;
   /** Workspace folder name (only set for multi-root workspaces) */
   folderName?: string;
+  /** Explicit Area label from PIXEL_AGENTS_AREA env var. Persisted so the agent
+   *  returns to the same Area after a server restart. */
+  areaLabel?: string;
 
   // -- Agent Teams --
   teamName?: string;

@@ -212,6 +212,8 @@ function normalizeHookEvent(
           source: typeof raw.source === 'string' ? raw.source : undefined,
           transcriptPath: typeof raw.transcript_path === 'string' ? raw.transcript_path : undefined,
           cwd: typeof raw.cwd === 'string' ? raw.cwd : undefined,
+          areaLabel:
+            typeof raw.area_label === 'string' && raw.area_label ? raw.area_label : undefined,
         },
       };
 

@@ -287,6 +287,7 @@ export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): v
       jsonlFile: agent.jsonlFile,
       projectDir: agent.projectDir,
       folderName: agent.folderName,
+      areaLabel: agent.areaLabel,
       teamName: agent.teamName,
       agentName: agent.agentName,
       isTeamLead: agent.isTeamLead,
@@ -381,6 +382,7 @@ export function restoreAgents(
       linesProcessed: 0,
       seenUnknownRecordTypes: new Set(),
       folderName: p.folderName,
+      areaLabel: p.areaLabel,
       hookDelivered: false,
       contextTokens: 0,
       maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
@@ -537,12 +539,16 @@ export function sendExistingAgents(
   // Include persisted palette/seatId from separate key
   const agentMeta = adapter.loadSeats();
 
-  // Include folderName and isExternal per agent
+  // Include folderName, areaLabel and isExternal per agent
   const folderNames: Record<number, string> = {};
+  const areaLabels: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   for (const [id, agent] of agents) {
     if (agent.folderName) {
       folderNames[id] = agent.folderName;
+    }
+    if (agent.areaLabel) {
+      areaLabels[id] = agent.areaLabel;
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
@@ -557,6 +563,7 @@ export function sendExistingAgents(
     agents: agentIds,
     agentMeta,
     folderNames,
+    areaLabels,
     externalAgents,
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
