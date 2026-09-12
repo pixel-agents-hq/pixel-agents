@@ -58,7 +58,6 @@ interface CodexHooksFile {
 }
 
 export const HOOKS_UNPARSEABLE_MESSAGE = "Couldn't parse ~/.codex/hooks.json";
-export const HOOKS_CONTENDED_MESSAGE = '~/.codex/hooks.json is being modified by another process';
 
 export function hooksNotObjectMessage(): string {
   return 'hooks in ~/.codex/hooks.json is not an object — fix or remove it';

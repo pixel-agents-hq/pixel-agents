@@ -29,8 +29,6 @@ export const CODEX_HOOK_EVENTS = [
   'SubagentStop',
 ] as const;
 
-export type CodexHookEvent = (typeof CODEX_HOOK_EVENTS)[number];
-
 /** Provider id on the wire. Must stay stable: it keys the consent record and
  *  the hooks-enabled setting. */
 export const CODEX_PROVIDER_ID = 'codex';
