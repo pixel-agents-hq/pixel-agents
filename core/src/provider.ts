@@ -116,6 +116,17 @@ export interface HookProvider {
    *  previous estimate and widens it if a context ever exceeds it. */
   contextWindowForModel?(model: string | undefined): number | undefined;
 
+  /** Does this CLI appear to be installed for the current user?
+   *
+   *  Only consulted to decide whether to ASK for hook consent: asking someone
+   *  to let us edit the config of a tool they do not have is a prompt they
+   *  cannot evaluate and must answer just to dismiss. Absent = treated as
+   *  present, the right default for a provider that cannot tell cheaply.
+   *
+   *  Never gates event handling: a provider that reports false but then sends
+   *  events is still served, because the events prove it is there. */
+  isPresent?(): boolean;
+
   // ── Optional file fallback (heuristic mode) ──
 
   /** Session directories to scan. Undefined = no file fallback. */
