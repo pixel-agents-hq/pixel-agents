@@ -27,7 +27,14 @@ import {
 } from './configPersistence.js';
 import { MAX_PORT, MIN_PORT } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import {
+  claudeProvider,
+  codexProvider,
+  copyCodexHookScript,
+  copyHookScript,
+  hookProviderById,
+  hookProviders,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -98,6 +105,25 @@ Options:
 function copyHookScriptOrReport(packageRoot: string, context = ''): boolean {
   if (copyHookScript(packageRoot)) return true;
   console.error(`[Pixel Agents] Hooks NOT installed${context}: hook script missing.`);
+  return false;
+}
+
+/** Same contract as copyHookScriptOrReport, for a non-Claude provider. Each
+ *  provider ships its own script, so the copier is resolved by provider id
+ *  rather than assuming one shared file. */
+function copyCodexHookScriptOrReport(providerId: string, packageRoot: string): boolean {
+  const copiers: Record<string, (root: string) => boolean> = {
+    [codexProvider.id]: copyCodexHookScript,
+  };
+  const copy = copiers[providerId];
+  if (!copy) {
+    // A provider with no script copier installs nothing on this surface; that is
+    // a wiring bug, not a user error, so it is reported rather than ignored.
+    console.error(`[Pixel Agents] No hook script copier registered for "${providerId}".`);
+    return false;
+  }
+  if (copy(packageRoot)) return true;
+  console.error(`[Pixel Agents] ${providerId} hooks NOT installed: hook script missing.`);
   return false;
 }
 
@@ -270,6 +296,31 @@ async function main(): Promise<void> {
         try {
           await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
           console.log('[Pixel Agents] Hooks installed');
+        } catch (err) {
+          console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      // Every OTHER bundled provider, each gated on its own consent record and
+      // presence check. Deliberately not folded into the Claude arm above:
+      // Claude carries the pre-consent migration (grant-on-already-installed)
+      // that a new provider has no history for, and a provider whose CLI is
+      // absent is skipped in SILENCE — an approval notice for a tool the user
+      // never installed is pure noise.
+      for (const provider of hookProviders) {
+        if (provider.id === claudeProvider.id) continue;
+        if (provider.isPresent?.() === false) continue;
+        if (!getHooksEnabled(provider.id)) continue;
+        if (getHooksConsent(provider.id) !== 'granted') {
+          console.log(
+            `[Pixel Agents] ${provider.displayName} hooks not installed: needs one-time approval — open the URL below to review and approve it.`,
+          );
+          continue;
+        }
+        if (!copyCodexHookScriptOrReport(provider.id, packageRoot)) continue;
+        try {
+          await provider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+          console.log(`[Pixel Agents] ${provider.displayName} hooks installed`);
         } catch (err) {
           console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
         }

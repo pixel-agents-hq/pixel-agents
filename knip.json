@@ -14,6 +14,7 @@
   "ignore": [
     "core/src/index.ts",
     "server/src/providers/hook/claude/hooks/claude-hook.ts",
+    "server/src/providers/hook/codex/hooks/codex-hook.ts",
     "webview-ui/src/office/components/index.ts",
     "webview-ui/src/office/editor/index.ts",
     "webview-ui/src/office/engine/index.ts",

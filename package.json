@@ -37,6 +37,7 @@
     "dist/cli.js",
     "dist/extension.js",
     "dist/hooks/claude-hook.js",
+    "dist/hooks/codex-hook.js",
     "dist/uninstall.js",
     "dist/assets/",
     "dist/webview/",
