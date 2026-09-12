@@ -86,3 +86,12 @@ export const CODEX_CONTEXT_WINDOW_PATTERNS: ReadonlyArray<readonly [string, numb
 
 /** Max chars of a shell command rendered in the status line. */
 export const SHELL_COMMAND_DISPLAY_MAX_LENGTH = 40;
+
+/** Timeout we request for a normal hook. Generous relative to the script's own
+ *  2s per-request budget; it exists only so a wedged `node` cannot sit around. */
+export const HOOK_TIMEOUT_SECONDS = 5;
+
+/** Codex caps SessionEnd and Interrupt at 3s (default 1s) and runs them
+ *  synchronously even when `async: true`. Asking for more makes Codex print a
+ *  clamping warning about our own config at every startup. */
+export const SESSION_END_MAX_TIMEOUT_SECONDS = 3;

@@ -27,8 +27,10 @@ import {
   CODEX_HOOK_SCRIPT_NAME,
   CODEX_HOOKS_FILE,
   HOOK_PATH_SUFFIX,
+  HOOK_TIMEOUT_SECONDS,
   HOOKS_BACKUP_SUFFIX,
   HOOKS_TMP_SUFFIX,
+  SESSION_END_MAX_TIMEOUT_SECONDS,
 } from './constants.js';
 
 /** One handler inside a matcher group. */
@@ -176,15 +178,27 @@ function isOurGroup(group: CodexHookGroup): boolean {
   );
 }
 
-/** The handler we install. `async: true` is the whole point: Codex runs it in
- *  the background, so the agent loop never waits on our POST even if the office
- *  is gone. The short timeout is a second belt on top of that. */
-function ourHandler(): CodexHookHandler {
+/**
+ * The handler we install for one event.
+ *
+ * `async: true` is the whole point: Codex runs it in the background, so the
+ * agent loop never waits on our POST even if the office is gone. The short
+ * timeout is a second belt on top of that.
+ *
+ * SessionEnd (and Interrupt) are the documented exceptions — Codex caps their
+ * timeout at 3s and ALWAYS runs them synchronously, ignoring `async`. Writing 5
+ * there makes Codex print two startup warnings about clamping our own config,
+ * so we ask for exactly what it will honour. The hook script's own 2s per-request
+ * timeout still bounds the synchronous case.
+ */
+function ourHandler(event: string): CodexHookHandler {
+  const synchronousEvent = event === 'SessionEnd' || event === 'Interrupt';
   return {
     type: 'command',
     command: `node "${getHookScriptPath()}"`,
-    timeout: 5,
-    async: true,
+    timeout: synchronousEvent ? SESSION_END_MAX_TIMEOUT_SECONDS : HOOK_TIMEOUT_SECONDS,
+    // Stating async on an event that ignores it is just noise in the user's file.
+    ...(synchronousEvent ? {} : { async: true }),
   };
 }
 
@@ -280,7 +294,7 @@ export async function installHooks(_serverUrl: string, _authToken: string): Prom
     const existing = next[event] ?? [];
     // No `matcher`: we want every tool, and an omitted matcher is Codex's
     // match-everything default.
-    next[event] = [...existing, { hooks: [ourHandler()] }];
+    next[event] = [...existing, { hooks: [ourHandler(event)] }];
   }
 
   writeHooksFile({ ...file, hooks: next }, hadExisting);

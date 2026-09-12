@@ -71,6 +71,20 @@ describe('codexHookInstaller', () => {
       expect(String(handler['command'])).toContain('codex-hook.js');
     });
 
+    it('asks SessionEnd for only what Codex will honour', async () => {
+      // Codex caps SessionEnd at 3s and always runs it synchronously, ignoring
+      // `async`. Asking for 5s + async makes Codex print two warnings about
+      // clamping our own config at every single startup.
+      await installHooks('u', 't');
+      const hooks = readFile()['hooks'] as Record<
+        string,
+        Array<{ hooks: Array<Record<string, unknown>> }>
+      >;
+      const sessionEnd = hooks['SessionEnd'][0].hooks[0];
+      expect(sessionEnd['timeout']).toBe(3);
+      expect(sessionEnd['async']).toBeUndefined();
+    });
+
     it('omits matcher so every tool is observed', async () => {
       await installHooks('u', 't');
       const hooks = readFile()['hooks'] as Record<string, Array<Record<string, unknown>>>;
