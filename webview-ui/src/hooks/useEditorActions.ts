@@ -16,8 +16,10 @@ import {
   duplicateFurniture,
   eraseArea,
   eraseCarpet,
+  eraseTile,
   expandLayout,
   freshFurnitureUid,
+  furnitureAt,
   getWallPlacementRow,
   moveFurniture,
   paintArea,
@@ -26,7 +28,6 @@ import {
   placeFurniture,
   removeArea,
   removeFurniture,
-  removeFurnitureAt,
   renameArea,
   rotateFurniture,
   toggleFurnitureState,
@@ -34,11 +35,7 @@ import {
 } from '../office/editor/editorActions.js';
 import type { EditorState } from '../office/editor/editorState.js';
 import type { OfficeState } from '../office/engine/officeState.js';
-import {
-  getCatalogEntry,
-  getRotatedType,
-  getToggledType,
-} from '../office/layout/furnitureCatalog.js';
+import { getRotatedType, getToggledType } from '../office/layout/furnitureCatalog.js';
 import type {
   EditTool as EditToolType,
   OfficeLayout,
@@ -111,20 +108,6 @@ interface EditorActions {
 function defaultZoom(): number {
   const dpr = window.devicePixelRatio || 1;
   return Math.max(ZOOM_MIN, Math.round(ZOOM_DEFAULT_DPR_FACTOR * dpr));
-}
-
-/** First placed item whose footprint covers (col,row), or undefined. */
-function furnitureAt(layout: OfficeLayout, col: number, row: number): PlacedFurniture | undefined {
-  return layout.furniture.find((f) => {
-    const entry = getCatalogEntry(f.type);
-    if (!entry) return false;
-    return (
-      col >= f.col &&
-      col < f.col + entry.footprintW &&
-      row >= f.row &&
-      row < f.row + entry.footprintH
-    );
-  });
 }
 
 export function useEditorActions(
@@ -789,14 +772,7 @@ export function useEditorActions(
           }
         }
       } else if (editorState.activeTool === EditTool.ERASE) {
-        if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return;
-        const idx = row * layout.cols + col;
-        // Erase clears the tile to VOID and deletes any furniture it passes through.
-        let newLayout = layout;
-        if (newLayout.tiles[idx] !== TileType.VOID) {
-          newLayout = paintTile(newLayout, col, row, TileType.VOID);
-        }
-        newLayout = removeFurnitureAt(newLayout, col, row);
+        const newLayout = eraseTile(layout, col, row);
         if (newLayout !== layout) {
           applyStrokeEdit(newLayout);
         }
@@ -984,13 +960,7 @@ export function useEditorActions(
         return;
       }
 
-      const idx = row * layout.cols + col;
-      // Clear the tile to VOID and delete any furniture the stroke passes through.
-      let newLayout = layout;
-      if (newLayout.tiles[idx] !== TileType.VOID) {
-        newLayout = paintTile(newLayout, col, row, TileType.VOID);
-      }
-      newLayout = removeFurnitureAt(newLayout, col, row);
+      const newLayout = eraseTile(layout, col, row);
       if (newLayout !== layout) {
         applyStrokeEdit(newLayout);
       }

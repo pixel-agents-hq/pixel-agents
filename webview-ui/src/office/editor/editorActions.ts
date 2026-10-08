@@ -65,24 +65,61 @@ export function removeFurniture(layout: OfficeLayout, uid: string): OfficeLayout
   return { ...layout, furniture: filtered };
 }
 
+/** Whether a placed item's footprint (background rows included) covers (col, row). */
+function coversTile(item: PlacedFurniture, col: number, row: number): boolean {
+  const entry = getCatalogEntry(item.type);
+  if (!entry) return false;
+  return (
+    col >= item.col &&
+    col < item.col + entry.footprintW &&
+    row >= item.row &&
+    row < item.row + entry.footprintH
+  );
+}
+
 /**
- * Remove every furniture item whose footprint covers (col, row). Used by the
- * erase tool so a stroke deletes any furniture it passes through. Returns new
- * layout (immutable). No-op if no furniture covers the tile.
+ * The placed item a click on (col, row) means, or undefined. Where items stack,
+ * a surface item (laptop, monitor, mug…) wins over the desk under it — it's the
+ * one drawn on top — so selecting, dragging, copying and eyedropping all agree
+ * on what the cursor is pointing at.
+ */
+export function furnitureAt(
+  layout: OfficeLayout,
+  col: number,
+  row: number,
+): PlacedFurniture | undefined {
+  let hit: PlacedFurniture | undefined;
+  for (const f of layout.furniture) {
+    if (!coversTile(f, col, row)) continue;
+    if (!hit || getCatalogEntry(f.type)?.canPlaceOnSurfaces) hit = f;
+  }
+  return hit;
+}
+
+/**
+ * Remove every furniture item whose footprint covers (col, row) — all of them,
+ * not just the one {@link furnitureAt} would pick, so an erase stroke clears a
+ * desk together with whatever stands on the tile it crosses. Returns new layout
+ * (immutable). No-op if no furniture covers the tile; unknown types are kept
+ * rather than silently dropped.
  */
 export function removeFurnitureAt(layout: OfficeLayout, col: number, row: number): OfficeLayout {
-  const filtered = layout.furniture.filter((f) => {
-    const entry = getCatalogEntry(f.type);
-    if (!entry) return true; // keep unknown types rather than silently drop them
-    const covers =
-      col >= f.col &&
-      col < f.col + entry.footprintW &&
-      row >= f.row &&
-      row < f.row + entry.footprintH;
-    return !covers;
-  });
+  const filtered = layout.furniture.filter((f) => !coversTile(f, col, row));
   if (filtered.length === layout.furniture.length) return layout;
   return { ...layout, furniture: filtered };
+}
+
+/**
+ * One tile of an erase stroke: clear it to VOID and delete any furniture it
+ * passes through. Returns new layout (immutable); unchanged when the tile is
+ * out of bounds or already bare VOID.
+ */
+export function eraseTile(layout: OfficeLayout, col: number, row: number): OfficeLayout {
+  if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return layout;
+  const idx = row * layout.cols + col;
+  const cleared =
+    layout.tiles[idx] === TileType.VOID ? layout : paintTile(layout, col, row, TileType.VOID);
+  return removeFurnitureAt(cleared, col, row);
 }
 
 /** Footprint tiles of a placed item, as `"col,row"` keys (background rows included). */
@@ -329,15 +366,15 @@ export function getWallPlacementRow(type: string, row: number): number {
 
 /**
  * Check if furniture can be placed at (col, row) without overlapping.
- * `excludeUid` takes a single uid or a whole group of them (a desk and its
- * riders check placement against everything except themselves).
+ * `excluded` are the uids that don't count as obstacles — the item being moved,
+ * or a desk together with its riders, which never block their own move.
  */
 export function canPlaceFurniture(
   layout: OfficeLayout,
   type: string, // FurnitureType enum or asset ID
   col: number,
   row: number,
-  excludeUid?: string | ReadonlySet<string>,
+  excluded?: ReadonlySet<string>,
 ): boolean {
   const entry = getCatalogEntry(type);
   if (!entry) return false;
@@ -384,7 +421,6 @@ export function canPlaceFurniture(
   }
 
   // Build occupied set excluding the item being moved, skipping background tile rows
-  const excluded = typeof excludeUid === 'string' ? new Set([excludeUid]) : excludeUid;
   const occupied = getPlacementBlockedTiles(layout.furniture, excluded);
 
   // If this item can be placed on surfaces, build set of desk tiles to exclude from collision

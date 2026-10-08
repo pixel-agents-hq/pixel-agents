@@ -13,6 +13,7 @@ import { transport } from '../../transport/index.js';
 import { getColorizedSprite } from '../colorize.js';
 import {
   canPlaceFurniture,
+  furnitureAt,
   getWallPlacementRow,
   planFurnitureMove,
 } from '../editor/editorActions.js';
@@ -495,18 +496,8 @@ export function OfficeCanvas({
               tile
             ) {
               // Copy modes (type or colour): pointer over furniture, crosshair elsewhere
-              const layout = officeState.getLayout();
-              const hitFurniture = layout.furniture.find((f) => {
-                const entry = getCatalogEntry(f.type);
-                if (!entry) return false;
-                return (
-                  tile.col >= f.col &&
-                  tile.col < f.col + entry.footprintW &&
-                  tile.row >= f.row &&
-                  tile.row < f.row + entry.footprintH
-                );
-              });
-              canvas.style.cursor = hitFurniture ? 'pointer' : 'crosshair';
+              const hit = furnitureAt(officeState.getLayout(), tile.col, tile.row);
+              canvas.style.cursor = hit ? 'pointer' : 'crosshair';
             } else if (
               (editorState.activeTool === EditTool.SELECT ||
                 (editorState.activeTool === EditTool.FURNITURE_PLACE &&
@@ -514,18 +505,8 @@ export function OfficeCanvas({
               tile
             ) {
               // Check if hovering over furniture
-              const layout = officeState.getLayout();
-              const hitFurniture = layout.furniture.find((f) => {
-                const entry = getCatalogEntry(f.type);
-                if (!entry) return false;
-                return (
-                  tile.col >= f.col &&
-                  tile.col < f.col + entry.footprintW &&
-                  tile.row >= f.row &&
-                  tile.row < f.row + entry.footprintH
-                );
-              });
-              canvas.style.cursor = hitFurniture ? 'grab' : 'crosshair';
+              const hit = furnitureAt(officeState.getLayout(), tile.col, tile.row);
+              canvas.style.cursor = hit ? 'grab' : 'crosshair';
             } else {
               canvas.style.cursor = 'crosshair';
             }
@@ -631,21 +612,7 @@ export function OfficeCanvas({
         (editorState.activeTool === EditTool.FURNITURE_PLACE &&
           editorState.selectedFurnitureType === '');
       if (actAsSelect && tile) {
-        const layout = officeState.getLayout();
-        // Find all furniture at clicked tile, prefer surface items (on top of desks)
-        let hitFurniture = null as (typeof layout.furniture)[0] | null;
-        for (const f of layout.furniture) {
-          const entry = getCatalogEntry(f.type);
-          if (!entry) continue;
-          if (
-            tile.col >= f.col &&
-            tile.col < f.col + entry.footprintW &&
-            tile.row >= f.row &&
-            tile.row < f.row + entry.footprintH
-          ) {
-            if (!hitFurniture || entry.canPlaceOnSurfaces) hitFurniture = f;
-          }
-        }
+        const hitFurniture = furnitureAt(officeState.getLayout(), tile.col, tile.row);
         if (hitFurniture) {
           // Start drag — record offset from furniture's top-left. Alt at press
           // time means "drag out a copy"; mousemove keeps it in sync after that.
