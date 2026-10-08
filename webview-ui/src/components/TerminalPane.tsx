@@ -80,6 +80,10 @@ export function TerminalPane({
   isActiveRef.current = isActive;
   const registerInputRef = useRef(onRegisterInput);
   registerInputRef.current = onRegisterInput;
+  // Read only when the terminal first opens — as a dependency, flipping it
+  // would dispose the terminal and reconnect the socket for nothing.
+  const autoFocusRef = useRef(autoFocus);
+  autoFocusRef.current = autoFocus;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -671,7 +675,7 @@ export function TerminalPane({
       // here.
       if (!term.element) {
         term.open(host);
-        if (autoFocus) term.focus();
+        if (autoFocusRef.current) term.focus();
       }
       try {
         fit.fit();
@@ -722,7 +726,7 @@ export function TerminalPane({
       termRef.current = null;
       fitRef.current = null;
     };
-  }, [agentId, fontSizePx, autoFocus]);
+  }, [agentId, fontSizePx]);
 
   // Becoming visible: the pane had no dimensions while hidden, so re-fit and
   // focus now that it does.
