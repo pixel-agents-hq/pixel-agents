@@ -4,8 +4,6 @@ import {
   CAMERA_FOLLOW_LERP,
   CAMERA_FOLLOW_SNAP_THRESHOLD,
   PAN_MARGIN_FRACTION,
-  TOUCH_TAP_MAX_DURATION_MS,
-  TOUCH_TAP_MAX_MOVE_PX,
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_SCROLL_THRESHOLD,
@@ -27,6 +25,7 @@ import { renderFrame } from '../engine/renderer.js';
 import { getCatalogEntry, isRotatable } from '../layout/furnitureCatalog.js';
 import { EditTool, TILE_SIZE } from '../types.js';
 import { computeNormalModeCursor } from './officeCanvasCursor.js';
+import { useCanvasTouchGestures } from './useCanvasTouchGestures.js';
 
 interface OfficeCanvasProps {
   officeState: OfficeState;
@@ -86,28 +85,6 @@ export function OfficeCanvas({
   const isEraseDraggingRef = useRef(false);
   // Zoom scroll accumulator for trackpad pinch sensitivity
   const zoomAccumulatorRef = useRef(0);
-  // Touch gesture state (one-finger pan / two-finger pinch / tap detection).
-  // 'pending-tap' promotes to 'pan' once the finger travels past the slop.
-  const touchRef = useRef<{
-    mode: 'none' | 'pending-tap' | 'pan' | 'pinch';
-    startX: number;
-    startY: number;
-    startTime: number;
-    panX: number;
-    panY: number;
-    pinchStartDist: number;
-    pinchStartZoom: number;
-  }>({
-    mode: 'none',
-    startX: 0,
-    startY: 0,
-    startTime: 0,
-    panX: 0,
-    panY: 0,
-    pinchStartDist: 0,
-    pinchStartZoom: 1,
-  });
-
   // Clamp pan so the map edge can't go past a margin inside the viewport
   const clampPan = useCallback(
     (px: number, py: number): { x: number; y: number } => {
@@ -571,8 +548,7 @@ export function OfficeCanvas({
       if (e.button === 1) {
         e.preventDefault();
         // Break camera follow + greeter centering on manual pan
-        officeState.cameraFollowId = null;
-        officeState.cancelGreeterCamera();
+        officeState.breakCameraFollow();
         isPanningRef.current = true;
         panStartRef.current = {
           mouseX: e.clientX,
@@ -897,8 +873,7 @@ export function OfficeCanvas({
       } else {
         // Pan via trackpad two-finger scroll or mouse wheel
         const dpr = window.devicePixelRatio || 1;
-        officeState.cameraFollowId = null;
-        officeState.cancelGreeterCamera();
+        officeState.breakCameraFollow();
         panRef.current = clampPan(
           panRef.current.x - e.deltaX * dpr,
           panRef.current.y - e.deltaY * dpr,
@@ -917,130 +892,17 @@ export function OfficeCanvas({
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, [handleWheel]);
 
-  // Touch: one-finger pan, two-finger pinch zoom, short tap = click. Native
-  // listeners for the same reason as wheel — React registers touch handlers
-  // passively, and we must preventDefault so the browser neither scrolls nor
-  // synthesizes a duplicate mouse click after our own tap handling.
-  //
-  // Edit mode is deliberately left to the browser's synthesized mouse events:
-  // a tap there lands as mousedown/mouseup and drives select/paint through the
-  // existing handlers. (Touch *drags* don't paint — mobile hides the editor.)
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const touchDist = (a: Touch, b: Touch) =>
-      Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-
-    const midpoint = (a: Touch, b: Touch) => ({
-      clientX: (a.clientX + b.clientX) / 2,
-      clientY: (a.clientY + b.clientY) / 2,
-    });
-
-    const anchorPan = (t: { clientX: number; clientY: number }) => {
-      const touch = touchRef.current;
-      touch.startX = t.clientX;
-      touch.startY = t.clientY;
-      touch.panX = panRef.current.x;
-      touch.panY = panRef.current.y;
-    };
-
-    const onTouchStart = (e: TouchEvent) => {
-      unlockAudio();
-      if (isEditMode) return;
-      e.preventDefault();
-      const touch = touchRef.current;
-      if (e.touches.length === 1) {
-        touch.mode = 'pending-tap';
-        touch.startTime = performance.now();
-        anchorPan(e.touches[0]);
-      } else if (e.touches.length === 2) {
-        // Second finger down: any pending tap/pan becomes a pinch.
-        touch.mode = 'pinch';
-        touch.pinchStartDist = touchDist(e.touches[0], e.touches[1]);
-        touch.pinchStartZoom = zoom;
-        anchorPan(midpoint(e.touches[0], e.touches[1]));
-      }
-    };
-
-    const applyTouchPan = (clientX: number, clientY: number) => {
-      const touch = touchRef.current;
-      const dpr = window.devicePixelRatio || 1;
-      panRef.current = clampPan(
-        touch.panX + (clientX - touch.startX) * dpr,
-        touch.panY + (clientY - touch.startY) * dpr,
-      );
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (isEditMode) return;
-      e.preventDefault();
-      const touch = touchRef.current;
-
-      if (touch.mode === 'pinch' && e.touches.length >= 2) {
-        const dist = touchDist(e.touches[0], e.touches[1]);
-        const proposed = Math.round(touch.pinchStartZoom * (dist / touch.pinchStartDist));
-        const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, proposed));
-        if (newZoom !== zoom) onZoomChange(newZoom);
-        // Two-finger drag also pans, tracked from the midpoint.
-        const mid = midpoint(e.touches[0], e.touches[1]);
-        applyTouchPan(mid.clientX, mid.clientY);
-        return;
-      }
-
-      if (e.touches.length !== 1) return;
-      const t = e.touches[0];
-      if (touch.mode === 'pending-tap') {
-        const moved = Math.hypot(t.clientX - touch.startX, t.clientY - touch.startY);
-        if (moved > TOUCH_TAP_MAX_MOVE_PX) {
-          touch.mode = 'pan';
-          officeState.cameraFollowId = null;
-        }
-      }
-      if (touch.mode === 'pan') {
-        applyTouchPan(t.clientX, t.clientY);
-      }
-    };
-
-    const onTouchEnd = (e: TouchEvent) => {
-      if (isEditMode) return;
-      e.preventDefault();
-      const touch = touchRef.current;
-
-      if (e.touches.length === 0) {
-        if (
-          touch.mode === 'pending-tap' &&
-          performance.now() - touch.startTime <= TOUCH_TAP_MAX_DURATION_MS
-        ) {
-          const t = e.changedTouches[0];
-          if (t) performTap(t.clientX, t.clientY);
-        }
-        touch.mode = 'none';
-        return;
-      }
-
-      // Pinch finger lifted: continue as a plain pan from the remaining finger.
-      if (e.touches.length === 1) {
-        touch.mode = 'pan';
-        anchorPan(e.touches[0]);
-      }
-    };
-
-    const onTouchCancel = () => {
-      touchRef.current.mode = 'none';
-    };
-
-    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
-    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
-    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
-    canvas.addEventListener('touchcancel', onTouchCancel);
-    return () => {
-      canvas.removeEventListener('touchstart', onTouchStart);
-      canvas.removeEventListener('touchmove', onTouchMove);
-      canvas.removeEventListener('touchend', onTouchEnd);
-      canvas.removeEventListener('touchcancel', onTouchCancel);
-    };
-  }, [isEditMode, zoom, onZoomChange, clampPan, panRef, officeState, performTap]);
+  // Touch: one-finger pan, two-finger pinch zoom, short tap = click.
+  useCanvasTouchGestures({
+    canvasRef,
+    enabled: !isEditMode,
+    zoom,
+    onZoomChange,
+    panRef,
+    clampPan,
+    onManualPan: () => officeState.breakCameraFollow(),
+    onTap: performTap,
+  });
 
   // Prevent default middle-click browser behavior (auto-scroll)
   const handleAuxClick = useCallback((e: React.MouseEvent) => {
