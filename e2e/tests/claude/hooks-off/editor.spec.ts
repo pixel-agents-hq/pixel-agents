@@ -4,10 +4,13 @@ import path from 'path';
 
 import { expect, test } from '../../../fixtures/pixel-agents';
 import {
+  clickTile,
+  dragOnCanvas,
   dropFurnitureAt,
   endStroke,
   enterEditMode,
   eraseTile,
+  expectStays,
   furniturePanel,
   paintTile,
   pressEditorKey,
@@ -19,30 +22,40 @@ import {
   selectFurnitureAt,
   selectFurnitureTool,
   selectWallTool,
-  type TestHooksWindow,
   TILE,
   undo,
 } from '../../../helpers/editor';
 import { buildSeedLayout } from '../../../helpers/layout-seed';
 
 /**
- * e2e coverage for the layout editor's erase semantics and stroke-based undo.
+ * e2e coverage for the layout editor: erase semantics, stroke-based undo,
+ * desks carrying what stands on them, and the colour eyedropper.
  *
- * Two behaviours are pinned here:
  *  1. Erase clears a tile to VOID *and* deletes any furniture whose footprint
- *     the stroke passes through (removeFurnitureAt in editorActions.ts).
+ *     the stroke passes through (eraseTile in editorActions.ts).
  *  2. One click-drag = one undo entry for every drag-painting tool — floor,
- *     wall, and erase (applyStrokeEdit in useEditorActions.ts). Carpet already
- *     had this and is covered in carpet.spec.ts.
+ *     wall, and erase (the 'stroke' undo session). Carpet is covered in
+ *     carpet.spec.ts.
+ *  3. A desk's riders move, rotate and get copied with it.
+ *  4. The colour eyedropper reads the item a click selects, and is its own
+ *     undo entry.
  *
- * Tiles render only on the canvas (no DOM), so assertions read state through
- * window.__pixelAgentsTestHooks.getTiles() / getFurniture() — the same
- * canvas-state approach the carpet and pets specs use. Tool selection goes
- * through the real toolbar; tile targeting goes through the editorTileAction
- * hook, which bypasses ONLY canvas pixel→tile geometry. Stroke boundaries are
- * NOT bypassed — endStroke() dispatches a real mouseup on the canvas, because
- * "every edit collapses into one undo entry" is precisely the regression these
- * tests exist to catch.
+ * Tiles and furniture render only on the canvas (no DOM), so assertions read
+ * state through window.__pixelAgentsTestHooks.getTiles() / getFurniture() — the
+ * same canvas-state approach the carpet and pets specs use.
+ *
+ * How much each test bypasses, from least to most:
+ *  - Selecting, dragging and Alt-drag copying a placed item go through the REAL
+ *    canvas (clickTile / dragOnCanvas): page.mouse presses at a tile's projected
+ *    centre and OfficeCanvas's own handlers hit-test, sample Alt and drop.
+ *  - Painting and erasing go through the editorTileAction / editorEraseAction
+ *    hooks, which skip ONLY canvas pixel→tile geometry. Stroke boundaries are
+ *    real: endStroke() dispatches a mouseup on the canvas, because "every edit
+ *    collapses into one undo entry" is exactly the regression those tests catch.
+ *  - The drop-rule tests (refused moves/copies, undo of a copied group) use the
+ *    editorDrop hook, which skips the WHOLE drag gesture — press, movement, the
+ *    Alt modifier and geometry — and runs only the drop rules. The real gesture
+ *    is pinned separately by the canvas drag tests above.
  *
  * hooks-off lane: the layout editor has no hook dependency; lighter fixture.
  */
@@ -62,12 +75,13 @@ function firstDefaultFurnitureType(): string {
   return type;
 }
 
+/** Furniture placed in the layout — the one count every test here reads. */
+async function furnitureCount(frame: Frame): Promise<number> {
+  return (await readFurniture(frame)).length;
+}
+
 async function waitForFurnitureCount(frame: Frame, count: number): Promise<void> {
-  await frame.waitForFunction(
-    (n) => (window as TestHooksWindow).__pixelAgentsTestHooks?.getFurnitureCount?.() === n,
-    count,
-    { timeout: 10_000 },
-  );
+  await expect.poll(() => furnitureCount(frame), { timeout: 10_000 }).toBe(count);
 }
 
 test.describe('Layout editor — erase', () => {
@@ -350,6 +364,12 @@ test.describe('Layout editor — stroke undo', () => {
 const DESK = 'DESK_FRONT'; // 3x2, rotates to DESK_SIDE (1x4)
 const SURFACE_ITEM = 'PC_FRONT_OFF'; // 1x2, sits on the desk at local (1,0)
 
+/** Where a placed item is, as "col,row" (undefined when it's gone). */
+async function positionOf(frame: Frame, uid: string): Promise<string | undefined> {
+  const item = (await readFurniture(frame)).find((f) => f.uid === uid);
+  return item && `${item.col},${item.row}`;
+}
+
 test.describe('Layout editor — desks carry what stands on them', () => {
   test.use({
     seedLayout: (() => {
@@ -372,9 +392,11 @@ test.describe('Layout editor — desks carry what stands on them', () => {
     await enterEditMode(frame);
 
     // 3 rows down: the desk's new footprint covers the PC's old tiles, which is
-    // exactly the overlap that used to make a short drag impossible.
-    narrator.step('dragging the desk from (3,3) to (3,6)');
-    await dropFurnitureAt(frame, 'seed-desk', 3, 6);
+    // exactly the overlap that used to make a short drag impossible. A real
+    // canvas drag: grab the desk by (3,4) — a tile only the desk covers — and
+    // release three rows lower, so its top-left lands on (3,6).
+    narrator.step('dragging the desk on the canvas from its tile (3,4) to (3,7)');
+    await dragOnCanvas(frame, [3, 4], [3, 7]);
 
     await expect
       .poll(async () => {
@@ -396,13 +418,18 @@ test.describe('Layout editor — desks carry what stands on them', () => {
 
     // The desk alone would fit at row 10 (3x2 → rows 10-11); the PC riding it
     // would not (rows 10-11 too, but the group is validated as one).
-    narrator.step('dragging the desk to (3,11) — the bottom edge of a 12-row grid');
+    narrator.step('dropping the desk at (3,11) — the bottom edge of a 12-row grid');
     await dropFurnitureAt(frame, 'seed-desk', 3, 11);
 
-    const furniture = await readFurniture(frame);
-    const desk = furniture.find((f) => f.uid === 'seed-desk');
-    expect(`${desk?.col},${desk?.row}`).toBe('3,3');
+    await expectStays(() => positionOf(frame, 'seed-desk'), '3,3');
     narrator.check('the desk stayed put — the whole group has to fit, not just the desk');
+
+    // Positive control: the same drop path does move the group when it fits,
+    // so the refusal above wasn't the drop silently never running.
+    narrator.step('dropping the desk at (3,6), where the group fits');
+    await dropFurnitureAt(frame, 'seed-desk', 3, 6);
+    await expect.poll(() => positionOf(frame, 'seed-desk')).toBe('3,6');
+    narrator.check('the fitting drop moved it — only the off-grid one was refused');
   });
 
   test('rotating a desk turns the item standing on it @area:editor', async ({ pixelAgents }) => {
@@ -440,8 +467,10 @@ test.describe('Layout editor — desks carry what stands on them', () => {
     await waitForFurnitureCount(frame, 2);
     await enterEditMode(frame);
 
-    narrator.step('alt-dragging the desk from (3,3) to (3,7)');
-    await dropFurnitureAt(frame, 'seed-desk', 3, 7, { duplicate: true });
+    // A real canvas drag with Alt held: grab the desk by (3,4), release four
+    // rows lower, so the copy's top-left lands on (3,7).
+    narrator.step('alt-dragging the desk on the canvas from its tile (3,4) to (3,8)');
+    await dragOnCanvas(frame, [3, 4], [3, 8], { alt: true });
 
     await waitForFurnitureCount(frame, 4);
     narrator.check('2 → 4 items: the desk AND the PC on it were copied, not just the desk');
@@ -473,21 +502,16 @@ test.describe('Layout editor — desks carry what stands on them', () => {
     // One column right overlaps the desk's own solid row (the desk's top row is
     // a background row, so only row 4 blocks). A move vacates those tiles and
     // fits; a copy leaves the original standing on them.
-    narrator.step('alt-dragging the desk one column right, over its own tiles');
+    narrator.step('dropping a copy of the desk one column right, over its own tiles');
     await dropFurnitureAt(frame, 'seed-desk', 4, 3, { duplicate: true });
 
-    expect((await readFurniture(frame)).length).toBe(2);
+    await expectStays(() => furnitureCount(frame), 2);
     narrator.check('no copy was made — the original still blocks the tiles it sits on');
 
-    narrator.step('dragging the desk to the same (4,3) without alt');
+    narrator.step('dropping the desk at the same (4,3) as a move');
     await dropFurnitureAt(frame, 'seed-desk', 4, 3);
 
-    await expect
-      .poll(async () => {
-        const desk = (await readFurniture(frame)).find((f) => f.uid === 'seed-desk');
-        return desk && `${desk.col},${desk.row}`;
-      })
-      .toBe('4,3');
+    await expect.poll(() => positionOf(frame, 'seed-desk')).toBe('4,3');
     narrator.check('the plain move lands there — only the copy is blocked by the original');
   });
 
@@ -498,7 +522,7 @@ test.describe('Layout editor — desks carry what stands on them', () => {
     await waitForFurnitureCount(frame, 2);
     await enterEditMode(frame);
 
-    narrator.step('alt-dragging the desk from (3,3) to (3,7)');
+    narrator.step('dropping a copy of the desk at (3,7)');
     await dropFurnitureAt(frame, 'seed-desk', 3, 7, { duplicate: true });
     await waitForFurnitureCount(frame, 4);
 
@@ -538,5 +562,61 @@ test.describe('Layout editor — desks carry what stands on them', () => {
       .poll(async () => (await readFurniture(frame)).find((f) => f.uid === 'seed-desk')?.type)
       .toBe('DESK_SIDE');
     narrator.check('the desk rotated — the click left it selected, only the panel went away');
+  });
+});
+
+/**
+ * The colour eyedropper (the Copy button on a selected item's colour sliders):
+ * the next canvas click copies the clicked item's colour onto the selection.
+ */
+const DESK_COLOR = { h: 10, s: 20, b: 0, c: 0 };
+const PC_COLOR = { h: 200, s: 50, b: 10, c: 0 };
+
+test.describe('Layout editor — colour eyedropper', () => {
+  test.use({
+    seedLayout: (() => {
+      const layout = buildSeedLayout({ cols: 12, rows: 12 });
+      layout.furniture = [
+        { uid: 'seed-desk', type: DESK, col: 3, row: 3, color: DESK_COLOR },
+        { uid: 'seed-pc', type: SURFACE_ITEM, col: 4, row: 3, color: PC_COLOR },
+      ];
+      return layout;
+    })(),
+  });
+
+  test('eyedropping the item on a desk copies its colour, as its own undo entry @area:editor', async ({
+    pixelAgents,
+  }) => {
+    const { frame, narrator } = pixelAgents;
+    const deskColor = async () =>
+      (await readFurniture(frame)).find((f) => f.uid === 'seed-desk')?.color;
+
+    narrator.step('waiting for the coloured desk + PC to load');
+    await waitForFurnitureCount(frame, 2);
+    await enterEditMode(frame);
+
+    narrator.step('selecting the desk by clicking its own tile (3,4)');
+    await selectFurnitureAt(frame, 3, 4);
+
+    // A slider edit first, so the eyedrop has a slider run it could wrongly
+    // fold into.
+    narrator.step('toggling Colorize on the desk’s sliders');
+    await frame.locator('button[title="Toggle colorize mode"]').click();
+    await expect.poll(deskColor).toEqual({ ...DESK_COLOR, colorize: true });
+    narrator.check('the desk colour is now colorized');
+
+    narrator.step('arming Copy and clicking (4,3) — the PC standing on the desk');
+    await frame.locator('button[title^="Copy color from another item"]').click();
+    await clickTile(frame, 4, 3);
+
+    // Both the desk and the PC cover (4,3); the eyedropper must pick the PC on
+    // top, the same item a click there selects.
+    await expect.poll(deskColor).toEqual(PC_COLOR);
+    narrator.check('the desk took the PC’s colour, not its own');
+
+    narrator.step('clicking Undo once');
+    await undo(frame);
+    await expect.poll(deskColor).toEqual({ ...DESK_COLOR, colorize: true });
+    narrator.check('only the eyedrop reverted — the earlier Colorize edit is still there');
   });
 });
