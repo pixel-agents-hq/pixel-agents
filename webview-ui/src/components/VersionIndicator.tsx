@@ -7,6 +7,9 @@ import { Button } from './ui/Button.js';
 interface VersionIndicatorProps {
   currentVersion: string;
   lastSeenVersion: string;
+  /** Never show the "Updated to vX" notice -- a read-only office can't record
+   *  that it was seen, so it would come back on every load. */
+  hideUpdateNotice: boolean;
   onDismiss: () => void;
   onOpenChangelog: () => void;
 }
@@ -14,6 +17,7 @@ interface VersionIndicatorProps {
 export function VersionIndicator({
   currentVersion,
   lastSeenVersion,
+  hideUpdateNotice,
   onDismiss,
   onOpenChangelog,
 }: VersionIndicatorProps) {
@@ -23,7 +27,7 @@ export function VersionIndicator({
 
   const currentMajorMinor = toMajorMinor(currentVersion);
   const isUnseen = currentMajorMinor !== lastSeenVersion;
-  const showUpdateNotice = isUnseen && !dismissed;
+  const showUpdateNotice = isUnseen && !dismissed && !hideUpdateNotice;
 
   // Start fade-out after auto-close delay, then fully dismiss after the transition
   useEffect(() => {

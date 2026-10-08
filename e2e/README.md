@@ -271,7 +271,7 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/standalone/hooks.spec.ts:137` — the tokened page shows the Intro and Install writes the hooks (Standalone / hooks consent)
 - `e2e/standalone/hooks.spec.ts:164` — an untokened spectator page never sees the consent dialog (Standalone / hooks consent)
 - `e2e/standalone/hooks.spec.ts:186` — an untokened spectator page shows no toolbar, only a View only label (Standalone / hooks consent)
-- `e2e/standalone/hooks.spec.ts:210` — the hooks checkbox reflects install state and its click is the consent grant (Standalone / hooks consent)
+- `e2e/standalone/hooks.spec.ts:213` — the hooks checkbox reflects install state and its click is the consent grant (Standalone / hooks consent)
 - `e2e/standalone/launch-drawer.spec.ts:42` — the server start directory is a badged host row that launches an agent labeled with it (Standalone / launch drawer)
 - `e2e/standalone/launch-drawer.spec.ts:94` — a Directory added in the modal launches an agent and is still there after a reload (Standalone / user-defined Directories)
 - `e2e/standalone/launch-drawer.spec.ts:149` — deleting a Directory drops its row and leaves its running agent alone (Standalone / user-defined Directories)

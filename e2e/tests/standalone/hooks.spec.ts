@@ -194,6 +194,9 @@ test.describe('Standalone / hooks consent', () => {
         await expect(spectator.getByRole('button', { name, exact: true })).toHaveCount(0);
       }
       await expect(spectator.getByText('View only', { exact: true })).toBeVisible();
+      // Its dismissal could never be recorded, so the update notice would
+      // return on every load -- a read-only office doesn't show it at all.
+      await expect(spectator.getByText(/^Updated to v/)).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
       await expect(page.getByText('View only', { exact: true })).toHaveCount(0);
     } finally {
