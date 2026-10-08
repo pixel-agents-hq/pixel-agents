@@ -513,6 +513,11 @@ Run: `npm run test:webview`.
 
 `e2e/` contains Playwright tests against a real VS Code Electron instance and a standalone Fastify server. CI runs the suite on Linux, macOS, and Windows in three shards at `--workers=1`. The generated [e2e inventory](e2e/README.md) is the source of truth for current specs, scenarios, and `@area:` coverage.
 
+**Running VS Code e2e locally needs explicit approval.** The VS Code specs (`e2e/tests/claude/**`) launch real VS Code windows one after another, which cover the screen and steal keyboard focus from whatever the user is typing in. Ask the user before running any of them, and when approved:
+
+- Run them **once, at the end of an implementation** — never as an intermediate check.
+- **Never from a subagent**: delegated work verifies with typecheck, lint, unit tests, and the standalone specs (`e2e/tests/standalone/**`, headless browser, no windows).
+
 **Mock claude**: Tests never invoke real `claude`. A bash script (`e2e/fixtures/mock-claude`) is copied into an isolated `bin/` and prepended to `PATH`. The scenario runner (`mock-claude-runner.cjs`) honors `claudeScenario(...).at(ms).appendJsonl(record).emitHook(event).holdOpenFor(ms).build()` to drive timed JSONL writes and hook events.
 
 **Authoring rules (normative)**: before writing a new spec, read `e2e/README.md` → "Mocking model & rules". It is the single source of truth for the process-boundary principle, the append-only transcript rule, the assert-on-visible-outcomes discipline, and the one standalone-server exception. New tests must follow that model.
