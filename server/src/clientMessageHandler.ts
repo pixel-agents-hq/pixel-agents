@@ -1,3 +1,4 @@
+import type { StateAdapter } from '../../core/src/adapter.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import { resendAgentActivity } from './agentActivityResend.js';
 import { buildAgentDiagnostics } from './agentDiagnostics.js';
@@ -335,6 +336,15 @@ export function handleClientMessage(
     }
 
     case 'setBypassPermissions': {
+      // Privileged: every agent launched afterwards runs with
+      // --dangerously-skip-permissions, so flipping it is acting on this
+      // machine. Refused the same way as the hooks toggle, and the refused
+      // client is told the real value.
+      if (!ctx.privileged) {
+        console.warn('[Pixel Agents] Ignoring setBypassPermissions from an unprivileged client.');
+        send(settingsSnapshot(adapter));
+        break;
+      }
       const enabled = msg.enabled as boolean;
       adapter?.setSetting(KEY_BYPASS_PERMISSIONS, enabled);
       break;
@@ -343,6 +353,14 @@ export function handleClientMessage(
     case 'saveDirectory':
     case 'removeDirectory':
     case 'requestDirectorySuggestions':
+      // Privileged: these write the machine-wide config, probe whether a path
+      // exists (saveDirectory's validation), and list project paths
+      // (suggestions) -- an unprivileged viewer could otherwise map the disk
+      // or rewrite the operator's Directories.
+      if (!ctx.privileged) {
+        console.warn(`[Pixel Agents] Ignoring ${String(msg.type)} from an unprivileged client.`);
+        break;
+      }
       // Shared with the VS Code adapter: same validation, same union, same
       // machine-wide config. Success rebroadcasts to every connected office
       // (store.broadcast fans out to all sockets); a rejection — and the
@@ -509,26 +527,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
 
   // 4. Settings (from adapter, with sensible defaults when adapter is absent)
   const cfg = readConfig();
-  const watchAllSessions = adapter?.getSetting(KEY_WATCH_ALL_SESSIONS, false) ?? false;
-  // settingsLoaded.hooksEnabled stays a single boolean carrying the CLAUDE
-  // provider's preference until the Settings UI grows a per-provider list —
-  // its sole webview reader is the hooks tooltip gate.
-  const hooksEnabled = getHooksEnabled(claudeProvider.id);
-  const showAreas = adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false;
-  send({
-    type: 'settingsLoaded',
-    soundEnabled: adapter?.getSetting(KEY_SOUND_ENABLED, true) ?? true,
-    lastSeenVersion: adapter?.getSetting(KEY_LAST_SEEN_VERSION, '') ?? '',
-    extensionVersion: process.env.PIXEL_AGENTS_VERSION ?? '',
-    watchAllSessions,
-    alwaysShowLabels: adapter?.getSetting(KEY_ALWAYS_SHOW_LABELS, false) ?? false,
-    ghostHeadlessAgents: adapter?.getSetting(KEY_GHOST_HEADLESS_AGENTS, false) ?? false,
-    hooksEnabled,
-    hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
-    externalAssetDirectories: cfg.externalAssetDirectories,
-    showAreas,
-    bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
-  });
+  const settings = settingsSnapshot(adapter);
+  const { watchAllSessions, hooksEnabled } = settings;
+  send(settings);
 
   // 4a. Actual install state, distinct from the hooksEnabled preference —
   // hooksEnabled defaults true while first-run consent is still pending. The
@@ -644,4 +645,29 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
       }
     }
   }
+}
+
+/**
+ * The settingsLoaded snapshot: sent on connect, and re-sent to a client whose
+ * privileged setting change was refused, so its optimistic toggle snaps back to
+ * the truth instead of showing a state the server never adopted.
+ */
+function settingsSnapshot(adapter: StateAdapter | undefined) {
+  return {
+    type: 'settingsLoaded',
+    soundEnabled: adapter?.getSetting(KEY_SOUND_ENABLED, true) ?? true,
+    lastSeenVersion: adapter?.getSetting(KEY_LAST_SEEN_VERSION, '') ?? '',
+    extensionVersion: process.env.PIXEL_AGENTS_VERSION ?? '',
+    watchAllSessions: adapter?.getSetting(KEY_WATCH_ALL_SESSIONS, false) ?? false,
+    alwaysShowLabels: adapter?.getSetting(KEY_ALWAYS_SHOW_LABELS, false) ?? false,
+    ghostHeadlessAgents: adapter?.getSetting(KEY_GHOST_HEADLESS_AGENTS, false) ?? false,
+    // A single boolean carrying the CLAUDE provider's preference until the
+    // Settings UI grows a per-provider list -- its sole webview reader is the
+    // hooks tooltip gate.
+    hooksEnabled: getHooksEnabled(claudeProvider.id),
+    hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
+    externalAssetDirectories: readConfig().externalAssetDirectories,
+    showAreas: adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false,
+    bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+  } as const;
 }

@@ -841,6 +841,24 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     expect(adapter.getSetting('pixel-agents.bypassPermissions', true)).toBe(false);
   });
 
+  it('refuses setBypassPermissions from an unprivileged client and tells it the truth', () => {
+    // The escalation this pins: an untokened viewer (LAN, DNS-rebound page)
+    // flips the posture, and the operator's NEXT launch from a tokened tab runs
+    // with --dangerously-skip-permissions.
+    const { manager, spawnArgs } = workingPtyManager();
+    const runtime = new AgentRuntime(store, claudeProvider);
+
+    dispatch({ type: 'setBypassPermissions', enabled: true }, ctx({ privileged: false }));
+
+    expect(store.getAdapter()!.getSetting('pixel-agents.bypassPermissions', false)).toBe(false);
+    // The optimistic toggle snaps back: the refused client gets the real value.
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: 'settingsLoaded', bypassPermissions: false }),
+    );
+    dispatch({ type: 'launchAgent' }, ctx({ runtime, ptyManager: manager }));
+    expect(spawnArgs[0]).not.toContain('--dangerously-skip-permissions');
+  });
+
   it('webviewReady reports the persisted permission posture in settingsLoaded', () => {
     dispatch({ type: 'setBypassPermissions', enabled: true }, ctx());
     sent = [];
@@ -892,6 +910,24 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
       source: 'user',
     });
     expect(readConfig().directories).toEqual([{ name: 'Side Project', path: target }]);
+  });
+
+  it('ignores every Directory message from an unprivileged client', () => {
+    // saveDirectory's validation is an exists-oracle for any path, suggestions
+    // list project paths, and both mutations rewrite the machine-wide config.
+    const { manager } = workingPtyManager();
+    const target = path.join(tempHome, 'side-project');
+    fs.mkdirSync(target);
+    const untokened = ctx({ ptyManager: manager, privileged: false });
+
+    dispatch({ type: 'saveDirectory', name: 'Side Project', path: target }, untokened);
+    dispatch({ type: 'saveDirectory', name: 'Probe', path: path.join(tempHome, 'x') }, untokened);
+    dispatch({ type: 'removeDirectory', path: target }, untokened);
+    dispatch({ type: 'requestDirectorySuggestions' }, untokened);
+
+    expect(sent).toEqual([]);
+    expect(broadcasts).toEqual([]);
+    expect(readConfig().directories).toEqual([]);
   });
 
   it('saveDirectory with an invalid path replies directoryRejected and persists nothing', () => {
