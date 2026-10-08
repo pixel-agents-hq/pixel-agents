@@ -16,6 +16,7 @@ function contentTypeFor(filePath: string): string {
   if (filePath.endsWith('.js')) return 'text/javascript; charset=utf-8';
   if (filePath.endsWith('.css')) return 'text/css; charset=utf-8';
   if (filePath.endsWith('.png')) return 'image/png';
+  if (filePath.endsWith('.webmanifest')) return 'application/manifest+json';
   return 'application/octet-stream';
 }
 
@@ -35,7 +36,8 @@ async function buildSubpathPreview(base: string): Promise<string> {
 
 async function startStaticServer(rootDir: string, mountPath: string): Promise<http.Server> {
   const server = http.createServer((req, res) => {
-    const url = req.url ?? '/';
+    // Query strings (icon cache-busters like ?v=2) don't name files.
+    const url = (req.url ?? '/').split('?')[0];
     if (!url.startsWith(mountPath)) {
       res.writeHead(404).end('Not Found');
       return;
@@ -106,6 +108,18 @@ test('production build stays accessible from a fixed subpath', async () => {
 
     await assertUrlOk(`${origin}/sub/assets/asset-index.json`);
     await assertUrlOk(`${origin}/sub/assets/furniture-catalog.json`);
+
+    // The web-app manifest is copied verbatim from public/, so its icon URLs
+    // must resolve relative to the manifest itself — a root-absolute src
+    // 404s once the app is mounted under a subpath.
+    const manifestHref = /<link rel="manifest" href="([^"]+)"/.exec(html)?.[1];
+    assert.ok(manifestHref, 'expected a <link rel="manifest">');
+    const manifestUrl = new URL(manifestHref, indexUrl).toString();
+    const manifest = JSON.parse(await fetchText(manifestUrl)) as { icons: Array<{ src: string }> };
+    assert.ok(manifest.icons.length > 0, 'expected manifest icons');
+    for (const icon of manifest.icons) {
+      await assertUrlOk(new URL(icon.src, manifestUrl).toString());
+    }
 
     const assetsDir = path.join(outDir, 'assets');
     const staticAssets = readdirSync(assetsDir).filter((entry) => entry.endsWith('.json'));
