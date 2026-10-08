@@ -451,6 +451,24 @@ export const TERMINAL_LONG_PRESS_MS = 500;
 /** Vertical gap between the selection's top row and the floating copy pill
  *  hovering above it (clears the start handle's knob). */
 export const TERMINAL_COPY_PILL_GAP_PX = 56;
+/** The copy pill's center stays at least this far from the pane's left and
+ *  right edges (about half the pill's width), so it is never clipped. */
+export const TERMINAL_COPY_PILL_EDGE_INSET_X_PX = 44;
+/** The copy pill's top stays at least this far above the pane's bottom edge
+ *  (its own height plus a margin). */
+export const TERMINAL_COPY_PILL_BOTTOM_CLEARANCE_PX = 48;
+/** The copy pill's top never goes above this; a pill that would (selection
+ *  near the top of the pane) drops below the selection instead. */
+export const TERMINAL_COPY_PILL_MIN_TOP_PX = 4;
+/** Gap below the selection's last row when the pill drops beneath it (clears
+ *  the end handle's knob). */
+export const TERMINAL_COPY_PILL_BELOW_OFFSET_PX = 16;
+/** Width of a selection handle's touch strip, centered on the selection edge.
+ *  Feeds the `.terminal-sel-handle` CSS through --sel-handle-w. */
+export const TERMINAL_SEL_HANDLE_WIDTH_PX = 24;
+/** Side of a selection handle's square knob (above the start bar, below the
+ *  end bar). Feeds the `.terminal-sel-handle` CSS through --sel-knob. */
+export const TERMINAL_SEL_HANDLE_KNOB_PX = 12;
 /** Copy-flowing (flowCopy.ts) judges "the next word would not have fit on
  *  the row above" against `cols` minus this: Claude Code wraps prose a few
  *  columns short of the terminal width (its own gutters). Too small and real
@@ -462,6 +480,17 @@ export const TERMINAL_FLICK_DECAY_PER_MS = 0.998;
 /** Release velocity (px/ms) below which no flick starts and at which a
  *  running flick stops. */
 export const TERMINAL_FLICK_MIN_VELOCITY_PX_PER_MS = 0.05;
+/** Exponential smoothing of the touch-scroll velocity: weight of the newest
+ *  move's sample (the running value keeps the rest). The release velocity
+ *  comes from the last move event, which is noisy on its own. */
+export const TERMINAL_FLICK_VELOCITY_SMOOTHING = 0.8;
+/** xterm's cell-grid element: hit-testing, row height and the selection
+ *  chrome all measure THIS rect (not the host, which keeps up to a row of
+ *  slack below the grid after fit). */
+export const XTERM_SCREEN_SELECTOR = '.xterm-screen';
+/** Class of xterm's hidden input textarea — focused while typing into a
+ *  terminal (see isTypingInTerminal). */
+export const XTERM_HELPER_TEXTAREA_CLASS = 'xterm-helper-textarea';
 /** Holding a card motionless this long arms drag-to-reorder in the mobile bar. */
 export const CARD_REORDER_LONG_PRESS_MS = 400;
 /** localStorage key for the mobile bar's custom card order (per device — a

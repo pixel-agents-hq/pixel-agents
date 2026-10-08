@@ -8,6 +8,12 @@ export interface TouchPoint {
   clientY: number;
 }
 
+/** A TouchList, structurally — what findTouch searches. */
+export interface TouchListLike<T extends TouchPoint = TouchPoint> {
+  length: number;
+  [index: number]: T;
+}
+
 /**
  * The touch with `id` in `list`, or null. Every gesture here tracks ONE
  * finger by identifier rather than reading `touches[0]`: with a second
@@ -15,10 +21,7 @@ export interface TouchPoint {
  * be the wrong finger, and bailing on `touches.length !== 1` stalls the
  * gesture outright.
  */
-export function findTouch<T extends TouchPoint>(
-  list: { length: number; [index: number]: T },
-  id: number,
-): T | null {
+export function findTouch<T extends TouchPoint>(list: TouchListLike<T>, id: number): T | null {
   for (let i = 0; i < list.length; i++) {
     if (list[i].identifier === id) return list[i];
   }
