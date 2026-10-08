@@ -11,6 +11,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { TERMINAL_URL_PATTERN } from '../src/constants.js';
 import type { TerminalBufferLike } from '../src/terminal/terminalLinks.js';
 import { terminalLinkOpener, urlAtCell } from '../src/terminal/terminalLinks.js';
 
@@ -112,5 +113,18 @@ describe('urlAtCell', () => {
 
   it('only matches http(s) URLs', () => {
     expect(urlAtCell(bufferOf([{ text: 'javascript:alert(1)' }]), 0, 3)).toBeNull();
+  });
+});
+
+describe('TERMINAL_URL_PATTERN', () => {
+  it('survives @xterm/addon-web-links rebuilding it with a g flag appended', () => {
+    // The addon does `new RegExp(re.source, (re.flags || '') + 'g')` -- a
+    // pattern that already carried `g` would throw on the duplicate flag.
+    expect(TERMINAL_URL_PATTERN.global).toBe(false);
+    const rebuilt = new RegExp(
+      TERMINAL_URL_PATTERN.source,
+      (TERMINAL_URL_PATTERN.flags || '') + 'g',
+    );
+    expect('see https://example.com/a, then'.match(rebuilt)).toEqual(['https://example.com/a']);
   });
 });

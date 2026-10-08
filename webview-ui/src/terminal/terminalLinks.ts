@@ -74,7 +74,7 @@ export function urlAtCell(buffer: TerminalBufferLike, row: number, col: number):
     }
   }
   if (tapOffset < 0) return null;
-  for (const match of text.matchAll(TERMINAL_URL_PATTERN)) {
+  for (const match of text.matchAll(new RegExp(TERMINAL_URL_PATTERN.source, 'g'))) {
     const start = match.index;
     if (tapOffset >= start && tapOffset < start + match[0].length) return match[0];
   }

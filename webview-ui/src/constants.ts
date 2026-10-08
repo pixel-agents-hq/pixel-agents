@@ -372,10 +372,15 @@ export const TERMINAL_RESIZE_DEBOUNCE_MS = 100;
 export const TERMINAL_LINK_PROTOCOLS: readonly string[] = ['http:', 'https:'];
 /** window.open features for terminal links: no opener handle, no Referer. */
 export const TERMINAL_LINK_WINDOW_FEATURES = 'noopener,noreferrer';
-/** Plain-URL pattern for touch taps -- the same one @xterm/addon-web-links
- *  matches for mouse clicks, so a URL that is clickable is also tappable. */
+/** THE plain-URL pattern of the terminal pane: TerminalPane hands it to
+ *  @xterm/addon-web-links (`urlRegex`) for mouse clicks and urlAtCell matches
+ *  it for touch taps, so a URL that is clickable is exactly one that is
+ *  tappable. Equivalent to the addon's built-in strictUrlRegex. Deliberately
+ *  NOT global: the addon rebuilds it as `new RegExp(source, flags + 'g')`, so
+ *  a `g` here would throw on the duplicate flag; matchAll callers make their
+ *  own global copy. */
 export const TERMINAL_URL_PATTERN =
-  /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/g;
+  /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/;
 /** Largest OSC 52 clipboard write the terminal honours (clipboardKeys.ts),
  *  in base64 characters (~3 MB of text). Bigger ones are dropped rather than
  *  decoded: a runaway program shouldn't be able to stall the page. */

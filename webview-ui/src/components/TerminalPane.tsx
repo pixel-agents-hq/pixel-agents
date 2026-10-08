@@ -14,6 +14,7 @@ import {
   TERMINAL_RESIZE_DEBOUNCE_MS,
   TERMINAL_SCROLLBACK_LINES,
   TERMINAL_THEME,
+  TERMINAL_URL_PATTERN,
   TOUCH_TAP_MAX_DURATION_MS,
   TOUCH_TAP_MAX_MOVE_PX,
 } from '../constants.js';
@@ -98,7 +99,7 @@ export function TerminalPane({
     const fit = new FitAddon();
     term.loadAddon(fit);
     // Plain URLs printed as text (most of what an agent prints) become clickable.
-    term.loadAddon(new WebLinksAddon(openLink));
+    term.loadAddon(new WebLinksAddon(openLink, { urlRegex: TERMINAL_URL_PATTERN }));
     termRef.current = term;
     fitRef.current = fit;
 
