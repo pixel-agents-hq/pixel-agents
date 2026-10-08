@@ -294,29 +294,22 @@ export function handleClientMessage(
       adapter?.setSetting(KEY_HOOKS_INFO_SHOWN, true);
       break;
 
-    case 'addExternalAssetDirectory': {
-      const newPath = msg.path as string | undefined;
-      if (!newPath) break;
-      const cfg = readConfig();
-      if (!cfg.externalAssetDirectories.includes(newPath)) {
-        cfg.externalAssetDirectories.push(newPath);
-        writeConfig(cfg);
+    case 'addExternalAssetDirectory':
+    case 'removeExternalAssetDirectory':
+      // Privileged: an asset directory is read from OUTSIDE ~/.pixel-agents/,
+      // and whatever loads there as a sprite is sent back over this socket --
+      // an unprivileged viewer could point the server at any directory and
+      // read its images. A refused client is told the real list.
+      if (!ctx.privileged) {
+        console.warn(`[Pixel Agents] Ignoring ${String(msg.type)} from an unprivileged client.`);
+        send({
+          type: 'externalAssetDirectoriesUpdated',
+          dirs: readConfig().externalAssetDirectories,
+        });
+        break;
       }
-      send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
-      void ctx.onReloadAssets?.(send);
+      handleExternalAssetDirectoryMessage(msg, send, ctx);
       break;
-    }
-
-    case 'removeExternalAssetDirectory': {
-      const removePath = msg.path as string | undefined;
-      if (!removePath) break;
-      const cfg = readConfig();
-      cfg.externalAssetDirectories = cfg.externalAssetDirectories.filter((d) => d !== removePath);
-      writeConfig(cfg);
-      send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
-      void ctx.onReloadAssets?.(send);
-      break;
-    }
 
     case 'saveAreaMappings': {
       const rawMappings = msg.mappings;
@@ -670,4 +663,37 @@ function settingsSnapshot(adapter: StateAdapter | undefined) {
     showAreas: adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false,
     bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
   } as const;
+}
+
+/** The external asset directory mutations (privilege checked by the caller). */
+function handleExternalAssetDirectoryMessage(
+  msg: Record<string, unknown>,
+  send: WsSend,
+  ctx: ClientMessageContext,
+): void {
+  switch (msg.type) {
+    case 'addExternalAssetDirectory': {
+      const newPath = msg.path as string | undefined;
+      if (!newPath) break;
+      const cfg = readConfig();
+      if (!cfg.externalAssetDirectories.includes(newPath)) {
+        cfg.externalAssetDirectories.push(newPath);
+        writeConfig(cfg);
+      }
+      send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
+      void ctx.onReloadAssets?.(send);
+      break;
+    }
+
+    case 'removeExternalAssetDirectory': {
+      const removePath = msg.path as string | undefined;
+      if (!removePath) break;
+      const cfg = readConfig();
+      cfg.externalAssetDirectories = cfg.externalAssetDirectories.filter((d) => d !== removePath);
+      writeConfig(cfg);
+      send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
+      void ctx.onReloadAssets?.(send);
+      break;
+    }
+  }
 }

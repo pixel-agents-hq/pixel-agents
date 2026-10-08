@@ -930,6 +930,37 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     expect(readConfig().directories).toEqual([]);
   });
 
+  it('refuses external asset directory changes from an unprivileged client', () => {
+    // An asset directory is read from outside ~/.pixel-agents/ and its sprites
+    // are sent back over the socket -- an untokened viewer must not choose it.
+    const reloads: number[] = [];
+    const untokened = ctx({ privileged: false, onReloadAssets: async () => void reloads.push(1) });
+    const outside = path.join(tempHome, 'someone-elses-pictures');
+
+    dispatch({ type: 'addExternalAssetDirectory', path: outside }, untokened);
+    dispatch({ type: 'removeExternalAssetDirectory', path: outside }, untokened);
+
+    expect(readConfig().externalAssetDirectories).toEqual([]);
+    expect(reloads).toEqual([]);
+    // Each refusal answers with the real (unchanged) list.
+    expect(sent).toEqual([
+      { type: 'externalAssetDirectoriesUpdated', dirs: [] },
+      { type: 'externalAssetDirectoriesUpdated', dirs: [] },
+    ]);
+  });
+
+  it('applies external asset directory changes from a privileged client', () => {
+    const reloads: number[] = [];
+    const tokened = ctx({ onReloadAssets: async () => void reloads.push(1) });
+    const assets = path.join(tempHome, 'my-assets');
+
+    dispatch({ type: 'addExternalAssetDirectory', path: assets }, tokened);
+    expect(readConfig().externalAssetDirectories).toEqual([assets]);
+    dispatch({ type: 'removeExternalAssetDirectory', path: assets }, tokened);
+    expect(readConfig().externalAssetDirectories).toEqual([]);
+    expect(reloads).toHaveLength(2);
+  });
+
   it('saveDirectory with an invalid path replies directoryRejected and persists nothing', () => {
     const { manager } = workingPtyManager();
     const missing = path.join(tempHome, 'not-there');
