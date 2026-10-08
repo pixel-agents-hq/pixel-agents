@@ -63,11 +63,12 @@ export interface ClientMessageContext {
   /** Reload assets after an external-asset-directory change. Needs the dist root, known only to cli.ts. */
   onReloadAssets?: ReloadAssetsSideEffect;
   /**
-   * Whether this client may send messages that reach OUTSIDE `~/.pixel-agents/`
-   * — today only `setHooksEnabled`, which grants machine-wide consent to modify
-   * `~/.claude/settings.json`. Decided per-connection by the transport
-   * (httpServer's standaloneTokenValid, or the embedded Bearer token); defaults
-   * to false so a caller that forgets to pass it gets the safe answer.
+   * Whether this client may change ANYTHING. An unprivileged client is
+   * read-only: it may load and watch the office (`webviewReady`) and every
+   * other message is refused at the top of handleClientMessage. Decided
+   * per-connection by the transport (wsAuth.standaloneHandshakeVerdict, or the
+   * embedded Bearer token); defaults to false so a caller that forgets to pass
+   * it gets the safe answer.
    */
   privileged?: boolean;
   /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
@@ -110,6 +111,14 @@ export function handleClientMessage(
   const { store, runtime, cache } = ctx;
   const adapter = store.getAdapter();
 
+  // Tokenless is read-only. Refused HERE, once, rather than per message, so a
+  // message type added later is privileged by default instead of open until
+  // someone remembers to gate it.
+  if (!ctx.privileged && msg.type !== 'webviewReady') {
+    refuseReadOnly(msg, send, ctx);
+    return;
+  }
+
   switch (msg.type) {
     case 'webviewReady':
       handleWebviewReady(send, ctx);
@@ -117,17 +126,9 @@ export function handleClientMessage(
 
     case 'launchAgent': {
       // Standalone can launch: the agent runs in a server-side PTY streamed to
-      // the browser drawer. That PTY is a shell running as the operator, so only
-      // a privileged (tokened) connection may open one -- the same rule as the
-      // hooks toggle, for the same reason: an untokened viewer on the network
-      // may watch the office, not act on this machine.
+      // the browser drawer (a shell running as the operator -- privileged, like
+      // every message past the read-only gate above).
       if (!runtime || !ctx.ptyManager) break;
-      if (!ctx.privileged) {
-        console.warn(
-          '[Pixel Agents] Ignoring launchAgent from an untokened client — launching a terminal needs the tokened URL the CLI printed.',
-        );
-        break;
-      }
       // Permission posture is a persisted per-host setting, never a per-launch
       // field: the client sends only where to launch. Every launch comes from a
       // drawer row and carries its Directory's path; no directoryPath falls
@@ -151,15 +152,6 @@ export function handleClientMessage(
       const id = msg.id as number;
       const agent = store.get(id);
       if (agent && runtime) {
-        // Killing a PTY we launched is an action on this machine, gated like
-        // launching it was. Dismissing a merely-observed agent only touches
-        // ~/.pixel-agents/ state and stays open to every viewer.
-        if (ctx.ptyManager?.has(id) && !ctx.privileged) {
-          console.warn(
-            '[Pixel Agents] Ignoring closeAgent for a PTY-backed agent from an untokened client.',
-          );
-          break;
-        }
         // dispose() is a no-op for agents with no terminal, so this is safe for
         // both shapes. The PTY's onExit handler does the store cleanup for
         // PTY-backed agents; do it here too so external agents (and a PTY that
@@ -250,34 +242,11 @@ export function handleClientMessage(
       // id names nothing to install into, so it is dropped like a junk choice.
       const provider = hookProviderById(msg.providerId);
       if (!provider) break;
-      if (!ctx.privileged) {
-        // No server token on this connection: the toggle would grant durable
-        // consent to modify a settings file on THIS machine, and only the
-        // operator — who was handed the tokened URL — gets to decide that.
-        // Answer with the truth so the checkbox still shows reality instead of
-        // silently appearing to have worked.
-        console.warn(
-          '[Pixel Agents] Ignoring setHooksEnabled from an untokened client — installing hooks needs approval from this machine (open the tokened URL the CLI printed).',
-        );
-        void provider
-          .areHooksInstalled()
-          .then((installed) => send({ type: 'hooksStatus', providerId: provider.id, installed }));
-        break;
-      }
       void applyHooksPreference(ctx, send, provider, enabled);
       break;
     }
 
     case 'hooksConsentResponse': {
-      // Privilege: the request is only ever sent to tokened connections, so a
-      // response from an untokened one is a crafted message — ignored, same
-      // reasoning as setHooksEnabled above.
-      if (!ctx.privileged) {
-        console.warn(
-          '[Pixel Agents] Ignoring hooksConsentResponse from an untokened client — installing hooks needs approval from this machine (open the tokened URL the CLI printed).',
-        );
-        break;
-      }
       // Fail-closed on the provider exactly like on the choice: an id naming
       // no registered provider writes nothing.
       const provider = hookProviderById(msg.providerId);
@@ -294,22 +263,29 @@ export function handleClientMessage(
       adapter?.setSetting(KEY_HOOKS_INFO_SHOWN, true);
       break;
 
-    case 'addExternalAssetDirectory':
-    case 'removeExternalAssetDirectory':
-      // Privileged: an asset directory is read from OUTSIDE ~/.pixel-agents/,
-      // and whatever loads there as a sprite is sent back over this socket --
-      // an unprivileged viewer could point the server at any directory and
-      // read its images. A refused client is told the real list.
-      if (!ctx.privileged) {
-        console.warn(`[Pixel Agents] Ignoring ${String(msg.type)} from an unprivileged client.`);
-        send({
-          type: 'externalAssetDirectoriesUpdated',
-          dirs: readConfig().externalAssetDirectories,
-        });
-        break;
+    case 'addExternalAssetDirectory': {
+      const newPath = msg.path as string | undefined;
+      if (!newPath) break;
+      const cfg = readConfig();
+      if (!cfg.externalAssetDirectories.includes(newPath)) {
+        cfg.externalAssetDirectories.push(newPath);
+        writeConfig(cfg);
       }
-      handleExternalAssetDirectoryMessage(msg, send, ctx);
+      send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
+      void ctx.onReloadAssets?.(send);
       break;
+    }
+
+    case 'removeExternalAssetDirectory': {
+      const removePath = msg.path as string | undefined;
+      if (!removePath) break;
+      const cfg = readConfig();
+      cfg.externalAssetDirectories = cfg.externalAssetDirectories.filter((d) => d !== removePath);
+      writeConfig(cfg);
+      send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
+      void ctx.onReloadAssets?.(send);
+      break;
+    }
 
     case 'saveAreaMappings': {
       const rawMappings = msg.mappings;
@@ -329,15 +305,6 @@ export function handleClientMessage(
     }
 
     case 'setBypassPermissions': {
-      // Privileged: every agent launched afterwards runs with
-      // --dangerously-skip-permissions, so flipping it is acting on this
-      // machine. Refused the same way as the hooks toggle, and the refused
-      // client is told the real value.
-      if (!ctx.privileged) {
-        console.warn('[Pixel Agents] Ignoring setBypassPermissions from an unprivileged client.');
-        send(settingsSnapshot(adapter));
-        break;
-      }
       const enabled = msg.enabled as boolean;
       adapter?.setSetting(KEY_BYPASS_PERMISSIONS, enabled);
       break;
@@ -346,14 +313,6 @@ export function handleClientMessage(
     case 'saveDirectory':
     case 'removeDirectory':
     case 'requestDirectorySuggestions':
-      // Privileged: these write the machine-wide config, probe whether a path
-      // exists (saveDirectory's validation), and list project paths
-      // (suggestions) -- an unprivileged viewer could otherwise map the disk
-      // or rewrite the operator's Directories.
-      if (!ctx.privileged) {
-        console.warn(`[Pixel Agents] Ignoring ${String(msg.type)} from an unprivileged client.`);
-        break;
-      }
       // Shared with the VS Code adapter: same validation, same union, same
       // machine-wide config. Success rebroadcasts to every connected office
       // (store.broadcast fans out to all sockets); a rejection — and the
@@ -641,9 +600,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
 }
 
 /**
- * The settingsLoaded snapshot: sent on connect, and re-sent to a client whose
- * privileged setting change was refused, so its optimistic toggle snaps back to
- * the truth instead of showing a state the server never adopted.
+ * The settingsLoaded snapshot: sent on connect, and re-sent to a read-only
+ * client whose setting change was refused (refuseReadOnly), so its optimistic
+ * toggle snaps back to the truth.
  */
 function settingsSnapshot(adapter: StateAdapter | undefined) {
   return {
@@ -665,35 +624,54 @@ function settingsSnapshot(adapter: StateAdapter | undefined) {
   } as const;
 }
 
-/** The external asset directory mutations (privilege checked by the caller). */
-function handleExternalAssetDirectoryMessage(
+/** Message types already reported as refused, so a read-only client that keeps
+ *  sending (seat saves, layout saves) logs once per type, not per message. */
+const reportedRefusals = new Set<string>();
+
+/**
+ * Drop a message from a read-only (unprivileged) client. Where the UI changes
+ * optimistically before the server answers, the refused client is re-sent the
+ * real state so the control snaps back instead of showing a change that was
+ * never made -- the same "answer with the truth" rule as a failed hooks install.
+ */
+function refuseReadOnly(
   msg: Record<string, unknown>,
   send: WsSend,
   ctx: ClientMessageContext,
 ): void {
+  const type = String(msg.type);
+  if (!reportedRefusals.has(type)) {
+    reportedRefusals.add(type);
+    console.warn(
+      `[Pixel Agents] Ignoring ${type} from a read-only client. Changes need the tokened URL the CLI printed (at localhost or an --allowed-host name).`,
+    );
+  }
   switch (msg.type) {
-    case 'addExternalAssetDirectory': {
-      const newPath = msg.path as string | undefined;
-      if (!newPath) break;
-      const cfg = readConfig();
-      if (!cfg.externalAssetDirectories.includes(newPath)) {
-        cfg.externalAssetDirectories.push(newPath);
-        writeConfig(cfg);
-      }
-      send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
-      void ctx.onReloadAssets?.(send);
-      break;
+    case 'setHooksEnabled': {
+      const provider = hookProviderById(msg.providerId);
+      if (!provider) return;
+      void provider
+        .areHooksInstalled()
+        .then((installed) => send({ type: 'hooksStatus', providerId: provider.id, installed }));
+      return;
     }
-
-    case 'removeExternalAssetDirectory': {
-      const removePath = msg.path as string | undefined;
-      if (!removePath) break;
-      const cfg = readConfig();
-      cfg.externalAssetDirectories = cfg.externalAssetDirectories.filter((d) => d !== removePath);
-      writeConfig(cfg);
-      send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
-      void ctx.onReloadAssets?.(send);
-      break;
-    }
+    case 'setSoundEnabled':
+    case 'setAlwaysShowLabels':
+    case 'setGhostHeadlessAgents':
+    case 'setWatchAllSessions':
+    case 'setShowAreas':
+    case 'setBypassPermissions':
+      send(settingsSnapshot(ctx.store.getAdapter()));
+      return;
+    case 'addExternalAssetDirectory':
+    case 'removeExternalAssetDirectory':
+      send({
+        type: 'externalAssetDirectoriesUpdated',
+        dirs: readConfig().externalAssetDirectories,
+      });
+      return;
+    case 'saveAreaMappings':
+      send({ type: 'areaMappingsLoaded', mappings: readConfig().standalone.areaMappings ?? {} });
+      return;
   }
 }

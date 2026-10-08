@@ -211,7 +211,7 @@ function registerWebSocketRoute(
         // listed (typically a reverse proxy). Say how to fix it, or the session
         // silently stays watch-only.
         console.warn(
-          `[Pixel Agents] Tokened connection via Host "${request.headers.host ?? ''}" is watch-only: restart with --allowed-host <that name> to allow launching agents and hook changes from it.`,
+          `[Pixel Agents] Tokened connection via Host "${request.headers.host ?? ''}" is read-only: restart with --allowed-host <that name> to allow changes from it.`,
         );
       }
     }

@@ -190,9 +190,10 @@ position is reproducible by a forwarder or a rebound page.
 
 The terminal is the second privileged surface, and it follows that model exactly:
 
-- `launchAgent` and `closeAgent` for a PTY-backed agent are honoured only on a privileged `/ws`
-  connection (`clientMessageHandler.ts`). An untokened client is told the terminal is unavailable,
-  with the reason, so the **+ Agent** button explains itself instead of silently doing nothing.
+- An unprivileged `/ws` connection is read-only: one gate at the top of `handleClientMessage`
+  refuses every message except `webviewReady`, so `launchAgent` and `closeAgent` (like every other
+  change) need the token. An untokened client is told the terminal is unavailable, with the
+  reason, so the **+ Agent** button explains itself instead of silently doing nothing.
 - **`GET /terminal/:agentId`** requires the same token, carried the same way as `/ws`: in the
   handshake's `?token=` query, checked by the same `standaloneTokenValid` in
   `server/src/wsAuth.ts` (constant-time compare, length-guarded). One predicate, one carry, one
@@ -227,7 +228,7 @@ bound to loopback. That broke reverse proxies (Tailscale Serve forwards to 127.0
 name as `Host`), and the only escape was `--host 0.0.0.0` — which also exposes the port, and the
 token in transit, to the LAN over plain HTTP. The explicit allowlist keeps the bind on loopback, and
 applying it to `/ws` too means no privileged path is weaker than another. A tokened `/ws` connection
-under an unlisted `Host` stays watch-only and the server logs the `--allowed-host` hint.
+under an unlisted `Host` stays read-only and the server logs the `--allowed-host` hint.
 
 ### Other properties
 
@@ -372,8 +373,8 @@ render). Both skip on Windows, where spawning the `.cmd` mock shim through a PTY
 The security negatives are pinned at the unit level, against a real server where a socket is
 involved: `terminalRoutes.test.ts` (no token, wrong token, same-length token, valid token from a
 foreign origin, DNS-rebound attach, attach to an agent with no terminal) and
-`clientMessageHandler.test.ts` (`launchAgent` / `closeAgent` from an untokened `/ws` client do
-nothing, and `webviewReady` tells that client why). Not covered end to end: the module-failure
+`clientMessageHandler.test.ts` (every mutating message from an untokened `/ws` client changes
+nothing on disk, and `webviewReady` tells that client why the terminal is unavailable). Not covered end to end: the module-failure
 degradation path (see open question 3).
 
 ## Risks

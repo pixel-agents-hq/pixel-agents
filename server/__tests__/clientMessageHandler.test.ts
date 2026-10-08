@@ -67,8 +67,10 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
   let sent: Array<Record<string, unknown>>;
   let ctx: ClientMessageContext;
 
+  // Tokened by default: these suites pin what a message DOES; the read-only
+  // gate for untokened clients has its own suite below.
   function freshCtx(cache: AssetCache | null = null): ClientMessageContext {
-    return { store, cache };
+    return { store, cache, privileged: true };
   }
 
   beforeEach(() => {
@@ -434,8 +436,10 @@ describe('clientMessageHandler: saveAgentSeats palette sync', () => {
   let sent: Array<Record<string, unknown>>;
   let ctx: ClientMessageContext;
 
+  // Tokened by default: these suites pin what a message DOES; the read-only
+  // gate for untokened clients has its own suite below.
   function freshCtx(cache: AssetCache | null = null): ClientMessageContext {
-    return { store, cache };
+    return { store, cache, privileged: true };
   }
 
   beforeEach(() => {
@@ -1088,5 +1092,128 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     );
 
     expect(store.has(7)).toBe(false);
+  });
+});
+
+/**
+ * Tokenless is read-only: an unprivileged client may load the office
+ * (webviewReady) and nothing else. One gate at the top of handleClientMessage,
+ * so this suite throws EVERY mutating message at it and checks that nothing on
+ * disk or in the store moved.
+ */
+describe('clientMessageHandler: read-only (untokened) clients', () => {
+  let tempHome: string;
+  let originalHome: string | undefined;
+  let store: AgentStateStore;
+  let sent: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cmh-readonly-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
+    store = new AgentStateStore();
+    store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
+    sent = [];
+  });
+
+  afterEach(() => {
+    process.env.HOME = originalHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  /** Everything under the temp HOME, as path -> contents. */
+  function snapshotHome(): Record<string, string> {
+    const out: Record<string, string> = {};
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else out[full] = fs.readFileSync(full, 'utf-8');
+      }
+    };
+    walk(tempHome);
+    return out;
+  }
+
+  it('refuses every mutating message and changes nothing', () => {
+    const directory = path.join(tempHome, 'project');
+    fs.mkdirSync(directory);
+    const before = snapshotHome();
+    const untokened: ClientMessageContext = {
+      store,
+      cache: null,
+      privileged: false,
+      onSetHooksEnabled: () => {
+        throw new Error('side effect must not run');
+      },
+      onReloadAssets: () => {
+        throw new Error('side effect must not run');
+      },
+    };
+
+    for (const msg of [
+      { type: 'launchAgent' },
+      { type: 'closeAgent', id: 1 },
+      { type: 'saveLayout', layout: { version: 1, cols: 1, rows: 1, tiles: [0], furniture: [] } },
+      { type: 'saveAgentSeats', seats: { 1: { palette: 1 } } },
+      { type: 'setSoundEnabled', enabled: false },
+      { type: 'setLastSeenVersion', version: '9.9' },
+      { type: 'setAlwaysShowLabels', enabled: true },
+      { type: 'setGhostHeadlessAgents', enabled: true },
+      { type: 'setWatchAllSessions', enabled: true },
+      { type: 'setHooksEnabled', providerId: 'claude', enabled: false },
+      { type: 'hooksConsentResponse', providerId: 'claude', choice: 'allow' },
+      { type: 'setHooksInfoShown' },
+      { type: 'addExternalAssetDirectory', path: directory },
+      { type: 'removeExternalAssetDirectory', path: directory },
+      { type: 'saveAreaMappings', mappings: { Lab: ['project'] } },
+      { type: 'setShowAreas', enabled: true },
+      { type: 'setBypassPermissions', enabled: true },
+      { type: 'saveDirectory', name: 'Project', path: directory },
+      { type: 'removeDirectory', path: directory },
+      { type: 'requestDirectorySuggestions' },
+      { type: 'requestDiagnostics' },
+    ]) {
+      handleClientMessage(msg, (m) => sent.push(m), untokened);
+    }
+
+    expect(snapshotHome()).toEqual(before);
+    // Only truth-restoring replies come back -- no suggestions, no diagnostics.
+    const replyTypes = new Set(sent.map((m) => m.type));
+    expect([...replyTypes].sort()).toEqual([
+      'areaMappingsLoaded',
+      'externalAssetDirectoriesUpdated',
+      'settingsLoaded',
+    ]);
+  });
+
+  it('answers a refused toggle with the real state so the control snaps back', () => {
+    handleClientMessage({ type: 'setShowAreas', enabled: true }, (m) => sent.push(m), {
+      store,
+      cache: null,
+      privileged: false,
+    });
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: 'settingsLoaded', showAreas: false }),
+    );
+
+    sent = [];
+    handleClientMessage(
+      { type: 'saveAreaMappings', mappings: { Lab: ['x'] } },
+      (m) => sent.push(m),
+      { store, cache: null, privileged: false },
+    );
+    expect(sent).toEqual([{ type: 'areaMappingsLoaded', mappings: {} }]);
+  });
+
+  it('still loads the office', () => {
+    handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), {
+      store,
+      cache: null,
+      privileged: false,
+    });
+    expect(sent.map((m) => m.type)).toEqual(
+      expect.arrayContaining(['settingsLoaded', 'existingAgents', 'layoutLoaded']),
+    );
   });
 });
