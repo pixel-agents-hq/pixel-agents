@@ -22,7 +22,6 @@ import { flowTerminalCopy } from '../terminal/flowCopy.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 import { TerminalConnection } from '../terminal/terminalClient.js';
 import { terminalLinkOpener, urlAtCell } from '../terminal/terminalLinks.js';
-import { touchDebugCount } from '../terminal/touchDebug.js';
 
 interface TerminalPaneProps {
   agentId: number;
@@ -190,7 +189,6 @@ export function TerminalPane({
       flick.remainder -= ticks * rowH;
       const target = term.element?.querySelector('.xterm-screen') ?? host;
       for (let i = 0; i < Math.abs(ticks); i++) {
-        touchDebugCount('tk');
         target.dispatchEvent(
           new WheelEvent('wheel', {
             deltaY: Math.sign(ticks),
@@ -460,16 +458,11 @@ export function TerminalPane({
       // wanted from terminal touches: taps focus explicitly in touchend, so
       // even the synthesized click this suppresses isn't needed.
       if (e.cancelable) e.preventDefault();
-      else touchDebugCount('st-nc');
       stopFlick();
       // Already following a finger that's still down → this is an extra
       // contact (palm, second finger); ignore it. The e.touches check
       // self-heals a stale gesture whose end event never arrived.
-      if (flick.tracking && findTracked(e.touches)) {
-        touchDebugCount('st-x');
-        return;
-      }
-      touchDebugCount('st');
+      if (flick.tracking && findTracked(e.touches)) return;
       const t = e.changedTouches[0];
       if (!t) return;
       flick.tracking = true;
@@ -509,19 +502,11 @@ export function TerminalPane({
       // and kills the gesture a few px in. Nothing on a terminal needs a
       // native touch gesture, so leave Safari no opening.
       if (e.cancelable) e.preventDefault();
-      else touchDebugCount('mv-nc');
-      touchDebugCount('mv');
-      if (!flick.tracking) {
-        touchDebugCount('mv-untr');
-        return;
-      }
+      if (!flick.tracking) return;
       // Only the tracked finger's motion counts; this event may be another
       // contact moving.
       const t = findTracked(e.changedTouches);
-      if (!t) {
-        touchDebugCount('mv-oth');
-        return;
-      }
+      if (!t) return;
       if (sel.mode) {
         extendSelection(t.clientX, t.clientY);
         flick.lastX = t.clientX;
@@ -566,11 +551,7 @@ export function TerminalPane({
       if (!flick.tracking) return;
       // A palm graze lifting must not end the real drag — only the tracked
       // finger ends the gesture.
-      if (!findTracked(e.changedTouches)) {
-        touchDebugCount('end-oth');
-        return;
-      }
-      touchDebugCount('end');
+      if (!findTracked(e.changedTouches)) return;
       flick.tracking = false;
       unbindDirect();
       cancelLongPress();
@@ -616,11 +597,7 @@ export function TerminalPane({
         hdl.dragging = null;
         return;
       }
-      if (!flick.tracking || !findTracked(e.changedTouches)) {
-        touchDebugCount('cx-oth');
-        return;
-      }
-      touchDebugCount('cx');
+      if (!flick.tracking || !findTracked(e.changedTouches)) return;
       flick.tracking = false;
       unbindDirect();
       cancelLongPress();
@@ -633,30 +610,25 @@ export function TerminalPane({
     // makes the TUI repaint the transcript — so a drag that began on a text
     // span loses its target node a tick or two in. Detached, the events stop
     // propagating, and the capture listeners on host fall permanently
-    // silent: no more moves, no touchend, not even a touchcancel (the HUD
-    // signature — last:tk, every counter frozen). A drag that begins on a
-    // blank cell keeps its target (row divs persist), which is why only some
+    // silent: no more moves, no touchend, not even a touchcancel. A drag
+    // that begins on a blank cell keeps its target (row divs persist), which is why only some
     // scrolls stalled. Events ARE still dispatched at the detached node, so
     // per-gesture listeners bound directly to the touchstart target keep
     // receiving the stream. While the target is attached these stay idle —
     // the host capture handlers run first and their stopPropagation() ends
     // the dispatch before the target phase; the contains() guard covers the
-    // one case propagation doesn't (host itself as target). `det` counts
-    // events that arrived only through this rescue path.
+    // one case propagation doesn't (host itself as target).
     let directTarget: EventTarget | null = null;
     const directMove = (e: Event) => {
       if (e.target instanceof Node && host.contains(e.target)) return;
-      touchDebugCount('det');
       onTouchMove(e as TouchEvent);
     };
     const directEnd = (e: Event) => {
       if (e.target instanceof Node && host.contains(e.target)) return;
-      touchDebugCount('det');
       onTouchEnd(e as TouchEvent);
     };
     const directCancel = (e: Event) => {
       if (e.target instanceof Node && host.contains(e.target)) return;
-      touchDebugCount('det');
       onTouchCancel(e as TouchEvent);
     };
     const unbindDirect = () => {
