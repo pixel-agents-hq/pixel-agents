@@ -5,26 +5,27 @@ import {
   CARD_REORDER_LONG_PRESS_MS,
   CARD_SCROLL_INTO_VIEW_MARGIN_PX,
   MOBILE_CARD_ORDER_STORAGE_KEY,
-  TOUCH_TAP_MAX_MOVE_PX,
 } from '../constants.js';
-import type { AgentAppearance, CardVariant, TabStatus } from './AgentCard.js';
+import { findTouch, withinTapSlop } from '../touch/touchPrimitives.js';
+import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCard } from './AgentCard.js';
+import { cardVariant, mergeOrder, reorderByPointer } from './cardBar.js';
 
 interface MobileAgentBarProps {
   /** Every top-level office agent (launched and external), in creation order. */
   agentIds: number[];
   /** Agent whose character is selected in the office (bg highlight, no border). */
   focusedAgentId: number | null;
-  /** Agent whose terminal pane is showing (accent border — terminal view only). */
-  activeTerminalAgentId: number | null;
-  view: 'office' | 'terminal';
+  /** Agent whose terminal pane is showing — accent border and the only
+   *  visible ×. App passes null on the office page, where no pane shows. */
+  activeAgentId: number | null;
   onSelectAgent: (agentId: number) => void;
   onCloseAgent: (agentId: number) => void;
   onLaunch: () => void;
   /** False when the server has no working PTY — the + card shows disabled. */
   canLaunch: boolean;
   launchUnavailableReason: string | null;
-  getAppearance: (agentId: number) => AgentAppearance | null;
+  getAppearance: (agentId: number) => AgentAppearance;
   statusFor: (agentId: number) => TabStatus | null;
 }
 
@@ -39,23 +40,14 @@ function loadSavedOrder(): number[] {
   }
 }
 
-/** Saved order first (dropping closed agents), then any new agents appended
- *  in creation order — so a reorder survives launches and closes. */
-function mergeOrder(saved: number[], live: number[]): number[] {
-  const liveSet = new Set(live);
-  const ordered = saved.filter((id) => liveSet.has(id));
-  const seen = new Set(ordered);
-  for (const id of live) {
-    if (!seen.has(id)) ordered.push(id);
-  }
-  return ordered;
-}
-
 /** Long-press drag state. 'pending' = timer armed, finger must stay within the
- *  slop; 'dragging' = card lifted, touchmoves reorder instead of scrolling. */
+ *  slop; 'dragging' = card lifted, touchmoves reorder instead of scrolling.
+ *  One finger is tracked by identifier, so a second finger resting on the
+ *  glass neither blocks the press nor hijacks it. */
 interface DragState {
   phase: 'idle' | 'pending' | 'dragging';
   id: number;
+  touchId: number;
   startX: number;
   startY: number;
   timer: ReturnType<typeof setTimeout> | null;
@@ -79,8 +71,7 @@ interface DragState {
 export function MobileAgentBar({
   agentIds,
   focusedAgentId,
-  activeTerminalAgentId,
-  view,
+  activeAgentId,
   onSelectAgent,
   onCloseAgent,
   onLaunch,
@@ -95,7 +86,14 @@ export function MobileAgentBar({
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef(new Map<number, HTMLDivElement>());
-  const dragRef = useRef<DragState>({ phase: 'idle', id: 0, startX: 0, startY: 0, timer: null });
+  const dragRef = useRef<DragState>({
+    phase: 'idle',
+    id: 0,
+    touchId: -1,
+    startX: 0,
+    startY: 0,
+    timer: null,
+  });
   // The native touch handlers below are attached once but need the current
   // render's order and select callback.
   const displayIdsRef = useRef(displayIds);
@@ -104,12 +102,21 @@ export function MobileAgentBar({
   onSelectAgentRef.current = onSelectAgent;
 
   const handleCardTouchStart = (id: number) => (e: ReactTouchEvent) => {
-    const t = e.touches[0];
-    if (!t || e.touches.length !== 1) return;
     const drag = dragRef.current;
-    if (drag.timer) clearTimeout(drag.timer);
+    // Self-heal a press whose end was never delivered (its finger is gone).
+    if (drag.phase !== 'idle' && !findTouch(e.touches, drag.touchId)) {
+      if (drag.timer) clearTimeout(drag.timer);
+      drag.timer = null;
+      drag.phase = 'idle';
+      setDraggingId(null);
+    }
+    // Already tracking a finger: a second one landing changes nothing.
+    if (drag.phase !== 'idle') return;
+    const t = e.changedTouches[0];
+    if (!t) return;
     drag.phase = 'pending';
     drag.id = id;
+    drag.touchId = t.identifier;
     drag.startX = t.clientX;
     drag.startY = t.clientY;
     drag.timer = setTimeout(() => {
@@ -133,45 +140,42 @@ export function MobileAgentBar({
         drag.timer = null;
       }
       drag.phase = 'idle';
+      drag.touchId = -1;
     };
 
     const onTouchMove = (e: TouchEvent) => {
       const drag = dragRef.current;
-      const t = e.touches[0];
+      if (drag.phase === 'idle') return;
+      const t = findTouch(e.touches, drag.touchId);
       if (!t) return;
 
       if (drag.phase === 'pending') {
         // Finger moved before the hold armed — it's a scroll (or a sloppy
         // tap), not a reorder.
-        if (Math.hypot(t.clientX - drag.startX, t.clientY - drag.startY) > TOUCH_TAP_MAX_MOVE_PX) {
-          disarm();
-        }
+        if (!withinTapSlop(t.clientX - drag.startX, t.clientY - drag.startY)) disarm();
         return;
       }
-      if (drag.phase !== 'dragging') return;
       e.preventDefault();
 
-      // Insertion point: before the first card (excluding the dragged one)
-      // whose midpoint lies right of the finger. Rects come from the live DOM,
-      // so bar scroll position is already accounted for.
+      // Rects come from the live DOM, so bar scroll position is already
+      // accounted for.
       const ids = displayIdsRef.current;
-      const others = ids.filter((id) => id !== drag.id);
-      let insertAt = others.length;
-      for (let i = 0; i < others.length; i++) {
-        const el = cardRefs.current.get(others[i]);
-        if (!el) continue;
-        const rect = el.getBoundingClientRect();
-        if (t.clientX < rect.left + rect.width / 2) {
-          insertAt = i;
-          break;
-        }
-      }
-      const next = [...others.slice(0, insertAt), drag.id, ...others.slice(insertAt)];
+      const next = reorderByPointer(
+        ids,
+        drag.id,
+        (id) => {
+          const rect = cardRefs.current.get(id)?.getBoundingClientRect();
+          return rect ? rect.left + rect.width / 2 : null;
+        },
+        t.clientX,
+      );
       if (next.join(',') !== ids.join(',')) setSavedOrder(next);
     };
 
     const onTouchEnd = (e: TouchEvent) => {
       const drag = dragRef.current;
+      // Only the tracked finger lifting ends the press.
+      if (drag.phase === 'idle' || !findTouch(e.changedTouches, drag.touchId)) return;
       if (drag.phase === 'dragging') {
         // Swallow the synthesized click so the drop doesn't also select.
         e.preventDefault();
@@ -234,14 +238,6 @@ export function MobileAgentBar({
     }
   }, [focusedAgentId]);
 
-  // The accent border marks the showing terminal tab, so it only exists in
-  // terminal view; the focused character keeps the background tint in both.
-  const variantFor = (agentId: number): CardVariant => {
-    if (view === 'terminal' && agentId === activeTerminalAgentId) return 'active';
-    if (agentId === focusedAgentId) return 'focused';
-    return 'default';
-  };
-
   return (
     // No safe-area padding: the cards keep the same 6px below as above. The
     // home indicator floats over the bar's bottom edge, but taps still land —
@@ -267,29 +263,35 @@ export function MobileAgentBar({
           ref={scrollerRef}
           className="flex items-stretch gap-6 overflow-x-auto no-scrollbar flex-1 min-w-0"
         >
-          {displayIds.map((agentId) => (
-            <div
-              key={agentId}
-              ref={(el) => {
-                if (el) cardRefs.current.set(agentId, el);
-                else cardRefs.current.delete(agentId);
-              }}
-              onTouchStart={handleCardTouchStart(agentId)}
-              className={`shrink-0 flex items-stretch transition-transform ${
-                draggingId === agentId ? 'relative z-10 -translate-y-4 opacity-70' : ''
-              }`}
-            >
-              <AgentCard
-                agentId={agentId}
-                variant={variantFor(agentId)}
-                appearance={getAppearance(agentId) ?? { palette: 0, hueShift: 0 }}
-                status={statusFor(agentId)}
-                showClose={variantFor(agentId) === 'active'}
-                onSelect={onSelectAgent}
-                onClose={onCloseAgent}
-              />
-            </div>
-          ))}
+          {displayIds.map((agentId) => {
+            const variant = cardVariant(agentId, {
+              activeId: activeAgentId,
+              focusedId: focusedAgentId,
+            });
+            return (
+              <div
+                key={agentId}
+                ref={(el) => {
+                  if (el) cardRefs.current.set(agentId, el);
+                  else cardRefs.current.delete(agentId);
+                }}
+                onTouchStart={handleCardTouchStart(agentId)}
+                className={`shrink-0 flex items-stretch transition-transform ${
+                  draggingId === agentId ? 'relative z-10 -translate-y-4 opacity-70' : ''
+                }`}
+              >
+                <AgentCard
+                  agentId={agentId}
+                  variant={variant}
+                  appearance={getAppearance(agentId)}
+                  status={statusFor(agentId)}
+                  showClose={variant === 'active'}
+                  onSelect={onSelectAgent}
+                  onClose={onCloseAgent}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

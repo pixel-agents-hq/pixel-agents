@@ -1,6 +1,7 @@
 import { TERMINAL_SIDEBAR_WIDTH_PX } from '../constants.js';
-import type { AgentAppearance, CardVariant, TabStatus } from './AgentCard.js';
+import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCard } from './AgentCard.js';
+import { cardVariant } from './cardBar.js';
 
 interface AgentCardBarProps {
   /** Agents to show, top to bottom. */
@@ -11,7 +12,7 @@ interface AgentCardBarProps {
   /** The agent whose character is selected in the office. Its card gets the
    *  active background; `activeAgentId` wins when both name the same agent. */
   focusedAgentId?: number | null;
-  getAppearance: (agentId: number) => AgentAppearance | null;
+  getAppearance: (agentId: number) => AgentAppearance;
   statusFor: (agentId: number) => TabStatus | null;
   onSelect: (agentId: number) => void;
   onClose: (agentId: number) => void;
@@ -43,12 +44,6 @@ export function AgentCardBar({
 }: AgentCardBarProps) {
   if (agentIds.length === 0) return null;
 
-  const variantFor = (agentId: number): CardVariant => {
-    if (agentId === activeAgentId) return 'active';
-    if (agentId === focusedAgentId) return 'focused';
-    return 'default';
-  };
-
   return (
     <div
       className="relative z-30 h-full shrink-0 flex flex-col items-center gap-4 pt-4 overflow-y-auto pointer-events-none"
@@ -58,8 +53,8 @@ export function AgentCardBar({
         <AgentCard
           key={agentId}
           agentId={agentId}
-          variant={variantFor(agentId)}
-          appearance={getAppearance(agentId) ?? { palette: 0, hueShift: 0 }}
+          variant={cardVariant(agentId, { activeId: activeAgentId, focusedId: focusedAgentId })}
+          appearance={getAppearance(agentId)}
           status={statusFor(agentId)}
           onSelect={onSelect}
           onClose={onClose}

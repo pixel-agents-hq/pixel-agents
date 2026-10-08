@@ -421,6 +421,9 @@ export const MOBILE_EDGE_SWIPE_SLOP_PX = 8;
 export const MOBILE_EDGE_SWIPE_COMMIT_RATIO = 0.35;
 /** Release velocity (px/ms) that commits a swipe regardless of distance. */
 export const MOBILE_EDGE_SWIPE_COMMIT_VELOCITY = 0.3;
+/** Weight of the newest sample in the swipe's smoothed release velocity
+ *  (the rest carries over from the previous estimate). */
+export const MOBILE_EDGE_SWIPE_VELOCITY_WEIGHT = 0.8;
 /** Slightly smaller than the desktop 13px: a 390px phone fits ~46 columns at
  *  13px but ~50 at 12px, and Claude Code's TUI degrades below ~45 columns. */
 export const MOBILE_TERMINAL_FONT_SIZE_PX = 12;

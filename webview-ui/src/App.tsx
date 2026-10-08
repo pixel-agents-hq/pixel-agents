@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
-import type { TabStatus } from './components/AgentCard.js';
 import { AgentCardBar } from './components/AgentCardBar.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
@@ -10,24 +9,13 @@ import { DebugView } from './components/DebugView.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
-import { MobileAgentBar } from './components/MobileAgentBar.js';
-import { MobileKeyBar } from './components/MobileKeyBar.js';
-import { MobileTerminalPage } from './components/MobileTerminalPage.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TerminalDrawer } from './components/TerminalDrawer.js';
-import type { TerminalInputHandle } from './components/TerminalPane.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Button } from './components/ui/Button.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
-import {
-  MOBILE_EDGE_SWIPE_COMMIT_RATIO,
-  MOBILE_EDGE_SWIPE_COMMIT_VELOCITY,
-  MOBILE_EDGE_SWIPE_SLOP_PX,
-  MOBILE_EDGE_SWIPE_ZONE_PX,
-  MOBILE_VIEW_TRANSITION_MS,
-} from './constants.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
@@ -35,6 +23,8 @@ import { useIntroTour } from './hooks/useIntroTour.js';
 import { useIsMobile } from './hooks/useIsMobile.js';
 import { useTerminalDrawer } from './hooks/useTerminalDrawer.js';
 import { useVisualViewportHeight } from './hooks/useVisualViewportHeight.js';
+import { MobileShell } from './mobile/MobileShell.js';
+import { useMobileShell } from './mobile/useMobileShell.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -46,7 +36,6 @@ import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
 import { getPetCount } from './office/sprites/petSpriteData.js';
 import { EditTool, type OfficeLayout } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
-import type { TerminalConnectionStatus } from './terminal/terminalClient.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
 
@@ -133,53 +122,20 @@ function App() {
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
 
-  // Mobile shell: office and terminal are full-screen pages in a sliding
-  // track, with the agent cards in a bottom scroller. Desktop keeps the
-  // right-docked drawer. Crossing the breakpoint (rotation, window resize)
-  // remounts the terminal panes; their sockets reconnect and the server
-  // replays the current screen.
+  // Mobile shell (phones, touch tablets): office and terminal as sliding
+  // full-screen pages with the cards in a bottom bar. Desktop keeps the
+  // right-docked drawer.
   const isMobile = useIsMobile();
-  const [mobileView, setMobileView] = useState<'office' | 'terminal'>('office');
   // Software-keyboard handling: clamp the shell to the visual viewport so the
   // terminal shrinks (and the PTY resizes) instead of hiding its input line
   // under the keys. null while the keyboard is closed.
   const keyboardViewportHeight = useVisualViewportHeight(isMobile);
-  // Mirror the office's imperative character selection into React so the
-  // mobile card bar can restyle the focused agent's card — selection changes
-  // from canvas taps would otherwise never re-render the bar.
-  const [focusedAgentId, setFocusedAgentId] = useState<number | null>(null);
-  useEffect(() => {
-    const os = getOfficeState();
-    os.onSelectionChange = setFocusedAgentId;
-    setFocusedAgentId(os.selectedAgentId);
-    return () => {
-      os.onSelectionChange = null;
-    };
-  }, []);
-
-  // Terminal socket status per agent for the mobile card bar's red dot — the
-  // desktop equivalent lives inside TerminalDrawer, which mobile doesn't mount.
-  const [mobileConnStatuses, setMobileConnStatuses] = useState<
-    Record<number, TerminalConnectionStatus>
-  >({});
-  const handleMobileTermStatus = useCallback(
-    (agentId: number, status: TerminalConnectionStatus) => {
-      setMobileConnStatuses((prev) =>
-        prev[agentId] === status ? prev : { ...prev, [agentId]: status },
-      );
-    },
-    [],
+  // The office's imperative character selection, mirrored into React so the
+  // card bars can restyle the focused agent's card on canvas taps.
+  const focusedAgentId = useSyncExternalStore(
+    useCallback((onChange: () => void) => getOfficeState().subscribeSelection(onChange), []),
+    () => getOfficeState().selectedAgentId,
   );
-
-  // Mobile only slides over for launches initiated from the + card
-  // (pendingMobileLaunchRef): the office is the app's main screen, so a
-  // reload that re-announces live sessions must land on the office, not
-  // whatever terminal happens to exist.
-  const pendingMobileLaunchRef = useRef(false);
-  const onNewTerminal = useCallback(() => {
-    if (pendingMobileLaunchRef.current) setMobileView('terminal');
-    pendingMobileLaunchRef.current = false;
-  }, []);
 
   // Standalone only: every input here stays false/empty under VS Code. Owns the
   // active tab on both shells; the desktop-only bits (isOpen, width, resize)
@@ -191,7 +147,14 @@ function App() {
     agentStatuses,
     agentAwaitingInput,
     agentSeenActivity,
-    onNewTerminal,
+  });
+
+  const mobileShell = useMobileShell({
+    getOfficeState,
+    terminalAgentIds,
+    drawer: terminalDrawer,
+    focusedAgentId,
+    launchAgent: editor.handleOpenClaude,
   });
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
@@ -209,13 +172,6 @@ function App() {
   useEffect(() => {
     setAlwaysShowOverlay(alwaysShowLabels);
   }, [alwaysShowLabels]);
-
-  // The + card in the mobile bar: launch, then slide to the new terminal when
-  // the server announces it (onNewTerminal above).
-  const handleMobileLaunch = useCallback(() => {
-    pendingMobileLaunchRef.current = true;
-    editor.handleOpenClaude();
-  }, [editor.handleOpenClaude]);
 
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), []);
   const handleToggleAlwaysShowOverlay = useCallback(() => {
@@ -325,12 +281,12 @@ function App() {
   }, []);
 
   const { reveal: revealTerminal } = terminalDrawer;
+  const { showTerminal: showMobileTerminal } = mobileShell;
   const handleClick = useCallback(
     (agentId: number) => {
       // If clicked agent is a sub-agent, focus the parent's terminal instead
       const os = getOfficeState();
-      const meta = os.subagentMeta.get(agentId);
-      const focusId = meta ? meta.parentAgentId : agentId;
+      const focusId = os.terminalOwnerOf(agentId);
       transport.send({ type: 'focusAgent', id: focusId });
       // Standalone: focusAgent is a no-op server-side (there's no editor to
       // raise a panel in), so focus is resolved here — reveal the agent's tab
@@ -342,10 +298,10 @@ function App() {
         leadId !== undefined && !terminalAgentIds.includes(focusId) ? leadId : focusId;
       if (terminalAgentIds.includes(terminalId)) {
         revealTerminal(terminalId);
-        if (isMobile) setMobileView('terminal');
+        if (isMobile) showMobileTerminal();
       }
     },
-    [terminalAgentIds, isMobile, revealTerminal],
+    [terminalAgentIds, isMobile, revealTerminal, showMobileTerminal],
   );
 
   // Card click when there is no terminal pane to switch (VS Code, or a
@@ -354,320 +310,10 @@ function App() {
   // show — and select its character so the office follows the click.
   const handleCardSelect = useCallback((agentId: number) => {
     transport.send({ type: 'focusAgent', id: agentId });
-    const os = getOfficeState();
-    if (os.characters.has(agentId)) {
-      os.selectedAgentId = agentId;
-      os.cameraFollowId = agentId;
-    }
+    getOfficeState().selectAndFollow(agentId);
   }, []);
 
-  // Input handles handed up by each mobile TerminalPane, so the key bar can
-  // inject bytes or paste into whichever pane is showing. A ref, not state:
-  // sends are imperative and registration must not re-render the app.
-  const mobileTermInputsRef = useRef(new Map<number, TerminalInputHandle>());
-  const registerMobileTermInput = useCallback(
-    (agentId: number, handle: TerminalInputHandle | null) => {
-      if (handle) mobileTermInputsRef.current.set(agentId, handle);
-      else mobileTermInputsRef.current.delete(agentId);
-    },
-    [],
-  );
-  const getMobileTermInput = useCallback(() => {
-    // Mirror MobileTerminalPage's fallback: first pane when the active agent
-    // has no PTY.
-    const activeId = terminalDrawer.activeAgentId;
-    const targetId =
-      activeId !== null && terminalAgentIds.includes(activeId)
-        ? activeId
-        : (terminalAgentIds[0] ?? null);
-    return targetId === null ? null : (mobileTermInputsRef.current.get(targetId) ?? null);
-  }, [terminalDrawer.activeAgentId, terminalAgentIds]);
-  const handleMobileKey = useCallback(
-    (sequence: string) => getMobileTermInput()?.send(sequence),
-    [getMobileTermInput],
-  );
-  const handleMobilePaste = useCallback(() => {
-    const handle = getMobileTermInput();
-    if (!handle) return;
-    // Silently a no-op when the user dismisses Safari's paste-permission
-    // callout or the clipboard is empty.
-    navigator.clipboard.readText().then(
-      (text) => {
-        if (text) handle.paste(text);
-      },
-      () => undefined,
-    );
-  }, [getMobileTermInput]);
-
-  // The >_ / Office view toggle. Entering the terminal view collapses the
-  // canvas focus into the terminal selection: whoever is focused in the
-  // office is the agent whose terminal shows (sub-agents resolve to their
-  // parent, which owns the pane). Card taps, character double-taps, and
-  // launches already keep the two in sync — this toggle was the one path
-  // that could land on a different agent's terminal than the focused one.
-  const handleMobileViewToggle = useCallback(() => {
-    if (mobileView === 'terminal') {
-      setMobileView('office');
-      return;
-    }
-    if (focusedAgentId !== null) {
-      const meta = getOfficeState().subagentMeta.get(focusedAgentId);
-      const focusId = meta ? meta.parentAgentId : focusedAgentId;
-      revealTerminal(focusId);
-    }
-    setMobileView('terminal');
-  }, [mobileView, focusedAgentId, revealTerminal]);
-
-  // Edge swipes between the two mobile pages — the gestural twin of the
-  // >_ / Office toggle, so a commit runs the exact same handler (including
-  // the focus-collapse). Capture listeners on the shell run before the
-  // terminal's and canvas's own capture handlers, but a touch in the edge
-  // strip is only CLAIMED once its movement is clearly horizontal — until
-  // then everything propagates normally, so edge taps still select
-  // characters or focus the terminal. While armed-but-unclaimed, only
-  // preventDefault runs (suppressing iOS's own history edge-swipe); the
-  // toggle button, copy pill, and selection handles opt out entirely. A
-  // claimed drag moves the track 1:1 with the finger (transition off), and
-  // the release either commits — transition restored, state flip animates
-  // from the dragged position — or settles back.
-  const mobileShellRef = useRef<HTMLDivElement | null>(null);
-  const mobileTrackRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const shell = mobileShellRef.current;
-    const track = mobileTrackRef.current;
-    if (!isMobile || !shell || !track) return;
-    const toTerminal = mobileView === 'office';
-    if (toTerminal && !terminalAvailable) return;
-    const baseTransform = toTerminal ? 'translateX(0)' : 'translateX(-50%)';
-    const transition = `transform ${String(MOBILE_VIEW_TRANSITION_MS)}ms ease-out`;
-    const sw = {
-      id: -1,
-      claimed: false,
-      startX: 0,
-      startY: 0,
-      lastX: 0,
-      lastT: 0,
-      velocity: 0,
-      width: 0,
-      armedTarget: null as EventTarget | null,
-      synthetic: false,
-    };
-    const findT = (list: TouchList) => {
-      for (let i = 0; i < list.length; i++) {
-        if (list[i].identifier === sw.id) return list[i];
-      }
-      return null;
-    };
-    // Terminal rows are rebuilt on every repaint, and WebKit keeps addressing
-    // a gesture's events to its touchstart node — detached, they stop
-    // propagating through the shell, which both froze a claimed swipe and
-    // left sw.id armed forever (blocking every later swipe). Same cure as the
-    // terminal's own gestures: rescue listeners bound to the armed target
-    // keep the stream, and only fire when the shell can no longer see it.
-    const dMove = (e: Event) => {
-      if (e.target instanceof Node && shell.contains(e.target)) return;
-      onMove(e as TouchEvent);
-    };
-    const dEnd = (e: Event) => {
-      if (e.target instanceof Node && shell.contains(e.target)) return;
-      onEnd(e as TouchEvent);
-    };
-    const dCancel = (e: Event) => {
-      if (e.target instanceof Node && shell.contains(e.target)) return;
-      onCancel(e as TouchEvent);
-    };
-    const release = () => {
-      sw.id = -1;
-      sw.claimed = false;
-      if (sw.armedTarget) {
-        sw.armedTarget.removeEventListener('touchmove', dMove);
-        sw.armedTarget.removeEventListener('touchend', dEnd);
-        sw.armedTarget.removeEventListener('touchcancel', dCancel);
-        sw.armedTarget = null;
-      }
-    };
-    // When the swipe claims the gesture, tell whatever was underneath (the
-    // terminal's scroll/long-press, the canvas pan) that its touch is over —
-    // a real bubbling touchcancel cleans their state through the same paths
-    // a system cancel would, attached or detached.
-    const cancelUnderlying = (t: Touch) => {
-      const target = sw.armedTarget;
-      if (!target) return;
-      sw.synthetic = true;
-      try {
-        target.dispatchEvent(
-          new TouchEvent('touchcancel', {
-            bubbles: true,
-            changedTouches: [t],
-            touches: [],
-            targetTouches: [],
-          }),
-        );
-      } catch {
-        // No TouchEvent constructor: underlying gestures self-heal on their
-        // next touch instead.
-      }
-      sw.synthetic = false;
-    };
-    const onStart = (e: TouchEvent) => {
-      // Self-heal a stale arm whose end was never delivered (its target
-      // detached before the finger lifted).
-      if (sw.id !== -1 && !findT(e.touches)) release();
-      if (sw.id !== -1) return;
-      const t = e.changedTouches[0];
-      if (!t) return;
-      const rect = shell.getBoundingClientRect();
-      const inZone = toTerminal
-        ? t.clientX >= rect.right - MOBILE_EDGE_SWIPE_ZONE_PX
-        : t.clientX <= rect.left + MOBILE_EDGE_SWIPE_ZONE_PX;
-      if (!inZone) return;
-      if (e.target instanceof Element && e.target.closest('button, [data-handle]')) return;
-      if (e.cancelable) e.preventDefault();
-      sw.id = t.identifier;
-      sw.claimed = false;
-      sw.startX = t.clientX;
-      sw.startY = t.clientY;
-      sw.lastX = t.clientX;
-      sw.lastT = e.timeStamp;
-      sw.velocity = 0;
-      sw.width = rect.width;
-      sw.armedTarget = e.target;
-      if (e.target) {
-        e.target.addEventListener('touchmove', dMove, { passive: false });
-        e.target.addEventListener('touchend', dEnd);
-        e.target.addEventListener('touchcancel', dCancel);
-      }
-    };
-    const onMove = (e: TouchEvent) => {
-      if (sw.id === -1) return;
-      const t = findT(e.changedTouches);
-      if (!t) return;
-      const dx = t.clientX - sw.startX;
-      const dy = t.clientY - sw.startY;
-      if (!sw.claimed) {
-        if (Math.abs(dy) > MOBILE_EDGE_SWIPE_SLOP_PX && Math.abs(dy) >= Math.abs(dx)) {
-          release(); // vertical intent — hand the touch back for good
-          return;
-        }
-        if (Math.abs(dx) < MOBILE_EDGE_SWIPE_SLOP_PX || Math.abs(dx) <= Math.abs(dy)) return;
-        sw.claimed = true;
-        track.style.transition = 'none';
-        cancelUnderlying(t);
-      }
-      e.stopPropagation();
-      // The armed target may carry the terminal's own rescue listeners;
-      // stopPropagation can't silence same-node listeners, this can.
-      e.stopImmediatePropagation();
-      if (e.cancelable) e.preventDefault();
-      const dt = Math.max(1, e.timeStamp - sw.lastT);
-      sw.velocity = 0.8 * ((t.clientX - sw.lastX) / dt) + 0.2 * sw.velocity;
-      sw.lastX = t.clientX;
-      sw.lastT = e.timeStamp;
-      const offset = toTerminal
-        ? Math.min(0, Math.max(-sw.width, dx))
-        : Math.min(sw.width, Math.max(0, dx));
-      const base = toTerminal ? 0 : -sw.width;
-      track.style.transform = `translateX(${String(base + offset)}px)`;
-    };
-    const settleBack = () => {
-      track.style.transition = transition;
-      track.style.transform = baseTransform;
-    };
-    const onEnd = (e: TouchEvent) => {
-      if (sw.id === -1 || !findT(e.changedTouches)) return;
-      const { claimed, velocity, width } = sw;
-      const dx = sw.lastX - sw.startX;
-      release();
-      if (!claimed) return;
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      const dir = toTerminal ? -1 : 1;
-      const commit =
-        dx * dir > width * MOBILE_EDGE_SWIPE_COMMIT_RATIO ||
-        velocity * dir > MOBILE_EDGE_SWIPE_COMMIT_VELOCITY;
-      if (commit) {
-        // Restore the transition, then let the view flip patch the
-        // transform — the browser animates from the dragged position.
-        track.style.transition = transition;
-        handleMobileViewToggle();
-      } else {
-        settleBack();
-      }
-    };
-    const onCancel = (e: TouchEvent) => {
-      if (sw.synthetic) return;
-      if (sw.id === -1 || !findT(e.changedTouches)) return;
-      const { claimed } = sw;
-      release();
-      if (claimed) settleBack();
-    };
-    shell.addEventListener('touchstart', onStart, { capture: true, passive: false });
-    shell.addEventListener('touchmove', onMove, { capture: true, passive: false });
-    shell.addEventListener('touchend', onEnd, { capture: true });
-    shell.addEventListener('touchcancel', onCancel, { capture: true });
-    return () => {
-      release();
-      shell.removeEventListener('touchstart', onStart, { capture: true });
-      shell.removeEventListener('touchmove', onMove, { capture: true });
-      shell.removeEventListener('touchend', onEnd, { capture: true });
-      shell.removeEventListener('touchcancel', onCancel, { capture: true });
-    };
-  }, [isMobile, mobileView, terminalAvailable, handleMobileViewToggle]);
-
-  // Mobile card tap. In terminal view the bar is a tab strip: one tap
-  // switches panes (external agents jump back to the office — they have no
-  // pane). In office view it mirrors the character's two-step tap: first tap
-  // focuses the character (camera follow + status label), a repeat tap on the
-  // already-focused agent opens its terminal.
-  const handleMobileCardSelect = useCallback(
-    (agentId: number) => {
-      const os = getOfficeState();
-      const hasTerminal = terminalAgentIds.includes(agentId);
-      const focusCharacter = () => {
-        if (os.characters.has(agentId)) {
-          os.selectedAgentId = agentId;
-          os.cameraFollowId = agentId;
-        }
-      };
-
-      if (mobileView === 'terminal') {
-        focusCharacter();
-        if (hasTerminal) {
-          revealTerminal(agentId);
-        } else {
-          setMobileView('office');
-        }
-        return;
-      }
-
-      if (os.selectedAgentId === agentId && hasTerminal) {
-        revealTerminal(agentId);
-        setMobileView('terminal');
-        return;
-      }
-      focusCharacter();
-      // Pre-select the pane (and the card highlight) without leaving the office.
-      if (hasTerminal) revealTerminal(agentId);
-    },
-    [terminalAgentIds, mobileView, revealTerminal],
-  );
-
   const officeState = getOfficeState();
-
-  // Card status for the mobile bar: connection-broken (red) wins for agents
-  // whose terminal socket dropped; everything else shows live activity.
-  // (Desktop's TerminalDrawer derives the same thing from its own pane state.)
-  const { getActivity: getAgentActivity } = terminalDrawer;
-  const mobileStatusFor = useCallback(
-    (agentId: number): TabStatus | null => {
-      const conn = mobileConnStatuses[agentId];
-      if (terminalAgentIds.includes(agentId) && (conn === 'closed' || conn === 'reconnecting')) {
-        return 'disconnected';
-      }
-      return getAgentActivity(agentId);
-    },
-    [mobileConnStatuses, terminalAgentIds, getAgentActivity],
-  );
 
   // Merged set of folders the Areas dropdown can map: real workspace folders plus
   // every distinct folder an agent has run in this session (deduped by name; name
@@ -1020,73 +666,18 @@ function App() {
       }
     >
       {isMobile ? (
-        <>
-          {/* touch-none: drags on the track (canvas margins, safe-area strip,
-              terminal padding) must never start an iOS page pan — with the
-              keyboard up Safari pans the layout viewport on any vertical drag
-              it gets to claim, making the whole app jump. The canvas and the
-              terminal panes run their own touch handling; the card bar below
-              is a sibling, so its horizontal scroll is unaffected. */}
-          <div ref={mobileShellRef} className="relative flex-1 min-h-0 overflow-hidden touch-none">
-            {/* Sliding track: office and terminal side by side at 200% width;
-                selecting a terminal slides one viewport-width left. Both pages
-                keep real layout at all times (never display:none), so the
-                canvas ResizeObserver and xterm's fit always see dimensions. */}
-            <div
-              ref={mobileTrackRef}
-              className="absolute top-0 bottom-0 left-0 flex w-[200%]"
-              style={{
-                transform: mobileView === 'terminal' ? 'translateX(-50%)' : 'translateX(0)',
-                transition: `transform ${MOBILE_VIEW_TRANSITION_MS}ms ease-out`,
-              }}
-            >
-              <div className="w-1/2 h-full relative overflow-hidden">{officeRegion}</div>
-              <div className="w-1/2 h-full">
-                <MobileTerminalPage
-                  agentIds={terminalAgentIds}
-                  activeAgentId={terminalDrawer.activeAgentId}
-                  onStatusChange={handleMobileTermStatus}
-                  onRegisterInput={registerMobileTermInput}
-                />
-              </div>
-            </div>
-
-            {/* View toggle — pinned outside the track so it never slides. */}
-            {terminalAvailable && (
-              <div className="absolute mobile-safe-top right-8 z-40">
-                <Button
-                  size="sm"
-                  className="border-border! shadow-pixel"
-                  onClick={handleMobileViewToggle}
-                  title={mobileView === 'office' ? 'Show terminal' : 'Show office'}
-                >
-                  {mobileView === 'office' ? '>_' : 'Office'}
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <MobileAgentBar
-            agentIds={agents}
-            focusedAgentId={focusedAgentId}
-            activeTerminalAgentId={terminalDrawer.activeAgentId}
-            view={mobileView}
-            onSelectAgent={handleMobileCardSelect}
-            onCloseAgent={handleCloseAgent}
-            onLaunch={handleMobileLaunch}
-            canLaunch={terminalAvailable}
-            launchUnavailableReason={terminalUnavailableReason}
-            getAppearance={terminalDrawer.getAppearance}
-            statusFor={mobileStatusFor}
-          />
-
-          {/* Accessory keys for the TUI, only while the software keyboard is
-              up (keyboardViewportHeight is the clamp signal) — the last flex
-              child, so it sits directly above the keyboard. */}
-          {mobileView === 'terminal' && keyboardViewportHeight !== null && (
-            <MobileKeyBar onKey={handleMobileKey} onPaste={handleMobilePaste} />
-          )}
-        </>
+        <MobileShell
+          office={officeRegion}
+          shell={mobileShell}
+          drawer={terminalDrawer}
+          agentIds={agents}
+          terminalAgentIds={terminalAgentIds}
+          focusedAgentId={focusedAgentId}
+          terminalAvailable={terminalAvailable}
+          terminalUnavailableReason={terminalUnavailableReason}
+          onCloseAgent={handleCloseAgent}
+          keyboardOpen={keyboardViewportHeight !== null}
+        />
       ) : (
         <>
           {officeRegion}
@@ -1103,7 +694,7 @@ function App() {
           {terminalAvailable ? (
             <TerminalDrawer
               agentIds={terminalAgentIds}
-              activeAgentId={terminalDrawer.activeAgentId}
+              shownAgentId={terminalDrawer.shownAgentId}
               onSelectAgent={terminalDrawer.select}
               onCloseAgent={handleCloseAgent}
               isOpen={terminalDrawer.isOpen}
@@ -1111,7 +702,8 @@ function App() {
               widthPx={terminalDrawer.widthPx}
               onResizeStart={terminalDrawer.onResizeStart}
               getAppearance={terminalDrawer.getAppearance}
-              getActivity={terminalDrawer.getActivity}
+              statusFor={terminalDrawer.statusFor}
+              onStatusChange={terminalDrawer.onStatusChange}
             />
           ) : (
             !isDebugMode && (
@@ -1119,7 +711,7 @@ function App() {
                 agentIds={agents}
                 focusedAgentId={focusedAgentId}
                 getAppearance={terminalDrawer.getAppearance}
-                statusFor={terminalDrawer.getActivity}
+                statusFor={terminalDrawer.statusFor}
                 onSelect={handleCardSelect}
                 onClose={handleCloseAgent}
               />

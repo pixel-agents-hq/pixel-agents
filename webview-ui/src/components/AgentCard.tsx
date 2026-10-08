@@ -1,3 +1,4 @@
+import type { CardVariant } from './cardBar.js';
 import { CharacterMugShot } from './CharacterMugShot.js';
 import { Button } from './ui/Button.js';
 
@@ -19,11 +20,6 @@ const STATUS_DOT: Record<TabStatus, string> = {
   attention: 'bg-status-permission', // yellow — needs permission or input
   disconnected: 'bg-status-error', // red — terminal socket dropped
 };
-
-/** Card highlight tiers: 'focused' = the agent's character is selected in the
- *  office (active background, no border); 'active' = its terminal pane is the
- *  one showing (background + accent border). */
-export type CardVariant = 'default' | 'focused' | 'active';
 
 const CARD_VARIANT: Record<CardVariant, string> = {
   default: 'bg-btn-bg border-transparent hover:bg-btn-hover',

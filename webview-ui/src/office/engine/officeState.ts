@@ -63,17 +63,21 @@ export class OfficeState {
   /** Accumulated time for furniture animation frame cycling */
   furnitureAnimTimer = 0;
   private _selectedAgentId: number | null = null;
-  /** Notified whenever selectedAgentId changes. React (the mobile card bar)
-   *  subscribes so imperative canvas selection can drive card highlights —
-   *  everything else about selection stays out of React state. */
-  onSelectionChange: ((id: number | null) => void) | null = null;
+  private readonly selectionListeners = new Set<(id: number | null) => void>();
   get selectedAgentId(): number | null {
     return this._selectedAgentId;
   }
   set selectedAgentId(id: number | null) {
     if (this._selectedAgentId === id) return;
     this._selectedAgentId = id;
-    this.onSelectionChange?.(id);
+    for (const listener of this.selectionListeners) listener(id);
+  }
+  /** Observe selectedAgentId changes. React (the card bars) subscribes so
+   *  imperative canvas selection can drive card highlights — everything else
+   *  about selection stays out of React state. Returns the unsubscribe. */
+  subscribeSelection(listener: (id: number | null) => void): () => void {
+    this.selectionListeners.add(listener);
+    return () => this.selectionListeners.delete(listener);
   }
   cameraFollowId: number | null = null;
   hoveredAgentId: number | null = null;
@@ -560,6 +564,26 @@ export class OfficeState {
   cancelGreeterCamera(): void {
     this.greeterCameraTarget = null;
     this.greeterCameraCancelled = true;
+  }
+
+  /** Every manual pan (mouse, wheel, touch) takes the camera back from both
+   *  automatic drivers: character follow and the greeter's ask. */
+  breakCameraFollow(): void {
+    this.cameraFollowId = null;
+    this.cancelGreeterCamera();
+  }
+
+  /** Select an agent's character and have the camera follow it — what a card
+   *  tap does to the office. No-op for an agent with no character. */
+  selectAndFollow(id: number): void {
+    if (!this.characters.has(id)) return;
+    this.selectedAgentId = id;
+    this.cameraFollowId = id;
+  }
+
+  /** The agent that owns `id`'s terminal: a sub-agent's parent, else itself. */
+  terminalOwnerOf(id: number): number {
+    return this.subagentMeta.get(id)?.parentAgentId ?? id;
   }
 
   removeAgent(id: number): void {

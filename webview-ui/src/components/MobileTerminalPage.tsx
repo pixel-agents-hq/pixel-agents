@@ -1,21 +1,24 @@
+import type { Ref } from 'react';
+
 import { MOBILE_TERMINAL_FONT_SIZE_PX } from '../constants.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 import type { TerminalInputHandle } from './TerminalPane.js';
-import { TerminalPane } from './TerminalPane.js';
+import { TerminalPaneStack } from './TerminalPaneStack.js';
 
 interface MobileTerminalPageProps {
   /** Agent ids with a live PTY, in open order. */
   agentIds: number[];
-  activeAgentId: number | null;
+  /** The pane to show (useTerminalDrawer's resolution). */
+  shownAgentId: number | null;
   onStatusChange: (agentId: number, status: TerminalConnectionStatus) => void;
-  /** Passed through to each pane so the key bar can write to the active PTY. */
-  onRegisterInput: (agentId: number, handle: TerminalInputHandle | null) => void;
+  /** Input into the shown pane, for the key bar. */
+  inputRef: Ref<TerminalInputHandle>;
 }
 
 /**
  * The mobile shell's terminal page — the full-screen pane the office slides
  * away to reveal. One TerminalPane per launched agent, all mounted (buffers
- * and sockets survive switches, same as the desktop drawer), only the active
+ * and sockets survive switches, same as the desktop drawer), only the shown
  * one visible.
  *
  * autoFocus is off: on a phone, focusing xterm summons the software keyboard
@@ -26,16 +29,10 @@ interface MobileTerminalPageProps {
  */
 export function MobileTerminalPage({
   agentIds,
-  activeAgentId,
+  shownAgentId,
   onStatusChange,
-  onRegisterInput,
+  inputRef,
 }: MobileTerminalPageProps) {
-  // Fall back to the first terminal when the active agent has no PTY.
-  const activeId =
-    activeAgentId !== null && agentIds.includes(activeAgentId)
-      ? activeAgentId
-      : (agentIds[0] ?? null);
-
   return (
     <div className="relative w-full h-full bg-bg-dark">
       {agentIds.length === 0 && (
@@ -44,26 +41,15 @@ export function MobileTerminalPage({
           <span className="text-sm text-text-muted">Tap + in the bar below to launch one</span>
         </div>
       )}
-      {agentIds.map((agentId) => (
-        // Inactive wrappers must not hit-test: they are full-size transparent
-        // overlays stacked in DOM order, so a later agent's empty wrapper
-        // would otherwise swallow every tap meant for an earlier active pane.
-        <div
-          key={agentId}
-          className={`absolute left-4 right-4 bottom-4 mobile-safe-pane-top ${
-            agentId === activeId ? '' : 'pointer-events-none'
-          }`}
-        >
-          <TerminalPane
-            agentId={agentId}
-            isActive={agentId === activeId}
-            onStatusChange={onStatusChange}
-            fontSizePx={MOBILE_TERMINAL_FONT_SIZE_PX}
-            autoFocus={false}
-            onRegisterInput={onRegisterInput}
-          />
-        </div>
-      ))}
+      <TerminalPaneStack
+        agentIds={agentIds}
+        shownAgentId={shownAgentId}
+        onStatusChange={onStatusChange}
+        paneClassName="left-4 right-4 bottom-4 mobile-safe-pane-top"
+        fontSizePx={MOBILE_TERMINAL_FONT_SIZE_PX}
+        autoFocus={false}
+        inputRef={inputRef}
+      />
     </div>
   );
 }

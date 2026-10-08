@@ -8,8 +8,8 @@ import {
   TERMINAL_SEQ_ARROW_LEFT,
   TERMINAL_SEQ_ARROW_RIGHT,
   TERMINAL_SEQ_ARROW_UP,
-  TOUCH_TAP_MAX_MOVE_PX,
 } from '../constants.js';
+import { findTouch, withinTapSlop } from '../touch/touchPrimitives.js';
 
 interface MobileKeyBarProps {
   /** Writes the key's byte sequence to the active terminal's PTY. */
@@ -30,20 +30,15 @@ export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
   // The bar scrolls horizontally when the keys outgrow a narrow screen, so a
   // touch only counts as a key press if it didn't travel — otherwise the
   // release of a scroll-drag would fire whatever key it happened to end on.
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const touchStartRef = useRef<{ id: number; x: number; y: number } | null>(null);
   const onKeyTouchStart = (e: ReactTouchEvent) => {
-    const t = e.touches[0];
-    touchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
+    const t = e.changedTouches[0];
+    touchStartRef.current = t ? { id: t.identifier, x: t.clientX, y: t.clientY } : null;
   };
   const endedAsTap = (e: ReactTouchEvent) => {
     const s = touchStartRef.current;
-    const t = e.changedTouches[0];
-    return (
-      s !== null &&
-      t !== undefined &&
-      Math.abs(t.clientX - s.x) <= TOUCH_TAP_MAX_MOVE_PX &&
-      Math.abs(t.clientY - s.y) <= TOUCH_TAP_MAX_MOVE_PX
-    );
+    const t = s ? findTouch(e.changedTouches, s.id) : null;
+    return s !== null && t !== null && withinTapSlop(t.clientX - s.x, t.clientY - s.y);
   };
   // The trackpad key echoes the iOS space-bar gesture in four directions:
   // press, hold, and slide anywhere — every MOBILE_TRACKPAD_STEP_PX of

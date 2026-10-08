@@ -1,17 +1,17 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { useCallback, useState } from 'react';
 
 import { TERMINAL_DRAWER_RESIZE_HANDLE_PX } from '../constants.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
-import type { AgentActivity, AgentAppearance, TabStatus } from './AgentCard.js';
+import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCardBar } from './AgentCardBar.js';
-import { TerminalPane } from './TerminalPane.js';
+import { TerminalPaneStack } from './TerminalPaneStack.js';
 import { Button } from './ui/Button.js';
 
 interface TerminalDrawerProps {
   /** Agent ids with a live PTY, in open order. */
   agentIds: number[];
-  activeAgentId: number | null;
+  /** The pane showing (useTerminalDrawer's resolution); its card is the active tab. */
+  shownAgentId: number | null;
   onSelectAgent: (agentId: number) => void;
   onCloseAgent: (agentId: number) => void;
   isOpen: boolean;
@@ -23,9 +23,10 @@ interface TerminalDrawerProps {
   /** Mousedown on the left-edge drag handle; App owns the resize gesture. */
   onResizeStart: (e: ReactMouseEvent) => void;
   /** Look up an agent's character appearance for its tab mug shot. */
-  getAppearance: (agentId: number) => AgentAppearance | null;
-  /** Look up an agent's activity for its tab status dot (null until first activity). */
-  getActivity: (agentId: number) => AgentActivity | null;
+  getAppearance: (agentId: number) => AgentAppearance;
+  /** An agent's tab status dot (null until first activity). */
+  statusFor: (agentId: number) => TabStatus | null;
+  onStatusChange: (agentId: number, status: TerminalConnectionStatus) => void;
 }
 
 /**
@@ -43,7 +44,7 @@ interface TerminalDrawerProps {
  */
 export function TerminalDrawer({
   agentIds,
-  activeAgentId,
+  shownAgentId,
   onSelectAgent,
   onCloseAgent,
   isOpen,
@@ -51,26 +52,10 @@ export function TerminalDrawer({
   widthPx,
   onResizeStart,
   getAppearance,
-  getActivity,
+  statusFor,
+  onStatusChange,
 }: TerminalDrawerProps) {
-  // Terminal socket status per agent, for the "connection broken" (red) dot.
-  const [connStatuses, setConnStatuses] = useState<Record<number, TerminalConnectionStatus>>({});
-  const handleStatusChange = useCallback((agentId: number, status: TerminalConnectionStatus) => {
-    setConnStatuses((prev) => (prev[agentId] === status ? prev : { ...prev, [agentId]: status }));
-  }, []);
-
   if (agentIds.length === 0) return null;
-
-  // Fall back to the first tab when the active agent has no terminal (e.g. the
-  // user clicked an externally-detected character, which has no PTY).
-  const activeId =
-    activeAgentId !== null && agentIds.includes(activeAgentId) ? activeAgentId : agentIds[0];
-
-  // null = no activity yet → empty square. Broken connection (red) wins.
-  const statusFor = (agentId: number): TabStatus | null => {
-    const conn = connStatuses[agentId];
-    return conn === 'closed' || conn === 'reconnecting' ? 'disconnected' : getActivity(agentId);
-  };
 
   return (
     <div className="h-full shrink-0 flex">
@@ -78,7 +63,7 @@ export function TerminalDrawer({
           pane (App also reopens the panel if it's closed). */}
       <AgentCardBar
         agentIds={agentIds}
-        activeAgentId={activeId}
+        activeAgentId={shownAgentId}
         getAppearance={getAppearance}
         statusFor={statusFor}
         onSelect={onSelectAgent}
@@ -118,23 +103,13 @@ export function TerminalDrawer({
           </Button>
         </div>
 
-        {/* Panes: all mounted, only the active one shown. Inactive wrappers
-            must not hit-test — they are full-size transparent overlays in DOM
-            order, so a later tab's empty wrapper would swallow clicks (text
-            selection, focus) meant for an earlier active pane. */}
         <div className="relative flex-1 min-h-0 p-4">
-          {agentIds.map((agentId) => (
-            <div
-              key={agentId}
-              className={`absolute inset-4 ${agentId === activeId ? '' : 'pointer-events-none'}`}
-            >
-              <TerminalPane
-                agentId={agentId}
-                isActive={agentId === activeId}
-                onStatusChange={handleStatusChange}
-              />
-            </div>
-          ))}
+          <TerminalPaneStack
+            agentIds={agentIds}
+            shownAgentId={shownAgentId}
+            onStatusChange={onStatusChange}
+            paneClassName="inset-4"
+          />
         </div>
       </div>
     </div>

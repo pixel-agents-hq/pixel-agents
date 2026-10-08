@@ -1,7 +1,7 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { AgentActivity, AgentAppearance } from '../components/AgentCard.js';
+import type { AgentActivity, AgentAppearance, TabStatus } from '../components/AgentCard.js';
 import {
   TERMINAL_DRAWER_DEFAULT_WIDTH_PX,
   TERMINAL_DRAWER_MAX_WIDTH_RATIO,
@@ -10,6 +10,10 @@ import {
 } from '../constants.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import type { ToolActivity } from '../office/types.js';
+import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
+
+/** A character not (yet) in the office — the mug shot falls back to palette 0. */
+const DEFAULT_APPEARANCE: AgentAppearance = { palette: 0, hueShift: 0 };
 
 interface TerminalDrawerInputs {
   /** Agent ids with a live server-side PTY, in open order (control plane). */
@@ -19,15 +23,21 @@ interface TerminalDrawerInputs {
   agentStatuses: Record<number, string>;
   agentAwaitingInput: Record<number, boolean>;
   agentSeenActivity: Record<number, boolean>;
-  /** Fired when a terminal the drawer hadn't seen appears (launch answered,
-   *  or a reload re-announcing live sessions), after it became the active tab. */
-  onNewTerminal?: (agentId: number) => void;
 }
 
 export interface TerminalDrawerController {
   activeAgentId: number | null;
+  /** The pane actually showing: the active agent's, or the first terminal
+   *  when the active agent has no PTY (an external session's character was
+   *  clicked). null only when there are no terminals. Both shells and the
+   *  mobile key bar read this one resolution. */
+  shownAgentId: number | null;
   isOpen: boolean;
   widthPx: number;
+  /** The newest terminal the drawer saw appear (launch answered, or a reload
+   *  re-announcing live sessions) — it became the active tab. `seq` makes
+   *  every appearance a distinct value for effects to key on. */
+  lastOpened: { agentId: number; seq: number } | null;
   /** Show an agent's terminal if it has one; no-op otherwise. The office's
    *  character click routes here: standalone has no editor panel to raise, so
    *  "focus the agent" means "open its tab", mirroring VS Code's terminalRef.show(). */
@@ -37,8 +47,12 @@ export interface TerminalDrawerController {
   select: (agentId: number) => void;
   close: () => void;
   onResizeStart: (e: ReactMouseEvent) => void;
-  getAppearance: (agentId: number) => AgentAppearance | null;
-  getActivity: (agentId: number) => AgentActivity | null;
+  getAppearance: (agentId: number) => AgentAppearance;
+  /** Card status dot: 'disconnected' (red) for a terminal whose socket
+   *  dropped, otherwise the agent's activity; null before its first activity. */
+  statusFor: (agentId: number) => TabStatus | null;
+  /** Each TerminalPane reports its socket state here. */
+  onStatusChange: (agentId: number, status: TerminalConnectionStatus) => void;
 }
 
 /**
@@ -55,9 +69,10 @@ export function clampDrawerWidth(preferredPx: number, viewportPx: number): numbe
 }
 
 /**
- * All state and derivations behind the standalone terminal drawer: which tab is
- * active, whether the panel is open, its width and drag-resize gesture, and the
- * per-agent lookups the cards render from. App only composes it.
+ * All state and derivations behind the standalone terminal panes, on both
+ * shells: which tab is active (and which pane that resolves to), whether the
+ * desktop panel is open, its width and drag-resize gesture, each pane's socket
+ * state, and the per-agent lookups the cards render from. App only composes it.
  */
 export function useTerminalDrawer({
   terminalAgentIds,
@@ -66,12 +81,9 @@ export function useTerminalDrawer({
   agentStatuses,
   agentAwaitingInput,
   agentSeenActivity,
-  onNewTerminal,
 }: TerminalDrawerInputs): TerminalDrawerController {
   const [activeAgentId, setActiveAgentId] = useState<number | null>(null);
-  // Latest callback in a ref so the reveal effect stays keyed on the id list only.
-  const onNewTerminalRef = useRef(onNewTerminal);
-  onNewTerminalRef.current = onNewTerminal;
+  const [lastOpened, setLastOpened] = useState<{ agentId: number; seq: number } | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   // The width the user asked for; what renders is that clamped to the
   // viewport, re-derived on every window resize so a window that narrows
@@ -84,6 +96,12 @@ export function useTerminalDrawer({
     return () => window.removeEventListener('resize', onResize);
   }, []);
   const widthPx = clampDrawerWidth(preferredWidthPx, viewportPx);
+  const [connStatuses, setConnStatuses] = useState<Record<number, TerminalConnectionStatus>>({});
+
+  const shownAgentId =
+    activeAgentId !== null && terminalAgentIds.includes(activeAgentId)
+      ? activeAgentId
+      : (terminalAgentIds[0] ?? null);
 
   // Reveal a newly-opened terminal. Launching is async — the toolbar sends
   // launchAgent and the server answers with terminalSessionOpened once the PTY
@@ -98,7 +116,7 @@ export function useTerminalDrawer({
     const newest = added[added.length - 1];
     setActiveAgentId(newest);
     setIsOpen(true);
-    onNewTerminalRef.current?.(newest);
+    setLastOpened((prev) => ({ agentId: newest, seq: (prev?.seq ?? 0) + 1 }));
   }, [terminalAgentIds]);
 
   const reveal = useCallback(
@@ -114,11 +132,7 @@ export function useTerminalDrawer({
     (agentId: number) => {
       setActiveAgentId(agentId);
       setIsOpen(true);
-      const os = getOfficeState();
-      if (os.characters.has(agentId)) {
-        os.selectedAgentId = agentId;
-        os.cameraFollowId = agentId;
-      }
+      getOfficeState().selectAndFollow(agentId);
     },
     [getOfficeState],
   );
@@ -154,16 +168,15 @@ export function useTerminalDrawer({
   // A terminal tab shows the agent's character (front-facing mug shot), so it
   // reads the same palette/hueShift the office assigned that character.
   const getAppearance = useCallback(
-    (id: number): AgentAppearance | null => {
+    (id: number): AgentAppearance => {
       const ch = getOfficeState().characters.get(id);
-      return ch ? { palette: ch.palette, hueShift: ch.hueShift } : null;
+      return ch ? { palette: ch.palette, hueShift: ch.hueShift } : DEFAULT_APPEARANCE;
     },
     [getOfficeState],
   );
 
   // Activity for the tab status dot (green idle / blue working / yellow needs
   // attention). null until the agent's first activity, so the dot stays empty.
-  // Connection-broken (red) is layered on top by the drawer itself.
   const getActivity = useCallback(
     (id: number): AgentActivity | null => {
       if (!agentSeenActivity[id]) return null;
@@ -177,8 +190,26 @@ export function useTerminalDrawer({
     [agentSeenActivity, agentTools, agentStatuses, agentAwaitingInput],
   );
 
+  const onStatusChange = useCallback((agentId: number, status: TerminalConnectionStatus) => {
+    setConnStatuses((prev) => (prev[agentId] === status ? prev : { ...prev, [agentId]: status }));
+  }, []);
+
+  // Broken connection (red) wins over activity, for agents that have a pane.
+  const statusFor = useCallback(
+    (id: number): TabStatus | null => {
+      const conn = connStatuses[id];
+      if (terminalAgentIds.includes(id) && (conn === 'closed' || conn === 'reconnecting')) {
+        return 'disconnected';
+      }
+      return getActivity(id);
+    },
+    [connStatuses, terminalAgentIds, getActivity],
+  );
+
   return {
     activeAgentId,
+    shownAgentId,
+    lastOpened,
     isOpen,
     widthPx,
     reveal,
@@ -186,6 +217,7 @@ export function useTerminalDrawer({
     close,
     onResizeStart,
     getAppearance,
-    getActivity,
+    statusFor,
+    onStatusChange,
   };
 }
