@@ -215,6 +215,11 @@ export const GREETER_ID = -1_000_000_000;
  *  Intro is diegetic furniture over the office, not a modal, so a modal opened
  *  on top of it must cover it rather than slide underneath. */
 export const INTRO_BUBBLE_Z_INDEX = 45;
+/** ToolOverlay stacking: status label panels (selected one on top), then the
+ *  characters' speech bubbles above every label — all below the Intro bubble. */
+export const OVERLAY_LABEL_Z_INDEX = 41;
+export const OVERLAY_LABEL_SELECTED_Z_INDEX = 42;
+export const OVERLAY_BUBBLE_Z_INDEX = 43;
 /** The greeter stands this many tiles in from the office's bottom-left corner
  *  (target tile (margin, rows-1-margin); nearest walkable tile if blocked). */
 export const GREETER_TILE_MARGIN = 3;

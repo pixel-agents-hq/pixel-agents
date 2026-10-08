@@ -16,6 +16,9 @@ import {
   CONTEXT_GAUGE_HEIGHT_PX,
   CONTEXT_GAUGE_WIDTH_PX,
   CONTEXT_WARN_THRESHOLD,
+  OVERLAY_BUBBLE_Z_INDEX,
+  OVERLAY_LABEL_SELECTED_Z_INDEX,
+  OVERLAY_LABEL_Z_INDEX,
   TEAM_LEAD_COLOR,
   TEAM_ROLE_COLOR,
   TOOL_OVERLAY_VERTICAL_OFFSET,
@@ -159,7 +162,7 @@ export function ToolOverlay({
         const isSub = ch.isSubagent;
 
         // Speech bubble (permission dots / done checkmark) — rendered here in
-        // the DOM, above the label panels (zIndex 43 > panel 41/42), for every
+        // the DOM, above the label panels (OVERLAY_BUBBLE_Z_INDEX over the label panels), for every
         // character regardless of label visibility. Mirrors the geometry the
         // canvas renderer used. The idle "Waiting for input" state speaks
         // through its label, not a bubble.
@@ -186,7 +189,7 @@ export function ToolOverlay({
                   project.toScreenY(ch.y + bubbleSittingOff - BUBBLE_VERTICAL_OFFSET_PX) -
                   (cachedBubble.height + zoom) / dpr,
                 opacity: alpha,
-                zIndex: 43,
+                zIndex: OVERLAY_BUBBLE_Z_INDEX,
               }}
             >
               <OverlayBubble cached={cachedBubble} dpr={dpr} />
@@ -290,7 +293,7 @@ export function ToolOverlay({
                 top: screenY - (hasExtraLines ? 34 : 28),
                 pointerEvents: isSelected ? 'auto' : 'none',
                 opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
-                zIndex: isSelected ? 42 : 41,
+                zIndex: isSelected ? OVERLAY_LABEL_SELECTED_Z_INDEX : OVERLAY_LABEL_Z_INDEX,
               }}
               data-testid="agent-overlay"
               data-agent-id={id}
