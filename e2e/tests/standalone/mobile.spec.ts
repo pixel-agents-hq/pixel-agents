@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import type { Page } from '@playwright/test';
 
 import { expect, test } from '../../fixtures/standalone';
@@ -16,6 +18,13 @@ import { arrangeNextClaudeInvocation, claudeScenario } from '../../helpers/mock-
  */
 
 const PHONE = { width: 390, height: 844 };
+
+/** The + card opens the launch drawer; the launch itself is a tap on the
+ *  host-contributed Directory (the workspace the server started in). */
+async function launchFromCard(page: Page, workspaceDir: string) {
+  await page.getByTitle('Launch agent', { exact: true }).tap();
+  await page.getByRole('button', { name: path.basename(workspaceDir), exact: true }).tap();
+}
 
 /** The page currently showing, read off the view toggle's title. */
 async function expectView(page: Page, view: 'office' | 'terminal') {
@@ -127,9 +136,16 @@ async function longPress(page: Page, x: number, y: number, ms: number) {
 }
 
 /** Launch a mock-claude session from the + card and wait for its terminal. */
-async function launchTerminal(page: Page, tmpHome: string, name: string) {
-  await arrangeNextClaudeInvocation(tmpHome, claudeScenario(name).holdOpenFor(60_000).build());
-  await page.getByTitle('Launch agent', { exact: true }).tap();
+async function launchTerminal(
+  page: Page,
+  standalone: { tmpHome: string; workspaceDir: string },
+  name: string,
+) {
+  await arrangeNextClaudeInvocation(
+    standalone.tmpHome,
+    claudeScenario(name).holdOpenFor(60_000).build(),
+  );
+  await launchFromCard(page, standalone.workspaceDir);
   const terminal = page.locator('.xterm').first();
   await expect(terminal).toContainText('mock claude session', { timeout: 15_000 });
   return terminal;
@@ -161,7 +177,7 @@ test.describe('Standalone / mobile shell', () => {
     await expectView(page, 'office');
 
     // + launches, and the shell slides over once the terminal appears.
-    await launch.tap();
+    await launchFromCard(page, standalone.workspaceDir);
     const card = page.getByTitle('Agent 1', { exact: true });
     await expect(card).toBeVisible({ timeout: 15_000 });
     await expectView(page, 'terminal');
@@ -193,7 +209,7 @@ test.describe('Standalone / mobile shell', () => {
     page,
     standalone,
   }) => {
-    const terminal = await launchTerminal(page, standalone.tmpHome, 'mobile link tap');
+    const terminal = await launchTerminal(page, standalone, 'mobile link tap');
 
     // Put a URL on screen through the PTY's own echo.
     await terminal.tap();
@@ -228,7 +244,7 @@ test.describe('Standalone / mobile shell', () => {
     page,
     standalone,
   }) => {
-    const terminal = await launchTerminal(page, standalone.tmpHome, 'mobile keyboard');
+    const terminal = await launchTerminal(page, standalone, 'mobile keyboard');
     const esc = page.getByRole('button', { name: 'esc', exact: true });
     // A tap focuses the terminal's input; the keyboard isn't up yet.
     await terminal.tap();
@@ -273,7 +289,7 @@ test.describe('Standalone / mobile shell', () => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
 
-    const terminal = await launchTerminal(page, standalone.tmpHome, 'mobile clipboard');
+    const terminal = await launchTerminal(page, standalone, 'mobile clipboard');
     await terminal.tap();
     const word = 'pixelcopyword';
     await page.keyboard.type(word);
@@ -354,7 +370,7 @@ test.describe('Standalone / mobile shell', () => {
     page,
     standalone,
   }) => {
-    await launchTerminal(page, standalone.tmpHome, 'mobile camera follow');
+    await launchTerminal(page, standalone, 'mobile camera follow');
     await page.getByTitle('Show office', { exact: true }).tap();
     // A card tap in the office focuses the character and follows it.
     await page.getByTitle('Agent 1', { exact: true }).tap();
@@ -408,7 +424,7 @@ test.describe('Standalone / mobile shell', () => {
       };
     });
     await page.reload();
-    const terminal = await launchTerminal(page, standalone.tmpHome, 'mobile trackpad');
+    const terminal = await launchTerminal(page, standalone, 'mobile trackpad');
     await terminal.tap();
     await page.setViewportSize({ width: PHONE.width, height: 500 }); // keyboard up
     const pad = page.getByRole('button', { name: '✜', exact: true });

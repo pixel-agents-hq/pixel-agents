@@ -336,13 +336,13 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 
 ### `@area:mobile` (7 tests)
 
-- `e2e/standalone/mobile.spec.ts:148` — phone shell: + card launches and slides to the terminal; toggle, card taps and edge swipe navigate (Standalone / mobile shell)
-- `e2e/standalone/mobile.spec.ts:192` — tapping a URL in the terminal opens it; a sideways drag from it does not (Standalone / mobile shell)
-- `e2e/standalone/mobile.spec.ts:227` — the key bar shows while the software keyboard is up, under both viewport resize policies (Standalone / mobile shell)
-- `e2e/standalone/mobile.spec.ts:256` — copy and paste work on a plain-http origin (no Clipboard API) (Standalone / mobile shell)
-- `e2e/standalone/mobile.spec.ts:328` — the hooks info modal fits the phone screen (Standalone / mobile shell)
-- `e2e/standalone/mobile.spec.ts:353` — a two-finger pan stops the camera following a character; a pure pinch does not (Standalone / mobile shell)
-- `e2e/standalone/mobile.spec.ts:393` — the trackpad key follows the finger that pressed it, not touches[0] (Standalone / mobile shell)
+- `e2e/standalone/mobile.spec.ts:164` — phone shell: + card launches and slides to the terminal; toggle, card taps and edge swipe navigate (Standalone / mobile shell)
+- `e2e/standalone/mobile.spec.ts:208` — tapping a URL in the terminal opens it; a sideways drag from it does not (Standalone / mobile shell)
+- `e2e/standalone/mobile.spec.ts:243` — the key bar shows while the software keyboard is up, under both viewport resize policies (Standalone / mobile shell)
+- `e2e/standalone/mobile.spec.ts:272` — copy and paste work on a plain-http origin (no Clipboard API) (Standalone / mobile shell)
+- `e2e/standalone/mobile.spec.ts:344` — the hooks info modal fits the phone screen (Standalone / mobile shell)
+- `e2e/standalone/mobile.spec.ts:369` — a two-finger pan stops the camera following a character; a pure pinch does not (Standalone / mobile shell)
+- `e2e/standalone/mobile.spec.ts:409` — the trackpad key follows the finger that pressed it, not touches[0] (Standalone / mobile shell)
 
 ### `@area:pets` (3 tests)
 
