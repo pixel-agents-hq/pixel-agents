@@ -59,6 +59,9 @@ export interface LaunchStandaloneOptions {
    *  host's PATH, so agents launched from the browser spawn the scenario
    *  runner in the host's PTY instead of a real Claude CLI. */
   mockClaude?: boolean;
+  /** Browser viewport (default 1280×800, the desktop shell). A phone-sized
+   *  viewport renders the mobile shell instead. */
+  viewport?: { width: number; height: number };
 }
 
 function delay(ms: number): Promise<void> {
@@ -318,7 +321,7 @@ export async function launchStandalone(
   let hostProcess = spawnAndAttach();
 
   try {
-    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.setViewportSize(options.viewport ?? { width: 1280, height: 800 });
     // Mark this as the e2e harness before navigation so the standalone webview
     // installs its test-only observability hooks (window.__pixelAgentsTestHooks).
     await page.addInitScript(() => {
