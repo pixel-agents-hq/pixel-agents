@@ -813,6 +813,11 @@ export interface EditorRenderState {
   ghostCol: number;
   ghostRow: number;
   ghostValid: boolean;
+  /**
+   * Extra ghost sprites drawn on top of the main one, sharing its validity tint
+   * — the stuff riding a dragged desk, so the preview shows the whole group.
+   */
+  ghostExtras: Array<{ sprite: SpriteData; col: number; row: number; mirrored: boolean }>;
   selectedCol: number;
   selectedRow: number;
   selectedW: number;
@@ -958,6 +963,20 @@ export function renderFrame(
         zoom,
         editor.ghostMirrored,
       );
+      // Riders last so they sit on top of the surface they're being carried on.
+      for (const extra of editor.ghostExtras) {
+        renderGhostPreview(
+          ctx,
+          extra.sprite,
+          extra.col,
+          extra.row,
+          editor.ghostValid,
+          offsetX,
+          offsetY,
+          zoom,
+          extra.mirrored,
+        );
+      }
     }
     if (editor.hasSelection) {
       renderSelectionHighlight(

@@ -11,7 +11,11 @@ import {
 import { unlockAudio } from '../../notificationSound.js';
 import { transport } from '../../transport/index.js';
 import { getColorizedSprite } from '../colorize.js';
-import { canPlaceFurniture, getWallPlacementRow } from '../editor/editorActions.js';
+import {
+  canPlaceFurniture,
+  getWallPlacementRow,
+  planFurnitureMove,
+} from '../editor/editorActions.js';
 import type { EditorState } from '../editor/editorState.js';
 import { startGameLoop } from '../engine/gameLoop.js';
 import type { OfficeState } from '../engine/officeState.js';
@@ -38,6 +42,8 @@ interface OfficeCanvasProps {
   onDeleteSelected: () => void;
   onRotateSelected: () => void;
   onDragMove: (uid: string, newCol: number, newRow: number) => void;
+  /** Alt-drag drop: copy the item (and its surface riders) to (newCol,newRow). */
+  onDragDuplicate: (uid: string, newCol: number, newRow: number) => void;
   editorTick: number;
   zoom: number;
   onZoomChange: (zoom: number) => void;
@@ -64,6 +70,7 @@ export function OfficeCanvas({
   onDeleteSelected,
   onRotateSelected,
   onDragMove,
+  onDragDuplicate,
   editorTick: _editorTick,
   zoom,
   onZoomChange,
@@ -153,6 +160,7 @@ export function OfficeCanvas({
             ghostCol: editorState.ghostCol,
             ghostRow: editorState.ghostRow,
             ghostValid: editorState.ghostValid,
+            ghostExtras: [],
             selectedCol: 0,
             selectedRow: 0,
             selectedW: 0,
@@ -174,7 +182,7 @@ export function OfficeCanvas({
                 editorState.selectedFurnitureType,
                 editorState.ghostRow,
               );
-              const pickedColor = editorState.pickedFurnitureColor;
+              const pickedColor = editorState.placementColor();
               editorRender.ghostSprite = pickedColor
                 ? getColorizedSprite(
                     `ghost-${editorState.selectedFurnitureType}-${pickedColor.h}-${pickedColor.s}-${pickedColor.b}-${pickedColor.c}-${pickedColor.colorize ?? ''}`,
@@ -194,29 +202,38 @@ export function OfficeCanvas({
             }
           }
 
-          // Ghost preview for drag-to-move
+          // Ghost preview for drag-to-move — the dragged item plus whatever is
+          // riding on it, previewed as the one group that will be dropped. With
+          // Alt held the same group previews as a copy, so the originals still
+          // block it and the ghost turns red over them.
           if (editorState.isDragMoving && editorState.dragUid && editorState.ghostCol >= 0) {
-            const draggedItem = officeState
-              .getLayout()
-              .furniture.find((f) => f.uid === editorState.dragUid);
-            if (draggedItem) {
-              const entry = getCatalogEntry(draggedItem.type);
-              if (entry) {
-                const ghostCol = editorState.ghostCol - editorState.dragOffsetCol;
-                const ghostRow = editorState.ghostRow - editorState.dragOffsetRow;
-                editorRender.ghostSprite = entry.sprite;
-                editorRender.ghostCol = ghostCol;
-                editorRender.ghostRow = ghostRow;
-                editorRender.ghostMirrored =
-                  !!entry.mirrorSide && draggedItem.type.endsWith(':left');
-                editorRender.ghostValid = canPlaceFurniture(
-                  officeState.getLayout(),
-                  draggedItem.type,
-                  ghostCol,
-                  ghostRow,
-                  editorState.dragUid,
-                );
-              }
+            const plan = planFurnitureMove(
+              officeState.getLayout(),
+              editorState.dragUid,
+              editorState.ghostCol - editorState.dragOffsetCol,
+              editorState.ghostRow - editorState.dragOffsetRow,
+              { duplicate: editorState.dragDuplicate },
+            );
+            const [dragged, ...riders] = plan?.items ?? [];
+            const entry = dragged ? getCatalogEntry(dragged.type) : undefined;
+            if (plan && dragged && entry) {
+              editorRender.ghostSprite = entry.sprite;
+              editorRender.ghostCol = dragged.col;
+              editorRender.ghostRow = dragged.row;
+              editorRender.ghostMirrored = !!entry.mirrorSide && dragged.type.endsWith(':left');
+              editorRender.ghostValid = plan.valid;
+              editorRender.ghostExtras = riders.flatMap((rider) => {
+                const riderEntry = getCatalogEntry(rider.type);
+                if (!riderEntry) return [];
+                return [
+                  {
+                    sprite: riderEntry.sprite,
+                    col: rider.col,
+                    row: rider.row,
+                    mirrored: !!riderEntry.mirrorSide && rider.type.endsWith(':left'),
+                  },
+                ];
+              });
             }
           }
 
@@ -405,16 +422,23 @@ export function OfficeCanvas({
           editorState.ghostRow = tile.row;
 
           // Drag-to-move: check if cursor moved to different tile
-          if (editorState.dragUid && !editorState.isDragMoving) {
-            if (tile.col !== editorState.dragStartCol || tile.row !== editorState.dragStartRow) {
+          if (editorState.dragUid) {
+            // Alt is sampled every move, so it can be pressed or released
+            // part-way through a drag and the ghost follows.
+            editorState.dragDuplicate = e.altKey;
+            if (
+              !editorState.isDragMoving &&
+              (tile.col !== editorState.dragStartCol || tile.row !== editorState.dragStartRow)
+            ) {
               editorState.isDragMoving = true;
             }
           }
 
           // Paint on drag (paint-style tools only, not during furniture drag).
           // Carpet + Area paint join the drag set so a single click-drag stamps
-          // every tile under the cursor — stroke-based undo lives in
-          // useEditorActions for carpet, per-tile undo for area.
+          // every tile under the cursor — stroke-based undo (one undo per
+          // click-drag) lives in useEditorActions for floor/wall/erase/carpet;
+          // area paint stays per-tile.
           if (
             editorState.isDragging &&
             (editorState.activeTool === EditTool.TILE_PAINT ||
@@ -455,7 +479,8 @@ export function OfficeCanvas({
         const canvas = canvasRef.current;
         if (canvas) {
           if (editorState.isDragMoving) {
-            canvas.style.cursor = 'grabbing';
+            // 'copy' is the platform's own duplicate-drag affordance.
+            canvas.style.cursor = editorState.dragDuplicate ? 'copy' : 'grabbing';
           } else {
             const pos = screenToWorld(e.clientX, e.clientY);
             if (
@@ -464,8 +489,12 @@ export function OfficeCanvas({
                 hitTestRotateButton(pos.deviceX, pos.deviceY))
             ) {
               canvas.style.cursor = 'pointer';
-            } else if (editorState.activeTool === EditTool.FURNITURE_PICK && tile) {
-              // Pick mode: show pointer over furniture, crosshair elsewhere
+            } else if (
+              (editorState.activeTool === EditTool.FURNITURE_PICK ||
+                editorState.activeTool === EditTool.COLOR_PICK) &&
+              tile
+            ) {
+              // Copy modes (type or colour): pointer over furniture, crosshair elsewhere
               const layout = officeState.getLayout();
               const hitFurniture = layout.furniture.find((f) => {
                 const entry = getCatalogEntry(f.type);
@@ -618,13 +647,15 @@ export function OfficeCanvas({
           }
         }
         if (hitFurniture) {
-          // Start drag — record offset from furniture's top-left
+          // Start drag — record offset from furniture's top-left. Alt at press
+          // time means "drag out a copy"; mousemove keeps it in sync after that.
           editorState.startDrag(
             hitFurniture.uid,
             tile.col,
             tile.row,
             tile.col - hitFurniture.col,
             tile.row - hitFurniture.row,
+            e.altKey,
           );
           return;
         } else {
@@ -667,42 +698,44 @@ export function OfficeCanvas({
       }
       if (e.button === 2) {
         isEraseDraggingRef.current = false;
-        // Close any in-progress carpet / area stroke so the next stroke
-        // starts a fresh undo entry instead of bundling into this one.
-        editorState.carpetStrokeInitialLayout = null;
-        editorState.carpetDragErasing = null;
-        editorState.areaDragErasing = null;
+        // Close the in-progress stroke so the next stroke starts a fresh undo
+        // entry instead of bundling into this one.
+        editorState.endStroke();
         return;
       }
 
       // Handle drag-to-move completion
       if (editorState.dragUid) {
         if (editorState.isDragMoving) {
-          // Compute target position
+          // Compute target position — validity covers the whole group (the item
+          // plus anything on its surface), matching the ghost preview.
+          const duplicating = editorState.dragDuplicate;
           const ghostCol = editorState.ghostCol - editorState.dragOffsetCol;
           const ghostRow = editorState.ghostRow - editorState.dragOffsetRow;
-          const draggedItem = officeState
-            .getLayout()
-            .furniture.find((f) => f.uid === editorState.dragUid);
-          if (draggedItem) {
-            const valid = canPlaceFurniture(
-              officeState.getLayout(),
-              draggedItem.type,
-              ghostCol,
-              ghostRow,
-              editorState.dragUid,
-            );
-            if (valid) {
+          const plan = planFurnitureMove(
+            officeState.getLayout(),
+            editorState.dragUid,
+            ghostCol,
+            ghostRow,
+            { duplicate: duplicating },
+          );
+          if (plan?.valid) {
+            if (duplicating) {
+              onDragDuplicate(editorState.dragUid, ghostCol, ghostRow);
+            } else {
               onDragMove(editorState.dragUid, ghostCol, ghostRow);
             }
           }
-          editorState.clearSelection();
+          // A committed copy leaves itself selected (onDragDuplicate sets it),
+          // so only drop the selection when nothing new was created.
+          if (!duplicating || !plan?.valid) editorState.clearSelection();
         } else {
-          // Click (no movement) — toggle selection
+          // Click (no movement) — toggle selection. Selecting also collapses
+          // the open tool tab, so the toolbar shows the item's own controls.
           if (editorState.selectedFurnitureUid === editorState.dragUid) {
             editorState.clearSelection();
           } else {
-            editorState.selectedFurnitureUid = editorState.dragUid;
+            editorState.selectPlacedFurniture(editorState.dragUid);
           }
         }
         editorState.clearDrag();
@@ -713,13 +746,11 @@ export function OfficeCanvas({
       }
 
       editorState.isDragging = false;
-      editorState.wallDragAdding = null;
-      // Close the current carpet stroke so the next click starts a fresh undo entry.
-      editorState.carpetStrokeInitialLayout = null;
-      editorState.carpetDragErasing = null;
-      editorState.areaDragErasing = null;
+      // Releasing the mouse ends the stroke, so the next click starts a fresh
+      // undo entry — one click-drag collapses to a single undo.
+      editorState.endStroke();
     },
-    [editorState, isEditMode, officeState, onDragMove, onEditorSelectionChange],
+    [editorState, isEditMode, officeState, onDragMove, onDragDuplicate, onEditorSelectionChange],
   );
 
   // Shared by mouse click and touch tap — both resolve a viewport point to a
@@ -821,10 +852,7 @@ export function OfficeCanvas({
     isPanningRef.current = false;
     isEraseDraggingRef.current = false;
     editorState.isDragging = false;
-    editorState.wallDragAdding = null;
-    editorState.carpetStrokeInitialLayout = null;
-    editorState.carpetDragErasing = null;
-    editorState.areaDragErasing = null;
+    editorState.endStroke();
     editorState.clearDrag();
     editorState.ghostCol = -1;
     editorState.ghostRow = -1;
@@ -839,6 +867,23 @@ export function OfficeCanvas({
       }
     }
   }, [officeState, editorState, isEditMode]);
+
+  // Alt tapped or released with the mouse already down flips the in-flight drag
+  // between move and copy without waiting for the next mouse move — the rAF
+  // loop redraws the ghost from editorState every frame, so no re-render here.
+  useEffect(() => {
+    if (!isEditMode) return;
+    const syncAlt = (e: KeyboardEvent) => {
+      if (e.key !== 'Alt' || !editorState.dragUid) return;
+      editorState.dragDuplicate = e.type === 'keydown';
+    };
+    window.addEventListener('keydown', syncAlt);
+    window.addEventListener('keyup', syncAlt);
+    return () => {
+      window.removeEventListener('keydown', syncAlt);
+      window.removeEventListener('keyup', syncAlt);
+    };
+  }, [isEditMode, editorState]);
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {

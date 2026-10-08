@@ -259,8 +259,16 @@ function App() {
     const hooks = (window.__pixelAgentsTestHooks ??= {});
     hooks.editorTileAction = (col, row) => editor.handleEditorTileAction(col, row);
     hooks.editorEraseAction = (col, row) => editor.handleEditorEraseAction(col, row);
+    hooks.editorDragMove = (uid, col, row) => editor.handleDragMove(uid, col, row);
+    hooks.editorDragDuplicate = (uid, col, row) => editor.handleDragDuplicate(uid, col, row);
     hooks.getShowAreas = () => effectiveShowAreas;
-  }, [editor.handleEditorTileAction, editor.handleEditorEraseAction, effectiveShowAreas]);
+  }, [
+    editor.handleEditorTileAction,
+    editor.handleEditorEraseAction,
+    editor.handleDragMove,
+    editor.handleDragDuplicate,
+    effectiveShowAreas,
+  ]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -425,6 +433,7 @@ function App() {
         onDeleteSelected={editor.handleDeleteSelected}
         onRotateSelected={editor.handleRotateSelected}
         onDragMove={editor.handleDragMove}
+        onDragDuplicate={editor.handleDragDuplicate}
         editorTick={editor.editorTick}
         zoom={editor.zoom}
         onZoomChange={editor.handleZoomChange}
@@ -483,6 +492,7 @@ function App() {
                   onSelectedFurnitureColorChange={editor.handleSelectedFurnitureColorChange}
                   pickedFurnitureColor={editorState.pickedFurnitureColor}
                   onPickedFurnitureColorChange={editor.handlePickedFurnitureColorChange}
+                  onColorPickToggle={editor.handleColorPickToggle}
                   onFurnitureTypeChange={editor.handleFurnitureTypeChange}
                   loadedAssets={loadedAssets}
                   activePetTypes={officeState.getActivePetTypes()}
