@@ -343,7 +343,9 @@ export function TerminalPane({
       s.border = '2px solid var(--color-border)';
       s.borderRadius = '0';
       pill.addEventListener('click', () => {
-        void navigator.clipboard.writeText(flowTerminalCopy(term.getSelection()));
+        void navigator.clipboard.writeText(
+          flowTerminalCopy(term.getSelection(), term.cols, range.sc),
+        );
         term.clearSelection();
         hidePill();
         hideHandles();

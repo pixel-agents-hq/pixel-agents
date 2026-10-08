@@ -451,6 +451,11 @@ export const TERMINAL_LONG_PRESS_MS = 500;
 /** Vertical gap between the selection's top row and the floating copy pill
  *  hovering above it (clears the start handle's knob). */
 export const TERMINAL_COPY_PILL_GAP_PX = 56;
+/** Copy-flowing (flowCopy.ts) judges "the next word would not have fit on
+ *  the row above" against `cols` minus this: Claude Code wraps prose a few
+ *  columns short of the terminal width (its own gutters). Too small and real
+ *  soft wraps stay broken; too large and short deliberate lines get joined. */
+export const TERMINAL_COPY_WRAP_SLACK_COLS = 4;
 /** Flick decay after a terminal touch-scroll release, applied per millisecond
  *  of frame time (0.998 ≈ iOS UIScrollView's normal deceleration rate). */
 export const TERMINAL_FLICK_DECAY_PER_MS = 0.998;
