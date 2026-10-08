@@ -253,6 +253,62 @@ export function duplicateFurniture(
   };
 }
 
+/**
+ * Commit a drag-drop gesture: move the item (and its riders) to (newCol, newRow),
+ * or — with `duplicate` — stamp a copy of the group there. Null when the group
+ * doesn't fit, so nothing changes. `selectedUid` is what the drop leaves
+ * selected: the copy, so R / T / the colour sliders act on what was just
+ * dropped; nothing after a move.
+ */
+export function dropFurniture(
+  layout: OfficeLayout,
+  uid: string,
+  newCol: number,
+  newRow: number,
+  opts: { duplicate: boolean },
+): { layout: OfficeLayout; selectedUid: string | null } | null {
+  if (opts.duplicate) {
+    const copy = duplicateFurniture(layout, uid, newCol, newRow);
+    return copy && { layout: copy.layout, selectedUid: copy.uid };
+  }
+  const moved = moveFurniture(layout, uid, newCol, newRow);
+  return moved === layout ? null : { layout: moved, selectedUid: null };
+}
+
+/** Set (or, with null, remove) a placed item's colour. Returns new layout (immutable). */
+export function setFurnitureColor(
+  layout: OfficeLayout,
+  uid: string,
+  color: ColorValue | null,
+): OfficeLayout {
+  if (!layout.furniture.some((f) => f.uid === uid)) return layout;
+  return {
+    ...layout,
+    furniture: layout.furniture.map((f) =>
+      f.uid === uid ? { ...f, color: color ? { ...color } : undefined } : f,
+    ),
+  };
+}
+
+/**
+ * Place a new catalog item under the cursor at (col, row) — wall items hang so
+ * their bottom row sits on the hovered tile — with a fresh uid and, if given,
+ * its own copy of `color`. Returns new layout (immutable); unchanged when the
+ * item doesn't fit there.
+ */
+export function placeNewFurniture(
+  layout: OfficeLayout,
+  type: string,
+  col: number,
+  row: number,
+  color: ColorValue | null,
+): OfficeLayout {
+  const uid = freshFurnitureUid(new Set(layout.furniture.map((f) => f.uid)));
+  const item: PlacedFurniture = { uid, type, col, row: getWallPlacementRow(type, row) };
+  if (color) item.color = { ...color };
+  return placeFurniture(layout, item);
+}
+
 /** Replace each listed item in the layout by uid. Returns new layout (immutable). */
 function withFurniture(layout: OfficeLayout, updates: PlacedFurniture[]): OfficeLayout {
   const byUid = new Map(updates.map((f) => [f.uid, f]));
@@ -451,6 +507,55 @@ export function canPlaceFurniture(
   }
 
   return true;
+}
+
+/** Whether (col, row) is on the grid and neither VOID nor wall — where carpets and areas go. */
+export function isFloorTile(layout: OfficeLayout, col: number, row: number): boolean {
+  if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return false;
+  const tileVal = layout.tiles[row * layout.cols + col];
+  return tileVal !== TileType.VOID && tileVal !== TileType.WALL;
+}
+
+/**
+ * One tile of a wall-tool stroke. The stroke's first tile decides its
+ * direction (`adding`): adding paints a wall in `wallColor`; removing turns a
+ * wall back into floor of the given pattern and colour and leaves non-walls
+ * alone. Returns new layout (immutable).
+ */
+export function wallStrokeTile(
+  layout: OfficeLayout,
+  col: number,
+  row: number,
+  adding: boolean,
+  wallColor: ColorValue,
+  floor: { type: TileTypeVal; color: ColorValue },
+): OfficeLayout {
+  if (adding) return paintTile(layout, col, row, TileType.WALL, wallColor);
+  if (layout.tiles[row * layout.cols + col] !== TileType.WALL) return layout;
+  return paintTile(layout, col, row, floor.type, floor.color);
+}
+
+/** Recolour every wall tile. Returns new layout (immutable); unchanged when there are no walls. */
+export function recolorWalls(layout: OfficeLayout, color: ColorValue): OfficeLayout {
+  if (!layout.tiles.includes(TileType.WALL)) return layout;
+  const existing = layout.tileColors || new Array(layout.tiles.length).fill(null);
+  const tileColors = existing.map((c, i) => (layout.tiles[i] === TileType.WALL ? { ...color } : c));
+  return { ...layout, tileColors };
+}
+
+/** Whether a wall stroke starting on (col, row) adds walls (it removes them when it starts on one). */
+export function wallStrokeAdds(layout: OfficeLayout, col: number, row: number): boolean {
+  return layout.tiles[row * layout.cols + col] !== TileType.WALL;
+}
+
+/** Whether an area stroke starting on (col, row) erases: it does when that tile already carries `label`. */
+export function areaStrokeErases(
+  layout: OfficeLayout,
+  col: number,
+  row: number,
+  label: string,
+): boolean {
+  return (layout.areaTiles?.[row * layout.cols + col] ?? null) === label;
 }
 
 /**

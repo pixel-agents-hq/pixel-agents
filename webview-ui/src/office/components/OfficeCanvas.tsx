@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import {
   CAMERA_FOLLOW_LERP,
   CAMERA_FOLLOW_SNAP_THRESHOLD,
+  OFFICE_CANVAS_TEST_ID,
   PAN_MARGIN_FRACTION,
   ZOOM_MAX,
   ZOOM_MIN,
@@ -10,7 +11,7 @@ import {
 } from '../../constants.js';
 import { unlockAudio } from '../../notificationSound.js';
 import { transport } from '../../transport/index.js';
-import { furnitureAt, planFurnitureMove } from '../editor/editorActions.js';
+import { furnitureAt } from '../editor/editorActions.js';
 import { buildEditorRenderState } from '../editor/editorRenderState.js';
 import type { EditorState } from '../editor/editorState.js';
 import { startGameLoop } from '../engine/gameLoop.js';
@@ -36,9 +37,9 @@ interface OfficeCanvasProps {
   onEditorSelectionChange: () => void;
   onDeleteSelected: () => void;
   onRotateSelected: () => void;
-  onDragMove: (uid: string, newCol: number, newRow: number) => void;
-  /** Alt-drag drop: copy the item (and its surface riders) to (newCol,newRow). */
-  onDragDuplicate: (uid: string, newCol: number, newRow: number) => void;
+  /** A furniture drag released with the item's top-left over (col,row);
+   *  `duplicate` when Alt was held. The handler decides what that commits. */
+  onDrop: (uid: string, col: number, row: number, opts: { duplicate: boolean }) => void;
   editorTick: number;
   zoom: number;
   onZoomChange: (zoom: number) => void;
@@ -64,8 +65,7 @@ export function OfficeCanvas({
   onEditorSelectionChange,
   onDeleteSelected,
   onRotateSelected,
-  onDragMove,
-  onDragDuplicate,
+  onDrop,
   editorTick: _editorTick,
   zoom,
   onZoomChange,
@@ -389,7 +389,7 @@ export function OfficeCanvas({
             } else if (
               (editorState.activeTool === EditTool.SELECT ||
                 (editorState.activeTool === EditTool.FURNITURE_PLACE &&
-                  editorState.selectedFurnitureType === '')) &&
+                  editorState.placing === null)) &&
               tile
             ) {
               // Check if hovering over furniture
@@ -497,8 +497,7 @@ export function OfficeCanvas({
       // SELECT tool (or furniture tool with nothing selected): check for furniture hit to start drag
       const actAsSelect =
         editorState.activeTool === EditTool.SELECT ||
-        (editorState.activeTool === EditTool.FURNITURE_PLACE &&
-          editorState.selectedFurnitureType === '');
+        (editorState.activeTool === EditTool.FURNITURE_PLACE && editorState.placing === null);
       if (actAsSelect && tile) {
         const hitFurniture = furnitureAt(officeState.getLayout(), tile.col, tile.row);
         if (hitFurniture) {
@@ -562,28 +561,12 @@ export function OfficeCanvas({
       // Handle drag-to-move completion
       if (editorState.dragUid) {
         if (editorState.isDragMoving) {
-          // Compute target position — validity covers the whole group (the item
-          // plus anything on its surface), matching the ghost preview.
-          const duplicating = editorState.dragDuplicate;
-          const ghostCol = editorState.ghostCol - editorState.dragOffsetCol;
-          const ghostRow = editorState.ghostRow - editorState.dragOffsetRow;
-          const plan = planFurnitureMove(
-            officeState.getLayout(),
+          onDrop(
             editorState.dragUid,
-            ghostCol,
-            ghostRow,
-            { duplicate: duplicating },
+            editorState.ghostCol - editorState.dragOffsetCol,
+            editorState.ghostRow - editorState.dragOffsetRow,
+            { duplicate: editorState.dragDuplicate },
           );
-          if (plan?.valid) {
-            if (duplicating) {
-              onDragDuplicate(editorState.dragUid, ghostCol, ghostRow);
-            } else {
-              onDragMove(editorState.dragUid, ghostCol, ghostRow);
-            }
-          }
-          // A committed copy leaves itself selected (onDragDuplicate sets it),
-          // so only drop the selection when nothing new was created.
-          if (!duplicating || !plan?.valid) editorState.clearSelection();
         } else {
           // Click (no movement) — toggle selection. Selecting also collapses
           // the open tool tab, so the toolbar shows the item's own controls.
@@ -605,7 +588,7 @@ export function OfficeCanvas({
       // undo entry — one click-drag collapses to a single undo.
       editorState.endStroke();
     },
-    [editorState, isEditMode, officeState, onDragMove, onDragDuplicate, onEditorSelectionChange],
+    [editorState, isEditMode, onDrop, onEditorSelectionChange],
   );
 
   // Shared by mouse click and touch tap — both resolve a viewport point to a
@@ -813,6 +796,7 @@ export function OfficeCanvas({
     <div ref={containerRef} className="w-full h-full relative overflow-hidden bg-bg">
       <canvas
         ref={canvasRef}
+        data-testid={OFFICE_CANVAS_TEST_ID}
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}

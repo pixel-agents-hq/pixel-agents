@@ -93,6 +93,8 @@ export const PAN_MARGIN_FRACTION = 0.25;
 // ── Editor ───────────────────────────────────────────────────
 export const UNDO_STACK_MAX_SIZE = 50;
 export const LAYOUT_SAVE_DEBOUNCE_MS = 500;
+/** data-testid of the office canvas — e2e drives real editor gestures on it. */
+export const OFFICE_CANVAS_TEST_ID = 'office-canvas';
 /** Ghost-border hover tile when the border isn't shown — off any reachable tile. */
 export const GHOST_BORDER_NO_HOVER_TILE = -999;
 

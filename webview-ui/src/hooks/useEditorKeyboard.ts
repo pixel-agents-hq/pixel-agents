@@ -28,10 +28,9 @@ export function useEditorKeyboard(
           editorState.clearGhost();
         } else if (
           editorState.activeTool === EditTool.FURNITURE_PLACE &&
-          editorState.selectedFurnitureType !== ''
+          editorState.placing !== null
         ) {
-          editorState.selectedFurnitureType = '';
-          editorState.copiedFurnitureColor = null;
+          editorState.placing = null;
           editorState.clearGhost();
         } else if (editorState.activeTool === EditTool.CARPET_PICK) {
           // First Esc inside carpet sub-flow: drop pick → back to paint

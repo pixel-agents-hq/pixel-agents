@@ -1,12 +1,17 @@
 /**
- * Layout-editor driving helpers for carpet + area e2e specs.
+ * Layout-editor driving helpers for the carpet, area and editor e2e specs.
  *
  * Tool selection goes through the REAL toolbar UI (same path a user takes).
- * Tile targeting goes through `window.__pixelAgentsTestHooks.editorTileAction`
+ * Tile painting goes through `window.__pixelAgentsTestHooks.editorTileAction`
  * / `.editorEraseAction`, which call the same App-level handlers the canvas
  * calls — bypassing ONLY canvas pixel→tile geometry (mirrors the pets fixture's
- * petClick, see webview-ui/src/testHooks.ts). Selectors are read from the live
- * EditorToolbar.tsx; prefer titles over text so they survive copy changes.
+ * petClick, see webview-ui/src/testHooks.ts). `dropFurnitureAt` bypasses more:
+ * the whole drag gesture (press, movement, the Alt modifier, geometry) — only
+ * the drop rules run. Gestures the canvas itself resolves (selecting a placed
+ * item, dragging it, Alt-drag copying it) have real-mouse helpers too:
+ * `clickTile` / `dragOnCanvas` press the mouse on the office canvas at a tile's
+ * projected centre. Selectors are read from the live EditorToolbar.tsx; prefer
+ * titles over text so they survive copy changes.
  */
 import type { Frame, Locator } from '@playwright/test';
 import { expect } from '@playwright/test';
@@ -42,13 +47,22 @@ export interface TestHooksWindow extends Window {
     }>;
     editorTileAction?: (col: number, row: number) => void;
     editorEraseAction?: (col: number, row: number) => void;
-    editorDragMove?: (uid: string, col: number, row: number) => void;
-    editorDragDuplicate?: (uid: string, col: number, row: number) => void;
+    editorDrop?: (uid: string, col: number, row: number, duplicate?: boolean) => void;
+    getTileCenter?: (col: number, row: number) => { x: number; y: number } | null;
     getTiles?: () => { cols: number; rows: number; tiles: number[] };
-    getFurniture?: () => Array<{ uid: string; type: string; col: number; row: number }>;
+    getFurniture?: () => Array<PlacedItem>;
     getFurnitureCount?: () => number;
     messageLog?: Array<{ type: string }>;
   };
+}
+
+/** A placed furniture item as the getFurniture hook reports it. */
+export interface PlacedItem {
+  uid: string;
+  type: string;
+  col: number;
+  row: number;
+  color?: { h: number; s: number; b: number; c: number; colorize?: boolean };
 }
 
 /** TileType values mirrored from webview-ui/src/office/types.ts. */
@@ -180,13 +194,104 @@ export function furniturePanel(frame: Frame): Locator {
   return frame.locator('button[title="Copy furniture type from placed item"]');
 }
 
+/** The office canvas (the editor's click/drag surface). */
+export function officeCanvas(frame: Frame): Locator {
+  return frame.locator('[data-testid="office-canvas"]');
+}
+
 /**
- * Select a placed item by clicking its tile. Real selection path: both SELECT
- * and the Furniture panel (with no catalog item picked) resolve the click to
- * the furniture under the tile in handleEditorTileAction.
+ * Where tile (col,row)'s centre is on screen, in the page coordinates
+ * `page.mouse` takes. The canvas projects tiles itself (zoom, pan, centring),
+ * so the in-canvas offset comes from the renderer's own projection via the
+ * getTileCenter hook; the canvas box places it on the page. Fails loudly if
+ * anything (a toolbar, an overlay) covers the point — a real click there would
+ * never reach the canvas.
  */
+async function tilePagePoint(frame: Frame, col: number, row: number) {
+  const box = await officeCanvas(frame).boundingBox();
+  if (!box) throw new Error('office canvas is not rendered');
+  const local = await frame.evaluate(
+    ([c, r]) => {
+      const center = (window as TestHooksWindow).__pixelAgentsTestHooks?.getTileCenter?.(c, r);
+      const canvas = document.querySelector('[data-testid="office-canvas"]');
+      if (!center || !canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      const top = document.elementFromPoint(rect.left + center.x, rect.top + center.y);
+      return { ...center, onCanvas: top === canvas };
+    },
+    [col, row] as const,
+  );
+  if (!local) throw new Error(`tile (${col},${row}) has no projection yet`);
+  if (!local.onCanvas) throw new Error(`tile (${col},${row}) is covered — not clickable on canvas`);
+  return { x: box.x + local.x, y: box.y + local.y };
+}
+
+/**
+ * A real left click on the canvas at tile (col,row): mousedown + mouseup,
+ * through OfficeCanvas's own hit-testing. On a placed item that selects it (or
+ * deselects it if already selected), exactly as a user's click does.
+ */
+export async function clickTile(frame: Frame, col: number, row: number): Promise<void> {
+  const p = await tilePagePoint(frame, col, row);
+  await frame.page().mouse.click(p.x, p.y);
+}
+
+/** Select a placed item by clicking one of its tiles on the canvas. */
 export async function selectFurnitureAt(frame: Frame, col: number, row: number): Promise<void> {
-  await paintTile(frame, col, row);
+  await clickTile(frame, col, row);
+}
+
+/**
+ * A real mouse drag on the canvas from tile `from` to tile `to` — press,
+ * move across the tiles, release — with Alt held throughout when `alt` is set
+ * (the copy gesture). The item under `from` moves (or is copied) by the same
+ * tile delta, so grab it by any of its tiles.
+ */
+export async function dragOnCanvas(
+  frame: Frame,
+  from: readonly [number, number],
+  to: readonly [number, number],
+  opts: { alt?: boolean } = {},
+): Promise<void> {
+  const mouse = frame.page().mouse;
+  const keyboard = frame.page().keyboard;
+  const start = await tilePagePoint(frame, from[0], from[1]);
+  const end = await tilePagePoint(frame, to[0], to[1]);
+  await mouse.move(start.x, start.y);
+  if (opts.alt) await keyboard.down('Alt');
+  try {
+    await mouse.down();
+    await mouse.move(end.x, end.y, { steps: 8 });
+    await mouse.up();
+  } finally {
+    if (opts.alt) await keyboard.up('Alt');
+  }
+}
+
+/**
+ * Release a drag of `uid` at (col,row) through the real drop handler, with
+ * `duplicate` standing in for Alt. Skips the whole mouse gesture — press,
+ * movement, the Alt modifier, pixel→tile geometry — so it pins the drop rules
+ * (what rides along, whether the group fits, what ends up selected), not the
+ * gesture; dragOnCanvas covers that.
+ */
+export async function dropFurnitureAt(
+  frame: Frame,
+  uid: string,
+  col: number,
+  row: number,
+  opts: { duplicate?: boolean } = {},
+): Promise<void> {
+  await frame.evaluate(
+    ([u, c, r, d]) =>
+      (window as TestHooksWindow).__pixelAgentsTestHooks?.editorDrop?.(
+        u as string,
+        c as number,
+        r as number,
+        d as boolean,
+      ),
+    [uid, col, row, !!opts.duplicate] as const,
+  );
 }
 
 /**
@@ -195,50 +300,6 @@ export async function selectFurnitureAt(frame: Frame, col: number, row: number):
  */
 export async function pressEditorKey(frame: Frame, key: string): Promise<void> {
   await frame.locator('body').press(key);
-}
-
-/**
- * Drop a dragged item at (col,row) through the real drag-move handler. Bypasses
- * the mouse gesture only — moveFurniture still decides what comes along (items
- * on a desk's surface) and whether the group fits.
- */
-export async function dragFurnitureTo(
-  frame: Frame,
-  uid: string,
-  col: number,
-  row: number,
-): Promise<void> {
-  await frame.evaluate(
-    ([u, c, r]) =>
-      (window as TestHooksWindow).__pixelAgentsTestHooks?.editorDragMove?.(
-        u as string,
-        c as number,
-        r as number,
-      ),
-    [uid, col, row] as const,
-  );
-}
-
-/**
- * Drop an Alt-drag copy at (col,row) through the real duplicate handler. Same
- * bypass as dragFurnitureTo — the altKey gesture is the only thing skipped;
- * duplicateFurniture still decides what is copied and whether the copy fits.
- */
-export async function duplicateFurnitureTo(
-  frame: Frame,
-  uid: string,
-  col: number,
-  row: number,
-): Promise<void> {
-  await frame.evaluate(
-    ([u, c, r]) =>
-      (window as TestHooksWindow).__pixelAgentsTestHooks?.editorDragDuplicate?.(
-        u as string,
-        c as number,
-        r as number,
-      ),
-    [uid, col, row] as const,
-  );
 }
 
 /** Save the layout via the EditActionBar (only visible while the editor is dirty). */
@@ -257,13 +318,29 @@ export async function readTilesAt(frame: Frame, cells: Array<[number, number]>):
   }, cells);
 }
 
-/** Read placed furniture (uid + type + grid coords) from the test hook. */
-export async function readFurniture(
-  frame: Frame,
-): Promise<Array<{ uid: string; type: string; col: number; row: number }>> {
+/** Read placed furniture (uid + type + grid coords + colour) from the test hook. */
+export async function readFurniture(frame: Frame): Promise<PlacedItem[]> {
   return frame.evaluate(
     () => (window as TestHooksWindow).__pixelAgentsTestHooks?.getFurniture?.() ?? [],
   );
+}
+
+/**
+ * Assert a negative outcome HOLDS: `read()` must keep equalling `expected` on
+ * every poll across `windowMs`, not just on the first read — a refused edit
+ * that lands late (a debounce, a re-render) would slip past a one-shot check.
+ */
+export async function expectStays<T>(
+  read: () => Promise<T>,
+  expected: T,
+  windowMs = 1_000,
+): Promise<void> {
+  const deadline = Date.now() + windowMs;
+  do {
+    const value: unknown = await read();
+    expect(value).toEqual(expected);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  } while (Date.now() < deadline);
 }
 
 /** Read the painted carpet tiles from the test hook. */

@@ -9,11 +9,24 @@ import {
 import type { OfficeLayout, TileType as TileTypeVal } from '../types.js';
 import { EditTool, TileType } from '../types.js';
 
+/** A catalog item queued for placement, with the colour the Copy tool lifted (if any). */
+export interface FurniturePlacement {
+  type: string;
+  color?: ColorValue;
+}
+
 export class EditorState {
   isEditMode = false;
   activeTool: EditTool = EditTool.SELECT;
   selectedTileType: TileTypeVal = TileType.FLOOR_1;
-  selectedFurnitureType = ''; // asset ID, set when catalog loads
+  /**
+   * The catalog item being placed, or null when none is picked. `color` is
+   * set only when the Copy tool lifted the item off a placed one: that copy
+   * goes down in the colour it was taken in, and nothing else does. Type and
+   * colour travel together, so picking another catalog item (or clearing the
+   * pick) replaces both in one assignment.
+   */
+  placing: FurniturePlacement | null = null;
 
   // Floor color settings (applied to new tiles when painting)
   floorColor: ColorValue = { ...DEFAULT_FLOOR_COLOR };
@@ -33,15 +46,6 @@ export class EditorState {
    */
   pickedFurnitureColor: ColorValue | null = null;
 
-  /**
-   * Colour lifted off a placed item by the Copy tool. Deliberately separate
-   * from `pickedFurnitureColor`: copying an item styles that copy and nothing
-   * else, so the catalog previews and every other new item stay as they were.
-   * Dropped as soon as a catalog item, a palette colour, or another tool is
-   * chosen.
-   */
-  copiedFurnitureColor: ColorValue | null = null;
-
   /** Tool the colour eyedropper returns to once it has taken a colour (or is cancelled). */
   colorPickReturnTool: EditTool = EditTool.SELECT;
 
@@ -57,13 +61,15 @@ export class EditorState {
   isDragging = false;
 
   /**
-   * Layout snapshot taken at the first tile of the current paint/erase stroke.
-   * Non-null means a stroke is in progress, so later tiles of the same
-   * click-drag must not push another undo entry — one stroke = one undo.
-   * Shared by every drag-painting tool (floor, wall, erase, carpet). Cleared on
-   * mouse up / mouse leave / tool change / Esc.
+   * The run of edits the newest undo entry covers, so a continuous gesture
+   * collapses to one undo: `'stroke'` for a floor / wall / erase / carpet
+   * click-drag, `'wallColor'` for the wall colour sliders, `` `color:${uid}` ``
+   * for a placed item's colour sliders. An edit pushes undo only when its key
+   * differs from this one (see {@link beginEdit}); null means the next edit
+   * always starts a fresh entry. Cleared by endStroke (mouse up / leave, tool
+   * change, Esc), by selection changes, and by undo / redo.
    */
-  strokeInitialLayout: OfficeLayout | null = null;
+  undoSession: string | null = null;
 
   // Undo / Redo stacks
   undoStack: OfficeLayout[] = [];
@@ -104,18 +110,20 @@ export class EditorState {
   areaDragErasing: boolean | null = null;
 
   /**
-   * Open a stroke. Returns true only for the first tile of a click-drag — the
-   * caller pushes undo then. Later tiles return false and ride the same entry.
+   * Enter the undo session an edit belongs to. Returns true when the edit opens
+   * a new undo entry — the caller pushes undo then — and false when it extends
+   * the session the newest entry already covers. `null` is a discrete edit:
+   * always its own entry, and it ends whatever session was running.
    */
-  beginStroke(layout: OfficeLayout): boolean {
-    if (this.strokeInitialLayout !== null) return false;
-    this.strokeInitialLayout = layout;
-    return true;
+  beginEdit(session: string | null): boolean {
+    const fresh = session === null || session !== this.undoSession;
+    this.undoSession = session;
+    return fresh;
   }
 
-  /** Close the current stroke so the next one starts a fresh undo entry. */
+  /** Close the current stroke (or slider run) so the next edit starts a fresh undo entry. */
   endStroke(): void {
-    this.strokeInitialLayout = null;
+    this.undoSession = null;
     this.carpetDragErasing = null;
     this.areaDragErasing = null;
     this.wallDragAdding = null;
@@ -148,8 +156,18 @@ export class EditorState {
     this.redoStack = [];
   }
 
+  /**
+   * Set (or clear) the selected placed item. A new selection ends any colour
+   * slider run, so re-selecting an item and dragging its sliders again is a
+   * fresh undo entry.
+   */
+  setSelection(uid: string | null): void {
+    this.selectedFurnitureUid = uid;
+    this.undoSession = null;
+  }
+
   clearSelection(): void {
-    this.selectedFurnitureUid = null;
+    this.setSelection(null);
   }
 
   /**
@@ -160,9 +178,14 @@ export class EditorState {
    * reopening the Furniture tab resumes placing what was being placed.
    */
   selectPlacedFurniture(uid: string): void {
-    this.selectedFurnitureUid = uid;
+    this.setSelection(uid);
     this.activeTool = EditTool.SELECT;
     this.clearGhost();
+  }
+
+  /** Asset ID of the catalog item being placed, or '' when none is picked. */
+  get placingType(): string {
+    return this.placing?.type ?? '';
   }
 
   /**
@@ -171,7 +194,17 @@ export class EditorState {
    * long as that copy is what's being placed.
    */
   placementColor(): ColorValue | null {
-    return this.copiedFurnitureColor ?? this.pickedFurnitureColor;
+    return this.placing?.color ?? this.pickedFurnitureColor;
+  }
+
+  /**
+   * Set the palette-wide colour. Reaching for the sliders is a deliberate
+   * choice of colour, so it also governs the item being placed — it outranks
+   * whatever the Copy tool lifted off a placed item.
+   */
+  setPaletteColor(color: ColorValue | null): void {
+    this.pickedFurnitureColor = color;
+    if (this.placing?.color) this.placing = { type: this.placing.type };
   }
 
   /**
@@ -234,12 +267,11 @@ export class EditorState {
     this.dragUid = null;
     this.isDragMoving = false;
     this.dragDuplicate = false;
-    this.copiedFurnitureColor = null;
     this.carpetVariant = 0;
     this.carpetColor = { ...CARPET_DEFAULT_COLOR };
     this.carpetAccentColor = { ...CARPET_DEFAULT_ACCENT_COLOR };
     this.carpetDragErasing = null;
-    this.strokeInitialLayout = null;
+    this.undoSession = null;
     this.selectedAreaLabel = null;
     this.areaDragErasing = null;
   }

@@ -49,7 +49,13 @@ declare global {
       getTiles?: () => { cols: number; rows: number; tiles: number[] };
       /** Placed furniture with grid coords, so a spec can assert exactly which
        *  item an erase stroke removed (getFurnitureCount only gives a total). */
-      getFurniture?: () => Array<{ uid: string; type: string; col: number; row: number }>;
+      getFurniture?: () => Array<{
+        uid: string;
+        type: string;
+        col: number;
+        row: number;
+        color?: ColorValue;
+      }>;
       /** Seated top-level agents with the area their seat falls in (or null). */
       getAgentSeats?: () => Array<{
         id: number;
@@ -70,12 +76,15 @@ declare global {
        *  bypassing only canvas pixel→tile geometry (mirrors petClick). */
       editorTileAction?: (col: number, row: number) => void;
       editorEraseAction?: (col: number, row: number) => void;
-      /** Drop a dragged item at (col,row) via the real drag-move handler —
-       *  bypasses the mouse gesture, not the move rules (group validity, riders). */
-      editorDragMove?: (uid: string, col: number, row: number) => void;
-      /** Drop an Alt-drag copy at (col,row) via the real duplicate handler —
-       *  same bypass as editorDragMove, minus only the altKey gesture. */
-      editorDragDuplicate?: (uid: string, col: number, row: number) => void;
+      /** Release a furniture drag at (col,row) via the real drop handler (a copy
+       *  with `duplicate`, as Alt does) — skips the whole mouse gesture: press,
+       *  movement, the Alt modifier and pixel→tile geometry. The drop rules
+       *  themselves (group validity, riders, selection) still run. */
+      editorDrop?: (uid: string, col: number, row: number, duplicate?: boolean) => void;
+      /** Centre of tile (col,row) in CSS pixels relative to the office canvas,
+       *  through the renderer's own projection (zoom + pan) — lets a spec drive
+       *  the REAL canvas mouse gesture at a known tile. Null before mount. */
+      getTileCenter?: (col: number, row: number) => { x: number; y: number } | null;
       getPets?: () => Array<{
         id: string;
         name: string;
@@ -278,6 +287,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       type: f.type,
       col: f.col,
       row: f.row,
+      color: f.color,
     }));
   };
 

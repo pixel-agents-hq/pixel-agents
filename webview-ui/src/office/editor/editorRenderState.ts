@@ -57,7 +57,7 @@ export function buildEditorRenderState(
   const hovering = editorState.ghostCol >= 0;
 
   // Ghost preview for furniture placement
-  const placingType = editorState.selectedFurnitureType;
+  const placingType = editorState.placingType;
   if (tool === EditTool.FURNITURE_PLACE && hovering && placingType) {
     const row = getWallPlacementRow(placingType, editorState.ghostRow);
     const entry = getCatalogEntry(placingType);

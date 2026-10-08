@@ -4,8 +4,7 @@ import path from 'path';
 
 import { expect, test } from '../../../fixtures/pixel-agents';
 import {
-  dragFurnitureTo,
-  duplicateFurnitureTo,
+  dropFurnitureAt,
   endStroke,
   enterEditMode,
   eraseTile,
@@ -375,7 +374,7 @@ test.describe('Layout editor — desks carry what stands on them', () => {
     // 3 rows down: the desk's new footprint covers the PC's old tiles, which is
     // exactly the overlap that used to make a short drag impossible.
     narrator.step('dragging the desk from (3,3) to (3,6)');
-    await dragFurnitureTo(frame, 'seed-desk', 3, 6);
+    await dropFurnitureAt(frame, 'seed-desk', 3, 6);
 
     await expect
       .poll(async () => {
@@ -398,7 +397,7 @@ test.describe('Layout editor — desks carry what stands on them', () => {
     // The desk alone would fit at row 10 (3x2 → rows 10-11); the PC riding it
     // would not (rows 10-11 too, but the group is validated as one).
     narrator.step('dragging the desk to (3,11) — the bottom edge of a 12-row grid');
-    await dragFurnitureTo(frame, 'seed-desk', 3, 11);
+    await dropFurnitureAt(frame, 'seed-desk', 3, 11);
 
     const furniture = await readFurniture(frame);
     const desk = furniture.find((f) => f.uid === 'seed-desk');
@@ -442,7 +441,7 @@ test.describe('Layout editor — desks carry what stands on them', () => {
     await enterEditMode(frame);
 
     narrator.step('alt-dragging the desk from (3,3) to (3,7)');
-    await duplicateFurnitureTo(frame, 'seed-desk', 3, 7);
+    await dropFurnitureAt(frame, 'seed-desk', 3, 7, { duplicate: true });
 
     await waitForFurnitureCount(frame, 4);
     narrator.check('2 → 4 items: the desk AND the PC on it were copied, not just the desk');
@@ -475,13 +474,13 @@ test.describe('Layout editor — desks carry what stands on them', () => {
     // a background row, so only row 4 blocks). A move vacates those tiles and
     // fits; a copy leaves the original standing on them.
     narrator.step('alt-dragging the desk one column right, over its own tiles');
-    await duplicateFurnitureTo(frame, 'seed-desk', 4, 3);
+    await dropFurnitureAt(frame, 'seed-desk', 4, 3, { duplicate: true });
 
     expect((await readFurniture(frame)).length).toBe(2);
     narrator.check('no copy was made — the original still blocks the tiles it sits on');
 
     narrator.step('dragging the desk to the same (4,3) without alt');
-    await dragFurnitureTo(frame, 'seed-desk', 4, 3);
+    await dropFurnitureAt(frame, 'seed-desk', 4, 3);
 
     await expect
       .poll(async () => {
@@ -500,7 +499,7 @@ test.describe('Layout editor — desks carry what stands on them', () => {
     await enterEditMode(frame);
 
     narrator.step('alt-dragging the desk from (3,3) to (3,7)');
-    await duplicateFurnitureTo(frame, 'seed-desk', 3, 7);
+    await dropFurnitureAt(frame, 'seed-desk', 3, 7, { duplicate: true });
     await waitForFurnitureCount(frame, 4);
 
     narrator.step('clicking Undo once');

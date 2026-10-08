@@ -16,6 +16,7 @@ import { Button } from './components/ui/Button.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
+import { OFFICE_CANVAS_TEST_ID } from './constants.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
@@ -33,8 +34,9 @@ import { OfficeState } from './office/engine/officeState.js';
 import { exportLayoutToFile } from './office/layout/exportLayout.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
+import { overlayProjection } from './office/projection.js';
 import { getPetCount } from './office/sprites/petSpriteData.js';
-import { EditTool, type OfficeLayout } from './office/types.js';
+import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
@@ -252,21 +254,39 @@ function App() {
 
   // e2e: register the component-scoped editor-action drivers + the effective
   // show-areas gate on the test-hooks namespace (module-load installTestHooks
-  // can't reach these React callbacks). Bypasses only canvas pixel→tile
-  // geometry — the handlers still own undo/dirty/rebuild. Guarded on isE2E.
+  // can't reach these React callbacks). The action drivers bypass canvas
+  // pixel→tile geometry — the handlers still own undo/dirty/rebuild; for specs
+  // that drive the real canvas gesture instead, getTileCenter projects a tile
+  // to canvas CSS pixels with the renderer's own zoom + pan. Guarded on isE2E.
   useEffect(() => {
     if (!isE2E || typeof window === 'undefined') return;
     const hooks = (window.__pixelAgentsTestHooks ??= {});
     hooks.editorTileAction = (col, row) => editor.handleEditorTileAction(col, row);
     hooks.editorEraseAction = (col, row) => editor.handleEditorEraseAction(col, row);
-    hooks.editorDragMove = (uid, col, row) => editor.handleDragMove(uid, col, row);
-    hooks.editorDragDuplicate = (uid, col, row) => editor.handleDragDuplicate(uid, col, row);
+    hooks.editorDrop = (uid, col, row, duplicate = false) =>
+      editor.handleDrop(uid, col, row, { duplicate });
+    hooks.getTileCenter = (col, row) => {
+      const canvas = document.querySelector(`[data-testid="${OFFICE_CANVAS_TEST_ID}"]`);
+      if (!canvas) return null;
+      const projection = overlayProjection(
+        getOfficeState().getLayout(),
+        canvas.getBoundingClientRect(),
+        editor.zoom,
+        editor.panRef.current,
+        window.devicePixelRatio || 1,
+      );
+      return {
+        x: projection.toScreenX((col + 0.5) * TILE_SIZE),
+        y: projection.toScreenY((row + 0.5) * TILE_SIZE),
+      };
+    };
     hooks.getShowAreas = () => effectiveShowAreas;
   }, [
     editor.handleEditorTileAction,
     editor.handleEditorEraseAction,
-    editor.handleDragMove,
-    editor.handleDragDuplicate,
+    editor.handleDrop,
+    editor.zoom,
+    editor.panRef,
     effectiveShowAreas,
   ]);
 
@@ -402,7 +422,7 @@ function App() {
       }
       if (
         editorState.activeTool === EditTool.FURNITURE_PLACE &&
-        isRotatable(editorState.selectedFurnitureType)
+        isRotatable(editorState.placingType)
       ) {
         return true;
       }
@@ -432,8 +452,7 @@ function App() {
         onEditorSelectionChange={editor.handleEditorSelectionChange}
         onDeleteSelected={editor.handleDeleteSelected}
         onRotateSelected={editor.handleRotateSelected}
-        onDragMove={editor.handleDragMove}
-        onDragDuplicate={editor.handleDragDuplicate}
+        onDrop={editor.handleDrop}
         editorTick={editor.editorTick}
         zoom={editor.zoom}
         onZoomChange={editor.handleZoomChange}
@@ -478,7 +497,7 @@ function App() {
                 <EditorToolbar
                   activeTool={editorState.activeTool}
                   selectedTileType={editorState.selectedTileType}
-                  selectedFurnitureType={editorState.selectedFurnitureType}
+                  selectedFurnitureType={editorState.placingType}
                   selectedFurnitureUid={selUid}
                   selectedFurnitureColor={selColor}
                   floorColor={editorState.floorColor}
