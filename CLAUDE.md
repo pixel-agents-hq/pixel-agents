@@ -113,6 +113,7 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
     hooks/
       useExtensionMessages.ts        Message handler — translates ServerMessage into OfficeState mutations
       useEditorActions.ts            Editor state + callbacks
+      useFurnitureColorActions.ts    Furniture colour sliders + colour-only eyedropper
       useEditorKeyboard.ts           Keyboard shortcuts (R, T, Esc, Ctrl+Z/Y)
       introTourState.ts              Intro tour wire-state machine (pure reducer, Node-runner tested)
       useIntroTour.ts                Wires the reducer to React + transport (snapshot, verdict, choices)
@@ -131,7 +132,8 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
         spriteCache.ts               SpriteData → offscreen canvas, per-zoom WeakMap
       editor/
         editorActions.ts             Pure layout ops
-        editorState.ts               Imperative state (tools, ghost, selection, undo/redo, drag)
+        editorState.ts               Imperative state (tools, ghost, selection, undo/redo + undo session, drag, placing)
+        editorRenderState.ts         buildEditorRenderState: ghosts + selection for the renderer (pure)
         EditorToolbar.tsx
       layout/
         furnitureCatalog.ts          Dynamic catalog from loaded assets
@@ -430,15 +432,15 @@ Custom ESLint rules (`eslint-rules/pixel-agents-rules.mjs`) enforce: `no-inline-
 
 ## Layout Editor
 
-Toggle via "Layout" button. Tools: SELECT (default), Floor paint, Wall paint, Erase (set tiles to VOID), Furniture place, Furniture pick (eyedropper for furniture type), Eyedropper (floor).
+Toggle via "Layout" button. Tools: SELECT (default), Floor paint, Wall paint, Erase (set tiles to VOID), Furniture place, Furniture Copy (`FURNITURE_PICK`: type + colour off a placed item), colour Copy (`COLOR_PICK`: colour only), Eyedropper (floor/wall). `handleEditorTileAction` is a per-tool switch; the layout maths lives in pure `editorActions.ts` functions. Clicks on placed items (select, drag) never reach it — the canvas resolves them.
 
 **Floor**: 7 patterns from `floors.png` (grayscale 16×16), colorizable via HSBC sliders (Photoshop Colorize). Color baked per-tile on paint. Eyedropper picks pattern+color.
 
 **Walls**: Separate Wall paint tool. Click/drag to add walls; click/drag existing walls to remove (toggle direction set by first tile of drag, tracked by `wallDragAdding`). HSBC color sliders (Colorize mode) apply to all wall tiles at once. Eyedropper on a wall tile picks its color and switches to Wall tool. Furniture cannot be placed on wall tiles, but background rows may overlap walls.
 
-**Furniture**: Ghost preview (green/red validity). R key rotates, T key toggles on/off state. Drag-to-move in SELECT. Delete button (red X) + rotate button (blue arrow) on selected items. Any selected furniture shows HSBC color sliders (Color toggle + Clear button); color stored per-item in `PlacedFurniture.color?`. Single undo entry per color-editing session (tracked by `colorEditUidRef`). Pick tool copies type+color from placed item. Surface items preferred when clicking stacked furniture.
+**Furniture**: Ghost preview (green/red validity); `buildEditorRenderState` (`office/editor/`) builds the frame's `ghosts[]` + one `ghostValid`. R key rotates, T key toggles on/off state — a selected placed item wins over the catalog type. Drag-to-move in SELECT; **Alt-drag drops a copy** (cursor `copy`, Alt sampled live so it can flip mid-drag; the copy is left selected). The canvas only reports the gesture (`onDrop(uid, col, row, { duplicate })`); `handleDrop` → pure `dropFurniture` validates, commits and sets selection. **Desks carry their riders**: surface items standing on an `isDesk` item (`getSurfaceRiders`) move, rotate (spot swung round the desk top) and get copied with it; the whole group must fit or nothing happens. Delete button (red X) + rotate button (blue arrow) on selected items. **Selecting a placed item closes the open tool tab and opens its HSBC colour sliders** (Reset + Copy buttons); color stored per-item in `PlacedFurniture.color?`. Hit-testing is ONE `furnitureAt` (surface items win over the desk under them) — select, drag, cursor and both Copy tools agree. Placement state is `editorState.placing: { type, color? }`: the Copy tool's lifted colour styles that copy only (`placementColor()` = `placing?.color ?? pickedFurnitureColor`); palette sliders override it. Colour Copy takes the clicked item's colour into whichever sliders armed it, then returns to that tool.
 
-**Undo/Redo**: 50-level, Ctrl+Z/Y. EditActionBar (top-center when dirty): Undo, Redo, Save, Reset.
+**Undo/Redo**: 50-level, Ctrl+Z/Y. EditActionBar (top-center when dirty): Undo, Redo, Save, Reset. **Stroke-scoped undo**: every edit goes through `commitLayout(layout, session)`; edits sharing `editorState.undoSession` collapse into one entry — `'stroke'` (one floor / wall / erase / carpet click-drag), `'wallColor'`, `` `color:<uid>` `` (a slider run on one item). `null` = discrete edit (its own entry; a colour eyedrop is one). Mouse up / leave, tool change, Esc, selection changes and undo/redo end the session (`endStroke`). Area paint stays per-tile.
 
 **Multi-stage Esc**: exit furniture pick → deselect catalog → close tool tab → deselect furniture → close editor.
 
