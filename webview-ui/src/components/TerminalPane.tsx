@@ -21,7 +21,7 @@ import { attachClipboardInput } from '../terminal/clipboardInput.js';
 import { flowTerminalCopy } from '../terminal/flowCopy.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 import { TerminalConnection } from '../terminal/terminalClient.js';
-import { terminalLinkOpener } from '../terminal/terminalLinks.js';
+import { terminalLinkOpener, urlAtCell } from '../terminal/terminalLinks.js';
 import { touchDebugCount } from '../terminal/touchDebug.js';
 
 interface TerminalPaneProps {
@@ -581,13 +581,17 @@ export function TerminalPane({
         return;
       }
       if (!flick.engaged) {
-        // A tap. Focus explicitly instead of relying on the synthesized
-        // click: preventing a wobbly tap's touchmoves above suppresses its
-        // click, and losing the tap-to-summon-keyboard path is worse than
-        // double-focusing on clean taps.
+        // A tap. Handled explicitly instead of relying on the synthesized
+        // click: the preventDefaults above suppress it, and losing the
+        // tap-to-summon-keyboard path is worse than double-focusing on clean
+        // taps. The same suppression starves xterm's link providers, so a tap
+        // on a URL opens it here instead of focusing.
         if (e.timeStamp - flick.startT <= TOUCH_TAP_MAX_DURATION_MS && term.element) {
           e.preventDefault();
-          term.focus();
+          const { col, row } = cellAt(flick.startX, flick.startY);
+          const url = urlAtCell(term.buffer.active, row, col);
+          if (url) openLink(e, url);
+          else term.focus();
         }
         return;
       }
