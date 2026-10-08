@@ -1216,4 +1216,21 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
       expect.arrayContaining(['settingsLoaded', 'existingAgents', 'layoutLoaded']),
     );
   });
+
+  it('tells the client FIRST whether it is read-only, so it never draws the controls', () => {
+    handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), {
+      store,
+      cache: null,
+      privileged: false,
+    });
+    expect(sent[0]).toEqual({ type: 'officeAccess', readOnly: true });
+
+    sent = [];
+    handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), {
+      store,
+      cache: null,
+      privileged: true,
+    });
+    expect(sent[0]).toEqual({ type: 'officeAccess', readOnly: false });
+  });
 });

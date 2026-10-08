@@ -415,6 +415,11 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const { store, runtime, cache } = ctx;
   const adapter = store.getAdapter();
 
+  // 0. Access, first: a read-only office hides every control that would send
+  // a change (all refused by refuseReadOnly), so it must know before it draws
+  // them.
+  send({ type: 'officeAccess', readOnly: ctx.privileged !== true });
+
   // 1. Provider capabilities (must arrive before any agent messages)
   send({
     type: 'providerCapabilities',

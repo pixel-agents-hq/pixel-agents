@@ -32,6 +32,7 @@ export type ServerMessage =
   | FloorTilesLoaded
   | WallTilesLoaded
   | CarpetTilesLoaded
+  | OfficeAccess
   | SettingsLoaded
   | HooksStatus
   | HooksConsentRequest
@@ -270,6 +271,11 @@ export interface WallTilesLoaded {
 export interface CarpetTilesLoaded {
   type: 'carpetTilesLoaded';
   sets: string[][][][];
+}
+
+export interface OfficeAccess {
+  type: 'officeAccess';
+  readOnly: boolean;
 }
 
 export interface SettingsLoaded {

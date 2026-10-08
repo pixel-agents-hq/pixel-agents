@@ -134,6 +134,9 @@ interface ExtensionMessageState {
   /** Persisted permission posture for this host; the host applies it at launch. */
   bypassPermissions: boolean;
   setBypassPermissions: (v: boolean) => void;
+  /** A read-only office (standalone without the server token): every change it
+   *  sends is refused, so the UI hides the controls that would send one. */
+  officeReadOnly: boolean;
   // Terminal (standalone only; always false/empty under VS Code, which owns its
   // own terminals and never sends these messages)
   terminalAvailable: boolean;
@@ -199,6 +202,8 @@ export function useExtensionMessages(
   const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
   const [showAreas, setShowAreas] = useState(false);
   const [bypassPermissions, setBypassPermissions] = useState(false);
+  // Never sent under VS Code, so it stays false there.
+  const [officeReadOnly, setOfficeReadOnly] = useState(false);
   // Terminal control plane (standalone only; the server never sends these in
   // VS Code mode, so terminalAvailable stays false and no terminal UI renders).
   const [terminalAvailable, setTerminalAvailable] = useState(false);
@@ -264,6 +269,11 @@ export function useExtensionMessages(
           readingTools: msg.readingTools,
           subagentToolNames: msg.subagentToolNames,
         });
+        return;
+      }
+
+      if (msg.type === 'officeAccess') {
+        setOfficeReadOnly(msg.readOnly === true);
         return;
       }
 
@@ -876,6 +886,7 @@ export function useExtensionMessages(
     setShowAreas,
     bypassPermissions,
     setBypassPermissions,
+    officeReadOnly,
     terminalAvailable,
     terminalUnavailableReason,
     terminalAgentIds,

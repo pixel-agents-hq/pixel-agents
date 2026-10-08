@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import type { Page } from '@playwright/test';
+
 import { expect, test } from '../../fixtures/standalone';
+import type { TestHooksWindow } from '../../helpers/editor';
 import {
   ourHookEvents,
   sendHookEvent,
@@ -166,16 +169,31 @@ test.describe('Standalone / hooks consent', () => {
     const bareUrl = new URL(page.url());
     bareUrl.search = '';
 
-    const spectator = await page.context().newPage();
+    const spectator = await openSpectator(page);
     try {
-      await spectator.goto(bareUrl.toString());
-      await expect(spectator.getByRole('button', { name: 'Settings' })).toBeVisible({
-        timeout: 30_000,
-      });
       // Settle before the negative assertion: the dialog, were it coming,
       // rides the webviewReady handshake that just completed.
       await spectator.waitForTimeout(2_000);
       await expect(spectator.getByRole('dialog')).toHaveCount(0);
+    } finally {
+      await spectator.close();
+    }
+  });
+
+  // A read-only office: every change it could send is refused server-side
+  // (clientMessageHandler's refuseReadOnly), so it is shown no controls that
+  // send one -- while the tokened page beside it keeps them all.
+  test('an untokened spectator page shows no toolbar @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    void standalone;
+    const spectator = await openSpectator(page);
+    try {
+      for (const name of ['Settings', 'Layout', '+ Agent']) {
+        await expect(spectator.getByRole('button', { name, exact: true })).toHaveCount(0);
+      }
+      await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
     } finally {
       await spectator.close();
     }
@@ -229,3 +247,30 @@ test.describe('Standalone / hooks consent', () => {
     await expect.poll(() => isChecked(), { timeout: 15_000 }).toBe(true);
   });
 });
+
+/**
+ * Open the office beside `page` at its bare URL (token stripped) and wait for
+ * it to load. The loaded signal is the layout arriving -- not a toolbar button,
+ * which a read-only office never shows.
+ */
+async function openSpectator(page: Page): Promise<Page> {
+  const bareUrl = new URL(page.url());
+  bareUrl.search = '';
+  const spectator = await page.context().newPage();
+  // Same harness flag the fixture gives its own page, so the app installs the
+  // test hooks the loaded check below reads.
+  await spectator.addInitScript(() => {
+    (window as unknown as { __PIXEL_AGENTS_E2E?: boolean }).__PIXEL_AGENTS_E2E = true;
+  });
+  await spectator.goto(bareUrl.toString());
+  await expect
+    .poll(
+      () =>
+        spectator.evaluate(
+          () => (window as TestHooksWindow).__pixelAgentsTestHooks?.getTiles?.()?.tiles.length ?? 0,
+        ),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0);
+  return spectator;
+}

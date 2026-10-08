@@ -16,6 +16,10 @@ _Avoid_: host (that's the machine it runs on), surface, flavor, platform, editio
 The adapter that serves the office to a browser from a local server, independent of any editor.
 _Avoid_: CLI (that's the entry command, not the adapter), browser mode
 
+**Read-only office**:
+A standalone office opened without the server's token, or under a host name the operator didn't allow. It shows everything live, but changes nothing: no launching, no layout edits, no settings.
+_Avoid_: guest mode, watch-only, untokened (that's how it happens, not what it is)
+
 ## Agents & Teams
 
 **Agent**:
