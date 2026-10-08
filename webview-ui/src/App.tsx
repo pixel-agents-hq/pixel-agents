@@ -618,6 +618,12 @@ function App() {
         </Tooltip>
       )}
 
+      {officeReadOnly && (
+        <div className="absolute mobile-safe-top left-1/2 -translate-x-1/2 z-10 text-sm text-text-muted pointer-events-none select-none whitespace-nowrap">
+          View only
+        </div>
+      )}
+
       {/* A read-only office gets no toolbar: launching, layout editing and every
           setting would be refused by the server anyway. */}
       {!isMobile && !officeReadOnly && (
