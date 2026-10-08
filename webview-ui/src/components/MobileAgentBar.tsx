@@ -6,6 +6,7 @@ import {
   CARD_SCROLL_INTO_VIEW_MARGIN_PX,
   MOBILE_CARD_ORDER_STORAGE_KEY,
 } from '../constants.js';
+import { isTypingInTerminal } from '../terminal/terminalDom.js';
 import { findTouch, withinTapSlop } from '../touch/touchPrimitives.js';
 import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCard } from './AgentCard.js';
@@ -197,10 +198,7 @@ export function MobileAgentBar({
         // input-to-input keeps the keyboard open. Taps on the card's × close
         // button are left to their normal click path.
         const target = e.target instanceof HTMLElement ? e.target : null;
-        const typingInTerminal =
-          document.activeElement instanceof HTMLElement &&
-          document.activeElement.classList.contains('xterm-helper-textarea');
-        if (typingInTerminal && target && !target.closest('button')) {
+        if (isTypingInTerminal(document.activeElement) && target && !target.closest('button')) {
           e.preventDefault();
           onSelectAgentRef.current(drag.id);
         }

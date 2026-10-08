@@ -438,12 +438,15 @@ export const MOBILE_EDGE_SWIPE_VELOCITY_WEIGHT = 0.8;
  *  13px but ~50 at 12px, and Claude Code's TUI degrades below ~45 columns. */
 export const MOBILE_TERMINAL_FONT_SIZE_PX = 12;
 
-// ── Touch input (OfficeCanvas) ───────────────────────────────
-/** Finger slop: a touch that moves less than this stays a tap (selects an
- *  agent); beyond it the gesture becomes a one-finger pan. */
+// ── Touch input (every surface) ──────────────────────────────
+/** Tap slop shared by every touch surface (withinTapSlop): a finger that
+ *  travels less than this from where it landed is still a tap; beyond it the
+ *  gesture becomes that surface's drag (pan, scroll, reorder). */
 export const TOUCH_TAP_MAX_MOVE_PX = 10;
 /** A press longer than this is not a tap even if the finger never moved. */
 export const TOUCH_TAP_MAX_DURATION_MS = 350;
+
+// ── Terminal touch (touchGesture.ts, selectionOverlay.ts, flowCopy.ts) ──
 /** Hold a finger within the tap slop for this long on the terminal to start
  *  text selection instead of scrolling: the word under the finger is
  *  selected, and dragging then extends the selection cell by cell. */
@@ -491,6 +494,8 @@ export const XTERM_SCREEN_SELECTOR = '.xterm-screen';
 /** Class of xterm's hidden input textarea — focused while typing into a
  *  terminal (see isTypingInTerminal). */
 export const XTERM_HELPER_TEXTAREA_CLASS = 'xterm-helper-textarea';
+
+// ── Mobile card bar (MobileAgentBar) ─────────────────────────
 /** Holding a card motionless this long arms drag-to-reorder in the mobile bar. */
 export const CARD_REORDER_LONG_PRESS_MS = 400;
 /** localStorage key for the mobile bar's custom card order (per device — a
@@ -499,13 +504,16 @@ export const MOBILE_CARD_ORDER_STORAGE_KEY = 'pixel-agents.mobileCardOrder';
 /** Breathing room kept between a card and the scroller edge when the bar
  *  auto-scrolls the focused agent's card into view. */
 export const CARD_SCROLL_INTO_VIEW_MARGIN_PX = 8;
-/** Accessory keys shown above the iOS keyboard in terminal view — the keys a
- *  Claude Code TUI needs that the software keyboard lacks. `sequence` is the
- *  raw bytes written to the PTY: shift+tab is CSI Z (back-tab). */
+
+// ── Mobile key bar (MobileKeyBar) ────────────────────────────
+/** Arrow-key byte sequences the trackpad key writes to the PTY. */
 export const TERMINAL_SEQ_ARROW_UP = '\x1b[A';
 export const TERMINAL_SEQ_ARROW_DOWN = '\x1b[B';
 export const TERMINAL_SEQ_ARROW_RIGHT = '\x1b[C';
 export const TERMINAL_SEQ_ARROW_LEFT = '\x1b[D';
+/** Accessory keys shown above the iOS keyboard in terminal view — the keys a
+ *  Claude Code TUI needs that the software keyboard lacks. `sequence` is the
+ *  raw bytes written to the PTY: shift+tab is CSI Z (back-tab). */
 export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{
   label: string;
   /** Byte sequence a tap writes to the PTY. Absent on the trackpad key — a
