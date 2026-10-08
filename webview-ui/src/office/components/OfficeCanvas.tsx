@@ -10,13 +10,8 @@ import {
 } from '../../constants.js';
 import { unlockAudio } from '../../notificationSound.js';
 import { transport } from '../../transport/index.js';
-import { getColorizedSprite } from '../colorize.js';
-import {
-  canPlaceFurniture,
-  furnitureAt,
-  getWallPlacementRow,
-  planFurnitureMove,
-} from '../editor/editorActions.js';
+import { furnitureAt, planFurnitureMove } from '../editor/editorActions.js';
+import { buildEditorRenderState } from '../editor/editorRenderState.js';
 import type { EditorState } from '../editor/editorState.js';
 import { startGameLoop } from '../engine/gameLoop.js';
 import type { OfficeState } from '../engine/officeState.js';
@@ -27,7 +22,6 @@ import type {
   SelectionRenderState,
 } from '../engine/renderer.js';
 import { renderFrame } from '../engine/renderer.js';
-import { getCatalogEntry, isRotatable } from '../layout/furnitureCatalog.js';
 import { EditTool, TILE_SIZE } from '../types.js';
 import { computeNormalModeCursor } from './officeCanvasCursor.js';
 import { useCanvasTouchGestures } from './useCanvasTouchGestures.js';
@@ -147,115 +141,9 @@ export function OfficeCanvas({
         const w = canvas.width;
         const h = canvas.height;
 
-        // Build editor render state
-        let editorRender: EditorRenderState | undefined;
-        if (isEditMode) {
-          const showGhostBorder =
-            editorState.activeTool === EditTool.TILE_PAINT ||
-            editorState.activeTool === EditTool.WALL_PAINT ||
-            editorState.activeTool === EditTool.ERASE;
-          editorRender = {
-            showGrid: true,
-            ghostSprite: null,
-            ghostMirrored: false,
-            ghostCol: editorState.ghostCol,
-            ghostRow: editorState.ghostRow,
-            ghostValid: editorState.ghostValid,
-            ghostExtras: [],
-            selectedCol: 0,
-            selectedRow: 0,
-            selectedW: 0,
-            selectedH: 0,
-            hasSelection: false,
-            isRotatable: false,
-            deleteButtonBounds: null,
-            rotateButtonBounds: null,
-            showGhostBorder,
-            ghostBorderHoverCol: showGhostBorder ? editorState.ghostCol : -999,
-            ghostBorderHoverRow: showGhostBorder ? editorState.ghostRow : -999,
-          };
-
-          // Ghost preview for furniture placement
-          if (editorState.activeTool === EditTool.FURNITURE_PLACE && editorState.ghostCol >= 0) {
-            const entry = getCatalogEntry(editorState.selectedFurnitureType);
-            if (entry) {
-              const placementRow = getWallPlacementRow(
-                editorState.selectedFurnitureType,
-                editorState.ghostRow,
-              );
-              const pickedColor = editorState.placementColor();
-              editorRender.ghostSprite = pickedColor
-                ? getColorizedSprite(
-                    `ghost-${editorState.selectedFurnitureType}-${pickedColor.h}-${pickedColor.s}-${pickedColor.b}-${pickedColor.c}-${pickedColor.colorize ?? ''}`,
-                    entry.sprite,
-                    pickedColor,
-                  )
-                : entry.sprite;
-              editorRender.ghostRow = placementRow;
-              editorRender.ghostMirrored =
-                !!entry.mirrorSide && editorState.selectedFurnitureType.endsWith(':left');
-              editorRender.ghostValid = canPlaceFurniture(
-                officeState.getLayout(),
-                editorState.selectedFurnitureType,
-                editorState.ghostCol,
-                placementRow,
-              );
-            }
-          }
-
-          // Ghost preview for drag-to-move — the dragged item plus whatever is
-          // riding on it, previewed as the one group that will be dropped. With
-          // Alt held the same group previews as a copy, so the originals still
-          // block it and the ghost turns red over them.
-          if (editorState.isDragMoving && editorState.dragUid && editorState.ghostCol >= 0) {
-            const plan = planFurnitureMove(
-              officeState.getLayout(),
-              editorState.dragUid,
-              editorState.ghostCol - editorState.dragOffsetCol,
-              editorState.ghostRow - editorState.dragOffsetRow,
-              { duplicate: editorState.dragDuplicate },
-            );
-            const [dragged, ...riders] = plan?.items ?? [];
-            const entry = dragged ? getCatalogEntry(dragged.type) : undefined;
-            if (plan && dragged && entry) {
-              editorRender.ghostSprite = entry.sprite;
-              editorRender.ghostCol = dragged.col;
-              editorRender.ghostRow = dragged.row;
-              editorRender.ghostMirrored = !!entry.mirrorSide && dragged.type.endsWith(':left');
-              editorRender.ghostValid = plan.valid;
-              editorRender.ghostExtras = riders.flatMap((rider) => {
-                const riderEntry = getCatalogEntry(rider.type);
-                if (!riderEntry) return [];
-                return [
-                  {
-                    sprite: riderEntry.sprite,
-                    col: rider.col,
-                    row: rider.row,
-                    mirrored: !!riderEntry.mirrorSide && rider.type.endsWith(':left'),
-                  },
-                ];
-              });
-            }
-          }
-
-          // Selection highlight
-          if (editorState.selectedFurnitureUid && !editorState.isDragMoving) {
-            const item = officeState
-              .getLayout()
-              .furniture.find((f) => f.uid === editorState.selectedFurnitureUid);
-            if (item) {
-              const entry = getCatalogEntry(item.type);
-              if (entry) {
-                editorRender.hasSelection = true;
-                editorRender.selectedCol = item.col;
-                editorRender.selectedRow = item.row;
-                editorRender.selectedW = entry.footprintW;
-                editorRender.selectedH = entry.footprintH;
-                editorRender.isRotatable = isRotatable(item.type);
-              }
-            }
-          }
-        }
+        const editorRender: EditorRenderState | undefined = isEditMode
+          ? buildEditorRenderState(editorState, officeState.getLayout())
+          : undefined;
 
         // Camera: smoothly center on the followed agent, or — while the greeter
         // is speaking the Intro — on the character+bubble center the IntroBubble

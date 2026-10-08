@@ -806,18 +806,23 @@ export interface ButtonBounds {
 export type DeleteButtonBounds = ButtonBounds;
 export type RotateButtonBounds = ButtonBounds;
 
+/** One translucent preview sprite at a target tile. */
+export interface GhostSprite {
+  sprite: SpriteData;
+  col: number;
+  row: number;
+  mirrored: boolean;
+}
+
 export interface EditorRenderState {
   showGrid: boolean;
-  ghostSprite: SpriteData | null;
-  ghostMirrored: boolean;
-  ghostCol: number;
-  ghostRow: number;
-  ghostValid: boolean;
   /**
-   * Extra ghost sprites drawn on top of the main one, sharing its validity tint
-   * — the stuff riding a dragged desk, so the preview shows the whole group.
+   * Preview sprites, drawn in order with one shared validity tint: the item
+   * being placed, or a dragged item followed by everything riding on it — the
+   * group previews (and is accepted or refused) as one.
    */
-  ghostExtras: Array<{ sprite: SpriteData; col: number; row: number; mirrored: boolean }>;
+  ghosts: GhostSprite[];
+  ghostValid: boolean;
   selectedCol: number;
   selectedRow: number;
   selectedW: number;
@@ -951,32 +956,18 @@ export function renderFrame(
         editor.ghostBorderHoverRow,
       );
     }
-    if (editor.ghostSprite && editor.ghostCol >= 0) {
+    for (const ghost of editor.ghosts) {
       renderGhostPreview(
         ctx,
-        editor.ghostSprite,
-        editor.ghostCol,
-        editor.ghostRow,
+        ghost.sprite,
+        ghost.col,
+        ghost.row,
         editor.ghostValid,
         offsetX,
         offsetY,
         zoom,
-        editor.ghostMirrored,
+        ghost.mirrored,
       );
-      // Riders last so they sit on top of the surface they're being carried on.
-      for (const extra of editor.ghostExtras) {
-        renderGhostPreview(
-          ctx,
-          extra.sprite,
-          extra.col,
-          extra.row,
-          editor.ghostValid,
-          offsetX,
-          offsetY,
-          zoom,
-          extra.mirrored,
-        );
-      }
     }
     if (editor.hasSelection) {
       renderSelectionHighlight(
