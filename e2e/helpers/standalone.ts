@@ -7,6 +7,7 @@ import path from 'node:path';
 import { expect, type Page } from '@playwright/test';
 
 import { type HookServerConfig, waitForHookServer } from './hooks';
+import { applyMockHomeEnv } from './mock-claude';
 
 const REPO_ROOT = path.join(__dirname, '../..');
 const STANDALONE_CLI = path.resolve(REPO_ROOT, 'dist', 'cli.js');
@@ -112,11 +113,11 @@ function spawnStandaloneHost(args: {
     [STANDALONE_CLI, '--port', args.hostPort.toString(), '--host', '127.0.0.1'],
     {
       cwd: args.workspaceDir,
-      env: {
-        ...process.env,
-        HOME: args.homeDir,
-        USERPROFILE: args.homeDir,
-      },
+      // Routed through the shared helper (rather than duplicating the env
+      // object inline) so this entrypoint gets the same CLAUDE_CONFIG_DIR
+      // stripping the VS Code launch path already gets -- this file used to
+      // build its own env inline and bypass that protection entirely.
+      env: applyMockHomeEnv(process.env, args.homeDir),
       stdio: 'pipe',
     },
   );

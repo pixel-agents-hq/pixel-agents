@@ -58,9 +58,18 @@ export async function launchNewTerminal(
   const cwd = folderPath || folders?.[0]?.uri.fsPath || os.homedir();
   const isMultiRoot = !!(folders && folders.length > 1);
   const idx = nextTerminalIndexRef.current++;
+  // sessionId + buildLaunchCommand must run BEFORE createTerminal now: the
+  // terminal needs launch.env (carries CLAUDE_CONFIG_DIR when an override is
+  // active) at creation time, not after.
+  const sessionId = crypto.randomUUID();
+  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
+  if (!launch) {
+    throw new Error('claudeProvider.buildLaunchCommand is not implemented');
+  }
   const terminal = vscode.window.createTerminal({
     name: `${CLAUDE_TERMINAL_NAME_PREFIX} #${idx}`,
     cwd,
+    env: launch.env,
   });
   // When suppressShow is set (auto-spawn + autoShowPanel), keep the panel view
   // on Pixel Agents instead of switching to Terminal. Claude Code still runs
@@ -68,12 +77,6 @@ export async function launchNewTerminal(
   // the existing focusAgent message handler.
   if (!suppressShow) {
     terminal.show();
-  }
-
-  const sessionId = crypto.randomUUID();
-  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
-  if (!launch) {
-    throw new Error('claudeProvider.buildLaunchCommand is not implemented');
   }
   terminal.sendText([launch.command, ...launch.args].join(' '));
 

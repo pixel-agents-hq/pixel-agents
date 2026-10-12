@@ -1,7 +1,8 @@
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resetClaudeConfigDirOverrideForTests } from '../src/providers/hook/claude/claudeConfigDir.js';
 import { claudeTeamProvider } from '../src/providers/hook/claude/claudeTeamProvider.js';
 
 describe('claudeTeamProvider', () => {
@@ -392,7 +393,17 @@ describe('claudeTeamProvider', () => {
     const fs = require('fs') as typeof import('fs');
     const TEAM_NAME = 'test-team-' + Date.now();
 
+    beforeEach(() => {
+      // This file uses the REAL os.homedir() (no mock), so an inherited
+      // CLAUDE_CONFIG_DIR on a developer machine would silently redirect
+      // every test below away from ~/.claude/teams/ -- neutralize it.
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '');
+      resetClaudeConfigDirOverrideForTests();
+    });
+
     afterEach(() => {
+      vi.unstubAllEnvs();
+      resetClaudeConfigDirOverrideForTests();
       // Cleanup any test artifacts
       try {
         fs.rmSync(path.join(os.homedir(), '.claude', 'teams', TEAM_NAME), {
@@ -463,6 +474,23 @@ describe('claudeTeamProvider', () => {
       );
       const result = claudeTeamProvider.getTeamMembers(TEAM_NAME);
       expect([...result!].sort()).toEqual(['also-valid', 'valid']);
+    });
+
+    it('reads the team config from CLAUDE_CONFIG_DIR when set, not ~/.claude', () => {
+      const envDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-team-env-'));
+      vi.stubEnv('CLAUDE_CONFIG_DIR', envDir);
+      const teamDir = path.join(envDir, 'teams', TEAM_NAME);
+      fs.mkdirSync(teamDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(teamDir, 'config.json'),
+        JSON.stringify({ members: [{ name: 'env-teammate' }] }),
+      );
+
+      const result = claudeTeamProvider.getTeamMembers(TEAM_NAME);
+      expect(result).not.toBeNull();
+      expect([...result!]).toEqual(['env-teammate']);
+
+      fs.rmSync(envDir, { recursive: true, force: true });
     });
   });
 

@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 
 import { normalizeProjectPath } from '../../../../../core/src/normalizeProjectPath.js';
@@ -8,6 +7,7 @@ import {
   BASH_COMMAND_DISPLAY_MAX_LENGTH,
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
 } from '../../../constants.js';
+import { getClaudeConfigDir, getClaudeConfigDirSource } from './claudeConfigDir.js';
 import {
   areHooksInstalled as installerAreHooksInstalled,
   installHooks as installerInstallHooks,
@@ -16,6 +16,7 @@ import {
 import { claudeTeamProvider } from './claudeTeamProvider.js';
 import { CONSENT_DISCLOSURE, CONSENT_INSTALL_HEADLINE } from './consentCopy.js';
 import {
+  CLAUDE_CONFIG_DIR_ENV_VAR,
   CLAUDE_LARGE_CONTEXT_WINDOW,
   CLAUDE_SMALL_CONTEXT_MODEL_PATTERN,
   CLAUDE_SMALL_CONTEXT_WINDOW,
@@ -75,16 +76,17 @@ export function formatToolStatus(toolName: string, input?: unknown): string {
 // ── Session dir + launch command ──
 
 function getSessionDirs(workspacePath: string): string[] {
-  // Claude stores sessions at ~/.claude/projects/<workspace-path-with-dashes>/.
+  // Claude stores sessions at <CLAUDE_CONFIG_DIR>/projects/<workspace-path-with-dashes>/,
+  // defaulting to ~/.claude when CLAUDE_CONFIG_DIR isn't set.
   const dirName = normalizeProjectPath(workspacePath);
-  const projectDir = path.join(os.homedir(), '.claude', 'projects', dirName);
+  const projectDir = path.join(getClaudeConfigDir(), 'projects', dirName);
 
   // Try exact match first.
   if (fs.existsSync(projectDir)) return [projectDir];
 
   // Case-insensitive fallback for Windows: drive letter casing can differ
   // between what VS Code gives us (e.g. "c:\...") and Claude's encoding ("C:\...").
-  const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
+  const projectsRoot = path.join(getClaudeConfigDir(), 'projects');
   try {
     if (fs.existsSync(projectsRoot)) {
       const lowerDirName = dirName.toLowerCase();
@@ -106,13 +108,17 @@ function buildLaunchCommand(
 ): { command: string; args: string[]; env?: Record<string, string> } {
   const args = ['--session-id', sessionId];
   if (opts?.bypassPermissions) args.push('--dangerously-skip-permissions');
-  return { command: 'claude', args, env: { PWD: cwd } };
+  const env: Record<string, string> = { PWD: cwd };
+  if (getClaudeConfigDirSource() !== 'default') {
+    env[CLAUDE_CONFIG_DIR_ENV_VAR] = getClaudeConfigDir();
+  }
+  return { command: 'claude', args, env };
 }
 
 /** Root that holds every Claude session across all workspaces. Used by the
  *  global session scanner ("Watch All Sessions"). */
 function getAllSessionRoots(): string[] {
-  return [path.join(os.homedir(), '.claude', 'projects')];
+  return [path.join(getClaudeConfigDir(), 'projects')];
 }
 
 // ── normalizeHookEvent: the single Claude-specific normalization boundary ──

@@ -16,7 +16,13 @@ import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
-import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
+import {
+  buildClaudeConfigDirFields,
+  claudeProvider,
+  hookProviderById,
+  hookProviders,
+  normalizeClaudeConfigDirInput,
+} from './providers/index.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -70,6 +76,41 @@ const KEY_GHOST_HEADLESS_AGENTS = 'pixel-agents.ghostHeadlessAgents';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
+
+/** Outcome of applySetClaudeConfigDir: either the value was persisted (and
+ *  the caller should send claudeConfigDirUpdated with `fields`) or the
+ *  server's authoritative validation turned it down (and the caller should
+ *  send claudeConfigDirRejected with `claudeConfigDir`). */
+export type ApplySetClaudeConfigDirResult =
+  | { rejected: false; fields: ReturnType<typeof buildClaudeConfigDirFields> }
+  | { rejected: true; claudeConfigDir: string };
+
+/**
+ * Validate + persist a setClaudeConfigDir payload.
+ *
+ * A non-string payload is a protocol violation no real client produces, so
+ * it stays a silent no-op (`null`) -- matching how addExternalAssetDirectory
+ * already handles a missing path. A well-formed string that
+ * normalizeClaudeConfigDirInput turns down (non-absolute for THIS platform,
+ * the filesystem root, or an existing non-directory) is a user-input problem
+ * instead, and comes back as `{ rejected: true }` so the caller can say so.
+ * Silence there would leave the webview's draft differing from the live
+ * value forever, i.e. a permanent "restart to apply" notice for a value
+ * that was never written.
+ *
+ * Shared between the WebSocket handler below and the VS Code adapter, so the
+ * two surfaces can't drift apart the way the settingsLoaded emitters once did.
+ */
+export function applySetClaudeConfigDir(raw: unknown): ApplySetClaudeConfigDirResult | null {
+  const trimmed = typeof raw === 'string' ? raw.trim() : undefined;
+  if (trimmed === undefined) return null;
+  const newDir = normalizeClaudeConfigDirInput(trimmed);
+  if (newDir === null) return { rejected: true, claudeConfigDir: trimmed };
+  const cfg = readConfig();
+  cfg.claudeConfigDir = newDir;
+  writeConfig(cfg);
+  return { rejected: false, fields: buildClaudeConfigDirFields(newDir) };
+}
 
 /**
  * Handle incoming ClientMessage from a WebSocket client.
@@ -270,6 +311,16 @@ export function handleClientMessage(
       break;
     }
 
+    case 'setClaudeConfigDir': {
+      const result = applySetClaudeConfigDir(msg.claudeConfigDir);
+      if (result?.rejected === false) {
+        send({ type: 'claudeConfigDirUpdated', ...result.fields });
+      } else if (result?.rejected === true) {
+        send({ type: 'claudeConfigDirRejected', claudeConfigDir: result.claudeConfigDir });
+      }
+      break;
+    }
+
     default:
       // focusAgent, exportLayout, importLayout
       // require IDE-specific handling (not yet implemented for standalone)
@@ -422,6 +473,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
     externalAssetDirectories: cfg.externalAssetDirectories,
     showAreas,
+    ...buildClaudeConfigDirFields(cfg.claudeConfigDir),
   });
 
   // 4a. Actual install state, distinct from the hooksEnabled preference —

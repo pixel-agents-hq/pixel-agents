@@ -1,6 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import * as path from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+
+// Initialized at declaration: the os mock below is file-wide, so homedir() must
+// return something valid for every describe block -- not just the one whose
+// beforeEach reassigns it.
+let tmpHome = '/tmp/pxl-claude-test-home';
+
+vi.mock('os', async () => {
+  const actual = await vi.importActual<typeof import('os')>('os');
+  return { ...actual, homedir: () => tmpHome };
+});
+
+const { resetClaudeConfigDirOverrideForTests, setClaudeConfigDirOverride } =
+  await import('../src/providers/hook/claude/claudeConfigDir.js');
 
 describe('claudeProvider', () => {
   describe('identity', () => {
@@ -256,6 +270,82 @@ describe('claudeProvider', () => {
     });
     it('handles undefined input', () => {
       expect(claudeProvider.formatToolStatus('Read', undefined)).toBe('Reading ');
+    });
+  });
+});
+
+describe('claudeProvider: config dir precedence', () => {
+  beforeEach(() => {
+    tmpHome = '/tmp/pxl-claude-test-home';
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '');
+    resetClaudeConfigDirOverrideForTests();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetClaudeConfigDirOverrideForTests();
+  });
+
+  describe('getSessionDirs', () => {
+    it('resolves under ~/.claude/projects/ by default', () => {
+      const dirs = claudeProvider.getSessionDirs?.('/workspace');
+      expect(dirs?.[0]).toContain(path.join(tmpHome, '.claude', 'projects') + path.sep);
+    });
+
+    it('resolves under the env var when CLAUDE_CONFIG_DIR is set', () => {
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '/env/claude');
+      const dirs = claudeProvider.getSessionDirs?.('/workspace');
+      expect(dirs?.[0]).toContain(path.join('/env/claude', 'projects') + path.sep);
+    });
+
+    it('resolves under the override when set (even with env var also set)', () => {
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '/env/claude');
+      setClaudeConfigDirOverride('/setting/claude');
+      const dirs = claudeProvider.getSessionDirs?.('/workspace');
+      expect(dirs?.[0]).toContain(path.join('/setting/claude', 'projects') + path.sep);
+    });
+  });
+
+  describe('getAllSessionRoots', () => {
+    it('resolves under ~/.claude/projects by default', () => {
+      const roots = claudeProvider.getAllSessionRoots?.();
+      expect(roots?.[0]).toBe(path.join(tmpHome, '.claude', 'projects'));
+    });
+
+    it('resolves under the env var when set', () => {
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '/env/claude');
+      const roots = claudeProvider.getAllSessionRoots?.();
+      expect(roots?.[0]).toBe(path.join('/env/claude', 'projects'));
+    });
+
+    it('resolves under the override when set', () => {
+      setClaudeConfigDirOverride('/setting/claude');
+      const roots = claudeProvider.getAllSessionRoots?.();
+      expect(roots?.[0]).toBe(path.join('/setting/claude', 'projects'));
+    });
+  });
+
+  describe('buildLaunchCommand', () => {
+    it('does not include CLAUDE_CONFIG_DIR in env when using the default', () => {
+      const launch = claudeProvider.buildLaunchCommand?.('sess-1', '/cwd');
+      expect(launch?.env?.CLAUDE_CONFIG_DIR).toBeUndefined();
+    });
+
+    it('includes CLAUDE_CONFIG_DIR in env when the env var itself is set', () => {
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '/env/claude');
+      const launch = claudeProvider.buildLaunchCommand?.('sess-1', '/cwd');
+      expect(launch?.env?.CLAUDE_CONFIG_DIR).toBe('/env/claude');
+    });
+
+    it('includes CLAUDE_CONFIG_DIR in env when the override is set', () => {
+      setClaudeConfigDirOverride('/setting/claude');
+      const launch = claudeProvider.buildLaunchCommand?.('sess-1', '/cwd');
+      expect(launch?.env?.CLAUDE_CONFIG_DIR).toBe('/setting/claude');
+    });
+
+    it('always includes PWD in env', () => {
+      const launch = claudeProvider.buildLaunchCommand?.('sess-1', '/cwd');
+      expect(launch?.env?.PWD).toBe('/cwd');
     });
   });
 });

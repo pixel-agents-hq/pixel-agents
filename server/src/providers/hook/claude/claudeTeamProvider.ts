@@ -1,8 +1,8 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 
 import type { TeamProvider } from '../../../../../core/src/teamProvider.js';
+import { getClaudeConfigDir } from './claudeConfigDir.js';
 
 /**
  * Claude Code implementation of the TeamProvider interface.
@@ -247,7 +247,7 @@ export const claudeTeamProvider: TeamProvider = {
   },
 
   getTeamMembers(teamName) {
-    const configPath = path.join(os.homedir(), '.claude', 'teams', teamName, 'config.json');
+    const configPath = path.join(getClaudeConfigDir(), 'teams', teamName, 'config.json');
     let raw: string;
     try {
       raw = fs.readFileSync(configPath, 'utf-8');

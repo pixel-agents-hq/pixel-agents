@@ -85,3 +85,13 @@ export const CLAUDE_SMALL_CONTEXT_WINDOW = 200_000;
  *  guessing small for a large model pins every gauge in the red, while the
  *  reverse is a quiet under-read that the runtime's widening still corrects. */
 export const CLAUDE_SMALL_CONTEXT_MODEL_PATTERN = /haiku|claude-[123]|-4-[01]\b/i;
+
+// ── Config directory override ───────────────────────────────
+//
+// Claude Code CLI itself honors CLAUDE_CONFIG_DIR to relocate its config
+// directory away from ~/.claude (e.g. running multiple accounts/profiles).
+// See claudeConfigDir.ts for the resolution logic that uses these.
+/** Default Claude Code config directory name, joined onto os.homedir(). */
+export const CLAUDE_CONFIG_DIR_NAME = '.claude';
+/** Env var Claude Code CLI itself reads to relocate its config directory. */
+export const CLAUDE_CONFIG_DIR_ENV_VAR = 'CLAUDE_CONFIG_DIR';

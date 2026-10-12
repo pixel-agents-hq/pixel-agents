@@ -15,7 +15,14 @@ import type { HookProvider } from '../../../core/src/provider.js';
 import { claudeProvider } from './hook/claude/claude.js';
 
 export { claudeProvider };
-export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+export {
+  buildClaudeConfigDirFields,
+  getClaudeConfigDir,
+  getClaudeConfigDirSource,
+  normalizeClaudeConfigDirInput,
+  setClaudeConfigDirOverride,
+} from './hook/claude/claudeConfigDir.js';
+export { copyHookScript, uninstallHooksAt } from './hook/claude/claudeHookInstaller.js';
 
 /** Every bundled hook provider, in registration order. The consent gate loops
  *  over this at the webviewReady handshake (one ask per provider that needs

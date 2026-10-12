@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
 import { isBrowserRuntime } from '../runtime.js';
@@ -19,6 +19,20 @@ interface SettingsModalProps {
   ghostHeadlessAgents: boolean;
   onToggleGhostHeadlessAgents: () => void;
   externalAssetDirectories: string[];
+  /** Raw persisted CLAUDE_CONFIG_DIR override; '' means unset. */
+  claudeConfigDir: string;
+  /** What the server actually resolves to right now (setting, env var, or default). */
+  resolvedClaudeConfigDir: string;
+  /** Which source produced resolvedClaudeConfigDir: 'setting' | 'env' | 'default'. */
+  resolvedClaudeConfigDirSource: string;
+  /** Whether resolvedClaudeConfigDir exists on disk right now. */
+  resolvedClaudeConfigDirExists: boolean;
+  /** Whether claudeConfigDir would resolve to an existing directory after a restart. */
+  pendingDirExists: boolean;
+  /** Last server-side rejection of a save. `value` is the trimmed input the
+   *  server turned down; `token` changes on every rejection so re-submitting
+   *  the same bad value re-fires the notice. */
+  claudeConfigDirRejection?: { value: string; token: number };
   watchAllSessions: boolean;
   onToggleWatchAllSessions: () => void;
   /** ACTUAL install state (the hooksStatus message), not the hooksEnabled
@@ -48,6 +62,12 @@ export function SettingsModal({
   ghostHeadlessAgents,
   onToggleGhostHeadlessAgents,
   externalAssetDirectories,
+  claudeConfigDir,
+  resolvedClaudeConfigDir,
+  resolvedClaudeConfigDirSource,
+  resolvedClaudeConfigDirExists,
+  pendingDirExists,
+  claudeConfigDirRejection,
   watchAllSessions,
   onToggleWatchAllSessions,
   hooksInstalled,
@@ -61,6 +81,48 @@ export function SettingsModal({
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [assetDirDraft, setAssetDirDraft] = useState('');
+  const [claudeConfigDirDraft, setClaudeConfigDirDraft] = useState(claudeConfigDir);
+  const [claudeConfigDirError, setClaudeConfigDirError] = useState('');
+
+  useEffect(() => {
+    setClaudeConfigDirDraft(claudeConfigDir);
+    setClaudeConfigDirError('');
+  }, [claudeConfigDir]);
+
+  const draftTrimmed = claudeConfigDirDraft.trim();
+  // The server is the authority, and it turns down inputs the client-side
+  // pre-check lets through (a bare `/`, or a Windows-shaped path on a POSIX
+  // host). Nothing was persisted, so claudeConfigDir never changes and the
+  // draft-vs-live gap that drives needsRestart would otherwise stay open
+  // forever, promising a restart for a value that can never take effect.
+  // Reusing claudeConfigDirError keeps the existing "error wins over the
+  // restart notice" gate as the single mechanism for that.
+  //
+  // Deps are the rejection alone -- it changes identity on every rejection
+  // message via `token`, so a repeat blur on the same bad value re-fires --
+  // while draftTrimmed is read but NOT depended on, so a rejection that
+  // arrives after the user has typed something else is dropped instead of
+  // labelling their new draft invalid.
+  useEffect(() => {
+    if (claudeConfigDirRejection && claudeConfigDirRejection.value === draftTrimmed) {
+      setClaudeConfigDirError('Rejected: not a valid directory');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claudeConfigDirRejection]);
+  // A blank draft only needs a restart if a setting-sourced override is
+  // CURRENTLY live -- i.e. the user is clearing a previously-active override
+  // and that clearing hasn't taken effect yet. A non-blank draft needs a
+  // restart whenever it hasn't taken effect yet (differs from what's live).
+  const needsRestart =
+    draftTrimmed === ''
+      ? resolvedClaudeConfigDirSource === 'setting'
+      : draftTrimmed !== resolvedClaudeConfigDir;
+  // pendingDirExists describes the SAVED value, so it says nothing about a
+  // draft the user is still typing. Suppress the sub-clause until the draft
+  // has been blurred/saved and the server has echoed it back as
+  // claudeConfigDir -- otherwise typing "/" flashes an existence verdict
+  // that belongs to a completely different path.
+  const draftMatchesSaved = draftTrimmed === claudeConfigDir;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings">
@@ -169,6 +231,68 @@ export function SettingsModal({
           </Button>
         </div>
       ))}
+      <div className="flex flex-col gap-4 py-4 px-10">
+        <div className="flex items-center gap-4">
+          <input
+            type="text"
+            aria-label="Claude config directory"
+            value={claudeConfigDirDraft}
+            placeholder="Claude config directory (blank = default)"
+            onChange={(e) => {
+              setClaudeConfigDirDraft(e.target.value);
+              // Clear the rejection notice the moment the user starts fixing it.
+              setClaudeConfigDirError('');
+            }}
+            onBlur={() => {
+              // Nothing to save when the field still holds the persisted value;
+              // tabbing through an untouched field shouldn't cost a round trip.
+              if (draftMatchesSaved) {
+                setClaudeConfigDirError('');
+                return;
+              }
+              // Light pre-check only -- authoritative validation is server-side
+              // (see clientMessageHandler.ts's applySetClaudeConfigDir), since
+              // expanding a leading ~ requires knowing the SERVER's home
+              // directory, which the browser tab this modal renders in
+              // doesn't have access to. Accepts POSIX roots, a bare/leading
+              // `~`, a Windows drive letter (`C:\` or `C:/`), and UNC
+              // (`\\server\share`) -- the shapes path.isAbsolute() can call
+              // absolute on either platform.
+              const looksAbsolute = /^(\/|~$|~[/\\]|[A-Za-z]:[/\\]|\\\\)/.test(draftTrimmed);
+              if (draftTrimmed !== '' && !looksAbsolute) {
+                setClaudeConfigDirError('Must be an absolute path');
+                return;
+              }
+              setClaudeConfigDirError('');
+              transport.send({ type: 'setClaudeConfigDir', claudeConfigDir: draftTrimmed });
+            }}
+            className="flex-1 min-w-0 text-xs py-2 px-4 bg-bg border-2 border-border rounded-none text-text"
+          />
+        </div>
+        {claudeConfigDirError !== '' && (
+          <span className="text-xs text-status-error">{claudeConfigDirError}</span>
+        )}
+        {resolvedClaudeConfigDir !== '' && (
+          <span className="text-xs text-text-muted">
+            {resolvedClaudeConfigDirSource === 'setting' &&
+              `Using configured path: ${resolvedClaudeConfigDir}`}
+            {resolvedClaudeConfigDirSource === 'env' &&
+              `Using $CLAUDE_CONFIG_DIR: ${resolvedClaudeConfigDir}`}
+            {resolvedClaudeConfigDirSource === 'default' &&
+              `Using ${resolvedClaudeConfigDir} (default)`}
+            {!resolvedClaudeConfigDirExists && ' — does not exist on disk'}
+          </span>
+        )}
+        {/* The error wins: a draft the pre-check rejected was never sent, so
+            there is nothing pending to restart for. Showing "this is invalid"
+            and "restart to apply" side by side just reads as a contradiction. */}
+        {needsRestart && claudeConfigDirError === '' && (
+          <span className="text-xs text-text-muted">
+            Restart Pixel Agents to apply
+            {draftMatchesSaved && !pendingDirExists && ' — this directory does not exist yet'}
+          </span>
+        )}
+      </div>
       <Checkbox
         label="Sound Notifications"
         checked={soundLocal}

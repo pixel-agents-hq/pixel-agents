@@ -64,6 +64,7 @@ import {
   getPixelAgentsFrame,
   getSettingChecked,
   openPixelAgentsPanel,
+  openSettingsModal,
   setSettings,
 } from '../../../helpers/webview';
 
@@ -1607,6 +1608,33 @@ test.describe('Hooks ON / lifecycle', () => {
     expect(await getSettingChecked(frame, 'Always Show Labels')).toBe(!initial);
     expect(await getSettingChecked(frame, 'Display Headless as Ghosts')).toBe(!initialGhost);
     narrator.check('flipped state survives the reload — persisted through config.json');
+  });
+
+  // the Claude config directory field, fed by the VS Code adapter.
+  //
+  // The standalone settings spec covers the shared React component and the
+  // clientMessageHandler.ts path, but NOT this one: in VS Code the five
+  // claudeConfigDir fields are spread into settingsLoaded by
+  // PixelAgentsViewProvider.ts's own emitter. Dropping that spread would blank
+  // the helper line here and nothing else in the suite would notice.
+  //
+  // The fixture pins HOME to tmpHome and strips CLAUDE_CONFIG_DIR (see
+  // applyMockHomeEnv in helpers/mock-claude.ts), so the resolver must land on
+  // the default branch: <tmpHome>/.claude, source "default".
+  test('Settings reports the resolved Claude config directory @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
+    const { frame, tmpHome, narrator } = pixelAgents;
+
+    narrator.step('opening Settings to read the resolved Claude config directory');
+    const modal = await openSettingsModal(frame);
+    const defaultDir = path.join(tmpHome, '.claude');
+
+    await expect(modal.getByText(`Using ${defaultDir} (default)`)).toBeVisible();
+    // Nothing overridden: the input is blank and no restart is pending.
+    await expect(modal.getByLabel('Claude config directory')).toHaveValue('');
+    await expect(modal.getByText('Restart Pixel Agents to apply')).toHaveCount(0);
+    narrator.check(`Settings shows "Using ${defaultDir} (default)" with an empty override field`);
   });
 
   // layout editor smoke. Verifies entering edit mode reveals the editor

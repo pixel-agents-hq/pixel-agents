@@ -27,6 +27,11 @@ import {
 } from '../../server/src/assetLoader.js';
 import { loadAllCharacters, loadAllFurniture, loadAllPets } from '../../server/src/assetReload.js';
 import {
+  prepareClaudeConfigDirForBoot,
+  recordClaudeConfigDirHooksInstalled,
+} from '../../server/src/claudeConfigDirBoot.js';
+import { applySetClaudeConfigDir } from '../../server/src/clientMessageHandler.js';
+import {
   getHooksConsent,
   getHooksEnabled,
   grantHooksConsent,
@@ -46,6 +51,7 @@ import type { ConsentEffects } from '../../server/src/providers/hook/consentExec
 import { applyConsentChoice } from '../../server/src/providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from '../../server/src/providers/hook/consentGate.js';
 import {
+  buildClaudeConfigDirFields,
   claudeProvider,
   copyHookScript,
   hookProviderById,
@@ -118,6 +124,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     private readonly context: vscode.ExtensionContext,
     adapter: StateAdapter,
   ) {
+    // Must run before anything in this constructor (or initServer(), called
+    // at the end of it) can reach installHooks() -- sets the live
+    // CLAUDE_CONFIG_DIR override and cleans up any stale hook install from a
+    // previous directory.
+    prepareClaudeConfigDirForBoot('vscode');
     this.adapter = adapter;
     this.store.setAdapter(this.adapter);
     this.store.on('agentAdded', (id, agent) => {
@@ -270,6 +281,15 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       );
       await this.reportHooksStatus(provider);
       return;
+    }
+    // claudeConfigDirHooksInstalledAt is Claude-specific bookkeeping (see
+    // claudeConfigDirBoot.ts) -- only meaningful for that provider. This is
+    // the single choke point every install path (boot-time consent-gated
+    // install, the Settings toggle) already funnels through, so recording
+    // here -- AFTER installHooks() actually settled, not fired-and-forgotten
+    // -- covers every current and future caller by construction.
+    if (provider.id === claudeProvider.id) {
+      recordClaudeConfigDirHooksInstalled('vscode');
     }
     // No success report here: both callers already produce a truthful hooksStatus (setHooksEnabled re-derives, the
     // startup path rides the webviewReady handshake). A second optimistic send is a duplicate the Intro's seq-driven
@@ -497,6 +517,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       } else if (message.type === 'setShowAreas') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_SHOW_AREAS, enabled);
+      } else if (message.type === 'setClaudeConfigDir') {
+        const result = applySetClaudeConfigDir(message.claudeConfigDir);
+        if (result?.rejected === false) {
+          this.sendOrBuffer({ type: 'claudeConfigDirUpdated', ...result.fields });
+        } else if (result?.rejected === true) {
+          this.sendOrBuffer({
+            type: 'claudeConfigDirRejected',
+            claudeConfigDir: result.claudeConfigDir,
+          });
+        }
       } else if (message.type === 'saveAreaMappings') {
         const mappings = message.mappings as Record<string, string[]>;
         const cfg = readConfig();
@@ -598,6 +628,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           hooksInfoShown,
           externalAssetDirectories: config.externalAssetDirectories,
           showAreas,
+          ...buildClaudeConfigDirFields(config.claudeConfigDir),
         });
 
         // One status + at most one consent ask PER PROVIDER. Install state is distinct from the hooksEnabled

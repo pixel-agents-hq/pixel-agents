@@ -341,4 +341,9 @@ describe('PixelAgentsServer', () => {
 
     expect(received).toHaveLength(0);
   });
+
+  // The /ws Origin/connection gate and the token-based privileged-message gate
+  // that supersedes it are covered end-to-end in httpServerWs.test.ts (real
+  // `ws` client, real DNS-rebinding and forwarder reproductions) rather than
+  // here.
 });

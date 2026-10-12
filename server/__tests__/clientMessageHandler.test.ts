@@ -1,10 +1,11 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentStateStore } from '../src/agentStateStore.js';
 import {
+  applySetClaudeConfigDir,
   type AssetCache,
   type ClientMessageContext,
   handleClientMessage,
@@ -326,6 +327,35 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
       expect(mappings.mappings).toEqual({ frontend: ['Engineering'] });
     });
 
+    it('emits settingsLoaded with all five claudeConfigDir fields, reflecting a live override', () => {
+      // Isolate from any CLAUDE_CONFIG_DIR the ambient environment might have
+      // set — this test asserts the 'default' source, which only holds when
+      // nothing overrides it.
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '');
+
+      // Fresh temp HOME, no override written yet -> defaults.
+      handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx);
+      const first = sent.find((m) => m.type === 'settingsLoaded') as Record<string, unknown>;
+      expect(first).toBeTruthy();
+      expect(first.claudeConfigDir).toBe('');
+      expect(first.resolvedClaudeConfigDir).toBe(path.join(tempHome, '.claude'));
+      expect(first.resolvedClaudeConfigDirSource).toBe('default');
+      expect(typeof first.resolvedClaudeConfigDirExists).toBe('boolean');
+      expect(typeof first.pendingDirExists).toBe('boolean');
+
+      // Now persist an explicit override and prove settingsLoaded reflects the
+      // LIVE config on the next webviewReady, not a stale default snapshot --
+      // this is what actually proves the spread reads through to config.
+      sent = [];
+      applySetClaudeConfigDir('/custom/claude-dir');
+      handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx);
+      const second = sent.find((m) => m.type === 'settingsLoaded') as Record<string, unknown>;
+      expect(second).toBeTruthy();
+      expect(second.claudeConfigDir).toBe('/custom/claude-dir');
+
+      vi.unstubAllEnvs();
+    });
+
     it('emits layoutLoaded after existingAgents so buffered agents materialize', () => {
       // The webview buffers agents from existingAgents and only materializes
       // them on the next layoutLoaded. If layout arrives first, a client
@@ -601,5 +631,131 @@ describe('clientMessageHandler: saveAgentSeats palette sync', () => {
       ctx,
     );
     expect(store.get(1)?.palette).toBe(7);
+  });
+});
+
+describe('clientMessageHandler: setClaudeConfigDir', () => {
+  let tempHome: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cmh-ccd-test-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  describe('applySetClaudeConfigDir', () => {
+    it('persists a valid absolute path and returns the five fields', () => {
+      const result = applySetClaudeConfigDir('/custom/claude');
+      expect(result).not.toBeNull();
+      expect(result?.rejected).toBe(false);
+      expect(result?.rejected === false && result.fields.claudeConfigDir).toBe('/custom/claude');
+      expect(readConfig().claudeConfigDir).toBe('/custom/claude');
+    });
+
+    it('persists blank and clears the setting', () => {
+      applySetClaudeConfigDir('/custom/claude');
+      const result = applySetClaudeConfigDir('');
+      expect(result?.rejected === false && result.fields.claudeConfigDir).toBe('');
+      expect(readConfig().claudeConfigDir).toBe('');
+    });
+
+    // A rejection is reported, not swallowed: the webview needs to know the
+    // save failed or its "restart to apply" notice never goes away.
+    it('reports a rejection and does not write for a non-absolute path', () => {
+      const before = readConfig().claudeConfigDir;
+      const result = applySetClaudeConfigDir('relative/path');
+      expect(result).toEqual({ rejected: true, claudeConfigDir: 'relative/path' });
+      expect(readConfig().claudeConfigDir).toBe(before);
+    });
+
+    // The filesystem root passes the client's light regex but is rejected
+    // server-side (it would put getClaudeSettingsPath() at /settings.json).
+    it('reports a rejection and does not write for the filesystem root', () => {
+      const before = readConfig().claudeConfigDir;
+      const result = applySetClaudeConfigDir('/');
+      expect(result).toEqual({ rejected: true, claudeConfigDir: '/' });
+      expect(readConfig().claudeConfigDir).toBe(before);
+    });
+
+    it('echoes the TRIMMED value in a rejection', () => {
+      const result = applySetClaudeConfigDir('  relative/path  ');
+      expect(result).toEqual({ rejected: true, claudeConfigDir: 'relative/path' });
+    });
+
+    // Unchanged: a non-string payload is a protocol violation no real client
+    // sends, so it stays a silent no-op rather than a user-facing error.
+    it('returns null and does not write for a non-string payload', () => {
+      const before = readConfig().claudeConfigDir;
+      const result = applySetClaudeConfigDir(42);
+      expect(result).toBeNull();
+      expect(readConfig().claudeConfigDir).toBe(before);
+    });
+
+    it('trims whitespace before persisting', () => {
+      const result = applySetClaudeConfigDir('  /custom/claude  ');
+      expect(result?.rejected === false && result.fields.claudeConfigDir).toBe('/custom/claude');
+    });
+  });
+
+  describe('via handleClientMessage', () => {
+    let store: AgentStateStore;
+    let sent: Array<Record<string, unknown>>;
+    let ctx: ClientMessageContext;
+
+    beforeEach(() => {
+      store = new AgentStateStore();
+      store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
+      sent = [];
+      ctx = { store, cache: null };
+    });
+
+    afterEach(() => {
+      store.dispose();
+    });
+
+    it('sends claudeConfigDirUpdated on a valid save', () => {
+      handleClientMessage(
+        { type: 'setClaudeConfigDir', claudeConfigDir: '/custom/claude' },
+        (msg) => sent.push(msg),
+        ctx,
+      );
+      const reply = sent.find((m) => m.type === 'claudeConfigDirUpdated');
+      expect(reply).toBeTruthy();
+      expect(reply?.claudeConfigDir).toBe('/custom/claude');
+    });
+
+    it('sends claudeConfigDirRejected on an invalid save', () => {
+      const before = readConfig().claudeConfigDir;
+      handleClientMessage(
+        { type: 'setClaudeConfigDir', claudeConfigDir: 'relative/path' },
+        (msg) => sent.push(msg),
+        ctx,
+      );
+      const reply = sent.find((m) => m.type === 'claudeConfigDirRejected');
+      expect(reply).toBeTruthy();
+      expect(reply?.claudeConfigDir).toBe('relative/path');
+      expect(sent.find((m) => m.type === 'claudeConfigDirUpdated')).toBeUndefined();
+      expect(readConfig().claudeConfigDir).toBe(before);
+    });
+
+    it('sends nothing at all on a non-string payload', () => {
+      handleClientMessage(
+        { type: 'setClaudeConfigDir', claudeConfigDir: 42 },
+        (msg) => sent.push(msg),
+        ctx,
+      );
+      expect(sent.find((m) => m.type === 'claudeConfigDirUpdated')).toBeUndefined();
+      expect(sent.find((m) => m.type === 'claudeConfigDirRejected')).toBeUndefined();
+    });
   });
 });

@@ -33,12 +33,12 @@ a TRI-STATE (`'granted' | 'declined'`, absent = unanswered) rather than a boolea
 
 `consentActionFor(choice, { installed, consent })`, in `server/src/providers/hook/`:
 
-| choice | nothing left | grant (installed or not) | decline |
-| --- | --- | --- | --- |
-| `install` | `install` | `install` | `install` |
-| `never` | `persistOff` | `disable` if installed, else `persistOff` | `persistOff` |
-| `notNow` | `none` | `revert` | `revertDecline` |
-| anything else | `none` | `none` | `none` |
+| choice        | nothing left | grant (installed or not)                  | decline         |
+| ------------- | ------------ | ----------------------------------------- | --------------- |
+| `install`     | `install`    | `install`                                 | `install`       |
+| `never`       | `persistOff` | `disable` if installed, else `persistOff` | `persistOff`    |
+| `notNow`      | `none`       | `revert`                                  | `revertDecline` |
+| anything else | `none`       | `none`                                    | `none`          |
 
 - `install` grants and installs through the same path as the Settings toggle. A grant
   REPLACING a decline also deletes that decline's hooks-off remnant in the same write:

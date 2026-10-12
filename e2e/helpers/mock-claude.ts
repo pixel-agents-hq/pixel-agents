@@ -309,6 +309,11 @@ export function applyMockHomeEnv(base: NodeJS.ProcessEnv, tmpHome: string): Node
     delete env.HOMEDRIVE;
     delete env.HOMEPATH;
   }
+  // An inherited CLAUDE_CONFIG_DIR would redirect Pixel Agents' own hook
+  // install / session scanning away from tmpHome, the isolation this
+  // function exists to establish -- same category of problem HOMEDRIVE/
+  // HOMEPATH solve above for Windows.
+  delete env.CLAUDE_CONFIG_DIR;
   return env;
 }
 

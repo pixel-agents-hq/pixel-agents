@@ -114,6 +114,8 @@ components:
         - $ref: '#/components/schemas/HooksStatus'
         - $ref: '#/components/schemas/HooksConsentRequest'
         - $ref: '#/components/schemas/ExternalAssetDirectoriesUpdated'
+        - $ref: '#/components/schemas/ClaudeConfigDirUpdated'
+        - $ref: '#/components/schemas/ClaudeConfigDirRejected'
         - $ref: '#/components/schemas/AreaMappingsLoaded'
         - $ref: '#/components/schemas/WorkspaceFolders'
         # Diagnostics
@@ -143,6 +145,7 @@ components:
         - $ref: '#/components/schemas/RemoveExternalAssetDirectory'
         - $ref: '#/components/schemas/SaveAreaMappings'
         - $ref: '#/components/schemas/SetShowAreas'
+        - $ref: '#/components/schemas/SetClaudeConfigDir'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
 
@@ -644,6 +647,11 @@ components:
         - hooksInfoShown
         - externalAssetDirectories
         - showAreas
+        - claudeConfigDir
+        - resolvedClaudeConfigDir
+        - resolvedClaudeConfigDirSource
+        - resolvedClaudeConfigDirExists
+        - pendingDirExists
       properties:
         type:
           const: settingsLoaded
@@ -669,6 +677,21 @@ components:
             type: string
         showAreas:
           type: boolean
+        claudeConfigDir:
+          type: string
+          description: Raw persisted CLAUDE_CONFIG_DIR override; '' means unset.
+        resolvedClaudeConfigDir:
+          type: string
+          description: What the server actually resolves to right now (setting, env var, or default).
+        resolvedClaudeConfigDirSource:
+          type: string
+          description: Which source produced resolvedClaudeConfigDir -- 'setting', 'env', or 'default'.
+        resolvedClaudeConfigDirExists:
+          type: boolean
+          description: Whether resolvedClaudeConfigDir exists on disk right now.
+        pendingDirExists:
+          type: boolean
+          description: Whether claudeConfigDir would resolve to an existing directory after a restart.
 
     HooksStatus:
       description: |
@@ -758,6 +781,54 @@ components:
           type: array
           items:
             type: string
+
+    ClaudeConfigDirUpdated:
+      description: >-
+        Sent in reply to setClaudeConfigDir so the webview refreshes
+        immediately without waiting for the next webviewReady.
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - claudeConfigDir
+        - resolvedClaudeConfigDir
+        - resolvedClaudeConfigDirSource
+        - resolvedClaudeConfigDirExists
+        - pendingDirExists
+      properties:
+        type:
+          const: claudeConfigDirUpdated
+        claudeConfigDir:
+          type: string
+        resolvedClaudeConfigDir:
+          type: string
+        resolvedClaudeConfigDirSource:
+          type: string
+        resolvedClaudeConfigDirExists:
+          type: boolean
+        pendingDirExists:
+          type: boolean
+
+    ClaudeConfigDirRejected:
+      description: >-
+        Sent in reply to setClaudeConfigDir when the server's authoritative
+        validation rejects a well-formed string payload. Nothing was written
+        and nothing changed, so no claudeConfigDirUpdated follows -- and
+        without this message the webview would keep the value in its draft
+        and go on showing "restart to apply" for something that will never
+        take effect. `claudeConfigDir` echoes the trimmed value that was
+        rejected so the UI can ignore a stale rejection for a draft the user
+        has already edited past.
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - claudeConfigDir
+      properties:
+        type:
+          const: claudeConfigDirRejected
+        claudeConfigDir:
+          type: string
 
     WorkspaceFolders:
       description: Multi-root workspace folders (VS Code only).
@@ -1017,6 +1088,17 @@ components:
         path:
           type: string
           description: Absolute directory path (standalone browser only; omitted in VS Code).
+
+    SetClaudeConfigDir:
+      description: Set or clear the CLAUDE_CONFIG_DIR settings-modal override. Empty string clears it.
+      type: object
+      additionalProperties: false
+      required: [type, claudeConfigDir]
+      properties:
+        type:
+          const: setClaudeConfigDir
+        claudeConfigDir:
+          type: string
 
     RemoveExternalAssetDirectory:
       description: Remove an external asset directory by path.
