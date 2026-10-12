@@ -113,6 +113,61 @@ Content-Type: application/json
 }
 
 ###
+# ── OpenCode provider ─────────────────────────────────────────────
+# Same route, @provider = opencode. Envelopes below are what the bridge plugin
+# (server/src/providers/hook/opencode/bridge/pixel-agents-bridge.ts) POSTs for
+# each OpenCode bus event. Tool names are OpenCode's lowercase ids; call_id
+# becomes the stable hook tool id (no Date.now() minting needed).
+# Set @provider = opencode and re-run the SessionStart → PreToolUse →
+# PermissionRequest → PostToolUse → Stop → SessionEnd sequence above with these
+# bodies to drive an OpenCode character end to end.
+
+###
+# OpenCode: stage a session (bridge maps session.created)
+POST http://{{host}}:{{port}}/api/hooks/opencode
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "SessionStart",
+  "source": "opencode",
+  "cwd": "{{cwd}}"
+}
+
+###
+# OpenCode: tool start with stable call_id (bridge maps tool.execute.before)
+POST http://{{host}}:{{port}}/api/hooks/opencode
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "read",
+  "tool_input": {
+    "path": "src/index.ts"
+  },
+  "call_id": "call-1"
+}
+
+###
+# OpenCode: subagent spawn (bridge maps task calls carrying subagent_type)
+POST http://{{host}}:{{port}}/api/hooks/opencode
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "session_id": "{{sessionId}}",
+  "hook_event_name": "SubagentStart",
+  "tool_name": "explore",
+  "tool_input": {
+    "description": "Explore auth flow"
+  },
+  "call_id": "call-2"
+}
+
+###
 # Optional: simulate `/clear` or `--resume` handoff
 # Run this after the original session exists. Then run the next request to rebind it.
 POST http://{{host}}:{{port}}/api/hooks/{{provider}}

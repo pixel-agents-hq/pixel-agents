@@ -38,6 +38,7 @@ import type { HookEvent } from './hookEventHandler.js';
 import { HookEventHandler } from './hookEventHandler.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { PathSet, pathsMatch } from './pathKey.js';
+import { hookProviderById } from './providers/index.js';
 import { SessionRouter } from './sessionRouter.js';
 import { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -149,6 +150,11 @@ export class AgentRuntime {
       provider,
       new SessionRouter(),
       this.watchAllSessions,
+      // Per-event provider resolution: the constructor provider stays the
+      // default for file fallback and terminal adoption, while each wire
+      // event normalizes through the provider its id names. Unknown ids fall
+      // back to the constructor provider, exactly as before.
+      (providerId: string) => hookProviderById(providerId),
     );
 
     // Wire hook lifecycle callbacks to shared agent operations

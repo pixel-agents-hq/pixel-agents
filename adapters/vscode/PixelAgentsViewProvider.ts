@@ -50,6 +50,8 @@ import {
   copyHookScript,
   hookProviderById,
   hookProviders,
+  installBridgePlugin,
+  opencodeProvider,
 } from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
@@ -252,9 +254,17 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   ): Promise<void> {
     // The bundled claude-hook.js script belongs to the Claude provider alone;
     // another provider's install must neither copy it nor be blocked by it.
+    // The OpenCode bridge plugin belongs to the OpenCode provider the same way.
     if (provider.id === claudeProvider.id && !copyHookScript(this.context.extensionPath)) {
       vscode.window.showErrorMessage(
         'Pixel Agents: could not install the hook script — hooks not installed.',
+      );
+      await this.reportHooksStatus(provider);
+      return;
+    }
+    if (provider.id === opencodeProvider.id && !installBridgePlugin(this.context.extensionPath)) {
+      vscode.window.showErrorMessage(
+        'Pixel Agents: could not install the OpenCode bridge plugin — hooks not installed.',
       );
       await this.reportHooksStatus(provider);
       return;
@@ -549,11 +559,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
         // Provider capabilities: tool taxonomy for webview animation + subagent rendering.
         // Sent once before restoreAgents so characters render with correct animations
-        // from the first frame.
+        // from the first frame. Union over every registered provider (see
+        // clientMessageHandler.ts): tool names are provider-namespaced by case
+        // convention, so the union classifies correctly with no per-agent routing.
         this.webview?.postMessage({
           type: 'providerCapabilities',
-          readingTools: [...claudeProvider.readingTools],
-          subagentToolNames: [...claudeProvider.subagentToolNames],
+          readingTools: [...new Set(hookProviders.flatMap((p) => [...p.readingTools]))],
+          subagentToolNames: [...new Set(hookProviders.flatMap((p) => [...p.subagentToolNames]))],
         });
 
         // Settings + folder→Area mappings MUST be dispatched BEFORE restoreAgents

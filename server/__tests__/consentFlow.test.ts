@@ -102,7 +102,9 @@ describe('clientMessageHandler: hooks consent flow', () => {
     it('asks a privileged connection, carrying the provider disclosure verbatim', async () => {
       await connect();
 
-      const request = sent.find((m) => m.type === 'hooksConsentRequest');
+      const request = sent.find(
+        (m) => m.type === 'hooksConsentRequest' && m.providerId === 'claude',
+      );
       expect(request).toEqual({
         type: 'hooksConsentRequest',
         providerId: 'claude',
@@ -129,7 +131,11 @@ describe('clientMessageHandler: hooks consent flow', () => {
       grantHooksConsent('claude');
       await connect();
 
-      expect(sent.find((m) => m.type === 'hooksConsentRequest')).toBeUndefined();
+      // Per-provider: other registered providers with an open gate are still
+      // asked. This pins Claude's silence, not global silence.
+      expect(
+        sent.find((m) => m.type === 'hooksConsentRequest' && m.providerId === 'claude'),
+      ).toBeUndefined();
     });
 
     // The silent-grant population (a pre-consent version's install, migrated at
@@ -139,7 +145,9 @@ describe('clientMessageHandler: hooks consent flow', () => {
       seedInstalledHooks();
       await connect();
 
-      expect(sent.find((m) => m.type === 'hooksConsentRequest')).toBeUndefined();
+      expect(
+        sent.find((m) => m.type === 'hooksConsentRequest' && m.providerId === 'claude'),
+      ).toBeUndefined();
     });
 
     it('never asks while the hooks preference is off', async () => {
@@ -148,7 +156,9 @@ describe('clientMessageHandler: hooks consent flow', () => {
       setHooksEnabled('claude', false);
       await connect();
 
-      expect(sent.find((m) => m.type === 'hooksConsentRequest')).toBeUndefined();
+      expect(
+        sent.find((m) => m.type === 'hooksConsentRequest' && m.providerId === 'claude'),
+      ).toBeUndefined();
     });
 
     // Not-now writes nothing, so the gate must still be open on the next
