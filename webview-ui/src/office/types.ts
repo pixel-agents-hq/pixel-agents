@@ -167,6 +167,8 @@ export interface OfficeLayout {
 
 export interface Character {
   id: number;
+  /** Provider that owns this agent's tool taxonomy. */
+  providerId?: string;
   state: CharacterState;
   dir: Direction;
   /** Pixel position */

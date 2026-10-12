@@ -97,6 +97,7 @@ async function stopChild(child) {
 async function verifyInstalledTarball(tarballPath) {
   const smokeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-agents-npm-smoke-'));
   const smokeHome = path.join(smokeRoot, 'home');
+  const smokeHermesHome = path.join(smokeHome, '.hermes');
   const smokeProject = path.join(smokeRoot, 'project');
   fs.mkdirSync(smokeHome, { recursive: true });
   fs.mkdirSync(smokeProject, { recursive: true });
@@ -147,7 +148,12 @@ async function verifyInstalledTarball(tarballPath) {
     );
     const help = await execFileAsync(installedBin, ['--help'], {
       cwd: smokeProject,
-      env: { ...process.env, HOME: smokeHome, USERPROFILE: smokeHome },
+      env: {
+        ...process.env,
+        HOME: smokeHome,
+        USERPROFILE: smokeHome,
+        HERMES_HOME: smokeHermesHome,
+      },
       shell: process.platform === 'win32',
     });
     if (!help.stdout.includes('Usage: pixel-agents')) {
@@ -160,7 +166,12 @@ async function verifyInstalledTarball(tarballPath) {
       [installedCli, '--port', port.toString(), '--host', '127.0.0.1'],
       {
         cwd: smokeProject,
-        env: { ...process.env, HOME: smokeHome, USERPROFILE: smokeHome },
+        env: {
+          ...process.env,
+          HOME: smokeHome,
+          USERPROFILE: smokeHome,
+          HERMES_HOME: smokeHermesHome,
+        },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     );

@@ -36,10 +36,19 @@ export type AgentEvent =
       parentToolId: string;
       toolId: string;
       toolName: string;
+      /** Stable child session id when the provider runs the child as an
+       *  independently observable session. Absent for inline sub-agents. */
+      childSessionId?: string;
       input?: unknown;
       runInBackground?: boolean;
     }
-  | { kind: 'subagentEnd'; parentToolId: string; toolId: string }
+  | {
+      kind: 'subagentEnd';
+      parentToolId: string;
+      toolId: string;
+      /** Matches subagentStart.childSessionId for independent children. */
+      childSessionId?: string;
+    }
   | {
       kind: 'subagentTurnEnd';
       parentToolId: string;
@@ -50,6 +59,7 @@ export type AgentEvent =
     }
   | { kind: 'progress'; toolId: string; data: unknown }
   | { kind: 'permissionRequest' }
+  | { kind: 'permissionResolved' }
   | {
       kind: 'sessionStart';
       source?: string;
@@ -81,6 +91,10 @@ export interface HookProvider {
     sessionId: string;
     event: AgentEvent;
   } | null;
+
+  /** Adopt an unknown hook-only session as soon as sessionStart arrives.
+   *  File-backed providers may leave this false to retain transient-session filtering. */
+  readonly adoptOnSessionStart?: boolean;
 
   /** Install hook scripts that POST to our server. */
   installHooks(serverUrl: string, authToken: string): Promise<void>;

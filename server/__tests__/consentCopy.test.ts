@@ -8,6 +8,7 @@ import {
   CLAUDE_HOOK_EVENTS,
   SETTINGS_BACKUP_SUFFIX,
 } from '../src/providers/hook/claude/constants.js';
+import { hermesConsentDisclosure } from '../src/providers/hook/hermes/consentCopy.js';
 
 /**
  * The consent copy is two pieces: the HEADLINE is the greeter's welcome line
@@ -30,7 +31,7 @@ describe('consent copy', () => {
     expect(full).toContain(`settings.json${SETTINGS_BACKUP_SUFFIX}`);
     expect(full).toContain('tool names and tool inputs');
     expect(full).toContain('127.0.0.1');
-    expect(full).toContain('Settings → Instant Detection (Hooks)');
+    expect(full).toContain('Settings → Claude Code Instant Detection');
   });
 
   // Every fact must be in the DISCLOSURE block, not the headline: the headline
@@ -46,7 +47,7 @@ describe('consent copy', () => {
     expect(CONSENT_DISCLOSURE).toContain(`settings.json${SETTINGS_BACKUP_SUFFIX}`);
     expect(CONSENT_DISCLOSURE).toContain('tool names and tool inputs');
     expect(CONSENT_DISCLOSURE).toContain('127.0.0.1');
-    expect(CONSENT_DISCLOSURE).toContain('Settings → Instant Detection (Hooks)');
+    expect(CONSENT_DISCLOSURE).toContain('Settings → Claude Code Instant Detection');
   });
 
   // The ask is about a FIRST install and nothing else. A user who already has
@@ -64,5 +65,18 @@ describe('consent copy', () => {
   // would be a silent legibility regression.
   it('is a paragraph-separated block', () => {
     expect(CONSENT_DISCLOSURE.split('\n\n')).toHaveLength(3);
+  });
+});
+
+describe('Hermes consent copy', () => {
+  it('truthfully discloses every sensitive payload class received locally', () => {
+    const { disclosure } = hermesConsentDisclosure();
+    expect(disclosure).toContain('working-directory metadata');
+    expect(disclosure).toContain('tool names, inputs, results, and errors');
+    expect(disclosure).toContain('role, and goal metadata');
+    expect(disclosure).toContain('raw commands and choices');
+    expect(disclosure).toContain('without retaining command, result, error, or decision payloads');
+    expect(disclosure).toContain('127.0.0.1');
+    expect(disclosure).toContain('cannot approve actions or write back to Hermes');
   });
 });

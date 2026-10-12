@@ -514,6 +514,7 @@ describe('fileWatcher dismissal state', () => {
           waitingTimers,
           permissionTimers,
           () => {},
+          'claude',
         );
         runExternalScan();
 

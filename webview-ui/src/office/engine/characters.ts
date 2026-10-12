@@ -18,9 +18,9 @@ import { CharacterState, Direction, TILE_SIZE } from '../types.js';
 
 /** Whether a tool should show the reading animation (vs typing). Taxonomy comes
  *  from the active HookProvider via the `providerCapabilities` message. */
-export function isReadingTool(tool: string | null): boolean {
+export function isReadingTool(tool: string | null, providerId?: string): boolean {
   if (!tool) return false;
-  return isReadingToolName(tool);
+  return isReadingToolName(tool, providerId);
 }
 
 /** Pixel center of a tile */
@@ -52,12 +52,14 @@ export function createCharacter(
   seatId: string | null,
   seat: Seat | null,
   hueShift = 0,
+  providerId = 'claude',
 ): Character {
   const col = seat ? seat.seatCol : 1;
   const row = seat ? seat.seatRow : 1;
   const center = tileCenter(col, row);
   return {
     id,
+    providerId,
     state: CharacterState.TYPE,
     dir: seat ? seat.facingDir : Direction.DOWN,
     x: center.x,
@@ -320,7 +322,7 @@ export function updateCharacter(
 export function getCharacterSprite(ch: Character, sprites: CharacterSprites): SpriteData {
   switch (ch.state) {
     case CharacterState.TYPE:
-      if (isReadingTool(ch.currentTool)) {
+      if (isReadingTool(ch.currentTool, ch.providerId)) {
         return sprites.reading[ch.dir][ch.frame % 2];
       }
       return sprites.typing[ch.dir][ch.frame % 2];

@@ -94,6 +94,8 @@ export interface PersistedAgent {
   terminalName: string;
   /** Whether this agent was detected from an external source */
   isExternal?: boolean;
+  /** Provider that created the agent. Missing legacy values migrate to Claude. */
+  providerId?: string;
   jsonlFile: string;
   projectDir: string;
   /** Workspace folder name (only set for multi-root workspaces) */

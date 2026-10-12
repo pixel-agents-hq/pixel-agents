@@ -109,6 +109,7 @@ describe('AgentRuntime -- restore preserves palette/hueShift', () => {
     expect(agent).toBeDefined();
     expect(agent?.palette).toBe(3);
     expect(agent?.hueShift).toBe(90);
+    expect(agent?.providerId).toBe('claude');
   });
 
   it('persist() writes palette/hueShift onto the record that restoreExternalAgents copies back', () => {
@@ -139,6 +140,7 @@ describe('AgentRuntime -- restore preserves palette/hueShift', () => {
     const persisted = adapterA.saved[0];
     expect(persisted[0].palette).toBe(5);
     expect(persisted[0].hueShift).toBe(270);
+    expect(persisted[0].providerId).toBe('claude');
 
     runtime.dispose();
     runtime = undefined;
@@ -154,6 +156,7 @@ describe('AgentRuntime -- restore preserves palette/hueShift', () => {
     expect(restored).toBeDefined();
     expect(restored?.palette).toBe(5);
     expect(restored?.hueShift).toBe(270);
+    expect(restored?.providerId).toBe('claude');
   });
 
   it('assigns a fresh palette when the persisted record has no palette', () => {

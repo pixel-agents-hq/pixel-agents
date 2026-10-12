@@ -89,6 +89,10 @@ export const HOOK_EVENT_BUFFER_MS = 5_000;
  *  the agent is cleaned up instead of staying as a zombie with pendingClear forever. */
 export const SESSION_END_GRACE_MS = 2000;
 export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
+/** Signed Hermes deliveries outside this window are stale and rejected. */
+export const HERMES_DELIVERY_MAX_AGE_MS = 5 * 60 * 1_000;
+/** Bound replay memory independently of event volume. */
+export const HERMES_REPLAY_CACHE_MAX = 2_048;
 
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';

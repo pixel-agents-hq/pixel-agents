@@ -68,6 +68,13 @@ export interface WorkspaceFolder {
   path: string;
 }
 
+export interface ProviderCapability {
+  id: string;
+  displayName: string;
+  readingTools: string[];
+  subagentToolNames: string[];
+}
+
 interface ExtensionMessageState {
   agents: number[];
   selectedAgent: number | null;
@@ -95,6 +102,7 @@ interface ExtensionMessageState {
    *  while first-run consent is pending, unlike hooksEnabled which defaults
    *  true. Keyed by providerId; today's Settings checkbox reads 'claude'. */
   hooksInstalled: Record<string, boolean>;
+  providers: ProviderCapability[];
   /** Bumped per provider on every hooksStatus message. `hooksInstalled` alone cannot say "the server answered": a
    *  failed install re-reports the `false` already held, so no effect runs. The Intro needs the ARRIVAL to tell a
    *  pending install from a failed one, per provider — A's status is never a verdict on B's install. */
@@ -144,6 +152,7 @@ export function useExtensionMessages(
   const [ghostHeadlessAgents, setGhostHeadlessAgentsState] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInstalled, setHooksInstalled] = useState<Record<string, boolean>>({});
+  const [providers, setProviders] = useState<ProviderCapability[]>([]);
   const [hooksStatusSeq, setHooksStatusSeq] = useState<Record<string, number>>({});
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
   // FIFO of pending consent asks, at most one per provider (a re-ask replaces that provider's entry in place). The
@@ -208,9 +217,15 @@ export function useExtensionMessages(
       }
 
       if (msg.type === 'providerCapabilities') {
+        const providers = (msg.providers ?? []).filter(
+          (provider: ProviderCapability) =>
+            typeof provider.id === 'string' && typeof provider.displayName === 'string',
+        );
+        setProviders(providers);
         setProviderCapabilities({
           readingTools: msg.readingTools,
           subagentToolNames: msg.subagentToolNames,
+          providers: msg.providers,
         });
         return;
       }
@@ -232,7 +247,16 @@ export function useExtensionMessages(
         }
         // Add buffered agents now that layout (and seats) are correct
         for (const p of pendingAgents) {
-          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
+          os.addAgent(
+            p.id,
+            p.palette,
+            p.hueShift,
+            p.seatId,
+            true,
+            p.folderName,
+            undefined,
+            p.providerId,
+          );
           if (p.isHeadless) os.setHeadless(p.id, true);
         }
         pendingAgents = [];
@@ -251,6 +275,7 @@ export function useExtensionMessages(
         const teammateName = msg.teammateName as string | undefined;
         const teammateParentId = msg.parentAgentId as number | undefined;
         const teamName = msg.teamName as string | undefined;
+        const providerId = (msg.providerId as string | undefined) ?? 'claude';
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]));
         // Don't auto-select teammates (keep focus on lead)
         if (!isTeammate) {
@@ -271,6 +296,7 @@ export function useExtensionMessages(
             undefined,
             parentCh?.folderName,
             teammateParentId,
+            providerId,
           );
           noteFolderName(parentCh?.folderName);
           // Set team metadata on the character
@@ -283,7 +309,16 @@ export function useExtensionMessages(
         } else {
           const palette = msg.palette as number | undefined;
           const hueShift = msg.hueShift as number | undefined;
-          os.addAgent(id, palette, hueShift, undefined, undefined, folderName);
+          os.addAgent(
+            id,
+            palette,
+            hueShift,
+            undefined,
+            undefined,
+            folderName,
+            undefined,
+            providerId,
+          );
           noteFolderName(folderName);
           if (isHeadlessAgent(msg.isExternal as boolean | undefined)) {
             os.setHeadless(id, true);
@@ -396,7 +431,7 @@ export function useExtensionMessages(
         const parentChar = os.characters.get(id);
         const parentHasTeam = !!parentChar?.teamName;
         if (
-          isSubagentToolName(toolName) &&
+          isSubagentToolName(toolName, parentChar?.providerId) &&
           !isTeammateSpawn &&
           (!runInBackground || !parentHasTeam)
         ) {
@@ -780,6 +815,7 @@ export function useExtensionMessages(
     setGhostHeadlessAgents: applyGhostHeadlessAgents,
     hooksEnabled,
     hooksInstalled,
+    providers,
     hooksStatusSeq,
     setHooksEnabled,
     hooksInfoShown,

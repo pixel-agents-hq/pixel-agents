@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -25,6 +26,8 @@ vi.mock('os', async () => {
 
 // Must import AFTER mock setup
 const { PixelAgentsServer } = await import('../src/server.js');
+const { verifyHermesDelivery } = await import('../src/httpServer.js');
+const { HERMES_REPLAY_CACHE_MAX } = await import('../src/constants.js');
 
 async function postHook(
   port: number,
@@ -340,5 +343,69 @@ describe('PixelAgentsServer', () => {
     );
 
     expect(received).toHaveLength(0);
+  });
+
+  it('accepts valid Hermes HMAC and rejects invalid, stale, mismatched, and replayed deliveries', async () => {
+    const config = await server.start();
+    const received: unknown[] = [];
+    server.onHookEvent((_providerId, event) => received.push(event));
+
+    const send = async (
+      deliveryId: string,
+      timestamp: string,
+      secret = config.token,
+      headerDeliveryId = deliveryId,
+    ) => {
+      const body = JSON.stringify({
+        hook_event_name: 'on_session_start',
+        session_id: 'hermes-session',
+        delivery_id: deliveryId,
+        timestamp,
+      });
+      const signature = `sha256=${crypto.createHmac('sha256', secret).update(body).digest('hex')}`;
+      return fetch(`http://127.0.0.1:${config.port}/api/hooks/hermes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Hermes-Signature-256': signature,
+          'X-Hermes-Delivery': headerDeliveryId,
+        },
+        body,
+      });
+    };
+
+    expect((await send('delivery-ok', new Date().toISOString())).status).toBe(200);
+    expect(received).toHaveLength(1);
+    expect((await send('delivery-ok', new Date().toISOString())).status).toBe(401);
+    expect((await send('delivery-bad', new Date().toISOString(), 'wrong-secret')).status).toBe(401);
+    expect(
+      (await send('delivery-stale', new Date(Date.now() - 10 * 60_000).toISOString())).status,
+    ).toBe(401);
+    expect(
+      (await send('delivery-mismatch', new Date().toISOString(), config.token, 'different')).status,
+    ).toBe(401);
+    expect(received).toHaveLength(1);
+  });
+
+  it('fails closed when every replay-cache entry is still fresh', () => {
+    const now = Date.now();
+    const seen = new Map<string, number>();
+    for (let index = 0; index < HERMES_REPLAY_CACHE_MAX; index += 1) {
+      seen.set(`delivery-${index}`, now);
+    }
+    const secret = 'local-secret';
+    const deliveryId = 'delivery-over-capacity';
+    const event = {
+      hook_event_name: 'on_session_start',
+      session_id: 'hermes-session',
+      delivery_id: deliveryId,
+      timestamp: new Date(now).toISOString(),
+    };
+    const rawBody = Buffer.from(JSON.stringify(event));
+    const signature = `sha256=${crypto.createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+
+    expect(verifyHermesDelivery(rawBody, event, signature, deliveryId, secret, seen)).toBe(false);
+    expect(seen.size).toBe(HERMES_REPLAY_CACHE_MAX);
+    expect(seen.has('delivery-0')).toBe(true);
   });
 });

@@ -1366,7 +1366,7 @@ test.describe('Hooks ON / lifecycle', () => {
 
   // Hook installer side effects: claudeHookInstaller side effects on ~/.claude/settings.json.
   //
-  // Background: when "Instant Detection (Hooks)" is toggled in Settings, the
+  // Background: when "Claude Code Instant Detection" is toggled in Settings, the
   // extension writes (install) or rewrites (uninstall) ~/.claude/settings.json
   // via claudeHookInstaller. Historical bugs around clobbering pre-existing
   // third-party hook entries make this a real bug surface. Unit tests cover the

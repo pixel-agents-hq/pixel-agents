@@ -16,6 +16,7 @@ export interface ExistingAgentMeta {
   palette?: number;
   hueShift?: number;
   seatId?: string;
+  providerId?: string;
 }
 
 /** An agent buffered until the layout (and its seats) has been built. */
@@ -26,6 +27,7 @@ export interface PendingAgent {
   seatId?: string;
   folderName?: string;
   isHeadless?: boolean;
+  providerId?: string;
 }
 
 /** Minimal structural view of OfficeState this reconciler needs. */
@@ -38,6 +40,8 @@ export interface ExistingAgentsOffice {
     preferredSeatId?: string,
     skipSpawnEffect?: boolean,
     folderName?: string,
+    nearAgentId?: number,
+    providerId?: string,
   ) => void;
   setHeadless: (id: number, headless: boolean) => void;
 }
@@ -69,9 +73,19 @@ export function reconcileExistingAgents(
       folderName: folderNames[id],
       isHeadless: headlessAgents[id] === true,
     };
+    if (m?.providerId !== undefined) p.providerId = m.providerId;
     if (layoutReady) {
       if (!os.characters.has(p.id)) {
-        os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
+        os.addAgent(
+          p.id,
+          p.palette,
+          p.hueShift,
+          p.seatId,
+          true,
+          p.folderName,
+          undefined,
+          p.providerId,
+        );
         if (p.isHeadless) os.setHeadless(p.id, true);
         addedDirectly = true;
       }
