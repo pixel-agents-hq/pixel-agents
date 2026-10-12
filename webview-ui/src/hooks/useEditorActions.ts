@@ -187,6 +187,7 @@ export function useEditorActions(
         editorState.clearSelection();
         editorState.clearGhost();
         editorState.clearDrag();
+        editorState.clearPickedItem();
         wallColorEditActiveRef.current = false;
       }
       return next;
@@ -201,6 +202,7 @@ export function useEditorActions(
       editorState.clearSelection();
       editorState.clearGhost();
       editorState.clearDrag();
+      editorState.clearPickedItem();
       colorEditUidRef.current = null;
       wallColorEditActiveRef.current = false;
       // Reset carpet stroke buffer whenever leaving the carpet paint flow so the
@@ -429,6 +431,8 @@ export function useEditorActions(
 
   const handleFurnitureTypeChange = useCallback(
     (type: string) => {
+      // Switching to a catalog item cancels any pick-tool carry (fresh stamp)
+      editorState.clearPickedItem();
       // Clicking the same item deselects it (no ghost), stays in furniture mode
       if (editorState.selectedFurnitureType === type) {
         editorState.selectedFurnitureType = '';
@@ -730,6 +734,19 @@ export function useEditorActions(
           setEditorTick((n) => n + 1);
         } else {
           const placementRow = getWallPlacementRow(type, row);
+          // Carrying an item grabbed with the pick tool: move it instead of
+          // stamping a copy, then disarm so the next click doesn't duplicate.
+          const pickedUid = editorState.pickedFurnitureUid;
+          if (pickedUid) {
+            const newLayout = moveFurniture(layout, pickedUid, col, placementRow);
+            if (newLayout !== layout) {
+              applyEdit(newLayout);
+              editorState.selectedFurnitureType = '';
+              editorState.clearPickedItem();
+              editorState.clearGhost();
+            }
+            return;
+          }
           if (!canPlaceFurniture(layout, type, col, placementRow)) return;
           const uid = `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
           const placed: PlacedFurniture = { uid, type, col, row: placementRow };
@@ -756,6 +773,8 @@ export function useEditorActions(
         if (hit) {
           editorState.selectedFurnitureType = hit.type;
           editorState.pickedFurnitureColor = hit.color ? { ...hit.color } : null;
+          // Remember the source item: placement will MOVE it rather than clone it
+          editorState.pickedFurnitureUid = hit.uid;
           editorState.activeTool = EditTool.FURNITURE_PLACE;
         }
         setEditorTick((n) => n + 1);
