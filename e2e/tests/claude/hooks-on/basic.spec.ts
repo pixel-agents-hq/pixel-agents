@@ -17,10 +17,13 @@ import {
   waitForClaudeHookSetup,
 } from '../../../helpers/mock-claude';
 import {
+  expectAgentOverlayGone,
   expectCharacterGhosted,
   expectContextGauge,
   expectOverlayCount,
   expectOverlayVisible,
+  expectSingleAgentOverlay,
+  getOverlayByAgentId,
   getContextGauges,
 } from '../../../helpers/office';
 import {
@@ -194,5 +197,56 @@ test.describe('Hooks ON / spawn paths', () => {
     narrator.step('waiting for the t+13.5s SessionEnd to remove the agent');
     await expectOverlayCount(frame, 0);
     narrator.check('the agent is gone — count back to 0');
+  });
+
+  // Regression coverage for the #396 fix plus its agentDeselected follow-up.
+  // adapters/vscode's onDidChangeActiveTerminal already fires a real
+  // 'agentSelected' the moment the spawned terminal is focused (that's the
+  // bug #396 fixed: the label panel opening on the office canvas, not just
+  // <DebugView>), so the panel is asserted open below without any simulated
+  // message. Deselection has no real trigger to drive reliably through the
+  // Electron fixture yet (VS Code only fires onDidChangeActiveTerminal(undefined)
+  // on terminal-panel/focus changes that aren't exposed to
+  // vscode.commands.executeCommand from Playwright here), so agentDeselected
+  // is dispatched directly as a genuine ServerMessage — the same 'message'
+  // event PostMessageTransport listens for — to exercise the real, bundled
+  // useExtensionMessages.ts handler end-to-end.
+  test('agentDeselected clears the office label panel opened by agentSelected @area:spawn', async ({
+    pixelAgents,
+  }) => {
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
+
+    // The fixture seeds alwaysShowLabels: true for every test (so overlays are
+    // trivially visible elsewhere) — turn it off here since this test's whole
+    // point is selection-driven visibility.
+    narrator.step('disabling "Always Show Labels" so the panel reflects selection state');
+    await setSettings(frame, { alwaysShowLabels: false });
+
+    narrator.step('spawning an internal agent — its terminal is focused immediately on launch');
+    await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+    await openPixelAgentsPanel(window);
+    const panelFrame = await getPixelAgentsFrame(window);
+
+    narrator.step(
+      'the real agentSelected from terminal focus should already have opened the panel',
+    );
+    const agentId = await expectSingleAgentOverlay(panelFrame);
+    narrator.check(`label panel open for agent ${agentId} with no test-side selection`);
+
+    narrator.step('dispatching a stale agentDeselected for a different id — must be a no-op');
+    await panelFrame.evaluate((staleId) => {
+      window.postMessage({ type: 'agentDeselected', id: staleId }, '*');
+    }, agentId + 1);
+    await expect(getOverlayByAgentId(panelFrame, agentId)).toBeVisible();
+    narrator.check(
+      'panel still open — a deselect for a different id must not clear this selection',
+    );
+
+    narrator.step('dispatching the real agentDeselected for this agent');
+    await panelFrame.evaluate((id) => {
+      window.postMessage({ type: 'agentDeselected', id }, '*');
+    }, agentId);
+    await expectAgentOverlayGone(panelFrame, agentId);
+    narrator.check('panel closed — agentDeselected cleared the selection');
   });
 });
