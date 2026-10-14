@@ -1,6 +1,7 @@
 import type { Terminal } from '@xterm/xterm';
 
 import { clipboardKeyAction, decodeOsc52 } from './clipboardKeys.js';
+import { flowTerminalCopy } from './flowCopy.js';
 
 const OSC_CLIPBOARD = 52;
 
@@ -8,6 +9,8 @@ const OSC_CLIPBOARD = 52;
  * Wire the clipboard on a terminal pane (the rules are the pure functions in
  * clipboardKeys.ts):
  *
+ * - every copy of a selection — Cmd+C, Ctrl+C, the browser's Copy — goes
+ *   through one `copy` listener that re-flows Claude Code's soft wraps;
  * - Ctrl+C / Ctrl+V and their Shift forms copy and paste on Windows and Linux;
  * - OSC 52 writes from the running program reach this browser's clipboard.
  *
@@ -26,10 +29,13 @@ export function attachClipboardInput(
   let pending: string | null = null;
 
   // Capture phase on the host, so this runs before xterm's own copy handler
-  // (on the element inside), which would put the selection there instead.
-  // Selection copies fall through to xterm.
+  // (on the element inside) and replaces its unflowed text.
   const onCopy = (ev: ClipboardEvent) => {
-    const text = pending;
+    let text = pending;
+    if (text === null && term.hasSelection()) {
+      const startCol = (term.getSelectionPosition()?.start.x ?? 1) - 1;
+      text = flowTerminalCopy(term.getSelection(), term.cols, startCol);
+    }
     if (text === null || !ev.clipboardData) return;
     ev.clipboardData.setData('text/plain', text);
     ev.preventDefault();
