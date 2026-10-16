@@ -27,6 +27,16 @@ import { EditTool, TILE_SIZE } from '../types.js';
 import { computeNormalModeCursor } from './officeCanvasCursor.js';
 import { useCanvasTouchGestures } from './useCanvasTouchGestures.js';
 
+/**
+ * Cursor for a furniture drag that has started moving: 'copy' — the platform's
+ * own duplicate-drag affordance — while Alt makes the drop a copy, 'grabbing'
+ * for a move. Set wherever dragDuplicate changes, so the cursor never claims a
+ * move the drop would turn into a copy (or the reverse).
+ */
+function dragMoveCursor(editorState: EditorState): string {
+  return editorState.dragDuplicate ? 'copy' : 'grabbing';
+}
+
 interface OfficeCanvasProps {
   officeState: OfficeState;
   onClick: (agentId: number) => void;
@@ -368,8 +378,7 @@ export function OfficeCanvas({
         const canvas = canvasRef.current;
         if (canvas) {
           if (editorState.isDragMoving) {
-            // 'copy' is the platform's own duplicate-drag affordance.
-            canvas.style.cursor = editorState.dragDuplicate ? 'copy' : 'grabbing';
+            canvas.style.cursor = dragMoveCursor(editorState);
           } else {
             const pos = screenToWorld(e.clientX, e.clientY);
             if (
@@ -709,11 +718,14 @@ export function OfficeCanvas({
   // Alt tapped or released with the mouse already down flips the in-flight drag
   // between move and copy without waiting for the next mouse move — the rAF
   // loop redraws the ghost from editorState every frame, so no re-render here.
+  // The cursor flips with it: a stationary pointer gets no mouse move to do it.
   useEffect(() => {
     if (!isEditMode) return;
     const syncAlt = (e: KeyboardEvent) => {
       if (e.key !== 'Alt' || !editorState.dragUid) return;
       editorState.dragDuplicate = e.type === 'keydown';
+      const canvas = canvasRef.current;
+      if (canvas && editorState.isDragMoving) canvas.style.cursor = dragMoveCursor(editorState);
     };
     window.addEventListener('keydown', syncAlt);
     window.addEventListener('keyup', syncAlt);
