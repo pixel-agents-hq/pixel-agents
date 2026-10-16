@@ -145,6 +145,9 @@ interface ExtensionMessageState {
   /** Persisted permission posture for this host; the host applies it at launch. */
   bypassPermissions: boolean;
   setBypassPermissions: (v: boolean) => void;
+  /** Whether the host lists its own Directories (workspace folders / start directory). */
+  showHostDirectories: boolean;
+  setShowHostDirectories: (v: boolean) => void;
   /** A read-only office (standalone without the server token): every change it
    *  sends is refused, so the UI hides the controls that would send one. */
   officeReadOnly: boolean;
@@ -214,6 +217,7 @@ export function useExtensionMessages(
   const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
   const [showAreas, setShowAreas] = useState(false);
   const [bypassPermissions, setBypassPermissions] = useState(false);
+  const [showHostDirectories, setShowHostDirectories] = useState(false);
   // Never sent under VS Code, so it stays false there.
   const [officeReadOnly, setOfficeReadOnly] = useState(false);
   // Terminal control plane (standalone only; the server never sends these in
@@ -761,6 +765,9 @@ export function useExtensionMessages(
         if (typeof msg.bypassPermissions === 'boolean') {
           setBypassPermissions(msg.bypassPermissions as boolean);
         }
+        if (typeof msg.showHostDirectories === 'boolean') {
+          setShowHostDirectories(msg.showHostDirectories as boolean);
+        }
         if (Array.isArray(msg.externalAssetDirectories)) {
           setExternalAssetDirectories(msg.externalAssetDirectories as string[]);
         }
@@ -908,6 +915,8 @@ export function useExtensionMessages(
     setShowAreas,
     bypassPermissions,
     setBypassPermissions,
+    showHostDirectories,
+    setShowHostDirectories,
     officeReadOnly,
     terminalAvailable,
     terminalUnavailableReason,

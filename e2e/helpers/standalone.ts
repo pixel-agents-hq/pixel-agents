@@ -66,8 +66,9 @@ export interface LaunchStandaloneOptions {
    *  helpers/layout-seed.ts — it must carry a high layoutRevision). */
   seedLayout?: unknown;
   /** Extra top-level fields for the seeded `~/.pixel-agents/config.json`
-   *  (e.g. `directories`), merged over the consent baseline. Ignored when the
-   *  file already exists (a shared HOME was seeded by its owner). */
+   *  (e.g. `directories`), merged over the baseline (consent, and the start
+   *  directory shown in the drawer). Ignored when the file already exists (a
+   *  shared HOME was seeded by its owner). */
   seedConfig?: Record<string, unknown>;
 }
 
@@ -301,14 +302,16 @@ export async function launchStandalone(
   // HOME (multi-server) was already seeded by the surface that owns it.
   const configPath = path.join(tmpHome, '.pixel-agents', 'config.json');
   if (!fs.existsSync(configPath)) {
+    // The start directory is shown: the product hides host Directories by
+    // default, and the launch specs click its drawer row. A spec about the
+    // default overrides `standalone` through seedConfig.
     const seeded = {
+      standalone: { showHostDirectories: true },
       ...((options.seedHooksConsent ?? true) ? { hooksConsent: { claude: 'granted' } } : {}),
       ...options.seedConfig,
     };
-    if (Object.keys(seeded).length > 0) {
-      fs.mkdirSync(path.dirname(configPath), { recursive: true });
-      fs.writeFileSync(configPath, JSON.stringify(seeded, null, 2));
-    }
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify(seeded, null, 2));
   }
   if (options.seedLayout !== undefined) {
     const layoutPath = path.join(tmpHome, '.pixel-agents', 'layout.json');

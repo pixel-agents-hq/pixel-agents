@@ -888,8 +888,20 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
 
   // ── webviewReady: the host's own Directory ───────────────────
 
-  it('webviewReady contributes the server start directory as a host Directory', () => {
+  it('webviewReady lists no host Directory while Show Start Directory is off (the default)', () => {
     const { manager } = workingPtyManager();
+
+    dispatch({ type: 'webviewReady' }, ctx({ ptyManager: manager }));
+
+    const directories = sent.find((m) => m.type === 'directoriesLoaded');
+    expect(directories?.directories).toEqual([]);
+    const settings = sent.find((m) => m.type === 'settingsLoaded');
+    expect(settings?.showHostDirectories).toBe(false);
+  });
+
+  it('webviewReady contributes the server start directory as a host Directory when shown', () => {
+    const { manager } = workingPtyManager();
+    store.getAdapter()!.setSetting('pixel-agents.showHostDirectories', true);
 
     dispatch({ type: 'webviewReady' }, ctx({ ptyManager: manager }));
 
@@ -897,6 +909,57 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     expect(directories?.directories).toEqual([
       { name: path.basename(process.cwd()), path: process.cwd(), source: 'host' },
     ]);
+    const settings = sent.find((m) => m.type === 'settingsLoaded');
+    expect(settings?.showHostDirectories).toBe(true);
+  });
+
+  it('setShowHostDirectories persists and rebroadcasts the list to every office', () => {
+    const { manager } = workingPtyManager();
+    const host = { name: path.basename(process.cwd()), path: process.cwd(), source: 'host' };
+
+    dispatch({ type: 'setShowHostDirectories', enabled: true }, ctx({ ptyManager: manager }));
+    expect(store.getAdapter()!.getSetting('pixel-agents.showHostDirectories', false)).toBe(true);
+    expect(broadcasts).toEqual([{ type: 'directoriesLoaded', directories: [host] }]);
+
+    broadcasts = [];
+    dispatch({ type: 'setShowHostDirectories', enabled: false }, ctx({ ptyManager: manager }));
+    expect(store.getAdapter()!.getSetting('pixel-agents.showHostDirectories', true)).toBe(false);
+    expect(broadcasts).toEqual([{ type: 'directoriesLoaded', directories: [] }]);
+  });
+
+  it('hiding the host Directories leaves user-defined ones listed', () => {
+    const { manager } = workingPtyManager();
+    const target = path.join(tempHome, 'side-project');
+    fs.mkdirSync(target);
+    dispatch(
+      { type: 'saveDirectory', name: 'Side Project', path: target },
+      ctx({ ptyManager: manager }),
+    );
+    broadcasts = [];
+
+    dispatch({ type: 'setShowHostDirectories', enabled: false }, ctx({ ptyManager: manager }));
+
+    expect(broadcasts).toEqual([
+      {
+        type: 'directoriesLoaded',
+        directories: [{ name: 'Side Project', path: target, source: 'user' }],
+      },
+    ]);
+  });
+
+  it('refuses setShowHostDirectories from an unprivileged client and tells it the truth', () => {
+    const { manager } = workingPtyManager();
+
+    dispatch(
+      { type: 'setShowHostDirectories', enabled: true },
+      ctx({ ptyManager: manager, privileged: false }),
+    );
+
+    expect(store.getAdapter()!.getSetting('pixel-agents.showHostDirectories', false)).toBe(false);
+    expect(broadcasts.filter((m) => m.type === 'directoriesLoaded')).toEqual([]);
+    expect(sent).toContainEqual(
+      expect.objectContaining({ type: 'settingsLoaded', showHostDirectories: false }),
+    );
   });
 
   it('webviewReady contributes no Directory without a ptyManager (VS Code mode)', () => {

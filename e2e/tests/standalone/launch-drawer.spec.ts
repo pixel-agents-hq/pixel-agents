@@ -21,6 +21,7 @@ import {
   openDirectoryModal,
   openLaunchDrawer,
   setSettings,
+  SHOW_START_DIRECTORY_LABEL,
   SKIP_PERMISSIONS_LABEL,
   submitDirectoryModal,
 } from '../../helpers/webview';
@@ -298,6 +299,41 @@ test.describe('Standalone / Directory suggestions', () => {
     await expect(
       getDirectorySuggestions(reopened).getByRole('button', { name: worked, exact: true }),
     ).toHaveCount(0, { timeout: 15_000 });
+  });
+});
+
+test.describe('Standalone / host Directory setting', () => {
+  // The product default, which every other spec's seed overrides.
+  test.use({ standaloneOptions: { seedConfig: { standalone: { showHostDirectories: false } } } });
+
+  test('the start directory is hidden by default and Show Start Directory lists it @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    const directoryName = path.basename(standalone.workspaceDir);
+
+    // Off by default: the drawer has only the + Directory row.
+    expect(await getSettingChecked(page, SHOW_START_DIRECTORY_LABEL)).toBe(false);
+    let drawer = await openLaunchDrawer(page);
+    await expect(drawer.getByRole('button', { name: '+ Directory', exact: true })).toBeVisible();
+    await expect(drawer.getByRole('button', { name: directoryName, exact: true })).toHaveCount(0);
+    // The drawer is a hover surface: parking the pointer away closes it.
+    await page.mouse.move(0, 0);
+    await expect(drawer).toBeHidden();
+
+    // On: the start directory is a badged host row.
+    await setSettings(page, { showStartDirectory: true });
+    drawer = await openLaunchDrawer(page);
+    const row = drawer.getByRole('button', { name: directoryName, exact: true });
+    await expect(row).toBeVisible();
+    await expect(row.getByText('host', { exact: true })).toBeVisible();
+
+    // The choice is the host's, persisted: a reload keeps the row.
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible({ timeout: 30_000 });
+    await page.mouse.move(0, 0);
+    drawer = await openLaunchDrawer(page);
+    await expect(drawer.getByRole('button', { name: directoryName, exact: true })).toBeVisible();
   });
 });
 

@@ -116,6 +116,8 @@ function App() {
     setShowAreas,
     bypassPermissions,
     setBypassPermissions,
+    showHostDirectories,
+    setShowHostDirectories,
     officeReadOnly,
     terminalAvailable,
     terminalUnavailableReason,
@@ -855,6 +857,12 @@ function App() {
           const newVal = !bypassPermissions;
           setBypassPermissions(newVal);
           transport.send({ type: 'setBypassPermissions', enabled: newVal });
+        }}
+        showHostDirectories={showHostDirectories}
+        onToggleShowHostDirectories={() => {
+          const newVal = !showHostDirectories;
+          setShowHostDirectories(newVal);
+          transport.send({ type: 'setShowHostDirectories', enabled: newVal });
         }}
         onExportLayout={handleExportLayout}
         onImportLayout={handleImportLayout}

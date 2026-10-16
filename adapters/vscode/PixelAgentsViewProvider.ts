@@ -75,6 +75,7 @@ import {
   GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
   GLOBAL_KEY_SHOW_AREAS,
+  GLOBAL_KEY_SHOW_HOST_DIRECTORIES,
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
@@ -234,12 +235,22 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     return workspaceDirectories();
   }
 
-  /** Send the current union (user-defined + workspace folders) to the office.
-   *  Also the success signal for a Directory mutation. */
+  /** The workspace folders the drawer lists: all of them while Show Workspace
+   *  Folders is on, none while it is off (the default). Only the list is gated
+   *  -- launches still name agents from every workspace folder, so their labels
+   *  and Area mappings don't depend on the setting. */
+  private shownHostDirectories(): HostDirectoryEntry[] {
+    return this.adapter.getSetting<boolean>(GLOBAL_KEY_SHOW_HOST_DIRECTORIES, false)
+      ? this.hostDirectories()
+      : [];
+  }
+
+  /** Send the current union (user-defined + shown workspace folders) to the
+   *  office. Also the success signal for a Directory mutation. */
   private sendDirectories(): void {
     this.sendOrBuffer({
       type: 'directoriesLoaded',
-      directories: listDirectories(this.hostDirectories()),
+      directories: listDirectories(this.shownHostDirectories()),
     });
   }
 
@@ -543,11 +554,17 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // machine-wide config. This surface has a single office, so the
         // rebroadcast and the point-to-point reply are the same channel.
         handleDirectoryClientMessage(message as Record<string, unknown>, {
-          hostDirectories: () => this.hostDirectories(),
+          hostDirectories: () => this.shownHostDirectories(),
           broadcast: (m) => this.sendOrBuffer(m),
           reply: (m) => this.sendOrBuffer(m),
-          suggestions: () => collectDirectorySuggestions(claudeProvider, this.hostDirectories()),
+          suggestions: () =>
+            collectDirectorySuggestions(claudeProvider, this.shownHostDirectories()),
         });
+      } else if (message.type === 'setShowHostDirectories') {
+        if (typeof message.enabled === 'boolean') {
+          this.adapter.setSetting(GLOBAL_KEY_SHOW_HOST_DIRECTORIES, message.enabled);
+          this.sendDirectories();
+        }
       } else if (message.type === 'setBypassPermissions') {
         if (typeof message.enabled === 'boolean') {
           this.adapter.setSetting(GLOBAL_KEY_BYPASS_PERMISSIONS, message.enabled);
@@ -651,6 +668,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           GLOBAL_KEY_BYPASS_PERMISSIONS,
           false,
         );
+        const showHostDirectories = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_SHOW_HOST_DIRECTORIES,
+          false,
+        );
         const config = readConfig();
         this.webview?.postMessage({
           type: 'settingsLoaded',
@@ -665,6 +686,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           externalAssetDirectories: config.externalAssetDirectories,
           showAreas,
           bypassPermissions,
+          showHostDirectories,
         });
 
         // One status + at most one consent ask PER PROVIDER. Install state is distinct from the hooksEnabled

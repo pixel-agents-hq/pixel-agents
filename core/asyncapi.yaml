@@ -153,6 +153,7 @@ components:
         - $ref: '#/components/schemas/SaveAreaMappings'
         - $ref: '#/components/schemas/SetShowAreas'
         - $ref: '#/components/schemas/SetBypassPermissions'
+        - $ref: '#/components/schemas/SetShowHostDirectories'
         - $ref: '#/components/schemas/SaveDirectory'
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/RequestDirectorySuggestions'
@@ -658,6 +659,7 @@ components:
         - externalAssetDirectories
         - showAreas
         - bypassPermissions
+        - showHostDirectories
       properties:
         type:
           const: settingsLoaded
@@ -688,6 +690,12 @@ components:
           description: >-
             Persistent per-host permission posture. While true, every launch on
             this host runs the CLI with its skip-permissions flag.
+        showHostDirectories:
+          type: boolean
+          description: >-
+            Persistent per-host choice whether the host's own Directories (VS
+            Code's workspace folders, standalone's start directory) are listed
+            in `directoriesLoaded`. Off by default.
 
     BypassPermissionsUpdated:
       description: |
@@ -1225,6 +1233,21 @@ components:
       properties:
         type:
           const: setBypassPermissions
+        enabled:
+          type: boolean
+
+    SetShowHostDirectories:
+      description: >-
+        Persist whether the host's own Directories are listed. Answered with a
+        `directoriesLoaded` broadcast of the list as it now stands. Hiding them
+        only changes the list: agents launched in a host Directory are still
+        named after it.
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setShowHostDirectories
         enabled:
           type: boolean
 

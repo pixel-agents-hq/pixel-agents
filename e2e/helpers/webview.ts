@@ -20,10 +20,15 @@ export interface WebviewSettings {
   debugView?: boolean;
   /** Persisted permission posture the host applies to every launch. */
   bypassPermissions?: boolean;
+  /** Standalone: list the server's start directory in the launch drawer. */
+  showStartDirectory?: boolean;
 }
 
 /** Settings-modal label of the persistent skip-permissions toggle. */
 export const SKIP_PERMISSIONS_LABEL = 'Skip Permissions';
+
+/** Settings-modal label of standalone's host-Directory toggle. */
+export const SHOW_START_DIRECTORY_LABEL = 'Show Start Directory';
 
 export async function runCommand(window: Page, command: string, attempts = 3): Promise<void> {
   // Retry the full command palette interaction up to 3 times.
@@ -615,6 +620,9 @@ export async function setSettings(frame: WebviewSurface, settings: WebviewSettin
   }
   if (settings.bypassPermissions !== undefined) {
     await setCheckbox(settingsModal, SKIP_PERMISSIONS_LABEL, settings.bypassPermissions);
+  }
+  if (settings.showStartDirectory !== undefined) {
+    await setCheckbox(settingsModal, SHOW_START_DIRECTORY_LABEL, settings.showStartDirectory);
   }
 
   await closeSettingsModal(settingsModal);

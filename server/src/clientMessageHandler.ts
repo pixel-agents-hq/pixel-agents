@@ -85,6 +85,7 @@ const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
 const KEY_BYPASS_PERMISSIONS = 'pixel-agents.bypassPermissions';
+const KEY_SHOW_HOST_DIRECTORIES = 'pixel-agents.showHostDirectories';
 
 /**
  * This host's own Directory contribution: the directory the server was started
@@ -94,6 +95,19 @@ const KEY_BYPASS_PERMISSIONS = 'pixel-agents.bypassPermissions';
  */
 function hostDirectoriesFor(ctx: ClientMessageContext): HostDirectoryEntry[] {
   return ctx.ptyManager ? [hostDirectory()] : [];
+}
+
+/**
+ * The host Directories the drawer lists: all of them while the host's Show
+ * setting is on, none while it is off (the default). Only the LIST is gated --
+ * a launch still names its agent from hostDirectoriesFor, so an agent started
+ * in the start directory keeps its name (and its Area mapping) either way, and
+ * a hidden start directory becomes something the suggestions can offer.
+ */
+function shownHostDirectoriesFor(ctx: ClientMessageContext): HostDirectoryEntry[] {
+  return ctx.store.getAdapter()?.getSetting(KEY_SHOW_HOST_DIRECTORIES, false)
+    ? hostDirectoriesFor(ctx)
+    : [];
 }
 
 /**
@@ -317,6 +331,18 @@ export function handleClientMessage(
       break;
     }
 
+    case 'setShowHostDirectories': {
+      if (typeof msg.enabled !== 'boolean' || !adapter) break;
+      adapter.setSetting(KEY_SHOW_HOST_DIRECTORIES, msg.enabled);
+      // The list is what changed, so every office gets it again -- the same
+      // signal a Directory mutation sends.
+      store.broadcast({
+        type: 'directoriesLoaded',
+        directories: listDirectories(shownHostDirectoriesFor(ctx)),
+      });
+      break;
+    }
+
     case 'saveDirectory':
     case 'removeDirectory':
     case 'requestDirectorySuggestions':
@@ -325,10 +351,11 @@ export function handleClientMessage(
       // (store.broadcast fans out to all sockets); a rejection — and the
       // suggestion list — answers only the client that asked.
       handleDirectoryClientMessage(msg, {
-        hostDirectories: () => hostDirectoriesFor(ctx),
+        hostDirectories: () => shownHostDirectoriesFor(ctx),
         broadcast: (message) => store.broadcast(message),
         reply: send,
-        suggestions: () => collectDirectorySuggestions(claudeProvider, hostDirectoriesFor(ctx)),
+        suggestions: () =>
+          collectDirectorySuggestions(claudeProvider, shownHostDirectoriesFor(ctx)),
       });
       break;
 
@@ -545,7 +572,10 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // terminalAvailability is: no ptyManager means VS Code embedded mode, whose
   // adapter contributes its own Directories.
   if (ctx.ptyManager) {
-    send({ type: 'directoriesLoaded', directories: listDirectories(hostDirectoriesFor(ctx)) });
+    send({
+      type: 'directoriesLoaded',
+      directories: listDirectories(shownHostDirectoriesFor(ctx)),
+    });
   }
 
   // Sync runtime refs with the persisted settings so scanners behave correctly
@@ -633,6 +663,7 @@ function settingsSnapshot(adapter: StateAdapter | undefined) {
     externalAssetDirectories: readConfig().externalAssetDirectories,
     showAreas: adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false,
     bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+    showHostDirectories: adapter?.getSetting(KEY_SHOW_HOST_DIRECTORIES, false) ?? false,
   } as const;
 }
 
@@ -673,6 +704,7 @@ function refuseReadOnly(
     case 'setWatchAllSessions':
     case 'setShowAreas':
     case 'setBypassPermissions':
+    case 'setShowHostDirectories':
       send(settingsSnapshot(ctx.store.getAdapter()));
       return;
     case 'addExternalAssetDirectory':

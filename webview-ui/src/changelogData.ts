@@ -43,6 +43,7 @@ export const changelogEntries: ChangelogEntry[] = [
         title: 'Changes',
         items: [
           'Skip permissions is now a Settings toggle applied to every launch (off by default)',
+          'Workspace folders and the standalone start directory are listed in the drawer only when turned on in Settings',
           'The standalone access token survives restarts; --rotate-token replaces it',
         ],
       },
