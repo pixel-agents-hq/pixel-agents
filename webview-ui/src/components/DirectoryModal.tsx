@@ -93,7 +93,13 @@ export function DirectoryModal({
       onClose();
     } else if (e.key === 'Enter') {
       e.stopPropagation();
-      submit();
+      // Enter submits only from the text fields. On a button it is that
+      // button's own activation (the browser turns it into a click): Cancel
+      // cancels, an Area toggles, a suggestion fills the path -- none saves.
+      if (e.target instanceof HTMLInputElement) {
+        e.preventDefault();
+        submit();
+      }
     }
   };
 

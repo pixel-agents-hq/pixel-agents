@@ -62,6 +62,9 @@ export interface LaunchStandaloneOptions {
   /** Browser viewport (default 1280×800, the desktop shell). A phone-sized
    *  viewport renders the mobile shell instead. */
   viewport?: { width: number; height: number };
+  /** Pre-seed `~/.pixel-agents/layout.json` before the host starts (see
+   *  helpers/layout-seed.ts — it must carry a high layoutRevision). */
+  seedLayout?: unknown;
 }
 
 function delay(ms: number): Promise<void> {
@@ -296,6 +299,11 @@ export async function launchStandalone(
   if ((options.seedHooksConsent ?? true) && !fs.existsSync(configPath)) {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify({ hooksConsent: { claude: 'granted' } }, null, 2));
+  }
+  if (options.seedLayout !== undefined) {
+    const layoutPath = path.join(tmpHome, '.pixel-agents', 'layout.json');
+    fs.mkdirSync(path.dirname(layoutPath), { recursive: true });
+    fs.writeFileSync(layoutPath, JSON.stringify(options.seedLayout, null, 2));
   }
   const hostPort = await getFreePort();
   const hostUrl = `http://127.0.0.1:${hostPort}`;
