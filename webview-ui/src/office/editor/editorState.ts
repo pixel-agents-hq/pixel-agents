@@ -9,10 +9,15 @@ import {
 import type { OfficeLayout, TileType as TileTypeVal } from '../types.js';
 import { EditTool, TileType } from '../types.js';
 
-/** A catalog item queued for placement, with the colour the Copy tool lifted (if any). */
+/**
+ * A catalog item queued for placement. `color` is what the Copy tool lifted off
+ * a placed item: a colour, or null for an item that had none — an absence is
+ * copied too, so it must not fall through to the palette. Absent (undefined)
+ * when nothing was copied: a plain catalog pick, which takes the palette colour.
+ */
 export interface FurniturePlacement {
   type: string;
-  color?: ColorValue;
+  color?: ColorValue | null;
 }
 
 export class EditorState {
@@ -22,7 +27,8 @@ export class EditorState {
   /**
    * The catalog item being placed, or null when none is picked. `color` is
    * set only when the Copy tool lifted the item off a placed one: that copy
-   * goes down in the colour it was taken in, and nothing else does. Type and
+   * goes down in the colour it was taken in (uncoloured included), and nothing
+   * else does. Type and
    * colour travel together, so picking another catalog item (or clearing the
    * pick) replaces both in one assignment.
    */
@@ -189,12 +195,23 @@ export class EditorState {
   }
 
   /**
-   * Colour the next placed item gets, and the colour its ghost previews: a
-   * colour copied off an existing item wins over the palette-wide one, for as
-   * long as that copy is what's being placed.
+   * Furniture Copy: queue a copy of a placed item — its type, and its colour
+   * for this copy only (writing the palette-wide colour would restyle every
+   * catalog preview). An uncoloured item is copied as explicitly uncoloured.
+   */
+  pickUpCopy(item: { type: string; color?: ColorValue }): void {
+    this.placing = { type: item.type, color: item.color ? { ...item.color } : null };
+  }
+
+  /**
+   * Colour the next placed item gets, and the colour its ghost previews: what
+   * the Copy tool lifted off an existing item — a colour or its absence — wins
+   * over the palette-wide one, for as long as that copy is what's being placed.
    */
   placementColor(): ColorValue | null {
-    return this.placing?.color ?? this.pickedFurnitureColor;
+    const placing = this.placing;
+    if (placing && placing.color !== undefined) return placing.color;
+    return this.pickedFurnitureColor;
   }
 
   /**
@@ -204,7 +221,8 @@ export class EditorState {
    */
   setPaletteColor(color: ColorValue | null): void {
     this.pickedFurnitureColor = color;
-    if (this.placing?.color) this.placing = { type: this.placing.type };
+    if (this.placing && this.placing.color !== undefined)
+      this.placing = { type: this.placing.type };
   }
 
   /**

@@ -660,11 +660,9 @@ export function useEditorActions(
           return;
         }
         case EditTool.FURNITURE_PICK: {
-          // Copy a placed item: its type, plus its colour for this copy only —
-          // writing the palette-wide colour would restyle every catalog preview.
           const hit = furnitureAt(layout, col, row);
           if (hit) {
-            editorState.placing = { type: hit.type, ...(hit.color && { color: { ...hit.color } }) };
+            editorState.pickUpCopy(hit);
             editorState.activeTool = EditTool.FURNITURE_PLACE;
           }
           bumpTick();
