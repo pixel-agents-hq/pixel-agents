@@ -455,7 +455,8 @@ export const TERMINAL_LONG_PRESS_MS = 500;
  *  hovering above it (clears the start handle's knob). */
 export const TERMINAL_COPY_PILL_GAP_PX = 56;
 /** The copy pill's center stays at least this far from the pane's left and
- *  right edges (about half the pill's width), so it is never clipped. */
+ *  right edges — or half its measured width, when that is more — so it is
+ *  never clipped. */
 export const TERMINAL_COPY_PILL_EDGE_INSET_X_PX = 44;
 /** The copy pill's top stays at least this far above the pane's bottom edge
  *  (its own height plus a margin). */

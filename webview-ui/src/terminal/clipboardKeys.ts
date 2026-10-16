@@ -1,16 +1,31 @@
 import { TERMINAL_OSC52_MAX_BASE64_CHARS } from '../constants.js';
 
-/** What a key press means for the clipboard: copy the selection, let the
- *  browser paste, or hand the key to the terminal as usual. */
-export type ClipboardKeyAction = 'copy' | 'paste' | 'terminal';
+/** What a key press means for the clipboard: copy the selection (verbatim,
+ *  or re-flowed as text), let the browser paste, or hand the key to the
+ *  terminal as usual. */
+export type ClipboardKeyAction = 'copy' | 'copyText' | 'paste' | 'terminal';
 
 /** The parts of a KeyboardEvent the rules read. */
 export interface KeyChord {
   key: string;
+  /** Physical key: Option+C on a Mac reports key 'ç' but code 'KeyC'. */
+  code: string;
   ctrlKey: boolean;
   shiftKey: boolean;
   altKey: boolean;
   metaKey: boolean;
+}
+
+/**
+ * Alt+C (Option+C on a Mac) with a selection = "Copy as text": the selection
+ * re-flowed (flowTerminalCopy) instead of verbatim. Chosen because no browser
+ * claims it (Chrome and Firefox reserve Ctrl/Cmd+Shift+C for DevTools; Alt+C
+ * opens no menu) and because, gated on a selection like Ctrl+C, it costs the
+ * terminal nothing: without a selection the key still reaches the PTY (Meta-C
+ * / ç).
+ */
+function isCopyTextChord(ev: KeyChord): boolean {
+  return ev.altKey && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey && ev.code === 'KeyC';
 }
 
 /**
@@ -31,6 +46,7 @@ export function clipboardKeyAction(
   isMac: boolean,
   hasSelection: boolean,
 ): ClipboardKeyAction {
+  if (hasSelection && isCopyTextChord(ev)) return 'copyText';
   if (isMac || !ev.ctrlKey || ev.altKey || ev.metaKey) return 'terminal';
   const key = ev.key.toLowerCase();
   if (key === 'v') return 'paste';

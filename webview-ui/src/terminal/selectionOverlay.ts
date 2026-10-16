@@ -1,11 +1,13 @@
 import { TERMINAL_SEL_HANDLE_KNOB_PX, TERMINAL_SEL_HANDLE_WIDTH_PX } from '../constants.js';
+import type { TerminalCopyMode } from './flowCopy.js';
 import type { CellGrid, CellRange, HandleEnd, PixelPos } from './selectionMath.js';
 import { copyPillPosition, handlePositions } from './selectionMath.js';
 import type { TouchHit } from './touchGesture.js';
 
 /**
  * The chrome of the terminal's touch text selection, laid over the pane's
- * host: a floating "Copy" pill and iOS-style selection handles — a
+ * host: a floating copy pill — "Copy" (verbatim) and "Copy as text" (soft
+ * wraps re-flowed) — and iOS-style selection handles — a
  * knob-and-bar lollipop at each end of the selection, knob above the start
  * and below the end, each draggable to move that end. Square knob and hard
  * edges to match the pixel design language; same grammar as the native
@@ -13,6 +15,12 @@ import type { TouchHit } from './touchGesture.js';
  * `.terminal-sel-handle`); this module only creates, positions and
  * hit-tests the elements. touchGesture.ts decides when they show.
  */
+/** The pill's buttons: label → what it copies. */
+const COPY_ACTIONS: ReadonlyArray<readonly [string, TerminalCopyMode]> = [
+  ['Copy', 'verbatim'],
+  ['Copy as text', 'text'],
+];
+
 export interface SelectionOverlay {
   showPill(range: CellRange): void;
   hidePill(): void;
@@ -31,11 +39,11 @@ export function createSelectionOverlay(
     grid: () => CellGrid;
     /** Pill and handles only ever show over a live selection. */
     hasSelection: () => boolean;
-    /** The pill was clicked. */
-    onCopy: () => void;
+    /** One of the pill's buttons was clicked. */
+    onCopy: (mode: TerminalCopyMode) => void;
   },
 ): SelectionOverlay {
-  let pill: HTMLButtonElement | null = null;
+  let pill: HTMLDivElement | null = null;
   let handles: Record<HandleEnd, HTMLDivElement> | null = null;
 
   const place = (el: HTMLElement, pos: PixelPos) => {
@@ -72,12 +80,19 @@ export function createSelectionOverlay(
     showPill(range) {
       hidePill();
       if (!opts.hasSelection()) return;
-      pill = document.createElement('button');
+      pill = document.createElement('div');
       pill.className = 'terminal-copy-pill';
-      pill.textContent = 'Copy';
-      place(pill, copyPillPosition(range, opts.grid()));
-      pill.addEventListener('click', opts.onCopy);
+      for (const [label, mode] of COPY_ACTIONS) {
+        const button = document.createElement('button');
+        button.textContent = label;
+        button.addEventListener('click', () => opts.onCopy(mode));
+        pill.appendChild(button);
+      }
       host.appendChild(pill);
+      // Placed once it has a width: its center keeps half of it clear of
+      // the pane's edges.
+      const halfWidth = Math.ceil(pill.offsetWidth / 2);
+      place(pill, copyPillPosition(range, opts.grid(), halfWidth));
     },
     hidePill,
     showHandles(range) {

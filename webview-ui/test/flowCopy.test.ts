@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { TERMINAL_COPY_WRAP_SLACK_COLS } from '../src/constants.js';
-import { flowTerminalCopy } from '../src/terminal/flowCopy.js';
+import { flowTerminalCopy, terminalCopyText } from '../src/terminal/flowCopy.js';
 
 const COLS = 50;
 /** Widest row Claude Code fills before wrapping, per the slack constant. */
@@ -91,5 +91,35 @@ describe('flowTerminalCopy', () => {
     const tail = 'x'.repeat(10);
     expect(flowTerminalCopy(`${tail}\n  more`, COLS)).toBe(`${tail}\n  more`);
     expect(flowTerminalCopy(`${tail}\n  more`, COLS, WRAP - 10)).toBe(`${tail} more`);
+  });
+});
+
+describe('terminalCopyText: verbatim unless asked to re-flow', () => {
+  // Both look exactly like a soft wrap to the heuristic: a row filled past
+  // the wrap width, then a two-space-indented line whose first word would
+  // not have fit — so re-flowing joins them.
+  const yaml = `${'long_key_'.repeat(5).slice(0, WRAP)}:\n  enabled: true`;
+  const code = `${'x'.repeat(WRAP - 1)}\n  return response.json();`;
+
+  it('the default copy is verbatim: indented structure under a long row survives', () => {
+    expect(terminalCopyText(yaml, 'verbatim', COLS)).toBe(yaml);
+    expect(terminalCopyText(code, 'verbatim', COLS)).toBe(code);
+  });
+
+  it('the heuristic would have flattened them (why it is opt-in)', () => {
+    expect(flowTerminalCopy(yaml, COLS)).not.toContain('\n');
+    expect(flowTerminalCopy(code, COLS)).not.toContain('\n');
+  });
+
+  it('"Copy as text" re-flows soft-wrapped prose', () => {
+    const words = 'the quick brown fox jumps over the lazy dog again and again'.split(' ');
+    const wrapped = softWrap('So', [...words, ...words], WRAP);
+    expect(wrapped).toContain('\n');
+    expect(terminalCopyText(wrapped, 'text', COLS)).toBe(['So', ...words, ...words].join(' '));
+  });
+
+  it('"Copy as text" counts the start column of a mid-row selection', () => {
+    expect(terminalCopyText(code, 'text', COLS, 0)).toBe(flowTerminalCopy(code, COLS, 0));
+    expect(terminalCopyText('ab\n  cd', 'text', COLS, WRAP)).toBe('ab cd');
   });
 });

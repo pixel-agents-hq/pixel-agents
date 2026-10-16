@@ -7,6 +7,26 @@ import { TERMINAL_COPY_WRAP_SLACK_COLS } from '../constants.js';
  *  still a space. Captures the first word for the fit check. */
 const CONTINUATION = /^ {2}(?![-*•◦⎿☐☒│>#]|\d+[.)] )(\S+)/;
 
+/** How a terminal selection is copied: exactly as on screen (the default,
+ *  every plain copy), or re-flowed as prose (the opt-in "Copy as text"). */
+export type TerminalCopyMode = 'verbatim' | 'text';
+
+/**
+ * The clipboard text for a terminal selection. Verbatim is the default for
+ * every copy: the re-flow below is a heuristic, and on text that only looks
+ * like a soft wrap (a long row, then a two-space-indented line — YAML under
+ * a long key, a method body under a long signature) it joins lines the user
+ * meant. So it is only ever applied when asked for.
+ */
+export function terminalCopyText(
+  selection: string,
+  mode: TerminalCopyMode,
+  cols: number,
+  firstLineCol = 0,
+): string {
+  return mode === 'text' ? flowTerminalCopy(selection, cols, firstLineCol) : selection;
+}
+
 /**
  * Claude Code's TUI hard-wraps transcript prose at the terminal width with a
  * two-space continuation indent, so a multi-line copy comes out as ragged

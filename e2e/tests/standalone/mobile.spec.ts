@@ -297,7 +297,18 @@ test.describe('Standalone / mobile shell', () => {
     // Long-press the word, then the Copy pill.
     await longPress(page, at.x, at.y, 900);
     const pill = page.locator('.terminal-copy-pill');
-    await pill.tap();
+    await pill.getByRole('button', { name: 'Copy', exact: true }).tap();
+    await expect(pill).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __copied?: string }).__copied)).toBe(
+      word,
+    );
+
+    // The pill's second action, "Copy as text", copies through the same path.
+    await page.evaluate(() => {
+      (window as unknown as { __copied?: string }).__copied = undefined;
+    });
+    await longPress(page, at.x, at.y, 900);
+    await pill.getByRole('button', { name: 'Copy as text', exact: true }).tap();
     await expect(pill).toHaveCount(0);
     expect(await page.evaluate(() => (window as unknown as { __copied?: string }).__copied)).toBe(
       word,

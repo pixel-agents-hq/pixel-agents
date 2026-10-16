@@ -113,6 +113,99 @@ test.describe('Standalone / terminal', () => {
     await expect(page.getByTitle('Agent 1')).toBeInViewport({ ratio: 1 });
     await expect(page.getByTitle('Agent 2')).toBeInViewport({ ratio: 1 });
   });
+
+  test('copies are verbatim; Alt+C copies the selection re-flowed as text @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    // Windows/Linux key rules on every runner (Ctrl+Shift+C is the keyboard
+    // copy there), and the clipboard writes recorded instead of performed.
+    await page.addInitScript(() => {
+      Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'Linux x86_64' });
+      const written: string[] = [];
+      (window as unknown as { __clip: string[] }).__clip = written;
+      Object.defineProperty(Navigator.prototype, 'clipboard', {
+        get: () => ({
+          writeText: (text: string) => {
+            written.push(text);
+            return Promise.resolve();
+          },
+        }),
+      });
+    });
+    await page.reload();
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('terminal copy').holdOpenFor(60_000).build(),
+    );
+    await page.getByRole('button', { name: '+ Agent' }).click();
+    const terminal = page.locator('.xterm').first();
+    await expect(terminal).toContainText('mock claude session', { timeout: 15_000 });
+    await terminal.click();
+
+    // A row filled to the soft-wrap width, then a two-space-indented line:
+    // exactly what the re-flow heuristic joins, typed through the PTY echo.
+    const cols = await page.evaluate(() => {
+      const screen = document.querySelector('.xterm-screen');
+      const rows = document.querySelector('.xterm-rows');
+      const walker = document.createTreeWalker(rows ?? document.body, NodeFilter.SHOW_TEXT);
+      const node = walker.nextNode();
+      if (!screen || !node) throw new Error('no terminal text');
+      const range = document.createRange();
+      range.setStart(node, 0);
+      range.setEnd(node, 1);
+      return Math.round(screen.getBoundingClientRect().width / range.getBoundingClientRect().width);
+    });
+    const first = 'w'.repeat(cols - 6);
+    const second = '  return response.json();';
+    await page.keyboard.type(first);
+    await page.keyboard.press('Enter');
+    await page.keyboard.type(second);
+    await expect(terminal).toContainText('response.json();');
+
+    /** Drag-select the first row's first char through the second's last. */
+    const selectBoth = async () => {
+      const [from, to] = await page.evaluate(
+        ({ first, last }) => {
+          const rows = document.querySelector('.xterm-rows');
+          const rectOf = (needle: string, edge: 'start' | 'end') => {
+            const walker = document.createTreeWalker(rows ?? document.body, NodeFilter.SHOW_TEXT);
+            for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+              const i = n.textContent?.indexOf(needle) ?? -1;
+              if (i < 0) continue;
+              const range = document.createRange();
+              const at = edge === 'start' ? i : i + needle.length - 1;
+              range.setStart(n, at);
+              range.setEnd(n, at + 1);
+              const r = range.getBoundingClientRect();
+              return { x: edge === 'start' ? r.left + 1 : r.right - 1, y: r.top + r.height / 2 };
+            }
+            throw new Error(`not on screen: ${needle}`);
+          };
+          return [rectOf(first, 'start'), rectOf(last, 'end')];
+        },
+        { first, last: 'response.json();' },
+      );
+      // Backwards, from the last char: the first row starts at the drawer's
+      // resize edge, where a press would grab the handle instead.
+      await page.mouse.move(to.x, to.y);
+      await page.mouse.down();
+      await page.mouse.move(from.x, from.y, { steps: 5 });
+      await page.mouse.up();
+    };
+    const lastWrite = () =>
+      page.evaluate(() => (window as unknown as { __clip: string[] }).__clip.at(-1) ?? null);
+
+    // The plain keyboard copy keeps the line break and the indent.
+    await selectBoth();
+    await page.keyboard.press('Control+Shift+C');
+    await expect.poll(lastWrite).toBe(`${first}\n${second}`);
+
+    // Alt+C is the opt-in re-flow: the soft wrap joins.
+    await selectBoth();
+    await page.keyboard.press('Alt+C');
+    await expect.poll(lastWrite).toBe(`${first} ${second.trimStart()}`);
+  });
 });
 
 test.describe('Standalone / terminal disabled', () => {

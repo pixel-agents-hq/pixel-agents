@@ -165,9 +165,11 @@ export interface PixelPos {
  * Where the copy pill's top-center goes: centered above the whole selection
  * so it never covers the selected text (a multi-row selection spans the full
  * width, so center on the pane); when the top row leaves no room, it drops
- * below the end handle instead. Clamped inside the host.
+ * below the end handle instead. Clamped inside the host: its center stays
+ * `halfWidthPx` (the measured pill's half width) from either side, and never
+ * less than TERMINAL_COPY_PILL_EDGE_INSET_X_PX.
  */
-export function copyPillPosition(range: CellRange, grid: CellGrid): PixelPos {
+export function copyPillPosition(range: CellRange, grid: CellGrid, halfWidthPx = 0): PixelPos {
   const cx =
     range.startRow === range.endRow
       ? (grid.x(range.startCol) + grid.x(range.endCol + 1)) / 2
@@ -177,11 +179,9 @@ export function copyPillPosition(range: CellRange, grid: CellGrid): PixelPos {
     above >= TERMINAL_COPY_PILL_MIN_TOP_PX
       ? above
       : grid.y(range.endRow + 1) + TERMINAL_COPY_PILL_BELOW_OFFSET_PX;
+  const inset = Math.max(TERMINAL_COPY_PILL_EDGE_INSET_X_PX, halfWidthPx);
   return {
-    left: Math.min(
-      grid.hostWidth - TERMINAL_COPY_PILL_EDGE_INSET_X_PX,
-      Math.max(TERMINAL_COPY_PILL_EDGE_INSET_X_PX, cx),
-    ),
+    left: Math.min(grid.hostWidth - inset, Math.max(inset, cx)),
     top: Math.min(
       grid.hostHeight - TERMINAL_COPY_PILL_BOTTOM_CLEARANCE_PX,
       Math.max(TERMINAL_COPY_PILL_MIN_TOP_PX, top),

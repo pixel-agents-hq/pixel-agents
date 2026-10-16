@@ -217,11 +217,17 @@
      creates and positions these, and sets --cell-h, --sel-handle-w and
      --sel-knob on each handle from constants.ts, so the geometry it computes
      and the shapes drawn here can't drift. */
+  /* The pill is a row of buttons: Copy (verbatim) and Copy as text. */
   .terminal-copy-pill {
     position: absolute;
     z-index: 10;
     transform: translateX(-50%);
-    padding: 8px 16px;
+    display: flex;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .terminal-copy-pill button {
+    padding: 8px 14px;
     font-size: 17px;
     background: var(--color-btn-bg);
     color: var(--color-text);

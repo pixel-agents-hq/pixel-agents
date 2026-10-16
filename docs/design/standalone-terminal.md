@@ -334,6 +334,11 @@ reload reattaches to a still-running Claude session.
   viewport so the card bar stays on screen), one tab per PTY-backed agent, character-click
   focuses its tab (a Teammate's focuses its Lead's),
   standalone-only, pixel-art chrome + mono terminal content, xterm assets bundled (no CDN).
+- Clipboard: every copy is verbatim (Cmd/Ctrl+C, Ctrl+Shift+C, the browser's Copy, the
+  phone's Copy pill). Re-flowing Claude Code's two-space soft wraps into prose is opt-in —
+  Alt+C / Option+C with a selection, or the pill's "Copy as text" — because the heuristic
+  can't tell a soft wrap from indented structure under a long row (YAML, code). Writes go
+  through `terminal/clipboard.ts` (Clipboard API, or a copy event on plain-http origins).
 - Distribution: esbuild externals, `package.json` `optionalDependencies` + `files`.
 - Server unit tests: session manager lifecycle, WS auth, message framing.
 

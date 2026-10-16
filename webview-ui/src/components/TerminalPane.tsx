@@ -124,8 +124,8 @@ export function TerminalPane({
     void connection.connect();
 
     term.onData((data) => connection.write(data));
-    // Keyboard copy/paste on Windows and Linux, OSC 52 clipboard writes.
-    const detachClipboard = attachClipboardInput(term, host, {
+    // Keyboard copy (verbatim; Alt+C = copy as text) and paste, OSC 52 writes.
+    const detachClipboard = attachClipboardInput(term, {
       isActive: () => isActiveRef.current,
     });
     registerInputRef.current?.(agentId, {

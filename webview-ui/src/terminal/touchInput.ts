@@ -2,7 +2,7 @@ import type { Terminal } from '@xterm/xterm';
 
 import { TERMINAL_LONG_PRESS_MS } from '../constants.js';
 import { writeClipboardText } from './clipboard.js';
-import { flowTerminalCopy } from './flowCopy.js';
+import { terminalCopyText } from './flowCopy.js';
 import { selectionLength } from './selectionMath.js';
 import { createSelectionOverlay } from './selectionOverlay.js';
 import {
@@ -62,7 +62,7 @@ export function attachTouchInput(
   const overlay = createSelectionOverlay(host, {
     grid: () => terminalCellGrid(term, host),
     hasSelection: () => term.hasSelection(),
-    onCopy: () => {
+    onCopy: (mode) => {
       if (state.phase !== 'selected') {
         dispatch({ kind: 'dismiss' });
         return;
@@ -71,7 +71,7 @@ export function attachTouchInput(
       // refused write leaves them up to try again. Called synchronously from
       // the click, so the plain-http fallback still has its user gesture.
       const copying = state;
-      const text = flowTerminalCopy(term.getSelection(), term.cols, copying.range.startCol);
+      const text = terminalCopyText(term.getSelection(), mode, term.cols, copying.range.startCol);
       void writeClipboardText(text).then((ok) => {
         if (!ok) console.warn('[Webview] Terminal copy failed; selection kept');
         // Dismiss only the selection that was copied — a touch since then

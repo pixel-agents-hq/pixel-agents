@@ -11,6 +11,7 @@ import { clipboardKeyAction, decodeOsc52, type KeyChord } from '../src/terminal/
 
 const chord = (key: string, mods: Partial<KeyChord> = {}): KeyChord => ({
   key,
+  code: /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : '',
   ctrlKey: false,
   shiftKey: false,
   altKey: false,
@@ -50,6 +51,32 @@ describe('clipboardKeyAction on a Mac', () => {
     expect(clipboardKeyAction(ctrl('c'), true, true)).toBe('terminal');
     expect(clipboardKeyAction(ctrl('v'), true, false)).toBe('terminal');
     expect(clipboardKeyAction(chord('c', { metaKey: true }), true, true)).toBe('terminal');
+  });
+});
+
+describe('Copy as text (Alt+C / Option+C)', () => {
+  it('re-flows a selection on every platform', () => {
+    expect(clipboardKeyAction(chord('c', { altKey: true }), false, true)).toBe('copyText');
+    // Option+C on a Mac types ç: the physical key is what counts.
+    expect(clipboardKeyAction(chord('ç', { altKey: true, code: 'KeyC' }), true, true)).toBe(
+      'copyText',
+    );
+  });
+
+  it('is a terminal key without a selection', () => {
+    expect(clipboardKeyAction(chord('c', { altKey: true }), false, false)).toBe('terminal');
+    expect(clipboardKeyAction(chord('ç', { altKey: true, code: 'KeyC' }), true, false)).toBe(
+      'terminal',
+    );
+  });
+
+  it('only the bare chord: other modifiers keep their meaning', () => {
+    expect(clipboardKeyAction(ctrl('c', { altKey: true }), false, true)).toBe('terminal');
+    expect(clipboardKeyAction(chord('C', { altKey: true, shiftKey: true }), false, true)).toBe(
+      'terminal',
+    );
+    // Plain copy chords stay verbatim copies.
+    expect(clipboardKeyAction(ctrl('c'), false, true)).toBe('copy');
   });
 });
 

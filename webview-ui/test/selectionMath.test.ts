@@ -204,6 +204,15 @@ describe('selection chrome geometry', () => {
     expect(copyPillPosition(r, grid).left).toBe(44);
   });
 
+  it('keeps a wide pill (Copy + Copy as text) wholly inside the host', () => {
+    const left = { startRow: 55, startCol: 0, endRow: 55, endCol: 0 };
+    const right = { startRow: 55, startCol: 39, endRow: 55, endCol: 39 };
+    expect(copyPillPosition(left, grid, 110).left).toBe(110);
+    expect(copyPillPosition(right, grid, 110).left).toBe(400 - 110);
+    // A narrow measured pill never goes closer than the minimum inset.
+    expect(copyPillPosition(left, grid, 10).left).toBe(44);
+  });
+
   it('puts the handle bars flush with the selection edges', () => {
     const r = { startRow: 55, startCol: 10, endRow: 56, endCol: 19 };
     expect(handlePositions(r, grid)).toEqual({
