@@ -325,7 +325,13 @@ export function resetHooksConfig(): void {
   writeConfig(cfg);
 }
 
-export function writeConfig(config: PixelAgentsConfig): void {
+/**
+ * Atomically write the shared config. Never throws (most callers are
+ * fire-and-forget settings writes that degrade to a console error); returns
+ * whether the write landed, for callers whose success is reported to the user
+ * — a Directory save must not be announced as saved when it never hit the disk.
+ */
+export function writeConfig(config: PixelAgentsConfig): boolean {
   const filePath = getConfigFilePath();
   const dir = path.dirname(filePath);
   try {
@@ -336,7 +342,9 @@ export function writeConfig(config: PixelAgentsConfig): void {
     const tmpPath = filePath + '.tmp';
     fs.writeFileSync(tmpPath, json, 'utf-8');
     fs.renameSync(tmpPath, filePath);
+    return true;
   } catch (err) {
     console.error('[Pixel Agents] Failed to write config file:', err);
+    return false;
   }
 }

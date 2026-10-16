@@ -21,6 +21,7 @@ import * as path from 'path';
 
 import type { Directory } from '../../core/src/messages.js';
 import { readConfig, type UserDirectory, writeConfig } from './configPersistence.js';
+import { DIRECTORY_WRITE_FAILED_REASON } from './constants.js';
 import { directoryNameFor } from './hostDirectory.js';
 
 /** What a host contributes to the union. `source` is the union's business, so
@@ -31,6 +32,8 @@ export interface HostDirectoryEntry {
 }
 
 export type DirectorySaveResult = { ok: true; path: string } | { ok: false; reason: string };
+
+export type DirectoryRemoveResult = { ok: true } | { ok: false; reason: string };
 
 /** Expand a leading `~` to the home directory. Anything else is returned as
  *  typed (trimmed) — `~` mid-path is a legal directory name, not a shorthand. */
@@ -148,7 +151,9 @@ export function saveUserDirectory(input: {
   });
   cfg.directories.push({ name, path: resolvedPath });
 
-  writeConfig(cfg);
+  if (!writeConfig(cfg)) {
+    return { ok: false, reason: DIRECTORY_WRITE_FAILED_REASON };
+  }
   return { ok: true, path: resolvedPath };
 }
 
@@ -156,11 +161,14 @@ export function saveUserDirectory(input: {
  * Delete a user-defined Directory. Agents already running in it are untouched —
  * removal is a bookkeeping change, never a destructive one.
  */
-export function removeUserDirectory(rawPath: string): void {
+export function removeUserDirectory(rawPath: string): DirectoryRemoveResult {
   const cfg = readConfig();
   const key = normalizeDirectoryPath(rawPath);
   cfg.directories = cfg.directories.filter((entry) => normalizeDirectoryPath(entry.path) !== key);
-  writeConfig(cfg);
+  if (!writeConfig(cfg)) {
+    return { ok: false, reason: DIRECTORY_WRITE_FAILED_REASON };
+  }
+  return { ok: true };
 }
 
 /**
@@ -233,7 +241,13 @@ export function handleDirectoryClientMessage(
       if (typeof msg.path !== 'string') {
         return true;
       }
-      removeUserDirectory(msg.path);
+      const result = removeUserDirectory(msg.path);
+      if (!result.ok) {
+        // Same channel as a refused save: the modal stays open on the entry
+        // that is, in fact, still there.
+        deps.reply({ type: 'directoryRejected', path: msg.path, reason: result.reason });
+        return true;
+      }
       broadcastDirectories(deps);
       return true;
     }

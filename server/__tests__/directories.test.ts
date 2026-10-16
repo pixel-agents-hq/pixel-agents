@@ -46,6 +46,13 @@ describe('directories', () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
+  /** Make the next config write fail: the atomic write goes through a `.tmp`
+   *  sibling, and a directory squatting on that name makes it throw. */
+  function blockConfigWrites(): void {
+    const dir = path.join(tempHome, '.pixel-agents');
+    fs.mkdirSync(path.join(dir, 'config.json.tmp'), { recursive: true });
+  }
+
   // ── validation ───────────────────────────────────────────────
 
   describe('validateDirectoryPath', () => {
@@ -164,6 +171,15 @@ describe('directories', () => {
       expect(readConfig().directories).toEqual([{ name: 'Renamed', path: beta }]);
     });
 
+    it('reports a failed write instead of claiming the Directory was saved', () => {
+      blockConfigWrites();
+
+      const result = saveUserDirectory({ name: 'Mine', path: alpha });
+
+      expect(result.ok).toBe(false);
+      expect(readConfig().directories).toEqual([]);
+    });
+
     it('removes an entry without touching the others', () => {
       saveUserDirectory({ name: 'Mine', path: alpha });
       saveUserDirectory({ name: 'Other', path: beta });
@@ -251,6 +267,32 @@ describe('directories', () => {
       expect(readConfig().directories).toEqual([]);
       expect(broadcasts).toHaveLength(1);
       expect(broadcasts[0].directories).toEqual([{ name: 'beta', path: beta, source: 'host' }]);
+    });
+
+    it('saveDirectory reports a failed write as a rejection, not a saved Directory', () => {
+      blockConfigWrites();
+
+      handleDirectoryClientMessage({ type: 'saveDirectory', name: 'Mine', path: alpha }, deps());
+
+      // No broadcast: the office treats the rebroadcast list as "saved" and
+      // would close the modal over a Directory that never reached the disk.
+      expect(broadcasts).toEqual([]);
+      expect(replies).toHaveLength(1);
+      expect(replies[0]).toMatchObject({ type: 'directoryRejected', path: alpha });
+      expect(String(replies[0].reason)).toMatch(/save/i);
+      expect(readConfig().directories).toEqual([]);
+    });
+
+    it('removeDirectory reports a failed write as a rejection and keeps the entry', () => {
+      saveUserDirectory({ name: 'Mine', path: alpha });
+      blockConfigWrites();
+
+      handleDirectoryClientMessage({ type: 'removeDirectory', path: alpha }, deps());
+
+      expect(broadcasts).toEqual([]);
+      expect(replies).toHaveLength(1);
+      expect(replies[0]).toMatchObject({ type: 'directoryRejected', path: alpha });
+      expect(readConfig().directories).toEqual([{ name: 'Mine', path: alpha }]);
     });
 
     it('requestDirectorySuggestions answers only the asking client', () => {

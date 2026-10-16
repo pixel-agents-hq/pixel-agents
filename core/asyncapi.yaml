@@ -801,9 +801,10 @@ components:
 
     DirectoryRejected:
       description: |
-        A `saveDirectory` failed host-side validation. Sent point-to-point to the
-        requesting client (never broadcast) and nothing was persisted; the
-        Directory modal shows `reason` inline.
+        A `saveDirectory` failed host-side validation, or a `saveDirectory` /
+        `removeDirectory` could not be written to the shared config. Sent
+        point-to-point to the requesting client (never broadcast) and nothing
+        changed on disk; the Directory modal stays open and shows `reason` inline.
       type: object
       additionalProperties: false
       required: [type, path, reason]

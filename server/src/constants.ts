@@ -147,6 +147,11 @@ export const TERMINAL_DISABLED_BY_FLAG_REASON = 'Terminal disabled with --no-ter
  *  gated exactly like the hooks toggle (wsAuth.standaloneHandshakeVerdict). */
 export const TERMINAL_REQUIRES_TOKEN_REASON =
   'Open the URL the CLI printed (with its ?token=), at localhost or a name passed with --allowed-host, to launch agents from this browser.';
+/** directoryRejected reason when the shared config write behind a Directory
+ *  save or delete failed. The detail (permissions, disk full, ...) is on the
+ *  host's console, where writeConfig logged it. */
+export const DIRECTORY_WRITE_FAILED_REASON =
+  "Couldn't save the change: writing ~/.pixel-agents/config.json failed (see the host's log).";
 /** Standalone persists its server token here (mode 0600, beside server.json) so
  *  the tokened URL a browser bookmarked keeps working across restarts. The
  *  embedded (VS Code) server still mints a fresh token per process. */
