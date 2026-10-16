@@ -266,4 +266,29 @@ test.describe('Standalone / mobile shell', () => {
     await expect(terminal).toContainText('pastedviaprompt', { timeout: 10_000 });
     expect(errors).toEqual([]);
   });
+
+  test('the hooks info modal fits the phone screen @area:mobile', async ({
+    page,
+    standalone: _launched,
+  }) => {
+    // Seeded consent means hooks are installed: the first-run tooltip offers
+    // the info modal.
+    await page.getByText('View more', { exact: true }).tap();
+    const title = page.getByText('Instant Detection is ON', { exact: true });
+    await expect(title).toBeVisible();
+    const gotIt = page.getByRole('button', { name: 'Got it', exact: true });
+    // The modal header's close button (the tooltip has an x of its own).
+    const close = page
+      .locator('div', { has: title })
+      .last()
+      .getByRole('button', { name: 'x', exact: true });
+    for (const el of [title, gotIt, close]) {
+      const box = await el.boundingBox();
+      if (!box) throw new Error('modal part has no box');
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(PHONE.width);
+    }
+    await close.tap();
+    await expect(title).toHaveCount(0);
+  });
 });

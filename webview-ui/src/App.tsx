@@ -563,38 +563,6 @@ function App() {
         </Tooltip>
       )}
 
-      {/* Hooks info modal */}
-      <Modal
-        isOpen={isHooksInfoOpen}
-        onClose={() => setIsHooksInfoOpen(false)}
-        title="Instant Detection is ON"
-        zIndex={52}
-      >
-        <div className="text-base text-text px-10" style={{ lineHeight: 1.4 }}>
-          <p className="mb-8">Your Pixel Agents office now reacts in real-time:</p>
-          <ul className="mb-8 pl-18 list-disc m-0">
-            <li className="text-sm mb-2">Permission prompts appear instantly</li>
-            <li className="text-sm mb-2">Turn completions detected the moment they happen</li>
-            <li className="text-sm mb-2">Sound notifications play immediately</li>
-          </ul>
-          <p className="mb-12 text-text-muted">
-            This works through Claude Code Hooks, small event listeners that notify Pixel Agents
-            whenever something happens in your Claude sessions.
-          </p>
-          <div className="text-center">
-            <button
-              onClick={() => setIsHooksInfoOpen(false)}
-              className="py-4 px-20 text-lg bg-accent text-white border-2 border-accent rounded-none cursor-pointer shadow-pixel"
-            >
-              Got it
-            </button>
-          </div>
-          <p className="mt-8 text-xs text-text-muted text-center">
-            To disable, go to Settings {'>'} Instant Detection
-          </p>
-        </div>
-      </Modal>
-
       {!isMobile && (
         <BottomToolbar
           isEditMode={editor.isEditMode}
@@ -720,6 +688,41 @@ function App() {
           )}
         </>
       )}
+
+      {/* Hooks info modal. Top level, beside the other modals: inside the
+          office region it would sit in the mobile shell's transformed track,
+          and a transformed ancestor is the containing block of position:
+          fixed — the modal would size to the 200%-wide track. */}
+      <Modal
+        isOpen={isHooksInfoOpen}
+        onClose={() => setIsHooksInfoOpen(false)}
+        title="Instant Detection is ON"
+        zIndex={52}
+      >
+        <div className="text-base text-text px-10" style={{ lineHeight: 1.4 }}>
+          <p className="mb-8">Your Pixel Agents office now reacts in real-time:</p>
+          <ul className="mb-8 pl-18 list-disc m-0">
+            <li className="text-sm mb-2">Permission prompts appear instantly</li>
+            <li className="text-sm mb-2">Turn completions detected the moment they happen</li>
+            <li className="text-sm mb-2">Sound notifications play immediately</li>
+          </ul>
+          <p className="mb-12 text-text-muted">
+            This works through Claude Code Hooks, small event listeners that notify Pixel Agents
+            whenever something happens in your Claude sessions.
+          </p>
+          <div className="text-center">
+            <button
+              onClick={() => setIsHooksInfoOpen(false)}
+              className="py-4 px-20 text-lg bg-accent text-white border-2 border-accent rounded-none cursor-pointer shadow-pixel"
+            >
+              Got it
+            </button>
+          </div>
+          <p className="mt-8 text-xs text-text-muted text-center">
+            To disable, go to Settings {'>'} Instant Detection
+          </p>
+        </div>
+      </Modal>
 
       <ChangelogModal
         isOpen={isChangelogOpen}
