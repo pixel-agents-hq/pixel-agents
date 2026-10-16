@@ -76,7 +76,7 @@ Most of this is still ahead. See [Issues](https://github.com/pixel-agents-hq/pix
 
 1. Install Pixel Agents from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) or [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents).
 2. Open the **Pixel Agents** panel beside the terminal.
-3. Click **+ Agent** to launch Claude Code. Hover **+ Agent** (long-press on a phone) to open its drawer and pick the directory to launch into — every workspace folder is listed there.
+3. Click **+ Agent** to open its drawer of **Directories**, then click one to launch Claude Code in it. Every workspace folder is listed there; **+ Directory** adds your own (a name, a path, and optionally the Areas its agents should sit in), and the pencil on a row you added edits or deletes it.
 
 To use Claude with `--dangerously-skip-permissions`, turn on **Settings → Skip Permissions**. It stays on for every agent launched from that host until you turn it off. Only use this when you accept the security implications.
 
@@ -91,7 +91,7 @@ cd /path/to/your/project
 npx pixel-agents
 ```
 
-The CLI chooses a free local port and prints the URL. Standalone does not launch Claude for you; start Claude Code in a terminal for the same workspace. To install the command globally instead:
+The CLI chooses a free local port and prints the URL. Click **+ Agent** to open the Directory drawer and click a Directory to launch Claude Code in it; the agent's terminal opens in the browser. The directory the CLI was started from is always listed, and **+ Directory** adds your own. On a phone, tap the **+** card to open the same drawer and tap a Directory to launch (long-press a Directory you added to edit it). Claude Code started in your own terminal is picked up too. To install the command globally instead:
 
 ```bash
 npm install --global pixel-agents
@@ -131,7 +131,7 @@ Click **Layout** to edit the office:
 - Place, rotate, recolor, select, and remove furniture.
 - Paint auto-tiling carpets and customize their main and accent colors.
 - Add animated pets; click a pet in the office to interact with it.
-- Create named **Areas**, paint their tiles, and assign workspace folders to them.
+- Create named **Areas**, paint their tiles, and assign Directories to them (agents launched in a Directory prefer seats in its Areas).
 - Undo/redo changes, then import or export the complete layout as JSON.
 
 Layouts can grow to 64×64 tiles by clicking the ghost border outside the current grid.
