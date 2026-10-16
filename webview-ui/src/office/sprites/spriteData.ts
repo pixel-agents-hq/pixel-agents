@@ -1,5 +1,5 @@
 import type { ColorValue } from '../../components/ui/types.js';
-import { PALETTE_COUNT } from '../../constants.js';
+import { PALETTE_COUNT, PM_BASE_PALETTE, PM_SHIRT_RECOLOR } from '../../constants.js';
 import { adjustSprite } from '../colorize.js';
 import type { Direction, SpriteData } from '../types.js';
 import { Direction as Dir } from '../types.js';
@@ -115,6 +115,35 @@ function emptySprite(w: number, h: number): SpriteData {
   return rows;
 }
 
+/** Arrange one loaded character sheet into walk/typing/reading frame sets. */
+function buildCharacterSprites(char: LoadedCharacterData): CharacterSprites {
+  const d = char.down;
+  const u = char.up;
+  const rt = char.right;
+  const flip = flipSpriteHorizontal;
+
+  return {
+    walk: {
+      [Dir.DOWN]: [d[0], d[1], d[2], d[1]],
+      [Dir.UP]: [u[0], u[1], u[2], u[1]],
+      [Dir.RIGHT]: [rt[0], rt[1], rt[2], rt[1]],
+      [Dir.LEFT]: [flip(rt[0]), flip(rt[1]), flip(rt[2]), flip(rt[1])],
+    },
+    typing: {
+      [Dir.DOWN]: [d[3], d[4]],
+      [Dir.UP]: [u[3], u[4]],
+      [Dir.RIGHT]: [rt[3], rt[4]],
+      [Dir.LEFT]: [flip(rt[3]), flip(rt[4])],
+    },
+    reading: {
+      [Dir.DOWN]: [d[5], d[6]],
+      [Dir.UP]: [u[5], u[6]],
+      [Dir.RIGHT]: [rt[5], rt[6]],
+      [Dir.LEFT]: [flip(rt[5]), flip(rt[6])],
+    },
+  };
+}
+
 export function getCharacterSprites(paletteIndex: number, hueShift = 0): CharacterSprites {
   const cacheKey = `${paletteIndex}:${hueShift}`;
   const cached = spriteCache.get(cacheKey);
@@ -124,32 +153,7 @@ export function getCharacterSprites(paletteIndex: number, hueShift = 0): Charact
 
   if (loadedCharacters) {
     // Use pre-colored character sprites directly (no palette swapping)
-    const char = loadedCharacters[paletteIndex % loadedCharacters.length];
-    const d = char.down;
-    const u = char.up;
-    const rt = char.right;
-    const flip = flipSpriteHorizontal;
-
-    sprites = {
-      walk: {
-        [Dir.DOWN]: [d[0], d[1], d[2], d[1]],
-        [Dir.UP]: [u[0], u[1], u[2], u[1]],
-        [Dir.RIGHT]: [rt[0], rt[1], rt[2], rt[1]],
-        [Dir.LEFT]: [flip(rt[0]), flip(rt[1]), flip(rt[2]), flip(rt[1])],
-      },
-      typing: {
-        [Dir.DOWN]: [d[3], d[4]],
-        [Dir.UP]: [u[3], u[4]],
-        [Dir.RIGHT]: [rt[3], rt[4]],
-        [Dir.LEFT]: [flip(rt[3]), flip(rt[4])],
-      },
-      reading: {
-        [Dir.DOWN]: [d[5], d[6]],
-        [Dir.UP]: [u[5], u[6]],
-        [Dir.RIGHT]: [rt[5], rt[6]],
-        [Dir.LEFT]: [flip(rt[5]), flip(rt[6])],
-      },
-    };
+    sprites = buildCharacterSprites(loadedCharacters[paletteIndex % loadedCharacters.length]);
   } else {
     // Fallback: return transparent placeholder sprites (16×32)
     const e = emptySprite(16, 32);
@@ -183,5 +187,32 @@ export function getCharacterSprites(paletteIndex: number, hueShift = 0): Charact
   }
 
   spriteCache.set(cacheKey, sprites);
+  return sprites;
+}
+
+const PM_CACHE_KEY = 'pm';
+
+/**
+ * The team lead's fixed PM look: char_2 with its shirt recolored to a yellow
+ * tee (PM_SHIRT_RECOLOR). Ignores the agent's palette and hue shift, so every
+ * lead reads as the PM at a glance.
+ */
+export function getPmCharacterSprites(): CharacterSprites {
+  const cached = spriteCache.get(PM_CACHE_KEY);
+  if (cached) return cached;
+  // Not cached: setCharacterTemplates clears the cache, so the real PM look
+  // replaces this fallback as soon as sprites arrive.
+  if (!loadedCharacters || loadedCharacters.length <= PM_BASE_PALETTE) {
+    return getCharacterSprites(PM_BASE_PALETTE);
+  }
+  const base = loadedCharacters[PM_BASE_PALETTE];
+  const recolor = (s: SpriteData): SpriteData =>
+    s.map((row) => row.map((px) => PM_SHIRT_RECOLOR[px] ?? px));
+  const sprites = buildCharacterSprites({
+    down: base.down.map(recolor),
+    up: base.up.map(recolor),
+    right: base.right.map(recolor),
+  });
+  spriteCache.set(PM_CACHE_KEY, sprites);
   return sprites;
 }

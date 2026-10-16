@@ -7,4 +7,5 @@ export {
   BUBBLE_PERMISSION_SPRITE,
   BUBBLE_WAITING_SPRITE,
   getCharacterSprites,
+  getPmCharacterSprites,
 } from './spriteData.js';

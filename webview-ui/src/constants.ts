@@ -274,6 +274,24 @@ export const CONTEXT_GAUGE_BG = '#222';
 // ── Agent Teams ─────────────────────────────────────────────
 export const TEAM_LEAD_COLOR = '#ffd700';
 export const TEAM_ROLE_COLOR = '#66aaff';
+/** Overlay role label for a team lead. Keeps "LEAD" so the role stays legible. */
+export const TEAM_LEAD_LABEL = 'PM · LEAD';
+/** The team lead is drawn as the project PM: the char_2 look (black hair,
+ *  dark skin) with its orange/red shirt recolored to a yellow tee. Keys are
+ *  char_2's shirt pixels exactly as the PNG decoder emits them (uppercase). */
+export const PM_BASE_PALETTE = 2;
+export const PM_SHIRT_RECOLOR: Readonly<Record<string, string>> = {
+  '#FF8B31': '#FFF06A',
+  '#F67D20': '#F8D22A',
+  '#E8741B': '#ECC31F',
+  '#E87218': '#E9C01D',
+  '#E1721D': '#DEB51C',
+  '#592700': '#5C4A00',
+  '#A91D18': '#C99512',
+  '#8B1A16': '#A57A0E',
+  '#741713': '#87620B',
+  '#56110E': '#5F450A',
+};
 
 // ── Pets ────────────────────────────────────────────────────────
 /** Walking speed in world pixels per second (matches character walk speed visually but slower). */

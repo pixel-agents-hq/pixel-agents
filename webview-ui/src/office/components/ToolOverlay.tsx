@@ -14,6 +14,7 @@ import {
   CONTEXT_GAUGE_WIDTH_PX,
   CONTEXT_WARN_THRESHOLD,
   TEAM_LEAD_COLOR,
+  TEAM_LEAD_LABEL,
   TEAM_ROLE_COLOR,
   TOOL_OVERLAY_VERTICAL_OFFSET,
 } from '../../constants.js';
@@ -202,7 +203,7 @@ export function ToolOverlay({
         }
 
         // Team info
-        const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
+        const teamRoleLabel = ch.isTeamLead ? TEAM_LEAD_LABEL : ch.agentName || null;
         const hasExtraLines = !!(ch.folderName || teamRoleLabel);
 
         // Context gauge. Every agent gets one — lead, teammate, adopted,
