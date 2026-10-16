@@ -241,6 +241,52 @@ describe('tap', () => {
     expect(kinds(r.effects)).not.toContain('openUrl');
   });
 
+  it('a short horizontal drag from a URL opens nothing and does not focus', () => {
+    // Quick (inside the tap duration) but 120 px sideways: under the vertical
+    // scroll slop, so it never scrolls — and it is no tap either.
+    const r = run([
+      start(touch(1, 105, 45), 0),
+      move(touch(1, 165, 46), 40),
+      move(touch(1, 225, 46), 80),
+      end(touch(1, 225, 46), 120),
+    ]);
+    expect(r.state.phase).toBe('idle');
+    expect(kinds(r.effects)).not.toContain('openUrl');
+    expect(kinds(r.effects)).not.toContain('focus');
+  });
+
+  it('a release past the tap slop with no move events in between is no tap', () => {
+    const r = run([
+      start(touch(1, 105, 45), 0),
+      end(touch(1, 105 + TOUCH_TAP_MAX_MOVE_PX + 1, 45), 60),
+    ]);
+    expect(kinds(r.effects)).not.toContain('openUrl');
+    expect(kinds(r.effects)).not.toContain('focus');
+  });
+
+  it('once past the slop, sliding back to the start is still no tap (nor a long-press)', () => {
+    let r = run([
+      start(touch(1, 105, 45), 0),
+      move(touch(1, 105 + TOUCH_TAP_MAX_MOVE_PX + 10, 45), 30),
+      move(touch(1, 105, 45), 60),
+      { kind: 'longPress' },
+    ]);
+    expect(r.state.phase).toBe('pending');
+    expect(kinds(r.effects)).not.toContain('select');
+    r = run([end(touch(1, 105, 45), 90)], r.state);
+    expect(kinds(r.effects)).not.toContain('openUrl');
+    expect(kinds(r.effects)).not.toContain('focus');
+  });
+
+  it('jitter inside the slop still taps the URL', () => {
+    const r = run([
+      start(touch(1, 105, 45), 0),
+      move(touch(1, 108, 47), 30),
+      end(touch(1, 108, 47), 60),
+    ]);
+    expect(r.effects).toContainEqual({ kind: 'openUrl', url: URL });
+  });
+
   it('leaves copy-pill touches entirely alone (its click must fire)', () => {
     const r = run([start(touch(1, 12, 5), 0, undefined, PILL), end(touch(1, 12, 5), 50, PILL)]);
     expect(r.state).toBe(TOUCH_GESTURE_IDLE);

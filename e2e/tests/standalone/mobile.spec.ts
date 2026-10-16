@@ -107,7 +107,10 @@ test.describe('Standalone / mobile shell', () => {
     await expectView(page, 'terminal');
   });
 
-  test('tapping a URL in the terminal opens it @area:mobile', async ({ page, standalone }) => {
+  test('tapping a URL in the terminal opens it; a sideways drag from it does not @area:mobile', async ({
+    page,
+    standalone,
+  }) => {
     await arrangeNextClaudeInvocation(
       standalone.tmpHome,
       claudeScenario('mobile link tap').holdOpenFor(60_000).build(),
@@ -123,15 +126,25 @@ test.describe('Standalone / mobile shell', () => {
     const row = page.locator('.xterm-rows > div', { hasText: url }).first();
     await expect(row).toBeVisible({ timeout: 10_000 });
 
-    // Tap the middle of the URL text — a tap there opens it, it doesn't
-    // just focus the terminal.
     const box = await row.boundingBox();
     if (!box) throw new Error('URL row has no box');
     const rowText = (await row.textContent()) ?? '';
     const charW = box.width / Math.max(1, rowText.length);
-    const urlMid = rowText.indexOf(url) + url.length / 2;
-    const popup = page.waitForEvent('popup');
-    await page.touchscreen.tap(box.x + charW * urlMid, box.y + box.height / 2);
-    expect((await popup).url()).toContain('pixel-agents-tap');
+    const urlMidX = box.x + charW * (rowText.indexOf(url) + url.length / 2);
+    const rowY = box.y + box.height / 2;
+    const popups: string[] = [];
+    page.on('popup', (p) => popups.push(p.url()));
+
+    // A quick sideways drag starting on the URL stays under the vertical
+    // scroll slop, but it is no tap: nothing opens.
+    await swipe(page, urlMidX, urlMidX - 120, rowY);
+    await page.waitForTimeout(1_000);
+    expect(popups).toEqual([]);
+
+    // Tap the middle of the URL text — a tap there opens it, it doesn't
+    // just focus the terminal.
+    await page.touchscreen.tap(urlMidX, rowY);
+    await expect.poll(() => popups.length).toBe(1);
+    expect(popups[0]).toContain('pixel-agents-tap');
   });
 });

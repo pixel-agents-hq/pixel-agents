@@ -42,9 +42,17 @@ interface Point {
 export type TouchGestureState =
   /** No gesture. */
   | { phase: 'idle' }
-  /** A finger is down within the tap slop: may still become a tap, a scroll,
-   *  or (held still) a long-press selection. */
-  | { phase: 'pending'; touchId: number; start: Point & { t: number }; last: Point }
+  /** A finger is down, not (yet) scrolling: may still become a tap, a
+   *  scroll, or (held still) a long-press selection. `slipped` latches once
+   *  the finger has left the tap slop — from then on it can be a scroll but
+   *  never a tap or a long-press, even if it slides back. */
+  | {
+      phase: 'pending';
+      touchId: number;
+      start: Point & { t: number };
+      last: Point;
+      slipped: boolean;
+    }
   /** Past the vertical slop: every move scrolls. `remainder` carries the
    *  sub-row drag that hasn't made a whole wheel tick yet. */
   | {
@@ -240,7 +248,13 @@ function onStart(
     { kind: 'armLongPress' },
   );
   return {
-    state: { phase: 'pending', touchId: identifier, start: { x, y, t: event.t }, last: { x, y } },
+    state: {
+      phase: 'pending',
+      touchId: identifier,
+      start: { x, y, t: event.t },
+      last: { x, y },
+      slipped: false,
+    },
     effects,
   };
 }
@@ -277,12 +291,12 @@ function onMove(
       return { state: { ...state, range }, effects };
     }
     case 'pending':
-      // Within the (vertical) tap slop it may still become a tap or a
-      // long-press selection; scrolling starts — and rules both out — only
-      // past it. The press point is tracked meanwhile: the long-press reads
-      // it to require a still finger even when no move exceeded the slop.
+      // Scrolling starts only past the VERTICAL slop. Before that the finger
+      // is tracked: leaving the tap slop in any direction (a sideways drag)
+      // latches `slipped`, which rules out a tap and a long-press for good.
       if (Math.abs(at.y - state.start.y) <= TOUCH_TAP_MAX_MOVE_PX) {
-        return { state: { ...state, last: at }, effects };
+        const slipped = state.slipped || !withinTapSlop(at.x - state.start.x, at.y - state.start.y);
+        return { state: { ...state, last: at, slipped }, effects };
       }
       effects.push({ kind: 'cancelLongPress' });
       return {
@@ -341,8 +355,10 @@ function onEnd(
       // click: the preventDefaults suppress it, and losing the
       // tap-to-summon-keyboard path is worse than double-focusing on clean
       // taps. The same suppression starves xterm's link providers, so a tap
-      // on a URL opens it here instead of focusing.
-      if (event.t - state.start.t <= TOUCH_TAP_MAX_DURATION_MS) {
+      // on a URL opens it here instead of focusing. A tap is short AND never
+      // left the slop (the release point counts too: it may come with no
+      // move before it).
+      if (isTap(state, findTouch(event.changed, state.touchId), event.t)) {
         const url = probe.urlAt(probe.cellAt(state.start.x, state.start.y));
         effects.push(PREVENT, url ? { kind: 'openUrl', url } : { kind: 'focus' });
       }
@@ -363,6 +379,17 @@ function onEnd(
         effects,
       };
   }
+}
+
+/** A pending gesture released at `release` (time `t`) is a tap. */
+function isTap(
+  state: Extract<TouchGestureState, { phase: 'pending' }>,
+  release: TouchPoint | null,
+  t: number,
+): boolean {
+  if (state.slipped || t - state.start.t > TOUCH_TAP_MAX_DURATION_MS) return false;
+  const at = release ? { x: release.clientX, y: release.clientY } : state.last;
+  return withinTapSlop(at.x - state.start.x, at.y - state.start.y);
 }
 
 function onCancel(
@@ -388,11 +415,11 @@ function onCancel(
  * selection cell by cell from that anchor; releasing shows handles at both
  * ends and the copy pill. Long-press means held STILL: a slow drag that
  * stayed under the vertical scroll slop (e.g. mostly horizontal) is not a
- * selection — it stays pending (a tap or a scroll).
+ * selection — it stays pending, and can only become a scroll.
  */
 function onLongPress(state: TouchGestureState, probe: GestureProbe): TouchGestureResult {
   if (state.phase !== 'pending') return { state, effects: [] };
-  if (!withinTapSlop(state.last.x - state.start.x, state.last.y - state.start.y)) {
+  if (state.slipped || !withinTapSlop(state.last.x - state.start.x, state.last.y - state.start.y)) {
     return { state, effects: [] };
   }
   const cell = probe.cellAt(state.last.x, state.last.y);
