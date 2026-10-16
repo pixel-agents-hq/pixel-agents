@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentStateStore } from '../src/agentStateStore.js';
+import { TOOL_DONE_DELAY_MS } from '../src/constants.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import {
   processTranscriptLine,
@@ -347,5 +348,88 @@ describe('transcriptParser: teammate spawn results (new-harness implicit teams)'
     );
     expect(agent.teamName).toBeUndefined();
     expect(agent.isTeamLead).toBeUndefined();
+  });
+});
+
+describe('transcriptParser: agentToolDone does not depend on PostToolUse', () => {
+  let agents: AgentStateStore;
+  let agent: AgentState;
+  let messages: Array<Record<string, unknown>>;
+  const waitingTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  const permissionTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+  beforeEach(() => {
+    setHookProvider(claudeProvider);
+    agents = new AgentStateStore();
+    // hookDelivered: true is the case every other fixture leaves at false, and
+    // it is the one where the broadcast used to be skipped.
+    agent = createTestAgent({ hookDelivered: true });
+    agents.set(1, agent);
+    messages = [];
+    agents.on('broadcast', (msg) => {
+      messages.push(msg as Record<string, unknown>);
+    });
+    vi.useFakeTimers();
+    return () => {
+      vi.useRealTimers();
+      setTeamSwitchCallback(() => {});
+    };
+  });
+
+  it('sends agentToolDone for a plain tool even when hooks are delivering', () => {
+    processTranscriptLine(
+      1,
+      agentToolUseRecord('toolu_1', 'StructuredOutput', {}),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    expect(agent.activeToolIds.has('toolu_1')).toBe(true);
+
+    processTranscriptLine(
+      1,
+      toolResultRecord('toolu_1', 'ok'),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    vi.advanceTimersByTime(TOOL_DONE_DELAY_MS);
+
+    expect(agent.activeToolIds.has('toolu_1')).toBe(false);
+    expect(messages.find((m) => m.type === 'agentToolDone' && m.toolId === 'toolu_1')).toBeTruthy();
+  });
+
+  it('sends agentToolDone when a background spawn completes', () => {
+    processTranscriptLine(
+      1,
+      agentToolUseRecord('toolu_2', 'Agent', { run_in_background: true }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    processTranscriptLine(
+      1,
+      toolResultRecord('toolu_2', 'Async agent launched successfully.'),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    expect(agent.backgroundAgentToolIds.has('toolu_2')).toBe(true);
+
+    processTranscriptLine(
+      1,
+      JSON.stringify({
+        type: 'queue-operation',
+        operation: 'enqueue',
+        content:
+          '<task-notification> <task-id>a1</task-id> <tool-use-id>toolu_2</tool-use-id> <output>done</output>',
+      }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    vi.advanceTimersByTime(TOOL_DONE_DELAY_MS);
+
+    expect(messages.find((m) => m.type === 'agentToolDone' && m.toolId === 'toolu_2')).toBeTruthy();
   });
 });

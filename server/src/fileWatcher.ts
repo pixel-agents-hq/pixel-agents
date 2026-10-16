@@ -35,6 +35,8 @@ import type { AgentStateStore } from './agentStateStore.js';
 import {
   CLEAR_IDLE_THRESHOLD_MS,
   EXTERNAL_ACTIVE_THRESHOLD_MS,
+  EXTERNAL_IDLE_EVICT_BUSY_MS,
+  EXTERNAL_IDLE_EVICT_MS,
   EXTERNAL_SCAN_INTERVAL_MS,
   EXTERNAL_STALE_CHECK_INTERVAL_MS,
   FILE_WATCHER_POLL_INTERVAL_MS,
@@ -1480,32 +1482,37 @@ function scanGlobalProjectDirs(
 }
 
 /**
- * Periodically removes stale external agents whose JSONL files
- * haven't been modified recently.
+ * Periodically removes stale external agents: those whose JSONL file was
+ * deleted, and those whose JSONL has been quiet past the idle limit.
  */
 export function startStaleExternalAgentCheck(
   agents: AgentStateStore,
   knownJsonlFiles: Set<string>,
-  hooksEnabledRef?: { current: boolean },
 ): ReturnType<typeof setInterval> {
   return setInterval(() => {
-    // When hooks are active, SessionEnd handles agent cleanup.
-    if (hooksEnabledRef?.current) return;
+    const now = Date.now();
     const toRemove: number[] = [];
 
     for (const [id, agent] of agents) {
       if (!agent.isExternal) continue;
 
-      // Only despawn if the JSONL file has been deleted from disk.
-      // Inactive external agents stay alive so they can resume when
-      // the session continues (e.g., claude --resume).
+      let mtimeMs: number;
       try {
-        fs.statSync(agent.jsonlFile);
-        // File still exists — keep the agent alive regardless of mtime
+        mtimeMs = fs.statSync(agent.jsonlFile).mtimeMs;
       } catch {
         // File deleted — remove agent
         toRemove.push(id);
+        continue;
       }
+
+      // This runs with hooks on as well. SessionEnd is the normal cleanup, but
+      // a session can end without sending one, and those agents used to stay
+      // in the office forever. An evicted file is dropped from knownJsonlFiles
+      // below, so the scanner re-adopts it as soon as the session writes again
+      // (e.g. claude --resume).
+      const busy = agent.permissionSent || agent.activeToolIds.size > 0;
+      const limit = busy ? EXTERNAL_IDLE_EVICT_BUSY_MS : EXTERNAL_IDLE_EVICT_MS;
+      if (now - mtimeMs > limit) toRemove.push(id);
     }
 
     for (const id of toRemove) {

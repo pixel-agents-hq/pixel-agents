@@ -123,8 +123,10 @@ function getAllSessionRoots(): string[] {
 //
 // Sentinel 'current' toolIds are returned for PostToolUse/SubagentStop because the
 // raw hook payload doesn't carry the id; the handler correlates using its own
-// currentHookToolId state. Synthetic hook-* ids are returned for PreToolUse because
-// the real tool id arrives later via JSONL polling.
+// currentHookToolId state. PreToolUse uses the payload's tool_use_id when the CLI
+// sends one, which is the same id the transcript records, so the JSONL tool_result
+// can close the row even when PostToolUse never fires. Older CLIs send no id and
+// fall back to a synthetic hook-* id.
 
 function normalizeHookEvent(
   raw: Record<string, unknown>,
@@ -144,7 +146,10 @@ function normalizeHookEvent(
         sessionId,
         event: {
           kind: 'toolStart',
-          toolId: `hook-${Date.now()}`,
+          toolId:
+            typeof raw.tool_use_id === 'string' && raw.tool_use_id
+              ? raw.tool_use_id
+              : `hook-${Date.now()}`,
           toolName,
           input: toolInput,
           runInBackground: toolInput.run_in_background === true,

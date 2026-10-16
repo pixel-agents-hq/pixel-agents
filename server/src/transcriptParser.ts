@@ -373,21 +373,22 @@ export function processTranscriptLine(
               agent.activeToolIds.delete(completedToolId);
               agent.activeToolStatuses.delete(completedToolId);
               agent.activeToolNames.delete(completedToolId);
-              // Send agentToolDone when hooks are off, or for Task/Agent tools
-              // (which always use JSONL path for consistent sub-agent lifecycle).
-              const isCompletedAgentTool =
-                completedToolName === 'Task' || completedToolName === 'Agent';
-              const useJsonlToolEvents = agent.hookDelivered && hasInlineTeammates(agentId, agents);
-              if (!agent.hookDelivered || useJsonlToolEvents || isCompletedAgentTool) {
-                const toolId = completedToolId;
-                setTimeout(() => {
-                  agents.broadcast({
-                    type: 'agentToolDone',
-                    id: agentId,
-                    toolId,
-                  });
-                }, TOOL_DONE_DELAY_MS);
-              }
+              // Always send agentToolDone. The tool_result is in the transcript, so
+              // this branch already knows the tool finished — it just used to stay
+              // silent whenever hooks were delivering, and trust PostToolUse to tell
+              // the client. PostToolUse does not fire for every tool (StructuredOutput
+              // is one), which left the row unfinished forever: the agent kept a
+              // live-looking label like 'Using StructuredOutput' and counted as active.
+              // A repeated agentToolDone is idempotent on the client, which only maps
+              // the matching toolId to done: true, so overlapping with the hook is safe.
+              const toolId = completedToolId;
+              setTimeout(() => {
+                agents.broadcast({
+                  type: 'agentToolDone',
+                  id: agentId,
+                  toolId,
+                });
+              }, TOOL_DONE_DELAY_MS);
             }
           }
           // All tools completed — allow text-idle timer as fallback
@@ -431,16 +432,17 @@ export function processTranscriptLine(
             agent.activeToolNames.delete(completedToolId);
             // Remove the spawn's teammate character or stop its shadow watch.
             backgroundAgentCompletedCallback?.(agentId, completedToolId);
-            if (!agent.hookDelivered) {
-              const toolId = completedToolId;
-              setTimeout(() => {
-                agents.broadcast({
-                  type: 'agentToolDone',
-                  id: agentId,
-                  toolId,
-                });
-              }, TOOL_DONE_DELAY_MS);
-            }
+            // Same reason as the regular tool path above: the transcript already
+            // proves this spawn finished, so do not make the client wait on a
+            // PostToolUse that may never arrive for a background Agent call.
+            const toolId = completedToolId;
+            setTimeout(() => {
+              agents.broadcast({
+                type: 'agentToolDone',
+                id: agentId,
+                toolId,
+              });
+            }, TOOL_DONE_DELAY_MS);
           }
         }
       }

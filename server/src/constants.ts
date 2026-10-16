@@ -25,6 +25,13 @@ export const EXTERNAL_ACTIVE_THRESHOLD_MS = 120_000; // 2 minutes
 /** Remove external agents after this much inactivity */
 // export const EXTERNAL_STALE_TIMEOUT_MS = 300_000; // 5 minutes - deprecated
 export const EXTERNAL_STALE_CHECK_INTERVAL_MS = 30_000;
+/** Evict an external agent whose transcript has been quiet this long. A session
+ *  can end without SessionEnd (killed terminal, headless or SDK run), and with
+ *  no idle limit it would stay in the office forever. */
+export const EXTERNAL_IDLE_EVICT_MS = 10 * 60_000;
+/** Longer grace while a JSONL tool call is still open (a long build writes
+ *  nothing until its result lands) or a permission prompt is pending. */
+export const EXTERNAL_IDLE_EVICT_BUSY_MS = 60 * 60_000;
 /** Cooldown after user closes an agent via X. Must be > EXTERNAL_ACTIVE_THRESHOLD_MS
  *  so the file's mtime becomes stale before the dismissal expires. */
 export const DISMISSED_COOLDOWN_MS = 180_000; // 3 minutes
