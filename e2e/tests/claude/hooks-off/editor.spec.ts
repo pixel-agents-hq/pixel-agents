@@ -36,8 +36,11 @@ import { buildSeedLayout } from '../../../helpers/layout-seed';
  *  2. One click-drag = one undo entry for every drag-painting tool — floor,
  *     wall, and erase (the 'stroke' undo session). Carpet is covered in
  *     carpet.spec.ts.
- *  3. A desk's riders move, rotate and get copied with it.
- *  4. The colour eyedropper reads the item a click selects, and is its own
+ *  3. A desk's riders move, rotate and get copied with it — and a drag or a
+ *     rotation is refused unless every rider fits, not just the desk.
+ *  4. Furniture Copy carries a placed item's colour, or its lack of one, to
+ *     the copy.
+ *  5. The colour eyedropper reads the item a click selects, and is its own
  *     undo entry.
  *
  * Tiles and furniture render only on the canvas (no DOM), so assertions read
@@ -407,31 +410,6 @@ test.describe('Layout editor — desks carry what stands on them', () => {
     narrator.check('desk (3,3)→(3,6) and the PC on it (4,3)→(4,6) — same delta, one drag');
   });
 
-  test('a drag that would push the item on the desk off the grid is refused @area:editor', async ({
-    pixelAgents,
-  }) => {
-    const { frame, narrator } = pixelAgents;
-
-    narrator.step('waiting for the seeded desk + PC to load');
-    await waitForFurnitureCount(frame, 2);
-    await enterEditMode(frame);
-
-    // The desk alone would fit at row 10 (3x2 → rows 10-11); the PC riding it
-    // would not (rows 10-11 too, but the group is validated as one).
-    narrator.step('dropping the desk at (3,11) — the bottom edge of a 12-row grid');
-    await dropFurnitureAt(frame, 'seed-desk', 3, 11);
-
-    await expectStays(() => positionOf(frame, 'seed-desk'), '3,3');
-    narrator.check('the desk stayed put — the whole group has to fit, not just the desk');
-
-    // Positive control: the same drop path does move the group when it fits,
-    // so the refusal above wasn't the drop silently never running.
-    narrator.step('dropping the desk at (3,6), where the group fits');
-    await dropFurnitureAt(frame, 'seed-desk', 3, 6);
-    await expect.poll(() => positionOf(frame, 'seed-desk')).toBe('3,6');
-    narrator.check('the fitting drop moved it — only the off-grid one was refused');
-  });
-
   test('rotating a desk turns the item standing on it @area:editor', async ({ pixelAgents }) => {
     const { frame, narrator } = pixelAgents;
 
@@ -562,6 +540,177 @@ test.describe('Layout editor — desks carry what stands on them', () => {
       .poll(async () => (await readFurniture(frame)).find((f) => f.uid === 'seed-desk')?.type)
       .toBe('DESK_SIDE');
     narrator.check('the desk rotated — the click left it selected, only the panel went away');
+  });
+});
+
+/**
+ * The whole group has to fit, riders included — a desk that fits on its own
+ * isn't enough. Each layout here is built so ONLY a rider fails, so the
+ * refusal can't come from validating the desk alone.
+ */
+test.describe('Layout editor — a desk group fits as a whole or not at all', () => {
+  test.use({
+    seedLayout: (() => {
+      // The PC stands on the desk's front row and overhangs it by one row:
+      // desk rows 3-4, PC rows 4-5.
+      const layout = buildSeedLayout({ cols: 12, rows: 12 });
+      layout.furniture = [
+        { uid: 'seed-desk', type: DESK, col: 3, row: 3 },
+        { uid: 'seed-pc', type: SURFACE_ITEM, col: 4, row: 4 },
+      ];
+      return layout;
+    })(),
+  });
+
+  test('a drag that would push the item on the desk off the grid is refused @area:editor', async ({
+    pixelAgents,
+  }) => {
+    const { frame, narrator } = pixelAgents;
+
+    narrator.step('waiting for the seeded desk + overhanging PC to load');
+    await waitForFurnitureCount(frame, 2);
+    await enterEditMode(frame);
+
+    // At row 10 the 3x2 desk covers rows 10-11 — on a 12-row grid it fits.
+    // The PC riding it would land on rows 11-12, one row past the bottom edge.
+    narrator.step('dropping the desk at (3,10) — the desk fits, the PC on it would not');
+    await dropFurnitureAt(frame, 'seed-desk', 3, 10);
+
+    await expectStays(
+      async () => [await positionOf(frame, 'seed-desk'), await positionOf(frame, 'seed-pc')],
+      ['3,3', '4,4'],
+    );
+    narrator.check('desk and PC both stayed put — the rider is validated, not just the desk');
+
+    // Positive control: one row higher the PC's overhang lands on row 11, the
+    // last row, so the same drop path moves the whole group.
+    narrator.step('dropping the desk at (3,9), where the PC fits too');
+    await dropFurnitureAt(frame, 'seed-desk', 3, 9);
+    await expect
+      .poll(async () => [await positionOf(frame, 'seed-desk'), await positionOf(frame, 'seed-pc')])
+      .toEqual(['3,9', '4,10']);
+    narrator.check('the fitting drop moved both — only the off-grid rider was refused');
+  });
+});
+
+/**
+ * Rotation is held to the same rule as a drag: the desk AND every rider must
+ * fit in their rotated spots. DESK_FRONT at (3,3) turns into the 1x4 DESK_SIDE
+ * at (3,3), whose top row is a background row and so may share (3,3) with the
+ * chair's seat row; the coffee on the desk's far end swings onto (3,3) as well,
+ * and a coffee can't.
+ */
+const RIDER = 'COFFEE'; // 1x1 surface item, no rotation group
+const CHAIR = 'WOODEN_CHAIR_FRONT'; // 1x2, top row is background
+
+test.describe('Layout editor — a rotation fits as a whole or not at all', () => {
+  test.use({
+    seedLayout: (() => {
+      const layout = buildSeedLayout({ cols: 12, rows: 12 });
+      layout.furniture = [
+        { uid: 'seed-desk', type: DESK, col: 3, row: 3 },
+        { uid: 'seed-coffee', type: RIDER, col: 5, row: 3 },
+        { uid: 'seed-chair', type: CHAIR, col: 3, row: 2 },
+      ];
+      return layout;
+    })(),
+  });
+
+  test('a rotation that would swing the item on the desk into a chair is refused @area:editor', async ({
+    pixelAgents,
+  }) => {
+    const { frame, narrator } = pixelAgents;
+    const group = async () => {
+      const byUid = Object.fromEntries((await readFurniture(frame)).map((f) => [f.uid, f]));
+      return ['seed-desk', 'seed-coffee', 'seed-chair'].map((uid) => {
+        const f = byUid[uid];
+        return f && `${f.type}@${f.col},${f.row}`;
+      });
+    };
+    const untouched = [`${DESK}@3,3`, `${RIDER}@5,3`, `${CHAIR}@3,2`];
+
+    narrator.step('waiting for the seeded desk, coffee and chair to load');
+    await waitForFurnitureCount(frame, 3);
+    await enterEditMode(frame);
+
+    // (4,4) is covered by the desk only.
+    narrator.step('selecting the desk by clicking its own tile (4,4) and pressing R');
+    await selectFurnitureAt(frame, 4, 4);
+    await pressEditorKey(frame, 'r');
+
+    await expectStays(group, untouched);
+    narrator.check('nothing turned — the desk fits rotated, but the coffee would hit the chair');
+
+    // Positive control: with the chair moved out of the way the same R turns
+    // the desk, so the refusal above was the coffee's, not a dead key.
+    narrator.step('moving the chair away to (9,9), then reselecting the desk and pressing R');
+    await dropFurnitureAt(frame, 'seed-chair', 9, 9);
+    await expect.poll(() => positionOf(frame, 'seed-chair')).toBe('9,9');
+    await selectFurnitureAt(frame, 4, 4);
+    await pressEditorKey(frame, 'r');
+
+    await expect
+      .poll(async () => (await group()).slice(0, 2))
+      .toEqual(['DESK_SIDE@3,3', `${RIDER}@3,3`]);
+    narrator.check('with the chair gone the desk rotated and the coffee swung onto (3,3)');
+  });
+});
+
+/**
+ * Furniture Copy (the Furniture tab's Copy button) lifts a placed item's type
+ * AND its colour for that one copy — including the absence of a colour. An
+ * uncoloured item's copy must not pick up the palette colour.
+ */
+test.describe('Layout editor — Furniture Copy', () => {
+  test.use({
+    seedLayout: (() => {
+      const layout = buildSeedLayout({ cols: 12, rows: 12 });
+      layout.furniture = [{ uid: 'seed-pc', type: SURFACE_ITEM, col: 3, row: 3 }];
+      return layout;
+    })(),
+  });
+
+  test('a copy of an uncoloured item stays uncoloured under a Colorize palette @area:editor', async ({
+    pixelAgents,
+  }) => {
+    const { frame, narrator } = pixelAgents;
+    const placedAt = async (col: number, row: number) =>
+      (await readFurniture(frame)).find(
+        (f) => f.uid !== 'seed-pc' && f.col === col && f.row === row,
+      );
+
+    narrator.step('waiting for the uncoloured PC to load');
+    await waitForFurnitureCount(frame, 1);
+    await enterEditMode(frame);
+
+    narrator.step('Furniture → Color, then turning Colorize on in the palette');
+    await selectFurnitureTool(frame);
+    await frame.locator('button[title="Adjust color for new furniture"]').click();
+    await frame.locator('button[title="Toggle colorize mode"]').click();
+
+    // Pick and place are tile actions (paintTile: the real handler, minus
+    // pixel→tile geometry) — the colour rule under test lives past the canvas.
+    narrator.step('Copy, then picking the PC at (3,4) and placing the copy at (7,4)');
+    await furniturePanel(frame).click();
+    await paintTile(frame, 3, 4);
+    await paintTile(frame, 7, 4);
+
+    await expect.poll(async () => (await placedAt(7, 4))?.type).toBe(SURFACE_ITEM);
+    expect((await placedAt(7, 4))?.color).toBeUndefined();
+    narrator.check('the copy went down uncoloured — the active Colorize palette did not leak in');
+
+    // Positive control: touching the palette hands the colour back to it, so
+    // the next copy placed does take the palette colour.
+    narrator.step('toggling Colorize again on the palette, then placing another copy at (9,4)');
+    await frame.locator('button[title="Toggle colorize mode"]').click();
+    await paintTile(frame, 9, 4);
+
+    await expect
+      .poll(async () => (await placedAt(9, 4))?.color)
+      .toEqual({ h: 0, s: 0, b: 0, c: 0 });
+    narrator.check(
+      'after a palette change the copy took the palette colour — the sliders win again',
+    );
   });
 });
 
