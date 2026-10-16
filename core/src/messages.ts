@@ -34,6 +34,7 @@ export type ServerMessage =
   | CarpetTilesLoaded
   | OfficeAccess
   | SettingsLoaded
+  | BypassPermissionsUpdated
   | HooksStatus
   | HooksConsentRequest
   | ExternalAssetDirectoriesUpdated
@@ -291,6 +292,11 @@ export interface SettingsLoaded {
   externalAssetDirectories: string[];
   showAreas: boolean;
   bypassPermissions: boolean;
+}
+
+export interface BypassPermissionsUpdated {
+  type: 'bypassPermissionsUpdated';
+  enabled: boolean;
 }
 
 export interface HooksStatus {

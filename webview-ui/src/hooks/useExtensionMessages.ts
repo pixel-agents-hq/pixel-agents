@@ -755,6 +755,12 @@ export function useExtensionMessages(
         if (typeof msg.extensionVersion === 'string') {
           setExtensionVersion(msg.extensionVersion as string);
         }
+      } else if (msg.type === 'bypassPermissionsUpdated') {
+        // Another office (or this one) changed the host's posture: every launch
+        // uses it, so the Settings toggle must show it.
+        if (typeof msg.enabled === 'boolean') {
+          setBypassPermissions(msg.enabled);
+        }
       } else if (msg.type === 'hooksStatus') {
         if (typeof msg.installed === 'boolean' && typeof msg.providerId === 'string') {
           const providerId = msg.providerId as string;

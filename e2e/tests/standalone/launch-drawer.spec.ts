@@ -335,4 +335,24 @@ test.describe('Standalone / permission posture', () => {
     await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible({ timeout: 30_000 });
     expect(await getSettingChecked(page, SKIP_PERMISSIONS_LABEL)).toBe(true);
   });
+
+  test('turning skip-permissions on in one office shows it on in another already open @area:standalone', async ({
+    page,
+    standalone: _standalone,
+  }) => {
+    // A second tokened office, open BEFORE the change: it loaded "off" and
+    // must not keep showing that while every launch now skips permissions.
+    const other = await page.context().newPage();
+    await other.goto(page.url());
+    await expect(other.getByRole('button', { name: 'Settings' })).toBeVisible({ timeout: 30_000 });
+    expect(await getSettingChecked(other, SKIP_PERMISSIONS_LABEL)).toBe(false);
+
+    await setSettings(page, { bypassPermissions: true });
+
+    // No reload: the change has to reach the open office by itself.
+    await expect
+      .poll(() => getSettingChecked(other, SKIP_PERMISSIONS_LABEL), { timeout: 10_000 })
+      .toBe(true);
+    await other.close();
+  });
 });

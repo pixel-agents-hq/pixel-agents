@@ -845,6 +845,17 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     expect(adapter.getSetting('pixel-agents.bypassPermissions', true)).toBe(false);
   });
 
+  it('setBypassPermissions publishes the accepted posture to every connected office', () => {
+    // Every launch reads the persisted posture, so an office still showing the
+    // old value would be launching with a flag its Settings says is off.
+    dispatch({ type: 'setBypassPermissions', enabled: true }, ctx());
+    expect(broadcasts).toContainEqual({ type: 'bypassPermissionsUpdated', enabled: true });
+
+    broadcasts = [];
+    dispatch({ type: 'setBypassPermissions', enabled: false }, ctx());
+    expect(broadcasts).toContainEqual({ type: 'bypassPermissionsUpdated', enabled: false });
+  });
+
   it('refuses setBypassPermissions from an unprivileged client and tells it the truth', () => {
     // The escalation this pins: an untokened viewer (LAN, DNS-rebound page)
     // flips the posture, and the operator's NEXT launch from a tokened tab runs
@@ -855,6 +866,8 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     dispatch({ type: 'setBypassPermissions', enabled: true }, ctx({ privileged: false }));
 
     expect(store.getAdapter()!.getSetting('pixel-agents.bypassPermissions', false)).toBe(false);
+    // Nothing changed, so nothing is published to the other offices.
+    expect(broadcasts.filter((m) => m.type === 'bypassPermissionsUpdated')).toEqual([]);
     // The optimistic toggle snaps back: the refused client gets the real value.
     expect(sent).toContainEqual(
       expect.objectContaining({ type: 'settingsLoaded', bypassPermissions: false }),

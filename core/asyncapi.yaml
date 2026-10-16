@@ -112,6 +112,7 @@ components:
         # Settings & config
         - $ref: '#/components/schemas/OfficeAccess'
         - $ref: '#/components/schemas/SettingsLoaded'
+        - $ref: '#/components/schemas/BypassPermissionsUpdated'
         - $ref: '#/components/schemas/HooksStatus'
         - $ref: '#/components/schemas/HooksConsentRequest'
         - $ref: '#/components/schemas/ExternalAssetDirectoriesUpdated'
@@ -686,6 +687,22 @@ components:
           description: >-
             Persistent per-host permission posture. While true, every launch on
             this host runs the CLI with its skip-permissions flag.
+
+    BypassPermissionsUpdated:
+      description: |
+        The host's skip-permissions posture changed (an accepted
+        `setBypassPermissions`). Broadcast to every connected office, the one
+        that sent it included, so every Settings toggle shows the posture the
+        next launch will actually use. `enabled` is the persisted value read
+        back after the write, not an echo of the request.
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: bypassPermissionsUpdated
+        enabled:
+          type: boolean
 
     HooksStatus:
       description: |

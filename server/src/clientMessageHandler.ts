@@ -305,8 +305,15 @@ export function handleClientMessage(
     }
 
     case 'setBypassPermissions': {
-      const enabled = msg.enabled as boolean;
-      adapter?.setSetting(KEY_BYPASS_PERMISSIONS, enabled);
+      if (typeof msg.enabled !== 'boolean' || !adapter) break;
+      adapter.setSetting(KEY_BYPASS_PERMISSIONS, msg.enabled);
+      // Every launch reads the persisted posture, so every office must show it:
+      // a second tab still reading "off" would launch with the flag regardless.
+      // Published as read back, so a failed write shows the truth, not the ask.
+      store.broadcast({
+        type: 'bypassPermissionsUpdated',
+        enabled: adapter.getSetting(KEY_BYPASS_PERMISSIONS, false),
+      });
       break;
     }
 

@@ -549,7 +549,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           suggestions: () => collectDirectorySuggestions(claudeProvider, this.hostDirectories()),
         });
       } else if (message.type === 'setBypassPermissions') {
-        this.adapter.setSetting(GLOBAL_KEY_BYPASS_PERMISSIONS, message.enabled as boolean);
+        if (typeof message.enabled === 'boolean') {
+          this.adapter.setSetting(GLOBAL_KEY_BYPASS_PERMISSIONS, message.enabled);
+          // Through the store, not straight to the webview: the store's
+          // broadcast also reaches offices on the embedded server's /ws, which
+          // launch under this same posture.
+          this.store.broadcast({
+            type: 'bypassPermissionsUpdated',
+            enabled: this.adapter.getSetting<boolean>(GLOBAL_KEY_BYPASS_PERMISSIONS, false),
+          });
+        }
       } else if (message.type === 'saveAreaMappings') {
         const mappings = message.mappings as Record<string, string[]>;
         const cfg = readConfig();
