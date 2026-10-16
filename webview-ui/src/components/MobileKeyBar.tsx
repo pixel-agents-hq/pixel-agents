@@ -49,17 +49,25 @@ export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
   // React registers those passively, so it would be a no-op; touch-none/
   // select-none keep iOS gestures off the held key, and touchend's
   // preventDefault (non-passive) keeps the keyboard up.
-  const padRef = useRef<{ startX: number; startY: number; sentX: number; sentY: number } | null>(
-    null,
-  );
+  // The pad follows the finger that pressed it, by identifier: with another
+  // finger resting on the glass, touches[0] may be that one.
+  const padRef = useRef<{
+    id: number;
+    startX: number;
+    startY: number;
+    sentX: number;
+    sentY: number;
+  } | null>(null);
   const onPadTouchStart = (e: ReactTouchEvent) => {
-    const t = e.touches[0];
+    // A second finger landing on the pad doesn't restart a live slide.
+    if (padRef.current && findTouch(e.touches, padRef.current.id)) return;
+    const t = e.changedTouches[0];
     if (!t) return;
-    padRef.current = { startX: t.clientX, startY: t.clientY, sentX: 0, sentY: 0 };
+    padRef.current = { id: t.identifier, startX: t.clientX, startY: t.clientY, sentX: 0, sentY: 0 };
   };
   const onPadTouchMove = (e: ReactTouchEvent) => {
     const s = padRef.current;
-    const t = e.touches[0];
+    const t = s ? findTouch(e.touches, s.id) : null;
     if (!s || !t) return;
     const stepsX = Math.trunc((t.clientX - s.startX) / MOBILE_TRACKPAD_STEP_PX);
     const stepsY = Math.trunc((t.clientY - s.startY) / MOBILE_TRACKPAD_STEP_PX);
@@ -81,7 +89,8 @@ export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
     }
   };
   const onPadTouchEnd = (e: ReactTouchEvent) => {
-    padRef.current = null;
+    const s = padRef.current;
+    if (s && findTouch(e.changedTouches, s.id)) padRef.current = null;
     // Keep the keyboard: swallow the synthesized mousedown that would blur
     // the terminal's textarea.
     e.preventDefault();

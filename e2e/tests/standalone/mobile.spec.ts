@@ -378,4 +378,64 @@ test.describe('Standalone / mobile shell', () => {
     );
     expect(await cameraFollowId(page)).toBeNull();
   });
+
+  test('the trackpad key follows the finger that pressed it, not touches[0] @area:mobile', async ({
+    page,
+    standalone,
+  }) => {
+    // Record what the terminal socket sends to the PTY.
+    await page.addInitScript(() => {
+      const sent: string[] = [];
+      (window as unknown as { __ptyInput: string[] }).__ptyInput = sent;
+      const send = WebSocket.prototype.send;
+      WebSocket.prototype.send = function (data) {
+        if (typeof data === 'string' && data.includes('"input"')) {
+          const frame = JSON.parse(data) as { type?: string; data?: string };
+          if (frame.type === 'input' && frame.data) sent.push(frame.data);
+        }
+        send.call(this, data);
+      };
+    });
+    await page.reload();
+    const terminal = await launchTerminal(page, standalone.tmpHome, 'mobile trackpad');
+    await terminal.tap();
+    await page.setViewportSize({ width: PHONE.width, height: 500 }); // keyboard up
+    const pad = page.getByRole('button', { name: '✜', exact: true });
+    await expect(pad).toBeVisible();
+    const padBox = await pad.boundingBox();
+    if (!padBox) throw new Error('trackpad key has no box');
+
+    // A resting finger on the key bar lands FIRST (touches[0]); the pad
+    // finger then slides 3 trackpad steps right.
+    const arrows = await page.evaluate(
+      ({ x, y }) => {
+        const pad = document.elementFromPoint(x, y);
+        const bar = pad?.parentElement;
+        if (!pad || !bar) throw new Error('no trackpad key');
+        const rest = new Touch({ identifier: 9, target: bar, clientX: 4, clientY: y });
+        const at = (dx: number) =>
+          new Touch({ identifier: 2, target: pad, clientX: x + dx, clientY: y });
+        const fire = (target: Element, type: string, down: Touch[], changed: Touch[]) =>
+          target.dispatchEvent(
+            new TouchEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              touches: down,
+              targetTouches: down.filter((t) => t.target === target),
+              changedTouches: changed,
+            }),
+          );
+        const input = (window as unknown as { __ptyInput: string[] }).__ptyInput;
+        const before = input.length;
+        fire(bar, 'touchstart', [rest], [rest]);
+        fire(pad, 'touchstart', [rest, at(0)], [at(0)]);
+        for (const dx of [16, 32, 48, 52]) fire(pad, 'touchmove', [rest, at(dx)], [at(dx)]);
+        fire(pad, 'touchend', [rest], [at(52)]);
+        fire(bar, 'touchend', [], [rest]);
+        return input.slice(before).filter((d) => d === '\x1b[C').length;
+      },
+      { x: padBox.x + padBox.width / 2, y: padBox.y + padBox.height / 2 },
+    );
+    expect(arrows).toBe(3);
+  });
 });
