@@ -53,6 +53,53 @@ async function swipe(page: Page, x0: number, x1: number, y: number) {
   );
 }
 
+type Pt = { x: number; y: number };
+
+/** A two-finger gesture on the office canvas: both fingers land at `from`,
+ *  move in steps to `to`, and lift — as TouchEvents on the canvas. */
+async function twoFingerGesture(page: Page, from: [Pt, Pt], to: [Pt, Pt]) {
+  await page.evaluate(
+    ({ from, to }) => {
+      const canvas = document.querySelector('canvas');
+      if (!canvas) throw new Error('no office canvas');
+      const touches = (pts: Pt[]) =>
+        pts.map(
+          (p, i) => new Touch({ identifier: i + 1, target: canvas, clientX: p.x, clientY: p.y }),
+        );
+      const fire = (type: string, down: Touch[], changed: Touch[]) =>
+        canvas.dispatchEvent(
+          new TouchEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            touches: down,
+            targetTouches: down,
+            changedTouches: changed,
+          }),
+        );
+      const first = touches(from);
+      fire('touchstart', [first[0]], [first[0]]);
+      fire('touchstart', first, [first[1]]);
+      const steps = 8;
+      let last = first;
+      for (let i = 1; i <= steps; i++) {
+        last = touches(
+          from.map((f, k) => ({
+            x: f.x + ((to[k].x - f.x) * i) / steps,
+            y: f.y + ((to[k].y - f.y) * i) / steps,
+          })),
+        );
+        fire('touchmove', last, last);
+      }
+      fire('touchend', [last[0]], [last[1]]);
+      fire('touchend', [], [last[0]]);
+    },
+    { from, to },
+  );
+}
+
+const cameraFollowId = (page: Page) =>
+  page.evaluate(() => window.__pixelAgentsTestHooks?.getCameraFollowId?.() ?? null);
+
 /** A one-finger press held for `ms` at (x, y), as TouchEvents dispatched on
  *  the element under the point (Playwright's touchscreen can only tap). */
 async function longPress(page: Page, x: number, y: number, ms: number) {
@@ -290,5 +337,45 @@ test.describe('Standalone / mobile shell', () => {
     }
     await close.tap();
     await expect(title).toHaveCount(0);
+  });
+
+  test('a two-finger pan stops the camera following a character; a pure pinch does not @area:mobile', async ({
+    page,
+    standalone,
+  }) => {
+    await launchTerminal(page, standalone.tmpHome, 'mobile camera follow');
+    await page.getByTitle('Show office', { exact: true }).tap();
+    // A card tap in the office focuses the character and follows it.
+    await page.getByTitle('Agent 1', { exact: true }).tap();
+    await expect.poll(() => cameraFollowId(page)).not.toBeNull();
+
+    // Pinch in place: the midpoint stays put, so the follow survives.
+    const mid = { x: PHONE.width / 2, y: PHONE.height / 2 };
+    await twoFingerGesture(
+      page,
+      [
+        { x: mid.x - 40, y: mid.y },
+        { x: mid.x + 40, y: mid.y },
+      ],
+      [
+        { x: mid.x - 80, y: mid.y },
+        { x: mid.x + 80, y: mid.y },
+      ],
+    );
+    expect(await cameraFollowId(page)).not.toBeNull();
+
+    // Two fingers dragged together: a manual pan, the camera is the user's.
+    await twoFingerGesture(
+      page,
+      [
+        { x: mid.x - 40, y: mid.y },
+        { x: mid.x + 40, y: mid.y },
+      ],
+      [
+        { x: mid.x - 40, y: mid.y + 100 },
+        { x: mid.x + 40, y: mid.y + 100 },
+      ],
+    );
+    expect(await cameraFollowId(page)).toBeNull();
   });
 });

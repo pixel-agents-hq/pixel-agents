@@ -55,6 +55,8 @@ export function useCanvasTouchGestures(options: CanvasTouchOptions): void {
     let panY = 0;
     let pinchStartDist = 0;
     let pinchStartZoom = 1;
+    /** This gesture (first finger down → last finger up) has panned. */
+    let panned = false;
 
     const distance = (a: Touch, b: Touch) =>
       Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
@@ -78,10 +80,25 @@ export function useCanvasTouchGestures(options: CanvasTouchOptions): void {
       );
     };
 
+    // The first manual pan of a gesture breaks camera follow — whichever path
+    // pans: one finger past the slop, a pinch's midpoint, or the finger left
+    // over after a pinch. Until the anchor point has moved past the tap slop
+    // nothing pans, so a pure pinch-zoom (or its jitter) keeps the follow
+    // instead of fighting it every frame.
+    const manualPan = (p: Point) => {
+      if (!panned) {
+        if (withinTapSlop(p.clientX - startX, p.clientY - startY)) return;
+        panned = true;
+        latest.current.onManualPan();
+      }
+      panTo(p);
+    };
+
     const onTouchStart = (e: TouchEvent) => {
       unlockAudio();
       e.preventDefault();
       if (e.touches.length === 1) {
+        panned = false;
         mode = 'pending-tap';
         startTime = performance.now();
         anchorPan(e.touches[0]);
@@ -104,16 +121,15 @@ export function useCanvasTouchGestures(options: CanvasTouchOptions): void {
         const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, proposed));
         if (next !== zoom) onZoomChange(next);
         // Two-finger drag also pans, tracked from the midpoint.
-        panTo(midpoint(e.touches[0], e.touches[1]));
+        manualPan(midpoint(e.touches[0], e.touches[1]));
         return;
       }
       if (e.touches.length !== 1) return;
       const t = e.touches[0];
       if (mode === 'pending-tap' && !withinTapSlop(t.clientX - startX, t.clientY - startY)) {
         mode = 'pan';
-        latest.current.onManualPan();
       }
-      if (mode === 'pan') panTo(t);
+      if (mode === 'pan') manualPan(t);
     };
 
     const onTouchEnd = (e: TouchEvent) => {

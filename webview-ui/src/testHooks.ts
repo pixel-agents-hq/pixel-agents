@@ -16,6 +16,8 @@ declare global {
         isHeadless?: boolean;
         isGreeter?: boolean;
       }>;
+      /** The character the camera follows (null = free camera). */
+      getCameraFollowId?: () => number | null;
       /** Effective "Display headless as ghosts" setting the renderer is using. */
       getGhostHeadlessAgents?: () => boolean;
       // ── Carpet + Areas observability (added for carpet/areas e2e) ──
@@ -135,6 +137,8 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
   // The ghost setting lives in the renderer module (read every rAF frame), not
   // in OfficeState, so e2e reads it from there to assert what is actually drawn.
   hooks.getGhostHeadlessAgents = () => isGhostHeadlessAgentsEnabled();
+
+  hooks.getCameraFollowId = () => officeStateRef.current?.cameraFollowId ?? null;
 
   hooks.selectAgent = (id) => {
     const os = officeStateRef.current;
