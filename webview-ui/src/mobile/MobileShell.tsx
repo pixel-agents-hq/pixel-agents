@@ -22,7 +22,7 @@ interface MobileShellProps {
   terminalAvailable: boolean;
   terminalUnavailableReason: string | null;
   onCloseAgent: (agentId: number) => void;
-  /** The software keyboard is up (App clamps the shell to the visual viewport). */
+  /** The software keyboard is up (useKeyboardViewport). */
   keyboardOpen: boolean;
 }
 

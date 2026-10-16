@@ -53,6 +53,15 @@ async function swipe(page: Page, x0: number, x1: number, y: number) {
   );
 }
 
+/** Launch a mock-claude session from the + card and wait for its terminal. */
+async function launchTerminal(page: Page, tmpHome: string, name: string) {
+  await arrangeNextClaudeInvocation(tmpHome, claudeScenario(name).holdOpenFor(60_000).build());
+  await page.getByTitle('Launch agent', { exact: true }).tap();
+  const terminal = page.locator('.xterm').first();
+  await expect(terminal).toContainText('mock claude session', { timeout: 15_000 });
+  return terminal;
+}
+
 test.describe('Standalone / mobile shell', () => {
   // Same POSIX-only PTY launch as the terminal spec (the .cmd mock shim is
   // untested under a server-side PTY on Windows).
@@ -111,13 +120,7 @@ test.describe('Standalone / mobile shell', () => {
     page,
     standalone,
   }) => {
-    await arrangeNextClaudeInvocation(
-      standalone.tmpHome,
-      claudeScenario('mobile link tap').holdOpenFor(60_000).build(),
-    );
-    await page.getByTitle('Launch agent', { exact: true }).tap();
-    const terminal = page.locator('.xterm').first();
-    await expect(terminal).toContainText('mock claude session', { timeout: 15_000 });
+    const terminal = await launchTerminal(page, standalone.tmpHome, 'mobile link tap');
 
     // Put a URL on screen through the PTY's own echo.
     await terminal.tap();
@@ -146,5 +149,34 @@ test.describe('Standalone / mobile shell', () => {
     await page.touchscreen.tap(urlMidX, rowY);
     await expect.poll(() => popups.length).toBe(1);
     expect(popups[0]).toContain('pixel-agents-tap');
+  });
+
+  test('the key bar shows while the software keyboard is up, under both viewport resize policies @area:mobile', async ({
+    page,
+    standalone,
+  }) => {
+    const terminal = await launchTerminal(page, standalone.tmpHome, 'mobile keyboard');
+    const esc = page.getByRole('button', { name: 'esc', exact: true });
+    // A tap focuses the terminal's input; the keyboard isn't up yet.
+    await terminal.tap();
+    await expect(esc).toHaveCount(0);
+
+    // Android (interactive-widget=resizes-content): the keyboard shrinks the
+    // layout viewport and the visual viewport alike.
+    await page.setViewportSize({ width: PHONE.width, height: 500 });
+    await expect(esc).toBeVisible();
+    await page.setViewportSize(PHONE);
+    await expect(esc).toHaveCount(0);
+
+    // iOS: only the visual viewport shrinks; the shell is clamped to it.
+    await page.evaluate(() => {
+      const vv = window.visualViewport;
+      if (!vv) throw new Error('no visualViewport');
+      Object.defineProperty(vv, 'height', { configurable: true, get: () => 500 });
+      vv.dispatchEvent(new Event('resize'));
+    });
+    await expect(esc).toBeVisible();
+    const escBox = await esc.boundingBox();
+    expect(escBox && escBox.y + escBox.height).toBeLessThanOrEqual(500);
   });
 });

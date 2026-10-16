@@ -21,8 +21,8 @@ import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useIntroTour } from './hooks/useIntroTour.js';
 import { useIsMobile } from './hooks/useIsMobile.js';
+import { useKeyboardViewport } from './hooks/useKeyboardViewport.js';
 import { useTerminalDrawer } from './hooks/useTerminalDrawer.js';
-import { useVisualViewportHeight } from './hooks/useVisualViewportHeight.js';
 import { MobileShell } from './mobile/MobileShell.js';
 import { useMobileShell } from './mobile/useMobileShell.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
@@ -126,10 +126,11 @@ function App() {
   // full-screen pages with the cards in a bottom bar. Desktop keeps the
   // right-docked drawer.
   const isMobile = useIsMobile();
-  // Software-keyboard handling: clamp the shell to the visual viewport so the
-  // terminal shrinks (and the PTY resizes) instead of hiding its input line
-  // under the keys. null while the keyboard is closed.
-  const keyboardViewportHeight = useVisualViewportHeight(isMobile);
+  // Software keyboard: whether it is up (the key bar shows), and the height
+  // to clamp the shell to so the terminal shrinks (and the PTY resizes)
+  // instead of hiding its input line under the keys (iOS only — Android
+  // resizes the layout viewport itself).
+  const keyboard = useKeyboardViewport(isMobile);
   // The office's imperative character selection, mirrored into React so the
   // card bars can restyle the focused agent's card on canvas taps.
   const focusedAgentId = useSyncExternalStore(
@@ -662,7 +663,7 @@ function App() {
     <div
       className={`w-full h-full relative overflow-hidden flex ${isMobile ? 'flex-col' : ''}`}
       style={
-        isMobile && keyboardViewportHeight !== null ? { height: keyboardViewportHeight } : undefined
+        isMobile && keyboard.clampHeight !== null ? { height: keyboard.clampHeight } : undefined
       }
     >
       {isMobile ? (
@@ -676,7 +677,7 @@ function App() {
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
           onCloseAgent={handleCloseAgent}
-          keyboardOpen={keyboardViewportHeight !== null}
+          keyboardOpen={keyboard.keyboardOpen}
         />
       ) : (
         <>

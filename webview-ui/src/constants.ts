@@ -537,6 +537,10 @@ export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{
 ];
 /** Finger travel per emitted arrow while sliding on the trackpad key. */
 export const MOBILE_TRACKPAD_STEP_PX = 16;
-/** visualViewport.height within this many px of innerHeight = keyboard closed
- *  (the two disagree by sub-pixel rounding on some devices). */
+/** visualViewport.height within this many px of innerHeight = nothing to
+ *  clamp (the two disagree by sub-pixel rounding on some devices). */
 export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
+/** The visual viewport this far below the tallest seen at the current width
+ *  (with an editable focused) = the software keyboard is up. Well above an
+ *  address bar collapsing (~56 px), well below any on-screen keyboard. */
+export const KEYBOARD_MIN_HEIGHT_PX = 150;
