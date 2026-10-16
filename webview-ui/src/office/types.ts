@@ -188,6 +188,8 @@ export interface Character {
   palette: number;
   /** Hue shift in degrees (0 = no shift, ≥45 for repeated palettes) */
   hueShift: number;
+  /** Color of the Claude Code session (`/color`), dresses the character; sub-agents inherit it */
+  sessionColor?: string;
   /** Animation frame index */
   frame: number;
   /** Time accumulator for animation */

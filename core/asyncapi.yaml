@@ -100,6 +100,8 @@ components:
         - $ref: '#/components/schemas/AgentTeamInfo'
         # Context window
         - $ref: '#/components/schemas/AgentContextUsage'
+        # Session color
+        - $ref: '#/components/schemas/AgentSessionColor'
         # Layout
         - $ref: '#/components/schemas/LayoutLoaded'
         # Assets
@@ -432,6 +434,24 @@ components:
           type: integer
         teamUsesTmux:
           type: boolean
+
+    AgentSessionColor:
+      description: |
+        Color of the agent's Claude Code session, as set with `/color <name>`
+        (red, orange, yellow, green, cyan, blue, purple, pink). Read from the
+        transcript's `agent-color` records; the character wears it. `color`
+        absent means the color was reset to default. Sub-agents inherit the
+        color of their parent in the webview.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentSessionColor
+        id:
+          type: integer
+        color:
+          type: string
 
     AgentContextUsage:
       description: |

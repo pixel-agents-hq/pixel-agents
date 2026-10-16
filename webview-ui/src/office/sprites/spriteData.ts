@@ -6,6 +6,7 @@ import { Direction as Dir } from '../types.js';
 import bubblePermissionData from './bubble-permission.json';
 import bubblePetData from './bubble-pet.json';
 import bubbleWaitingData from './bubble-waiting.json';
+import { buildClothesColorMap, recolorClothes, resolveSessionColor } from './sessionColor.js';
 
 // ── Speech Bubble Sprites ───────────────────────────────────────
 
@@ -115,8 +116,16 @@ function emptySprite(w: number, h: number): SpriteData {
   return rows;
 }
 
-export function getCharacterSprites(paletteIndex: number, hueShift = 0): CharacterSprites {
-  const cacheKey = `${paletteIndex}:${hueShift}`;
+export function getCharacterSprites(
+  paletteIndex: number,
+  hueShift = 0,
+  sessionColor?: string,
+): CharacterSprites {
+  // A session color replaces the random hue shift: the outfit already tells the
+  // characters apart, and the hue shift would also tint skin and hair
+  const sessionHsl = resolveSessionColor(sessionColor);
+  if (sessionHsl) hueShift = 0;
+  const cacheKey = `${paletteIndex}:${hueShift}:${sessionHsl ? sessionColor!.toLowerCase() : ''}`;
   const cached = spriteCache.get(cacheKey);
   if (cached) return cached;
 
@@ -125,9 +134,15 @@ export function getCharacterSprites(paletteIndex: number, hueShift = 0): Charact
   if (loadedCharacters) {
     // Use pre-colored character sprites directly (no palette swapping)
     const char = loadedCharacters[paletteIndex % loadedCharacters.length];
-    const d = char.down;
-    const u = char.up;
-    const rt = char.right;
+    let d = char.down;
+    let u = char.up;
+    let rt = char.right;
+    if (sessionHsl) {
+      const map = buildClothesColorMap([...d, ...u], rt, sessionHsl);
+      d = d.map((f) => recolorClothes(f, map));
+      u = u.map((f) => recolorClothes(f, map));
+      rt = rt.map((f) => recolorClothes(f, map));
+    }
     const flip = flipSpriteHorizontal;
 
     sprites = {
