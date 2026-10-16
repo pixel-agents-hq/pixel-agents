@@ -508,6 +508,9 @@ export const CARD_REORDER_LONG_PRESS_MS = 400;
 export const DRAWER_EDIT_LONG_PRESS_MS = 500;
 /** Finger slop for that hold: moving beyond this is a scroll, not a press. */
 export const DRAWER_EDIT_LONG_PRESS_MAX_MOVE_PX = 10;
+/** Gap a viewport-fitted Dropdown (the launch drawer) keeps from the top of
+ *  the viewport when its content is taller than the room above its anchor. */
+export const DROPDOWN_VIEWPORT_MARGIN_PX = 8;
 /** localStorage key for the mobile bar's custom card order (per device — a
  *  presentation preference, deliberately not synced through the server). */
 export const MOBILE_CARD_ORDER_STORAGE_KEY = 'pixel-agents.mobileCardOrder';

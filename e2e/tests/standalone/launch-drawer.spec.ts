@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import type { Locator, Page } from '@playwright/test';
+
 import { expect, test } from '../../fixtures/standalone';
 import { preToolUseBash } from '../../helpers/hooks';
 import {
@@ -354,5 +356,83 @@ test.describe('Standalone / permission posture', () => {
       .poll(() => getSettingChecked(other, SKIP_PERMISSIONS_LABEL), { timeout: 10_000 })
       .toBe(true);
     await other.close();
+  });
+});
+
+/**
+ * A long Directory list must not push the drawer off the screen: the drawer is
+ * rendered above the launch button and the app hides overflow, so anything
+ * above the viewport's top edge is unreachable. Seeded straight into the
+ * shared config (the list's source of truth); none of these is ever launched,
+ * so the paths need not exist.
+ */
+const MANY_DIRECTORIES = Array.from({ length: 33 }, (_, i) => ({
+  name: `Project ${String(i + 1).padStart(2, '0')}`,
+  path: `/pixel-agents-e2e/project-${String(i + 1)}`,
+}));
+
+/** The drawer sits wholly inside the viewport, `+ Directory` included, and the
+ *  last row can be scrolled to. */
+async function expectDrawerFits(page: Page, drawer: Locator): Promise<void> {
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error('no viewport');
+  const box = await drawer.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+
+  const add = drawer.getByRole('button', { name: '+ Directory', exact: true });
+  await expect(add).toBeInViewport({ ratio: 1 });
+  const last = drawer.getByRole('button', { name: 'Project 33', exact: true });
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toBeInViewport({ ratio: 1 });
+  // Scrolling the rows never scrolls the pinned `+ Directory` away.
+  await expect(add).toBeInViewport({ ratio: 1 });
+}
+
+test.describe('Standalone / long Directory lists', () => {
+  test.use({ standaloneOptions: { seedConfig: { directories: MANY_DIRECTORIES } } });
+
+  test('the drawer fits the viewport, its rows scroll, and + Directory stays reachable @area:standalone', async ({
+    page,
+    standalone: _standalone,
+  }) => {
+    // The default desktop viewport, then a short one (a VS Code panel docked
+    // low is about this tall).
+    for (const size of [
+      { width: 1280, height: 800 },
+      { width: 1280, height: 360 },
+    ]) {
+      await page.setViewportSize(size);
+      await page.mouse.move(size.width - 1, 0);
+      const drawer = await openLaunchDrawer(page);
+      await expectDrawerFits(page, drawer);
+      await drawer.getByRole('button', { name: '+ Directory', exact: true }).click();
+      await expect(getDirectoryModal(page)).toBeVisible();
+      await getDirectoryModal(page).getByRole('button', { name: 'Cancel', exact: true }).click();
+    }
+  });
+});
+
+test.describe('Standalone / long Directory lists on a phone', () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    standaloneOptions: {
+      viewport: { width: 390, height: 844 },
+      seedConfig: { directories: MANY_DIRECTORIES },
+    },
+  });
+
+  test('the phone drawer fits above the card bar and keeps + Directory reachable @area:mobile', async ({
+    page,
+    standalone: _standalone,
+  }) => {
+    await page.getByTitle('Launch agent', { exact: true }).tap();
+    const drawer = getLaunchDrawer(page);
+    await expect(drawer).toBeVisible();
+    await expectDrawerFits(page, drawer);
+    await drawer.getByRole('button', { name: '+ Directory', exact: true }).tap();
+    await expect(getDirectoryModal(page)).toBeVisible();
   });
 });

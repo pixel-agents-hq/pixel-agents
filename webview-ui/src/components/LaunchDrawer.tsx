@@ -49,23 +49,28 @@ export function LaunchDrawer({
   return (
     // Open even with no Directories: `+ Directory` is always worth showing, and
     // an office with an empty list is exactly where it's needed most.
-    <Dropdown isOpen={isOpen} className={`min-w-128 ${className}`}>
-      <div data-testid="launch-drawer">
+    // fitViewport: a long list must never push `+ Directory` above the top of
+    // the screen, so the drawer is capped at the room above the button and
+    // only the rows scroll.
+    <Dropdown isOpen={isOpen} fitViewport className={`min-w-128 ${className}`}>
+      <div data-testid="launch-drawer" className="flex flex-col min-h-0">
         {/* DropdownItem hard-resets to border-none, so the separator lives on
-            this wrapper. */}
-        <div className="border-b-2 border-border">
+            this wrapper. Pinned: it never scrolls away with the rows. */}
+        <div className="shrink-0 border-b-2 border-border">
           <DropdownItem onClick={onAddDirectory} className="text-base text-accent-bright">
             + Directory
           </DropdownItem>
         </div>
-        {directories.map((directory) => (
-          <DirectoryRow
-            key={directory.path}
-            directory={directory}
-            onSelect={onSelect}
-            onEditDirectory={onEditDirectory}
-          />
-        ))}
+        <div className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain pixel-scrollbar">
+          {directories.map((directory) => (
+            <DirectoryRow
+              key={directory.path}
+              directory={directory}
+              onSelect={onSelect}
+              onEditDirectory={onEditDirectory}
+            />
+          ))}
+        </div>
       </div>
     </Dropdown>
   );
