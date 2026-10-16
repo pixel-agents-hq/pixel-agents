@@ -210,9 +210,23 @@ export function planFurnitureMove(
     col: f.col + dCol,
     row: f.row + dRow,
   }));
-  const exclude = opts.duplicate ? undefined : new Set(items.map((f) => f.uid));
-  const valid = items.every((f) => canPlaceFurniture(layout, f.type, f.col, f.row, exclude));
-  return { items, valid };
+  return { items, valid: groupFits(layout, items, { leavesOriginals: opts.duplicate }) };
+}
+
+/**
+ * Whether a desk group fits at the positions proposed for it: every member
+ * passes canPlaceFurniture. The group's own originals never block a move or a
+ * rotation (it vacates those tiles); with `leavesOriginals` — a copy — they do.
+ * The one rule behind drag, drop, copy and rotate, so none of them can commit
+ * a group the others would refuse.
+ */
+function groupFits(
+  layout: OfficeLayout,
+  items: PlacedFurniture[],
+  opts: { leavesOriginals?: boolean } = {},
+): boolean {
+  const exclude = opts.leavesOriginals ? undefined : new Set(items.map((f) => f.uid));
+  return items.every((f) => canPlaceFurniture(layout, f.type, f.col, f.row, exclude));
 }
 
 /**
@@ -378,7 +392,8 @@ function rotateRiderWithDesk(
 
 /**
  * Rotate furniture to the next orientation, turning anything on its surface with
- * it. Returns new layout (immutable).
+ * it. Returns new layout (immutable). No-op unless the whole group fits in its
+ * new orientation — the desk and every rider, on the grid and clear of others.
  */
 export function rotateFurniture(
   layout: OfficeLayout,
@@ -398,7 +413,9 @@ export function rotateFurniture(
       ? getSurfaceRiders(layout, uid).map((r) => rotateRiderWithDesk(r, item, from, to, direction))
       : [];
 
-  return withFurniture(layout, [rotated, ...riders]);
+  const group = [rotated, ...riders];
+  if (!groupFits(layout, group)) return layout;
+  return withFurniture(layout, group);
 }
 
 /** Toggle furniture state (on/off). Returns new layout (immutable). */
