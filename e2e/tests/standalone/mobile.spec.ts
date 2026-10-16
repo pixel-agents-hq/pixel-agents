@@ -53,6 +53,32 @@ async function swipe(page: Page, x0: number, x1: number, y: number) {
   );
 }
 
+/** A one-finger press held for `ms` at (x, y), as TouchEvents dispatched on
+ *  the element under the point (Playwright's touchscreen can only tap). */
+async function longPress(page: Page, x: number, y: number, ms: number) {
+  const fire = (type: string, down: boolean) =>
+    page.evaluate(
+      ({ x, y, type, down }) => {
+        const target = document.elementFromPoint(x, y);
+        if (!target) throw new Error('nothing under the press');
+        const t = new Touch({ identifier: 7, target, clientX: x, clientY: y });
+        target.dispatchEvent(
+          new TouchEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            touches: down ? [t] : [],
+            targetTouches: down ? [t] : [],
+            changedTouches: [t],
+          }),
+        );
+      },
+      { x, y, type, down },
+    );
+  await fire('touchstart', true);
+  await page.waitForTimeout(ms);
+  await fire('touchend', false);
+}
+
 /** Launch a mock-claude session from the + card and wait for its terminal. */
 async function launchTerminal(page: Page, tmpHome: string, name: string) {
   await arrangeNextClaudeInvocation(tmpHome, claudeScenario(name).holdOpenFor(60_000).build());
@@ -178,5 +204,66 @@ test.describe('Standalone / mobile shell', () => {
     await expect(esc).toBeVisible();
     const escBox = await esc.boundingBox();
     expect(escBox && escBox.y + escBox.height).toBeLessThanOrEqual(500);
+  });
+
+  test('copy and paste work on a plain-http origin (no Clipboard API) @area:mobile', async ({
+    page,
+    standalone,
+  }) => {
+    // What a phone opening the tokened LAN http:// URL gets: not a secure
+    // context, so navigator.clipboard does not exist. Whatever reaches the
+    // clipboard through a copy event is recorded instead.
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'isSecureContext', { value: false });
+      Object.defineProperty(Navigator.prototype, 'clipboard', { get: () => undefined });
+      const setData = DataTransfer.prototype.setData;
+      DataTransfer.prototype.setData = function (format: string, data: string) {
+        (window as unknown as { __copied?: string }).__copied = data;
+        setData.call(this, format, data);
+      };
+    });
+    await page.reload();
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+
+    const terminal = await launchTerminal(page, standalone.tmpHome, 'mobile clipboard');
+    await terminal.tap();
+    const word = 'pixelcopyword';
+    await page.keyboard.type(word);
+    await expect(page.locator('.xterm-rows', { hasText: word })).toBeVisible({ timeout: 10_000 });
+    // The word's exact on-screen box, from a DOM Range over its characters.
+    const at = await page.evaluate((word) => {
+      const rows = document.querySelector('.xterm-rows');
+      const walker = document.createTreeWalker(rows ?? document.body, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const i = n.textContent?.indexOf(word) ?? -1;
+        if (i < 0) continue;
+        const range = document.createRange();
+        range.setStart(n, i);
+        range.setEnd(n, i + word.length);
+        const r = range.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      }
+      throw new Error('word not on screen');
+    }, word);
+
+    // Long-press the word, then the Copy pill.
+    await longPress(page, at.x, at.y, 900);
+    const pill = page.locator('.terminal-copy-pill');
+    await pill.tap();
+    await expect(pill).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __copied?: string }).__copied)).toBe(
+      word,
+    );
+
+    // Paste: with no clipboard to read, the key asks for the text instead.
+    await terminal.tap(); // the pill took focus; the input gets it back
+    await page.setViewportSize({ width: PHONE.width, height: 500 }); // keyboard up
+    const pasteKey = page.getByRole('button', { name: 'paste', exact: true });
+    await expect(pasteKey).toBeVisible();
+    page.once('dialog', (d) => void d.accept('pastedviaprompt'));
+    await pasteKey.tap();
+    await expect(terminal).toContainText('pastedviaprompt', { timeout: 10_000 });
+    expect(errors).toEqual([]);
   });
 });

@@ -537,6 +537,9 @@ export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{
 ];
 /** Finger travel per emitted arrow while sliding on the trackpad key. */
 export const MOBILE_TRACKPAD_STEP_PX = 16;
+/** The paste key's prompt where script can't read the clipboard (plain-http
+ *  origins): the user pastes into the native field instead. */
+export const MOBILE_PASTE_PROMPT = 'Paste into the terminal:';
 /** visualViewport.height within this many px of innerHeight = nothing to
  *  clamp (the two disagree by sub-pixel rounding on some devices). */
 export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;

@@ -6,7 +6,9 @@ import { MobileKeyBar } from '../components/MobileKeyBar.js';
 import { MobileTerminalPage } from '../components/MobileTerminalPage.js';
 import type { TerminalInputHandle } from '../components/TerminalPane.js';
 import { Button } from '../components/ui/Button.js';
+import { MOBILE_PASTE_PROMPT } from '../constants.js';
 import type { TerminalDrawerController } from '../hooks/useTerminalDrawer.js';
+import { readClipboardText } from '../terminal/clipboard.js';
 import { TRACK_TRANSITION, trackTransform, useEdgeSwipe } from './useEdgeSwipe.js';
 import type { MobileShellController } from './useMobileShell.js';
 
@@ -57,14 +59,11 @@ export function MobileShell({
   const inputRef = useRef<TerminalInputHandle>(null);
   const handleKey = useCallback((sequence: string) => inputRef.current?.send(sequence), []);
   const handlePaste = useCallback(() => {
-    // Silently a no-op when the user dismisses Safari's paste-permission
-    // callout or the clipboard is empty.
-    navigator.clipboard.readText().then(
-      (text) => {
-        if (text) inputRef.current?.paste(text);
-      },
-      () => undefined,
-    );
+    // A no-op when the user dismisses Safari's paste-permission callout (or
+    // the plain-http prompt) or the clipboard is empty.
+    void readClipboardText(MOBILE_PASTE_PROMPT).then((text) => {
+      if (text) inputRef.current?.paste(text);
+    });
   }, []);
 
   return (

@@ -1,5 +1,6 @@
 import type { Terminal } from '@xterm/xterm';
 
+import { writeClipboardText } from './clipboard.js';
 import { clipboardKeyAction, decodeOsc52 } from './clipboardKeys.js';
 import { flowTerminalCopy } from './flowCopy.js';
 
@@ -25,18 +26,13 @@ export function attachClipboardInput(
   },
 ): () => void {
   const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
-  /** Text an OSC 52 write is putting on the clipboard through the copy event. */
-  let pending: string | null = null;
 
   // Capture phase on the host, so this runs before xterm's own copy handler
   // (on the element inside) and replaces its unflowed text.
   const onCopy = (ev: ClipboardEvent) => {
-    let text = pending;
-    if (text === null && term.hasSelection()) {
-      const startCol = (term.getSelectionPosition()?.start.x ?? 1) - 1;
-      text = flowTerminalCopy(term.getSelection(), term.cols, startCol);
-    }
-    if (text === null || !ev.clipboardData) return;
+    if (!term.hasSelection() || !ev.clipboardData) return;
+    const startCol = (term.getSelectionPosition()?.start.x ?? 1) - 1;
+    const text = flowTerminalCopy(term.getSelection(), term.cols, startCol);
     ev.clipboardData.setData('text/plain', text);
     ev.preventDefault();
     ev.stopPropagation();
@@ -61,25 +57,11 @@ export function attachClipboardInput(
     return false;
   });
 
-  const writeClipboard = (text: string) => {
-    if (window.isSecureContext && navigator.clipboard) {
-      navigator.clipboard.writeText(text).catch((err: unknown) => {
-        console.warn('[Webview] Terminal clipboard write refused:', err);
-      });
-      return;
-    }
-    // Plain-http origins have no async clipboard: raise a copy event instead
-    // (works while the triggering key press still counts as a user gesture).
-    pending = text;
-    try {
-      document.execCommand('copy');
-    } finally {
-      pending = null;
-    }
-  };
+  // Plain-http origins fall back to a copy event, which works only while the
+  // triggering key press still counts as a user gesture (writeClipboardText).
   const osc = term.parser.registerOscHandler(OSC_CLIPBOARD, (data) => {
     const text = opts.isActive() ? decodeOsc52(data) : null;
-    if (text !== null) writeClipboard(text);
+    if (text !== null) void writeClipboardText(text);
     return true;
   });
 

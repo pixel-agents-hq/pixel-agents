@@ -106,6 +106,7 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
       touchInput.ts                  DOM adapter: listeners, flick rAF, long-press timer, detached-target rescue
       selectionMath.ts               Word expansion, range ordering, handle clamping (pure)
       selectionOverlay.ts            Copy pill + selection handles (DOM; styled in index.css)
+      clipboard.ts                   The one clipboard write/read: Clipboard API on secure origins; plain http falls back to a copy event (write) / a native prompt (paste)
       flowCopy.ts                    Re-flows Claude Code's soft-wrapped lines on copy (pure)
       terminalDom.ts                 xterm screen geometry + isTypingInTerminal
     hooks/

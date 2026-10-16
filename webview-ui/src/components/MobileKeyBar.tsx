@@ -14,7 +14,7 @@ import { findTouch, withinTapSlop } from '../touch/touchPrimitives.js';
 interface MobileKeyBarProps {
   /** Writes the key's byte sequence to the active terminal's PTY. */
   onKey: (sequence: string) => void;
-  /** Reads the clipboard and pastes it into the active terminal. */
+  /** Pastes the clipboard (plain http: prompted text) into the active terminal. */
   onPaste: () => void;
 }
 
