@@ -3,38 +3,27 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DirectoryModalValues } from '../components/DirectoryModal.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { transport } from '../transport/index.js';
-import type { Directory } from './useExtensionMessages.js';
+import type { Directory, DirectorySaved } from './useExtensionMessages.js';
 
-/** The Area mapping a Directory save still owes once the host accepts it. */
+/** The Area mapping a Directory save still owes once the host accepts it. Its
+ *  key is NOT known yet: it is the name the host stores the entry under, which
+ *  arrives with the host's ack (directorySaved). */
 interface DirectoryAreaMapping {
-  /** Directory name the mapping is stored under. */
-  key: string;
   /** Name the entry had before this save; dropped when it differs (a rename). */
   previousKey?: string;
   areas: string[];
 }
 
-/** A Directory mutation waiting for the host's answer. `mapping` is absent for
- *  a delete, which has nothing left to write. */
-interface PendingDirectorySave {
-  mapping?: DirectoryAreaMapping;
-}
-
-/**
- * The name the host will store this entry under — the key its Area mapping
- * hangs on and the label its agents will wear. Mirrors the host's own fallback
- * (server/src/directories.ts): an empty name becomes the path's basename.
- */
-function directoryKeyFor(values: { name: string; path: string }): string {
-  if (values.name.length > 0) return values.name;
-  const trimmed = values.path.replace(/[/\\]+$/, '');
-  const lastSeparator = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  return lastSeparator === -1 ? trimmed : trimmed.slice(lastSeparator + 1);
-}
+/** A Directory mutation waiting for the host's answer. A save is answered by
+ *  its own ack (directorySaved) and carries the Area mapping to key by it; a
+ *  delete has nothing left to write, and the rebroadcast list is its answer. */
+type PendingDirectoryMutation =
+  { kind: 'save'; mapping: DirectoryAreaMapping } | { kind: 'remove' };
 
 interface DirectoryEditorInputs {
   directories: Directory[];
   directoryRejection: { reason: string } | null;
+  directorySaved: DirectorySaved | null;
   areaMappings: Record<string, string[]>;
   setAreaMappings: (next: Record<string, string[]>) => void;
   getOfficeState: () => OfficeState;
@@ -44,15 +33,18 @@ interface DirectoryEditorInputs {
  * The Directory modal's state and its round trips with the host (the launch
  * drawer's + and pencil, on both shells).
  *
- * The host owns validation, so a save is a round trip: send, then wait. The
- * rebroadcast Directory list is the success signal (it also arrives when
- * another office mutates, which is equally a reason to stop editing), and
- * directoryRejected is the failure one. pendingDirectorySaveRef is what
- * distinguishes "our save came back" from the list simply loading.
+ * The host owns validation, so a mutation is a round trip: send, then wait.
+ * A save succeeds on its ack, directorySaved, which carries the entry as the
+ * host stored it — the Area mapping is keyed by that stored name, never by a
+ * client-side guess at how the host resolves and names a path. A delete
+ * succeeds on the rebroadcast Directory list. directoryRejected is the failure
+ * signal for both. pendingDirectorySaveRef is what distinguishes "our mutation
+ * came back" from the list simply loading (or another office's ack).
  */
 export function useDirectoryEditor({
   directories,
   directoryRejection,
+  directorySaved,
   areaMappings,
   setAreaMappings,
   getOfficeState,
@@ -62,23 +54,23 @@ export function useDirectoryEditor({
     editing: Directory | null;
   }>({ open: false, editing: null });
   const [directoryError, setDirectoryError] = useState<string | null>(null);
-  const pendingDirectorySaveRef = useRef<PendingDirectorySave | null>(null);
+  const pendingDirectorySaveRef = useRef<PendingDirectoryMutation | null>(null);
 
   // The Area mapping half of a save. It only lands once the host has accepted
   // the Directory — a refused path must not leave a mapping keyed to a
   // Directory that was never created.
   const applyDirectoryAreaMapping = useCallback(
-    (mapping: DirectoryAreaMapping) => {
+    (mapping: DirectoryAreaMapping, key: string) => {
       const next = { ...areaMappings };
       // A rename carries the mapping to the new name rather than orphaning it
       // under the old one (seat placement is keyed by Directory name).
-      if (mapping.previousKey !== undefined && mapping.previousKey !== mapping.key) {
+      if (mapping.previousKey !== undefined && mapping.previousKey !== key) {
         delete next[mapping.previousKey];
       }
       if (mapping.areas.length === 0) {
-        delete next[mapping.key];
+        delete next[key];
       } else {
-        next[mapping.key] = mapping.areas;
+        next[key] = mapping.areas;
       }
       if (JSON.stringify(next) === JSON.stringify(areaMappings)) return;
       setAreaMappings(next);
@@ -88,14 +80,28 @@ export function useDirectoryEditor({
     [areaMappings, setAreaMappings, getOfficeState],
   );
 
-  useEffect(() => {
-    const pending = pendingDirectorySaveRef.current;
-    if (pending === null) return;
+  const finishMutation = useCallback(() => {
     pendingDirectorySaveRef.current = null;
-    if (pending.mapping) applyDirectoryAreaMapping(pending.mapping);
     setDirectoryModal({ open: false, editing: null });
     setDirectoryError(null);
-  }, [directories, applyDirectoryAreaMapping]);
+  }, []);
+
+  // A save's ack: the stored name keys the mapping. Keyed on the ack ALONE: the
+  // mapping callback changes with every areaMappings update, and re-running on
+  // that while a later save is pending would apply this old ack's name to it.
+  useEffect(() => {
+    const pending = pendingDirectorySaveRef.current;
+    if (directorySaved === null || pending?.kind !== 'save') return;
+    applyDirectoryAreaMapping(pending.mapping, directorySaved.directory.name);
+    finishMutation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [directorySaved]);
+
+  // A delete's answer is the rebroadcast list.
+  useEffect(() => {
+    if (pendingDirectorySaveRef.current?.kind !== 'remove') return;
+    finishMutation();
+  }, [directories, finishMutation]);
 
   useEffect(() => {
     if (directoryRejection === null || pendingDirectorySaveRef.current === null) return;
@@ -127,11 +133,8 @@ export function useDirectoryEditor({
     (values: DirectoryModalValues) => {
       const editing = directoryModal.editing;
       pendingDirectorySaveRef.current = {
-        mapping: {
-          key: directoryKeyFor(values),
-          previousKey: editing?.name,
-          areas: values.areas,
-        },
+        kind: 'save',
+        mapping: { previousKey: editing?.name, areas: values.areas },
       };
       setDirectoryError(null);
       transport.send({
@@ -152,7 +155,7 @@ export function useDirectoryEditor({
     // No mapping work: a deleted Directory's mapping is inert (nothing launches
     // with that name any more) and keeping it means an entry re-added under the
     // same name comes back to its Areas.
-    pendingDirectorySaveRef.current = {};
+    pendingDirectorySaveRef.current = { kind: 'remove' };
     transport.send({ type: 'removeDirectory', path: editing.path });
   }, [directoryModal.editing]);
 

@@ -917,8 +917,14 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
       ctx({ ptyManager: manager }),
     );
 
-    // The rebroadcast (not a point-to-point reply) is the success signal.
-    expect(sent).toEqual([]);
+    // Every office gets the list; only the saver gets the ack, carrying the
+    // entry as stored (its name keys the saver's Area mapping).
+    expect(sent).toEqual([
+      {
+        type: 'directorySaved',
+        directory: { name: 'Side Project', path: target, source: 'user' },
+      },
+    ]);
     expect(broadcasts).toHaveLength(1);
     expect(broadcasts[0].type).toBe('directoriesLoaded');
     expect(broadcasts[0].directories).toContainEqual({

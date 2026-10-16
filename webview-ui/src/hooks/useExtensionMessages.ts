@@ -79,6 +79,14 @@ export interface DirectoryRejection {
   seq: number;
 }
 
+/** An accepted saveDirectory, acked to this office alone: the entry as the host
+ *  stored it (its name may not be anything this office typed). `seq` rises with
+ *  every ack, like DirectoryRejection's. */
+export interface DirectorySaved {
+  directory: Directory;
+  seq: number;
+}
+
 interface ExtensionMessageState {
   agents: number[];
   selectedAgent: number | null;
@@ -94,9 +102,12 @@ interface ExtensionMessageState {
   layoutWasReset: boolean;
   loadedAssets?: { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> };
   directories: Directory[];
-  /** Last refused saveDirectory. The Directory modal shows it inline; the next
-   *  directoriesLoaded is what tells it a save went through instead. */
+  /** Last refused saveDirectory/removeDirectory. The Directory modal shows it
+   *  inline. */
   directoryRejection: DirectoryRejection | null;
+  /** Last accepted saveDirectory from this office: what closes the modal and
+   *  keys its Area mapping. */
+  directorySaved: DirectorySaved | null;
   /** Paths the host recovered from past sessions, offered as taps in the
    *  Directory modal. Refreshed every time the modal asks. */
   directorySuggestions: string[];
@@ -182,6 +193,7 @@ export function useExtensionMessages(
   >();
   const [directories, setDirectories] = useState<Directory[]>([]);
   const [directoryRejection, setDirectoryRejection] = useState<DirectoryRejection | null>(null);
+  const [directorySaved, setDirectorySaved] = useState<DirectorySaved | null>(null);
   const [directorySuggestions, setDirectorySuggestions] = useState<string[]>([]);
   const [agentDirectoryNames, setAgentDirectoryNames] = useState<string[]>([]);
   const [externalAssetDirectories, setExternalAssetDirectories] = useState<string[]>([]);
@@ -716,6 +728,9 @@ export function useExtensionMessages(
         setDirectories(directories);
       } else if (msg.type === 'directorySuggestions') {
         setDirectorySuggestions((msg.paths ?? []) as string[]);
+      } else if (msg.type === 'directorySaved') {
+        const directory = msg.directory as Directory;
+        setDirectorySaved((prev) => ({ directory, seq: (prev?.seq ?? 0) + 1 }));
       } else if (msg.type === 'directoryRejected') {
         setDirectoryRejection((prev) => ({
           path: msg.path as string,
@@ -859,6 +874,7 @@ export function useExtensionMessages(
     loadedAssets,
     directories,
     directoryRejection,
+    directorySaved,
     directorySuggestions,
     agentDirectoryNames,
     externalAssetDirectories,

@@ -33,6 +33,10 @@ export interface HostDirectoryEntry {
 
 export type DirectorySaveResult = { ok: true; path: string } | { ok: false; reason: string };
 
+/** A stored user-defined Directory: the name and resolved path as persisted. */
+export type DirectoryStoreResult =
+  { ok: true; name: string; path: string } | { ok: false; reason: string };
+
 export type DirectoryRemoveResult = { ok: true } | { ok: false; reason: string };
 
 /** Expand a leading `~` to the home directory. Anything else is returned as
@@ -130,7 +134,7 @@ export function saveUserDirectory(input: {
   name: string;
   path: string;
   previousPath?: string;
-}): DirectorySaveResult {
+}): DirectoryStoreResult {
   const validation = validateDirectoryPath(input.path);
   if (!validation.ok) {
     return validation;
@@ -154,7 +158,7 @@ export function saveUserDirectory(input: {
   if (!writeConfig(cfg)) {
     return { ok: false, reason: DIRECTORY_WRITE_FAILED_REASON };
   }
-  return { ok: true, path: resolvedPath };
+  return { ok: true, name, path: resolvedPath };
 }
 
 /**
@@ -200,8 +204,8 @@ export interface DirectoryMessageDeps {
   hostDirectories: () => HostDirectoryEntry[];
   /** Fan `directoriesLoaded` out to every connected office. */
   broadcast: (message: Record<string, unknown>) => void;
-  /** Point-to-point reply to the requesting client (`directoryRejected`,
-   *  `directorySuggestions`). */
+  /** Point-to-point reply to the requesting client (`directorySaved`,
+   *  `directoryRejected`, `directorySuggestions`). */
   reply: (message: Record<string, unknown>) => void;
   /** Paths to offer in the Directory modal, recovered from this host's provider
    *  session transcripts. Injected rather than imported so this module stays
@@ -213,9 +217,11 @@ export interface DirectoryMessageDeps {
  * Dispatch the Directory client messages, shared by both hosts. Returns false
  * for anything else so a host can keep its own switch/if-chain intact.
  *
- * Success of a mutation is signalled by the rebroadcast, never by a dedicated
- * ack: every office ends up holding the same list, and the modal treats the
- * broadcast as its "saved" signal.
+ * Every successful mutation is rebroadcast so every office ends up holding the
+ * same list. A save is additionally acked to its sender alone with the entry as
+ * stored (`directorySaved`) -- the list cannot say which row is the one just
+ * saved, and the office needs its stored name to key the Area mapping. A delete
+ * has nothing to key, so the rebroadcast is its success signal.
  */
 export function handleDirectoryClientMessage(
   msg: Record<string, unknown>,
@@ -234,6 +240,14 @@ export function handleDirectoryClientMessage(
         return true;
       }
       broadcastDirectories(deps);
+      // The saver's ack, after the list: the entry exactly as stored. Its name
+      // can differ from anything the office typed (an empty name becomes the
+      // RESOLVED path's basename -- `~` is the home folder's name, not "~"),
+      // and Area mappings are keyed by it, so the office takes it from here.
+      deps.reply({
+        type: 'directorySaved',
+        directory: { name: result.name, path: result.path, source: 'user' },
+      });
       return true;
     }
 

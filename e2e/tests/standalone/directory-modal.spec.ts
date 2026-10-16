@@ -3,7 +3,12 @@ import path from 'node:path';
 
 import { expect, test } from '../../fixtures/standalone';
 import { buildSeedLayout } from '../../helpers/layout-seed';
-import { getDirectoryAreas, openDirectoryModal, openLaunchDrawer } from '../../helpers/webview';
+import {
+  getDirectoryAreas,
+  getDirectoryModal,
+  openDirectoryModal,
+  openLaunchDrawer,
+} from '../../helpers/webview';
 
 /**
  * The Directory modal itself: its keyboard contract and the Area mapping it
@@ -20,6 +25,7 @@ const SEEDED_LAYOUT = buildSeedLayout({
 
 interface SharedConfig {
   directories?: Array<{ name: string; path: string }>;
+  standalone?: { areaMappings?: Record<string, string[]> };
 }
 
 function readSharedConfig(tmpHome: string): SharedConfig {
@@ -84,5 +90,40 @@ test.describe('Standalone / Directory modal keyboard', () => {
     await expect(
       drawer.getByRole('button', { name: 'Typed And Entered', exact: true }),
     ).toBeVisible();
+  });
+});
+
+test.describe('Standalone / Directory Area mapping', () => {
+  test.use({ standaloneOptions: { seedLayout: SEEDED_LAYOUT } });
+
+  test('an unnamed Directory keeps its Area under the name the host gave it @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    // `~` is the isolated HOME; with no name the host names the Directory
+    // after the RESOLVED path's basename, which is what launches are labelled
+    // with and what seat placement looks the Area mapping up by.
+    const hostName = path.basename(standalone.tmpHome);
+
+    const modal = await openDirectoryModal(page);
+    await modal.getByPlaceholder('~/code/my-project').fill('~');
+    await getDirectoryAreas(modal).getByRole('button', { name: AREA, exact: true }).click();
+    await modal.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(modal).toBeHidden({ timeout: 15_000 });
+
+    await expect
+      .poll(() => readSharedConfig(standalone.tmpHome).standalone?.areaMappings ?? {}, {
+        timeout: 10_000,
+      })
+      .toEqual({ [hostName]: [AREA] });
+
+    // Reopened, the entry still shows its Area.
+    const drawer = await openLaunchDrawer(page);
+    await drawer.getByRole('button', { name: `Edit ${hostName}` }).click();
+    const reopened = getDirectoryModal(page);
+    await expect(reopened).toBeVisible();
+    await expect(
+      getDirectoryAreas(reopened).getByRole('button', { name: AREA, exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 });

@@ -93,6 +93,7 @@ function App() {
     loadedAssets,
     directories,
     directoryRejection,
+    directorySaved,
     directorySuggestions,
     agentDirectoryNames,
     externalAssetDirectories,
@@ -190,6 +191,7 @@ function App() {
   const directoryEditor = useDirectoryEditor({
     directories,
     directoryRejection,
+    directorySaved,
     areaMappings,
     setAreaMappings,
     getOfficeState,

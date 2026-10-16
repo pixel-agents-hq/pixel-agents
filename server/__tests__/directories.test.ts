@@ -138,6 +138,7 @@ describe('directories', () => {
     it('persists an added Directory into the shared config and lists it', () => {
       expect(saveUserDirectory({ name: 'Mine', path: alpha })).toEqual({
         ok: true,
+        name: 'Mine',
         path: alpha,
       });
 
@@ -222,7 +223,9 @@ describe('directories', () => {
       );
 
       expect(handled).toBe(true);
-      expect(replies).toEqual([]);
+      expect(replies).toEqual([
+        { type: 'directorySaved', directory: { name: 'Mine', path: alpha, source: 'user' } },
+      ]);
       expect(broadcasts).toEqual([
         {
           type: 'directoriesLoaded',
@@ -230,6 +233,20 @@ describe('directories', () => {
             { name: 'beta', path: beta, source: 'host' },
             { name: 'Mine', path: alpha, source: 'user' },
           ],
+        },
+      ]);
+    });
+
+    it('saveDirectory tells the saver the name and path the host stored, not what was typed', () => {
+      // `~` with no name: the host resolves the path and names the entry after
+      // the RESOLVED basename. That name is the Area-mapping key, so the office
+      // must learn it from here rather than re-derive it from what it sent.
+      handleDirectoryClientMessage({ type: 'saveDirectory', name: '', path: '~' }, deps());
+
+      expect(replies).toEqual([
+        {
+          type: 'directorySaved',
+          directory: { name: path.basename(tempHome), path: tempHome, source: 'user' },
         },
       ]);
     });

@@ -40,6 +40,7 @@ export type ServerMessage =
   | ExternalAssetDirectoriesUpdated
   | AreaMappingsLoaded
   | DirectoriesLoaded
+  | DirectorySaved
   | DirectoryRejected
   | DirectorySuggestions
   | TerminalAvailability
@@ -334,6 +335,11 @@ export interface Directory {
 }
 
 export type DirectorySource = 'user' | 'host';
+
+export interface DirectorySaved {
+  type: 'directorySaved';
+  directory: Directory;
+}
 
 export interface DirectoryRejected {
   type: 'directoryRejected';
