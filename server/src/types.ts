@@ -85,6 +85,8 @@ export interface AgentState {
   palette?: number;
   /** Hue shift in degrees (0-360). Rotates the base palette colors. */
   hueShift?: number;
+  /** Session color from Claude Code's `/color` (red, blue, ...). Read from the transcript, never persisted. */
+  sessionColor?: string;
 }
 
 export interface PersistedAgent {

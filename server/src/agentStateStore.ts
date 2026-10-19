@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { appendFileSync } from 'node:fs';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import { readLastSessionColor } from './sessionColor.js';
 import type { AgentState, PersistedAgent } from './types.js';
 
 /**
@@ -115,6 +116,14 @@ export class AgentStateStore {
     this.agents.set(id, agent);
     if (isNew) {
       this.emitter.emit('agentAdded', id, agent);
+      // Adopted sessions start reading at the end of the transcript and would
+      // miss a /color set earlier. Clients keep the color until the character exists.
+      if (agent.jsonlFile && agent.sessionColor === undefined) {
+        agent.sessionColor = readLastSessionColor(agent.jsonlFile);
+        if (agent.sessionColor) {
+          this.broadcast({ type: 'agentSessionColor', id, color: agent.sessionColor });
+        }
+      }
     }
     return this;
   }
