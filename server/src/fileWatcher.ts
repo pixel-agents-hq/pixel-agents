@@ -21,6 +21,8 @@
  * modes. They provide tool content (status text, animations) that hooks don't carry.
  * Only their timer logic (permission 7s, text-idle 5s) is suppressed by hookDelivered.
  */
+import { StringDecoder } from 'node:string_decoder';
+
 import * as fs from 'fs';
 import * as path from 'path';
 import type * as vscode from 'vscode';
@@ -200,6 +202,8 @@ export function startFileWatching(
   pollingTimers.set(agentId, interval);
 }
 
+const transcriptDecoders = new WeakMap<AgentState, { offset: number; decoder: StringDecoder }>();
+
 export function readNewLines(
   agentId: number,
   agents: AgentStateStore,
@@ -218,11 +222,17 @@ export function readNewLines(
     const bytesToRead = Math.min(stat.size - agent.fileOffset, MAX_READ_BYTES);
     const buf = Buffer.alloc(bytesToRead);
     const fd = fs.openSync(agent.jsonlFile, 'r');
-    fs.readSync(fd, buf, 0, buf.length, agent.fileOffset);
+    const bytesRead = fs.readSync(fd, buf, 0, buf.length, agent.fileOffset);
     fs.closeSync(fd);
-    agent.fileOffset += bytesToRead;
+    let state = transcriptDecoders.get(agent);
+    if (!state || state.offset !== agent.fileOffset) {
+      state = { offset: agent.fileOffset, decoder: new StringDecoder('utf8') };
+      transcriptDecoders.set(agent, state);
+    }
+    agent.fileOffset += bytesRead;
+    state.offset = agent.fileOffset;
 
-    const text = agent.lineBuffer + buf.toString('utf-8');
+    const text = agent.lineBuffer + state.decoder.write(buf.subarray(0, bytesRead));
     const lines = text.split('\n');
     agent.lineBuffer = lines.pop() || '';
 
