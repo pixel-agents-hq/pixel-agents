@@ -40,6 +40,8 @@ const EMPTY_STATE: AdapterState = { agents: [], seats: {} };
 
 export interface FileStateAdapterOptions {
   namespace: ConfigNamespace;
+  /** Optional provider scope for agents and seats only. Settings keep the adapter namespace. */
+  stateScope?: string;
 }
 
 export class FileStateAdapter implements StateAdapter {
@@ -47,11 +49,17 @@ export class FileStateAdapter implements StateAdapter {
   private readonly stateFilePath: string;
 
   constructor(options: FileStateAdapterOptions) {
+    if (
+      options.stateScope !== undefined &&
+      (!/^[a-z0-9-]+$/.test(options.stateScope) || options.stateScope.trim() !== options.stateScope)
+    ) {
+      throw new Error('Invalid state scope: use only lowercase letters, digits and hyphens.');
+    }
     this.namespace = options.namespace;
     this.stateFilePath = path.join(
       os.homedir(),
       LAYOUT_FILE_DIR,
-      `${options.namespace}-state.json`,
+      `${options.namespace}${options.stateScope ? `-${options.stateScope}` : ''}-state.json`,
     );
   }
 

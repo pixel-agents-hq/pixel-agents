@@ -50,3 +50,5 @@ agent-orchestrator.yaml
 .ao/
 .serena/
 tasks/
+# Machine-local Kiro / KiroCrew runtime settings
+/.kiro/settings/

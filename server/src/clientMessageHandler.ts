@@ -76,6 +76,10 @@ export interface ClientMessageContext {
   ptyManager?: PtySessionManager;
 }
 
+function activeProvider(ctx: ClientMessageContext): HookProvider {
+  return ctx.runtime?.provider ?? claudeProvider;
+}
+
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
 const KEY_SOUND_ENABLED = 'pixel-agents.soundEnabled';
 const KEY_LAST_SEEN_VERSION = 'pixel-agents.lastSeenVersion';
@@ -148,7 +152,7 @@ export function handleClientMessage(
       // drawer row and carries its Directory's path; no directoryPath falls
       // back to the server cwd (launchStandaloneAgent's own default).
       launchStandaloneAgent(
-        { store, runtime, ptyManager: ctx.ptyManager, provider: claudeProvider },
+        { store, runtime, ptyManager: ctx.ptyManager, provider: activeProvider(ctx) },
         {
           directoryPath: msg.directoryPath as string | undefined,
           bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
@@ -355,7 +359,7 @@ export function handleClientMessage(
         broadcast: (message) => store.broadcast(message),
         reply: send,
         suggestions: () =>
-          collectDirectorySuggestions(claudeProvider, shownHostDirectoriesFor(ctx)),
+          collectDirectorySuggestions(activeProvider(ctx), shownHostDirectoriesFor(ctx)),
       });
       break;
 
@@ -388,7 +392,7 @@ async function applyHooksPreference(
       // The runtime's single hooksEnabled ref gates the CLAUDE scanners; it
       // follows only the Claude provider until the scanners grow per-provider
       // awareness alongside the Settings UI.
-      if (ctx.runtime && provider.id === claudeProvider.id) {
+      if (ctx.runtime && provider.id === activeProvider(ctx).id) {
         ctx.runtime.hooksEnabled.current = enabled;
       }
     }
@@ -427,7 +431,7 @@ function standaloneConsentEffects(
       // Durable writes are the executor's own atomic recordHooksDecline; this
       // only mirrors the live runtime ref the CLAUDE scanners read, so another
       // provider's answer can never flip Claude's fallback behavior.
-      if (ctx.runtime && provider.id === claudeProvider.id) {
+      if (ctx.runtime && provider.id === activeProvider(ctx).id) {
         ctx.runtime.hooksEnabled.current = false;
       }
     },
@@ -457,8 +461,10 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // 1. Provider capabilities (must arrive before any agent messages)
   send({
     type: 'providerCapabilities',
-    readingTools: [...claudeProvider.readingTools],
-    subagentToolNames: [...claudeProvider.subagentToolNames],
+    providerId: activeProvider(ctx).id,
+    displayName: activeProvider(ctx).displayName,
+    readingTools: [...activeProvider(ctx).readingTools],
+    subagentToolNames: [...activeProvider(ctx).subagentToolNames],
   });
 
   // 1b. Terminal availability. Gates the whole terminal UI (the + Agent button
@@ -518,7 +524,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
 
   // 4. Settings (from adapter, with sensible defaults when adapter is absent)
   const cfg = readConfig();
-  const settings = settingsSnapshot(adapter);
+  const settings = settingsSnapshot(adapter, activeProvider(ctx));
   const { watchAllSessions, hooksEnabled } = settings;
   send(settings);
 
@@ -527,7 +533,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // provider checks are async, so these land as follow-ups right after the
   // synchronous handshake; the webview's default (not installed) is the safe
   // assumption until each arrives. One status + at most one ask PER PROVIDER.
-  for (const provider of hookProviders) {
+  for (const provider of ctx.runtime?.provider
+    ? [ctx.runtime.provider]
+    : hookProviders.filter((p) => p.id === 'claude')) {
     // One provider's unreadable settings file must degrade to
     // installed=false (matching the executor's fail-closed read: no choice
     // ever uninstalls on a guess) rather than surface as an unhandled
@@ -646,7 +654,10 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
  * client whose setting change was refused (refuseReadOnly), so its optimistic
  * toggle snaps back to the truth.
  */
-function settingsSnapshot(adapter: StateAdapter | undefined) {
+function settingsSnapshot(
+  adapter: StateAdapter | undefined,
+  provider: HookProvider = claudeProvider,
+) {
   return {
     type: 'settingsLoaded',
     soundEnabled: adapter?.getSetting(KEY_SOUND_ENABLED, true) ?? true,
@@ -658,7 +669,7 @@ function settingsSnapshot(adapter: StateAdapter | undefined) {
     // A single boolean carrying the CLAUDE provider's preference until the
     // Settings UI grows a per-provider list -- its sole webview reader is the
     // hooks tooltip gate.
-    hooksEnabled: getHooksEnabled(claudeProvider.id),
+    hooksEnabled: getHooksEnabled(provider.id),
     hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
     externalAssetDirectories: readConfig().externalAssetDirectories,
     showAreas: adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false,
@@ -705,7 +716,7 @@ function refuseReadOnly(
     case 'setShowAreas':
     case 'setBypassPermissions':
     case 'setShowHostDirectories':
-      send(settingsSnapshot(ctx.store.getAdapter()));
+      send(settingsSnapshot(ctx.store.getAdapter(), activeProvider(ctx)));
       return;
     case 'addExternalAssetDirectory':
     case 'removeExternalAssetDirectory':

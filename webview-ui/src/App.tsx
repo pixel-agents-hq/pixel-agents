@@ -106,6 +106,8 @@ function App() {
     setGhostHeadlessAgents,
     hooksEnabled,
     hooksInstalled,
+    activeProviderId,
+    activeProviderName,
     hooksStatusSeq,
     hooksInfoShown,
     consentRequest,
@@ -233,7 +235,7 @@ function App() {
 
   // The Settings surface renders one provider today; its checkbox binds to
   // the Claude row of the per-provider install-state map.
-  const claudeHooksInstalled = hooksInstalled['claude'] === true;
+  const activeHooksInstalled = hooksInstalled[activeProviderId] === true;
 
   // Mutate Directory→Area mappings locally + send to server. Updates OfficeState in
   // the same tick so a follow-up agentCreated picks up the new mapping.
@@ -597,7 +599,7 @@ function App() {
           message), NOT the hooksEnabled preference: hooksEnabled defaults true
           while first-run consent is still pending, and announcing "Instant
           Detection Active" before anything is installed would be a lie. */}
-      {hooksEnabled && claudeHooksInstalled && !hooksInfoShown && !hooksTooltipDismissed && (
+      {hooksEnabled && activeHooksInstalled && !hooksInfoShown && !hooksTooltipDismissed && (
         <Tooltip
           title="Instant Detection Active"
           position="top-right"
@@ -670,6 +672,8 @@ function App() {
       {intro && (
         <IntroBubble
           officeState={officeState}
+          providerId={activeProviderId}
+          providerName={activeProviderName}
           headline={intro.headline}
           disclosure={intro.disclosure}
           containerRef={containerRef}
@@ -832,7 +836,9 @@ function App() {
           setWatchAllSessions(newVal);
           transport.send({ type: 'setWatchAllSessions', enabled: newVal });
         }}
-        hooksInstalled={claudeHooksInstalled}
+        providerId={activeProviderId}
+        providerName={activeProviderName}
+        hooksInstalled={activeHooksInstalled}
         onToggleHooksEnabled={() => {
           // Toggle the DISPLAYED state (actual install), not the preference: when the two disagree — preference on,
           // nothing installed while consent is pending — toggling the preference would turn hooks OFF for a user
@@ -840,12 +846,12 @@ function App() {
           // checkbox renders, so it lands correct instead of flickering when an install fails. The providerId is
           // ECHOED from that row (never originated here), so nothing sends until the row has arrived.
           const [rowProviderId] =
-            Object.entries(hooksInstalled).find(([id]) => id === 'claude') ?? [];
+            Object.entries(hooksInstalled).find(([id]) => id === activeProviderId) ?? [];
           if (rowProviderId !== undefined) {
             transport.send({
               type: 'setHooksEnabled',
               providerId: rowProviderId,
-              enabled: !claudeHooksInstalled,
+              enabled: !activeHooksInstalled,
             });
           }
         }}

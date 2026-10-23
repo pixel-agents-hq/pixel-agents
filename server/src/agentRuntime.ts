@@ -87,7 +87,7 @@ export class AgentRuntime {
 
   constructor(
     private readonly store: AgentStateStore,
-    provider: HookProvider,
+    readonly provider: HookProvider,
   ) {
     // Wire module-level dependencies
     setDismissalTracker(this.dismissalTracker);
@@ -289,6 +289,7 @@ export class AgentRuntime {
 
   /** Route an incoming hook event to the appropriate agent. */
   handleHookEvent(providerId: string, event: Record<string, unknown>): void {
+    if (providerId !== this.provider.id) return;
     this.hookEventHandler.handleEvent(providerId, event as HookEvent);
   }
 
@@ -473,6 +474,8 @@ export class AgentRuntime {
    * terminal agents via vscode.window.terminals.
    */
   restoreExternalAgents(): void {
+    // A hooks-only provider has no transcript to restore or watch.
+    if (!this.provider.getSessionDirs) return;
     const adapter = this.store.getAdapter();
     if (!adapter) return;
     const persisted = adapter.loadAgents();

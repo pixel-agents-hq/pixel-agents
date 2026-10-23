@@ -46,7 +46,7 @@ export interface LaunchStandaloneAgentOptions {
 }
 
 /**
- * Spawn a Claude agent in a PTY and register it with the runtime.
+ * Launch a provider agent in a PTY and register it with the runtime.
  * Returns the new agent id, or null when the terminal is unavailable.
  */
 export function launchStandaloneAgent(
@@ -63,20 +63,26 @@ export function launchStandaloneAgent(
   const cwd = options.directoryPath ?? process.cwd();
   const sessionId = crypto.randomUUID();
 
-  const launch = provider.buildLaunchCommand?.(sessionId, cwd, {
-    bypassPermissions: options.bypassPermissions,
-  });
+  let launch: ReturnType<NonNullable<HookProvider['buildLaunchCommand']>> | undefined;
+  try {
+    launch = provider.buildLaunchCommand?.(sessionId, cwd, {
+      bypassPermissions: options.bypassPermissions,
+    });
+  } catch (error) {
+    console.error(`[Pixel Agents] Terminal: provider setup required: ${String(error)}`);
+    return null;
+  }
   if (!launch) {
     console.error('[Pixel Agents] Terminal: provider.buildLaunchCommand is not implemented');
     return null;
   }
 
   const dirs = provider.getSessionDirs?.(cwd) ?? [];
-  if (dirs.length === 0) {
+  if (provider.getSessionDirs && dirs.length === 0) {
     console.error('[Pixel Agents] Terminal: provider returned no session dirs');
     return null;
   }
-  const projectDir = dirs[0];
+  const projectDir = dirs[0] ?? cwd;
 
   const id = store.nextAgentId.current++;
 
@@ -100,8 +106,10 @@ export function launchStandaloneAgent(
 
   // Pre-register the expected JSONL so the project scanner doesn't mistake it
   // for a /clear file, exactly as the VS Code path does.
-  const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
-  runtime.knownJsonlFiles.add(expectedFile);
+  const expectedFile = provider.getSessionDirs ? path.join(projectDir, `${sessionId}.jsonl`) : '';
+  if (expectedFile) {
+    runtime.knownJsonlFiles.add(expectedFile);
+  }
 
   const agent = createAgentState({
     id,
@@ -151,7 +159,9 @@ export function launchStandaloneAgent(
     }
   });
 
-  startJsonlPoll(deps, id, agent);
+  if (expectedFile) {
+    startJsonlPoll(deps, id, agent);
+  }
 
   return id;
 }

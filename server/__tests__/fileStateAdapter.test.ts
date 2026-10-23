@@ -165,6 +165,54 @@ describe('FileStateAdapter', () => {
     expect(standalone.loadAgents()).toEqual(agentSa);
   });
 
+  it('isolates provider agents and seats while keeping standalone settings shared', () => {
+    const claude = new FileStateAdapter({ namespace: 'standalone' });
+    const kiro = new FileStateAdapter({ namespace: 'standalone', stateScope: 'kiro' });
+    const claudeAgents: PersistedAgent[] = [
+      { id: 1, terminalName: 'Claude', jsonlFile: '/claude.jsonl', projectDir: '/claude' },
+    ];
+    const kiroAgents: PersistedAgent[] = [
+      { id: 1, terminalName: 'Kiro', jsonlFile: '', projectDir: '/kiro' },
+    ];
+    claude.saveAgents(claudeAgents);
+    claude.saveSeats({ '1': { seatId: 'claude-seat', palette: 1 } });
+    kiro.saveAgents(kiroAgents);
+    kiro.saveSeats({ '1': { seatId: 'kiro-seat', palette: 2 } });
+
+    expect(claude.loadAgents()).toEqual(claudeAgents);
+    expect(claude.loadSeats()).toEqual({ '1': { seatId: 'claude-seat', palette: 1 } });
+    const reopened = new FileStateAdapter({ namespace: 'standalone', stateScope: 'kiro' });
+    expect(reopened.loadAgents()).toEqual(kiroAgents);
+    expect(reopened.loadSeats()).toEqual({ '1': { seatId: 'kiro-seat', palette: 2 } });
+    expect(fs.existsSync(path.join(tempHome, '.pixel-agents', 'standalone-state.json'))).toBe(true);
+    expect(fs.existsSync(path.join(tempHome, '.pixel-agents', 'standalone-kiro-state.json'))).toBe(
+      true,
+    );
+
+    kiro.setSetting('pixel-agents.soundEnabled', false);
+    expect(claude.getSetting('pixel-agents.soundEnabled', true)).toBe(false);
+    kiro.saveAgents([]);
+    expect(claude.loadAgents()).toEqual(claudeAgents);
+  });
+
+  it.each([
+    '',
+    '../outside',
+    '..\\outside',
+    '/absolute',
+    'kiro/child',
+    'kiro\\child',
+    'kiro.json',
+    'C:outside',
+    'Kiro',
+    'kiro\n',
+  ])('rejects invalid state scope %j before any filesystem write', (stateScope) => {
+    expect(() => new FileStateAdapter({ namespace: 'standalone', stateScope })).toThrow(
+      'Invalid state scope',
+    );
+    expect(fs.readdirSync(tempHome)).toEqual([]);
+  });
+
   it('preserves seats when saving agents (and vice versa)', () => {
     const adapter = new FileStateAdapter({ namespace: 'standalone' });
     adapter.saveSeats({ '1': { palette: 3 } });

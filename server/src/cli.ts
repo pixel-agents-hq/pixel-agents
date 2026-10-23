@@ -32,7 +32,12 @@ import {
   WILDCARD_HOSTNAMES,
 } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import {
+  claudeProvider,
+  copyHookScript,
+  copyKiroHookScript,
+  hookProviderById,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
@@ -40,6 +45,8 @@ import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
 // ── Argument parsing ──────────────────────────────────────────
 
 export interface CliArgs {
+  /** CLI launched by this office; one provider per server. */
+  provider: 'claude' | 'kiro';
   /** Unset -> ephemeral (OS-assigned) port, so multiple standalone instances
    *  can run at once without a collision. --port picks a fixed one. */
   port?: number;
@@ -62,13 +69,20 @@ export class CliArgsError extends Error {}
 
 export function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
+    provider: 'claude',
     host: '127.0.0.1',
     terminal: true,
     allowedHosts: [],
     rotateToken: false,
   };
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--port' || argv[i] === '-p') {
+    if (argv[i] === '--provider') {
+      const value = argv[++i];
+      if (value !== 'claude' && value !== 'kiro') {
+        throw new CliArgsError('Invalid --provider: expected claude or kiro.');
+      }
+      args.provider = value;
+    } else if (argv[i] === '--port' || argv[i] === '-p') {
       const raw = argv[i + 1];
       if (raw === undefined) {
         throw new CliArgsError(
@@ -106,6 +120,7 @@ export function parseArgs(argv: string[]): CliArgs {
       console.log(`Usage: pixel-agents [options]
 
 Options:
+  --provider <name>    Agent CLI: claude (default) or kiro
   --port, -p <number>   Port to listen on (default: OS-assigned ephemeral port)
   --host <string>       Host to bind to (default: 127.0.0.1)
   --allowed-host <name> Also accept the tokened URL at this host name, e.g. a
@@ -204,6 +219,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const selectedProvider = hookProviderById(args.provider);
+  if (!selectedProvider) throw new CliArgsError('Unsupported provider');
+  console.log(`[Pixel Agents] Provider: ${selectedProvider.displayName}`);
+
   // dist/ contains both the CLI bundle and the assets/ + webview/ directories
   const distRoot = __dirname;
   const packageRoot = path.dirname(distRoot);
@@ -227,7 +246,10 @@ async function main(): Promise<void> {
 
   // ── Store + adapter (shared settings + standalone-scoped agents/seats) ──
   const store = new AgentStateStore();
-  const adapter = new FileStateAdapter({ namespace: 'standalone' });
+  const adapter = new FileStateAdapter({
+    namespace: 'standalone',
+    stateScope: args.provider !== 'claude' ? args.provider : undefined,
+  });
   store.setAdapter(adapter);
 
   // ── Create server ──
@@ -244,7 +266,7 @@ async function main(): Promise<void> {
 
   try {
     // Create runtime first (before server.start, so we can pass it in)
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const runtime = new AgentRuntime(store, selectedProvider);
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
@@ -258,7 +280,7 @@ async function main(): Promise<void> {
     const onSetHooksEnabled = async (providerId: string, enabled: boolean): Promise<void> => {
       if (!currentConfig) return;
       const provider = hookProviderById(providerId);
-      if (!provider) return; // unknown id: nothing to install into
+      if (!provider || provider.id !== selectedProvider.id) return;
       if (enabled) {
         // An explicit toggle in the UI IS the consent to modify the
         // provider's settings file. The bundled claude-hook.js script belongs
@@ -269,6 +291,12 @@ async function main(): Promise<void> {
           provider.id === claudeProvider.id &&
           !copyHookScriptOrReport(packageRoot, ' (user toggle)')
         ) {
+          return;
+        }
+        if (provider.id === 'kiro' && !copyKiroHookScript(packageRoot)) {
+          console.error(
+            '[Pixel Agents] Kiro hooks were not installed. Check the bundled script and filesystem permissions, then retry.',
+          );
           return;
         }
         try {
@@ -341,6 +369,7 @@ async function main(): Promise<void> {
       ptyManager,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,
+      providerId: selectedProvider.id,
     });
     currentConfig = { port: config.port, token: config.token };
     if (args.rotateToken) {
@@ -354,14 +383,14 @@ async function main(): Promise<void> {
     // Sync runtime refs with persisted settings BEFORE first scan tick. The
     // runtime's single hooksEnabled ref follows the Claude provider until the
     // scanners grow per-provider awareness alongside the Settings UI.
-    runtime.hooksEnabled.current = getHooksEnabled(claudeProvider.id);
+    runtime.hooksEnabled.current = getHooksEnabled(selectedProvider.id);
     runtime.watchAllSessions.current = adapter.getSetting('pixel-agents.watchAllSessions', false);
 
     // Install hooks on startup if the persisted setting says so — gated on the
     // one-time consent to modify ~/.claude/settings.json.
     if (runtime.hooksEnabled.current) {
-      let consent = getHooksConsent(claudeProvider.id) === 'granted';
-      if (!consent && (await claudeProvider.areHooksInstalled())) {
+      let consent = getHooksConsent(selectedProvider.id) === 'granted';
+      if (!consent && (await selectedProvider.areHooksInstalled())) {
         // Our hooks are already installed and already firing — a pre-consent
         // version put them there. Grant and continue with NO prompt: the
         // install below is the 14 -> 12 migration, and it only ever REDUCES
@@ -370,16 +399,20 @@ async function main(): Promise<void> {
         // this user no protection they do not already have, so they are not
         // asked. A fresh install still is, in full — in the browser UI, when a
         // tokened client connects (clientMessageHandler's webviewReady).
-        grantHooksConsent(claudeProvider.id);
+        grantHooksConsent(selectedProvider.id);
         consent = true;
       }
       if (!consent) {
         console.log(
-          '[Pixel Agents] Hooks not installed: modifying ~/.claude/settings.json needs one-time approval — open the URL below to review and approve it.',
+          `[Pixel Agents] ${selectedProvider.displayName} hooks setup needs one-time approval. Open the URL below to review the setup in the office.`,
         );
-      } else if (copyHookScriptOrReport(packageRoot)) {
+      } else if (
+        selectedProvider.id === 'kiro'
+          ? copyKiroHookScript(packageRoot)
+          : copyHookScriptOrReport(packageRoot)
+      ) {
         try {
-          await claudeProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+          await selectedProvider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
           console.log('[Pixel Agents] Hooks installed');
         } catch (err) {
           console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
@@ -395,7 +428,7 @@ async function main(): Promise<void> {
 
     // Start scanning for external sessions (Claude running in user's terminal)
     const cwd = process.cwd();
-    const dirs = claudeProvider.getSessionDirs?.(cwd);
+    const dirs = selectedProvider.getSessionDirs?.(cwd);
     if (dirs && dirs[0]) {
       const projectDir = dirs[0];
       console.log(`[Pixel Agents] Scanning project dir: ${projectDir}`);

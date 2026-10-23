@@ -39,6 +39,7 @@ interface MockPayload {
 // ── Module-level state ─────────────────────────────────────────────────────────
 
 let mockPayload: MockPayload | null = null;
+let showcaseTimer: ReturnType<typeof setInterval> | null = null;
 
 // ── PNG decode helpers (browser fallback) ───────────────────────────────────
 
@@ -283,6 +284,83 @@ export function dispatchMockMessages(): void {
     extensionVersion: '1.3.0',
     lastSeenVersion: '1.2',
   });
+
+  // Opt-in developer preview: exercise the real UI protocol without a CLI,
+  // credentials or AI usage. This module is excluded from production builds.
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('showcase') === '1') {
+    dispatch({
+      type: 'providerCapabilities',
+      providerId: 'kiro',
+      displayName: 'Kiro CLI · DEMO',
+      readingTools: ['read_file', 'grep_search'],
+      subagentToolNames: [],
+    });
+    dispatch({
+      type: 'settingsLoaded',
+      soundEnabled: false,
+      alwaysShowLabels: true,
+      extensionVersion: '1.5.0',
+      lastSeenVersion: '1.5',
+      hooksInfoShown: true,
+    });
+    dispatch({ type: 'officeAccess', readOnly: false });
+    dispatch({
+      type: 'terminalAvailability',
+      available: false,
+      reason: 'Visual demonstration: no Kiro process or AI model is running.',
+    });
+    dispatch({
+      type: 'existingAgents',
+      agents: [1, 2, 3, 4, 5, 6],
+      agentMeta: Object.fromEntries([1, 2, 3, 4, 5, 6].map((id) => [id, { palette: id - 1 }])),
+      directoryNames: {
+        1: 'DEMO · Junior',
+        2: 'DEMO · Pleno',
+        3: 'DEMO · Senior',
+        4: 'DEMO · DevOps',
+        5: 'DEMO · Projetos',
+        6: 'DEMO · HEAD MASTER',
+      },
+    });
+    const tools = [
+      'write_file',
+      'read_file',
+      'subagent',
+      'execute_pwsh',
+      'grep_search',
+      'thinking',
+    ];
+    const labels = [
+      'Editing dashboard.tsx',
+      'Reading architecture.md',
+      'Delegating work',
+      'Running tests',
+      'Searching requirements',
+      'Thinking',
+    ];
+    let round = 0;
+    const showActivity = () => {
+      for (let id = 1; id <= 6; id++) {
+        dispatch({ type: 'agentToolsClear', id });
+        if (round % 3 === 2 && id % 2 === 0) {
+          dispatch({ type: 'agentStatus', id, status: 'waiting', awaitingInput: id === 6 });
+        } else {
+          dispatch({ type: 'agentStatus', id, status: 'active' });
+          dispatch({
+            type: 'agentToolStart',
+            id,
+            toolId: `demo-${id}`,
+            toolName: tools[id - 1],
+            status: labels[id - 1],
+          });
+        }
+      }
+      round++;
+    };
+    showActivity();
+    if (showcaseTimer) clearInterval(showcaseTimer);
+    showcaseTimer = setInterval(showActivity, 7000);
+  }
 
   console.log('[BrowserMock] Messages dispatched');
 }

@@ -51,7 +51,19 @@ function buildHooks() {
   );
   if (!fs.existsSync(entry)) return;
   require('esbuild').buildSync({
-    entryPoints: [entry],
+    entryPoints: {
+      'claude-hook': entry,
+      'kiro-hook': path.join(
+        __dirname,
+        'server',
+        'src',
+        'providers',
+        'hook',
+        'kiro',
+        'hooks',
+        'kiro-hook.ts',
+      ),
+    },
     bundle: true,
     platform: 'node',
     target: 'node18',

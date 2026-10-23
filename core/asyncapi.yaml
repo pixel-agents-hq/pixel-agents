@@ -173,6 +173,12 @@ components:
       properties:
         type:
           const: providerCapabilities
+        providerId:
+          type: string
+          description: Active CLI provider id (defaults to claude for older hosts).
+        displayName:
+          type: string
+          description: Human-readable active CLI name.
         readingTools:
           type: array
           items:

@@ -1,7 +1,10 @@
 import {
   DEFAULT_MAX_CONTEXT_TOKENS,
+  EXECUTE_FRAME_DURATION_SEC,
+  READ_FRAME_DURATION_SEC,
   SEAT_REST_MAX_SEC,
   SEAT_REST_MIN_SEC,
+  THINK_FRAME_DURATION_SEC,
   TYPE_FRAME_DURATION_SEC,
   WALK_FRAME_DURATION_SEC,
   WALK_SPEED_PX_PER_SEC,
@@ -12,15 +15,19 @@ import {
 } from '../../constants.js';
 import { findPath } from '../layout/tileMap.js';
 import type { CharacterSprites } from '../sprites/spriteData.js';
-import { isReadingToolName } from '../toolUtils.js';
 import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../types.js';
 import { CharacterState, Direction, TILE_SIZE } from '../types.js';
+import {
+  advanceActivityClock,
+  classifyToolActivity,
+  getCharacterActivity,
+} from './activityEffectState.js';
 
 /** Whether a tool should show the reading animation (vs typing). Taxonomy comes
  *  from the active HookProvider via the `providerCapabilities` message. */
 export function isReadingTool(tool: string | null): boolean {
   if (!tool) return false;
-  return isReadingToolName(tool);
+  return classifyToolActivity(tool) === 'reading';
 }
 
 /** Pixel center of a tile */
@@ -71,6 +78,7 @@ export function createCharacter(
     hueShift,
     frame: 0,
     frameTimer: 0,
+    visualTime: 0,
     wanderTimer: 0,
     wanderCount: 0,
     wanderLimit: randomInt(WANDER_MOVES_BEFORE_REST_MIN, WANDER_MOVES_BEFORE_REST_MAX),
@@ -97,12 +105,25 @@ export function updateCharacter(
   tileMap: TileTypeVal[][],
   blockedTiles: Set<string>,
 ): void {
+  advanceActivityClock(ch, dt);
   ch.frameTimer += dt;
 
   switch (ch.state) {
     case CharacterState.TYPE: {
-      if (ch.frameTimer >= TYPE_FRAME_DURATION_SEC) {
-        ch.frameTimer -= TYPE_FRAME_DURATION_SEC;
+      const activity = getCharacterActivity(ch);
+      const duration =
+        activity === 'reading'
+          ? READ_FRAME_DURATION_SEC
+          : activity === 'thinking'
+            ? THINK_FRAME_DURATION_SEC
+            : activity === 'executing' || activity === 'delegating'
+              ? EXECUTE_FRAME_DURATION_SEC
+              : TYPE_FRAME_DURATION_SEC;
+      if (!ch.isActive || ch.bubbleType === 'permission') {
+        ch.frame = 0;
+        ch.frameTimer = 0;
+      } else if (ch.frameTimer >= duration) {
+        ch.frameTimer %= duration;
         ch.frame = (ch.frame + 1) % 2;
       }
       // If no longer active, stand up and start wandering (after seatTimer expires)
@@ -317,15 +338,20 @@ export function updateCharacter(
 }
 
 /** Get the correct sprite frame for a character's current state and direction */
-export function getCharacterSprite(ch: Character, sprites: CharacterSprites): SpriteData {
+export function getCharacterSprite(
+  ch: Character,
+  sprites: CharacterSprites,
+  animate = true,
+): SpriteData {
+  const frame = animate && ch.isActive && ch.bubbleType !== 'permission' ? ch.frame : 0;
   switch (ch.state) {
     case CharacterState.TYPE:
       if (isReadingTool(ch.currentTool)) {
-        return sprites.reading[ch.dir][ch.frame % 2];
+        return sprites.reading[ch.dir][frame % 2];
       }
-      return sprites.typing[ch.dir][ch.frame % 2];
+      return sprites.typing[ch.dir][frame % 2];
     case CharacterState.WALK:
-      return sprites.walk[ch.dir][ch.frame % 4];
+      return sprites.walk[ch.dir][animate ? ch.frame % 4 : 1];
     case CharacterState.IDLE:
       return sprites.walk[ch.dir][1];
     default:

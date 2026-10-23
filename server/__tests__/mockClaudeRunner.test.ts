@@ -11,7 +11,12 @@ let tmpHome: string;
 let workspaceDir: string;
 
 function makeNodeCommand(scriptPath: string): string {
-  return `${JSON.stringify(process.execPath)} ${JSON.stringify(scriptPath)}`;
+  // JSON escaping doubles Windows separators, so the runner would not
+  // recognize its own hook path. Forward slashes work in cmd and preserve
+  // literal quoted arguments without introducing JSON backslash escapes.
+  const commandPath = (value: string) =>
+    process.platform === 'win32' ? value.replace(/\\/g, '/') : value;
+  return `${JSON.stringify(commandPath(process.execPath))} ${JSON.stringify(commandPath(scriptPath))}`;
 }
 
 function writeHookScript(scriptPath: string, outputPath: string): void {
@@ -22,7 +27,7 @@ function writeHookScript(scriptPath: string, outputPath: string): void {
       "const fs = require('fs');",
       'let input = "";',
       "process.stdin.on('data', (chunk) => { input += chunk; });",
-      `process.stdin.on('end', () => fs.writeFileSync(${JSON.stringify(outputPath)}, input));`,
+      `process.stdin.on('end', () => fs.writeFileSync(${JSON.stringify(outputPath)}, JSON.stringify({ ...JSON.parse(input), mockHome: require('os').homedir() })));`,
     ].join('\n'),
   );
 }
@@ -48,20 +53,23 @@ function writeSettings(
 function runMockClaude(
   sessionId = 'test-session',
 ): Promise<{ code: number | null; stderr: string }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [MOCK_CLAUDE_RUNNER, '--session-id', sessionId], {
       cwd: workspaceDir,
       env: {
         ...process.env,
         HOME: tmpHome,
+        USERPROFILE: tmpHome,
       },
       stdio: ['ignore', 'ignore', 'pipe'],
+      timeout: 5000,
     });
 
     let stderr = '';
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
+    child.on('error', reject);
     child.on('close', (code) => resolve({ code, stderr }));
   });
 }
@@ -145,6 +153,7 @@ describe('mock-claude-runner hook execution', () => {
       session_id: 'test-session',
       hook_event_name: 'Notification',
       notification_type: 'idle_prompt',
+      mockHome: tmpHome,
     });
   });
 

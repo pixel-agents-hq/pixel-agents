@@ -15,6 +15,8 @@ import { computeIntroBubbleGeometry } from './introBubbleGeometry.js';
 import { Button } from './ui/Button.js';
 
 interface IntroBubbleProps {
+  providerId?: string;
+  providerName?: string;
   officeState: OfficeState;
   /** Server-provided copy for the consent step (hooksConsentRequest). Rendered
    *  verbatim so that step shows the exact terms being approved — the webview
@@ -94,6 +96,8 @@ const CLOSING_STEP = 3;
  * and a stray click must not read as an answer.
  */
 export function IntroBubble({
+  providerId = 'claude',
+  providerName = 'Claude Code',
   officeState,
   headline,
   disclosure,
@@ -218,7 +222,7 @@ export function IntroBubble({
 
   const titles = [
     'Welcome to Pixel Agents!',
-    'Powered by Claude Code',
+    `Powered by ${providerName}`,
     headline,
     installFailed ? "Hooks couldn't be installed" : "You're all set!",
   ];
@@ -291,21 +295,23 @@ export function IntroBubble({
         {step === CLAUDE_CODE_STEP && (
           <>
             <p className="text-sm m-0 mb-8">
-              The office watches your Claude Code sessions and brings them to life in here. New to
-              Claude Code? Download it first:
+              The office watches your {providerName} sessions and brings them to life in here.
+              {providerId === 'kiro'
+                ? ' Launch an agent from + Agent and use your existing Kiro login.'
+                : ' New to Claude Code? Download it first:'}
             </p>
             <div className="text-sm bg-btn-bg border-2 border-border py-4 px-8 mb-8 select-all">
-              {CLAUDE_CODE_INSTALL_COMMAND}
+              {providerId === 'kiro' ? 'kiro-cli chat --v3' : CLAUDE_CODE_INSTALL_COMMAND}
             </div>
             <p className="text-sm m-0 mb-8">
               For more info, visit{' '}
               <a
-                href={CLAUDE_CODE_URL}
+                href={providerId === 'kiro' ? 'https://kiro.dev/docs/cli/' : CLAUDE_CODE_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-accent-bright hover:text-accent no-underline"
               >
-                claude.com/claude-code
+                {providerId === 'kiro' ? 'kiro.dev/docs/cli' : 'claude.com/claude-code'}
               </a>
             </p>
           </>
@@ -322,9 +328,9 @@ export function IntroBubble({
           <>
             {installFailed ? (
               <p className="text-sm m-0 mb-8">
-                Something went wrong writing to your Claude Code settings, so the office will watch
-                your sessions the slower way instead. No worries, everything still works and you can
-                retry activating them any time from Settings.
+                {providerId === 'kiro'
+                  ? 'Kiro hooks could not be installed. Check the server output and retry from Settings before launching an agent; live activity requires hooks.'
+                  : 'Something went wrong writing to your Claude Code settings. The office will watch sessions the slower way instead. You can retry from Settings.'}
               </p>
             ) : null}
             <p className="text-sm m-0 mb-8">

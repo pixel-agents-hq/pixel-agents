@@ -127,6 +127,8 @@ interface ExtensionMessageState {
    *  while first-run consent is pending, unlike hooksEnabled which defaults
    *  true. Keyed by providerId; today's Settings checkbox reads 'claude'. */
   hooksInstalled: Record<string, boolean>;
+  activeProviderId: string;
+  activeProviderName: string;
   /** Bumped per provider on every hooksStatus message. `hooksInstalled` alone cannot say "the server answered": a
    *  failed install re-reports the `false` already held, so no effect runs. The Intro needs the ARRIVAL to tell a
    *  pending install from a failed one, per provider — A's status is never a verdict on B's install. */
@@ -206,6 +208,8 @@ export function useExtensionMessages(
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
   const [ghostHeadlessAgents, setGhostHeadlessAgentsState] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
+  const [activeProviderId, setActiveProviderId] = useState('claude');
+  const [activeProviderName, setActiveProviderName] = useState('Claude Code');
   const [hooksInstalled, setHooksInstalled] = useState<Record<string, boolean>>({});
   const [hooksStatusSeq, setHooksStatusSeq] = useState<Record<string, number>>({});
   const [hooksInfoShown, setHooksInfoShown] = useState(true);
@@ -281,6 +285,8 @@ export function useExtensionMessages(
       }
 
       if (msg.type === 'providerCapabilities') {
+        setActiveProviderId(msg.providerId ?? 'claude');
+        setActiveProviderName(msg.displayName ?? 'Claude Code');
         setProviderCapabilities({
           readingTools: msg.readingTools,
           subagentToolNames: msg.subagentToolNames,
@@ -894,6 +900,8 @@ export function useExtensionMessages(
     setGhostHeadlessAgents: applyGhostHeadlessAgents,
     hooksEnabled,
     hooksInstalled,
+    activeProviderId,
+    activeProviderName,
     hooksStatusSeq,
     setHooksEnabled,
     hooksInfoShown,

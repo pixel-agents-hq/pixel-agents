@@ -1,6 +1,10 @@
 import { useRef, useState } from 'react';
 
 import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
+import {
+  isOfficeEffectsEnabled,
+  setOfficeEffectsEnabled,
+} from '../office/engine/activityEffects.js';
 import { isBrowserRuntime } from '../runtime.js';
 import { transport } from '../transport/index.js';
 import { Button } from './ui/Button.js';
@@ -9,6 +13,8 @@ import { MenuItem } from './ui/MenuItem.js';
 import { Modal } from './ui/Modal.js';
 
 interface SettingsModalProps {
+  providerId?: string;
+  providerName?: string;
   isOpen: boolean;
   onClose: () => void;
   isDebugMode: boolean;
@@ -45,6 +51,8 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({
+  providerId = 'claude',
+  providerName = 'Claude Code',
   isOpen,
   onClose,
   isDebugMode,
@@ -68,12 +76,16 @@ export function SettingsModal({
   onExportLayout,
   onImportLayout,
 }: SettingsModalProps) {
+  const [effectsLocal, setEffectsLocal] = useState(isOfficeEffectsEnabled);
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [assetDirDraft, setAssetDirDraft] = useState('');
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings">
+      <div className="px-10 py-8 text-sm text-accent-bright border-b-2 border-border">
+        {providerName} Office
+      </div>
       {/* Open Sessions Folder opens an OS file manager — impossible in the browser. */}
       {!isBrowserRuntime && (
         <MenuItem
@@ -190,10 +202,26 @@ export function SettingsModal({
         }}
       />
       <Checkbox
-        label="Watch All Sessions"
-        checked={watchAllSessions}
-        onChange={onToggleWatchAllSessions}
+        label="Enhanced Office Animations"
+        checked={effectsLocal}
+        onChange={() => {
+          const next = !effectsLocal;
+          setOfficeEffectsEnabled(next);
+          setEffectsLocal(next);
+          try {
+            localStorage.setItem('super-agentes:office-effects', String(next));
+          } catch {
+            /* Storage may be disabled. */
+          }
+        }}
       />
+      {providerId !== 'kiro' && (
+        <Checkbox
+          label="Watch All Sessions"
+          checked={watchAllSessions}
+          onChange={onToggleWatchAllSessions}
+        />
+      )}
       <Checkbox
         label="Instant Detection (Hooks)"
         checked={hooksInstalled}
@@ -218,20 +246,22 @@ export function SettingsModal({
       )}
       {/* Permission posture, set once instead of per launch: while on, the host
           adds the CLI's skip-permissions flag to every agent it launches. */}
-      <Checkbox
-        label={
-          <span className="flex items-center gap-4">
-            Skip Permissions
-            {/* Nudged down: the pixel font's glyphs sit low in their line box,
+      {providerId !== 'kiro' && (
+        <Checkbox
+          label={
+            <span className="flex items-center gap-4">
+              Skip Permissions
+              {/* Nudged down: the pixel font's glyphs sit low in their line box,
                 so a centered icon reads as floating high. */}
-            <span className="material-symbols-sharp text-[12px] translate-y-2" aria-hidden="true">
-              warning
+              <span className="material-symbols-sharp text-[12px] translate-y-2" aria-hidden="true">
+                warning
+              </span>
             </span>
-          </span>
-        }
-        checked={bypassPermissions}
-        onChange={onToggleBypassPermissions}
-      />
+          }
+          checked={bypassPermissions}
+          onChange={onToggleBypassPermissions}
+        />
+      )}
       {/* The host's own Directories in the launch drawer, named for what each
           host contributes: VS Code its workspace folders, standalone the
           directory the server was started from. */}

@@ -140,6 +140,50 @@ describe('launchStandaloneAgent', () => {
     expect(broadcasts).toContainEqual({ type: 'terminalSessionOpened', agentId: 1 });
   });
 
+  it('launches a hook-only provider without inventing or polling a transcript', () => {
+    const harness = workingPtyManager();
+    const cwd = path.join(tempDir, 'workspace');
+    fs.mkdirSync(cwd);
+    const hookOnly = provider({
+      id: 'hook-only-test',
+      getSessionDirs: undefined,
+      buildLaunchCommand: () => ({ command: 'test-cli', args: ['chat'] }),
+    });
+
+    const id = launchStandaloneAgent(
+      { store, runtime, ptyManager: harness.manager, provider: hookOnly },
+      { directoryPath: cwd },
+    );
+
+    expect(id).toBe(1);
+    expect(store.get(1)?.projectDir).toBe(cwd);
+    expect(store.get(1)?.jsonlFile).toBe('');
+    expect(store.get(1)?.providerId).toBe('hook-only-test');
+    expect(runtime.jsonlPollTimers.size).toBe(0);
+    expect(runtime.knownJsonlFiles.size).toBe(0);
+    expect(harness.spawnArgs[0].file).toBe('test-cli');
+    harness.spawned[0].exit(0);
+    expect(store.size).toBe(0);
+  });
+
+  it('handles a provider setup error without launching or burning an id', () => {
+    const harness = workingPtyManager();
+    const id = launchStandaloneAgent({
+      store,
+      runtime,
+      ptyManager: harness.manager,
+      provider: provider({
+        buildLaunchCommand: () => {
+          throw new Error('setup required');
+        },
+      }),
+    });
+    expect(id).toBeNull();
+    expect(store.nextAgentId.current).toBe(1);
+    expect(store.size).toBe(0);
+    expect(harness.spawnArgs).toHaveLength(0);
+  });
+
   it('passes bypassPermissions through to the launch command', () => {
     const harness = workingPtyManager();
 

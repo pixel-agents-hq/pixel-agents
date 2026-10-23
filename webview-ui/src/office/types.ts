@@ -192,6 +192,8 @@ export interface Character {
   frame: number;
   /** Time accumulator for animation */
   frameTimer: number;
+  /** Ephemeral activity animation clock, independent of sprite-frame resets. */
+  visualTime?: number;
   /** Timer for idle wander decisions */
   wanderTimer: number;
   /** Number of wander moves completed in current roaming cycle */

@@ -560,3 +560,86 @@ export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
  *  (with an editable focused) = the software keyboard is up. Well above an
  *  address bar collapsing (~56 px), well below any on-screen keyboard. */
 export const KEYBOARD_MIN_HEIGHT_PX = 150;
+
+// ── Activity Effects (original characters and layout stay untouched) ───────
+export const OFFICE_REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+export const OFFICE_EFFECTS_STORAGE_KEY = 'super-agentes:office-effects';
+export const ACTIVITY_CLOCK_WRAP_SEC = 3600;
+export const ACTIVITY_COMPLETION_DURATION_SEC = 0.85;
+export const ACTIVITY_EFFECT_OPACITY = 0.8;
+export const ACTIVITY_GROUND_ALPHA = 0.13;
+export const READ_FRAME_DURATION_SEC = 0.65;
+export const EXECUTE_FRAME_DURATION_SEC = 0.42;
+export const THINK_FRAME_DURATION_SEC = 0.8;
+export const ACTIVITY_SHADOW_COLOR = 'rgba(10, 12, 25, 0.19)';
+export const ACTIVITY_PANEL_BG = 'rgba(22, 27, 43, 0.8)';
+export const ACTIVITY_EFFECT_COLORS = {
+  typing: '#8ee6c0',
+  reading: '#9adbea',
+  executing: '#f5bd86',
+  delegating: '#c1a4ef',
+  thinking: '#bcb8ea',
+  walking: '#d8cfbb',
+  idle: '#c1c1d5',
+  permission: '#f1c47c',
+  waiting: '#f1c47c',
+  done: '#96e1af',
+} as const;
+export const ACTIVITY_READING_TOOL_ALIASES = [
+  'read',
+  'fs_read',
+  'read_file',
+  'readfile',
+  'grep',
+  'glob',
+  'ls',
+  'list_directory',
+  'fs_list',
+  'search',
+  'search_files',
+  'file_search',
+  'grep_search',
+  'remote_web_search',
+  'webfetch',
+  'web_fetch',
+  'websearch',
+  'web_search',
+  'fetch',
+] as const;
+export const ACTIVITY_TYPING_TOOL_ALIASES = [
+  'write',
+  'fs_write',
+  'write_file',
+  'edit',
+  'fs_edit',
+  'edit_file',
+  'apply_patch',
+  'replace',
+  'str_replace',
+  'create_file',
+  'notebookedit',
+] as const;
+export const ACTIVITY_EXECUTION_TOOL_ALIASES = [
+  'bash',
+  'shell',
+  'execute_bash',
+  'execute_pwsh',
+  'execute',
+  'exec',
+  'command',
+  'run_command',
+  'terminal',
+  'execute_command',
+  'run',
+] as const;
+export const ACTIVITY_THINKING_TOOL_ALIASES = ['thinking', 'reasoning', 'kiro_turn'] as const;
+export const ACTIVITY_DELEGATION_TOOL_ALIASES = [
+  'agent',
+  'task',
+  'delegate',
+  'delegate_to_agent',
+  'spawn_agent',
+  'invoke_agent',
+  'use_subagent',
+  'use_sub_agent',
+] as const;

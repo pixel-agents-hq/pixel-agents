@@ -64,6 +64,12 @@ import type {
 } from '../types.js';
 import { CharacterState, TILE_SIZE, TileType } from '../types.js';
 import { getWallInstances, hasWallSprites, wallColorToHex } from '../wallTiles.js';
+import {
+  areOfficeEffectsAnimated,
+  characterPoseOffset,
+  renderActivityGroundEffects,
+  renderCharacterActivityEffects,
+} from './activityEffects.js';
 import { getCharacterSprite } from './characters.js';
 import { renderMatrixEffect } from './matrixEffect.js';
 import { getPetSpriteData } from './petEntity.js';
@@ -353,6 +359,21 @@ export function renderScene(
   pets: Pet[] = [],
 ): void {
   const drawables: ZDrawable[] = [];
+  const animate = areOfficeEffectsAnimated();
+  // Pixel shadows and active screen light sit below all furniture.
+  for (const ch of characters) {
+    const x = Math.round(offsetX + ch.x * zoom);
+    const sitting = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
+    const y = Math.round(offsetY + (ch.y + sitting) * zoom);
+    if (
+      x < -24 * zoom ||
+      x > ctx.canvas.width + 24 * zoom ||
+      y < -24 * zoom ||
+      y > ctx.canvas.height + 40 * zoom
+    )
+      continue;
+    renderActivityGroundEffects(ctx, ch, x, y, zoom, animate);
+  }
 
   // Furniture
   for (const f of furniture) {
@@ -383,13 +404,23 @@ export function renderScene(
   // Characters
   for (const ch of characters) {
     const sprites = getCharacterSprites(ch.palette, ch.hueShift);
-    const spriteData = getCharacterSprite(ch, sprites);
+    const spriteData = getCharacterSprite(ch, sprites, animate);
     const cached = getCachedSprite(spriteData, zoom);
     // Sitting offset: shift character down when seated so they visually sit in the chair
     const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
     // Anchor at bottom-center of character — round to integer device pixels
     const drawX = Math.round(offsetX + ch.x * zoom - cached.width / 2);
-    const drawY = Math.round(offsetY + (ch.y + sittingOffset) * zoom - cached.height);
+    const poseOffset = characterPoseOffset(ch, animate);
+    const drawY = Math.round(offsetY + (ch.y + sittingOffset + poseOffset) * zoom - cached.height);
+    // Activity effects extend by at most twenty sprite pixels around the body.
+    const margin = 20 * zoom;
+    if (
+      drawX + cached.width < -margin ||
+      drawX > ctx.canvas.width + margin ||
+      drawY + cached.height < -margin ||
+      drawY > ctx.canvas.height + margin
+    )
+      continue;
 
     // Sort characters by bottom of their tile (not center) so they render
     // in front of same-row furniture (e.g. chairs) but behind furniture
@@ -401,7 +432,8 @@ export function renderScene(
     const alpha = ch.isHeadless && ghostHeadlessAgents ? HEADLESS_CHARACTER_ALPHA : 1;
 
     // Matrix spawn/despawn effect — skip outline, use per-pixel rendering
-    if (ch.matrixEffect) {
+    if (ch.matrixEffect === 'despawn' && !animate) continue;
+    if (ch.matrixEffect && animate) {
       const mDrawX = drawX;
       const mDrawY = drawY;
       const mSpriteData = spriteData;
@@ -441,13 +473,17 @@ export function renderScene(
     drawables.push({
       zY: charZY,
       draw: (c) => {
-        if (alpha === 1) {
-          c.drawImage(cached, drawX, drawY);
-          return;
-        }
         c.save();
         c.globalAlpha = alpha;
         c.drawImage(cached, drawX, drawY);
+        renderCharacterActivityEffects(
+          c,
+          ch,
+          drawX + cached.width / 2,
+          drawY + cached.height,
+          zoom,
+          animate,
+        );
         c.restore();
       },
     });

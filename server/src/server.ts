@@ -79,6 +79,7 @@ export class PixelAgentsServer {
      *  the old one. Refused while another standalone server is running: it
      *  would keep honouring the old token until it restarts. */
     rotateToken?: boolean;
+    providerId?: string;
   }): Promise<ServerConfig> {
     const embedded = options?.embedded ?? true;
     const wantsSpa = !embedded;
@@ -86,6 +87,9 @@ export class PixelAgentsServer {
     const standalone: StandaloneAccess | undefined = embedded
       ? undefined
       : {
+          ...(options?.providerId && options.providerId !== 'claude'
+            ? { providerId: options.providerId }
+            : {}),
           terminal: options?.ptyManager?.enabled ?? false,
           host,
           allowedHosts: normalizedAllowedHosts(options?.allowedHosts ?? []),

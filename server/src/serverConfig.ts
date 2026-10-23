@@ -17,6 +17,8 @@ export interface ServerTarget {
  * `--host` would be silently ignored in favour of a server that has a shell.
  */
 export interface StandaloneAccess {
+  /** Omitted by older Claude offices. Kiro must never reuse a Claude server. */
+  providerId?: string;
   /** Whether the browser may launch agents and attach to their terminals. */
   terminal: boolean;
   /** Bind address. */
@@ -46,6 +48,7 @@ export function sameStandaloneAccess(
 ): boolean {
   if (running === undefined || wanted === undefined) return running === wanted;
   return (
+    (running.providerId ?? 'claude') === (wanted.providerId ?? 'claude') &&
     running.terminal === wanted.terminal &&
     running.host === wanted.host &&
     running.allowedHosts.length === wanted.allowedHosts.length &&
@@ -56,6 +59,7 @@ export function sameStandaloneAccess(
 function isStandaloneAccess(value: unknown): value is StandaloneAccess {
   return (
     isRecord(value) &&
+    (value.providerId === undefined || typeof value.providerId === 'string') &&
     typeof value.terminal === 'boolean' &&
     typeof value.host === 'string' &&
     Array.isArray(value.allowedHosts) &&
