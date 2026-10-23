@@ -1,6 +1,6 @@
 # Pixel Agents — Compressed Reference
 
-Pixel art office where AI agents (Claude Code terminals today, any tool tomorrow) become animated characters. Ships as a **VS Code extension** and an **`npx pixel-agents` standalone CLI** from the same source tree.
+Pixel art office where AI agents (Claude Code and Hermes Agent sessions today, any tool tomorrow) become animated characters. Ships as a **VS Code extension** and an **`npx pixel-agents` standalone CLI** from the same source tree.
 
 `CONTEXT.md` is the canonical glossary — read it for what terms like Agent, Sub-agent, Teammate, Lead, Adopt, or Headless agent mean here, and use its vocabulary in code, comments, and docs.
 
@@ -33,13 +33,14 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
       hooks/claude-hook.ts           Hook script (CJS+shebang, bundled to dist/hooks/claude-hook.js)
     providers/hook/consentGate.ts    Provider-agnostic consent POLICY: when to ask (hooksConsentRequest per provider) and what an answer means (consentActionFor(choice, {installed, consent}) — see docs/adr/0001)
     providers/hook/consentExecutor.ts Provider-agnostic consent EXECUTION: applyConsentChoice(providerId, choice, ConsentEffects) runs the six actions in one order for both surfaces, and SERIALIZES answers per process across ALL providers
-    providers/index.ts               Provider registry (claudeProvider + the hookProviders list the consent gate loops over)
+      hermes/                        HermesProvider — second HookProvider (normalize for Hermes' outbound-webhook envelope, config.yaml hooks.outbound installer, Hermes consent copy, Hermes tool-name formatting)
+    providers/index.ts               Provider registry (claudeProvider + hermesProvider in the hookProviders list the consent gate loops over)
     agentRuntime.ts                  Lifecycle core: timers, scanners, HookEventHandler, SessionRouter, DismissalTracker
     agentStateStore.ts               EventEmitter-backed single source of truth (typed mutations + events)
     sessionRouter.ts                 session_id → agent_id mapping, event buffering, pending external sessions
     dismissalTracker.ts              Unified dismissal state (replaces four legacy globals)
     hookEventHandler.ts              Dispatches normalized AgentEvent into runtime
-    httpServer.ts                    Fastify: POST /api/hooks/:providerId, GET /api/health, GET /ws, SPA (standalone)
+    httpServer.ts                    Fastify: POST /api/hooks/:providerId (Bearer header or loopback `?token=` — hookAuth — for CLIs whose push delivery cannot set headers), GET /api/health, GET /ws, SPA (standalone)
     clientMessageHandler.ts          Single dispatch point for ClientMessage from webview
     server.ts                        Top-level composition
     cli.ts                           npx pixel-agents entry (npm bin)

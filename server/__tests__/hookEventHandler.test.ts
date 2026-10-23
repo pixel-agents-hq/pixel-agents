@@ -724,6 +724,53 @@ describe('HookEventHandler', () => {
     );
   });
 
+  it('SessionStart with neither path nor cwd STAGES for a stagesPathlessSessions provider', () => {
+    // Hermes' desktop-gateway rows carry cwd = NULL and there is no
+    // transcript file: the store scanner's birth sessionStart arrives
+    // path-less. The provider's stagesPathlessSessions opt-in must let it
+    // stage, or the confirm beat finds an unknown session and the session
+    // is invisible forever (the cwd-NULL defect).
+    const onExternalSessionDetected = vi.fn();
+    handler.setLifecycleCallbacks({ onExternalSessionDetected });
+
+    handler.handleEvent('hermes', {
+      hook_event_name: 'on_session_start',
+      session_id: '20261023_120000_abcdef',
+      extra: { platform: 'desktop' },
+    });
+
+    // Staged as pending, no adoption yet (two-beat).
+    expect(onExternalSessionDetected).not.toHaveBeenCalled();
+
+    // The confirm beat adopts hooks-only: no transcript path, empty cwd.
+    handler.handleEvent('hermes', {
+      hook_event_name: 'on_session_end',
+      session_id: '20261023_120000_abcdef',
+    });
+
+    expect(onExternalSessionDetected).toHaveBeenCalledWith('20261023_120000_abcdef', undefined, '');
+  });
+
+  it('Claude SessionStart with neither path nor cwd is still NOT staged', () => {
+    // The gate's original purpose holds: a file provider's transient
+    // SessionStart + SessionEnd without any activity must never mint an
+    // agent. Only providers that opt in (stagesPathlessSessions) bypass it.
+    const onExternalSessionDetected = vi.fn();
+    handler.setLifecycleCallbacks({ onExternalSessionDetected });
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'SessionStart',
+      session_id: 'pathless-claude',
+      source: 'startup',
+    });
+    handler.handleEvent('claude', {
+      hook_event_name: 'Stop',
+      session_id: 'pathless-claude',
+    });
+
+    expect(onExternalSessionDetected).not.toHaveBeenCalled();
+  });
+
   it('SessionStart(source=resume) uses cwd for matching when no transcript_path', () => {
     const onSessionClear = vi.fn();
     handler.setLifecycleCallbacks({ onSessionClear });

@@ -12,7 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import type { HookProvider } from '../../core/src/provider.js';
+import type { HookProvider, SessionScanner } from '../../core/src/provider.js';
 import { createAgentState } from './agentState.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { DismissalTracker } from './dismissalTracker.js';
@@ -38,6 +38,7 @@ import type { HookEvent } from './hookEventHandler.js';
 import { HookEventHandler } from './hookEventHandler.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { PathSet, pathsMatch } from './pathKey.js';
+import { hookProviders } from './providers/index.js';
 import { SessionRouter } from './sessionRouter.js';
 import { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -83,6 +84,11 @@ export class AgentRuntime {
   /** Shadow-store watcher for unnamed background spawns (sub-agents). */
   readonly subagentWatch: SubagentWatch;
   private hookEventHandler: HookEventHandler;
+  /** Shared routing table: the runtime answers "is this session already
+   *  driven?" from it for provider session scanners (see startSessionScanners). */
+  private readonly sessionRouter = new SessionRouter();
+  /** Live provider session-store scanners, started once by the adapter. */
+  private sessionScanners: SessionScanner[] = [];
   private lifecycleCallbacks: RuntimeLifecycleCallbacks = {};
 
   constructor(
@@ -147,7 +153,7 @@ export class AgentRuntime {
       this.waitingTimers,
       this.permissionTimers,
       provider,
-      new SessionRouter(),
+      this.sessionRouter,
       this.watchAllSessions,
     );
 
@@ -464,6 +470,50 @@ export class AgentRuntime {
     );
   }
 
+  /** Start every registered provider's session-STORE scanner (Hermes).
+   *  The JSONL scanners above belong to file-backed CLIs; a provider whose
+   *  sessions live in structured storage (SQLite + a lease registry) exposes
+   *  createSessionScanner instead, and both adapters reach it here. Idempotent:
+   *  VS Code may call this again when workspace folders change.
+   *
+   *  The context deliberately mirrors the hook pipeline's own gates:
+   *   - emit() is handleEvent() itself — scanner events share the wire path
+   *     (pending-session adoption, buffering, routing), so a scanner cannot
+   *     create a shadow office or skip the consented normalization boundary;
+   *   - isSessionLive is exactly "the router already drives this session":
+   *     registered, pending confirmation, or held by an existing agent — a
+   *     scanner must never re-adopt what hooks (or a launch) reached first;
+   *   - isAdoptableDir mirrors onExternalSessionDetected's Directory policy:
+   *     untracked working directories need "Watch All Sessions" on. */
+  startSessionScanners(): void {
+    if (this.sessionScanners.length > 0) return;
+    const started: SessionScanner[] = [];
+    for (const provider of hookProviders) {
+      if (!provider.createSessionScanner) continue;
+      let available = true;
+      try {
+        available = provider.isAvailable?.() ?? true;
+      } catch {
+        available = true; // a throwing probe must not blind the desk
+      }
+      if (!available) continue; // no data home on this machine: nothing to scan
+      const scanner = provider.createSessionScanner({
+        providerId: provider.id,
+        emit: (event) => this.hookEventHandler.handleEvent(provider.id, event as HookEvent),
+        isSessionLive: (sessionId) =>
+          this.sessionRouter.hasSession(sessionId) ||
+          this.sessionRouter.hasPending(sessionId) ||
+          [...this.store.values()].some((a) => a.sessionId === sessionId),
+        isAdoptableDir: (cwd) => this.watchAllSessions.current || isTrackedProjectDir(cwd),
+      });
+      if (!scanner) continue; // store unopenable on this host: capability absent
+      scanner.start();
+      started.push(scanner);
+      console.log(`[Pixel Agents] ${provider.displayName} session scanner started`);
+    }
+    this.sessionScanners = started;
+  }
+
   // ── Restore persisted external agents (standalone) ──
 
   /**
@@ -487,11 +537,15 @@ export class AgentRuntime {
       // is live. Restoring them directly would resurrect immortal characters
       // (also skips stale entries written by older builds that persisted them).
       if (p.leadAgentId !== undefined && !p.teamName) continue;
-      try {
-        if (!fs.existsSync(p.jsonlFile)) continue;
-      } catch {
-        continue;
-      }
+      // A live transcript is what rebinds the 1s file watcher. Hooks-only
+      // agents (created purely from provider pushes — Hermes has no
+      // transcript the office reads) have none by definition, so the
+      // transcript gate must not prune them: their events flow over the
+      // wire and restore only needs to re-register the session route.
+      // Agents WITH a transcript keep the old contract exactly: a deleted
+      // jsonlFile means the session was cleaned up; prune the stale record.
+      const transcriptLive = !!p.jsonlFile && fs.existsSync(p.jsonlFile);
+      if (!p.hooksOnly && !transcriptLive) continue;
       if (this.store.has(p.id)) {
         this.knownJsonlFiles.add(p.jsonlFile);
         if (p.id > maxId) maxId = p.id;
@@ -502,6 +556,7 @@ export class AgentRuntime {
         id: p.id,
         sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
         isExternal: true,
+        hooksOnly: p.hooksOnly,
         projectDir: p.projectDir,
         jsonlFile: p.jsonlFile,
         // Live spawn ids survive the restart so the 1s scan can re-adopt the
@@ -521,27 +576,33 @@ export class AgentRuntime {
       this.store.set(p.id, agent);
       this.knownJsonlFiles.add(p.jsonlFile);
 
-      try {
-        const stat = fs.statSync(p.jsonlFile);
-        agent.fileOffset = stat.size;
-        startFileWatching(
-          p.id,
-          p.jsonlFile,
-          this.store,
-          this.fileWatchers,
-          this.pollingTimers,
-          this.waitingTimers,
-          this.permissionTimers,
-        );
-      } catch {
-        /* ignore stat errors on restore */
+      // Watchers only for agents that actually have a transcript to watch;
+      // a hooks-only agent's liveness signal is its provider's push stream.
+      if (transcriptLive) {
+        try {
+          const stat = fs.statSync(p.jsonlFile);
+          agent.fileOffset = stat.size;
+          startFileWatching(
+            p.id,
+            p.jsonlFile,
+            this.store,
+            this.fileWatchers,
+            this.pollingTimers,
+            this.waitingTimers,
+            this.permissionTimers,
+          );
+        } catch {
+          /* ignore stat errors on restore */
+        }
       }
 
       this.registerAgent(agent.sessionId, agent.id);
 
       if (p.id > maxId) maxId = p.id;
       console.log(
-        `[Pixel Agents] Restored external agent ${p.id} -> ${path.basename(p.jsonlFile)}`,
+        `[Pixel Agents] Restored external agent ${p.id} -> ${
+          p.hooksOnly ? p.sessionId || 'hooks-only' : path.basename(p.jsonlFile)
+        }`,
       );
     }
 
@@ -558,6 +619,14 @@ export class AgentRuntime {
   dispose(): void {
     this.hookEventHandler.dispose();
     this.subagentWatch.dispose();
+    for (const scanner of this.sessionScanners) {
+      try {
+        scanner.stop();
+      } catch {
+        /* a poller that cannot stop is already on its way out */
+      }
+    }
+    this.sessionScanners = [];
 
     if (this.projectScanTimer.current) {
       clearInterval(this.projectScanTimer.current);

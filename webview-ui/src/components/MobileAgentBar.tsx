@@ -7,6 +7,8 @@ import {
   MOBILE_CARD_ORDER_STORAGE_KEY,
 } from '../constants.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
+import { useLaunchProviderSelection } from '../hooks/useLaunchProviderSelection.js';
+import type { LaunchProviderOption } from '../launchProvider.js';
 import { isTypingInTerminal } from '../terminal/terminalDom.js';
 import { findTouch, withinTapSlop } from '../touch/touchPrimitives.js';
 import type { AgentAppearance, TabStatus } from './AgentCard.js';
@@ -35,6 +37,10 @@ interface MobileAgentBarProps {
   /** False when the server has no working PTY — the + card shows disabled. */
   canLaunch: boolean;
   launchUnavailableReason: string | null;
+  /** Launchable providers (server-reported). 0/1 entries: no choice UI; >1:
+   *  the drawer header cycles through them, persisted per device — exactly
+   *  the desktop BottomToolbar behavior, so no layout is stuck on defaults. */
+  launchProviders: LaunchProviderOption[];
   getAppearance: (agentId: number) => AgentAppearance;
   statusFor: (agentId: number) => TabStatus | null;
 }
@@ -90,6 +96,7 @@ export function MobileAgentBar({
   onEditDirectory,
   canLaunch,
   launchUnavailableReason,
+  launchProviders,
   getAppearance,
   statusFor,
 }: MobileAgentBarProps) {
@@ -98,6 +105,11 @@ export function MobileAgentBar({
   const [draggingId, setDraggingId] = useState<number | null>(null);
 
   const [isLaunchDrawerOpen, setIsLaunchDrawerOpen] = useState(false);
+  // The drawer's current launch target — same shared hook as the desktop
+  // toolbar, so the compact layout offers the provider picker too. The send
+  // goes through App's launchIntoDirectory, which re-reads the stored pick,
+  // and cycleProvider persists it before returning.
+  const { selectedProviderId, cycleProvider } = useLaunchProviderSelection(launchProviders);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const launchRef = useRef<HTMLDivElement>(null);
@@ -311,6 +323,9 @@ export function MobileAgentBar({
               setIsLaunchDrawerOpen(false);
               onEditDirectory(directory);
             }}
+            launchProviders={launchProviders}
+            selectedProviderId={selectedProviderId}
+            onCycleProvider={cycleProvider}
           />
         </div>
         <div

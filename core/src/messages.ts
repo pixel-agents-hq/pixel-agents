@@ -45,6 +45,7 @@ export type ServerMessage =
   | DirectorySuggestions
   | TerminalAvailability
   | TerminalSessionOpened
+  | LaunchRejected
   | TerminalSessionClosed
   | AgentDiagnostics;
 
@@ -81,6 +82,13 @@ export interface ProviderCapabilities {
   type: 'providerCapabilities';
   readingTools: string[];
   subagentToolNames: string[];
+  providers?: ProviderDisplayEntry[];
+}
+
+export interface ProviderDisplayEntry {
+  id: string;
+  displayName: string;
+  launchable?: boolean;
 }
 
 export interface AgentCreated {
@@ -365,6 +373,12 @@ export interface TerminalSessionOpened {
   agentId: number;
 }
 
+export interface LaunchRejected {
+  type: 'launchRejected';
+  providerId?: string;
+  reason: string;
+}
+
 export interface TerminalSessionClosed {
   type: 'terminalSessionClosed';
   agentId: number;
@@ -383,6 +397,7 @@ export interface WebviewReady {
 export interface LaunchAgent {
   type: 'launchAgent';
   directoryPath?: string;
+  providerId?: string;
 }
 
 export interface FocusAgent {

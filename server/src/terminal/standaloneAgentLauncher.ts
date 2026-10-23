@@ -26,6 +26,7 @@ import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import type { AgentState } from '../types.js';
 import type { PtySessionManager } from './ptySessionManager.js';
+import { resolveLaunchCommand } from './resolveLaunchCommand.js';
 
 export interface LaunchStandaloneAgentDeps {
   store: AgentStateStore;
@@ -43,11 +44,15 @@ export interface LaunchStandaloneAgentOptions {
   bypassPermissions?: boolean;
   cols?: number;
   rows?: number;
+  /** Injectable PATH resolution (see resolveLaunchCommand); tests pass an
+   *  identity function so assertions can pin the provider's raw command. */
+  resolveCommand?: typeof resolveLaunchCommand;
 }
 
 /**
- * Spawn a Claude agent in a PTY and register it with the runtime.
- * Returns the new agent id, or null when the terminal is unavailable.
+ * Spawn an agent for a hook provider in a PTY and register it with the
+ * runtime. Returns the new agent id, or null when the terminal is
+ * unavailable.
  */
 export function launchStandaloneAgent(
   deps: LaunchStandaloneAgentDeps,
@@ -61,31 +66,46 @@ export function launchStandaloneAgent(
   }
 
   const cwd = options.directoryPath ?? process.cwd();
-  const sessionId = crypto.randomUUID();
-
-  const launch = provider.buildLaunchCommand?.(sessionId, cwd, {
+  // The id we generate is a candidate, not a contract: push-only providers
+  // mint their own session id inside buildLaunchCommand (Hermes' id format is
+  // a validated upstream contract). The effective sessionId is what the
+  // runtime registers and what later hook events must match.
+  const candidateSessionId = crypto.randomUUID();
+  const launch = provider.buildLaunchCommand?.(candidateSessionId, cwd, {
     bypassPermissions: options.bypassPermissions,
   });
   if (!launch) {
     console.error('[Pixel Agents] Terminal: provider.buildLaunchCommand is not implemented');
     return null;
   }
+  const sessionId = launch.sessionId ?? candidateSessionId;
 
-  const dirs = provider.getSessionDirs?.(cwd) ?? [];
-  if (dirs.length === 0) {
+  // File seams are for providers that own transcript files on disk. A
+  // push-only provider (no getSessionDirs: Hermes' hooks surface) has no file
+  // to pre-register or poll -- its session announces itself via hooks carrying
+  // the sessionId we registered below, which hookEventHandler auto-discovers.
+  const dirs = provider.getSessionDirs?.(cwd);
+  if (dirs !== undefined && dirs.length === 0) {
     console.error('[Pixel Agents] Terminal: provider returned no session dirs');
     return null;
   }
-  const projectDir = dirs[0];
+  const expectsTranscript = dirs !== undefined;
+  const projectDir = expectsTranscript ? dirs![0] : cwd;
+  const expectedFile = expectsTranscript ? path.join(projectDir, `${sessionId}.jsonl`) : '';
 
   const id = store.nextAgentId.current++;
 
+  let spawnWith: { command: string; args: string[] };
   let session;
   try {
+    // Inside the try: a provider CLI that is not installed anywhere fails at
+    // resolution, and that -- like a PTY spawn failure -- is a launch failure
+    // with a message, never an exception escaping into the WS handler.
+    spawnWith = (options.resolveCommand ?? resolveLaunchCommand)(launch.command, launch.args);
     session = ptyManager.create({
       agentId: id,
-      command: launch.command,
-      args: launch.args,
+      command: spawnWith.command,
+      args: spawnWith.args,
       cwd,
       env: launch.env,
       cols: options.cols,
@@ -100,8 +120,9 @@ export function launchStandaloneAgent(
 
   // Pre-register the expected JSONL so the project scanner doesn't mistake it
   // for a /clear file, exactly as the VS Code path does.
-  const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
-  runtime.knownJsonlFiles.add(expectedFile);
+  if (expectsTranscript) {
+    runtime.knownJsonlFiles.add(expectedFile);
+  }
 
   const agent = createAgentState({
     id,
@@ -151,7 +172,9 @@ export function launchStandaloneAgent(
     }
   });
 
-  startJsonlPoll(deps, id, agent);
+  if (expectsTranscript) {
+    startJsonlPoll(deps, id, agent);
+  }
 
   return id;
 }

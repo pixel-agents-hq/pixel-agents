@@ -9,6 +9,7 @@ import { DebugView } from './components/DebugView.js';
 import { DirectoryModal } from './components/DirectoryModal.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
+import { LaunchRejectionToast } from './components/LaunchRejectionToast.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TerminalDrawer } from './components/TerminalDrawer.js';
@@ -27,6 +28,7 @@ import { useIntroTour } from './hooks/useIntroTour.js';
 import { useIsMobile } from './hooks/useIsMobile.js';
 import { useKeyboardViewport } from './hooks/useKeyboardViewport.js';
 import { useTerminalDrawer } from './hooks/useTerminalDrawer.js';
+import { resolveLaunchProviderId } from './launchProvider.js';
 import { MobileShell } from './mobile/MobileShell.js';
 import { useMobileShell } from './mobile/useMobileShell.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
@@ -106,6 +108,8 @@ function App() {
     setGhostHeadlessAgents,
     hooksEnabled,
     hooksInstalled,
+    hookProviders,
+    launchRejection,
     hooksStatusSeq,
     hooksInfoShown,
     consentRequest,
@@ -163,9 +167,24 @@ function App() {
     agentSeenActivity,
   });
 
-  const launchIntoDirectory = useCallback((directory: Directory) => {
-    transport.send({ type: 'launchAgent', directoryPath: directory.path });
-  }, []);
+  // Providers the server can actually spawn (additive `launchable` field;
+  // older servers omit it and everything is assumed launchable, matching the
+  // pre-picker behavior where every launch was Claude).
+  const launchableProviders = useMemo(
+    () => hookProviders.filter((p) => p.launchable !== false),
+    [hookProviders],
+  );
+
+  const launchIntoDirectory = useCallback(
+    (directory: Directory) => {
+      transport.send({
+        type: 'launchAgent',
+        directoryPath: directory.path,
+        providerId: resolveLaunchProviderId(launchableProviders),
+      });
+    },
+    [launchableProviders],
+  );
   const mobileShell = useMobileShell({
     getOfficeState,
     terminalAgentIds,
@@ -231,9 +250,26 @@ function App() {
     onClose: handleIntroClose,
   } = useIntroTour({ consentRequest, hooksInstalled, hooksStatusSeq, dismissConsentRequest });
 
-  // The Settings surface renders one provider today; its checkbox binds to
-  // the Claude row of the per-provider install-state map.
+  // The Claude row keeps a dedicated binding for the hooks-info tooltip,
+  // which is Claude-onboarding copy. Settings itself renders one row per
+  // provider from the server's registry.
   const claudeHooksInstalled = hooksInstalled['claude'] === true;
+
+  // Settings rows: one per provider the server reports as AVAILABLE, falling
+  // back to the legacy single Claude row when an older server sends no list
+  // (the capabilities field is additive — an unlisted provider must not erase
+  // the row users already know). A row only appears once that provider's
+  // hooksStatus has ANSWERED: the providerId a toggle carries is echoed from
+  // an arrived row, never originated here (unchanged contract).
+  const hookProviderRows = (
+    hookProviders.length > 0 ? hookProviders : [{ id: 'claude', displayName: 'Claude Code' }]
+  )
+    .map((p) => ({
+      id: p.id,
+      label: p.id === 'claude' ? 'Instant Detection (Hooks)' : `${p.displayName} hooks`,
+      installed: hooksInstalled[p.id] === true,
+    }))
+    .filter((row) => row.id in hooksInstalled);
 
   // Mutate Directory→Area mappings locally + send to server. Updates OfficeState in
   // the same tick so a follow-up agentCreated picks up the new mapping.
@@ -641,8 +677,13 @@ function App() {
           onEditDirectory={directoryEditor.edit}
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
+          launchProviders={launchableProviders}
         />
       )}
+
+      {/* The server refused a launch (unknown/view-only provider): the click
+          committed the user to an action, so the answer has to be visible. */}
+      {launchRejection && <LaunchRejectionToast rejection={launchRejection} />}
 
       {/* Mobile: Settings floats top-left (the layout editor stays desktop-
             only — its tools are drag/hover-driven). */}
@@ -713,6 +754,7 @@ function App() {
           focusedAgentId={focusedAgentId}
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
+          launchProviders={launchableProviders}
           directories={directories}
           onAddDirectory={directoryEditor.add}
           onEditDirectory={directoryEditor.edit}
@@ -832,22 +874,14 @@ function App() {
           setWatchAllSessions(newVal);
           transport.send({ type: 'setWatchAllSessions', enabled: newVal });
         }}
-        hooksInstalled={claudeHooksInstalled}
-        onToggleHooksEnabled={() => {
+        hookProviderRows={hookProviderRows}
+        onToggleHooks={(providerId: string, installed: boolean) => {
           // Toggle the DISPLAYED state (actual install), not the preference: when the two disagree — preference on,
           // nothing installed while consent is pending — toggling the preference would turn hooks OFF for a user
           // asking for ON. No optimistic local update either; both backends answer with the truthful hooksStatus this
           // checkbox renders, so it lands correct instead of flickering when an install fails. The providerId is
           // ECHOED from that row (never originated here), so nothing sends until the row has arrived.
-          const [rowProviderId] =
-            Object.entries(hooksInstalled).find(([id]) => id === 'claude') ?? [];
-          if (rowProviderId !== undefined) {
-            transport.send({
-              type: 'setHooksEnabled',
-              providerId: rowProviderId,
-              enabled: !claudeHooksInstalled,
-            });
-          }
+          transport.send({ type: 'setHooksEnabled', providerId, enabled: !installed });
         }}
         showAreas={showAreas}
         onToggleShowAreas={onToggleShowAreas}

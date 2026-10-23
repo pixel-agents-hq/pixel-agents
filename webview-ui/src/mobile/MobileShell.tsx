@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button.js';
 import { MOBILE_PASTE_PROMPT } from '../constants.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import type { TerminalDrawerController } from '../hooks/useTerminalDrawer.js';
+import type { LaunchProviderOption } from '../launchProvider.js';
 import { readClipboardText } from '../terminal/clipboard.js';
 import { TRACK_TRANSITION, trackTransform, useEdgeSwipe } from './useEdgeSwipe.js';
 import type { MobileShellController } from './useMobileShell.js';
@@ -24,6 +25,8 @@ interface MobileShellProps {
   focusedAgentId: number | null;
   terminalAvailable: boolean;
   terminalUnavailableReason: string | null;
+  /** Launchable providers for the + card's drawer (see MobileAgentBar). */
+  launchProviders: LaunchProviderOption[];
   /** The + card's launch drawer. */
   directories: Directory[];
   onAddDirectory: () => void;
@@ -49,6 +52,7 @@ export function MobileShell({
   focusedAgentId,
   terminalAvailable,
   terminalUnavailableReason,
+  launchProviders,
   directories,
   onAddDirectory,
   onEditDirectory,
@@ -132,6 +136,7 @@ export function MobileShell({
         onEditDirectory={onEditDirectory}
         canLaunch={terminalAvailable}
         launchUnavailableReason={terminalUnavailableReason}
+        launchProviders={launchProviders}
         getAppearance={drawer.getAppearance}
         statusFor={drawer.statusFor}
       />

@@ -124,6 +124,7 @@ components:
         # Terminal (standalone embedded terminal control plane)
         - $ref: '#/components/schemas/TerminalAvailability'
         - $ref: '#/components/schemas/TerminalSessionOpened'
+        - $ref: '#/components/schemas/LaunchRejected'
         - $ref: '#/components/schemas/TerminalSessionClosed'
         # Diagnostics
         - $ref: '#/components/schemas/AgentDiagnostics'
@@ -166,7 +167,13 @@ components:
       description: |
         Sent once after `webviewReady`, before any agent messages. Tells the client
         which tool names should render with the "reading" animation and which spawn
-        sub-agent characters.
+        sub-agent characters. Both tool-name arrays are the UNION across the hook
+        providers available on this machine — provider tool-name spaces belong to
+        different CLIs (Claude's `Read` vs Hermes' `read_file`), so the merge cannot
+        mis-classify either. `providers` (optional, present from multi-provider
+        builds) is the display registry every provider-keyed UI surface — the
+        Settings hooks rows, consent asks — must render from: a provider absent
+        here is unavailable on this machine and must not be offered.
       type: object
       additionalProperties: false
       required: [type, readingTools, subagentToolNames]
@@ -183,6 +190,49 @@ components:
           items:
             type: string
           description: Tool names that spawn sub-agent characters (e.g. Task, Agent).
+        providers:
+          type: array
+          description: The hook providers present and available on this machine.
+          items:
+            $ref: '#/components/schemas/ProviderDisplayEntry'
+
+    ProviderDisplayEntry:
+      description: One hook provider a client surface may render.
+      type: object
+      additionalProperties: false
+      required: [id, displayName]
+      properties:
+        id:
+          type: string
+          description: HookProvider.id — the same wire key hooksStatus and the consent messages use.
+        displayName:
+          type: string
+          description: Human-readable provider name for Settings rows and consent copy.
+        launchable:
+          type: boolean
+          description: >-
+            Whether the server can spawn this provider from the office
+            (+Agent). Additive: older clients ignore it; a provider without
+            buildLaunchCommand reports false.
+
+    LaunchRejected:
+      description: >-
+        The server refused a launchAgent attempt (unknown providerId, a
+        view-only provider without buildLaunchCommand). Sent to the
+        requesting socket only — the click committed the user to a launch,
+        and silence would read as a dead button.
+      type: object
+      additionalProperties: false
+      required: [type, reason]
+      properties:
+        type:
+          const: launchRejected
+        providerId:
+          type: string
+          description: The provider the client asked to launch, when it was a string.
+        reason:
+          type: string
+          description: Human-readable cause surfaced as a toast.
 
     AgentCreated:
       description: A new agent has appeared in the office.
@@ -979,7 +1029,10 @@ components:
           const: webviewReady
 
     LaunchAgent:
-      description: Launch a new Claude agent in a new terminal.
+      description: >-
+        Launch a new agent of one provider in a server PTY. Absent providerId
+        = legacy wire = Claude (documented server fallback); an id naming no
+        registered provider is refused with launchRejected, never defaulted.
       type: object
       additionalProperties: false
       required: [type]
@@ -989,6 +1042,9 @@ components:
         directoryPath:
           type: string
           description: Path of the Directory to launch into.
+        providerId:
+          type: string
+          description: HookProvider.id to spawn (e.g. claude, hermes).
 
     FocusAgent:
       description: Focus an agent's terminal.

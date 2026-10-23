@@ -54,19 +54,24 @@ export function extractContextTokens(record: unknown): number {
  * Window an observed context has to fit in, when nobody can name it.
  *
  * The provider's answer for the model is the real source (see
- * `HookProvider.contextWindowForModel`); this is the backstop for unrecognized
- * models and for windows larger than anything we know about. It only ever
- * widens: a context that doesn't fit proves the assumption too small, while a
- * context that shrinks proves nothing (a 900k session compacted to 20k is
- * still running in a 1M window).
+ * `HookProvider.contextWindowForModel`, and a push provider's per-session
+ * window on the turn event); this is the backstop for unrecognized models and
+ * for windows larger than anything we know about. It only ever widens: a
+ * context that doesn't fit proves the assumption too small, while a context
+ * that shrinks proves nothing (a 900k session compacted to 20k is still
+ * running in a 1M window). A fit keeps ANY current — including a provider-
+ * declared window below the 200k default, which must survive untouched. An
+ * overflow snaps to the next plausible tier: an odd figure like 260k is a
+ * stale declaration, not a window anyone ships.
  */
 export function widenContextWindow(observed: number, current: number): number {
-  const window = Math.max(current || 0, DEFAULT_MAX_CONTEXT_TOKENS);
+  const window = current || DEFAULT_MAX_CONTEXT_TOKENS;
+  if (observed <= window) return window;
   for (const tier of CONTEXT_WINDOW_TIERS) {
-    if (tier >= observed) return Math.max(window, tier);
+    if (tier >= observed) return tier;
   }
   const largest = CONTEXT_WINDOW_TIERS[CONTEXT_WINDOW_TIERS.length - 1];
-  return Math.max(window, Math.ceil(observed / largest) * largest);
+  return Math.ceil(observed / largest) * largest;
 }
 
 function applyContextTokens(
@@ -118,6 +123,25 @@ export function updateContextUsage(
 /** The provider's window for whichever model wrote this record. */
 function windowFor(record: unknown, provider?: HookProvider | null): number | undefined {
   return provider?.contextWindowForModel?.((record as TranscriptRecord | null)?.message?.model);
+}
+
+/**
+ * Apply a context figure a provider PUSHED instead of writing to a transcript.
+ *
+ * The transcript path derives tokens per record and needs the sidechain
+ * position logic; a push event (Hermes' turn-end snapshot) is already the
+ * agent's own newest turn, so it folds in directly. `declaredWindow` is the
+ * provider-resolved window — the real denominator, preferred over the running
+ * estimate. Non-positive token counts never move the gauge.
+ */
+export function applyContextUsage(
+  agentId: number,
+  agent: AgentState,
+  agents: AgentStateStore,
+  tokens: number,
+  declaredWindow: number | undefined,
+): void {
+  if (tokens > 0) applyContextTokens(agentId, agent, agents, tokens, true, declaredWindow);
 }
 
 /**

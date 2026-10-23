@@ -21,11 +21,15 @@ import {
 describe('configPersistence: areas', () => {
   let tempHome: string;
   let originalHome: string | undefined;
+  let originalProfile: string | undefined;
 
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-config-test-'));
     originalHome = process.env.HOME;
+    originalProfile = process.env.USERPROFILE;
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
+    // win32 os.homedir() reads USERPROFILE, not HOME (see cli.test's dual stub) — mirror it.
   });
 
   afterEach(() => {
@@ -33,6 +37,11 @@ describe('configPersistence: areas', () => {
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalProfile;
     }
     fs.rmSync(tempHome, { recursive: true, force: true });
   });

@@ -94,6 +94,11 @@ export interface PersistedAgent {
   terminalName: string;
   /** Whether this agent was detected from an external source */
   isExternal?: boolean;
+  /** Provider pushes keep this agent live; it has no transcript the office
+   *  reads. Persisted so restoreExternalAgents does not prune it for the
+   *  missing jsonlFile it was never going to have (mirror of the same field
+   *  on core/src/schemas.ts PersistedAgent). */
+  hooksOnly?: boolean;
   jsonlFile: string;
   projectDir: string;
   /** Directory name — the agent's origin label (only set for multi-root workspaces) */

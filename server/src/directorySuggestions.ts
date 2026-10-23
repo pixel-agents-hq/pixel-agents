@@ -31,6 +31,26 @@ import { type HostDirectoryEntry, listDirectories, normalizeDirectoryPath } from
  *  fallback simply yields no suggestions), which is why this is a Pick. */
 export type SuggestionProvider = Pick<HookProvider, 'getAllSessionRoots' | 'sessionFilePattern'>;
 
+/** A working directory a provider's sessions say was recently worked in, with
+ *  the recency the office orders by. Both sources speak it: a transcript walk
+ *  (mtime) and a session store (its own activity column, already in ms). */
+type SuggestionEntry = { cwd: string; lastActive: number };
+
+/** One provider's file-fallback walk: every transcript root, every session
+ *  directory, the working directories recovered out of them (recency included).
+ *  Both collectors below are this plus the shared hardening tail. */
+function transcriptEntries(provider: SuggestionProvider): SuggestionEntry[] {
+  const suffix = transcriptSuffix(provider.sessionFilePattern);
+  const entries: SuggestionEntry[] = [];
+  for (const root of provider.getAllSessionRoots?.() ?? []) {
+    for (const sessionDir of listSubdirectories(root)) {
+      const recovered = recoverWorkingDirectory(sessionDir, suffix);
+      if (recovered !== undefined) entries.push(recovered);
+    }
+  }
+  return entries;
+}
+
 /**
  * Directories the user has already run agents in and hasn't turned into a
  * Directory yet, most recently worked-in first, capped at
@@ -49,38 +69,58 @@ export function collectDirectorySuggestions(
   provider: SuggestionProvider,
   hostDirectories: HostDirectoryEntry[],
 ): string[] {
+  return dedupeSort(transcriptEntries(provider), hostDirectories);
+}
+
+/**
+ * The SAME list across ALL registered providers: file-fallback walks (Claude)
+ * plus structured session stores (Hermes' `sessions` table via
+ * `directorySuggestions`). One hardening step over the single-provider form:
+ * a provider that throws contributes nothing rather than poisoning the whole
+ * answer — suggestions are a convenience and may never fail the modal.
+ */
+export function collectAllDirectorySuggestions(
+  providers: readonly (SuggestionProvider & Pick<HookProvider, 'directorySuggestions'>)[],
+  hostDirectories: HostDirectoryEntry[],
+): string[] {
+  const entries: SuggestionEntry[] = [];
+  for (const provider of providers) {
+    try {
+      entries.push(...transcriptEntries(provider));
+      for (const entry of provider.directorySuggestions?.() ?? []) {
+        if (typeof entry.cwd === 'string' && entry.cwd.length > 0) {
+          entries.push({ cwd: entry.cwd, lastActive: entry.lastActiveMs });
+        }
+      }
+    } catch {
+      continue; // one provider's broken store must not zero out the rest
+    }
+  }
+  return dedupeSort(entries, hostDirectories);
+}
+
+/** Shared tail of both collectors: drop what the union already has, resolve,
+ *  require existence, collapse duplicate spellings to their freshest entry,
+ *  and order by last activity so the cap trims abandoned projects. */
+function dedupeSort(entries: SuggestionEntry[], hostDirectories: HostDirectoryEntry[]): string[] {
   const known = new Set(
     listDirectories(hostDirectories).map((directory) => normalizeDirectoryPath(directory.path)),
   );
-  const suffix = transcriptSuffix(provider.sessionFilePattern);
-  // Keyed by the normalized path so `/p` and `/p/` are one suggestion; the value
-  // carries the resolved path the office displays and fills into the field.
   const byKey = new Map<string, { resolved: string; lastActive: number }>();
-
-  for (const root of provider.getAllSessionRoots?.() ?? []) {
-    for (const sessionDir of listSubdirectories(root)) {
-      const recovered = recoverWorkingDirectory(sessionDir, suffix);
-      if (recovered === undefined) continue;
-
-      const resolved = path.resolve(recovered.cwd);
-      const key = normalizeDirectoryPath(resolved);
-      if (known.has(key)) continue;
-      // Several session directories can resolve to one working directory (a
-      // rename leaves both spellings behind); the suggestion's recency is the
-      // newest of them.
-      const existing = byKey.get(key);
-      if (existing !== undefined) {
-        existing.lastActive = Math.max(existing.lastActive, recovered.lastActive);
-        continue;
-      }
-      // A session's directory can be renamed or deleted long after the fact;
-      // suggesting one would only produce a rejection when the modal saved it.
-      if (!isDirectory(resolved)) continue;
-
-      byKey.set(key, { resolved, lastActive: recovered.lastActive });
+  for (const entry of entries) {
+    const resolved = path.resolve(entry.cwd);
+    const key = normalizeDirectoryPath(resolved);
+    if (known.has(key)) continue;
+    const existing = byKey.get(key);
+    if (existing !== undefined) {
+      existing.lastActive = Math.max(existing.lastActive, entry.lastActive);
+      continue;
     }
+    // A session's directory can be renamed or deleted long after the fact;
+    // suggesting one would only produce a rejection when the modal saved it.
+    if (!isDirectory(resolved)) continue;
+    byKey.set(key, { resolved, lastActive: entry.lastActive });
   }
-
   return [...byKey.values()]
     .sort((a, b) => b.lastActive - a.lastActive)
     .slice(0, DIRECTORY_SUGGESTION_LIMIT)
