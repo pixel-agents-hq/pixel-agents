@@ -21,20 +21,38 @@ import {
 import { collectDirectorySuggestions } from './directorySuggestions.js';
 import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
+import type { PermissionApprovals } from './permissions/approvalRegistry.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
-import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
+import {
+  claudeProvider,
+  hookProviderById,
+  hookProviders,
+  statusLineState,
+} from './providers/index.js';
+import { getSignalsHub } from './signals/registry.js';
+import type { UsageEntry } from './signals/tokenMeter.js';
+import { isDateKey } from './tasks/taskLedger.js';
+import { buildTimeReport, datesBetween, timeReportRange } from './tasks/timeReport.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
+/** What a read-only office may send: messages that only read. Everything else
+ *  is refused at the top of handleClientMessage. */
 /** Async hook toggle side effect (install/uninstall + script copy). Provided by cli.ts. */
 export type SetHooksEnabledSideEffect = (
   providerId: string,
   enabled: boolean,
 ) => Promise<void> | void;
+
+/** Async usage meter toggle side effect: copy the status line script, then
+ *  install the statusLine entry (or remove it). Needs the dist root, known only
+ *  to the host. Throws when the install was refused (the user's own status
+ *  line, an unparseable settings.json); the handler re-derives the state. */
+export type SetUsageMeterEnabledSideEffect = (enabled: boolean) => Promise<void> | void;
 
 /**
  * Reload server-side assets after an external-asset-directory change and
@@ -62,10 +80,13 @@ export interface ClientMessageContext {
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
   /** Reload assets after an external-asset-directory change. Needs the dist root, known only to cli.ts. */
   onReloadAssets?: ReloadAssetsSideEffect;
+  /** Install/remove the usage meter's status line. Needs the dist root, known only to cli.ts. */
+  onSetUsageMeterEnabled?: SetUsageMeterEnabledSideEffect;
   /**
    * Whether this client may change ANYTHING. An unprivileged client is
-   * read-only: it may load and watch the office (`webviewReady`) and every
-   * other message is refused at the top of handleClientMessage. Decided
+   * read-only: it may load and watch the office (`webviewReady`) and read the
+   * Manager's task log and reports (READ_ONLY_MESSAGE_TYPES); every other
+   * message is refused at the top of handleClientMessage. Decided
    * per-connection by the transport (wsAuth.standaloneHandshakeVerdict, or the
    * embedded Bearer token); defaults to false so a caller that forgets to pass
    * it gets the safe answer.
@@ -74,7 +95,37 @@ export interface ClientMessageContext {
   /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
    *  mode, where the editor owns terminal lifecycle. */
   ptyManager?: PtySessionManager;
+  /** Pending permission requests (standalone). Answered by `answerPermission`. */
+  approvals?: PermissionApprovals;
+  /** Who is connected (address + Host), for approvals.log. */
+  client?: string;
 }
+
+/**
+ * The only messages a read-only (unprivileged) client may send. Keep this to
+ * pure reads that reveal nothing the read-only office doesn't already show:
+ *  - webviewReady: load and watch the office.
+ *  - requestTasks / requestReport: read a day's task log or the Manager's
+ *    report. Task titles, repos, statuses and counts are what the office
+ *    already broadcasts live (labels, the TODAY strip, taskUpdated, and
+ *    today's tasksSnapshot on connect), and the report is prose over that same
+ *    log. They change nothing and run nothing, and the phone view -- which is
+ *    unprivileged -- needs them for the Tasks board's history and Report tab.
+ *  - requestTimeReport: the same log and the token totals, summed per repo
+ *    per day for the Time tab and its CSV (repos, hours, counts and the token
+ *    figures the TODAY strip already shows).
+ * Anything that writes, launches or spends (writeReportNow runs claude on the
+ * operator's subscription) stays privileged.
+ */
+const READ_ONLY_MESSAGE_TYPES: ReadonlySet<string> = new Set([
+  'webviewReady',
+  'requestTasks',
+  'requestReport',
+  // Tap-for-timeline: one agent's recent actions, sent back to the asker only.
+  'requestTimeline',
+  // Time per repo over a date range, sent back to the asker only.
+  'requestTimeReport',
+]);
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
 const KEY_SOUND_ENABLED = 'pixel-agents.soundEnabled';
@@ -127,8 +178,8 @@ export function handleClientMessage(
 
   // Tokenless is read-only. Refused HERE, once, rather than per message, so a
   // message type added later is privileged by default instead of open until
-  // someone remembers to gate it.
-  if (!ctx.privileged && msg.type !== 'webviewReady') {
+  // someone remembers to gate it. Only READ_ONLY_MESSAGE_TYPES get through.
+  if (!ctx.privileged && !READ_ONLY_MESSAGE_TYPES.has(String(msg.type))) {
     refuseReadOnly(msg, send, ctx);
     return;
   }
@@ -176,10 +227,85 @@ export function handleClientMessage(
       break;
     }
 
+    case 'answerPermission':
+      // Privileged only, like everything past the read-only gate above.
+      ctx.approvals?.answer(msg.requestId, msg.behavior, ctx.client, msg.answers);
+      break;
+
     case 'requestDiagnostics':
       // Point-to-point reply to the requesting socket (NOT a broadcast).
       send({ type: 'agentDiagnostics', agents: buildAgentDiagnostics(store) });
       break;
+
+    case 'requestTasks':
+      // Read-only clients may ask (READ_ONLY_MESSAGE_TYPES). The date names a
+      // file, so anything but a real YYYY-MM-DD is dropped unanswered.
+      if (!isDateKey(msg.date)) break;
+      send({
+        type: 'tasksSnapshot',
+        date: msg.date,
+        tasks: runtime?.tasks.tasksFor(msg.date) ?? [],
+      });
+      break;
+
+    case 'requestReport':
+      // Read-only clients may ask (READ_ONLY_MESSAGE_TYPES); same date rule.
+      if (!isDateKey(msg.date)) break;
+      send({
+        ...(runtime?.reports.reportMessage(msg.date) ?? {
+          type: 'report',
+          date: msg.date,
+          exists: false,
+        }),
+      });
+      break;
+
+    case 'writeReportNow':
+      // Privileged (past the gate above): it runs claude on the operator's
+      // subscription. Everyone hears reportReady when it is saved.
+      void runtime?.reports.writeNow();
+      break;
+
+    case 'setAnshBrainEnabled':
+      // Privileged. Everyone hears the new anshBrainState.
+      runtime?.ansh.setEnabled(msg.enabled === true);
+      break;
+
+    case 'askAnsh':
+      // Privileged: it runs claude on the operator's subscription (still under
+      // the brain's own rate limit and daily cap).
+      void runtime?.ansh.ask();
+      break;
+    case 'requestTimeline': {
+      // Point-to-point too: only the client that tapped the character asked.
+      const timeline = getSignalsHub()?.timelineMessage(store, msg.id);
+      if (timeline) send({ ...timeline });
+      break;
+    }
+
+    case 'requestTimeReport': {
+      // Read-only clients may ask (READ_ONLY_MESSAGE_TYPES). The dates name
+      // files and the span bounds the reads, so a bad range is dropped
+      // unanswered. Point-to-point: only the Time tab that asked wants it.
+      // The tokens may need the transcripts read first (signals/tokenBackfill.ts),
+      // so the reply follows once they are in; the task log is read then too.
+      const range = timeReportRange(msg.from, msg.to);
+      if (!range) break;
+      const usage =
+        getSignalsHub()?.timeReportUsage(datesBetween(range.from, range.to)) ??
+        Promise.resolve<Record<string, UsageEntry[]>>({});
+      void usage.then(
+        (byDate) =>
+          send({
+            ...buildTimeReport(range, {
+              tasksFor: (date) => runtime?.tasks.tasksFor(date) ?? [],
+              usageFor: (date) => byDate[date] ?? [],
+            }),
+          }),
+        (err) => console.error('[Pixel Agents] Time report failed:', err),
+      );
+      break;
+    }
 
     case 'saveLayout':
       if (msg.layout) {
@@ -275,6 +401,11 @@ export function handleClientMessage(
 
     case 'setHooksInfoShown':
       adapter?.setSetting(KEY_HOOKS_INFO_SHOWN, true);
+      break;
+
+    case 'setUsageMeterEnabled':
+      if (typeof msg.enabled !== 'boolean') break;
+      void applyUsageMeter(ctx, msg.enabled);
       break;
 
     case 'addExternalAssetDirectory': {
@@ -398,6 +529,21 @@ async function applyHooksPreference(
   } catch (err) {
     console.error('[Pixel Agents] Applying the hooks preference failed:', err);
   }
+}
+
+/**
+ * Run the usage meter toggle's side effect, then tell every office the ACTUAL
+ * state, re-derived from settings.json -- the toggle expresses intent, and the
+ * install refuses a status line of the user's own. Machine-wide (one
+ * settings.json), so it is a broadcast, not a reply. Never rejects.
+ */
+async function applyUsageMeter(ctx: ClientMessageContext, enabled: boolean): Promise<void> {
+  try {
+    await ctx.onSetUsageMeterEnabled?.(enabled);
+  } catch (err) {
+    console.error('[Pixel Agents] Usage meter toggle failed:', err);
+  }
+  ctx.store.broadcast({ type: 'usageMeterStatus', state: statusLineState() });
 }
 
 /**
@@ -558,6 +704,10 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
       });
   }
 
+  // 4a-ter. The usage meter's status line (on / off / the user's own). Read-only
+  // offices get it too: the server room's display says why it is blank.
+  send({ type: 'usageMeterStatus', state: statusLineState() });
+
   // 4b. Directory→Area mappings (must arrive before existingAgents so the
   // webview seat-preference logic has the dict when characters are created).
   send({
@@ -592,6 +742,10 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const agentIds: number[] = [];
   const directoryNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
+  const sourceLabels: Record<number, string> = {};
+  const sourceKinds: Record<number, 'computer' | 'cloud'> = {};
+  const titles: Record<number, string> = {};
+  const backgroundAgents: Record<number, boolean> = {};
   const persistedSeats = adapter?.loadSeats() ?? {};
   const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
   for (const [id, agent] of store) {
@@ -601,6 +755,16 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
+    }
+    if (agent.remoteSource) {
+      sourceLabels[id] = agent.remoteSource.label;
+      sourceKinds[id] = agent.remoteSource.kind;
+    }
+    if (agent.title) {
+      titles[id] = agent.title;
+    }
+    if (agent.background) {
+      backgroundAgents[id] = true;
     }
     const persisted = persistedSeats[String(id)];
     agentMeta[id] = {
@@ -615,6 +779,10 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     agentMeta,
     directoryNames,
     externalAgents,
+    sourceLabels,
+    sourceKinds,
+    titles,
+    backgroundAgents,
   });
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents
@@ -626,6 +794,14 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // exist once the layout flush creates them. Without this a reconnecting
   // client shows bare characters until each agent takes another turn.
   resendAgentActivity(send, store);
+
+  // 8b. Permission requests still waiting on an answer. Read-only clients see
+  // them too (the card, without buttons).
+  for (const pending of ctx.approvals?.pendingMessages() ?? []) send({ ...pending });
+
+  // 8c. Ansh's brain: on/off and the recent thoughts (read-only clients too:
+  // they watch him walk and talk, they just can't ask or switch him off).
+  if (runtime) send({ ...runtime.ansh.stateMessage() });
 
   // 9. Re-announce live terminals AFTER existingAgents, so a browser that
   // reloaded (or a second tab) rebuilds its drawer tabs. The PTY outlives the
@@ -698,6 +874,9 @@ function refuseReadOnly(
         .then((installed) => send({ type: 'hooksStatus', providerId: provider.id, installed }));
       return;
     }
+    case 'setUsageMeterEnabled':
+      send({ type: 'usageMeterStatus', state: statusLineState() });
+      return;
     case 'setSoundEnabled':
     case 'setAlwaysShowLabels':
     case 'setGhostHeadlessAgents':

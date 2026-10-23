@@ -9,6 +9,11 @@
 /** Output filename after esbuild compiles claude-hook.ts to CJS (source is .ts, output is .js) */
 export const CLAUDE_HOOK_SCRIPT_NAME = 'claude-hook.js';
 
+/** Output filename of the status line script (hooks/claude-statusline.ts): the
+ *  `statusLine` command the usage meter installs. Claude Code passes it the
+ *  subscription's 5-hour and 7-day usage, which nothing else carries. */
+export const CLAUDE_STATUSLINE_SCRIPT_NAME = 'claude-statusline.js';
+
 /** The script name we shipped before the rename to claude-hook.js. Still
  *  recognized as ours so a very old install can be migrated or removed. */
 export const LEGACY_HOOK_SCRIPT_NAME = 'pixel-agents-hook.js';
@@ -18,6 +23,8 @@ export const LEGACY_HOOK_SCRIPT_NAME = 'pixel-agents-hook.js';
  *  local server, so an event we do not act on is scope we should not ask for.
  *  SessionStart/SessionEnd handle session lifecycle (start, /clear, resume, exit).
  *  Stop/PermissionRequest/Notification handle turn completion and permission UI.
+ *  StopFailure ends a turn that stopped on an API error -- it is how a usage
+ *  limit pausing the session is seen (inbox/usageLimit.ts).
  *  SubagentStart/SubagentStop/TeammateIdle/TaskCompleted power Agent Teams.
  *
  *  Deliberately NOT installed: UserPromptSubmit and TaskCreated. Both normalize
@@ -38,7 +45,12 @@ export const CLAUDE_HOOK_EVENTS = [
   'SubagentStop',
   'TeammateIdle',
   'TaskCompleted',
+  'StopFailure',
 ] as const;
+
+/** `timeout` (seconds) on every hook entry we install, except PermissionRequest
+ *  (see permissions/constants.ts PERMISSION_HOOK_TIMEOUT_SECONDS). */
+export const HOOK_TIMEOUT_SECONDS = 5;
 
 /** Suffix of the one-time pre-modification backup of settings.json. Brand-named
  *  rather than a generic `.backup`, which collides with other tools' backup
@@ -85,3 +97,16 @@ export const CLAUDE_SMALL_CONTEXT_WINDOW = 200_000;
  *  guessing small for a large model pins every gauge in the red, while the
  *  reverse is a quiet under-read that the runtime's widening still corrects. */
 export const CLAUDE_SMALL_CONTEXT_MODEL_PATTERN = /haiku|claude-[123]|-4-[01]\b/i;
+
+// ── MCP tool names ──────────────────────────────────────────
+//
+// Claude Code names an MCP tool `mcp__<server>__<tool>`. Plugin-provided
+// servers are `plugin_<plugin>_<server>` (usually the same word twice) and
+// claude.ai connectors `claude_ai_<Name>`.
+export const MCP_TOOL_PREFIX = 'mcp__';
+export const MCP_NAME_SEPARATOR = '__';
+export const MCP_PLUGIN_SERVER_PREFIX = 'plugin_';
+export const MCP_CLAUDE_AI_SERVER_PREFIX = 'claude_ai_';
+/** A plain lower-case server name ("playwright") reads better capitalized;
+ *  anything else ("claude-in-chrome") is shown as its owner wrote it. */
+export const MCP_PLAIN_SERVER_NAME = /^[a-z][a-z0-9]*$/;

@@ -1,0 +1,33 @@
+{
+  "id": "BALCONY_RAILING",
+  "name": "Balcony Railing",
+  "category": "misc",
+  "type": "group",
+  "groupType": "rotation",
+  "rotationScheme": "2-way",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 0,
+  "members": [
+    {
+      "type": "asset",
+      "id": "BALCONY_RAILING_FRONT",
+      "file": "BALCONY_RAILING_FRONT.png",
+      "width": 16,
+      "height": 16,
+      "footprintW": 1,
+      "footprintH": 1,
+      "orientation": "front"
+    },
+    {
+      "type": "asset",
+      "id": "BALCONY_RAILING_SIDE",
+      "file": "BALCONY_RAILING_SIDE.png",
+      "width": 16,
+      "height": 16,
+      "footprintW": 1,
+      "footprintH": 1,
+      "orientation": "side"
+    }
+  ]
+}

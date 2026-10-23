@@ -10,17 +10,25 @@ import type {
   AssetCache,
   ReloadAssetsSideEffect,
   SetHooksEnabledSideEffect,
+  SetUsageMeterEnabledSideEffect,
 } from './clientMessageHandler.js';
 import { handleClientMessage } from './clientMessageHandler.js';
 import {
   HOOK_API_PREFIX,
   MAX_HOOK_BODY_SIZE,
+  USAGE_API_PATH,
   WS_CLOSE_FORBIDDEN_ORIGIN,
   WS_CLOSE_UNAUTHORIZED,
 } from './constants.js';
+import { registerMcpRoute } from './mcp/mcpRoute.js';
+import type { OfficeView } from './mcp/officeTools.js';
+import type { PermissionApprovals } from './permissions/approvalRegistry.js';
+import { registerPermissionRoutes } from './permissions/permissionRoutes.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { registerTerminalRoutes } from './terminal/terminalRoutes.js';
+import { getHookProvider } from './transcriptParser.js';
 import type { AgentState } from './types.js';
+import { getUsageMeter } from './usage/usageMeter.js';
 import {
   bearerTokenValid,
   isAllowedWebSocketOrigin,
@@ -53,6 +61,8 @@ export interface HttpServerOptions {
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
   /** Invoked when an external asset directory is added/removed. Standalone reloads + re-broadcasts assets here. */
   onReloadAssets?: ReloadAssetsSideEffect;
+  /** Invoked when the usage meter is toggled via WebSocket. Standalone installs/removes its status line here. */
+  onSetUsageMeterEnabled?: SetUsageMeterEnabledSideEffect;
   /** PTY terminals for standalone-launched agents. Absent = terminal feature off
    *  (VS Code embedded mode, where the editor owns terminals). */
   ptyManager?: PtySessionManager;
@@ -60,6 +70,8 @@ export interface HttpServerOptions {
    *  privileged standalone handshake may arrive under -- e.g. a reverse proxy's
    *  public name. See wsAuth.privilegedHostnames. */
   allowedHosts?: readonly string[];
+  /** Pending permission requests (standalone). Absent = no approvals route. */
+  approvals?: PermissionApprovals;
 }
 
 /** Result of createHttpServer(). */
@@ -82,7 +94,14 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     // and `/terminal/:id?token=` handshakes, so the url is redacted before it
     // is written -- otherwise every (re)connect would put the secret in stdout
     // and any log file (see wsAuth.redactTokenQuery).
-    logger: options.embedded ? false : { serializers: { req: serializeRequestForLog } },
+    // PIXEL_AGENTS_LOG_LEVEL=warn drops the two request lines logged per hook
+    // event, for a server left running 24x7 (remote/windows/autostart.ps1 sets it).
+    logger: options.embedded
+      ? false
+      : {
+          level: process.env.PIXEL_AGENTS_LOG_LEVEL || 'info',
+          serializers: { req: serializeRequestForLog },
+        },
     bodyLimit: MAX_HOOK_BODY_SIZE,
   });
 
@@ -108,7 +127,20 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
 
   registerHealthRoute(app);
   registerHookRoute(app, options);
+  registerUsageRoute(app, options);
+  if (options.approvals) {
+    registerPermissionRoutes(app, { token: options.token, approvals: options.approvals });
+  }
   registerWebSocketRoute(app, options, allowedHostnames);
+  // The office as a read-only MCP server (standalone: it needs the runtime).
+  if (!options.embedded && options.runtime) {
+    registerMcpRoute(app, {
+      token: options.token,
+      allowedHostnames,
+      office: officeViewOf(options.runtime, options.store, options.approvals),
+      version: process.env.PIXEL_AGENTS_VERSION ?? '',
+    });
+  }
   registerTerminalRoutes(app, {
     token: options.token,
     allowedHostnames,
@@ -122,6 +154,26 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
   const port = typeof address === 'object' ? (address?.port ?? 0) : 0;
 
   return { app, port };
+}
+
+// ── MCP ─────────────────────────────────────────────────────────
+
+/** What the MCP tools may see: getters over the store, the approvals board,
+ *  the task log and the usage meter. Nothing that can act. */
+function officeViewOf(
+  runtime: AgentRuntime,
+  store: AgentStateStore,
+  approvals: PermissionApprovals | undefined,
+): OfficeView {
+  return {
+    agents: () => store.entries(),
+    pendingApprovals: () => approvals?.pendingMessages() ?? [],
+    sources: runtime.officeSources,
+    tasksFor: (date) => runtime.tasks.tasksFor(date),
+    usage: () => getUsageMeter()?.snapshot()[0],
+    formatToolStatus: (name, input) => getHookProvider()?.formatToolStatus(name, input) ?? name,
+    now: () => Date.now(),
+  };
 }
 
 // ── Health ──────────────────────────────────────────────────────
@@ -162,6 +214,22 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
         options.onHookEvent?.(providerId, event);
       }
 
+      reply.send('ok');
+    },
+  );
+}
+
+// ── Subscription usage ─────────────────────────────────────────
+
+/** The usage meter's status line script reports here (usage/usageMeter.ts).
+ *  Reached through the registered meter rather than options.runtime: the VS
+ *  Code embedded server is built without a runtime. */
+function registerUsageRoute(app: FastifyInstance, options: HttpServerOptions): void {
+  app.post<{ Body: unknown }>(
+    USAGE_API_PATH,
+    { preHandler: bearerAuth(options.token) },
+    async (request, reply) => {
+      getUsageMeter()?.report(request.body);
       reply.send('ok');
     },
   );
@@ -232,6 +300,10 @@ function registerWebSocketRoute(
         hooksOnly: agent.hooksOnly || undefined,
         palette: agent.palette,
         hueShift: agent.hueShift,
+        sourceLabel: agent.remoteSource?.label,
+        sourceKind: agent.remoteSource?.kind,
+        title: agent.title,
+        background: agent.background,
       });
     };
 
@@ -260,8 +332,11 @@ function registerWebSocketRoute(
           cache: options.assetCache ?? null,
           onSetHooksEnabled: options.onSetHooksEnabled,
           onReloadAssets: options.onReloadAssets,
+          onSetUsageMeterEnabled: options.onSetUsageMeterEnabled,
           privileged,
           ptyManager: options.ptyManager,
+          approvals: options.approvals,
+          client: `${request.ip} (${request.headers.host ?? '?'})`,
         });
       } catch {
         // Malformed JSON, ignore

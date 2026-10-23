@@ -353,6 +353,21 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
       expect(existing.agents).toEqual([1]);
     });
 
+    it('carries task titles and background flags in existingAgents', () => {
+      store.set(1, createTestAgent({ id: 1, title: 'Draft review by email' }));
+      store.set(2, createTestAgent({ id: 2, sessionId: 'sess-2', background: true }));
+      store.set(3, createTestAgent({ id: 3, sessionId: 'sess-3' }));
+
+      handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx);
+
+      const existing = sent.find((m) => m.type === 'existingAgents') as {
+        titles?: Record<string, string>;
+        backgroundAgents?: Record<string, boolean>;
+      };
+      expect(existing.titles).toEqual({ 1: 'Draft review by email' });
+      expect(existing.backgroundAgents).toEqual({ 2: true });
+    });
+
     it('replays agent activity after layoutLoaded so it lands on real characters', () => {
       // Two things at once, both invisible to the helper's own unit tests:
       // that handleWebviewReady calls the replay at all, and that it runs AFTER
@@ -1255,6 +1270,9 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
       { type: 'removeDirectory', path: directory },
       { type: 'requestDirectorySuggestions' },
       { type: 'requestDiagnostics' },
+      { type: 'writeReportNow' },
+      { type: 'setAnshBrainEnabled', enabled: false },
+      { type: 'askAnsh' },
     ]) {
       handleClientMessage(msg, (m) => sent.push(m), untokened);
     }
@@ -1314,5 +1332,142 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
       privileged: true,
     });
     expect(sent[0]).toEqual({ type: 'officeAccess', readOnly: false });
+  });
+});
+
+/**
+ * The Manager's task log and reports. Reading them is allowed for a read-only
+ * client -- the phone view is unprivileged, and they reveal nothing the office
+ * doesn't already show -- while writing a report (which spends the operator's
+ * Claude subscription) stays privileged.
+ */
+describe("clientMessageHandler: the Manager's tasks and reports", () => {
+  const T0 = new Date(2026, 9, 17, 10, 0, 0).getTime();
+  const TODAY = '2026-10-17';
+  let dataDir: string;
+  let store: AgentStateStore;
+  let runtime: AgentRuntime;
+  let runs: number;
+  let sent: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cmh-manager-'));
+    store = new AgentStateStore();
+    runs = 0;
+    runtime = new AgentRuntime(store, claudeProvider, {
+      progress: { dailyDir: null, now: () => T0 },
+      manager: {
+        dataDir,
+        now: () => T0,
+        env: {},
+        projectsRoot: null,
+        git: null,
+        publisher: null,
+        runClaude: async () => {
+          runs++;
+          return '## Overview\n- Wrote the docs\n===DETAILS===\n## docs\n- Wrote them';
+        },
+      },
+    });
+    sent = [];
+  });
+
+  afterEach(() => {
+    runtime.dispose();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  const dispatch = (msg: Record<string, unknown>, privileged = false) =>
+    handleClientMessage(msg, (m) => sent.push(m), { store, runtime, cache: null, privileged });
+
+  function workOnSomething(): void {
+    store.set(1, createTestAgent({ id: 1, sessionId: 's1', title: 'Write the docs' }));
+    store.broadcast({ type: 'agentStatus', id: 1, status: 'active' });
+  }
+
+  it("lets a read-only client read a day's tasks; a day with none is empty", () => {
+    workOnSomething();
+    dispatch({ type: 'requestTasks', date: TODAY });
+    dispatch({ type: 'requestTasks', date: '2026-10-01' });
+    expect(sent).toEqual([
+      {
+        type: 'tasksSnapshot',
+        date: TODAY,
+        tasks: [expect.objectContaining({ title: 'Write the docs', status: 'in_progress' })],
+      },
+      { type: 'tasksSnapshot', date: '2026-10-01', tasks: [] },
+    ]);
+  });
+
+  it('ignores a requestTasks or requestReport whose date is not YYYY-MM-DD', () => {
+    for (const date of ['../../secrets', '2026-1-01', '2026-02-30', 20261017, undefined]) {
+      dispatch({ type: 'requestTasks', date });
+      dispatch({ type: 'requestReport', date });
+    }
+    expect(sent).toEqual([]);
+  });
+
+  it('lets a read-only client read a report', async () => {
+    dispatch({ type: 'requestReport', date: TODAY });
+    expect(sent).toEqual([{ type: 'report', date: TODAY, exists: false }]);
+
+    await runtime.reports.writeNow();
+    sent = [];
+    dispatch({ type: 'requestReport', date: TODAY });
+    expect(sent).toEqual([
+      {
+        type: 'report',
+        date: TODAY,
+        exists: true,
+        markdown: '## Overview\n- Wrote the docs',
+        details: expect.stringMatching(/^## docs\s+- Wrote them/),
+        generatedAt: T0,
+        aiWritten: true,
+      },
+    ]);
+  });
+
+  it('refuses writeReportNow from a read-only client and runs it for a privileged one', async () => {
+    dispatch({ type: 'writeReportNow' });
+    await settle();
+    expect(runs).toBe(0);
+    expect(fs.existsSync(path.join(dataDir, 'reports'))).toBe(false);
+
+    dispatch({ type: 'writeReportNow' }, true);
+    await settle();
+    expect(runs).toBe(1);
+  });
+
+  it("refuses Ansh's controls to a read-only client and runs them for a privileged one", async () => {
+    runtime.startAnshBrain();
+    workOnSomething();
+    dispatch({ type: 'askAnsh' });
+    dispatch({ type: 'setAnshBrainEnabled', enabled: false });
+    await settle();
+    expect(runs).toBe(0);
+    expect(runtime.ansh.stateMessage().enabled).toBe(true);
+
+    dispatch({ type: 'askAnsh' }, true);
+    await settle();
+    expect(runs).toBe(1);
+    dispatch({ type: 'setAnshBrainEnabled', enabled: false }, true);
+    expect(runtime.ansh.stateMessage().enabled).toBe(false);
+  });
+
+  it('answers with an empty day and no report without a runtime', () => {
+    handleClientMessage({ type: 'requestTasks', date: TODAY }, (m) => sent.push(m), {
+      store,
+      cache: null,
+      privileged: false,
+    });
+    handleClientMessage({ type: 'requestReport', date: TODAY }, (m) => sent.push(m), {
+      store,
+      cache: null,
+      privileged: false,
+    });
+    expect(sent).toEqual([
+      { type: 'tasksSnapshot', date: TODAY, tasks: [] },
+      { type: 'report', date: TODAY, exists: false },
+    ]);
   });
 });

@@ -1,0 +1,32 @@
+{
+  "id": "ALARM_LAMP",
+  "name": "Alarm Lamp",
+  "category": "misc",
+  "type": "group",
+  "groupType": "state",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": true,
+  "backgroundTiles": 0,
+  "members": [
+    {
+      "type": "asset",
+      "id": "ALARM_LAMP_ON",
+      "file": "ALARM_LAMP_ON.png",
+      "width": 16,
+      "height": 16,
+      "footprintW": 1,
+      "footprintH": 1,
+      "state": "on"
+    },
+    {
+      "type": "asset",
+      "id": "ALARM_LAMP_OFF",
+      "file": "ALARM_LAMP_OFF.png",
+      "width": 16,
+      "height": 16,
+      "footprintW": 1,
+      "footprintH": 1,
+      "state": "off"
+    }
+  ]
+}

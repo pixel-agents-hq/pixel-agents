@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { MCP_TOOL_STATUS_MAX_LENGTH } from '../src/constants.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 
 describe('claudeProvider', () => {
@@ -253,6 +254,56 @@ describe('claudeProvider', () => {
     });
     it('falls back to "Using X" for unknown tools', () => {
       expect(claudeProvider.formatToolStatus('FancyTool', {})).toBe('Using FancyTool');
+    });
+    describe('MCP tools', () => {
+      const status = (name: string) => claudeProvider.formatToolStatus(name, {});
+
+      it('names a plugin server once and spells the tool out', () => {
+        expect(status('mcp__plugin_playwright_playwright__browser_run_code_unsafe')).toBe(
+          'Using Playwright: browser run code unsafe',
+        );
+        expect(status('mcp__plugin_context7_context7__query-docs')).toBe(
+          'Using Context7: query-docs',
+        );
+      });
+
+      it('keeps the server half of a plugin whose server is named differently', () => {
+        expect(status('mcp__plugin_pm-skills_atlassian__authenticate')).toBe(
+          'Using Atlassian: authenticate',
+        );
+      });
+
+      it('shows a configured server name as written, capitalizing a plain word', () => {
+        expect(status('mcp__claude-in-chrome__navigate')).toBe('Using claude-in-chrome: navigate');
+        expect(status('mcp__github__create_pull_request')).toBe(
+          'Using Github: create pull request',
+        );
+      });
+
+      it('names a claude.ai connector without its prefix', () => {
+        expect(status('mcp__claude_ai_Google_Calendar__list_events')).toBe(
+          'Using Google Calendar: list events',
+        );
+      });
+
+      it('keeps a server name containing a double underscore whole', () => {
+        expect(status('mcp__my__server__do_thing')).toBe('Using my__server: do thing');
+      });
+
+      it('caps the status at MCP_TOOL_STATUS_MAX_LENGTH', () => {
+        const long = status(
+          'mcp__plugin_playwright_playwright__browser_take_a_very_long_named_screenshot_now',
+        );
+        expect(long.length).toBeLessThanOrEqual(MCP_TOOL_STATUS_MAX_LENGTH);
+        expect(long.startsWith('Using Playwright: browser take')).toBe(true);
+        expect(long.endsWith('…')).toBe(true);
+      });
+
+      it('falls back to "Using X" for names that are not server + tool', () => {
+        expect(status('mcp__lonely')).toBe('Using mcp__lonely');
+        expect(status('mcp__server__')).toBe('Using mcp__server__');
+        expect(status('mcp____tool')).toBe('Using mcp____tool');
+      });
     });
     it('handles undefined input', () => {
       expect(claudeProvider.formatToolStatus('Read', undefined)).toBe('Reading ');

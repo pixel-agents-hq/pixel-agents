@@ -26,13 +26,23 @@ import {
   readConfig,
 } from './configPersistence.js';
 import {
+  LOCAL_SESSIONS_ENABLED_ENV,
   MAX_PORT,
   MIN_PORT,
   TERMINAL_DISABLED_BY_FLAG_REASON,
   WILDCARD_HOSTNAMES,
 } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import { weatherEnabled } from './fun/funConstants.js';
+import { localSessionWatchEnabled } from './localSessions.js';
+import { createPermissionApprovals } from './permissions/index.js';
+import {
+  claudeProvider,
+  copyHookScript,
+  hookProviderById,
+  refreshStatusLineScript,
+  setStatusLineInstalled,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
@@ -243,12 +253,20 @@ async function main(): Promise<void> {
     : PtySessionManager.disabled(TERMINAL_DISABLED_BY_FLAG_REASON);
 
   try {
-    // Create runtime first (before server.start, so we can pass it in)
-    const runtime = new AgentRuntime(store, claudeProvider);
+    // Create runtime first (before server.start, so we can pass it in). With
+    // manager: {} the Manager's task log and reports live under ~/.pixel-agents
+    // (standalone only; the VS Code adapter keeps its task log in memory).
+    const runtime = new AgentRuntime(store, claudeProvider, { manager: {} });
+
+    // Permission requests local sessions wait on the board to answer.
+    const approvals = createPermissionApprovals(store);
+    // Ansh's brain reads what is pending (to comment on it); it never answers.
+    runtime.ansh.setPendingApprovalsSource(() => approvals.pendingMessages());
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
       runtime.handleHookEvent(providerId, event);
+      approvals.observeHookEvent(event);
     });
 
     // onSetHooksEnabled side effect: install/uninstall the named provider's
@@ -338,11 +356,17 @@ async function main(): Promise<void> {
       assetCache,
       onSetHooksEnabled,
       onReloadAssets,
+      // The usage meter's status line (Settings toggle): copy the script from
+      // this package, then write settings.json -- or remove the entry.
+      onSetUsageMeterEnabled: (enabled) => setStatusLineInstalled(packageRoot, enabled),
       ptyManager,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,
+      approvals,
     });
     currentConfig = { port: config.port, token: config.token };
+    // While the usage meter is on, Claude Code runs this package's status line.
+    refreshStatusLineScript(packageRoot);
     if (args.rotateToken) {
       console.log(
         '[Pixel Agents] Server token rotated: URLs carrying the old token no longer grant access. Open the new URL below on each device.',
@@ -403,6 +427,26 @@ async function main(): Promise<void> {
       runtime.startExternalScanning(projectDir);
       runtime.startStaleCheck();
     }
+    // Every Claude Code session open on this machine, idle ones included, from
+    // `claude agents --json` (standalone only: the VS Code adapter doesn't start it).
+    if (localSessionWatchEnabled()) {
+      runtime.startLocalSessionWatch();
+    } else {
+      console.log(
+        `[Pixel Agents] Session list off (${LOCAL_SESSIONS_ENABLED_ENV}): idle open sessions are not adopted.`,
+      );
+    }
+    // ntfy phone alerts for agents left waiting on the user (standalone only;
+    // off until ~/.pixel-agents/alerts.json names a topic).
+    runtime.startPhoneAlerts();
+    // The Manager's 19:00 daily report (standalone only). PIXEL_AGENTS_MANAGER=off
+    // keeps claude from ever being run for it.
+    runtime.startManagerReports();
+    // Ansh's brain: looks at the office and comments (standalone only). Same
+    // kill switches as the Manager for claude; built-in thoughts otherwise.
+    runtime.startAnshBrain();
+    // Real weather in the office windows (city guessed once from the IP; offline = none).
+    if (weatherEnabled()) runtime.startWeather();
 
     // The URL the operator opens has to be REACHABLE (a wildcard bind address
     // is a bind target, not an address you can browse to — `--host 0.0.0.0`
@@ -427,6 +471,7 @@ async function main(): Promise<void> {
       // wait for them: exiting now would cancel the SIGKILL escalation and
       // leave a child that ignores SIGHUP orphaned on a dead server.
       await ptyManager.disposeAll();
+      approvals.dispose();
       runtime.dispose();
       server.stop();
       process.exit(0);

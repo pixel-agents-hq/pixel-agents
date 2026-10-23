@@ -15,7 +15,15 @@ import type { HookProvider } from '../../../core/src/provider.js';
 import { claudeProvider } from './hook/claude/claude.js';
 
 export { claudeProvider };
-export { copyHookScript } from './hook/claude/claudeHookInstaller.js';
+export {
+  copyHookScript,
+  copyStatusLineScript,
+  installStatusLine,
+  refreshStatusLineScript,
+  setStatusLineInstalled,
+  statusLineState,
+  uninstallStatusLine,
+} from './hook/claude/claudeHookInstaller.js';
 
 /** Every bundled hook provider, in registration order. The consent gate loops
  *  over this at the webviewReady handshake (one ask per provider that needs

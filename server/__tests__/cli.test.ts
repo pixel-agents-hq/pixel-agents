@@ -208,7 +208,19 @@ describe('dist/cli.js entry-point guard', () => {
     const port = await getFreePort();
     const child = spawn(process.execPath, [CLI_BUNDLE, '--port', port.toString(), '--host', host], {
       cwd: workspaceDir,
-      env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome },
+      // Session list and Manager reports off: they would run the real `claude`.
+      // The notice board off too: a `gh` it started would outlive a stopped
+      // server, holding workspaceDir open so the cleanup below fails (EPERM).
+      // Weather off: no network in tests.
+      env: {
+        ...process.env,
+        HOME: tmpHome,
+        USERPROFILE: tmpHome,
+        PIXEL_AGENTS_SESSION_LIST: 'off',
+        PIXEL_AGENTS_MANAGER: 'off',
+        PIXEL_AGENTS_NOTICE_BOARD: 'off',
+        PIXEL_AGENTS_WEATHER: 'off',
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '';
@@ -422,7 +434,13 @@ describe('dist/cli.js entry-point guard', () => {
       [CLI_BUNDLE, '--port', port.toString(), '--host', '127.0.0.1'],
       {
         cwd: workspaceDir,
-        env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome },
+        env: {
+          ...process.env,
+          HOME: tmpHome,
+          USERPROFILE: tmpHome,
+          PIXEL_AGENTS_SESSION_LIST: 'off',
+          PIXEL_AGENTS_MANAGER: 'off',
+        },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     );

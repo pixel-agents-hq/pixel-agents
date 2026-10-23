@@ -1,0 +1,59 @@
+{
+  "id": "FISH_TANK",
+  "name": "Fish Tank",
+  "category": "decor",
+  "type": "group",
+  "groupType": "state",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 1,
+  "members": [
+    {
+      "type": "group",
+      "groupType": "animation",
+      "state": "on",
+      "members": [
+        {
+          "type": "asset",
+          "id": "FISH_TANK_ON_1",
+          "file": "FISH_TANK_ON_1.png",
+          "width": 32,
+          "height": 32,
+          "footprintW": 2,
+          "footprintH": 2,
+          "frame": 0
+        },
+        {
+          "type": "asset",
+          "id": "FISH_TANK_ON_2",
+          "file": "FISH_TANK_ON_2.png",
+          "width": 32,
+          "height": 32,
+          "footprintW": 2,
+          "footprintH": 2,
+          "frame": 1
+        },
+        {
+          "type": "asset",
+          "id": "FISH_TANK_ON_3",
+          "file": "FISH_TANK_ON_3.png",
+          "width": 32,
+          "height": 32,
+          "footprintW": 2,
+          "footprintH": 2,
+          "frame": 2
+        }
+      ]
+    },
+    {
+      "type": "asset",
+      "id": "FISH_TANK_OFF",
+      "file": "FISH_TANK_OFF.png",
+      "width": 32,
+      "height": 32,
+      "footprintW": 2,
+      "footprintH": 2,
+      "state": "off"
+    }
+  ]
+}

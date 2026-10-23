@@ -5,6 +5,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { MAX_HOOK_BODY_SIZE } from '../src/constants.js';
+import { findPrUrl } from '../src/progress/phase.js';
+import { shrinkHookPayload } from '../src/providers/hook/claude/hooks/claude-hook.js';
+
 const HOOK_SCRIPT = path.join(__dirname, '../../dist/hooks/claude-hook.js');
 
 // Isolated temp HOME
@@ -281,5 +285,326 @@ describe('claude-hook.js integration', () => {
     // Each POST times out at 2s; sequential delivery would take ~4s+. A
     // generous 3.5s ceiling proves the two requests ran concurrently.
     expect(elapsed).toBeLessThan(3500);
+  });
+
+  // 12. An event bigger than the server's body limit still arrives (shrunk),
+  // instead of being rejected with 413 and silently lost.
+  itBuilt('delivers an oversized PostToolUse under the server body limit', async () => {
+    const server = await startRecordingServer();
+    writeServerJson(server.port, 'tok');
+    const url = 'https://github.com/octo/repo/pull/7';
+    const event = JSON.stringify({
+      session_id: 'oversized',
+      transcript_path: '/home/me/.claude/projects/p/oversized.jsonl',
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'gh pr create --title "Fix" --body "b"' },
+      tool_response: { stdout: `${url}\n${'log line\n'.repeat(100_000)}`, stderr: '' },
+    });
+    expect(Buffer.byteLength(event)).toBeGreaterThan(MAX_HOOK_BODY_SIZE);
+    const debugLog = path.join(tmpBase, 'hook-debug.log');
+
+    const { code } = await runHookScript(event, { PIXEL_AGENTS_DEBUG_LOG: debugLog });
+
+    server.close();
+    expect(code).toBe(0);
+    expect(server.received).toHaveLength(1);
+    expect(Buffer.byteLength(server.received[0])).toBeLessThanOrEqual(MAX_HOOK_BODY_SIZE);
+    // sid is the session id's first 8 chars.
+    expect(fs.readFileSync(debugLog, 'utf-8')).toMatch(
+      /shrunk event=PostToolUse sid=oversize bytes=\d+->\d+/,
+    );
+    const delivered = JSON.parse(server.received[0]) as Record<string, unknown>;
+    expect(delivered.session_id).toBe('oversized');
+    expect(delivered.transcript_path).toBe('/home/me/.claude/projects/p/oversized.jsonl');
+    expect(findPrUrl(delivered.tool_response as string)).toBe(url);
+  });
+});
+
+// ── shrinkHookPayload (pure) ─────────────────────────────────────────────────
+
+/** Bytes the hook would POST for this payload. */
+function bodyBytes(payload: Record<string, unknown>): number {
+  return Buffer.byteLength(JSON.stringify(payload));
+}
+
+/** Fields every Claude Code hook payload carries; the shrink must never touch them. */
+const COMMON = {
+  session_id: 'sess-1234',
+  transcript_path: '/home/me/.claude/projects/p/sess-1234.jsonl',
+  agent_transcript_path: '/home/me/.claude/projects/p/sess-1234/subagents/agent-1.jsonl',
+  cwd: '/home/me/proj',
+  permission_mode: 'default',
+};
+
+/** A truncated string keeps at most its cap plus a short marker. */
+const MARKER_SLACK = 64;
+
+describe('shrinkHookPayload', () => {
+  it('leaves payloads that are already small unchanged, byte for byte', () => {
+    let deep: unknown = { leaf: 'x' };
+    for (let i = 0; i < 20; i++) deep = { child: deep };
+    const raws = [
+      JSON.stringify({ ...COMMON, hook_event_name: 'Stop', stop_hook_active: false }),
+      JSON.stringify({
+        ...COMMON,
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Bash',
+        tool_use_id: 'toolu_1',
+        tool_input: { command: 'npm test', description: 'Run tests', timeout: 120000 },
+      }),
+      JSON.stringify({
+        ...COMMON,
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Bash',
+        tool_use_id: 'toolu_2',
+        tool_input: { command: 'ls', run_in_background: false },
+        tool_response: { stdout: 'a'.repeat(2000), stderr: '', interrupted: false, isImage: false },
+      }),
+      JSON.stringify({
+        ...COMMON,
+        hook_event_name: 'PreToolUse',
+        tool_name: 'TodoWrite',
+        tool_input: {
+          todos: [
+            { content: 'one', status: 'pending', activeForm: 'Doing one' },
+            { content: 'two', status: 'completed', activeForm: 'Doing two' },
+          ],
+          exactlyAtCap: 'y'.repeat(2048),
+          deep,
+          nothing: null,
+          flags: [true, 1, 'z'],
+        },
+      }),
+      JSON.stringify({
+        ...COMMON,
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Read',
+        tool_input: { file_path: '/home/me/proj/a.ts' },
+        tool_response: 'short text',
+      }),
+    ];
+    for (const raw of raws) {
+      expect(JSON.stringify(shrinkHookPayload(JSON.parse(raw)))).toBe(raw);
+    }
+  });
+
+  it('shrinks a big Read response below the limit, keeping its start and every other field', () => {
+    const raw = {
+      ...COMMON,
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Read',
+      tool_use_id: 'toolu_read',
+      tool_input: { file_path: '/home/me/proj/huge.log' },
+      tool_response: {
+        type: 'text',
+        file: {
+          filePath: '/home/me/proj/huge.log',
+          content: 'line of the file\n'.repeat(50_000),
+          numLines: 50_000,
+          startLine: 1,
+          totalLines: 50_000,
+        },
+      },
+    };
+    expect(bodyBytes(raw)).toBeGreaterThan(MAX_HOOK_BODY_SIZE);
+
+    const out = shrinkHookPayload(raw);
+
+    expect(bodyBytes(out)).toBeLessThanOrEqual(MAX_HOOK_BODY_SIZE);
+    expect(typeof out.tool_response).toBe('string');
+    const response = out.tool_response as string;
+    expect(response.length).toBeLessThanOrEqual(4096 + MARKER_SLACK);
+    expect(response.startsWith('{"type":"text","file":{"filePath":"/home/me/proj/huge.log"')).toBe(
+      true,
+    );
+    expect(out.tool_input).toEqual({ file_path: '/home/me/proj/huge.log' });
+    for (const [key, value] of Object.entries(COMMON)) expect(out[key]).toBe(value);
+    expect(out.hook_event_name).toBe('PostToolUse');
+    expect(out.tool_name).toBe('Read');
+    expect(out.tool_use_id).toBe('toolu_read');
+  });
+
+  it('keeps the PR url gh pr create prints in its first lines', () => {
+    const url = 'https://github.com/octo/repo/pull/42';
+    const raw = {
+      ...COMMON,
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'gh pr create --title "Fix" --body "b"' },
+      tool_response: {
+        stdout: `${url}\n${'warning: something long\n'.repeat(10_000)}`,
+        stderr: '',
+        interrupted: false,
+        isImage: false,
+      },
+    };
+
+    const out = shrinkHookPayload(raw);
+
+    expect(bodyBytes(out)).toBeLessThanOrEqual(MAX_HOOK_BODY_SIZE);
+    expect(findPrUrl(out.tool_response as string)).toBe(url);
+  });
+
+  it('keeps the PR url a chained command prints at the end of a long output', () => {
+    const url = 'https://github.com/octo/repo/pull/43';
+    const raw = {
+      ...COMMON,
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'npm run check && gh pr create --title "Fix" --body "b"' },
+      tool_response: `${'check output line\n'.repeat(10_000)}${url}\n`,
+    };
+
+    const out = shrinkHookPayload(raw);
+
+    expect(bodyBytes(out)).toBeLessThanOrEqual(MAX_HOOK_BODY_SIZE);
+    expect((out.tool_response as string).length).toBeLessThanOrEqual(4096 + MARKER_SLACK);
+    expect(findPrUrl(out.tool_response as string)).toBe(url);
+  });
+
+  it('truncates a big Write content but keeps file_path', () => {
+    const content = 'const x = 1;\n'.repeat(50_000);
+    const raw = {
+      ...COMMON,
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Write',
+      tool_input: { file_path: '/home/me/proj/big.ts', content },
+    };
+
+    const out = shrinkHookPayload(raw);
+    const input = out.tool_input as Record<string, unknown>;
+
+    expect(bodyBytes(out)).toBeLessThanOrEqual(MAX_HOOK_BODY_SIZE);
+    expect(input.file_path).toBe('/home/me/proj/big.ts');
+    const shrunk = input.content as string;
+    expect(shrunk.length).toBeLessThanOrEqual(2048 + MARKER_SLACK);
+    expect(shrunk.startsWith(content.slice(0, 2000))).toBe(true);
+    for (const [key, value] of Object.entries(COMMON)) expect(out[key]).toBe(value);
+  });
+
+  it("truncates both of a big Edit's strings, keeping the short fields intact", () => {
+    const raw = {
+      ...COMMON,
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: '/home/me/proj/a.ts',
+        old_string: 'o'.repeat(40_000),
+        new_string: 'n'.repeat(40_000),
+        replace_all: false,
+      },
+    };
+
+    const out = shrinkHookPayload(raw);
+    const input = out.tool_input as Record<string, unknown>;
+
+    expect(bodyBytes(out)).toBeLessThanOrEqual(MAX_HOOK_BODY_SIZE);
+    expect(input.file_path).toBe('/home/me/proj/a.ts');
+    expect(input.replace_all).toBe(false);
+    expect((input.old_string as string).length).toBeLessThanOrEqual(2048 + MARKER_SLACK);
+    expect((input.new_string as string).length).toBeLessThanOrEqual(2048 + MARKER_SLACK);
+  });
+
+  it('bounds long arrays and deep nesting in tool_input', () => {
+    let deep: unknown = { leaf: 'd'.repeat(50_000) };
+    for (let i = 0; i < 20; i++) deep = { child: deep };
+    const raw = {
+      ...COMMON,
+      hook_event_name: 'PreToolUse',
+      tool_name: 'mcp__some__tool',
+      tool_input: {
+        items: Array.from({ length: 5000 }, (_, i) => `item-${i}`),
+        deep,
+      },
+    };
+
+    const out = shrinkHookPayload(raw);
+    const input = out.tool_input as Record<string, unknown>;
+
+    expect(bodyBytes(out)).toBeLessThanOrEqual(MAX_HOOK_BODY_SIZE);
+    expect((input.items as string[]).length).toBeLessThan(5000);
+    expect((input.items as string[])[0]).toBe('item-0');
+    expect(JSON.stringify(input.deep).length).toBeLessThan(4096);
+  });
+
+  it('never splits a surrogate pair when it truncates', () => {
+    const raw = {
+      ...COMMON,
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Write',
+      // The one-char prefix/suffix put the pairs at odd offsets, so a naive cut
+      // at an even length lands between the halves of a pair.
+      tool_input: {
+        file_path: '/home/me/proj/emoji.md',
+        content: `x${'\u{1F600}'.repeat(30_000)}`,
+      },
+      tool_response: `x${'\u{1F600}'.repeat(30_000)}y`,
+    };
+
+    const out = shrinkHookPayload(raw);
+    const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+    expect(bodyBytes(out)).toBeLessThanOrEqual(MAX_HOOK_BODY_SIZE);
+    expect(loneSurrogate.test((out.tool_input as Record<string, string>).content)).toBe(false);
+    expect(loneSurrogate.test(out.tool_response as string)).toBe(false);
+  });
+
+  it('drops tool_input and tool_response when shrinking them still leaves it too big', () => {
+    const raw = {
+      ...COMMON,
+      hook_event_name: 'PreToolUse',
+      tool_name: 'mcp__bulk__upload',
+      tool_use_id: 'toolu_bulk',
+      tool_input: Object.fromEntries(
+        Array.from({ length: 100 }, (_, i) => [`field${i}`, 'v'.repeat(5000)]),
+      ),
+      tool_response: 'r'.repeat(100_000),
+    };
+
+    const out = shrinkHookPayload(raw);
+
+    expect(bodyBytes(out)).toBeLessThanOrEqual(MAX_HOOK_BODY_SIZE);
+    expect(out).not.toHaveProperty('tool_input');
+    expect(out).not.toHaveProperty('tool_response');
+    for (const [key, value] of Object.entries(COMMON)) expect(out[key]).toBe(value);
+    expect(out.hook_event_name).toBe('PreToolUse');
+    expect(out.tool_name).toBe('mcp__bulk__upload');
+    expect(out.tool_use_id).toBe('toolu_bulk');
+  });
+
+  it('as a last resort clips another oversized field rather than lose the event', () => {
+    // A failed command's full output arrives in a field the server never reads.
+    const raw = {
+      ...COMMON,
+      hook_event_name: 'PostToolUseFailure',
+      tool_name: 'Bash',
+      tool_use_id: 'toolu_fail',
+      tool_input: { command: 'npm test' },
+      error: `Exit code 1\n${'FAIL something\n'.repeat(20_000)}`,
+    };
+
+    const out = shrinkHookPayload(raw);
+
+    expect(bodyBytes(out)).toBeLessThanOrEqual(MAX_HOOK_BODY_SIZE);
+    for (const [key, value] of Object.entries(COMMON)) expect(out[key]).toBe(value);
+    expect(out.hook_event_name).toBe('PostToolUseFailure');
+    expect(out.tool_use_id).toBe('toolu_fail');
+    expect((out.error as string).startsWith('Exit code 1\nFAIL something')).toBe(true);
+  });
+
+  it('does not modify the payload it is given', () => {
+    const raw = {
+      ...COMMON,
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Write',
+      tool_input: { file_path: '/home/me/proj/big.ts', content: 'c'.repeat(100_000) },
+      tool_response: 'r'.repeat(100_000),
+    };
+    const before = JSON.stringify(raw);
+
+    shrinkHookPayload(raw);
+
+    expect(JSON.stringify(raw)).toBe(before);
   });
 });

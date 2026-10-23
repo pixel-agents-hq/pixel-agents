@@ -119,9 +119,15 @@ export function useCanvasTouchGestures(options: CanvasTouchOptions): void {
           pinchStartZoom * (distance(e.touches[0], e.touches[1]) / pinchStartDist),
         );
         const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, proposed));
-        if (next !== zoom) onZoomChange(next);
+        const mid = midpoint(e.touches[0], e.touches[1]);
+        if (next !== zoom) {
+          onZoomChange(next);
+          // The zoom just re-scaled the pan about the view's center: carry
+          // the drag on from there, not from the pre-zoom anchor.
+          anchorPan(mid);
+        }
         // Two-finger drag also pans, tracked from the midpoint.
-        manualPan(midpoint(e.touches[0], e.touches[1]));
+        manualPan(mid);
         return;
       }
       if (e.touches.length !== 1) return;

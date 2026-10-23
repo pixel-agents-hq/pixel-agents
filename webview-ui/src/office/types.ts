@@ -56,6 +56,29 @@ export interface Seat {
   assigned: boolean;
 }
 
+/**
+ * Where the living office's destination engine sent a character: a zone seat
+ * (sit) or standing spot (stand), the Entrance door on the way out, or its own
+ * desk to wait at when every zone place is taken. While a character has one,
+ * the zone branch of the FSM drives it there and keeps it there.
+ */
+export interface ZoneTarget {
+  /** Zone label (Smoke, Lounge, ...); null for "wait at its own desk". */
+  zone: string | null;
+  /** The seat uid for a seat, `spot:col,row` for a standing spot. */
+  key: string;
+  col: number;
+  row: number;
+  /** Faces the zone's key furniture once there. */
+  facing: Direction;
+  /** Sit (a seat) or stand (a spot). */
+  sit: boolean;
+  /** Not reserved (the door, its own desk): any number may share it. */
+  shared?: boolean;
+  /** Set by the FSM when no path leads there any more. */
+  unreachable?: boolean;
+}
+
 export interface FurnitureInstance {
   sprite: SpriteData;
   /** Pixel x (top-left) */
@@ -66,6 +89,8 @@ export interface FurnitureInstance {
   zY: number;
   /** Render-time horizontal flip flag (for mirrored side variants) */
   mirrored?: boolean;
+  /** A name plate (runtime-only): the repo the renderer writes on its face. */
+  plateText?: string;
 }
 
 export interface ToolActivity {
@@ -229,12 +254,41 @@ export interface Character {
    *  focus. Rendered translucent. Teammates and sub-agents are never headless —
    *  clicking them reaches their lead's / parent's terminal. */
   isHeadless?: boolean;
+  /** Sleeping agent: its session is open but idle (agentSleep). Rendered
+   *  dimmed, and stays in its seat — no wandering — until it wakes. */
+  isSleeping?: boolean;
   /** The first-run consent greeter. A MARKER, not a gate: the greeter lives in
    *  OfficeState.greeter, outside the agent map, so seat assignment, palette
    *  diversity, the FSM, hit-testing and seat persistence never see it — no
    *  per-consumer guard reads this flag. It exists for the render/e2e snapshot
    *  (testHooks.getCharacters) to tell the greeter from agents. */
   isGreeter?: boolean;
+
+  // -- Living office (zones) --
+  /** Zone seat/spot the destination engine sent it to; null/absent = the
+   *  desk-and-wander FSM drives it (always, in a layout without zones). */
+  zoneTarget?: ZoneTarget | null;
+  /** Seconds spent settled at the zone target (drives the smoke break's timeline). */
+  zoneFxTimer?: number;
+  /** zoneFxTimer when it began stubbing its cigarette out (called away from a smoke). */
+  smokeStubAt?: number;
+  /** A mid-work smoker (the label shows a "🚬 break" tag): a long-running
+   *  command, or a break after long work. Absent for a smoke while waiting
+   *  on the user, and everywhere else. */
+  smokeBreak?: 'command' | 'break';
+  /** Walking out through the Entrance door after agentClosed; despawns there. */
+  leaving?: boolean;
+  /** Office-clock time it walked in through the door (a live agentCreated).
+   *  Absent for restored agents, whose session length is unknown. */
+  enteredAt?: number;
+  /** Back from a Café coffee run, cup in hand (coffeeRuns.ts). */
+  carryingCup?: boolean;
+  /** Ansh watering a plant: seconds into it (the drops fall on it); absent otherwise. */
+  wateringCan?: number;
+  /** The Entrance receptionist (an NPC, never an agent; see OfficeState.receptionist). */
+  isReceptionist?: boolean;
+  /** The receptionist's wave frame while she waves; absent otherwise. */
+  waveFrame?: 0 | 1;
 
   // -- Agent Teams --
   /** Team name this agent belongs to */

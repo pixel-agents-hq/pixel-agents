@@ -3,10 +3,14 @@ import * as os from 'os';
 import * as path from 'path';
 import { isDeepStrictEqual } from 'util';
 
+import type { UsageMeterState } from '../../../../../core/src/messages.js';
 import { HOOK_SCRIPTS_DIR } from '../../../constants.js';
+import { PERMISSION_HOOK_TIMEOUT_SECONDS } from '../../../permissions/constants.js';
 import {
   CLAUDE_HOOK_EVENTS,
   CLAUDE_HOOK_SCRIPT_NAME,
+  CLAUDE_STATUSLINE_SCRIPT_NAME,
+  HOOK_TIMEOUT_SECONDS,
   LEGACY_HOOK_SCRIPT_NAME,
   SETTINGS_BACKUP_SUFFIX,
   SETTINGS_FRESH_FILE_MODE,
@@ -25,9 +29,18 @@ interface ClaudeHookEntry {
   }>;
 }
 
-/** Partial shape of ~/.claude/settings.json (only the hooks field is relevant). */
+/** The `statusLine` entry the usage meter writes into settings.json. */
+interface ClaudeStatusLine {
+  type: string;
+  command: string;
+  padding?: number;
+}
+
+/** Partial shape of ~/.claude/settings.json (the hooks field, and the usage
+ *  meter's statusLine). */
 interface ClaudeSettings {
   hooks?: Record<string, ClaudeHookEntry[]>;
+  statusLine?: unknown;
   [key: string]: unknown;
 }
 
@@ -39,6 +52,12 @@ function getClaudeSettingsPath(): string {
 /** Returns the destination path for the hook script (~/.pixel-agents/hooks/claude-hook.js). */
 function getHookScriptPath(): string {
   return path.join(os.homedir(), HOOK_SCRIPTS_DIR, CLAUDE_HOOK_SCRIPT_NAME);
+}
+
+/** Destination of the usage meter's status line script
+ *  (~/.pixel-agents/hooks/claude-statusline.js). */
+function getStatusLineScriptPath(): string {
+  return path.join(os.homedir(), HOOK_SCRIPTS_DIR, CLAUDE_STATUSLINE_SCRIPT_NAME);
 }
 
 /** Surfaced to the user when settings.json exists but cannot be parsed. The
@@ -297,6 +316,9 @@ const LEGACY_HOOK_PATH_SUFFIX = `/${LEGACY_HOOK_SCRIPT_NAME}`;
  *  and `my-pixel-agents-hook.js` match by substring. */
 const HOOK_PATH_SUFFIX = `/${HOOK_SCRIPTS_DIR}/${CLAUDE_HOOK_SCRIPT_NAME}`;
 
+/** The usage meter's status line script, as a path suffix (same anchoring). */
+const STATUSLINE_PATH_SUFFIX = `/${HOOK_SCRIPTS_DIR}/${CLAUDE_STATUSLINE_SCRIPT_NAME}`;
+
 /** Characters that end a path token in a shell command line. A path we own is
  *  either the whole token or ends at one of these; anything else after it
  *  (`.backup`, `.disabled`, more path segments) means the command names a
@@ -354,12 +376,19 @@ const PATH_TERMINATORS = new Set([' ', '\t', '"', "'", ';', '&', '|', '>', '<', 
  *   hook for everyone if we resolved paths from a config file.
  */
 function isOurHookCommand(command: string): boolean {
+  return commandRunsScript(command, [HOOK_PATH_SUFFIX, LEGACY_HOOK_PATH_SUFFIX]);
+}
+
+/** Whether the command's first token is an absolute path ending in one of the
+ *  (lower-case) suffixes -- the identity rule isOurHookCommand documents, shared
+ *  with the usage meter's status line. */
+function commandRunsScript(command: string, suffixes: readonly string[]): boolean {
   const token = firstCommandToken(command);
   if (token === null) return false;
-  // Both suffix constants are lower-case, so folding the token is the whole
+  // Every suffix constant is lower-case, so folding the token is the whole
   // normalization.
   const normalized = token.toLowerCase();
-  return normalized.endsWith(HOOK_PATH_SUFFIX) || normalized.endsWith(LEGACY_HOOK_PATH_SUFFIX);
+  return suffixes.some((suffix) => normalized.endsWith(suffix));
 }
 
 /**
@@ -418,7 +447,8 @@ function isOurHook(hook: ClaudeHookEntry['hooks'][number]): boolean {
 }
 
 /** Whether the parsed settings hold nothing a backup could preserve: every
- *  top-level key is `hooks`, and everything in it is exactly the shape our
+ *  top-level key is `hooks` (or the usage meter's `statusLine`, exactly as
+ *  makeStatusLine writes it), and everything in it is exactly the shape our
  *  installer writes, running our script. This is what settings.json looks like
  *  when OUR install created the file in a home that never had one — and a
  *  backup taken then would enshrine our own output as "the user's original"
@@ -445,7 +475,9 @@ function isOurHook(hook: ClaudeHookEntry['hooks'][number]): boolean {
  *  suffix rule used everywhere else) and `timeout`. Deviation in anything
  *  else, present or added later, reads as the user's. */
 function settingsHoldOnlyOurHooks(settings: ClaudeSettings): boolean {
-  if (Object.keys(settings).some((key) => key !== 'hooks')) return false;
+  if (Object.keys(settings).some((key) => key !== 'hooks' && key !== 'statusLine')) return false;
+  // The usage meter's statusLine is ours too, by the same writer-reference rule.
+  if ('statusLine' in settings && !statusLineMatchesWriter(settings.statusLine)) return false;
   if (!('hooks' in settings)) return true;
   const hooks = settings.hooks;
   if (hooks === null || typeof hooks !== 'object' || Array.isArray(hooks)) {
@@ -532,15 +564,24 @@ function makeHookCommand(): string {
   return `node "${scriptPath}"`;
 }
 
+/** Seconds Claude Code lets our hook run for `event`. Every event is a quick
+ *  POST, except PermissionRequest: it may wait on the board for a human's
+ *  answer (permissions/), so it gets the long timeout. An install written
+ *  before this split carries 5 there; the next install (every consented
+ *  startup) replaces the entry, since it no longer equals what we write. */
+function hookTimeoutFor(event: string | undefined): number {
+  return event === 'PermissionRequest' ? PERMISSION_HOOK_TIMEOUT_SECONDS : HOOK_TIMEOUT_SECONDS;
+}
+
 /** Create a hook entry object for Claude's settings.json. Matcher is empty (catch-all). */
-function makeHookEntry(): ClaudeHookEntry {
+function makeHookEntry(event?: string): ClaudeHookEntry {
   return {
     matcher: '',
     hooks: [
       {
         type: 'command',
         command: makeHookCommand(),
-        timeout: 5,
+        timeout: hookTimeoutFor(event),
       },
     ],
   };
@@ -666,7 +707,7 @@ function installEntries(): Promise<boolean> {
       }
       const entries = hooks[event];
       // Remove any existing Pixel Agents commands (in case the script path changed)
-      const filtered = (withoutOurEntries(entries) ?? entries).concat(makeHookEntry());
+      const filtered = (withoutOurEntries(entries) ?? entries).concat(makeHookEntry(event));
       if (JSON.stringify(filtered) !== JSON.stringify(entries)) {
         hooks[event] = filtered;
         changed = true;
@@ -746,4 +787,145 @@ export function copyHookScript(extensionPath: string): boolean {
     console.error(`[Pixel Agents] Failed to copy hook script: ${e}`);
     return false;
   }
+}
+
+// ── Usage meter: the statusLine entry ───────────────────────────────────
+//
+// Claude Code passes the subscription's 5-hour and 7-day usage only to a
+// status line command, so the usage meter installs one: our script, which
+// prints a short line and forwards the usage to the server. settings.json
+// holds ONE statusLine, and a user's own is never replaced or removed -- the
+// install refuses instead, and the Settings toggle says why.
+
+/** Surfaced when settings.json already has a status line that is not ours. */
+export const STATUSLINE_FOREIGN_MESSAGE =
+  '~/.claude/settings.json already has a status line of your own — Pixel Agents will not replace it';
+
+/** The command Claude Code runs for the status line. */
+function makeStatusLine(): ClaudeStatusLine {
+  return { type: 'command', command: `node "${getStatusLineScriptPath()}"`, padding: 0 };
+}
+
+/** A statusLine value is ours: an object whose command runs our script. */
+function isOurStatusLine(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const command = (value as { command?: unknown }).command;
+  return typeof command === 'string' && commandRunsScript(command, [STATUSLINE_PATH_SUFFIX]);
+}
+
+/** Ours AND exactly the shape makeStatusLine writes (bar the command, whose
+ *  path varies across homes) -- for the backup rule (settingsHoldOnlyOurHooks). */
+function statusLineMatchesWriter(value: unknown): boolean {
+  if (!isOurStatusLine(value)) return false;
+  const reference = new Map<string, unknown>(Object.entries(makeStatusLine()));
+  return Object.entries(value as Record<string, unknown>).every(
+    ([key, field]) =>
+      key === 'command' || (reference.has(key) && isDeepStrictEqual(field, reference.get(key))),
+  );
+}
+
+/** Where the usage meter's status line stands in settings.json: ours (`on`),
+ *  absent (`off`), the user's own (`foreign`), or a file we cannot parse
+ *  (`unreadable` -- nothing is written then). */
+export function statusLineState(): UsageMeterState {
+  let settings: ClaudeSettings;
+  try {
+    settings = readClaudeSettings();
+  } catch {
+    return 'unreadable';
+  }
+  if (settings.statusLine === undefined) return 'off';
+  return isOurStatusLine(settings.statusLine) ? 'on' : 'foreign';
+}
+
+/**
+ * Point settings.json's statusLine at our script. Idempotent (a moved home
+ * rewrites the path). Rejects, writing nothing, when the file is unparseable
+ * or holds a status line of the user's own.
+ */
+export async function installStatusLine(): Promise<void> {
+  let wrote: boolean;
+  try {
+    wrote = await mutateClaudeSettings((settings) => {
+      const current = settings.statusLine;
+      if (current !== undefined && !isOurStatusLine(current)) {
+        throw new Error(STATUSLINE_FOREIGN_MESSAGE);
+      }
+      const next = makeStatusLine();
+      if (isDeepStrictEqual(current, next)) return false;
+      settings.statusLine = next;
+      return true;
+    });
+  } catch (e) {
+    throw new Error(`${e instanceof Error ? e.message : String(e)} — usage meter not installed.`, {
+      cause: e,
+    });
+  }
+  if (wrote) {
+    console.log('[Pixel Agents] Usage meter status line installed in ~/.claude/settings.json');
+  }
+}
+
+/** Remove our statusLine from settings.json; a status line of the user's own
+ *  is left alone. Rejects, writing nothing, when the file is unparseable. */
+export async function uninstallStatusLine(): Promise<void> {
+  let wrote: boolean;
+  try {
+    wrote = await mutateClaudeSettings((settings) => {
+      if (!isOurStatusLine(settings.statusLine)) return false;
+      delete settings.statusLine;
+      return true;
+    });
+  } catch (e) {
+    throw new Error(`${e instanceof Error ? e.message : String(e)} — status line left in place.`, {
+      cause: e,
+    });
+  }
+  if (wrote) {
+    console.log('[Pixel Agents] Usage meter status line removed from ~/.claude/settings.json');
+  }
+}
+
+/** Copy the shipped status line script to ~/.pixel-agents/hooks/. False (and
+ *  logged) when the source is missing or the copy failed: the install must
+ *  not point settings.json at a script that is not there. */
+export function copyStatusLineScript(extensionPath: string): boolean {
+  const src = path.join(extensionPath, 'dist', 'hooks', CLAUDE_STATUSLINE_SCRIPT_NAME);
+  const dst = getStatusLineScriptPath();
+  try {
+    if (!fs.existsSync(src)) {
+      console.warn(`[Pixel Agents] Status line script not found at ${src}`);
+      return false;
+    }
+    fs.mkdirSync(path.dirname(dst), { recursive: true, mode: 0o700 });
+    fs.copyFileSync(src, dst);
+    fs.chmodSync(dst, 0o700);
+    return true;
+  } catch (e) {
+    console.error(`[Pixel Agents] Failed to copy the status line script: ${e}`);
+    return false;
+  }
+}
+
+/** The Settings toggle's whole side effect, for both surfaces: on = copy the
+ *  script, THEN point settings.json at it (a failed copy aborts, so the entry
+ *  never names a missing script); off = remove our entry. Throws on refusal. */
+export async function setStatusLineInstalled(
+  extensionPath: string,
+  enabled: boolean,
+): Promise<void> {
+  if (!enabled) {
+    await uninstallStatusLine();
+    return;
+  }
+  if (!copyStatusLineScript(extensionPath)) {
+    throw new Error('Status line script missing — usage meter not installed.');
+  }
+  await installStatusLine();
+}
+
+/** Startup refresh: while the meter is on, re-copy the script so an upgrade's
+ *  version is what Claude Code runs. Nothing is written to settings.json. */
+export function refreshStatusLineScript(extensionPath: string): void {
+  if (statusLineState() === 'on') copyStatusLineScript(extensionPath);
 }

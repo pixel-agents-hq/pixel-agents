@@ -156,6 +156,9 @@ export class AgentStateStore {
       // them from sidecars after a restore. Persisting them would resurrect
       // immortal characters whose completion signal never comes.
       if (agent.spawnToolUseId) continue;
+      // Remote agents have no transcript to restore from; they are re-adopted
+      // from their next relayed event instead.
+      if (agent.remoteSource) continue;
       persisted.push({
         id: agent.id,
         sessionId: agent.sessionId,

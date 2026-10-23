@@ -125,3 +125,10 @@ export function unlockAudio(): void {
     // ignore
   }
 }
+
+/** The shared AudioContext when a sound may play right now: sound on and the
+ *  context already unlocked by a user gesture. Null otherwise — callers then
+ *  stay silent rather than prompt (celebrationSound.ts). */
+export function readyAudioContext(): AudioContext | null {
+  return soundEnabled && audioCtx?.state === 'running' ? audioCtx : null;
+}

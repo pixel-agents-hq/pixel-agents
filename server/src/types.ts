@@ -1,5 +1,7 @@
 import type * as vscode from 'vscode';
 
+import type { RemoteSource } from './remoteSource.js';
+
 export interface AgentState {
   id: number;
   sessionId: string;
@@ -32,8 +34,23 @@ export interface AgentState {
   hookDelivered: boolean;
   /** True when agent has no transcript file (provider doesn't use JSONL). All state from hooks. */
   hooksOnly?: boolean;
+  /** Set for sessions ingested through remote/relay (another computer or the cloud).
+   *  Always hooksOnly: the transcript lives on the other machine. */
+  remoteSource?: RemoteSource;
   /** Provider that created this agent (defaults to 'claude') */
   providerId?: string;
+  /** Adopted by the LocalSessionWatcher because `claude agents` listed its session
+   *  (localSessions.ts). Only such agents are removed when their session leaves
+   *  the list. Transient — not persisted. */
+  fromSessionList?: true;
+  /** The session's task title: the newest `ai-title` record in its transcript
+   *  (transcriptTitle.ts). Remote agents have no transcript here, so none. */
+  title?: string;
+  /** A background or headless local session -- the session list names a kind
+   *  other than interactive, or a hook-adopted session never appears in it
+   *  (localSessions.ts). Shown as a compact remote-worker tile. Remote agents
+   *  never are. Transient -- not persisted. */
+  background?: true;
   /** Set when SessionEnd(reason=clear) fires; cleared when SessionStart(source=clear) reassigns */
   pendingClear?: boolean;
   /** Hook-generated tool ID for PreToolUse/PostToolUse correlation */

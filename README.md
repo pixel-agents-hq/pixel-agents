@@ -1,240 +1,316 @@
 <h1 align="center">
-  <a href="https://github.com/pixel-agents-hq/pixel-agents/discussions">
-    <img src="webview-ui/public/banner.png" alt="Pixel Agents">
-  </a>
+  <img src="webview-ui/public/banner.png" alt="Pixel Agents">
 </h1>
 
-<h2 align="center">The most playful way to orchestrate your agents</h2>
+<p align="center">Your Claude Code sessions as characters in a pixel-art office, on any screen.</p>
 
-<div align="center">
+Pixel Agents turns every Claude Code session into an animated character. Characters walk to a desk, type while the agent edits files, read while it searches, and walk to other rooms when they're waiting on you, asking for permission, or running tests. Sessions from this computer, your other computers and claude.ai/code cloud sessions can all appear in the same office.
 
-[![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fpablodelucca%2F3cd28398fa4a2c0a636e1d51d41aee39%2Fraw%2Fversion.json)](https://github.com/pixel-agents-hq/pixel-agents/releases)
-[![marketplaces](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fpablodelucca%2F3cd28398fa4a2c0a636e1d51d41aee39%2Fraw%2Finstalls.json)](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents)
-[![npm downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fpablodelucca%2F3cd28398fa4a2c0a636e1d51d41aee39%2Fraw%2Fnpm-downloads.json)](https://www.npmjs.com/package/pixel-agents)
-[![stars](https://img.shields.io/github/stars/pixel-agents-hq/pixel-agents?logo=github&color=0183ff&style=flat)](https://github.com/pixel-agents-hq/pixel-agents/stargazers)
-[![license](https://img.shields.io/github/license/pixel-agents-hq/pixel-agents?color=0183ff&style=flat)](https://github.com/pixel-agents-hq/pixel-agents/blob/main/LICENSE)
-[![discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white&style=flat)](https://discord.gg/Yk7jXebv9H)
+This repository is a fork of [pixel-agents-hq/pixel-agents](https://github.com/pixel-agents-hq/pixel-agents) (MIT). It keeps everything upstream does and adds a lot on top, mostly to the standalone browser board. See [What this fork adds](#what-this-fork-adds).
 
-</div>
+![Pixel Agents office](webview-ui/public/office.png)
 
-<div align="center">
-<a href="https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents">🛒 VS Code Marketplace</a> • <a href="https://open-vsx.org/extension/pablodelucca/pixel-agents">🛒 Open VSX</a> • <a href="https://www.npmjs.com/package/pixel-agents">📦 npm</a> • <a href="https://discord.gg/Yk7jXebv9H">👾 Discord</a> • <a href="https://github.com/pixel-agents-hq/pixel-agents/discussions">💬 Discussions</a> • <a href="CONTRIBUTING.md">🤝 Contributing</a> • <a href="CHANGELOG.md">📋 Changelog</a>
-</div>
+> **Run this fork from source.** The `pixel-agents` package on npm and the extension on the VS Code Marketplace and Open VSX are upstream's releases. They don't include this fork's features. See [Getting started](#getting-started).
 
-<br/>
+## Contents
 
-Pixel Agents turns the AI coding agents running in your terminals into animated pixel-art characters working in a tiny office. They walk to their desks, sit down, type when they're editing files, read when they're searching, and flag you visually when they're stuck waiting for input.
+- [What this fork adds](#what-this-fork-adds)
+- [Requirements](#requirements)
+- [Getting started](#getting-started)
+- [Watching from a phone or a TV](#watching-from-a-phone-or-a-tv)
+- [Sessions from other computers and the cloud](#sessions-from-other-computers-and-the-cloud)
+- [Features](#features)
+- [Office MCP server](#office-mcp-server)
+- [Settings and switches](#settings-and-switches)
+- [Data on disk](#data-on-disk)
+- [How it works](#how-it-works)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Credits and license](#credits-and-license)
 
-It ships in two forms from the same codebase:
+## What this fork adds
 
-- **VS Code extension** — [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) and [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents). Agents launch into VS Code terminals; characters render in the panel area.
-- **Standalone CLI** — `npx pixel-agents` starts a local server and serves the same office as a browser app, useful for tmux, remote, and non-VS Code workflows.
+Most of these live in the standalone board (`node dist/cli.js`). The VS Code panel gets the office and look changes, but not the server-side parts (approvals, Manager, Ansh's brain, alerts, MCP).
 
-The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation today; Codex, Gemini, Cursor, and others are on the roadmap.
-
-![Pixel Agents screenshot](webview-ui/public/office.png)
-
-## Features
-
-- **One agent, one character** — every Claude Code terminal gets its own animated character
-- **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
-- **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
-- **Speech bubbles** — visual indicators when an agent is waiting for input or awaiting permission
-- **Sound notifications** — optional chimes when an agent finishes its turn or requests permission
-- **Sub-agents and Agent Teams** — see ephemeral sub-agents and persistent Claude teammates as separate characters, including team roles and lifecycle changes
-- **Persistent layouts** — your office design is saved and shared across VS Code windows
-- **Shared layout and assets** — import/export layouts and load external character, pet, and furniture packs
-- **Areas** — paint named areas onto the office, map workspace folders to them, and new agents sit inside the areas mapped to their folder
-- **Diverse characters** — 6 diverse characters. These are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack).
-
-<p align="center">
-  <img src="webview-ui/public/characters.png" alt="Pixel Agents characters" width="320" height="72" style="image-rendering: pixelated;">
-</p>
-
-## Where This Is Going
-
-The vision is: play a game, build a product. Two goals follow from it: to build a familiar, intuitive interface for running and orchestrating a lot of agents; and to make the hours you spend doing it feel less like administration and more like play.
-
-Roughly three stages get there:
-
-1. **Everywhere, with everything.** Today it's Claude Code in VS Code or the browser. It should be whatever agent you run, wherever you work. A new CLI is a subdirectory, not a rewrite — this is where help is most useful right now.
-2. **Actually a game.** Health bars for rate limits and token budgets. Scores for whatever you care about. Furniture that _does_ things. Offices you open like save files, one per project.
-3. **Expand the orchestration frontier.** Orchestrator characters. Form a team by dragging a box around them. Hand work between agents. Point them at a board and let them pick up tasks themselves.
-
-Most of this is still ahead. See [Issues](https://github.com/pixel-agents-hq/pixel-agents/issues) and [Discussions](https://github.com/pixel-agents-hq/pixel-agents/discussions) for what's open, and [CONTRIBUTING.md](CONTRIBUTING.md) to jump in.
+- **Remote sessions.** Other computers and cloud sessions send their hook events to a small relay behind Tailscale Funnel. They show up with a 💻 or ☁ badge.
+- **A living office.** Rooms with meaning: a lounge for sleeping sessions, a smoking balcony for sessions waiting on you, a meeting room for questions, a server room for test runs, a café, an entrance where characters arrive and leave.
+- **Approvals from the board.** Answer a permission request from the board or your phone, not only the terminal.
+- **Status at a glance.** Stage track per agent, a waiting timer, a "Needs you" inbox, failure and loop warnings, a per-agent timeline, usage-limit pauses, and a TODAY strip with PRs, pushes, files, commands, hours and tokens.
+- **The Manager.** A task log built from session titles, a Tasks board, time per repo with CSV export, and a daily report written by `claude -p`.
+- **Ansh.** Your own character. It watches the office, walks over to agents that need attention, and comments in one line.
+- **Usage meter.** Your Claude subscription's 5-hour and weekly usage on a wall display in the server room.
+- **Phone alerts** through ntfy when an agent has waited on you too long.
+- **Office life.** Celebrations for PRs and pushes, trophies, day/night windows with real weather, live clocks, festivals, smart pets, a lo-fi radio, ping-pong, a notice board of open PRs and issues, and more.
+- **Clawd look.** Draw agents as Clawd, Claude Code's orange mascot, instead of the classic characters.
+- **TV mode.** A full-screen, controls-hidden board for a wall display.
+- **An office MCP server.** Ask Claude about your other agents with five read-only tools.
 
 ## Requirements
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
-- **VS Code extension:** VS Code 1.105.0 or later
-- **Standalone CLI:** Node.js 20 or later
-- Windows, Linux, or macOS
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and signed in
+- Node.js 20 or later
+- Windows, macOS or Linux
+- For the VS Code extension: VS Code 1.105.0 or later
 
-## Getting Started
+## Getting started
+
+### Standalone board (recommended)
+
+```bash
+git clone https://github.com/anshhoff/pixel-agents.git
+cd pixel-agents
+npm install
+npm run build
+node dist/cli.js --port 3100
+```
+
+The CLI prints a URL ending in `?token=...`. Open it.
+
+1. The first time, a greeter walks you through a short intro and asks before installing hooks into `~/.claude/settings.json`. Hooks give instant, reliable status. Without them, Pixel Agents falls back to reading transcripts.
+2. In **Settings**, turn on **Watch All Sessions** to see sessions from every project, not only the folder you started from.
+3. Click **+ Agent** and pick a Directory to start Claude Code in the browser terminal. Sessions you start in your own terminal are picked up too.
+
+Without `--port`, the server picks a free port on every start, so a bookmarked URL stops working after a restart. Use a fixed port.
+
+#### Options
+
+| Option                  | Effect                                                                                                                                                            |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--port`, `-p <number>` | Port to listen on. Default: a free port chosen by the OS.                                                                                                         |
+| `--host <string>`       | Address to bind to. Default: `127.0.0.1`. Binding to `0.0.0.0` exposes the board to your network.                                                                 |
+| `--allowed-host <name>` | Also accept the tokened URL under this host name, for example a Tailscale Serve name. Repeatable. Without it, only localhost and a specific `--host` are trusted. |
+| `--rotate-token`        | Replace the server token. Every URL that carried the old one stops working.                                                                                       |
+| `--no-terminal`         | Turn off the browser terminal. You can watch agents but not launch or attach to them.                                                                             |
+| `--help`                | Show the help.                                                                                                                                                    |
+
+#### The token URL is a secret
+
+The `?token=` in the URL is what lets a browser change things: install hooks, launch agents, attach to terminals, answer permission requests. Anyone with the URL can do those things from anywhere the board is reachable.
+
+- Don't paste it into a shared channel. It's also saved in your browser history. The server's own log hides it.
+- A browser without the token gets a **read-only** board. It can watch the office and read the Tasks board, nothing else. That's what you want on a wall display.
+- The token is stored in `~/.pixel-agents/standalone-token` (readable only by you) and survives restarts. `--rotate-token` replaces it.
+
+Stop the board with **Ctrl+C**.
 
 ### VS Code extension
 
-1. Install Pixel Agents from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) or [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents).
-2. Open the **Pixel Agents** panel beside the terminal.
-3. Click **+ Agent** to open its drawer of **Directories**, then click one to launch Claude Code in it. Your workspace folders are listed there once you turn on **Settings → Show Workspace Folders**; **+ Directory** adds your own (a name, a path, and optionally the Areas its agents should sit in), and the pencil on a row you added edits or deletes it.
+Open this repository in VS Code and press **F5**. That starts an Extension Development Host with the fork's extension loaded. Open the **Pixel Agents** panel beside the terminal and click **+ Agent**.
 
-To use Claude with `--dangerously-skip-permissions`, turn on **Settings → Skip Permissions**. It stays on for every agent launched from that host until you turn it off. Only use this when you accept the security implications.
+The extension and the standalone board can run at the same time. Each registers itself under `~/.pixel-agents/servers/`, and the hook sends every event to all of them. They keep separate agents, seats and settings, and share the office layout.
 
-Pixel Agents also detects Claude sessions started outside the extension. Turn on **Settings → Watch All Sessions** to include sessions from other workspaces.
+### Use the full office layout
 
-### Standalone CLI
+The living office needs rooms. A ready-made layout and the sprites it uses ship in this repo:
 
-Run Pixel Agents from the workspace whose Claude sessions you want to see:
+1. **Settings → Add Asset Directory**, and pick `remote/office-pack`.
+2. **Settings → Import Layout**, and pick `remote/layouts/office-with-rooms.json`.
 
-```bash
-cd /path/to/your/project
-npx pixel-agents
-```
+Rooms are Areas with reserved names: `Entrance`, `Dev`, `Smoke`, `Lounge`, `Meeting`, `Server`, `Cafe`, `Ansh` and `Manager`. In your own layout, paint Areas with these names to get the same behaviour. A layout without them still works; characters just stay at their desks.
 
-The CLI chooses a free local port and prints the URL. Click **+ Agent** to open the Directory drawer and click a Directory to launch Claude Code in it; the agent's terminal opens in the browser. **+ Directory** adds your own, and **Settings → Show Start Directory** lists the directory the CLI was started from. On a phone, tap the **+** card to open the same drawer and tap a Directory to launch (long-press a Directory you added to edit it). Claude Code started in your own terminal is picked up too. To install the command globally instead:
+## Watching from a phone or a TV
 
-```bash
-npm install --global pixel-agents
-pixel-agents
-```
+**Phone.** Below a phone-sized width the board turns into a two-page app: the office, and a terminal page for the agent you pick. A row of agent cards sits at the bottom. Add it to your home screen and it opens like an app.
 
-Use a fixed address or port when needed:
+To reach the board from your phone without exposing it to the internet, put both devices on the same [Tailscale](https://tailscale.com) tailnet and serve the board inside the tailnet only:
 
 ```bash
-pixel-agents --port 3100
-pixel-agents --host 127.0.0.1 --port 3100
-pixel-agents --no-terminal
-pixel-agents --help
+tailscale serve --bg --https=3443 http://127.0.0.1:3100
+node dist/cli.js --port 3100 --allowed-host <machine>.<tailnet>.ts.net
 ```
 
-The default bind address is `127.0.0.1`. Binding to `0.0.0.0` exposes the UI and WebSocket to the local network; do this only on a trusted network.
+Open `https://<machine>.<tailnet>.ts.net:3443`. Without the token it's read-only. With the token and `--allowed-host`, you can also approve permission requests and launch agents from the phone.
 
-Open the URL the CLI prints - it carries a `?token=` for this server. Any browser can watch the office without it, but installing or removing hooks (which edits your agent tool's own settings file, like the `~/.claude/settings.json`), launching agents from the browser and attaching to their terminals are only offered to a session that has the token, so an untokened client on the network cannot approve or do any of it. Open the bare address instead and the hooks toggle in Settings is refused (reporting the actual install state rather than appearing to work) and the **+ Agent** button explains what it needs. Standalone keeps the same token across restarts (in `~/.pixel-agents/standalone-token`, readable only by you), so a bookmarked or home-screen URL keeps working — as long as the port stays the same too, which takes `--port` (the default port is picked fresh on every start).
+**TV mode.** Full screen with the controls hidden, for a second monitor or a wall display. The office auto-fits, the cursor hides, and the screen is kept awake where the browser allows it. Enter it with the TV button, the **T** key, or `?tv=1` in the URL. Leave with **Esc**, **T**, or the Exit button that appears when you move the mouse.
 
-Treat that URL as a secret: the token is a bearer capability, not proof of being local. Whoever holds it can approve the hook install from anywhere the server is reachable — so don't paste the URL into a shared channel, and note that it also lands in your browser history (the server's own request log redacts it).
+## Sessions from other computers and the cloud
 
-Pass `--no-terminal` to disable the embedded terminal — watch agents without launching or attaching to them from the browser.
+One computer runs the board and a small relay. Only the relay is exposed to the internet, through Tailscale Funnel, and it accepts a single `POST /ingest` route. Other computers and claude.ai/code cloud sessions send their hook events to it with their own key. The board itself is never exposed.
 
-Copying from the embedded terminal is verbatim: Cmd+C (Mac), Ctrl+C or Ctrl+Shift+C with a selection (Windows, Linux), the browser's Copy, and the **Copy** button on a phone copy exactly what is on screen. Claude Code wraps long prose into lines indented two spaces; to copy such a passage as flowing text instead, select it and press **Alt+C** (**Option+C** on a Mac), or tap **Copy as text** on a phone. On a phone opened over plain `http://` (a LAN address), the paste key asks for the text in a prompt, since the page cannot read the clipboard there.
+```
+this computer   Claude Code ── local hook ─────────────────► board 127.0.0.1:3100
+other computer ── curl + key ──┐                                 ▲
+                               ├─► Tailscale Funnel ─► relay ────┘
+cloud session ─── curl ────────┘
+```
 
-### Running the extension and standalone together
+Remote sessions show tool activity, permission bubbles, Done/Waiting and sub-agents. They don't get a context gauge or teammate detection, because the transcript stays on the other machine, and their permission requests are answered in their own terminal, not from the board. The board only updates while the host computer is on.
 
-The extension and standalone CLI can run at the same time. Each server registers under `~/.pixel-agents/servers/`; the hook script sends events to all active registrations. VS Code and standalone keep separate agents, seats, and settings while using the shared office layout.
+Setup, including keeping the board and relay running at login on Windows and macOS: [remote/README.md](remote/README.md). Design: [docs/remote/DESIGN.md](docs/remote/DESIGN.md).
 
-Stop a standalone server with **Ctrl+C**. It removes only its own registration.
+## Features
 
-## Customizing the Office
+### The office
 
-Click **Layout** to edit the office:
+- **One character per session.** Sub-agents appear as helpers next to their parent. Agent Teams teammates get their own characters, and the lead wears a crown.
+- **Live activity.** Characters type while the agent edits or runs commands, and read while it searches or fetches.
+- **Rooms that mean something** (with a layout that has them):
+  - sleeping sessions go to the Lounge
+  - questions go to the Meeting room
+  - permission requests knock on Ansh's door
+  - test and build commands send the agent to the Server room
+  - a finished turn waiting on you means a cigarette on the Smoke balcony
+  - short gaps mean a coffee run to the Café
+  - new sessions walk in through the Entrance, and closed ones walk out
+- **Speech bubbles** for permission requests and finished turns, and an optional chime.
+- **Labels** with the session's task title and repo, a context gauge, and the stage track.
+- **Two looks.** Classic characters (the default) or Clawd, with a colour and an accessory per repo. Change it in **Settings → Agent Look**.
+- **Layout editor.** Click **Layout** to paint floors and walls, place, rotate, recolour and copy furniture, paint carpets, add pets, and paint named Areas. Undo and redo, import and export as JSON. Layouts grow up to 64×64 tiles.
+- **Directories and Areas.** **+ Directory** saves a named folder to launch agents in, optionally tied to Areas where its agents prefer to sit.
+- **External asset packs** for furniture, characters and pets. See [docs/external-assets.md](docs/external-assets.md).
 
-- Paint floor patterns and walls, with color and contrast controls.
-- Place, rotate, recolor, select, and remove furniture.
-- Paint auto-tiling carpets and customize their main and accent colors.
-- Add animated pets; click a pet in the office to interact with it.
-- Create named **Areas**, paint their tiles, and assign Directories to them (agents launched in a Directory prefer seats in its Areas).
-- Undo/redo changes, then import or export the complete layout as JSON.
+### Knowing what needs you
 
-Layouts can grow to 64×64 tiles by clicking the ghost border outside the current grid.
+- **Stage track** on each label: `EXPLORE · BUILD · TEST · SHIP`, from the tools the agent runs.
+- **Waiting timer**: `⏳ waiting on you 14m`. It turns yellow at 5 minutes and red at 15.
+- **"Needs you" inbox** (📥): every agent waiting on you, oldest first, with the reason: turn done, permission, or question.
+- **Open in Claude**: a link to the session on claude.ai/code when Remote Control is on. Otherwise, a copyable `claude --resume` command.
+- **Trouble signals**: a 🔥 on the desk for each failed tool, a red alarm after three in a row, and 🌀 when an agent seems to be going in circles.
+- **Timeline**: click a character to see its last actions, today's PRs and pushes, and its time worked.
+- **Usage-limit pauses**: an agent that hit a usage limit shows ⏸️ with its reset time instead of "waiting on you".
+- **TODAY strip**: PRs, pushes, files edited, commands, active hours and tokens for the day, with an estimated cost.
+- **Phone alerts**: one [ntfy](https://ntfy.sh) notification per wait when an agent has waited on you for 15 minutes. Turn it on by creating `~/.pixel-agents/alerts.json` with `{ "ntfyTopic": "<your topic>" }`. You can also set `ntfyServer` and `waitMinutes`. The message contains the task title and repo only.
 
-### Office assets
+### Acting from the board
 
-Bundled furniture, floors, walls, carpets, characters, and pets live under `webview-ui/public/assets/`. Furniture manifests describe sprites, rotation groups, state groups, and animation frames.
+- **Approvals.** When a session asks for permission, the board shows the request with Allow and Deny. Claude Code shows its own prompt at the same time, and whichever is answered first wins. Only plain allow or deny is sent back, never "always allow". Answers are logged to `~/.pixel-agents/approvals.log`. Standalone only, for sessions on the board's own computer.
+- **Browser terminal.** Launch Claude Code from **+ Agent** and drive it in the browser, on desktop or phone. Copying is verbatim. **Alt+C** (**Option+C** on a Mac), or **Copy as text** on a phone, joins Claude Code's wrapped lines into flowing text.
+- **Skip Permissions.** **Settings → Skip Permissions** launches new agents with `--dangerously-skip-permissions`. Only turn it on if you accept what that means.
 
-Use **Settings → Add Asset Directory** to load external characters, pets, and furniture. See [docs/external-assets.md](docs/external-assets.md) for furniture directory structure and manifest details. The visual asset manager at `scripts/asset-manager.html` helps create furniture manifests.
+### The Manager and Ansh (standalone)
 
-## How It Works
+- **Task log.** Each session's title period is a task: in progress, waiting on you, or done, with its PRs, pushes, files, commands and active time. Stored per day under `~/.pixel-agents/tasks/`.
+- **Tasks board.** Click the Manager to see a kanban of today's tasks, earlier days, the daily report, and a **Time** tab with time per repo for the week (active hours, tasks, PRs, pushes, tokens) and a CSV export.
+- **Daily report.** At 19:00 the Manager writes a short report with `claude -p` (tools off) and walks it into Ansh's office. **Write report now** does it on demand. If Claude can't run, a plain template report is written instead.
+- **Ansh's brain.** Every 20 seconds Ansh looks at the office. When something important changes (at most every 5 minutes, with a daily cap), it asks `claude -p` for one move (visit an agent, talk to the Manager, stretch, or stay) and one line of comment. Ansh can only watch and comment. It has no way to answer, launch or message anything. Click Ansh to see its thoughts, turn it on or off, or ask it something.
 
-Pixel Agents uses two Claude Code detection paths:
+### Usage meter
 
-- **Hooks mode** (default) — a hook script receives Claude events such as `SessionStart`, `PreToolUse`, `PermissionRequest`, and `Stop`. It discovers active Pixel Agents servers and sends authenticated events to each one.
-- **Heuristic mode** (fallback) — when hooks are unavailable, the runtime infers agent status by scanning Claude's JSONL session transcripts under `~/.claude/projects/`. Transcripts are also read in hooks mode for details not present in an event.
+**Settings → Usage Meter (Server Room)** shows your Claude subscription's 5-hour and weekly usage, with reset times, on a display above the server racks. Claude Code only reports these numbers to a status line, so turning this on installs a `statusLine` in `~/.claude/settings.json`. That status line prints a short line in your terminal, such as `Opus 5.5 | 5h 23% (resets 6:30 PM) | 7d 41%`. A status line of your own is never replaced; the setting then shows that one is in the way. Needs a Pro or Max plan.
 
-The Claude provider normalizes both sources into a shared `AgentEvent` model. `AgentRuntime` updates the central state store, and the active transport sends typed messages to the React webview. The office renders through Canvas 2D with pathfinding and character state machines.
+### Office life
 
-Pixel Agents does not modify Claude Code. Its hook configuration and persistent data live under `~/.claude/` and `~/.pixel-agents/` respectively.
+- **Celebrations**: a bell, confetti and a trophy on the trophy wall for every PR and push. Pizza after three PRs in a day.
+- **Ambience**: windows that follow the time of day and show the real weather, dimmed lights at night, wall clocks with real time, name plates on desks.
+- **Rituals and festivals**: a 10:00 standup in the Meeting room, an end-of-day banner at 19:00, and Diwali, Holi and New Year decorations.
+- **Smart pets**: Gitcat sits on the busiest agent's desk. Claudio greets new arrivals and bounces around an agent that just shipped.
+- **More**: a receptionist who waves, a fish tank that bubbles faster when more agents work, ping-pong between idle agents, a printer that prints when a session writes a document, plants that grow with the week's PRs, a week wall with streaks, and a lo-fi radio in the Lounge.
+- **Notice board**: open PRs and issues for today's repos, polled with `gh` every 10 minutes when `gh` is signed in. Titles only.
 
-### Architecture
+## Office MCP server
 
-- **`core/`** — provider, adapter, transport, schema, and AsyncAPI message contracts with no runtime side effects.
-- **`server/`** — shared Fastify server, agent runtime, persistence, Claude provider, transcript scanning, and standalone CLI.
-- **`adapters/vscode/`** — the VS Code adapter: terminal, persistence, and webview bridge.
-- **`webview-ui/`** — React 19, Vite, Canvas 2D, and adapter-specific transports for VS Code and browser WebSocket clients.
+The standalone board is also an MCP server, so a Claude Code session can ask about your other agents. Its five tools are read-only:
 
-The extension and CLI are bundled with esbuild; the webview is built with Vite. Unit tests use Vitest and Node's test runner, and end-to-end coverage uses Playwright against VS Code and standalone.
+| Tool                | Returns                                                       |
+| ------------------- | ------------------------------------------------------------- |
+| `list_agents`       | Every agent in the office, with ids                           |
+| `read_agent`        | The end of one agent's transcript: prompts, replies, failures |
+| `pending_approvals` | Permission requests waiting for an answer                     |
+| `tasks_today`       | Today's task log                                              |
+| `usage`             | The subscription usage the meter shows                        |
+
+Connect it (replace `3100` with your port, and the token with the contents of `~/.pixel-agents/standalone-token`):
+
+```bash
+claude mcp add --transport http pixel-agents http://127.0.0.1:3100/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+Text that came from an agent is marked as data in every tool result.
+
+## Settings and switches
+
+The **Settings** panel covers sound, Watch All Sessions, Instant Detection (Hooks), Always Show Labels, the usage meter, Agent Look, Show Areas, Skip Permissions, Show Start Directory, asset directories, layout import/export, and a Debug View.
+
+Environment variables for the standalone board:
+
+| Variable                         | Effect                                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `PIXEL_AGENTS_APPROVALS=off`     | The permission hook never waits on the board. `"approvalsEnabled": false` in `~/.pixel-agents/config.json` does the same. |
+| `PIXEL_AGENTS_ANSH_BRAIN=off`    | Ansh never runs `claude`. It uses built-in thoughts.                                                                      |
+| `PIXEL_AGENTS_MANAGER=off`       | Neither the Manager's report nor Ansh runs `claude`. Reports use the template.                                            |
+| `PIXEL_AGENTS_WEATHER=off`       | No network lookups for the weather in the windows.                                                                        |
+| `PIXEL_AGENTS_NOTICE_BOARD=off`  | Never run `gh` for the notice board.                                                                                      |
+| `PIXEL_AGENTS_SESSION_LIST=off`  | Don't run `claude agents --json`, which is used to spot sleeping and background sessions.                                 |
+| `PIXEL_AGENTS_CLAUDE_BIN=<path>` | Use this executable instead of `claude` on `PATH`.                                                                        |
+| `PIXEL_AGENTS_LOG_LEVEL=warn`    | Quieter server log, for a board that runs all the time.                                                                   |
+
+`0`, `false` and `no` work like `off`.
+
+The weather feature guesses your city once from your IP address (ipapi.co, then ip-api.com) and fetches the weather from Open-Meteo. No key is needed. The city is cached in `~/.pixel-agents/weather-location.json`.
+
+## Data on disk
+
+Pixel Agents never modifies Claude Code. It adds entries to `~/.claude/settings.json` only after you agree (hooks) or turn the usage meter on (status line), and removes them when you turn them off. Before its first change it saves a backup next to the file. Everything else lives under `~/.pixel-agents/`:
+
+| Path                                         | Contents                                               |
+| -------------------------------------------- | ------------------------------------------------------ |
+| `config.json`                                | Settings, hook consent, asset directories              |
+| `layout.json`                                | The office layout, shared by every surface             |
+| `standalone-state.json`, `vscode-state.json` | Agents and seats per surface                           |
+| `standalone-token`                           | The standalone server token                            |
+| `servers/`                                   | One registration per running server                    |
+| `hooks/`                                     | The hook and status line scripts                       |
+| `daily/`, `tasks/`, `reports/`, `tokens/`    | Daily totals, task log, Manager reports, token counts  |
+| `ansh/`                                      | Ansh's state                                           |
+| `usage.json`                                 | The latest subscription usage                          |
+| `approvals.log`                              | One line per permission answered from the board        |
+| `alerts.json`                                | Your ntfy settings (you create it)                     |
+| `relay.json`                                 | Relay sources, with hashed keys (remote sessions only) |
+
+## How it works
+
+Claude Code reports what it's doing in two ways, and Pixel Agents uses both:
+
+- **Hooks** (preferred). A small hook script receives events like `SessionStart`, `PreToolUse`, `PermissionRequest` and `Stop`, and posts them to every running board.
+- **Transcripts** (fallback). Without hooks, status is inferred from the JSONL transcripts under `~/.claude/projects/`. Transcripts are also read in hooks mode for titles, tokens and context use.
+
+Both become one shared event model. A runtime updates a central state store, and the store's changes are sent to the browser over WebSocket (standalone) or to the VS Code panel. The office is drawn on a Canvas 2D with pathfinding and character state machines.
+
+The code is layered:
+
+- `core/`: the protocol and interfaces, including the AsyncAPI contract that the message types are generated from
+- `server/`: the runtime, the Claude provider, persistence, the Fastify server and the standalone CLI
+- `adapters/vscode/`: the VS Code extension
+- `webview-ui/`: the React and Canvas office, shared by both surfaces
+- `remote/`: the relay, the office sprite pack and layout, and the autostart scripts
+
+For more detail, see [CLAUDE.md](CLAUDE.md) (architecture reference), [CONTEXT.md](CONTEXT.md) (glossary), and the design notes in [docs/](docs/).
 
 ## Development
 
 ```bash
-git clone https://github.com/pixel-agents-hq/pixel-agents.git
-cd pixel-agents
-npm install
-npm run build
+npm install          # root and all workspaces
+npm run build        # generate protocol types, type-check, lint, bundle, build the webview
+npm run watch        # rebuild the extension and CLI on change
+cd webview-ui && npm run dev   # Vite dev server for the webview, in a second terminal
 ```
 
-Press **F5** in VS Code to launch the Extension Development Host. To run the standalone bundle built from source:
+Press **F5** in VS Code for the Extension Development Host. Run the standalone build with `node dist/cli.js`.
 
-```bash
-node dist/cli.js
-```
-
-Common checks:
+Checks:
 
 ```bash
 npm run check-types
 npm run lint
-npm test
-npm run e2e
+npm test             # webview, server, npm package contract and relay tests
+npm run e2e          # Playwright, against VS Code and the standalone board
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and [e2e/README.md](e2e/README.md) for the end-to-end suite.
+The VS Code end-to-end tests open real VS Code windows that take keyboard focus. The standalone ones run in a headless browser. See [e2e/README.md](e2e/README.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
-### Hosted Test Reports
-
-Build the combined Allure report locally and stage it for Vercel:
-
-```bash
-npm run test
-npm run e2e
-npm run e2e -- --attach-videos-on-success
-npm run vercel:prepare
-```
-
-Use `npm run test:report` to build the combined report without preparing the Vercel output, then `npm run test:report:open` to serve it locally.
-
-The staged output serves the combined `e2e`, `server`, and `webview` Allure report at `/reports/allure/`; it does not include a standalone webview preview. GitHub Actions creates a Vercel Preview deployment only for same-repository pull requests targeting `main`. The deploy job expects `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID` secrets and skips fork pull requests.
+`core/src/messages.ts` is generated from `core/asyncapi.yaml` by `npm run asyncapi:generate`. Edit the YAML, never the generated file.
 
 ## Troubleshooting
 
-- **Standalone will not start:** verify Node.js 20+, omit `--port` to choose a free port, or select another fixed port.
-- **An agent is missing:** confirm **Settings → Instant Detection (Hooks)** is on and that the session belongs to the current workspace. Enable **Watch All Sessions** if needed.
-- **The UI looks disconnected:** open **Settings → Debug View** to inspect the server connection, transcript path, and latest agent data.
-- **Extension and standalone are both running:** this is supported. Current versions create separate files under `~/.pixel-agents/servers/`; stopping one does not remove the other.
+- **The board won't start.** Check Node.js 20+, and that nothing else uses the port.
+- **An agent is missing.** Check that **Instant Detection (Hooks)** is on, and turn on **Watch All Sessions** for sessions outside the start folder.
+- **Buttons do nothing or say the board is read-only.** You opened the URL without `?token=`, or under a host name you didn't pass with `--allowed-host`.
+- **Something looks wrong.** **Settings → Debug View** shows the connection, transcript paths and the latest data per agent.
+- **Remote sessions don't appear.** See the troubleshooting section of [remote/README.md](remote/README.md).
 
-## Community & Contributing
+## Credits and license
 
-Join the [Discord](https://discord.gg/Yk7jXebv9H) to chat with other users and follow development. Use [Issues](https://github.com/pixel-agents-hq/pixel-agents/issues) to report bugs or request features, and [Discussions](https://github.com/pixel-agents-hq/pixel-agents/discussions) for questions and ideas.
+Pixel Agents was created by [Pablo De Lucca](https://github.com/pablodelucca) and the contributors to [pixel-agents-hq/pixel-agents](https://github.com/pixel-agents-hq/pixel-agents). This fork builds on their work. The classic characters are based on [JIK-A-4's Metro City](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack) pack.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request and read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
-
-## Supporting the Project
-
-<a href="https://github.com/sponsors/pablodelucca">
-  <img src="https://img.shields.io/badge/Sponsor-GitHub-ea4aaa?logo=github" alt="GitHub Sponsors">
-</a>
-<a href="https://ko-fi.com/pablodelucca">
-  <img src="https://img.shields.io/badge/Support-Ko--fi-ff5e5b?logo=ko-fi" alt="Ko-fi">
-</a>
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=pixel-agents-hq%2Fpixel-agents&type=date&legend=bottom-right">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=pixel-agents-hq/pixel-agents&type=date&theme=dark&legend=bottom-right&sealed_token=Vn3YGMuZ_HFZAf56zIUQGCBJDYtDq38sOReKlcxWklxR_ilwVLynb7CPraf5uPhnAU7fwHXXoO88tzLkq9tpEYIExl4N8tcXOmu0ehAXPu5DdXNwjixYsxb00LSfeJ25f_jLkcZcTpRKLKYOb9p4_dR1jjAyrWDs7aicdbqejaDtLcVyj-oSoKkBfrS5" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=pixel-agents-hq/pixel-agents&type=date&legend=bottom-right&sealed_token=Vn3YGMuZ_HFZAf56zIUQGCBJDYtDq38sOReKlcxWklxR_ilwVLynb7CPraf5uPhnAU7fwHXXoO88tzLkq9tpEYIExl4N8tcXOmu0ehAXPu5DdXNwjixYsxb00LSfeJ25f_jLkcZcTpRKLKYOb9p4_dR1jjAyrWDs7aicdbqejaDtLcVyj-oSoKkBfrS5" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=pixel-agents-hq/pixel-agents&type=date&legend=bottom-right&sealed_token=Vn3YGMuZ_HFZAf56zIUQGCBJDYtDq38sOReKlcxWklxR_ilwVLynb7CPraf5uPhnAU7fwHXXoO88tzLkq9tpEYIExl4N8tcXOmu0ehAXPu5DdXNwjixYsxb00LSfeJ25f_jLkcZcTpRKLKYOb9p4_dR1jjAyrWDs7aicdbqejaDtLcVyj-oSoKkBfrS5" />
- </picture>
-</a>
-
-## License
-
-Pixel Agents is available under the [MIT License](LICENSE).
+Available under the [MIT License](LICENSE).

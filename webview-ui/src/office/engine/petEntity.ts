@@ -91,7 +91,7 @@ function findAdjacentTile(
 }
 
 /** Advance the walk-cycle frame counter (4-step cycle). */
-function updateWalkAnimation(pet: Pet, dt: number): void {
+export function updateWalkAnimation(pet: Pet, dt: number): void {
   pet.frameTimer += dt;
   if (pet.frameTimer >= PET_WALK_FRAME_DURATION_SEC) {
     pet.frameTimer -= PET_WALK_FRAME_DURATION_SEC;
@@ -100,7 +100,7 @@ function updateWalkAnimation(pet: Pet, dt: number): void {
 }
 
 /** Advance the idle-cycle frame counter (4-step cycle, slower than walk). */
-function updateIdleAnimation(pet: Pet, dt: number): void {
+export function updateIdleAnimation(pet: Pet, dt: number): void {
   pet.frameTimer += dt;
   if (pet.frameTimer >= PET_IDLE_FRAME_DURATION_SEC) {
     pet.frameTimer -= PET_IDLE_FRAME_DURATION_SEC;
@@ -112,7 +112,7 @@ function updateIdleAnimation(pet: Pet, dt: number): void {
  * Lerp the pet along its current `path`. When it reaches the next tile,
  * shift the tile off the path and update `tileCol`/`tileRow`. Sets `dir`.
  */
-function movePetAlongPath(pet: Pet, dt: number): void {
+export function movePetAlongPath(pet: Pet, dt: number): void {
   if (pet.path.length === 0) return;
   const nextTile = pet.path[0];
   pet.dir = directionBetween(pet.tileCol, pet.tileRow, nextTile.col, nextTile.row);

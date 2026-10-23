@@ -3,17 +3,18 @@ import { useEffect, useRef } from 'react';
 import {
   MUGSHOT_CROP_LEFT_COL,
   MUGSHOT_CROP_SIDE_PX,
-  MUGSHOT_CROP_TOP_ROW,
   MUGSHOT_DISPLAY_PX,
   MUGSHOT_RENDER_ZOOM,
 } from '../constants.js';
+import { useAgentLookVersion } from '../hooks/useAgentLook.js';
+import { lookMetrics, lookOf } from '../office/agentLook.js';
+import { characterSpritesFor } from '../office/sprites/agentSprites.js';
 import { getCachedSprite } from '../office/sprites/spriteCache.js';
-import { getCharacterSprites } from '../office/sprites/spriteData.js';
 import { Direction } from '../office/types.js';
+import type { AgentAppearance } from './AgentCard.js';
 
 interface CharacterMugShotProps {
-  palette: number;
-  hueShift: number;
+  appearance: AgentAppearance;
   /** On-screen side length in CSS px. Defaults to MUGSHOT_DISPLAY_PX. */
   size?: number;
 }
@@ -22,15 +23,16 @@ interface CharacterMugShotProps {
  * A square "mug shot" — the head region of an agent's front-facing sprite,
  * scaled up crisply. Used as the terminal tab's identity in place of a label.
  *
- * Reuses the office sprite cache: the full front sprite is rendered once per
- * palette:hueShift, and we blit just the head square out of it.
+ * Reuses the office sprite cache: the full front sprite (a Clawd in its repo's
+ * tint and accessory, or the chibi) is rendered once per look, and we blit
+ * just the head square out of it — cropped lower for a Clawd, which lives in
+ * the bottom half of its frame.
  */
-export function CharacterMugShot({
-  palette,
-  hueShift,
-  size = MUGSHOT_DISPLAY_PX,
-}: CharacterMugShotProps) {
+export function CharacterMugShot({ appearance, size = MUGSHOT_DISPLAY_PX }: CharacterMugShotProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Redraw when the look flips or this Clawd's tint/accessory is handed out.
+  const lookVersion = useAgentLookVersion();
+  const { id, palette, hueShift, directoryName, isTeamLead } = appearance;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -38,8 +40,10 @@ export function CharacterMugShot({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const front = getCharacterSprites(palette, hueShift).walk[Direction.DOWN][0];
+    const subject = { id, palette, hueShift, directoryName, isTeamLead, isSubagent: false };
+    const front = characterSpritesFor(subject).walk[Direction.DOWN][0];
     const full = getCachedSprite(front, MUGSHOT_RENDER_ZOOM);
+    const cropTop = lookMetrics(lookOf(subject)).mugshotCropTop;
 
     const side = MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM;
     canvas.width = side;
@@ -49,7 +53,7 @@ export function CharacterMugShot({
     ctx.drawImage(
       full,
       MUGSHOT_CROP_LEFT_COL * MUGSHOT_RENDER_ZOOM,
-      MUGSHOT_CROP_TOP_ROW * MUGSHOT_RENDER_ZOOM,
+      cropTop * MUGSHOT_RENDER_ZOOM,
       side,
       side,
       0,
@@ -57,7 +61,7 @@ export function CharacterMugShot({
       side,
       side,
     );
-  }, [palette, hueShift]);
+  }, [id, palette, hueShift, directoryName, isTeamLead, lookVersion]);
 
   return (
     <canvas

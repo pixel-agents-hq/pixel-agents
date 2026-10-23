@@ -159,6 +159,11 @@ function spawnStandaloneHost(args: {
     ...process.env,
     HOME: args.homeDir,
     USERPROFILE: args.homeDir,
+    // The session-list watcher would run `claude agents --json`: the real CLI,
+    // or the mock, which would consume a scenario meant for the test.
+    PIXEL_AGENTS_SESSION_LIST: 'off',
+    // Likewise the Manager's daily report, which runs `claude -p`.
+    PIXEL_AGENTS_MANAGER: 'off',
   };
   if (args.mockClaude) {
     // The host's PTYs inherit its env, so a browser-launched `claude` resolves

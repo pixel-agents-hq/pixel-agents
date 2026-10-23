@@ -506,3 +506,57 @@ describe('/ws privileged-message gate', () => {
     expect(readHooksConsent()).toBe(true);
   });
 });
+
+describe('/ws agent announcements', () => {
+  let server: InstanceType<typeof PixelAgentsServer>;
+  const sockets: WebSocket[] = [];
+
+  beforeEach(() => {
+    tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-ws-announce-'));
+    fs.mkdirSync(path.join(tmpBase, '.pixel-agents'), { recursive: true });
+    server = new PixelAgentsServer();
+  });
+
+  afterEach(() => {
+    for (const socket of sockets) socket.terminate();
+    sockets.length = 0;
+    server?.stop();
+    try {
+      fs.rmSync(tmpBase, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  });
+
+  it('agentCreated carries the task title and the background flag', async () => {
+    const store = new AgentStateStore();
+    const config = await server.start({ embedded: false, store });
+    const result = await connect(config.port, { Origin: `http://127.0.0.1:${config.port}` });
+    sockets.push(result.socket);
+    expect(result.accepted).toBe(true);
+
+    const created = waitForMessage(result.socket, 'agentCreated');
+    const { createAgentState } = await import('../src/agentState.js');
+    store.set(
+      5,
+      createAgentState({
+        id: 5,
+        sessionId: 'sess-5',
+        isExternal: true,
+        projectDir: '/work',
+        jsonlFile: '/work/sess-5.jsonl',
+        directoryName: 'hobbyfi-blog',
+        title: 'Draft review by email',
+        background: true,
+      }),
+    );
+
+    expect(await created).toMatchObject({
+      type: 'agentCreated',
+      id: 5,
+      directoryName: 'hobbyfi-blog',
+      title: 'Draft review by email',
+      background: true,
+    });
+  });
+});

@@ -56,8 +56,12 @@ import {
   copyHookScript,
   hookProviderById,
   hookProviders,
+  refreshStatusLineScript,
+  setStatusLineInstalled,
+  statusLineState,
 } from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
+import { getSignalsHub } from '../../server/src/signals/registry.js';
 import {
   getProjectDirPath,
   launchNewTerminal,
@@ -149,6 +153,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         hooksOnly: agent.hooksOnly || undefined,
         palette: agent.palette,
         hueShift: agent.hueShift,
+        sourceLabel: agent.remoteSource?.label,
+        sourceKind: agent.remoteSource?.kind,
+        title: agent.title,
+        background: agent.background,
       });
     });
     this.store.on('agentRemoved', (id) => {
@@ -273,6 +281,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         if (hooksEnabled) {
           void this.installHooksIfConsented(config.port, config.token);
         }
+        // While the usage meter is on, Claude Code runs this extension's status line.
+        refreshStatusLineScript(this.context.extensionPath);
         console.log(`[Pixel Agents] Server: ready on port ${config.port}`);
       })
       .catch((e) => {
@@ -329,6 +339,18 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
    * activation skip the consent/install path entirely — never asked again, and
    * the checkbox reads "off" so clicking it would install rather than remove.
    */
+  /** The usage meter toggle: install/remove the status line, then report the
+   *  ACTUAL state re-derived from settings.json (an install over the user's own
+   *  status line is refused). Never rejects. */
+  private async setUsageMeterEnabled(enabled: boolean): Promise<void> {
+    try {
+      await setStatusLineInstalled(this.context.extensionPath, enabled);
+    } catch (err) {
+      console.error('[Pixel Agents] Usage meter toggle failed:', err);
+    }
+    this.sendOrBuffer({ type: 'usageMeterStatus', state: statusLineState() });
+  }
+
   private async setHooksEnabled(provider: HookProvider, enabled: boolean): Promise<void> {
     if (enabled) {
       // An explicit Settings toggle IS the consent to modify the provider's
@@ -542,6 +564,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
       } else if (message.type === 'setHooksInfoShown') {
         this.adapter.setSetting(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
+      } else if (message.type === 'setUsageMeterEnabled') {
+        if (typeof message.enabled === 'boolean') void this.setUsageMeterEnabled(message.enabled);
       } else if (message.type === 'setShowAreas') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_SHOW_AREAS, enabled);
@@ -721,6 +745,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           );
           if (consentRequest) this.webview?.postMessage(consentRequest);
         }
+
+        // The usage meter's status line (on / off / the user's own), for the
+        // server room's display and the Settings toggle.
+        this.webview?.postMessage({ type: 'usageMeterStatus', state: statusLineState() });
 
         // Directory→Area mappings (must arrive before any agentCreated/existingAgents
         // so OfficeState.findFreeSeat has the dict when characters are placed).
@@ -921,6 +949,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           }
         })();
         sendExistingAgents(this.store, this.adapter, this.webview);
+      } else if (message.type === 'requestTimeline') {
+        // Tap-for-timeline: one agent's recent actions, back to this webview.
+        const timeline = getSignalsHub()?.timelineMessage(this.store, message.id);
+        if (timeline) this.webview?.postMessage(timeline);
       } else if (message.type === 'requestDiagnostics') {
         // Send connection diagnostics for all agents to the Debug View
         this.webview?.postMessage({

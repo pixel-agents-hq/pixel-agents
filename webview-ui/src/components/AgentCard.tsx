@@ -2,10 +2,16 @@ import type { CardVariant } from './cardBar.js';
 import { CharacterMugShot } from './CharacterMugShot.js';
 import { Button } from './ui/Button.js';
 
-/** How a given agent's character looks, for the tab mug shot. */
+/** How a given agent's character looks, for the tab mug shot: its chibi skin,
+ *  and what its Clawd is drawn from (office/agentLook.ts LookSubject). */
 export interface AgentAppearance {
+  id: number;
   palette: number;
   hueShift: number;
+  /** The repo its Clawd's tint and accessory hash from. */
+  directoryName?: string;
+  /** A lead wears the crown, not an accessory. */
+  isTeamLead?: boolean;
 }
 
 /** Agent activity reflected by the tab's status dot. */
@@ -58,7 +64,7 @@ export function AgentCard({
       onClick={() => onSelect(agentId)}
       title={`Agent ${agentId}`}
     >
-      <CharacterMugShot palette={appearance.palette} hueShift={appearance.hueShift} />
+      <CharacterMugShot appearance={appearance} />
       {/* Close on top, status dot at the bottom, both centred over the
           same column beside the mug shot. */}
       <div className="flex flex-col items-center justify-between shrink-0">

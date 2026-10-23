@@ -58,8 +58,11 @@ export function getCachedSprite(sprite: SpriteData, zoom: number): HTMLCanvasEle
   const rows = sprite.length;
   const cols = sprite[0].length;
   const canvas = document.createElement('canvas');
-  canvas.width = cols * zoom;
-  canvas.height = rows * zoom;
+  // Whole device pixels at any zoom: at a fractional zoom (ZOOM_QUANTUM steps)
+  // some sprite pixels get one device pixel more than others, but no edge is
+  // ever half-covered and blurred.
+  canvas.width = Math.round(cols * zoom);
+  canvas.height = Math.round(rows * zoom);
   const ctx = canvas.getContext('2d')!;
   ctx.imageSmoothingEnabled = false;
 
@@ -68,7 +71,9 @@ export function getCachedSprite(sprite: SpriteData, zoom: number): HTMLCanvasEle
       const color = sprite[r][c];
       if (color === '') continue;
       ctx.fillStyle = color;
-      ctx.fillRect(c * zoom, r * zoom, zoom, zoom);
+      const x = Math.round(c * zoom);
+      const y = Math.round(r * zoom);
+      ctx.fillRect(x, y, Math.round((c + 1) * zoom) - x, Math.round((r + 1) * zoom) - y);
     }
   }
 

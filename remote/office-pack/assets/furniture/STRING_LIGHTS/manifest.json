@@ -1,0 +1,49 @@
+{
+  "id": "STRING_LIGHTS",
+  "name": "String Lights",
+  "category": "wall",
+  "type": "group",
+  "groupType": "state",
+  "canPlaceOnWalls": true,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 0,
+  "members": [
+    {
+      "type": "group",
+      "groupType": "animation",
+      "state": "on",
+      "members": [
+        {
+          "type": "asset",
+          "id": "STRING_LIGHTS_ON_1",
+          "file": "STRING_LIGHTS_ON_1.png",
+          "width": 16,
+          "height": 32,
+          "footprintW": 1,
+          "footprintH": 2,
+          "frame": 0
+        },
+        {
+          "type": "asset",
+          "id": "STRING_LIGHTS_ON_2",
+          "file": "STRING_LIGHTS_ON_2.png",
+          "width": 16,
+          "height": 32,
+          "footprintW": 1,
+          "footprintH": 2,
+          "frame": 1
+        }
+      ]
+    },
+    {
+      "type": "asset",
+      "id": "STRING_LIGHTS_OFF",
+      "file": "STRING_LIGHTS_OFF.png",
+      "width": 16,
+      "height": 32,
+      "footprintW": 1,
+      "footprintH": 2,
+      "state": "off"
+    }
+  ]
+}

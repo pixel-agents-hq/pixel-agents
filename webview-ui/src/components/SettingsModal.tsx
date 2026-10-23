@@ -1,8 +1,11 @@
 import { useRef, useState } from 'react';
 
+import { useAgentLook } from '../hooks/useAgentLook.js';
 import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
+import { setAgentLook } from '../office/agentLook.js';
 import { isBrowserRuntime } from '../runtime.js';
 import { transport } from '../transport/index.js';
+import { setUsageMeterEnabled, useUsageMeter } from '../usage/usageStore.js';
 import { Button } from './ui/Button.js';
 import { Checkbox } from './ui/Checkbox.js';
 import { MenuItem } from './ui/MenuItem.js';
@@ -42,6 +45,8 @@ interface SettingsModalProps {
   onExportLayout: () => void;
   /** Browser-native layout import from a chosen file (standalone only). */
   onImportLayout: (file: File) => void;
+  /** Enter TV mode (fullscreen, controls hidden). Browser board only. */
+  onEnterTvMode?: () => void;
 }
 
 export function SettingsModal({
@@ -67,13 +72,34 @@ export function SettingsModal({
   onToggleShowHostDirectories,
   onExportLayout,
   onImportLayout,
+  onEnterTvMode,
 }: SettingsModalProps) {
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [assetDirDraft, setAssetDirDraft] = useState('');
+  // Agent look (Clawd / Classic): a view preference kept per browser, not a
+  // server setting, so a read-only wall display can flip it too.
+  const agentLook = useAgentLook();
+  // The server room's usage meter: bound to the ACTUAL status line state the
+  // server re-derives, never to the click (it refuses a status line of the
+  // user's own).
+  const usageMeter = useUsageMeter().meter;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings">
+      {/* TV mode: the office alone, fullscreen. The modal closes with it —
+          it is one of the controls TV mode hides. */}
+      {onEnterTvMode && (
+        <MenuItem
+          onClick={() => {
+            onEnterTvMode();
+            onClose();
+          }}
+          right={<span className="text-xs text-text-muted">T</span>}
+        >
+          TV mode
+        </MenuItem>
+      )}
       {/* Open Sessions Folder opens an OS file manager — impossible in the browser. */}
       {!isBrowserRuntime && (
         <MenuItem
@@ -204,6 +230,49 @@ export function SettingsModal({
         checked={alwaysShowOverlay}
         onChange={onToggleAlwaysShowOverlay}
       />
+      {/* Claude Code hands the subscription's usage only to a status line, so
+          the meter installs ours in ~/.claude/settings.json. */}
+      {usageMeter !== null && (
+        <Checkbox
+          label="Usage Meter (Server Room)"
+          checked={usageMeter === 'on'}
+          onChange={() => setUsageMeterEnabled(usageMeter !== 'on')}
+        />
+      )}
+      {(usageMeter === 'foreign' || usageMeter === 'unreadable') && (
+        <span className="block text-xs text-text-muted px-10 pb-4">
+          {usageMeter === 'foreign'
+            ? 'Your ~/.claude/settings.json already has a status line. Remove it to use the meter.'
+            : "~/.claude/settings.json can't be parsed, so nothing was written."}
+        </span>
+      )}
+      {/* Agents as Clawds (Claude Code's mascot, tinted per repo) or the classic
+          chibis. NPCs — Ansh, the Manager, the receptionist — stay chibis. */}
+      <div className="flex items-center justify-between py-6 px-10 gap-8">
+        <span>Agent Look</span>
+        <span className="flex gap-4" role="radiogroup" aria-label="Agent look">
+          <Button
+            variant={agentLook === 'clawd' ? 'active' : 'default'}
+            size="sm"
+            role="radio"
+            aria-checked={agentLook === 'clawd'}
+            onClick={() => setAgentLook('clawd')}
+            data-testid="agent-look-clawd"
+          >
+            Clawd
+          </Button>
+          <Button
+            variant={agentLook === 'classic' ? 'active' : 'default'}
+            size="sm"
+            role="radio"
+            aria-checked={agentLook === 'classic'}
+            onClick={() => setAgentLook('classic')}
+            data-testid="agent-look-classic"
+          >
+            Classic
+          </Button>
+        </span>
+      </div>
       {/* Headless agents are the office's only terminal-less citizens in VS Code.
           Standalone has no terminals at all, so nothing there would ever ghost. */}
       {!isBrowserRuntime && (

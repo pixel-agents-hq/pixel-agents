@@ -1,0 +1,13 @@
+{
+  "id": "NEW_YEAR_BANNER",
+  "name": "New Year Banner",
+  "category": "wall",
+  "type": "asset",
+  "canPlaceOnWalls": true,
+  "canPlaceOnSurfaces": false,
+  "backgroundTiles": 0,
+  "width": 48,
+  "height": 32,
+  "footprintW": 3,
+  "footprintH": 2
+}

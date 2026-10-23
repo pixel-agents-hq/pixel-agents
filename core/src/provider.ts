@@ -7,6 +7,7 @@
  * speculation.
  */
 
+import type { LimitReason } from './messages.js';
 import type { TeamProvider } from './teamProvider.js';
 
 // ── Normalized Events (all provider types produce these) ──────
@@ -30,6 +31,10 @@ export type AgentEvent =
        *  its response (Stop). Drives the "Waiting for input" vs "Done" label.
        *  Absent/false = the agent finished its turn (Done). */
       awaitingInput?: boolean;
+      /** Set when the turn stopped on a usage limit: the agent is paused until
+       *  `resetsAt` (epoch ms, when the provider could tell), not waiting on
+       *  the user. */
+      usageLimit?: { reason: LimitReason; resetsAt?: number };
     }
   | {
       kind: 'subagentStart';

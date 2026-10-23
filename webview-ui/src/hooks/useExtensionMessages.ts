@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { HooksConsentRequest } from '../../../core/src/messages.js';
+import type {
+  AgentProgress,
+  AgentSleep,
+  DailyStats,
+  HooksConsentRequest,
+  WorkPhase,
+} from '../../../core/src/messages.js';
+import { handleAnshMessage } from '../ansh/anshStore.js';
+import { playBellSound } from '../celebrationSound.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
 import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
@@ -20,7 +28,16 @@ import {
 import type { OfficeLayout, ToolActivity } from '../office/types.js';
 import { setWallSprites } from '../office/wallTiles.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
+import { handleTasksMessage } from '../tasks/tasksStore.js';
 import { transport } from '../transport/index.js';
+import type { AgentTitles, BackgroundAgentInfo, BackgroundAgents } from './agentKindState.js';
+import {
+  backgroundIds,
+  backgroundInfoOf,
+  kindTransition,
+  withTitle,
+  withTitles,
+} from './agentKindState.js';
 
 /**
  * A Headless agent is one the office adopted from outside (`claude -p`, a session
@@ -87,6 +104,13 @@ export interface DirectorySaved {
   seq: number;
 }
 
+/** One agent's stage track + waiting clock (agentProgress), minus the envelope. */
+export type AgentProgressState = Omit<AgentProgress, 'type' | 'id'>;
+
+/** One agent's sleep (agentSleep), minus the envelope: its session is open but
+ *  idle, quiet since `idleSince` (epoch ms, when the server knows it). */
+export type AgentSleepState = Omit<AgentSleep, 'type' | 'id'>;
+
 interface ExtensionMessageState {
   agents: number[];
   selectedAgent: number | null;
@@ -98,6 +122,18 @@ interface ExtensionMessageState {
   agentSeenActivity: Record<number, boolean>;
   subagentTools: Record<number, Record<string, ToolActivity[]>>;
   subagentCharacters: SubagentCharacter[];
+  /** Latest agentProgress per agent: replaced whole on every message. */
+  agentProgress: Record<number, AgentProgressState>;
+  /** Agents the server reports sleeping (agentSleep); waking drops the entry. */
+  agentSleep: Record<number, AgentSleepState>;
+  /** Latest dailyStats; null until the server sends the first one. */
+  dailyStats: DailyStats | null;
+  /** Task title per agent (agentCreated.title, existingAgents.titles,
+   *  agentTitle); dropped on agentClosed. */
+  agentTitles: AgentTitles;
+  /** Background agents: no office character, a Remote Workers tile instead
+   *  (agentCreated.background, existingAgents.backgroundAgents, agentKind). */
+  backgroundAgents: BackgroundAgents;
   layoutReady: boolean;
   layoutWasReset: boolean;
   loadedAssets?: { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> };
@@ -189,6 +225,14 @@ export function useExtensionMessages(
     Record<number, Record<string, ToolActivity[]>>
   >({});
   const [subagentCharacters, setSubagentCharacters] = useState<SubagentCharacter[]>([]);
+  const [agentProgress, setAgentProgress] = useState<Record<number, AgentProgressState>>({});
+  const [agentSleep, setAgentSleep] = useState<Record<number, AgentSleepState>>({});
+  const [dailyStats, setDailyStats] = useState<DailyStats | null>(null);
+  const [agentTitles, setAgentTitles] = useState<AgentTitles>({});
+  const [backgroundAgents, setBackgroundAgentsState] = useState<BackgroundAgents>({});
+  // The message handler outlives renders, so it reads background membership
+  // from this ref; the state above is what the Remote Workers panel renders.
+  const backgroundAgentsRef = useRef<BackgroundAgents>({});
   const [layoutReady, setLayoutReady] = useState(false);
   const [layoutWasReset, setLayoutWasReset] = useState(false);
   const [loadedAssets, setLoadedAssets] = useState<
@@ -256,9 +300,56 @@ export function useExtensionMessages(
       setAgentDirectoryNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
     };
 
+    // Background membership: ref (read here) and state (rendered) move together.
+    const setBackground = (next: BackgroundAgents) => {
+      if (next === backgroundAgentsRef.current) return;
+      backgroundAgentsRef.current = next;
+      setBackgroundAgentsState(next);
+    };
+
+    // Turn an agent background. Its character and helpers leave the office at
+    // once, with no despawn effect (the agent didn't leave, it moved to the
+    // Remote Workers panel); one still buffered for the layout never gets one.
+    // What it needs to come back as itself is kept with the entry.
+    const makeWorker = (os: OfficeState, id: number, known: BackgroundAgentInfo = {}) => {
+      if (id in backgroundAgentsRef.current) return;
+      const pendingIdx = pendingAgents.findIndex((p) => p.id === id);
+      const pending = pendingIdx >= 0 ? pendingAgents.splice(pendingIdx, 1)[0] : undefined;
+      const ch = os.characters.get(id);
+      const info = ch || pending ? backgroundInfoOf(ch ?? pending) : known;
+      if (ch) {
+        delete backgroundParentToolIdsRef.current[id];
+        os.removeAllSubagents(id);
+        setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id));
+        os.removeAgent(id); // frees its seat, the selection and the camera follow
+        os.characters.delete(id); // ...and skips the despawn effect
+      }
+      setSelectedAgent((prev) => (prev === id ? null : prev));
+      setBackground({ ...backgroundAgentsRef.current, [id]: info });
+    };
+
+    // Turn a background agent interactive: it gets a character like a newly
+    // created agent (spawn effect included), or joins the restore buffer while
+    // the layout isn't built yet.
+    const makeCharacter = (os: OfficeState, id: number) => {
+      const info = backgroundAgentsRef.current[id];
+      if (!info) return;
+      setBackground(omitKey(backgroundAgentsRef.current, id));
+      if (!layoutReadyRef.current) {
+        pendingAgents.push({ id, ...info });
+        return;
+      }
+      os.addAgent(id, info.palette, info.hueShift, info.seatId, false, info.directoryName);
+      if (info.isHeadless) os.setHeadless(id, true);
+      os.enterThroughDoor(id); // walks in like a new agent, where there is a door
+      saveAgentSeats(os);
+    };
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = (msg: any) => {
       const os = getOfficeState();
+      // Fun (phases E/F) reads what it needs from every message itself.
+      os.fun.onMessage(msg);
       // CI / e2e diagnostic: record every received transport message on the
       // window-side log. The fixture reads window.__pixelAgentsTestHooks.
       // messageLog and attaches as JSON so CI failures can see the exact
@@ -279,6 +370,14 @@ export function useExtensionMessages(
           parentToolId: msg.parentToolId,
         });
       }
+
+      // Phase M task log: the Tasks board's store; a report for today sends
+      // the Manager to Ansh's desk.
+      if (handleTasksMessage(msg, { onReportReadyToday: () => os.startManagerVisit() })) return;
+
+      // Ansh's brain: his state for the thoughts panel; a new thought walks him
+      // (OfficeState.anshDo) and puts the line in his bubble.
+      if (handleAnshMessage(msg, { onThought: (thought) => os.anshDo(thought) })) return;
 
       if (msg.type === 'providerCapabilities') {
         setProviderCapabilities({
@@ -349,12 +448,33 @@ export function useExtensionMessages(
         const teammateName = msg.teammateName as string | undefined;
         const teammateParentId = msg.parentAgentId as number | undefined;
         const teamName = msg.teamName as string | undefined;
+        const background = msg.background === true;
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]));
-        // Don't auto-select teammates (keep focus on lead)
-        if (!isTeammate) {
+        if (typeof msg.title === 'string') {
+          setAgentTitles((prev) => withTitle(prev, id, msg.title));
+        }
+        // Don't auto-select teammates (keep focus on lead) or background agents
+        // (no character to focus).
+        if (!isTeammate && !background) {
           setSelectedAgent(id);
         }
-        if (isTeammate && teammateParentId !== undefined) {
+        // agentCreated is authoritative for the kind: an interactive agent
+        // drops any tile an earlier report left.
+        if (!background) setBackground(omitKey(backgroundAgentsRef.current, id));
+        if (background) {
+          // A Remote Workers tile instead of a character.
+          noteDirectoryName(directoryName);
+          makeWorker(
+            os,
+            id,
+            backgroundInfoOf({
+              palette: msg.palette as number | undefined,
+              hueShift: msg.hueShift as number | undefined,
+              directoryName,
+              isHeadless: isHeadlessAgent(msg.isExternal as boolean | undefined),
+            }),
+          );
+        } else if (isTeammate && teammateParentId !== undefined) {
           // Teammate: inherit parent's palette and workspace directoryName (teammate runs
           // in the same workspace as the lead). Name shown via agentName (teamRoleLabel).
           // Seat them at the free seat closest to the lead so the team clusters.
@@ -387,6 +507,13 @@ export function useExtensionMessages(
             os.setHeadless(id, true);
           }
         }
+        // A new agent (not a restore) walks in through the Entrance door, if any.
+        os.enterThroughDoor(id);
+        const sourceLabel = msg.sourceLabel as string | undefined;
+        const sourceKind = msg.sourceKind as 'computer' | 'cloud' | undefined;
+        if (sourceLabel && sourceKind) {
+          os.agentSources.set(id, { label: sourceLabel, kind: sourceKind });
+        }
         saveAgentSeats(os);
       } else if (msg.type === 'agentClosed') {
         const id = msg.id as number;
@@ -401,20 +528,53 @@ export function useExtensionMessages(
         setAgentAwaitingInput((prev) => omitKey(prev, id));
         setAgentSeenActivity((prev) => omitKey(prev, id));
         setSubagentTools((prev) => omitKey(prev, id));
+        setAgentProgress((prev) => omitKey(prev, id));
+        setAgentSleep((prev) => omitKey(prev, id));
+        setAgentTitles((prev) => omitKey(prev, id));
+        setBackground(omitKey(backgroundAgentsRef.current, id));
+        os.sleepingAgents.delete(id);
         // Remove all sub-agent characters belonging to this agent
         delete backgroundParentToolIdsRef.current[id];
         os.removeAllSubagents(id);
         setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id));
         os.removeAgent(id);
+        os.agentSources.delete(id);
       } else if (msg.type === 'existingAgents') {
         const incoming = msg.agents as number[];
         const meta = (msg.agentMeta || {}) as Record<number, ExistingAgentMeta>;
         const directoryNames = (msg.directoryNames || {}) as Record<number, string>;
         const externalAgents = (msg.externalAgents || {}) as Record<number, boolean>;
+        const sourceLabels = (msg.sourceLabels || {}) as Record<number, string>;
+        const sourceKinds = (msg.sourceKinds || {}) as Record<number, 'computer' | 'cloud'>;
         const headlessAgents: Record<number, boolean> = {};
         for (const id of incoming) {
           noteDirectoryName(directoryNames[id]);
           if (isHeadlessAgent(externalAgents[id])) headlessAgents[id] = true;
+          if (sourceLabels[id] && sourceKinds[id]) {
+            os.agentSources.set(id, { label: sourceLabels[id], kind: sourceKinds[id] });
+          }
+        }
+        setAgentTitles((prev) => withTitles(prev, msg.titles));
+        // Background agents get a tile, not a character, so they skip the
+        // restore. The snapshot is the truth on (re)connect: an agent it no
+        // longer flags loses its tile and is restored as a character below.
+        const flagged = backgroundIds(msg.backgroundAgents);
+        const officeIncoming: number[] = [];
+        for (const id of incoming) {
+          if (flagged.has(id)) {
+            makeWorker(
+              os,
+              id,
+              backgroundInfoOf({
+                ...meta[id],
+                directoryName: directoryNames[id],
+                isHeadless: headlessAgents[id],
+              }),
+            );
+          } else {
+            setBackground(omitKey(backgroundAgentsRef.current, id));
+            officeIncoming.push(id);
+          }
         }
         // Order-independent restore: add agents now if the layout (and its seats)
         // is already built, otherwise buffer them for the next layoutLoaded.
@@ -423,7 +583,7 @@ export function useExtensionMessages(
         if (
           reconcileExistingAgents(
             os,
-            incoming,
+            officeIncoming,
             meta,
             directoryNames,
             layoutReadyRef.current,
@@ -449,6 +609,7 @@ export function useExtensionMessages(
         const status = msg.status as string;
         const permissionActive = msg.permissionActive as boolean | undefined;
         markSeenActivity(id);
+        os.celebrations.noteTool(id, status, Date.now()); // who shipped (phase B)
         setAgentTools((prev) => {
           const list = prev[id] || [];
           if (list.some((t) => t.toolId === toolId)) return prev;
@@ -462,6 +623,7 @@ export function useExtensionMessages(
         });
         const toolName = (msg.toolName as string | undefined) ?? extractToolName(status);
         os.setAgentTool(id, toolName);
+        os.noteToolStart(id, toolId, toolName, permissionActive === true);
         os.setAgentActive(id, true);
         // Don't clear the permission bubble if the hook already confirmed permission is needed
         if (!permissionActive) {
@@ -485,9 +647,11 @@ export function useExtensionMessages(
         const isTeammateSpawn = msg.isTeammateSpawn as boolean | undefined;
         const parentChar = os.characters.get(id);
         const parentHasTeam = !!parentChar?.teamName;
+        // A background agent has no character, so its helpers get none either.
         if (
           isSubagentToolName(toolName) &&
           !isTeammateSpawn &&
+          !(id in backgroundAgentsRef.current) &&
           (!runInBackground || !parentHasTeam)
         ) {
           const label = status.startsWith('Subtask:') ? status.slice('Subtask:'.length).trim() : '';
@@ -500,6 +664,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentToolDone') {
         const id = msg.id as number;
         const toolId = msg.toolId as string;
+        os.noteToolDone(id, toolId);
         setAgentTools((prev) => {
           const list = prev[id];
           if (!list) return prev;
@@ -511,6 +676,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentToolsClear') {
         const id = msg.id as number;
         const bgSet = backgroundParentToolIdsRef.current[id];
+        os.clearAgentTools(id);
         setAgentTools((prev) => omitKey(prev, id));
         // Keep sub-tool rows of live background spawns: their sub-characters
         // survive the parent's turn end and stay animated by their own activity.
@@ -618,6 +784,7 @@ export function useExtensionMessages(
         const parentToolId = msg.parentToolId as string;
         const toolId = msg.toolId as string;
         const status = msg.status as string;
+        os.celebrations.noteTool(id, status, Date.now()); // a helper ships for its parent
         setSubagentTools((prev) => {
           const agentSubs = prev[id] || {};
           const list = agentSubs[parentToolId] || [];
@@ -633,6 +800,8 @@ export function useExtensionMessages(
         // spawn (the creation gate above suppressed the Subtask) or a reloaded
         // panel that lost it — create it lazily; addSubagent is idempotent.
         let subId = os.getSubagentId(id, parentToolId);
+        // No helper character for a background agent (it has none itself).
+        if (subId === null && id in backgroundAgentsRef.current) return;
         if (subId === null) {
           subId = os.addSubagent(id, parentToolId);
           const newSubId = subId;
@@ -844,6 +1013,54 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentContextUsage') {
         const id = msg.id as number;
         os.setAgentContext(id, msg.contextTokens as number, msg.maxContextTokens as number);
+      } else if (msg.type === 'agentProgress') {
+        // A full snapshot of the agent's cycle (also resent on connect), so it
+        // replaces whatever was held rather than merging into it.
+        const id = msg.id as number;
+        const progress: AgentProgressState = {
+          phase: msg.phase as WorkPhase | undefined,
+          reached: Array.isArray(msg.reached) ? (msg.reached as WorkPhase[]) : [],
+          waitingSince: typeof msg.waitingSince === 'number' ? msg.waitingSince : undefined,
+        };
+        setAgentProgress((prev) => ({ ...prev, [id]: progress }));
+        os.setAgentProgress(id, progress.phase, progress.waitingSince);
+      } else if (msg.type === 'agentSleep') {
+        // Sent on every change and, for every sleeping agent, on connect — which
+        // can be before its character exists (existingAgents buffering), so the
+        // office keeps the flag by id and applies it when the character arrives.
+        const id = msg.id as number;
+        const sleeping = msg.sleeping === true;
+        const idleSince = typeof msg.idleSince === 'number' ? msg.idleSince : undefined;
+        os.setAgentSleeping(id, sleeping);
+        setAgentSleep((prev) =>
+          sleeping ? { ...prev, [id]: { sleeping, idleSince } } : omitKey(prev, id),
+        );
+      } else if (msg.type === 'agentTitle') {
+        // The session's task title changed (newest ai-title wins server-side).
+        const id = msg.id as number;
+        setAgentTitles((prev) => withTitle(prev, id, msg.title));
+      } else if (msg.type === 'agentKind') {
+        // A running agent switched between interactive and background.
+        const id = msg.id as number;
+        const transition = kindTransition(
+          id in backgroundAgentsRef.current,
+          msg.background === true,
+        );
+        if (transition === 'toWorker') makeWorker(os, id);
+        else if (transition === 'toCharacter') makeCharacter(os, id);
+      } else if (msg.type === 'dailyStats') {
+        const stats: DailyStats = {
+          type: 'dailyStats',
+          date: msg.date as string,
+          prs: Array.isArray(msg.prs) ? msg.prs : [],
+          pushes: Array.isArray(msg.pushes) ? msg.pushes : [],
+          filesEdited: (msg.filesEdited as number) ?? 0,
+          commandsRun: (msg.commandsRun as number) ?? 0,
+          activeMs: (msg.activeMs as number) ?? 0,
+        };
+        setDailyStats(stats);
+        // A push or PR landed: bell, confetti, trophy (phase B).
+        if (os.celebrate(stats) > 0) playBellSound();
       }
     };
     const unsubscribe = transport.onMessage(handler);
@@ -876,6 +1093,11 @@ export function useExtensionMessages(
     agentSeenActivity,
     subagentTools,
     subagentCharacters,
+    agentProgress,
+    agentSleep,
+    dailyStats,
+    agentTitles,
+    backgroundAgents,
     layoutReady,
     layoutWasReset,
     loadedAssets,

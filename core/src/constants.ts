@@ -36,3 +36,11 @@ export const TRANSPORT_STATE_CONNECTING = 'connecting';
 export const TRANSPORT_STATE_CONNECTED = 'connected';
 export const TRANSPORT_STATE_RECONNECTING = 'reconnecting';
 export const TRANSPORT_STATE_DISCONNECTED = 'disconnected';
+
+// ── Usage limits ─────────────────────────────────────────────
+
+/** The `agentLimit` reasons that put an agent on the Lounge break until the
+ *  limit resets: the 5-hour session window, and a usage limit that didn't say
+ *  which window (almost always that one). Not the weekly cap (days away) nor a
+ *  plain API rate limit (seconds). */
+export const LIMIT_BREAK_REASONS: readonly string[] = ['session', 'usage'];

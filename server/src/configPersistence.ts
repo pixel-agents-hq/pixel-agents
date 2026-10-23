@@ -71,6 +71,9 @@ export interface PixelAgentsConfig {
   /** User-defined Directories. Machine-wide by decision: a Directory defined
    *  from the phone shows up in VS Code and vice versa. */
   directories: UserDirectory[];
+  /** Approvals from the board (permissions/). Absent = on; only an explicit
+   *  `false` is kept, so the kill switch survives every other config write. */
+  approvalsEnabled?: boolean;
 }
 
 const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
@@ -228,6 +231,7 @@ export function readConfig(): PixelAgentsConfig {
       hooksConsent: parseHooksConsent(parsed.hooksConsent),
       hooksEnabled: parseHooksEnabled(parsed.hooksEnabled),
       directories: parseUserDirectories(parsed.directories),
+      ...(parsed.approvalsEnabled === false ? { approvalsEnabled: false } : {}),
     };
   } catch (err) {
     console.error('[Pixel Agents] Failed to read config file:', err);

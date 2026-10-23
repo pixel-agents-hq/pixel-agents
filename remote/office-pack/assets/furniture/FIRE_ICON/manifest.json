@@ -1,0 +1,49 @@
+{
+  "id": "FIRE_ICON",
+  "name": "Fire",
+  "category": "misc",
+  "type": "group",
+  "groupType": "state",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": true,
+  "backgroundTiles": 0,
+  "members": [
+    {
+      "type": "group",
+      "groupType": "animation",
+      "state": "on",
+      "members": [
+        {
+          "type": "asset",
+          "id": "FIRE_ICON_ON_1",
+          "file": "FIRE_ICON_ON_1.png",
+          "width": 16,
+          "height": 16,
+          "footprintW": 1,
+          "footprintH": 1,
+          "frame": 0
+        },
+        {
+          "type": "asset",
+          "id": "FIRE_ICON_ON_2",
+          "file": "FIRE_ICON_ON_2.png",
+          "width": 16,
+          "height": 16,
+          "footprintW": 1,
+          "footprintH": 1,
+          "frame": 1
+        }
+      ]
+    },
+    {
+      "type": "asset",
+      "id": "FIRE_ICON_OFF",
+      "file": "FIRE_ICON_OFF.png",
+      "width": 16,
+      "height": 16,
+      "footprintW": 1,
+      "footprintH": 1,
+      "state": "off"
+    }
+  ]
+}

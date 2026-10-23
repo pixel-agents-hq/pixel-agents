@@ -50,6 +50,7 @@ const { areHooksInstalled, installHooks, uninstallHooks, copyHookScript } =
   await import('../src/providers/hook/claude/claudeHookInstaller.js');
 const { CLAUDE_HOOK_EVENTS, SETTINGS_BACKUP_SUFFIX, SETTINGS_TMP_SUFFIX } =
   await import('../src/providers/hook/claude/constants.js');
+const { PERMISSION_HOOK_TIMEOUT_SECONDS } = await import('../src/permissions/constants.js');
 
 function settingsPathFor(): string {
   return path.join(tmpBase, '.claude', 'settings.json');
@@ -1013,5 +1014,74 @@ describe('claudeHookInstaller', () => {
 
     expect(copyHookScript(mockExtPath)).toBe(false);
     expect(fs.existsSync(dst)).toBe(false);
+  });
+  // Approvals from the board: only PermissionRequest waits on a human, so only
+  // it gets the long timeout. Every other event keeps the quick one.
+  it('installs PermissionRequest with the long timeout and every other event with 5 s', async () => {
+    await installHooks();
+    const hooks = readSettings().hooks as Record<
+      string,
+      Array<{ hooks: Array<{ command: string; timeout: number }> }>
+    >;
+    for (const event of CLAUDE_HOOK_EVENTS) {
+      expect(hooks[event]).toHaveLength(1);
+      expect(hooks[event][0].hooks[0].command).toBe(ourCommand());
+      expect(hooks[event][0].hooks[0].timeout).toBe(
+        event === 'PermissionRequest' ? PERMISSION_HOOK_TIMEOUT_SECONDS : 5,
+      );
+    }
+    expect(PERMISSION_HOOK_TIMEOUT_SECONDS).toBe(660);
+  });
+
+  it('an install from before the split gets the long PermissionRequest timeout on the next install', async () => {
+    const theirs = { matcher: 'Bash', hooks: [{ type: 'command', command: 'node /x/guard.js' }] };
+    const old = { matcher: '', hooks: [{ type: 'command', command: ourCommand(), timeout: 5 }] };
+    fs.writeFileSync(
+      settingsPathFor(),
+      JSON.stringify({
+        permissions: { deny: ['Bash(rm:*)'] },
+        hooks: {
+          ...Object.fromEntries(CLAUDE_HOOK_EVENTS.map((e) => [e, [old]])),
+          PermissionRequest: [theirs, old],
+        },
+      }),
+    );
+
+    await installHooks();
+
+    const settings = readSettings();
+    expect(settings.permissions).toEqual({ deny: ['Bash(rm:*)'] });
+    const hooks = settings.hooks as Record<
+      string,
+      Array<{ matcher: string; hooks: Array<{ command: string; timeout?: number }> }>
+    >;
+    // The third-party entry is untouched; ours was replaced, not duplicated.
+    expect(hooks['PermissionRequest']).toHaveLength(2);
+    expect(hooks['PermissionRequest'][0]).toEqual(theirs);
+    expect(hooks['PermissionRequest'][1].hooks[0].timeout).toBe(PERMISSION_HOOK_TIMEOUT_SECONDS);
+    expect(hooks['Stop']).toEqual([old]);
+    expect(allCommands().filter((c) => c === ourCommand())).toHaveLength(CLAUDE_HOOK_EVENTS.length);
+    // The user's file was backed up first, as for any other first modification.
+    expect(fs.existsSync(settingsPathFor() + SETTINGS_BACKUP_SUFFIX)).toBe(true);
+  });
+
+  it('upgrading a file that holds only our old install takes no backup of it', async () => {
+    const old = { matcher: '', hooks: [{ type: 'command', command: ourCommand(), timeout: 5 }] };
+    fs.writeFileSync(
+      settingsPathFor(),
+      JSON.stringify({ hooks: Object.fromEntries(CLAUDE_HOOK_EVENTS.map((e) => [e, [old]])) }),
+    );
+
+    await installHooks();
+
+    const hooks = readSettings().hooks as Record<
+      string,
+      Array<{ hooks: Array<{ timeout: number }> }>
+    >;
+    expect(hooks['PermissionRequest'][0].hooks[0].timeout).toBe(PERMISSION_HOOK_TIMEOUT_SECONDS);
+    expect(fs.existsSync(settingsPathFor() + SETTINGS_BACKUP_SUFFIX)).toBe(false);
+    // ...and our new install still reads as only ours (no backup on uninstall).
+    await uninstallHooks();
+    expect(fs.existsSync(settingsPathFor() + SETTINGS_BACKUP_SUFFIX)).toBe(false);
   });
 });

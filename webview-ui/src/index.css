@@ -298,6 +298,14 @@
     top: calc(env(safe-area-inset-top, 0px) + 4px);
   }
 
+  /* TV mode, idle (tvMode/useTvMode): no cursor anywhere on the board. The
+     office canvas sets its own inline cursor (grab, pointer, …), so this has
+     to outrank inline styles. */
+  .tv-idle,
+  .tv-idle * {
+    cursor: none !important;
+  }
+
   /* Scroll containers whose overflow is obvious from clipped content (the
      mobile card bar) — a scrollbar strip would just eat row height. */
   .no-scrollbar {

@@ -1,0 +1,13 @@
+{
+  "id": "TROPHY_CUP_SILVER",
+  "name": "Trophy Cup (Silver)",
+  "category": "decor",
+  "type": "asset",
+  "canPlaceOnWalls": false,
+  "canPlaceOnSurfaces": true,
+  "backgroundTiles": 1,
+  "width": 16,
+  "height": 32,
+  "footprintW": 1,
+  "footprintH": 2
+}

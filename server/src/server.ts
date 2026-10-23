@@ -10,6 +10,7 @@ import type {
   AssetCache,
   ReloadAssetsSideEffect,
   SetHooksEnabledSideEffect,
+  SetUsageMeterEnabledSideEffect,
 } from './clientMessageHandler.js';
 import {
   SERVER_JSON_DIR,
@@ -18,6 +19,7 @@ import {
   SERVERS_DIR,
 } from './constants.js';
 import { createHttpServer } from './httpServer.js';
+import type { PermissionApprovals } from './permissions/approvalRegistry.js';
 import type { ServerConfig, StandaloneAccess } from './serverConfig.js';
 import { isServerConfig, isServerTarget, sameStandaloneAccess } from './serverConfig.js';
 import { loadOrCreateStandaloneToken } from './serverToken.js';
@@ -72,6 +74,7 @@ export class PixelAgentsServer {
     assetCache?: AssetCache;
     onSetHooksEnabled?: SetHooksEnabledSideEffect;
     onReloadAssets?: ReloadAssetsSideEffect;
+    onSetUsageMeterEnabled?: SetUsageMeterEnabledSideEffect;
     ptyManager?: PtySessionManager;
     /** Extra privileged Host names (standalone; see wsAuth.privilegedHostnames). */
     allowedHosts?: readonly string[];
@@ -79,6 +82,8 @@ export class PixelAgentsServer {
      *  the old one. Refused while another standalone server is running: it
      *  would keep honouring the old token until it restarts. */
     rotateToken?: boolean;
+    /** Pending permission requests the board can answer (standalone). */
+    approvals?: PermissionApprovals;
   }): Promise<ServerConfig> {
     const embedded = options?.embedded ?? true;
     const wantsSpa = !embedded;
@@ -142,8 +147,10 @@ export class PixelAgentsServer {
       onHookEvent: (providerId, event) => this.callback?.(providerId, event),
       onSetHooksEnabled: options?.onSetHooksEnabled,
       onReloadAssets: options?.onReloadAssets,
+      onSetUsageMeterEnabled: options?.onSetUsageMeterEnabled,
       ptyManager: options?.ptyManager,
       allowedHosts: standalone?.allowedHosts,
+      approvals: options?.approvals,
     });
 
     this.app = app;

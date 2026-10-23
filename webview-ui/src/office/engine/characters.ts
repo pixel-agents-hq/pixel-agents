@@ -89,6 +89,94 @@ export function createCharacter(
   };
 }
 
+/** Walk animation: advance the 4-frame cycle. */
+function animateWalk(ch: Character): void {
+  if (ch.frameTimer >= WALK_FRAME_DURATION_SEC) {
+    ch.frameTimer -= WALK_FRAME_DURATION_SEC;
+    ch.frame = (ch.frame + 1) % 4;
+  }
+}
+
+/** Move toward the next tile of the path; on reaching it, step the path. */
+function stepTowardNextTile(ch: Character, dt: number): void {
+  const nextTile = ch.path[0];
+  ch.dir = directionBetween(ch.tileCol, ch.tileRow, nextTile.col, nextTile.row);
+
+  ch.moveProgress += (WALK_SPEED_PX_PER_SEC / TILE_SIZE) * dt;
+
+  const fromCenter = tileCenter(ch.tileCol, ch.tileRow);
+  const toCenter = tileCenter(nextTile.col, nextTile.row);
+  const t = Math.min(ch.moveProgress, 1);
+  ch.x = fromCenter.x + (toCenter.x - fromCenter.x) * t;
+  ch.y = fromCenter.y + (toCenter.y - fromCenter.y) * t;
+
+  if (ch.moveProgress >= 1) {
+    // Arrived at next tile
+    ch.tileCol = nextTile.col;
+    ch.tileRow = nextTile.row;
+    ch.x = toCenter.x;
+    ch.y = toCenter.y;
+    ch.path.shift();
+    ch.moveProgress = 0;
+  }
+}
+
+/** Has the character arrived at its zone target and settled there (sitting or standing)? */
+export function isSettledAtZoneTarget(ch: Character): boolean {
+  const t = ch.zoneTarget;
+  if (!t || ch.matrixEffect) return false;
+  if (ch.tileCol !== t.col || ch.tileRow !== t.row) return false;
+  return ch.state === (t.sit ? CharacterState.TYPE : CharacterState.IDLE);
+}
+
+/**
+ * The zone branch of the FSM: walk to the zone target, then sit on it (a
+ * seat) or stand at it (a spot) facing the zone's key furniture, still — no
+ * typing frames, no wandering — for as long as the target holds. OfficeState
+ * picks, reserves and releases targets; this only gets the character there.
+ */
+function updateTowardZoneTarget(
+  ch: Character,
+  dt: number,
+  tileMap: TileTypeVal[][],
+  blockedTiles: Set<string>,
+): void {
+  const target = ch.zoneTarget!;
+  if (ch.state === CharacterState.WALK) {
+    animateWalk(ch);
+    if (ch.path.length > 0) {
+      stepTowardNextTile(ch, dt);
+      return;
+    }
+    // Path done (or dropped mid-walk): snap to the tile, then settle or re-path.
+    const center = tileCenter(ch.tileCol, ch.tileRow);
+    ch.x = center.x;
+    ch.y = center.y;
+    ch.moveProgress = 0;
+  }
+  if (ch.tileCol !== target.col || ch.tileRow !== target.row) {
+    const path = findPath(ch.tileCol, ch.tileRow, target.col, target.row, tileMap, blockedTiles);
+    if (path.length > 0) {
+      ch.path = path;
+      ch.moveProgress = 0;
+      ch.state = CharacterState.WALK;
+      ch.frame = 0;
+      ch.frameTimer = 0;
+      return;
+    }
+    // No way there any more: OfficeState drops the target and re-routes.
+    target.unreachable = true;
+    ch.state = CharacterState.IDLE;
+    ch.frame = 0;
+    ch.frameTimer = 0;
+    return;
+  }
+  ch.state = target.sit ? CharacterState.TYPE : CharacterState.IDLE;
+  ch.dir = target.facing;
+  ch.frame = 0;
+  ch.frameTimer = 0;
+}
+
 export function updateCharacter(
   ch: Character,
   dt: number,
@@ -99,8 +187,20 @@ export function updateCharacter(
 ): void {
   ch.frameTimer += dt;
 
+  // Living office: a character sent to a zone goes there instead.
+  if (ch.zoneTarget) {
+    updateTowardZoneTarget(ch, dt, tileMap, blockedTiles);
+    return;
+  }
+
   switch (ch.state) {
     case CharacterState.TYPE: {
+      // Asleep (open but idle session): sit still — no typing frames, no
+      // standing up to wander — until it wakes or work resumes.
+      if (ch.isSleeping && !ch.isActive) {
+        ch.frameTimer = 0;
+        break;
+      }
       if (ch.frameTimer >= TYPE_FRAME_DURATION_SEC) {
         ch.frameTimer -= TYPE_FRAME_DURATION_SEC;
         ch.frame = (ch.frame + 1) % 2;
@@ -126,13 +226,15 @@ export function updateCharacter(
       // No idle animation — static pose
       ch.frame = 0;
       if (ch.seatTimer < 0) ch.seatTimer = 0; // clear turn-end sentinel
-      // If became active, pathfind to seat
-      if (ch.isActive) {
+      // If became active — or fell asleep — pathfind to seat
+      if (ch.isActive || ch.isSleeping) {
         if (!ch.seatId) {
-          // No seat assigned — type in place
-          ch.state = CharacterState.TYPE;
-          ch.frame = 0;
-          ch.frameTimer = 0;
+          // No seat assigned — type in place (a seatless sleeper just stands)
+          if (ch.isActive) {
+            ch.state = CharacterState.TYPE;
+            ch.frame = 0;
+            ch.frameTimer = 0;
+          }
           break;
         }
         const seat = seats.get(ch.seatId);
@@ -212,10 +314,7 @@ export function updateCharacter(
 
     case CharacterState.WALK: {
       // Walk animation
-      if (ch.frameTimer >= WALK_FRAME_DURATION_SEC) {
-        ch.frameTimer -= WALK_FRAME_DURATION_SEC;
-        ch.frame = (ch.frame + 1) % 4;
-      }
+      animateWalk(ch);
 
       if (ch.path.length === 0) {
         // Path complete — snap to tile center and transition
@@ -269,29 +368,10 @@ export function updateCharacter(
       }
 
       // Move toward next tile in path
-      const nextTile = ch.path[0];
-      ch.dir = directionBetween(ch.tileCol, ch.tileRow, nextTile.col, nextTile.row);
+      stepTowardNextTile(ch, dt);
 
-      ch.moveProgress += (WALK_SPEED_PX_PER_SEC / TILE_SIZE) * dt;
-
-      const fromCenter = tileCenter(ch.tileCol, ch.tileRow);
-      const toCenter = tileCenter(nextTile.col, nextTile.row);
-      const t = Math.min(ch.moveProgress, 1);
-      ch.x = fromCenter.x + (toCenter.x - fromCenter.x) * t;
-      ch.y = fromCenter.y + (toCenter.y - fromCenter.y) * t;
-
-      if (ch.moveProgress >= 1) {
-        // Arrived at next tile
-        ch.tileCol = nextTile.col;
-        ch.tileRow = nextTile.row;
-        ch.x = toCenter.x;
-        ch.y = toCenter.y;
-        ch.path.shift();
-        ch.moveProgress = 0;
-      }
-
-      // If became active while wandering, repath to seat
-      if (ch.isActive && ch.seatId) {
+      // If became active (or fell asleep) while wandering, repath to seat
+      if ((ch.isActive || ch.isSleeping) && ch.seatId) {
         const seat = seats.get(ch.seatId);
         if (seat) {
           const lastStep = ch.path[ch.path.length - 1];

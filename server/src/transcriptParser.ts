@@ -4,6 +4,9 @@ import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
 import { updateContextUsage } from './contextUsage.js';
+import { getInboxTracker } from './inbox/inboxTracker.js';
+import type { ProgressTracker } from './progress/progressTracker.js';
+import { getSignalsHub } from './signals/registry.js';
 import { hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import {
   cancelPermissionTimer,
@@ -12,6 +15,7 @@ import {
   startPermissionTimer,
   startWaitingTimer,
 } from './timerManager.js';
+import { aiTitleOf, setAgentTitle } from './transcriptTitle.js';
 import type { AgentState } from './types.js';
 
 /** Empty set used as safe fallback when no HookProvider is registered. */
@@ -41,6 +45,39 @@ export function setHookProvider(provider: HookProvider): void {
  *  (fileWatcher seeds context gauges before any line has been read). */
 export function getHookProvider(): HookProvider | null {
   return hookProvider;
+}
+
+/** Stage track + daily totals. Registered by AgentRuntime; the transcript feeds
+ *  it only the tools no hook reports (see toolsReportedByHooks). */
+let progressTracker: ProgressTracker | null = null;
+
+export function setProgressTracker(tracker: ProgressTracker | null): void {
+  progressTracker = tracker;
+}
+
+/** The registered tracker, for the connect-time resend (agentActivityResend). */
+export function getProgressTracker(): ProgressTracker | null {
+  return progressTracker;
+}
+
+/**
+ * Do this agent's tool uses already reach the progress tracker through hooks?
+ * Its own hooks do once they flow; a teammate sharing its lead's session (in-
+ * process or background-spawned) fires its tool hooks on the lead's session, so
+ * the lead's hooks report them. Counting the transcript too would count twice.
+ */
+function toolsReportedByHooks(agent: AgentState, agents: AgentStateStore): boolean {
+  if (agent.hookDelivered) return true;
+  if (agent.leadAgentId === undefined) return false;
+  const lead = agents.get(agent.leadAgentId);
+  return lead?.hookDelivered === true && lead.sessionId === agent.sessionId;
+}
+
+/** The tracker, when this agent's transcript should feed it. */
+function progressFor(agent: AgentState, agents: AgentStateStore): ProgressTracker | null {
+  return progressTracker?.tracks(agents) && !toolsReportedByHooks(agent, agents)
+    ? progressTracker
+    : null;
 }
 
 /** Called when a lead's tool_result reports an async agent launch. The host
@@ -134,6 +171,17 @@ export function processTranscriptLine(
 
     // -- Context window usage (drives every agent's context gauge) --
     updateContextUsage(agentId, agent, agents, record, hookProvider);
+    // -- Useful signals: today's tokens; tool starts/results when no hook reports them --
+    getSignalsHub()?.onTranscriptRecord(
+      agents,
+      agentId,
+      record,
+      !toolsReportedByHooks(agent, agents),
+    );
+
+    // -- Needs-you inbox: Remote Control link + usage-limit pauses --
+    const inbox = getInboxTracker();
+    if (inbox?.tracks(agents)) inbox.onTranscriptRecord(agentId, record);
 
     // Resilient content extraction: support both record.message.content and record.content
     // Claude Code may change the JSONL structure across versions
@@ -164,6 +212,7 @@ export function processTranscriptLine(
             agent.activeToolIds.add(block.id);
             agent.activeToolStatuses.set(block.id, status);
             agent.activeToolNames.set(block.id, toolName);
+            progressFor(agent, agents)?.onToolStart(agentId, toolName, block.input ?? {});
             if (!exemptTools().has(toolName)) {
               hasNonExemptTool = true;
             }
@@ -513,6 +562,19 @@ export function processTranscriptLine(
           status: 'waiting',
           // turn_duration = the turn completed, so this is "Done".
           awaitingInput: false,
+        });
+      }
+    } else if (record.type === 'ai-title') {
+      // The session's task title, rewritten as the task takes shape: newest wins.
+      const title = aiTitleOf(record);
+      if (title) setAgentTitle(agentId, agent, agents, title);
+    } else if (record.type === 'pr-link') {
+      // The CLI's own note of a PR the session opened. Hook agents count PRs
+      // from the gh pr create tool end instead (with its --title).
+      if (typeof record.prUrl === 'string') {
+        progressFor(agent, agents)?.onPrLink(agentId, {
+          url: record.prUrl,
+          repo: typeof record.prRepository === 'string' ? record.prRepository : undefined,
         });
       }
     } else if (record.type && !agent.seenUnknownRecordTypes.has(record.type)) {

@@ -100,6 +100,32 @@ components:
         - $ref: '#/components/schemas/AgentTeamInfo'
         # Context window
         - $ref: '#/components/schemas/AgentContextUsage'
+        # Progress (stage track + done-today strip)
+        - $ref: '#/components/schemas/AgentProgress'
+        - $ref: '#/components/schemas/DailyStats'
+        - $ref: '#/components/schemas/AgentSleep'
+        - $ref: '#/components/schemas/AgentTitle'
+        - $ref: '#/components/schemas/AgentKind'
+        # Manager: task log + reports
+        - $ref: '#/components/schemas/TasksSnapshot'
+        - $ref: '#/components/schemas/TaskUpdated'
+        - $ref: '#/components/schemas/ReportReady'
+        - $ref: '#/components/schemas/Report'
+        # Ansh's brain: thoughts and moves of the user's own character
+        - $ref: '#/components/schemas/AnshBrainState'
+        - $ref: '#/components/schemas/AnshThought'
+        # Useful signals: trouble, loops, timeline, tokens, notice board
+        - $ref: '#/components/schemas/AgentTrouble'
+        - $ref: '#/components/schemas/AgentLoop'
+        - $ref: '#/components/schemas/AgentTimeline'
+        - $ref: '#/components/schemas/DailyTokens'
+        - $ref: '#/components/schemas/NoticeBoard'
+        # Needs-you inbox: Open in Claude + usage limits
+        - $ref: '#/components/schemas/AgentLink'
+        - $ref: '#/components/schemas/AgentLimit'
+        # Subscription usage meter (the server room's wall display)
+        - $ref: '#/components/schemas/SubscriptionUsage'
+        - $ref: '#/components/schemas/UsageMeterStatus'
         # Layout
         - $ref: '#/components/schemas/LayoutLoaded'
         # Assets
@@ -127,6 +153,14 @@ components:
         - $ref: '#/components/schemas/TerminalSessionClosed'
         # Diagnostics
         - $ref: '#/components/schemas/AgentDiagnostics'
+        # Permission approvals from the board
+        - $ref: '#/components/schemas/PermissionPending'
+        - $ref: '#/components/schemas/PermissionResolved'
+        # Fun (week wall, weather in the windows)
+        - $ref: '#/components/schemas/WeekStats'
+        - $ref: '#/components/schemas/Weather'
+        # Manager: time per repo (in reply to requestTimeReport)
+        - $ref: '#/components/schemas/TimeReport'
       discriminator: type
 
     ClientMessage:
@@ -158,6 +192,21 @@ components:
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/RequestDirectorySuggestions'
         - $ref: '#/components/schemas/RequestDiagnostics'
+        # Manager: task log + reports
+        - $ref: '#/components/schemas/RequestTasks'
+        - $ref: '#/components/schemas/RequestReport'
+        - $ref: '#/components/schemas/WriteReportNow'
+        # Ansh's brain
+        - $ref: '#/components/schemas/SetAnshBrainEnabled'
+        - $ref: '#/components/schemas/AskAnsh'
+        # Useful signals
+        - $ref: '#/components/schemas/RequestTimeline'
+        # Permission approvals from the board
+        - $ref: '#/components/schemas/AnswerPermission'
+        # Manager: time per repo
+        - $ref: '#/components/schemas/RequestTimeReport'
+        # Subscription usage meter
+        - $ref: '#/components/schemas/SetUsageMeterEnabled'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -204,6 +253,17 @@ components:
         hueShift:
           type: integer
           description: Server-assigned hue shift in degrees (0-360).
+        sourceLabel:
+          type: string
+          description: Where a relayed remote session runs (e.g. "Laptop"). Absent for local sessions.
+        sourceKind:
+          $ref: '#/components/schemas/RemoteSourceKind'
+        title:
+          type: string
+          description: The session's own task title (latest ai-title in its transcript). Absent until known.
+        background:
+          type: boolean
+          description: A background or headless session, shown as a compact remote-worker tile.
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -256,6 +316,26 @@ components:
           description: Map of agent ID (string) to external flag.
           additionalProperties:
             type: boolean
+        sourceLabels:
+          type: object
+          description: Map of agent ID (string) to remote source label. Local agents are absent.
+          additionalProperties:
+            type: string
+        sourceKinds:
+          type: object
+          description: Map of agent ID (string) to remote source kind. Local agents are absent.
+          additionalProperties:
+            $ref: '#/components/schemas/RemoteSourceKind'
+        titles:
+          type: object
+          description: Map of agent ID (string) to task title. Agents without a known title are absent.
+          additionalProperties:
+            type: string
+        backgroundAgents:
+          type: object
+          description: Map of agent ID (string) to true for background/headless sessions.
+          additionalProperties:
+            type: boolean
 
     AgentStatus:
       description: Active vs waiting state for an agent (drives character animation).
@@ -280,6 +360,11 @@ components:
       description: Activity state of an agent.
       type: string
       enum: [active, waiting]
+
+    RemoteSourceKind:
+      description: What a relayed remote session runs on.
+      type: string
+      enum: [computer, cloud]
 
     AgentToolStart:
       description: Agent began executing a tool.
@@ -455,6 +540,749 @@ components:
           type: integer
         maxContextTokens:
           type: integer
+
+    WorkPhase:
+      description: Coarse work phase inferred from an agent's tool use.
+      type: string
+      enum: [explore, build, test, ship]
+
+    AgentTitle:
+      description: An agent's task title changed (a new ai-title record in its transcript).
+      type: object
+      additionalProperties: false
+      required: [type, id, title]
+      properties:
+        type:
+          const: agentTitle
+        id:
+          type: integer
+        title:
+          type: string
+
+    AgentKind:
+      description: |
+        An agent was (re)classified as background/headless or interactive, e.g. a
+        hook-only local session that never appeared in the interactive session list.
+      type: object
+      additionalProperties: false
+      required: [type, id, background]
+      properties:
+        type:
+          const: agentKind
+        id:
+          type: integer
+        background:
+          type: boolean
+
+    AgentLink:
+      description: |
+        How the user gets back to an agent's session. `url` is the claude.ai/code
+        page of its Remote Control session (only when the transcript recorded one;
+        always https://claude.ai/code/session_...). `resumeCommand` resumes it in
+        a terminal: `cd "<cwd>" && claude --resume <sessionId>`, or the bare
+        resume for a remote session (whose cwd is on another machine). Sent for
+        every agent on connect, and again whenever it changes.
+      type: object
+      additionalProperties: false
+      required: [type, id, resumeCommand]
+      properties:
+        type:
+          const: agentLink
+        id:
+          type: integer
+        url:
+          type: string
+        resumeCommand:
+          type: string
+
+    LimitReason:
+      description: |
+        Which limit paused an agent: the 5-hour session window, the weekly cap,
+        an unspecified usage limit, or a plain API rate limit.
+      type: string
+      enum: [session, weekly, usage, rate]
+
+    AgentLimit:
+      description: |
+        An agent's turn stopped on a usage limit (paused) or the pause ended
+        (paused false: the limit reset, or the agent is working again). Detected
+        best-effort from transcript API errors, the StopFailure hook and limit
+        notifications. `resetsAt` (epoch ms) is when the limit lifts, when known.
+        A paused agent is not "waiting on you". Pauses in force are re-sent on
+        connect.
+      type: object
+      additionalProperties: false
+      required: [type, id, paused]
+      properties:
+        type:
+          const: agentLimit
+        id:
+          type: integer
+        paused:
+          type: boolean
+        reason:
+          $ref: '#/components/schemas/LimitReason'
+        resetsAt:
+          type: integer
+
+    UsageWindow:
+      description: |
+        One subscription rate-limit window as Claude Code's status line reports
+        it: how much of it is used (0-100) and when it resets (epoch ms).
+      type: object
+      additionalProperties: false
+      required: [usedPercentage, resetsAt]
+      properties:
+        usedPercentage:
+          type: number
+        resetsAt:
+          type: integer
+
+    SubscriptionUsage:
+      description: |
+        The Claude subscription's usage, for the server room's meter: the
+        5-hour session window and the 7-day weekly cap, each absent when
+        unknown or already reset. Reported by the Pixel Agents status line
+        script (Claude Code passes `rate_limits` only to a status line, and
+        only for Pro/Max subscribers after a session's first response).
+        `updatedAt` (epoch ms) is when the last report arrived. Sent on
+        connect when known and whenever it changes.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: subscriptionUsage
+        fiveHour:
+          $ref: '#/components/schemas/UsageWindow'
+        sevenDay:
+          $ref: '#/components/schemas/UsageWindow'
+        updatedAt:
+          type: integer
+
+    UsageMeterState:
+      description: |
+        Whether the usage meter's status line is in ~/.claude/settings.json:
+        `on` (ours), `off` (no status line), `foreign` (the user's own status
+        line, which Pixel Agents never replaces) or `unreadable` (the file
+        cannot be parsed, so nothing is written).
+      type: string
+      enum: [on, off, foreign, unreadable]
+
+    UsageMeterStatus:
+      description: |
+        The usage meter's ACTUAL install state, re-derived from disk. Sent on
+        connect and to every office after a toggle, whatever its outcome.
+      type: object
+      additionalProperties: false
+      required: [type, state]
+      properties:
+        type:
+          const: usageMeterStatus
+        state:
+          $ref: '#/components/schemas/UsageMeterState'
+
+    TaskStatus:
+      type: string
+      enum: [in_progress, waiting, done]
+
+    Task:
+      description: |
+        One task in the Manager's log: a session's title period (a new title starts
+        a new task). Stats are attributed to the task that was live when they happened.
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          title,
+          repo,
+          machine,
+          sessionId,
+          startedAt,
+          status,
+          prs,
+          pushes,
+          filesEdited,
+          commands,
+          activeMs,
+        ]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        repo:
+          type: string
+        machine:
+          type: string
+          description: '"local" or the remote source label (e.g. "Mac").'
+        sessionId:
+          type: string
+        startedAt:
+          type: integer
+        endedAt:
+          type: integer
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+        prs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyPr'
+        pushes:
+          type: integer
+        filesEdited:
+          type: integer
+        commands:
+          type: integer
+        activeMs:
+          type: integer
+
+    TasksSnapshot:
+      description: One day's task log. Sent for today on connect, and in reply to requestTasks.
+      type: object
+      additionalProperties: false
+      required: [type, date, tasks]
+      properties:
+        type:
+          const: tasksSnapshot
+        date:
+          type: string
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+
+    TaskUpdated:
+      description: A task of today's log was created or changed.
+      type: object
+      additionalProperties: false
+      required: [type, task]
+      properties:
+        type:
+          const: taskUpdated
+        task:
+          $ref: '#/components/schemas/Task'
+
+    ReportReady:
+      description: The Manager finished a report for this date (clients may requestReport it).
+      type: object
+      additionalProperties: false
+      required: [type, date]
+      properties:
+        type:
+          const: reportReady
+        date:
+          type: string
+
+    AnshAction:
+      description: >-
+        What Ansh does with a thought: walk over to an agent (`visit`, with
+        targetId), go talk to the Manager (`chatManager`), take a short walk
+        (`stretch`), or stay at his desk (`stay`). Moves only: Ansh never acts on
+        an agent.
+      type: string
+      enum: [visit, chatManager, stretch, stay]
+
+    AnshThoughtEntry:
+      description: One of Ansh's thoughts. `aiWritten` is false for the built-in fallback.
+      type: object
+      additionalProperties: false
+      required: [at, action, say, aiWritten]
+      properties:
+        at:
+          type: integer
+        action:
+          $ref: '#/components/schemas/AnshAction'
+        targetId:
+          type: integer
+          description: The agent a `visit` walks to (an id on the board when the thought was had).
+        say:
+          type: string
+        aiWritten:
+          type: boolean
+
+    AnshBrainState:
+      description: >-
+        Ansh's brain: on or off, thinking right now, today's thought count against
+        the daily cap, and the recent thoughts (newest last). Sent on connect and
+        whenever any of it changes.
+      type: object
+      additionalProperties: false
+      required: [type, enabled, thinking, thoughtsToday, dailyCap, thoughts]
+      properties:
+        type:
+          const: anshBrainState
+        enabled:
+          type: boolean
+        thinking:
+          type: boolean
+        thoughtsToday:
+          type: integer
+        dailyCap:
+          type: integer
+        thoughts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnshThoughtEntry'
+
+    AnshThought:
+      description: Ansh just had a thought (the character walks and says it).
+      type: object
+      additionalProperties: false
+      required: [type, thought]
+      properties:
+        type:
+          const: anshThought
+        thought:
+          $ref: '#/components/schemas/AnshThoughtEntry'
+
+    Report:
+      description: A day's Manager report, in reply to requestReport. `exists` is false when none was written.
+      type: object
+      additionalProperties: false
+      required: [type, date, exists]
+      properties:
+        type:
+          const: report
+        date:
+          type: string
+        exists:
+          type: boolean
+        markdown:
+          type: string
+          description: The overview -- what the dashboard shows first.
+        details:
+          type: string
+          description: The per-repo details (a section per repo, a bullet per piece of work).
+        generatedAt:
+          type: integer
+        aiWritten:
+          type: boolean
+        notionUrl:
+          type: string
+          description: The day's page in Notion, when the report was sent there.
+        writing:
+          type: boolean
+          description: True while a report for this date is being written.
+
+    WeekDay:
+      description: One local day's totals on the week wall.
+      type: object
+      additionalProperties: false
+      required: [date, prs, pushes, activeMs]
+      properties:
+        date:
+          type: string
+          description: Local date, YYYY-MM-DD.
+        prs:
+          type: integer
+        pushes:
+          type: integer
+        activeMs:
+          type: integer
+
+    WeekStats:
+      description: |
+        The last 7 local days (oldest first, today last) from the daily totals in
+        ~/.pixel-agents/daily/. Sent on connect and whenever today's totals change.
+      type: object
+      additionalProperties: false
+      required: [type, days]
+      properties:
+        type:
+          const: weekStats
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/WeekDay'
+
+    WeatherCondition:
+      type: string
+      enum: [clear, clouds, rain, snow, fog, storm]
+
+    Weather:
+      description: |
+        Current weather for the city guessed once from the PC's IP (cached), polled
+        from Open-Meteo every 30 min. Never sent when the network is unavailable.
+      type: object
+      additionalProperties: false
+      required: [type, condition, isDay, tempC, city]
+      properties:
+        type:
+          const: weather
+        condition:
+          $ref: '#/components/schemas/WeatherCondition'
+        isDay:
+          type: boolean
+        tempC:
+          type: number
+        city:
+          type: string
+
+    TimeReportRow:
+      description: |
+        One repo's day in the time report: its tasks' active time and counts from the
+        task log, and the tokens of the API responses attributed to it. The token
+        fields are absent when no response of that day was attributed to the repo
+        (a token file from before attribution existed, work on another machine, or a
+        transcript this server never read) -- "—", not zero.
+      type: object
+      additionalProperties: false
+      required: [date, repo, activeMs, tasks, prs, pushes]
+      properties:
+        date:
+          type: string
+          description: Local date, YYYY-MM-DD.
+        repo:
+          type: string
+        activeMs:
+          type: integer
+        tasks:
+          type: integer
+        prs:
+          type: integer
+        pushes:
+          type: integer
+        input:
+          type: integer
+        output:
+          type: integer
+        cacheRead:
+          type: integer
+        cacheWrite:
+          type: integer
+        estimatedUsd:
+          type: number
+          description: Estimated at API list prices. Absent when no response had a priced model.
+        partialEstimate:
+          type: boolean
+          description: True when some of the repo's responses came from a model without a price.
+
+    TimeReportUnattributed:
+      description: One day's tokens that belong to no repo (a token file from before attribution).
+      type: object
+      additionalProperties: false
+      required: [date, input, output, cacheRead, cacheWrite]
+      properties:
+        date:
+          type: string
+        input:
+          type: integer
+        output:
+          type: integer
+        cacheRead:
+          type: integer
+        cacheWrite:
+          type: integer
+        estimatedUsd:
+          type: number
+        partialEstimate:
+          type: boolean
+
+    TimeReport:
+      description: |
+        Time per repo over a date range (both ends inclusive, at most 31 days): one
+        row per repo per day with work on it or tokens attributed to it, in date then
+        repo order. `unattributed` lists the days whose tokens could not be split by
+        repo. In reply to requestTimeReport, to the requester only.
+      type: object
+      additionalProperties: false
+      required: [type, from, to, rows, unattributed]
+      properties:
+        type:
+          const: timeReport
+        from:
+          type: string
+        to:
+          type: string
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeReportRow'
+        unattributed:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeReportUnattributed'
+
+    AgentSleep:
+      description: |
+        Whether an agent's session is open but idle ("sleeping"): Claude Code's own
+        session list reports it idle and its transcript has been quiet for a while.
+        Sleeping agents render dimmed with a 💤 label. Sent on every change and, for
+        every sleeping agent, when a client connects.
+      type: object
+      additionalProperties: false
+      required: [type, id, sleeping]
+      properties:
+        type:
+          const: agentSleep
+        id:
+          type: integer
+        sleeping:
+          type: boolean
+        idleSince:
+          type: integer
+          description: Epoch ms of the session's last activity. Present while sleeping.
+
+    AgentProgress:
+      description: |
+        An agent's stage track: the phase of its most recent classified tool, the
+        phases reached in the current cycle (in the order first reached), and when
+        it began waiting on the user. A cycle resets after a ship or 30 min idle.
+        Sent on every change and, for every agent, when a client connects.
+      type: object
+      additionalProperties: false
+      required: [type, id, reached]
+      properties:
+        type:
+          const: agentProgress
+        id:
+          type: integer
+        phase:
+          $ref: '#/components/schemas/WorkPhase'
+        reached:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkPhase'
+        waitingSince:
+          type: integer
+          description: Epoch ms the agent started waiting on the user. Absent while it works.
+
+    DailyPr:
+      description: A pull request an agent opened today.
+      type: object
+      additionalProperties: false
+      required: [title, repo, at]
+      properties:
+        title:
+          type: string
+        repo:
+          type: string
+        url:
+          type: string
+        at:
+          type: integer
+          description: Epoch ms.
+
+    DailyPush:
+      description: Pushes to one repo today.
+      type: object
+      additionalProperties: false
+      required: [repo, count]
+      properties:
+        repo:
+          type: string
+        count:
+          type: integer
+
+    DailyStats:
+      description: |
+        Today's totals across every agent (local day, resets at midnight, survives
+        server restarts). Sent on every change and when a client connects.
+      type: object
+      additionalProperties: false
+      required: [type, date, prs, pushes, filesEdited, commandsRun, activeMs]
+      properties:
+        type:
+          const: dailyStats
+        date:
+          type: string
+          description: Local date, YYYY-MM-DD.
+        prs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyPr'
+        pushes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyPush'
+        filesEdited:
+          type: integer
+        commandsRun:
+          type: integer
+        activeMs:
+          type: integer
+          description: Time agents spent working (not waiting on the user), summed.
+
+    TroubleLevel:
+      type: string
+      enum: [none, fire, alarm]
+
+    AgentTrouble:
+      description: |
+        Consecutive failed tools (PostToolUseFailure, or a shell command that exited
+        non-zero or was interrupted). `fire` from the first failure, `alarm` from
+        the third in a row; `none` (failures 0) once a tool succeeds. Sent on every
+        change and, for every agent in trouble, when a client connects.
+      type: object
+      additionalProperties: false
+      required: [type, id, level, failures]
+      properties:
+        type:
+          const: agentTrouble
+        id:
+          type: integer
+        level:
+          $ref: '#/components/schemas/TroubleLevel'
+        failures:
+          type: integer
+
+    LoopReason:
+      type: string
+      enum: [repeat, stall]
+
+    AgentLoop:
+      description: |
+        Whether an agent looks like it is going in circles: the same tool with the
+        same input 4+ times within 10 min (`repeat`), or 15 min of active work with
+        no new file edited and no phase change (`stall`). Cleared (looping false) on
+        progress. Sent on every change and, for every looping agent, when a client connects.
+      type: object
+      additionalProperties: false
+      required: [type, id, looping]
+      properties:
+        type:
+          const: agentLoop
+        id:
+          type: integer
+        looping:
+          type: boolean
+        reason:
+          $ref: '#/components/schemas/LoopReason'
+
+    TimelineKind:
+      type: string
+      enum: [tool, status, ship, pr, push]
+
+    TimelineEntry:
+      description: One recent action. `text` is the activity label (never a raw tool input).
+      type: object
+      additionalProperties: false
+      required: [at, kind, text]
+      properties:
+        at:
+          type: integer
+          description: Epoch ms.
+        kind:
+          $ref: '#/components/schemas/TimelineKind'
+        text:
+          type: string
+        failed:
+          type: boolean
+          description: A tool that failed.
+
+    AgentTimeline:
+      description: |
+        One agent's last actions (oldest first, at most 20), its PRs and pushes today,
+        and its active time today. In reply to requestTimeline, to the requester only.
+      type: object
+      additionalProperties: false
+      required: [type, id, entries, prs, pushes, activeMs]
+      properties:
+        type:
+          const: agentTimeline
+        id:
+          type: integer
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineEntry'
+        prs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyPr'
+        pushes:
+          type: integer
+        activeMs:
+          type: integer
+
+    ModelTokens:
+      description: One model's token usage today.
+      type: object
+      additionalProperties: false
+      required: [input, output, cacheRead, cacheWrite]
+      properties:
+        input:
+          type: integer
+        output:
+          type: integer
+        cacheRead:
+          type: integer
+        cacheWrite:
+          type: integer
+        estimatedUsd:
+          type: number
+          description: Estimated list-price cost. Absent for a model without a known price.
+
+    DailyTokens:
+      description: |
+        Today's token usage across every agent, summed from transcript usage records
+        (local day, survives server restarts). `estimatedUsd` is an estimate at API
+        list prices, absent when no model had a known price; `partialEstimate` is
+        true when some tokens came from a model without one. Sent on every change
+        and when a client connects.
+      type: object
+      additionalProperties: false
+      required: [type, date, input, output, cacheRead, cacheWrite, byModel]
+      properties:
+        type:
+          const: dailyTokens
+        date:
+          type: string
+          description: Local date, YYYY-MM-DD.
+        input:
+          type: integer
+        output:
+          type: integer
+        cacheRead:
+          type: integer
+        cacheWrite:
+          type: integer
+        byModel:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ModelTokens'
+        estimatedUsd:
+          type: number
+        partialEstimate:
+          type: boolean
+
+    NoticeKind:
+      type: string
+      enum: [pr, issue]
+
+    NoticeItem:
+      description: An open PR (authored) or issue (assigned) on GitHub. Titles only.
+      type: object
+      additionalProperties: false
+      required: [kind, title, repo, url]
+      properties:
+        kind:
+          $ref: '#/components/schemas/NoticeKind'
+        title:
+          type: string
+        repo:
+          type: string
+          description: owner/name.
+        url:
+          type: string
+
+    NoticeBoard:
+      description: |
+        Open PRs and issues for the repos seen today or the user's own, from `gh`
+        (polled every 10 min, only while `gh` is signed in). Sent on change and
+        when a client connects.
+      type: object
+      additionalProperties: false
+      required: [type, items]
+      properties:
+        type:
+          const: noticeBoard
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoticeItem'
 
     LayoutLoaded:
       description: |
@@ -967,6 +1795,118 @@ components:
         exitCode:
           type: integer
 
+    # ── Permission approvals from the board ────────────────────────
+
+    PermissionPending:
+      description: |
+        A local Claude Code session is showing a permission dialog and its
+        PermissionRequest hook is waiting on this board for an answer. Sent
+        to every connected office, and again in the connect snapshot while it
+        is still pending. Answered with `answerPermission` (privileged
+        clients only); ends with `permissionResolved`. A relayed remote
+        session produces one too when its sender waits on the board (the
+        relay's permission route).
+      type: object
+      additionalProperties: false
+      required: [type, requestId, id, tool, detail, since]
+      properties:
+        type:
+          const: permissionPending
+        requestId:
+          type: string
+          description: Random id the hook script minted for this one request.
+        id:
+          type: integer
+          description: The agent whose session asked.
+        tool:
+          type: string
+          description: Tool name as Claude Code reports it (Bash, Edit, mcp__x__y, ...).
+        detail:
+          type: string
+          description: >-
+            What would run, capped server-side: the full command, the file
+            path and the first lines of the change, the URL, or the tool's
+            input as compact JSON.
+        since:
+          type: number
+          description: When the request arrived (ms since epoch).
+        questions:
+          type: array
+          description: >-
+            Set when the tool is AskUserQuestion: the questions to answer.
+            The card offers their options instead of Allow, and the answer
+            carries `answers`.
+          items:
+            $ref: '#/components/schemas/PermissionQuestion'
+
+    PermissionQuestion:
+      description: One AskUserQuestion question, as the approval card shows it.
+      type: object
+      additionalProperties: false
+      required: [question, multiSelect, options]
+      properties:
+        question:
+          type: string
+        header:
+          type: string
+          description: Short chip label Claude gave the question.
+        multiSelect:
+          type: boolean
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/PermissionQuestionOption'
+
+    PermissionQuestionOption:
+      description: One choice of a PermissionQuestion.
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label:
+          type: string
+        description:
+          type: string
+
+    PermissionAnswer:
+      description: >-
+        The answer to one PermissionQuestion: the chosen options by index
+        (one for a single-select question), and/or free text for "Other".
+      type: object
+      additionalProperties: false
+      required: [options]
+      properties:
+        options:
+          type: array
+          items:
+            type: integer
+        other:
+          type: string
+
+    PermissionResolved:
+      description: |
+        A pending permission request ended. `allowed` / `denied`: answered
+        from the board. `answeredInTerminal`: the session moved on (the
+        terminal answered first). `expired`: nobody answered within the wait
+        window, so the terminal dialog is the only way left.
+      type: object
+      additionalProperties: false
+      required: [type, requestId, id, outcome]
+      properties:
+        type:
+          const: permissionResolved
+        requestId:
+          type: string
+        id:
+          type: integer
+        outcome:
+          $ref: '#/components/schemas/PermissionOutcome'
+
+    PermissionOutcome:
+      description: How a pending permission request ended.
+      type: string
+      enum: [allowed, denied, answeredInTerminal, expired]
+
     # ── Client message variants ────────────────────────────────────
 
     WebviewReady:
@@ -1094,6 +2034,20 @@ components:
             The hook provider being toggled (HookProvider.id). The client
             echoes the id of the hooksStatus row the checkbox renders; it
             never originates one.
+        enabled:
+          type: boolean
+
+    SetUsageMeterEnabled:
+      description: |
+        Install (true) or remove (false) the usage meter's status line in
+        ~/.claude/settings.json. Privileged. Never replaces a status line the
+        user configured. Answered with usageMeterStatus.
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setUsageMeterEnabled
         enabled:
           type: boolean
 
@@ -1319,6 +2273,117 @@ components:
       properties:
         type:
           const: requestDiagnostics
+
+    RequestTasks:
+      description: Ask for one day's task log (server responds with tasksSnapshot). Allowed for read-only clients.
+      type: object
+      additionalProperties: false
+      required: [type, date]
+      properties:
+        type:
+          const: requestTasks
+        date:
+          type: string
+          description: Local date, YYYY-MM-DD.
+
+    RequestReport:
+      description: Ask for one day's Manager report (server responds with report). Allowed for read-only clients.
+      type: object
+      additionalProperties: false
+      required: [type, date]
+      properties:
+        type:
+          const: requestReport
+        date:
+          type: string
+          description: Local date, YYYY-MM-DD.
+
+    WriteReportNow:
+      description: Have the Manager write today's report now. Privileged only (it uses the Claude subscription).
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: writeReportNow
+
+    SetAnshBrainEnabled:
+      description: Turn Ansh's brain on or off. Privileged only.
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setAnshBrainEnabled
+        enabled:
+          type: boolean
+
+    AskAnsh:
+      description: >-
+        Have Ansh think now, out of turn. Privileged only (it uses the Claude
+        subscription); still subject to the brain's own rate limit and daily cap.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: askAnsh
+
+    RequestTimeline:
+      description: Ask for one agent's recent actions (server responds with agentTimeline). Allowed for read-only clients.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: requestTimeline
+        id:
+          type: integer
+
+    AnswerPermission:
+      description: >-
+        Answer a pending permission request, this once. Privileged only. Never
+        carries an "always allow" rule: the settings' deny rules still apply.
+      type: object
+      additionalProperties: false
+      required: [type, requestId, behavior]
+      properties:
+        type:
+          const: answerPermission
+        requestId:
+          type: string
+        behavior:
+          $ref: '#/components/schemas/PermissionBehavior'
+        answers:
+          type: array
+          description: >-
+            For an AskUserQuestion request with `allow`: one answer per
+            question, in the request's order. Required there, ignored
+            elsewhere.
+          items:
+            $ref: '#/components/schemas/PermissionAnswer'
+
+    PermissionBehavior:
+      description: The answer to a permission request.
+      type: string
+      enum: [allow, deny]
+
+    RequestTimeReport:
+      description: |
+        Ask for the time per repo over a date range (server responds with timeReport,
+        to the requester only). Both dates are local YYYY-MM-DD, inclusive, `from` not
+        after `to`, spanning at most 31 days; anything else is dropped unanswered.
+        Allowed for read-only clients.
+      type: object
+      additionalProperties: false
+      required: [type, from, to]
+      properties:
+        type:
+          const: requestTimeReport
+        from:
+          type: string
+        to:
+          type: string
 
     # ── Supporting schemas ─────────────────────────────────────────
 

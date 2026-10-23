@@ -31,6 +31,9 @@ interface MobileShellProps {
   onCloseAgent: (agentId: number) => void;
   /** The software keyboard is up (useKeyboardViewport). */
   keyboardOpen: boolean;
+  /** TV mode: the office page alone — no card bar, view toggle or key bar,
+   *  and no edge swipe to the terminal. */
+  tvMode?: boolean;
 }
 
 /**
@@ -54,13 +57,17 @@ export function MobileShell({
   onEditDirectory,
   onCloseAgent,
   keyboardOpen,
+  tvMode = false,
 }: MobileShellProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  // TV mode pins the track on the office page without touching the shell's
+  // own view, which comes back as it was when TV mode ends.
+  const view = tvMode ? 'office' : shell.view;
   useEdgeSwipe(
     shellRef,
     trackRef,
-    shell.view === 'terminal' ? 'office' : terminalAvailable ? 'terminal' : null,
+    tvMode ? null : shell.view === 'terminal' ? 'office' : terminalAvailable ? 'terminal' : null,
     shell.toggleView,
   );
 
@@ -90,7 +97,7 @@ export function MobileShell({
         <div
           ref={trackRef}
           className="absolute top-0 bottom-0 left-0 flex w-[200%]"
-          style={{ transform: trackTransform(shell.view), transition: TRACK_TRANSITION }}
+          style={{ transform: trackTransform(view), transition: TRACK_TRANSITION }}
         >
           <div className="w-1/2 h-full relative overflow-hidden">{office}</div>
           <div className="w-1/2 h-full">
@@ -104,7 +111,7 @@ export function MobileShell({
         </div>
 
         {/* View toggle — pinned outside the track so it never slides. */}
-        {terminalAvailable && (
+        {terminalAvailable && !tvMode && (
           <div className="absolute mobile-safe-top right-8 z-40">
             <Button
               size="sm"
@@ -118,27 +125,29 @@ export function MobileShell({
         )}
       </div>
 
-      <MobileAgentBar
-        agentIds={agentIds}
-        focusedAgentId={focusedAgentId}
-        // The accent border marks the showing pane, so it only exists on the
-        // terminal page; the focused character keeps its tint on both.
-        activeAgentId={shell.view === 'terminal' ? drawer.activeAgentId : null}
-        onSelectAgent={shell.selectCard}
-        onCloseAgent={onCloseAgent}
-        onLaunchDirectory={shell.launch}
-        directories={directories}
-        onAddDirectory={onAddDirectory}
-        onEditDirectory={onEditDirectory}
-        canLaunch={terminalAvailable}
-        launchUnavailableReason={terminalUnavailableReason}
-        getAppearance={drawer.getAppearance}
-        statusFor={drawer.statusFor}
-      />
+      {!tvMode && (
+        <MobileAgentBar
+          agentIds={agentIds}
+          focusedAgentId={focusedAgentId}
+          // The accent border marks the showing pane, so it only exists on the
+          // terminal page; the focused character keeps its tint on both.
+          activeAgentId={shell.view === 'terminal' ? drawer.activeAgentId : null}
+          onSelectAgent={shell.selectCard}
+          onCloseAgent={onCloseAgent}
+          onLaunchDirectory={shell.launch}
+          directories={directories}
+          onAddDirectory={onAddDirectory}
+          onEditDirectory={onEditDirectory}
+          canLaunch={terminalAvailable}
+          launchUnavailableReason={terminalUnavailableReason}
+          getAppearance={drawer.getAppearance}
+          statusFor={drawer.statusFor}
+        />
+      )}
 
       {/* Accessory keys for the TUI, only while the software keyboard is up —
           the last flex child, so it sits directly above the keyboard. */}
-      {shell.view === 'terminal' && keyboardOpen && (
+      {view === 'terminal' && keyboardOpen && (
         <MobileKeyBar onKey={handleKey} onPaste={handlePaste} />
       )}
     </>

@@ -3,7 +3,11 @@ import * as path from 'path';
 import type { AgentEvent, HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { SESSION_END_GRACE_MS } from './constants.js';
+import { getInboxTracker } from './inbox/inboxTracker.js';
+import type { ProgressTracker } from './progress/progressTracker.js';
+import { type RemoteSource, remoteSourceOf } from './remoteSource.js';
 import type { SessionRouter } from './sessionRouter.js';
+import { getSignalsHub } from './signals/registry.js';
 import { getInlineTeammates, hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
 import { notifyBackgroundAgentCompleted } from './transcriptParser.js';
@@ -30,13 +34,26 @@ export interface HookEvent {
  * suppresses heuristic timers (permission 7s, text-idle 5s) for that agent.
  */
 /** Callback for session lifecycle events detected via hooks. */
+/**
+ * The hook's own tool id, for agents that have no transcript to take it from.
+ * Lets parallel tools finish independently and gives Subtask sub-characters a
+ * stable parent id. Agents with a transcript keep using its ids.
+ */
+function hooksOnlyToolUseId(event: HookEvent, agent: AgentState): string | undefined {
+  return agent.hooksOnly && typeof event.tool_use_id === 'string' && event.tool_use_id
+    ? event.tool_use_id
+    : undefined;
+}
+
 interface SessionLifecycleCallbacks {
   /** Called when an external session is detected (unknown session_id in SessionStart).
-   *  transcriptPath is undefined for providers without transcripts (OpenCode, Copilot). */
+   *  transcriptPath is undefined for providers without transcripts (OpenCode, Copilot)
+   *  and for remote sessions, which also pass the source they were relayed from. */
   onExternalSessionDetected?: (
     sessionId: string,
     transcriptPath: string | undefined,
     cwd: string,
+    remote?: RemoteSource,
   ) => void;
   /** Called when /clear is detected via hooks (SessionEnd reason=clear + SessionStart source=clear). */
   onSessionClear?: (
@@ -69,6 +86,8 @@ export class HookEventHandler {
     private provider: HookProvider,
     private sessionRouter: SessionRouter,
     private watchAllSessionsRef?: { current: boolean },
+    /** Stage track + daily totals; fed every tool start and end this handler sees. */
+    private progress?: ProgressTracker,
   ) {
     if (provider.protocolVersion !== HookEventHandler.SUPPORTED_PROTOCOL_VERSION) {
       console.warn(
@@ -144,6 +163,7 @@ export class HookEventHandler {
     if (!normalized) return; // unknown / uninteresting event -- silently drop
     const normEvent = normalized.event;
     const eventName = event.hook_event_name; // retained for logs only
+    const remote = remoteSourceOf(event);
     // CI / e2e diagnostic: see agentStateStore.ts debugLogBroadcast comment.
     if (process.env['PIXEL_AGENTS_DEBUG_LOG']) {
       try {
@@ -210,8 +230,11 @@ export class HookEventHandler {
             // then SessionStart. Match the agent that has pendingClear in same project dir.
             // Normalize paths for cross-platform comparison (separators + case-insensitive
             // for Windows where drive letter casing differs: c:\ vs C:\).
+            // Remote sessions only match their own source: every cloud sandbox
+            // shares cwds like /home/user/<repo>.
             const isMatch =
               agent.pendingClear &&
+              agent.remoteSource?.id === remote?.id &&
               path.resolve(agent.projectDir).toLowerCase() ===
                 path.resolve(projectDir).toLowerCase();
             if (isMatch) {
@@ -271,11 +294,20 @@ export class HookEventHandler {
         console.log(
           `[Pixel Agents] Hook: ${eventName} confirmed external session ${event.session_id.slice(0, 8)}..., notifying host`,
         );
-      this.lifecycleCallbacks.onExternalSessionDetected?.(
-        pending.sessionId,
-        pending.transcriptPath,
-        pending.cwd,
-      );
+      if (remote) {
+        this.lifecycleCallbacks.onExternalSessionDetected?.(
+          pending.sessionId,
+          pending.transcriptPath,
+          pending.cwd,
+          remote,
+        );
+      } else {
+        this.lifecycleCallbacks.onExternalSessionDetected?.(
+          pending.sessionId,
+          pending.transcriptPath,
+          pending.cwd,
+        );
+      }
       // Re-process this event now that the agent exists
       this.handleEvent(_providerId, event);
       return;
@@ -290,6 +322,22 @@ export class HookEventHandler {
           break;
         }
       }
+    }
+    if (agentId === undefined && remote && normEvent.kind !== 'sessionEnd') {
+      // A remote session we have no record of is already running -- it started
+      // before this server did, or before its sender was set up. Its relay key
+      // already proved it belongs to the user, so adopt it now instead of waiting
+      // for a SessionStart that may never come.
+      this.lifecycleCallbacks.onExternalSessionDetected?.(
+        event.session_id,
+        undefined,
+        typeof event.cwd === 'string' ? event.cwd : '',
+        remote,
+      );
+      if (this.sessionRouter.resolve(event.session_id) !== undefined) {
+        this.handleEvent(_providerId, event);
+      }
+      return;
     }
     if (agentId === undefined) {
       // Buffer if: pending external session, already buffering for this session,
@@ -316,6 +364,9 @@ export class HookEventHandler {
     if (!agent) return;
 
     agent.hookDelivered = true;
+    // Remote agents have no transcript to stat; their last event is the only
+    // liveness signal (see AgentRuntime.expireRemoteAgents).
+    if (agent.remoteSource) agent.lastDataAt = Date.now();
     if (debug)
       console.log(
         `[Pixel Agents] Hook: Agent ${agentId} - ${eventName} (session=${event.session_id.slice(0, 8)}...)`,
@@ -328,12 +379,12 @@ export class HookEventHandler {
       case 'sessionEnd':
         return this.handleSessionEnd(normEvent, agent, agentId);
       case 'toolStart':
-        return this.handlePreToolUse(normEvent, agent, agentId);
+        return this.handlePreToolUse(normEvent, agent, agentId, hooksOnlyToolUseId(event, agent));
       case 'toolEnd':
         // Both PostToolUse and PostToolUseFailure normalize to toolEnd. Distinguishing
         // them inside handlers would require extra info; the existing behavior was
         // identical for both (agentToolDone + clear currentHookToolId), so one branch suffices.
-        return this.handlePostToolUse(agent, agentId);
+        return this.handlePostToolUse(event, agent, agentId, hooksOnlyToolUseId(event, agent));
       case 'subagentStart':
         return this.provider.team ? this.handleSubagentStart(event, agent, agentId) : undefined;
       case 'subagentEnd':
@@ -345,7 +396,16 @@ export class HookEventHandler {
       case 'turnEnd':
         // Handles Stop AND Notification(idle_prompt) -- both normalize to turnEnd.
         // awaitingInput discriminates them: idle_prompt sets it (-> "Waiting for
-        // input"), Stop leaves it absent (-> "Done").
+        // input"), Stop leaves it absent (-> "Done"). StopFailure normalizes here
+        // too; one that stopped on a usage limit also pauses the agent.
+        if (normEvent.usageLimit && getInboxTracker()?.tracks(this.agents)) {
+          getInboxTracker()?.onUsageLimit(agentId, normEvent.usageLimit);
+        }
+        // How the turn ended, in the agent's words, for the Manager's report.
+        // (StopFailure's is the API error, not a reply.)
+        if (event.hook_event_name === 'Stop' && typeof event.last_assistant_message === 'string') {
+          this.progress?.onTurnSummary(agentId, event.last_assistant_message);
+        }
         return this.handleStop(agent, agentId, normEvent.awaitingInput === true);
       case 'subagentTurnEnd':
         // Handles TeammateIdle AND TaskCompleted -- both normalize here. The normalized
@@ -412,11 +472,21 @@ export class HookEventHandler {
     normEvent: Extract<AgentEvent, { kind: 'toolStart' }>,
     agent: AgentState,
     agentId: number,
+    toolUseId?: string,
   ): void {
     const toolName = normEvent.toolName;
     const toolInput = (normEvent.input as Record<string, unknown> | undefined) ?? {};
+    // Counted before the display suppression below: the tool ran either way.
+    this.progress?.onToolStart(agentId, toolName, toolInput);
+    getSignalsHub()?.onToolStart(this.agents, agentId, toolName, toolInput, normEvent.toolId);
     const status = this.provider.formatToolStatus(toolName, toolInput);
-    const hookToolId = `hook-${Date.now()}`;
+    const hookToolId = toolUseId ?? `hook-${Date.now()}`;
+    if (toolUseId) {
+      // No transcript will ever report this tool: track it here instead.
+      agent.activeToolIds.add(toolUseId);
+      agent.activeToolStatuses.set(toolUseId, status);
+      agent.activeToolNames.set(toolUseId, toolName);
+    }
 
     // Track for PostToolUse/SubagentStart correlation (always, even if suppressed below).
     // currentHookIsTeammateSpawn is the authoritative teammate-vs-subagent discriminator.
@@ -441,14 +511,17 @@ export class HookEventHandler {
     // Skip for Task/Agent tools — their sub-agent characters need the stable JSONL
     // tool ID (not the transient hook ID) so that SubagentStop/tool_result cleanup
     // can find and remove them. JSONL handles agentToolStart (with runInBackground)
-    // for these tools.
-    if (toolName !== 'Task' && toolName !== 'Agent') {
+    // for these tools. Hooks-only agents have no JSONL, but their toolUseId is the
+    // stable id, so they send it here.
+    const isSpawn = toolName === 'Task' || toolName === 'Agent';
+    if (!isSpawn || toolUseId) {
       this.agents.broadcast({
         type: 'agentToolStart',
         id: agentId,
         toolId: hookToolId,
         status,
         toolName,
+        ...(isSpawn && { runInBackground: normEvent.runInBackground === true }),
       });
     }
     this.agents.broadcast({
@@ -459,11 +532,53 @@ export class HookEventHandler {
   }
 
   /**
-   * Handle PostToolUse: no action needed. JSONL handles tool_result processing.
-   * Stop hook handles the idle transition. This is here for completeness and
-   * to serve as a confirmation event for pending external sessions.
+   * Handle PostToolUse / PostToolUseFailure: report the result to work progress
+   * (pushes, PRs). Otherwise little to do: JSONL handles tool_result processing
+   * and the Stop hook handles the idle transition. It also serves as a
+   * confirmation event for pending external sessions.
    */
-  private handlePostToolUse(agent: AgentState, agentId: number): void {
+  private handlePostToolUse(
+    event: HookEvent,
+    agent: AgentState,
+    agentId: number,
+    toolUseId?: string,
+  ): void {
+    if (this.progress) {
+      // Work progress reads the raw payload: toolEnd names no tool, and the
+      // result (tool_response, or the relay's pr_url) and whether the tool
+      // failed exist only there.
+      this.progress.onToolEnd(
+        agentId,
+        typeof event.tool_name === 'string' ? event.tool_name : '',
+        typeof event.tool_input === 'object' && event.tool_input !== null
+          ? (event.tool_input as Record<string, unknown>)
+          : {},
+        {
+          response: event.tool_response,
+          prUrl: typeof event.pr_url === 'string' ? event.pr_url : undefined,
+          failed: event.hook_event_name === 'PostToolUseFailure',
+        },
+      );
+    }
+    // Trouble (failed tools in a row) and the timeline read the raw payload too.
+    getSignalsHub()?.onHookToolEnd(this.agents, agentId, event);
+    if (toolUseId) {
+      const toolName = agent.activeToolNames.get(toolUseId);
+      agent.activeToolIds.delete(toolUseId);
+      agent.activeToolStatuses.delete(toolUseId);
+      agent.activeToolNames.delete(toolUseId);
+      this.agents.broadcast({ type: 'agentToolDone', id: agentId, toolId: toolUseId });
+      if (toolName && this.getSubagentToolSet().has(toolName)) {
+        agent.activeSubagentToolIds.delete(toolUseId);
+        agent.activeSubagentToolNames.delete(toolUseId);
+        this.agents.broadcast({ type: 'subagentClear', id: agentId, parentToolId: toolUseId });
+      }
+      if (agent.currentHookToolId === toolUseId) {
+        agent.currentHookToolId = undefined;
+        agent.currentHookToolName = undefined;
+      }
+      return;
+    }
     if (agent.currentHookToolId) {
       // Suppress tool display when lead has inline teammates (see handlePreToolUse)
       if (!hasInlineTeammates(agentId, this.agents)) {

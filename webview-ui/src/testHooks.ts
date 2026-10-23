@@ -14,6 +14,7 @@ declare global {
         bubbleType: 'permission' | 'waiting' | null;
         waitingAwaitingInput?: boolean;
         isHeadless?: boolean;
+        isSleeping?: boolean;
         isGreeter?: boolean;
       }>;
       /** The character the camera follows (null = free camera). */
@@ -37,6 +38,19 @@ declare global {
       getAreas?: () => Array<{ label: string; color: string }>;
       /** Sparse list of area-painted tiles with their grid coords. */
       getAreaTiles?: () => Array<{ col: number; row: number; label: string }>;
+      /** The limit break (fun/limitBreak.ts): pause every top-level agent on
+       *  the session limit, as the server's `agentLimit` would (visual checks). */
+      startLimitBreak?: (resetsAt?: number) => void;
+      /** ...and un-pause them, as the reset would. */
+      endLimitBreak?: () => void;
+      /** The break as the office sees it: on or off, who is on it doing what,
+       *  and where the Manager and Ansh are. */
+      getLimitBreak?: () => {
+        on: boolean;
+        sign: string | null;
+        agents: Array<{ id: number; activity: string | null; col: number; row: number }>;
+        npcs: Array<{ kind: 'ansh' | 'manager'; col: number; row: number; atBreak: boolean }>;
+      };
       /** Directory→Area mappings received by OfficeState. */
       getAreaMappings?: () => Record<string, string[]>;
       /** Effective show-areas gate (settings toggle OR active area edit). */
@@ -151,6 +165,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       bubbleType: ch.bubbleType,
       waitingAwaitingInput: ch.waitingAwaitingInput,
       isHeadless: ch.isHeadless,
+      isSleeping: ch.isSleeping,
       isGreeter: ch.isGreeter,
     }));
   };
@@ -255,6 +270,42 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       out.push({ col: i % layout.cols, row: Math.floor(i / layout.cols), label });
     }
     return out;
+  };
+
+  const limitAll = (paused: boolean, resetsAt?: number) => {
+    const os = officeStateRef.current;
+    if (!os) return;
+    for (const ch of os.characters.values()) {
+      if (ch.isSubagent) continue;
+      os.fun.onMessage(
+        paused
+          ? { type: 'agentLimit', id: ch.id, paused, reason: 'session', resetsAt }
+          : { type: 'agentLimit', id: ch.id, paused },
+      );
+      os.setAgentPaused(ch.id, paused);
+    }
+  };
+  hooks.startLimitBreak = (resetsAt) => limitAll(true, resetsAt);
+  hooks.endLimitBreak = () => limitAll(false);
+  hooks.getLimitBreak = () => {
+    const os = officeStateRef.current;
+    if (!os) return { on: false, sign: null, agents: [], npcs: [] };
+    const agents = os.fun.breakMembers().map((ch) => {
+      const b = os.fun.borrows.get(ch.id);
+      return {
+        id: ch.id,
+        activity: b?.kind === 'limitBreak' ? (b.activity ?? null) : (b?.kind ?? null),
+        col: ch.tileCol,
+        row: ch.tileRow,
+      };
+    });
+    const npcs = (['manager', 'ansh'] as const).flatMap((kind) => {
+      const ch = os.npcs.characterOf(kind);
+      return ch
+        ? [{ kind, col: ch.tileCol, row: ch.tileRow, atBreak: os.npcs.atHangout(kind) }]
+        : [];
+    });
+    return { on: os.fun.breakOn, sign: os.fun.breakSign()?.text ?? null, agents, npcs };
   };
 
   hooks.getAreaMappings = () => {

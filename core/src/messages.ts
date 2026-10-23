@@ -25,6 +25,26 @@ export type ServerMessage =
   | SubagentToolPermission
   | AgentTeamInfo
   | AgentContextUsage
+  | AgentProgress
+  | DailyStats
+  | AgentSleep
+  | AgentTitle
+  | AgentKind
+  | TasksSnapshot
+  | TaskUpdated
+  | ReportReady
+  | Report
+  | AnshBrainState
+  | AnshThought
+  | AgentTrouble
+  | AgentLoop
+  | AgentTimeline
+  | DailyTokens
+  | NoticeBoard
+  | AgentLink
+  | AgentLimit
+  | SubscriptionUsage
+  | UsageMeterStatus
   | LayoutLoaded
   | FurnitureAssetsLoaded
   | CharacterSpritesLoaded
@@ -46,7 +66,12 @@ export type ServerMessage =
   | TerminalAvailability
   | TerminalSessionOpened
   | TerminalSessionClosed
-  | AgentDiagnostics;
+  | AgentDiagnostics
+  | PermissionPending
+  | PermissionResolved
+  | WeekStats
+  | Weather
+  | TimeReport;
 
 export type ClientMessage =
   | WebviewReady
@@ -75,7 +100,16 @@ export type ClientMessage =
   | SaveDirectory
   | RemoveDirectory
   | RequestDirectorySuggestions
-  | RequestDiagnostics;
+  | RequestDiagnostics
+  | RequestTasks
+  | RequestReport
+  | WriteReportNow
+  | SetAnshBrainEnabled
+  | AskAnsh
+  | RequestTimeline
+  | AnswerPermission
+  | RequestTimeReport
+  | SetUsageMeterEnabled;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -90,7 +124,13 @@ export interface AgentCreated {
   isExternal?: boolean;
   palette?: number;
   hueShift?: number;
+  sourceLabel?: string;
+  sourceKind?: RemoteSourceKind;
+  title?: string;
+  background?: boolean;
 }
+
+export type RemoteSourceKind = 'computer' | 'cloud';
 
 export interface AgentClosed {
   type: 'agentClosed';
@@ -108,6 +148,10 @@ export interface ExistingAgents {
   agentMeta: Record<string, AgentSeatMeta>;
   directoryNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
+  sourceLabels?: Record<string, string>;
+  sourceKinds?: Record<string, RemoteSourceKind>;
+  titles?: Record<string, string>;
+  backgroundAgents?: Record<string, boolean>;
 }
 
 export interface AgentSeatMeta {
@@ -200,6 +244,233 @@ export interface AgentContextUsage {
   contextTokens: number;
   maxContextTokens: number;
 }
+
+export interface AgentProgress {
+  type: 'agentProgress';
+  id: number;
+  phase?: WorkPhase;
+  reached: WorkPhase[];
+  waitingSince?: number;
+}
+
+export type WorkPhase = 'explore' | 'build' | 'test' | 'ship';
+
+export interface DailyStats {
+  type: 'dailyStats';
+  date: string;
+  prs: DailyPr[];
+  pushes: DailyPush[];
+  filesEdited: number;
+  commandsRun: number;
+  activeMs: number;
+}
+
+export interface DailyPr {
+  title: string;
+  repo: string;
+  url?: string;
+  at: number;
+}
+
+export interface DailyPush {
+  repo: string;
+  count: number;
+}
+
+export interface AgentSleep {
+  type: 'agentSleep';
+  id: number;
+  sleeping: boolean;
+  idleSince?: number;
+}
+
+export interface AgentTitle {
+  type: 'agentTitle';
+  id: number;
+  title: string;
+}
+
+export interface AgentKind {
+  type: 'agentKind';
+  id: number;
+  background: boolean;
+}
+
+export interface TasksSnapshot {
+  type: 'tasksSnapshot';
+  date: string;
+  tasks: Task[];
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  repo: string;
+  machine: string;
+  sessionId: string;
+  startedAt: number;
+  endedAt?: number;
+  status: TaskStatus;
+  prs: DailyPr[];
+  pushes: number;
+  filesEdited: number;
+  commands: number;
+  activeMs: number;
+}
+
+export type TaskStatus = 'in_progress' | 'waiting' | 'done';
+
+export interface TaskUpdated {
+  type: 'taskUpdated';
+  task: Task;
+}
+
+export interface ReportReady {
+  type: 'reportReady';
+  date: string;
+}
+
+export interface Report {
+  type: 'report';
+  date: string;
+  exists: boolean;
+  markdown?: string;
+  details?: string;
+  generatedAt?: number;
+  aiWritten?: boolean;
+  notionUrl?: string;
+  writing?: boolean;
+}
+
+export interface AnshBrainState {
+  type: 'anshBrainState';
+  enabled: boolean;
+  thinking: boolean;
+  thoughtsToday: number;
+  dailyCap: number;
+  thoughts: AnshThoughtEntry[];
+}
+
+export interface AnshThoughtEntry {
+  at: number;
+  action: AnshAction;
+  targetId?: number;
+  say: string;
+  aiWritten: boolean;
+}
+
+export type AnshAction = 'visit' | 'chatManager' | 'stretch' | 'stay';
+
+export interface AnshThought {
+  type: 'anshThought';
+  thought: AnshThoughtEntry;
+}
+
+export interface AgentTrouble {
+  type: 'agentTrouble';
+  id: number;
+  level: TroubleLevel;
+  failures: number;
+}
+
+export type TroubleLevel = 'none' | 'fire' | 'alarm';
+
+export interface AgentLoop {
+  type: 'agentLoop';
+  id: number;
+  looping: boolean;
+  reason?: LoopReason;
+}
+
+export type LoopReason = 'repeat' | 'stall';
+
+export interface AgentTimeline {
+  type: 'agentTimeline';
+  id: number;
+  entries: TimelineEntry[];
+  prs: DailyPr[];
+  pushes: number;
+  activeMs: number;
+}
+
+export interface TimelineEntry {
+  at: number;
+  kind: TimelineKind;
+  text: string;
+  failed?: boolean;
+}
+
+export type TimelineKind = 'tool' | 'status' | 'ship' | 'pr' | 'push';
+
+export interface DailyTokens {
+  type: 'dailyTokens';
+  date: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  byModel: Record<string, ModelTokens>;
+  estimatedUsd?: number;
+  partialEstimate?: boolean;
+}
+
+export interface ModelTokens {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  estimatedUsd?: number;
+}
+
+export interface NoticeBoard {
+  type: 'noticeBoard';
+  items: NoticeItem[];
+}
+
+export interface NoticeItem {
+  kind: NoticeKind;
+  title: string;
+  repo: string;
+  url: string;
+}
+
+export type NoticeKind = 'pr' | 'issue';
+
+export interface AgentLink {
+  type: 'agentLink';
+  id: number;
+  url?: string;
+  resumeCommand: string;
+}
+
+export interface AgentLimit {
+  type: 'agentLimit';
+  id: number;
+  paused: boolean;
+  reason?: LimitReason;
+  resetsAt?: number;
+}
+
+export type LimitReason = 'session' | 'weekly' | 'usage' | 'rate';
+
+export interface SubscriptionUsage {
+  type: 'subscriptionUsage';
+  fiveHour?: UsageWindow;
+  sevenDay?: UsageWindow;
+  updatedAt?: number;
+}
+
+export interface UsageWindow {
+  usedPercentage: number;
+  resetsAt: number;
+}
+
+export interface UsageMeterStatus {
+  type: 'usageMeterStatus';
+  state: UsageMeterState;
+}
+
+export type UsageMeterState = 'on' | 'off' | 'foreign' | 'unreadable';
 
 export interface LayoutLoaded {
   type: 'layoutLoaded';
@@ -376,6 +647,92 @@ export interface AgentDiagnostics {
   agents: Record<string, any>[];
 }
 
+export interface PermissionPending {
+  type: 'permissionPending';
+  requestId: string;
+  id: number;
+  tool: string;
+  detail: string;
+  since: number;
+  questions?: PermissionQuestion[];
+}
+
+export interface PermissionQuestion {
+  question: string;
+  header?: string;
+  multiSelect: boolean;
+  options: PermissionQuestionOption[];
+}
+
+export interface PermissionQuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface PermissionResolved {
+  type: 'permissionResolved';
+  requestId: string;
+  id: number;
+  outcome: PermissionOutcome;
+}
+
+export type PermissionOutcome = 'allowed' | 'denied' | 'answeredInTerminal' | 'expired';
+
+export interface WeekStats {
+  type: 'weekStats';
+  days: WeekDay[];
+}
+
+export interface WeekDay {
+  date: string;
+  prs: number;
+  pushes: number;
+  activeMs: number;
+}
+
+export interface Weather {
+  type: 'weather';
+  condition: WeatherCondition;
+  isDay: boolean;
+  tempC: number;
+  city: string;
+}
+
+export type WeatherCondition = 'clear' | 'clouds' | 'rain' | 'snow' | 'fog' | 'storm';
+
+export interface TimeReport {
+  type: 'timeReport';
+  from: string;
+  to: string;
+  rows: TimeReportRow[];
+  unattributed: TimeReportUnattributed[];
+}
+
+export interface TimeReportRow {
+  date: string;
+  repo: string;
+  activeMs: number;
+  tasks: number;
+  prs: number;
+  pushes: number;
+  input?: number;
+  output?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+  estimatedUsd?: number;
+  partialEstimate?: boolean;
+}
+
+export interface TimeReportUnattributed {
+  date: string;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  estimatedUsd?: number;
+  partialEstimate?: boolean;
+}
+
 export interface WebviewReady {
   type: 'webviewReady';
 }
@@ -514,4 +871,57 @@ export interface RequestDirectorySuggestions {
 
 export interface RequestDiagnostics {
   type: 'requestDiagnostics';
+}
+
+export interface RequestTasks {
+  type: 'requestTasks';
+  date: string;
+}
+
+export interface RequestReport {
+  type: 'requestReport';
+  date: string;
+}
+
+export interface WriteReportNow {
+  type: 'writeReportNow';
+}
+
+export interface SetAnshBrainEnabled {
+  type: 'setAnshBrainEnabled';
+  enabled: boolean;
+}
+
+export interface AskAnsh {
+  type: 'askAnsh';
+}
+
+export interface RequestTimeline {
+  type: 'requestTimeline';
+  id: number;
+}
+
+export interface AnswerPermission {
+  type: 'answerPermission';
+  requestId: string;
+  behavior: PermissionBehavior;
+  answers?: PermissionAnswer[];
+}
+
+export type PermissionBehavior = 'allow' | 'deny';
+
+export interface PermissionAnswer {
+  options: number[];
+  other?: string;
+}
+
+export interface RequestTimeReport {
+  type: 'requestTimeReport';
+  from: string;
+  to: string;
+}
+
+export interface SetUsageMeterEnabled {
+  type: 'setUsageMeterEnabled';
+  enabled: boolean;
 }

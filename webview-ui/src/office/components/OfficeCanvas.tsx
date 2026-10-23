@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 
+import { openAnshPanel } from '../../ansh/anshStore.js';
 import {
   CAMERA_FOLLOW_LERP,
   CAMERA_FOLLOW_SNAP_THRESHOLD,
+  MOUSE_DRAG_PAN_THRESHOLD_PX,
   OFFICE_CANVAS_TEST_ID,
   PAN_MARGIN_FRACTION,
   ZOOM_MAX,
@@ -10,10 +12,14 @@ import {
   ZOOM_SCROLL_THRESHOLD,
 } from '../../constants.js';
 import { unlockAudio } from '../../notificationSound.js';
+import { furnitureWithSignals } from '../../signals/officeSignals.js';
+import { openTasksBoard } from '../../tasks/tasksStore.js';
 import { transport } from '../../transport/index.js';
+import { pastDragThreshold, stepZoom } from '../camera.js';
 import { furnitureAt } from '../editor/editorActions.js';
 import { buildEditorRenderState } from '../editor/editorRenderState.js';
 import type { EditorState } from '../editor/editorState.js';
+import { renderConfetti } from '../engine/celebrationRender.js';
 import { startGameLoop } from '../engine/gameLoop.js';
 import type { OfficeState } from '../engine/officeState.js';
 import type {
@@ -26,6 +32,20 @@ import { renderFrame } from '../engine/renderer.js';
 import { EditTool, TILE_SIZE } from '../types.js';
 import { computeNormalModeCursor } from './officeCanvasCursor.js';
 import { useCanvasTouchGestures } from './useCanvasTouchGestures.js';
+import { useKeyboardPan } from './useKeyboardPan.js';
+
+/** A left-button press that may turn into a pan: where it started, the pan
+ *  then, and whether it has crossed the drag threshold yet. */
+interface PendingDragPan {
+  mouseX: number;
+  mouseY: number;
+  panX: number;
+  panY: number;
+  active: boolean;
+  /** Editor only: the press landed on empty space, which deselects the placed
+   *  item — on release, and only if the press stayed a click. */
+  deselectOnClick: boolean;
+}
 
 /**
  * Cursor for a furniture drag that has started moving: 'copy' — the platform's
@@ -63,6 +83,8 @@ interface OfficeCanvasProps {
    *  character fires onClick (opens its terminal). Desktop keeps single-click
    *  focus with tap-again-to-deselect. */
   tapSelectsFirst?: boolean;
+  /** The user panned by hand (any input) — auto-fit stops managing the camera. */
+  onManualCamera?: () => void;
 }
 
 export function OfficeCanvas({
@@ -83,6 +105,7 @@ export function OfficeCanvas({
   showAreas,
   activeAreaLabel,
   tapSelectsFirst = false,
+  onManualCamera,
 }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -90,6 +113,10 @@ export function OfficeCanvas({
   // Middle-mouse pan state (imperative, no re-renders)
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 });
+  // Left-button drag-to-pan: armed on press, live past the threshold. A drag
+  // that panned swallows the click the browser fires on release.
+  const dragPanRef = useRef<PendingDragPan | null>(null);
+  const suppressClickRef = useRef(false);
   // Delete/rotate button bounds (updated each frame by renderer)
   const deleteButtonBoundsRef = useRef<DeleteButtonBounds | null>(null);
   const rotateButtonBoundsRef = useRef<RotateButtonBounds | null>(null);
@@ -116,6 +143,13 @@ export function OfficeCanvas({
     },
     [officeState, zoom],
   );
+
+  // Every manual pan — middle or left drag, wheel, keys, touch — takes the
+  // camera back from character follow and the greeter, and from auto-fit.
+  const beginManualPan = useCallback(() => {
+    officeState.breakCameraFollow();
+    onManualCamera?.();
+  }, [officeState, onManualCamera]);
 
   // Resize canvas backing store to device pixels (no DPR transform on ctx)
   const resizeCanvas = useCallback(() => {
@@ -188,7 +222,11 @@ export function OfficeCanvas({
         // Build selection render state
         const selectionRender: SelectionRenderState = {
           selectedAgentId: officeState.selectedAgentId,
-          hoveredAgentId: officeState.hoveredAgentId,
+          // A hovered NPC gets the same outline as a hovered agent.
+          hoveredAgentId:
+            officeState.hoveredAgentId ??
+            officeState.npcs.characterOf(officeState.npcs.hovered)?.id ??
+            null,
           hoveredTile: officeState.hoveredTile,
           seats: officeState.seats,
           characters: officeState.characters,
@@ -200,7 +238,10 @@ export function OfficeCanvas({
           w,
           h,
           officeState.tileMap,
-          officeState.furniture,
+          // Runtime-only trouble icons (desk fire / alarm lamp); never while editing.
+          isEditMode
+            ? officeState.furniture
+            : furnitureWithSignals(officeState, officeState.furniture),
           officeState.getCharacters(),
           zoom,
           panRef.current.x,
@@ -218,6 +259,7 @@ export function OfficeCanvas({
           officeState.pets,
         );
         offsetRef.current = { x: offsetX, y: offsetY };
+        renderConfetti(ctx, officeState.celebrations.bursts, offsetX, offsetY, zoom); // phase B
 
         // Store delete/rotate button bounds for hit-testing
         deleteButtonBoundsRef.current = editorRender?.deleteButtonBounds ?? null;
@@ -312,6 +354,25 @@ export function OfficeCanvas({
         const dy = (e.clientY - panStartRef.current.mouseY) * dpr;
         panRef.current = clampPan(panStartRef.current.panX + dx, panStartRef.current.panY + dy);
         return;
+      }
+
+      // Left-button drag: a pan once past the threshold, until then the
+      // press is still a click (hover and the editor ghost carry on below).
+      const drag = dragPanRef.current;
+      if (drag) {
+        const cssDX = e.clientX - drag.mouseX;
+        const cssDY = e.clientY - drag.mouseY;
+        if (!drag.active && pastDragThreshold(cssDX, cssDY, MOUSE_DRAG_PAN_THRESHOLD_PX)) {
+          drag.active = true;
+          beginManualPan();
+          const canvas = canvasRef.current;
+          if (canvas) canvas.style.cursor = 'grabbing';
+        }
+        if (drag.active) {
+          const dpr = window.devicePixelRatio || 1;
+          panRef.current = clampPan(drag.panX + cssDX * dpr, drag.panY + cssDY * dpr);
+          return;
+        }
       }
 
       if (isEditMode) {
@@ -432,6 +493,11 @@ export function OfficeCanvas({
         });
       }
       officeState.hoveredAgentId = hitId;
+      // Phase M NPCs: a name label on hover; the Manager is clickable.
+      const npc =
+        hitId === null && petId === null ? officeState.getNpcAt(pos.worldX, pos.worldY) : null;
+      officeState.npcs.hovered = npc;
+      if (npc === 'manager' && canvas) canvas.style.cursor = 'pointer';
     },
     [
       officeState,
@@ -445,17 +511,31 @@ export function OfficeCanvas({
       hitTestDeleteButton,
       hitTestRotateButton,
       clampPan,
+      beginManualPan,
     ],
   );
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       unlockAudio();
+      // A fresh press: whatever the last one swallowed, this one's click counts.
+      suppressClickRef.current = false;
+      dragPanRef.current = null;
+      const armDragPan = (deselectOnClick: boolean) => {
+        dragPanRef.current = {
+          mouseX: e.clientX,
+          mouseY: e.clientY,
+          panX: panRef.current.x,
+          panY: panRef.current.y,
+          active: false,
+          deselectOnClick,
+        };
+      };
       // Middle mouse button (button 1) starts panning
       if (e.button === 1) {
         e.preventDefault();
         // Break camera follow + greeter centering on manual pan
-        officeState.breakCameraFollow();
+        beginManualPan();
         isPanningRef.current = true;
         panStartRef.current = {
           mouseX: e.clientX,
@@ -488,7 +568,15 @@ export function OfficeCanvas({
         return;
       }
 
-      if (!isEditMode) return;
+      if (!isEditMode) {
+        // Left press off any character may become a drag-pan; on a character
+        // it stays a click (select / focus).
+        if (e.button !== 0) return;
+        const pos = screenToWorld(e.clientX, e.clientY);
+        if (pos && officeState.getCharacterAt(pos.worldX, pos.worldY) !== null) return;
+        armDragPan(false);
+        return;
+      }
 
       // Check rotate/delete button hit first
       const pos = screenToWorld(e.clientX, e.clientY);
@@ -507,9 +595,9 @@ export function OfficeCanvas({
       const actAsSelect =
         editorState.activeTool === EditTool.SELECT ||
         (editorState.activeTool === EditTool.FURNITURE_PLACE && editorState.placing === null);
-      if (actAsSelect && tile) {
-        const hitFurniture = furnitureAt(officeState.getLayout(), tile.col, tile.row);
-        if (hitFurniture) {
+      if (actAsSelect) {
+        const hitFurniture = tile ? furnitureAt(officeState.getLayout(), tile.col, tile.row) : null;
+        if (tile && hitFurniture) {
           // Start drag — record offset from furniture's top-left. Alt at press
           // time means "drag out a copy"; mousemove keeps it in sync after that.
           editorState.startDrag(
@@ -521,11 +609,11 @@ export function OfficeCanvas({
             e.altKey,
           );
           return;
-        } else {
-          // Clicked empty space — deselect
-          editorState.clearSelection();
-          onEditorSelectionChange();
         }
+        // Empty space (or off the grid): a drag here pans. A click on an empty
+        // tile deselects the placed item — on release, so a pan keeps it.
+        armDragPan(tile !== null);
+        return;
       }
 
       // Non-select tools: start paint drag
@@ -542,12 +630,12 @@ export function OfficeCanvas({
       screenToWorld,
       onEditorTileAction,
       onEditorEraseAction,
-      onEditorSelectionChange,
       onDeleteSelected,
       onRotateSelected,
       hitTestDeleteButton,
       hitTestRotateButton,
       panRef,
+      beginManualPan,
     ],
   );
 
@@ -565,6 +653,20 @@ export function OfficeCanvas({
         // entry instead of bundling into this one.
         editorState.endStroke();
         return;
+      }
+
+      // Left-drag pan (or the click it never became)
+      const drag = dragPanRef.current;
+      dragPanRef.current = null;
+      if (drag?.active) {
+        suppressClickRef.current = true;
+        const canvas = canvasRef.current;
+        if (canvas) canvas.style.cursor = isEditMode ? 'crosshair' : 'default';
+        return;
+      }
+      if (drag?.deselectOnClick) {
+        editorState.clearSelection();
+        onEditorSelectionChange();
       }
 
       // Handle drag-to-move completion
@@ -635,6 +737,18 @@ export function OfficeCanvas({
         return;
       }
 
+      // The Manager opens the Tasks board (phase M), Ansh his thoughts. Not
+      // selectable: NPCs aren't agents.
+      const npc = officeState.getNpcAt(pos.worldX, pos.worldY);
+      if (npc === 'manager') {
+        openTasksBoard('board');
+        return;
+      }
+      if (npc === 'ansh') {
+        openAnshPanel();
+        return;
+      }
+
       // Pet hit: toggle the heart bubble.
       const petId = officeState.getPetAt(pos.worldX, pos.worldY);
       if (petId !== null) {
@@ -646,6 +760,9 @@ export function OfficeCanvas({
         }
         return;
       }
+
+      // Fun: the Lounge radio toggles its lo-fi loop.
+      if (officeState.fun.handleTap(pos.worldX, pos.worldY)) return;
 
       // No agent hit — check seat click while agent is selected
       if (officeState.selectedAgentId !== null) {
@@ -689,6 +806,11 @@ export function OfficeCanvas({
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
+      // The release of a drag-pan is not a click on whatever it ended over.
+      if (suppressClickRef.current) {
+        suppressClickRef.current = false;
+        return;
+      }
       if (isEditMode) return; // handled by mouseDown/mouseUp
       performTap(e.clientX, e.clientY);
     },
@@ -697,6 +819,10 @@ export function OfficeCanvas({
 
   const handleMouseLeave = useCallback(() => {
     isPanningRef.current = false;
+    // A drag-pan that wandered off and back must not end in a click either
+    // (mousedown clears this again).
+    if (dragPanRef.current?.active) suppressClickRef.current = true;
+    dragPanRef.current = null;
     isEraseDraggingRef.current = false;
     editorState.isDragging = false;
     editorState.endStroke();
@@ -704,6 +830,7 @@ export function OfficeCanvas({
     editorState.ghostCol = -1;
     editorState.ghostRow = -1;
     officeState.hoveredAgentId = null;
+    officeState.npcs.hovered = null;
     officeState.hoveredTile = null;
 
     // Reset cursor in non-edit mode so pointer doesn't get stuck after hovering a pet.
@@ -760,7 +887,7 @@ export function OfficeCanvas({
         if (Math.abs(zoomAccumulatorRef.current) >= ZOOM_SCROLL_THRESHOLD) {
           const delta = zoomAccumulatorRef.current < 0 ? 1 : -1;
           zoomAccumulatorRef.current = 0;
-          const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom + delta));
+          const newZoom = stepZoom(zoom, delta, ZOOM_MIN, ZOOM_MAX);
           if (newZoom !== zoom) {
             onZoomChange(newZoom);
           }
@@ -768,14 +895,14 @@ export function OfficeCanvas({
       } else {
         // Pan via trackpad two-finger scroll or mouse wheel
         const dpr = window.devicePixelRatio || 1;
-        officeState.breakCameraFollow();
+        beginManualPan();
         panRef.current = clampPan(
           panRef.current.x - e.deltaX * dpr,
           panRef.current.y - e.deltaY * dpr,
         );
       }
     },
-    [zoom, onZoomChange, officeState, panRef, clampPan],
+    [zoom, onZoomChange, panRef, clampPan, beginManualPan],
   );
 
   // Attach wheel listener with { passive: false } so preventDefault() works.
@@ -795,8 +922,17 @@ export function OfficeCanvas({
     onZoomChange,
     panRef,
     clampPan,
-    onManualPan: () => officeState.breakCameraFollow(),
+    onManualPan: beginManualPan,
     onTap: performTap,
+  });
+
+  // Arrow keys everywhere; WASD too outside the editor (letters are its keys).
+  useKeyboardPan({
+    zoom,
+    panRef,
+    clampPan,
+    letters: !isEditMode,
+    onManualPan: beginManualPan,
   });
 
   // Prevent default middle-click browser behavior (auto-scroll)
