@@ -328,6 +328,13 @@ reload reattaches to a still-running Claude session.
 - `launchStandaloneAgent()`: PTY-backed mirror of the VS Code launch path, reusing
   `buildLaunchCommand`, pre-registering the expected JSONL, polling for it, and wiring the
   existing file-watcher + session-router machinery.
+- `resolveLaunchCommand()` (`server/src/terminal/resolveExecutable.ts`): the Windows-only lookup
+  of the provider's bare command before the spawn. node-pty's ConPTY backend searches PATH
+  without PATHEXT, so `claude` never found `claude.exe` (`File not found: ` with an empty
+  path); a `.cmd`/`.bat` shim (an npm global install) is run through `cmd.exe /d /s /c`, with
+  the command line passed as ONE pre-escaped string because node-pty appends a string verbatim
+  but re-quotes an array. Pure (platform, env and the file probe are injected); a passthrough
+  everywhere else.
 - `standalone` `launchAgent` / `closeAgent` handling (close now kills the PTY).
 - `GET /terminal/:agentId` WS, token-authenticated; `launchAgent`/`closeAgent` honoured on privileged `/ws` only.
 - Three additive AsyncAPI `ServerMessage` variants.
@@ -382,10 +389,12 @@ degradation path (see open question 3).
 - **Beta dependency.** `@lydell/node-pty` is `1.2.0-beta.12`. Mitigated by optionality, the
   fallback candidate list, and graceful degradation, but it is a real supply-chain call that
   deserves a maintainer's sign-off.
-- **Windows untested.** ConPTY is claimed by prebuilds but not exercised here. The e2e terminal
-  spec (`e2e/tests/standalone/terminal.spec.ts`) covers launch → drawer → I/O → reload → close on
-  macOS/Linux, but skips the PTY-launch path on Windows: it spawns `claude` directly (no shell
-  hop), and running a `.cmd` shim that way is exactly the untested part.
+- **Windows lightly tested.** The ConPTY launch of a native `claude.exe` has been exercised by
+  hand on Windows 11 (it needs the bare-name lookup in `resolveExecutable.ts`; without it the
+  spawn failed with `File not found: `). The `cmd.exe` hop for a `.cmd` shim is unit-tested,
+  not yet exercised end to end. The e2e terminal spec (`e2e/tests/standalone/terminal.spec.ts`)
+  covers launch → drawer → I/O → reload → close on macOS/Linux and still skips on Windows, where
+  its mock is exactly such a `.cmd` shim.
 - **`npx` install size.** Adds one prebuilt `.node` (~100–200 KB) for the host platform only.
 - **Non-loopback `--host`.** A user who sets `--host 0.0.0.0` exposes a token-guarded shell.
   Warned at startup; not blocked (blocking would be a behavior change to an existing flag).

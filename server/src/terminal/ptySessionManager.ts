@@ -13,6 +13,7 @@
 
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
+import * as fs from 'fs';
 
 import {
   TERMINAL_DEFAULT_COLS,
@@ -24,6 +25,8 @@ import {
 } from '../constants.js';
 import type { IPty, PtyModule } from './ptyModule.js';
 import { resolvePtyModule } from './ptyModule.js';
+import type { ResolvedLaunch } from './resolveExecutable.js';
+import { resolveLaunchCommand } from './resolveExecutable.js';
 
 export interface CreatePtySessionOptions {
   agentId: number;
@@ -35,6 +38,15 @@ export interface CreatePtySessionOptions {
   cols?: number;
   rows?: number;
 }
+
+/** Turns a provider's platform-agnostic launch into what the PTY module spawns,
+ *  given the env the PTY will receive. Injectable so tests never depend on what
+ *  the host's PATH happens to hold. */
+export type LaunchCommandResolver = (
+  command: string,
+  args: string[],
+  env: Record<string, string>,
+) => ResolvedLaunch | null;
 
 export interface PtyExit {
   exitCode: number;
@@ -200,9 +212,11 @@ export class PtySessionManager {
    *  to the PTY module failing to load. Recorded in the server registry. */
   private disabledByOperator = false;
 
-  /** Injectable for tests; production resolves the real optional native module. */
+  /** Both injectable for tests; production resolves the real optional native
+   *  module and looks the launch command up on the host itself. */
   constructor(
     private readonly resolve: () => ReturnType<typeof resolvePtyModule> = resolvePtyModule,
+    private readonly resolveLaunch: LaunchCommandResolver = resolveLaunchOnHost,
   ) {}
 
   /**
@@ -267,7 +281,7 @@ export class PtySessionManager {
     const rows = options.rows ?? TERMINAL_DEFAULT_ROWS;
     const session = new PtySession(
       options.agentId,
-      spawnPty(module, options, cols, rows),
+      spawnPty(module, options, cols, rows, this.resolveLaunch),
       cols,
       rows,
     );
@@ -331,6 +345,7 @@ function spawnPty(
   options: CreatePtySessionOptions,
   cols: number,
   rows: number,
+  resolveLaunch: LaunchCommandResolver,
 ): IPty {
   // Drop undefined values: process.env is `string | undefined`-valued, but the
   // PTY env must be all-strings.
@@ -340,11 +355,44 @@ function spawnPty(
   }
   Object.assign(env, options.env ?? {}, { TERM: TERMINAL_TERM_NAME });
 
-  return module.spawn(options.command, options.args, {
+  // On Windows node-pty looks a bare name up on PATH without PATHEXT, so
+  // `claude` never finds claude.exe: resolve it first, against the env the
+  // child gets (resolveExecutable.ts). A passthrough everywhere else. When
+  // nothing matches, say so plainly, then let the module fail as it always has.
+  const launch = resolveLaunch(options.command, options.args, env);
+  if (!launch) {
+    console.warn(
+      `[Pixel Agents] Terminal: "${options.command}" was not found on PATH (no PATHEXT match in any PATH directory); spawning it as given`,
+    );
+  }
+  const { file, args } = launch ?? { file: options.command, args: options.args };
+
+  return module.spawn(file, args, {
     name: TERMINAL_TERM_NAME,
     cols,
     rows,
     cwd: options.cwd,
     env,
   });
+}
+
+/** Production resolver: the host's platform and filesystem. */
+function resolveLaunchOnHost(
+  command: string,
+  args: string[],
+  env: Record<string, string>,
+): ResolvedLaunch | null {
+  return resolveLaunchCommand(command, args, {
+    platform: process.platform,
+    env,
+    isFile: isRegularFile,
+  });
+}
+
+function isRegularFile(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
 }

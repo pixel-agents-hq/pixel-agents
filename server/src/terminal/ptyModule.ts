@@ -39,7 +39,10 @@ export interface PtySpawnOptions {
 }
 
 export interface PtyModule {
-  spawn(file: string, args: string[], options: PtySpawnOptions): IPty;
+  /** `args` as argv, or (Windows only) one pre-escaped command-line string
+   *  that node-pty appends verbatim -- see resolveExecutable.ts for why the
+   *  cmd.exe hop needs that form. */
+  spawn(file: string, args: string[] | string, options: PtySpawnOptions): IPty;
 }
 
 /** Outcome of resolving a PTY implementation. */

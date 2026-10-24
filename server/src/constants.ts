@@ -157,6 +157,26 @@ export const DIRECTORY_WRITE_FAILED_REASON =
  *  embedded (VS Code) server still mints a fresh token per process. */
 export const STANDALONE_TOKEN_FILE_NAME = 'standalone-token';
 
+// ── Windows executable resolution (standalone PTY launch) ──
+// node-pty's ConPTY backend looks a bare command name up on PATH without
+// PATHEXT, so the resolver in terminal/resolveExecutable.ts does it first.
+/** Windows' own PATHEXT default, used when the env carries none. */
+export const WINDOWS_DEFAULT_PATHEXT = ['.COM', '.EXE', '.BAT', '.CMD'] as const;
+/** Script extensions CreateProcess cannot run directly: they go through cmd.exe. */
+export const WINDOWS_SHELL_SCRIPT_EXTENSIONS = ['.cmd', '.bat'] as const;
+/** Command interpreter for those scripts when the env has no ComSpec. */
+export const WINDOWS_DEFAULT_COMSPEC = 'cmd.exe';
+/** cmd.exe flags for running one command string: skip AutoRun (/d), strip
+ *  exactly the outer quotes of the string (/s), run it and exit (/c) -- the
+ *  set Node's child_process uses for `shell: true`. */
+export const WINDOWS_CMD_FLAGS = ['/d', '/s', '/c'] as const;
+/** Env variable names the resolver reads. Matched case-insensitively: a plain
+ *  object copied from process.env keeps the host's spelling (`Path` on most
+ *  Windows installs), unlike process.env itself. */
+export const WINDOWS_PATH_ENV = 'PATH';
+export const WINDOWS_PATHEXT_ENV = 'PATHEXT';
+export const WINDOWS_COMSPEC_ENV = 'ComSpec';
+
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';

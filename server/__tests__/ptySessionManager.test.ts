@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { TERMINAL_MIRROR_SCROLLBACK_LINES } from '../src/constants.js';
 import type { IPty, PtyModule, PtyModuleResolution } from '../src/terminal/ptyModule.js';
+import type { LaunchCommandResolver } from '../src/terminal/ptySessionManager.js';
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
 
 /**
@@ -48,10 +49,17 @@ class FakePty implements IPty {
 interface Harness {
   manager: PtySessionManager;
   spawned: FakePty[];
-  spawnArgs: Array<{ file: string; args: string[]; options: Record<string, unknown> }>;
+  spawnArgs: Array<{ file: string; args: string[] | string; options: Record<string, unknown> }>;
 }
 
-function harness(overrides: Partial<PtyModuleResolution> = {}): Harness {
+/** The off-Windows resolver: what the manager spawns is what it was asked for.
+ *  Injected so these tests never depend on what the host's PATH holds. */
+const passthroughLaunch: LaunchCommandResolver = (command, args) => ({ file: command, args });
+
+function harness(
+  overrides: Partial<PtyModuleResolution> = {},
+  resolveLaunch: LaunchCommandResolver = passthroughLaunch,
+): Harness {
   const spawned: FakePty[] = [];
   const spawnArgs: Harness['spawnArgs'] = [];
   const module: PtyModule = {
@@ -62,12 +70,15 @@ function harness(overrides: Partial<PtyModuleResolution> = {}): Harness {
       return pty;
     },
   };
-  const manager = new PtySessionManager(() => ({
-    module,
-    moduleId: 'fake-pty',
-    reason: null,
-    ...overrides,
-  }));
+  const manager = new PtySessionManager(
+    () => ({
+      module,
+      moduleId: 'fake-pty',
+      reason: null,
+      ...overrides,
+    }),
+    resolveLaunch,
+  );
   return { manager, spawned, spawnArgs };
 }
 
@@ -361,5 +372,54 @@ describe('PtySession snapshot', () => {
     const snapshot = stripAnsi(await session.snapshot());
     expect(snapshot).toContain(`L${String(total - 1).padStart(6, '0')}`);
     expect(snapshot).not.toContain('L000000');
+  });
+});
+
+describe('PtySessionManager launch resolution', () => {
+  it('resolves the launch against the env the PTY receives and spawns the result', () => {
+    // Windows is the case this exists for: node-pty cannot find claude.exe from
+    // a bare `claude`, so the resolved file is what must reach spawn().
+    const resolveLaunch = vi.fn<LaunchCommandResolver>(() => ({
+      file: 'C:\bin\claude.exe',
+      args: ['--session-id', 'x'],
+    }));
+    const { manager, spawnArgs } = harness({}, resolveLaunch);
+    manager.create({
+      agentId: 1,
+      command: 'claude',
+      args: ['--session-id', 'x'],
+      cwd: '/tmp',
+      env: { PATH: 'C:\bin' },
+    });
+    expect(resolveLaunch).toHaveBeenCalledWith(
+      'claude',
+      ['--session-id', 'x'],
+      expect.objectContaining({ PATH: 'C:\bin', TERM: expect.any(String) }),
+    );
+    expect(spawnArgs[0].file).toBe('C:\bin\claude.exe');
+    expect(spawnArgs[0].args).toEqual(['--session-id', 'x']);
+  });
+
+  it('hands a cmd.exe command-line string to spawn verbatim', () => {
+    const commandLine = '/d /s /c "claude.cmd --session-id x"';
+    const { manager, spawnArgs } = harness({}, () => ({ file: 'cmd.exe', args: commandLine }));
+    create(manager);
+    expect(spawnArgs[0].file).toBe('cmd.exe');
+    expect(spawnArgs[0].args).toBe(commandLine);
+  });
+
+  it('spawns the command as given, with a warning, when nothing resolves', () => {
+    // The module's own error still reaches the launcher as before; the warning
+    // names the command and why the spawn is about to fail.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { manager, spawnArgs } = harness({}, () => null);
+      create(manager);
+      expect(spawnArgs[0].file).toBe('claude');
+      expect(spawnArgs[0].args).toEqual(['--session-id', 'x']);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('"claude" was not found on PATH'));
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

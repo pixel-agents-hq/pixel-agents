@@ -46,7 +46,7 @@ class FakePty implements IPty {
 interface PtyHarness {
   manager: PtySessionManager;
   spawned: FakePty[];
-  spawnArgs: Array<{ file: string; args: string[]; options: PtySpawnOptions }>;
+  spawnArgs: Array<{ file: string; args: string[] | string; options: PtySpawnOptions }>;
 }
 
 function workingPtyManager(): PtyHarness {
@@ -60,7 +60,13 @@ function workingPtyManager(): PtyHarness {
       return pty;
     },
   };
-  const manager = new PtySessionManager(() => ({ module, moduleId: 'fake-pty', reason: null }));
+  // Launch resolution is passthrough here (the off-Windows behaviour): the
+  // launcher's contract is what it ASKS the manager to spawn, and on a Windows
+  // host the real resolver would turn `claude` into wherever claude.exe lives.
+  const manager = new PtySessionManager(
+    () => ({ module, moduleId: 'fake-pty', reason: null }),
+    (command, args) => ({ file: command, args }),
+  );
   return { manager, spawned, spawnArgs };
 }
 
