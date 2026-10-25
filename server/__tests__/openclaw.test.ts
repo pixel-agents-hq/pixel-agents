@@ -1,6 +1,6 @@
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
@@ -82,7 +82,55 @@ describe('openClawProvider', () => {
 describe('AgentRuntime OpenClaw routing', () => {
   let runtime: AgentRuntime | undefined;
 
-  afterEach(() => runtime?.dispose());
+  afterEach(() => {
+    runtime?.dispose();
+    vi.useRealTimers();
+  });
+
+  it('shows text-only turns immediately, survives stale checks, and resumes the same character', () => {
+    vi.useFakeTimers();
+    const store = new AgentStateStore();
+    const messages: Array<Record<string, unknown>> = [];
+    store.on('broadcast', (message) => messages.push(message));
+    runtime = new AgentRuntime(store, claudeProvider, hookProviders);
+    runtime.watchAllSessions.current = true;
+    runtime.startStaleCheck();
+    const start = { event: 'session_start', session_id: 'reused', cwd: '/remote/workspace' };
+    runtime.handleHookEvent('openclaw', start);
+    expect(store.size).toBe(1);
+    const agent = [...store.values()][0];
+    expect(messages).toContainEqual({ type: 'agentStatus', id: agent.id, status: 'active' });
+    runtime.handleHookEvent('openclaw', { event: 'turn_end', session_id: 'reused' });
+    expect(agent.isWaiting).toBe(true);
+    vi.advanceTimersByTime(90_000);
+    expect(store.get(agent.id)).toBe(agent);
+    runtime.handleHookEvent('openclaw', start);
+    expect(store.size).toBe(1);
+    expect(agent.isWaiting).toBe(false);
+    runtime.handleHookEvent('openclaw', { event: 'session_end', session_id: 'reused' });
+    expect(store.size).toBe(0);
+    runtime.handleHookEvent('openclaw', start);
+    expect(store.size).toBe(1);
+  });
+
+  it('recovers a stale mapping after removal and retains workspace restrictions', () => {
+    const store = new AgentStateStore();
+    runtime = new AgentRuntime(store, claudeProvider, hookProviders);
+    runtime.trackHookWorkspace('/allowed');
+    runtime.handleHookEvent('openclaw', {
+      event: 'session_start',
+      session_id: 'blocked',
+      cwd: '/blocked',
+    });
+    expect(store.size).toBe(0);
+    const start = { event: 'session_start', session_id: 'recover', cwd: '/allowed' };
+    runtime.handleHookEvent('openclaw', start);
+    const id = [...store.values()][0].id;
+    runtime.removeAgent(id);
+    runtime.handleHookEvent('openclaw', start);
+    expect(store.size).toBe(1);
+    expect([...store.values()][0].id).not.toBe(id);
+  });
 
   it('creates and animates a hooks-only OpenClaw agent in a tracked workspace', () => {
     const store = new AgentStateStore();

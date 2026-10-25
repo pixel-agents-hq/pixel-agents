@@ -172,6 +172,36 @@ export class HookEventHandler {
       const transcriptPath = normEvent.transcriptPath;
       const cwd = normEvent.cwd;
       const tracked = this.isTrackedSession(transcriptPath, cwd);
+      // The relay sends this on actual model/tool activity, not on opening an
+      // empty CLI session. Adopt immediately, including text-only turns.
+      if (this.provider.id === 'openclaw') {
+        let id = this.sessionRouter.resolve(sessionId);
+        if (id !== undefined && !this.agents.has(id)) {
+          this.sessionRouter.unregister(sessionId);
+          id = undefined;
+        }
+        if (id === undefined) {
+          const existing = [...this.agents.values()].find(
+            (a) => a.providerId === 'openclaw' && a.sessionId === sessionId,
+          );
+          if (existing) {
+            this.registerAgent(sessionId, existing.id);
+          } else if (cwd) {
+            this.lifecycleCallbacks.onExternalSessionDetected?.(sessionId, undefined, cwd);
+          }
+          id = this.sessionRouter.resolve(sessionId);
+        }
+        const agent = id === undefined ? undefined : this.agents.get(id);
+        if (agent) {
+          cancelWaitingTimer(agent.id, this.waitingTimers);
+          agent.hookDelivered = true;
+          agent.isWaiting = false;
+          agent.permissionSent = false;
+          agent.lastDataAt = Date.now();
+          this.agents.broadcast({ type: 'agentStatus', id: agent.id, status: 'active' });
+        }
+        return;
+      }
       if (debug && tracked)
         console.log(`[Pixel Agents] Hook: SessionStart(source=${source}, session=${sid}...)`);
 

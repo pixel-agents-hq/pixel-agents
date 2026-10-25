@@ -1497,7 +1497,9 @@ export function startStaleExternalAgentCheck(
     const toRemove: number[] = [];
 
     for (const [id, agent] of agents) {
-      if (!agent.isExternal) continue;
+      // Remote hook providers have no local transcript to stat. Their lifecycle
+      // is owned by session_end, independently of Claude's global hooks flag.
+      if (!agent.isExternal || agent.hooksOnly) continue;
 
       // Only despawn if the JSONL file has been deleted from disk.
       // Inactive external agents stay alive so they can resume when
