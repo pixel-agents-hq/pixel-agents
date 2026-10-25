@@ -30,13 +30,13 @@ It ships in two forms from the same codebase:
 - **VS Code extension** — [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) and [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents). Agents launch into VS Code terminals; characters render in the panel area.
 - **Standalone CLI** — `npx pixel-agents` starts a local server and serves the same office as a browser app, useful for tmux, remote, and non-VS Code workflows.
 
-The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation today; Codex, Gemini, Cursor, and others are on the roadmap.
+The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation, and an experimental OpenClaw provider can visualize local OpenClaw sessions without reading their conversation content.
 
 ![Pixel Agents screenshot](webview-ui/public/office.png)
 
 ## Features
 
-- **One agent, one character** — every Claude Code terminal gets its own animated character
+- **One agent, one character** — every Claude Code terminal or active OpenClaw session gets its own animated character
 - **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
 - **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
 - **Speech bubbles** — visual indicators when an agent is waiting for input or awaiting permission
@@ -65,7 +65,7 @@ Most of this is still ahead. See [Issues](https://github.com/pixel-agents-hq/pix
 
 ## Requirements
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and/or [OpenClaw](https://github.com/openclaw/openclaw) installed and configured
 - **VS Code extension:** VS Code 1.105.0 or later
 - **Standalone CLI:** Node.js 20 or later
 - Windows, Linux, or macOS
@@ -123,6 +123,14 @@ The extension and standalone CLI can run at the same time. Each server registers
 
 Stop a standalone server with **Ctrl+C**. It removes only its own registration.
 
+### Experimental OpenClaw support
+
+When Pixel Agents starts, it can offer to install its bundled OpenClaw relay plugin. Accepting that provider-specific consent prompt runs OpenClaw's normal plugin installer and links a copy stored under `~/.pixel-agents/openclaw-plugin/`. Restart the OpenClaw gateway if OpenClaw asks you to do so.
+
+Start the VS Code extension or standalone CLI, then use OpenClaw normally in a tracked workspace. Each active OpenClaw session appears as a hooks-only character; model calls, tool calls, turn completion, and session completion drive its activity. Pixel Agents does not launch or attach to OpenClaw sessions, and OpenClaw sub-agent sessions appear independently when OpenClaw gives them their own session key.
+
+The relay is deliberately content-free. It sends only hashed session and tool identifiers, tool names, lifecycle state, and the active workspace directory to authenticated Pixel Agents servers on `127.0.0.1`. It never sends prompts, responses, message bodies, tool parameters, tool results, credentials, tokens, or transcript content. Disable the OpenClaw connection from Pixel Agents settings to uninstall the relay plugin.
+
 ## Customizing the Office
 
 Click **Layout** to edit the office:
@@ -149,14 +157,17 @@ Pixel Agents uses two Claude Code detection paths:
 - **Hooks mode** (default) — a hook script receives Claude events such as `SessionStart`, `PreToolUse`, `PermissionRequest`, and `Stop`. It discovers active Pixel Agents servers and sends authenticated events to each one.
 - **Heuristic mode** (fallback) — when hooks are unavailable, the runtime infers agent status by scanning Claude's JSONL session transcripts under `~/.claude/projects/`. Transcripts are also read in hooks mode for details not present in an event.
 
-The Claude provider normalizes both sources into a shared `AgentEvent` model. `AgentRuntime` updates the central state store, and the active transport sends typed messages to the React webview. The office renders through Canvas 2D with pathfinding and character state machines.
+The OpenClaw provider uses a bundled local plugin and typed OpenClaw lifecycle hooks. It has no transcript fallback and intentionally forwards no conversation or tool payload content.
+
+Each provider normalizes its source events into a shared `AgentEvent` model. `AgentRuntime` routes events by provider, updates the central state store, and the active transport sends typed messages to the React webview. The office renders through Canvas 2D with pathfinding and character state machines.
 
 Pixel Agents does not modify Claude Code. Its hook configuration and persistent data live under `~/.claude/` and `~/.pixel-agents/` respectively.
 
 ### Architecture
 
 - **`core/`** — provider, adapter, transport, schema, and AsyncAPI message contracts with no runtime side effects.
-- **`server/`** — shared Fastify server, agent runtime, persistence, Claude provider, transcript scanning, and standalone CLI.
+- **`server/`** — shared Fastify server, provider-aware agent runtime, persistence, provider implementations, transcript scanning, and standalone CLI.
+- **`integrations/openclaw/`** — the content-free OpenClaw lifecycle relay bundled with Pixel Agents.
 - **`adapters/vscode/`** — the VS Code adapter: terminal, persistence, and webview bridge.
 - **`webview-ui/`** — React 19, Vite, Canvas 2D, and adapter-specific transports for VS Code and browser WebSocket clients.
 
@@ -207,6 +218,7 @@ The staged output serves the combined `e2e`, `server`, and `webview` Allure repo
 
 - **Standalone will not start:** verify Node.js 20+, omit `--port` to choose a free port, or select another fixed port.
 - **An agent is missing:** confirm **Settings → Instant Detection (Hooks)** is on and that the session belongs to the current workspace. Enable **Watch All Sessions** if needed.
+- **An OpenClaw session is missing:** confirm the OpenClaw consent prompt was accepted, run `openclaw plugins list --json` and look for the loaded `pixel-agents-openclaw` plugin, then restart the gateway if the installer requested it.
 - **The UI looks disconnected:** open **Settings → Debug View** to inspect the server connection, transcript path, and latest agent data.
 - **Extension and standalone are both running:** this is supported. Current versions create separate files under `~/.pixel-agents/servers/`; stopping one does not remove the other.
 

@@ -11,15 +11,8 @@ import type { AgentState } from './types.js';
 
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
-/** Normalized hook event received from any provider's hook script via the HTTP server. */
-export interface HookEvent {
-  /** Hook event name (e.g., 'Stop', 'PermissionRequest', 'Notification') */
-  hook_event_name: string;
-  /** Claude Code session ID, maps to JSONL filename */
-  session_id: string;
-  /** Additional provider-specific fields (notification_type, tool_name, etc.) */
-  [key: string]: unknown;
-}
+/** Raw hook event received from a provider's relay via the HTTP server. */
+export type HookEvent = Record<string, unknown>;
 
 /**
  * Dispatches normalized AgentEvents to agents based on session_id.
@@ -143,12 +136,18 @@ export class HookEventHandler {
     const normalized = this.provider.normalizeHookEvent(event);
     if (!normalized) return; // unknown / uninteresting event -- silently drop
     const normEvent = normalized.event;
-    const eventName = event.hook_event_name; // retained for logs only
+    const sessionId = normalized.sessionId;
+    const eventName =
+      typeof event.hook_event_name === 'string'
+        ? event.hook_event_name
+        : typeof event.event === 'string'
+          ? event.event
+          : normEvent.kind;
     // CI / e2e diagnostic: see agentStateStore.ts debugLogBroadcast comment.
     if (process.env['PIXEL_AGENTS_DEBUG_LOG']) {
       try {
         const fs = require('fs') as typeof import('fs');
-        const sid = (event.session_id as string | undefined)?.slice(0, 8) ?? '?';
+        const sid = sessionId.slice(0, 8);
         const extras =
           normEvent.kind === 'toolStart'
             ? ` toolName=${(normEvent as { toolName?: string }).toolName}`
@@ -168,7 +167,7 @@ export class HookEventHandler {
     //   1. Confirming known agents (set hookDelivered)
     //   2. /clear reassignment (source=clear + pendingClear agent)
     if (normEvent.kind === 'sessionStart') {
-      const sid = event.session_id.slice(0, 8);
+      const sid = sessionId.slice(0, 8);
       const source = normEvent.source ?? 'unknown';
       const transcriptPath = normEvent.transcriptPath;
       const cwd = normEvent.cwd;
@@ -177,7 +176,7 @@ export class HookEventHandler {
         console.log(`[Pixel Agents] Hook: SessionStart(source=${source}, session=${sid}...)`);
 
       // Check registered mapping
-      const existingAgentId = this.sessionRouter.resolve(event.session_id);
+      const existingAgentId = this.sessionRouter.resolve(sessionId);
       if (existingAgentId !== undefined) {
         const agent = this.agents.get(existingAgentId);
         if (agent) {
@@ -191,7 +190,10 @@ export class HookEventHandler {
       }
       // Check auto-discovery (agent exists but not yet registered for hooks)
       for (const [id, agent] of this.agents) {
-        if (agent.sessionId === event.session_id) {
+        const sameProvider = agent.providerId
+          ? agent.providerId === this.provider.id
+          : this.provider.id === 'claude';
+        if (sameProvider && agent.sessionId === sessionId) {
           this.registerAgent(agent.sessionId, id);
           agent.hookDelivered = true;
           if (debug)
@@ -217,11 +219,11 @@ export class HookEventHandler {
             if (isMatch) {
               agent.pendingClear = false;
               console.log(
-                `[Pixel Agents] Hook: Agent ${id} - /${normEvent.source} detected, reassigning to ${event.session_id}`,
+                `[Pixel Agents] Hook: Agent ${id} - /${normEvent.source} detected, reassigning to ${sessionId}`,
               );
               this.sessionRouter.unregister(agent.sessionId);
-              this.registerAgent(event.session_id, id);
-              this.lifecycleCallbacks.onSessionClear?.(id, event.session_id, transcriptPath);
+              this.registerAgent(sessionId, id);
+              this.lifecycleCallbacks.onSessionClear?.(id, sessionId, transcriptPath);
               return;
             }
           }
@@ -239,8 +241,8 @@ export class HookEventHandler {
           console.log(
             `[Pixel Agents] Hook: SessionStart(source=${source}) -> pending external session ${sid}..., awaiting confirmation`,
           );
-        this.sessionRouter.storePending(event.session_id, {
-          sessionId: event.session_id,
+        this.sessionRouter.storePending(sessionId, {
+          sessionId,
           transcriptPath,
           cwd: cwd ?? '',
         });
@@ -255,21 +257,21 @@ export class HookEventHandler {
 
     // --- All other events: standard agent lookup ---
     // If SessionEnd arrives for a pending external session, discard it (transient session)
-    if (normEvent.kind === 'sessionEnd' && this.sessionRouter.hasPending(event.session_id)) {
-      this.sessionRouter.discardPending(event.session_id);
+    if (normEvent.kind === 'sessionEnd' && this.sessionRouter.hasPending(sessionId)) {
+      this.sessionRouter.discardPending(sessionId);
       if (debug)
         console.log(
-          `[Pixel Agents] Hook: SessionEnd discarded pending external session ${event.session_id.slice(0, 8)}...`,
+          `[Pixel Agents] Hook: SessionEnd discarded pending external session ${sessionId.slice(0, 8)}...`,
         );
       return;
     }
 
     // If a confirmation event arrives for a pending external session, create the agent first
-    const pending = this.sessionRouter.confirmPending(event.session_id);
+    const pending = this.sessionRouter.confirmPending(sessionId);
     if (pending) {
       if (debug)
         console.log(
-          `[Pixel Agents] Hook: ${eventName} confirmed external session ${event.session_id.slice(0, 8)}..., notifying host`,
+          `[Pixel Agents] Hook: ${eventName} confirmed external session ${sessionId.slice(0, 8)}..., notifying host`,
         );
       this.lifecycleCallbacks.onExternalSessionDetected?.(
         pending.sessionId,
@@ -281,10 +283,13 @@ export class HookEventHandler {
       return;
     }
 
-    let agentId = this.sessionRouter.resolve(event.session_id);
+    let agentId = this.sessionRouter.resolve(sessionId);
     if (agentId === undefined) {
       for (const [id, agent] of this.agents) {
-        if (agent.sessionId === event.session_id) {
+        const sameProvider = agent.providerId
+          ? agent.providerId === this.provider.id
+          : this.provider.id === 'claude';
+        if (sameProvider && agent.sessionId === sessionId) {
           this.registerAgent(agent.sessionId, id);
           agentId = id;
           break;
@@ -297,17 +302,20 @@ export class HookEventHandler {
       // hook event arrives before registerAgent is called after launchNewTerminal).
       // Silently drop events for sessions we have no record of
       // (e.g. other projects with Watch All OFF).
-      const isPending = this.sessionRouter.hasPending(event.session_id);
-      const hasBuffered = this.sessionRouter.hasBuffered(event.session_id);
+      const isPending = this.sessionRouter.hasPending(sessionId);
+      const hasBuffered = this.sessionRouter.hasBuffered(sessionId);
       const hasUnregisteredAgents = [...this.agents.values()].some(
-        (a) => a.sessionId && !this.sessionRouter.hasSession(a.sessionId),
+        (a) =>
+          (a.providerId ?? 'claude') === this.provider.id &&
+          a.sessionId &&
+          !this.sessionRouter.hasSession(a.sessionId),
       );
       if (isPending || hasBuffered || hasUnregisteredAgents) {
         if (debug)
           console.log(
-            `[Pixel Agents] Hook: ${eventName} - unknown session ${event.session_id.slice(0, 8)}..., buffering`,
+            `[Pixel Agents] Hook: ${eventName} - unknown session ${sessionId.slice(0, 8)}..., buffering`,
           );
-        this.sessionRouter.bufferEvent(_providerId, event);
+        this.sessionRouter.bufferEvent(_providerId, { ...event, session_id: sessionId });
       }
       return;
     }
@@ -318,7 +326,7 @@ export class HookEventHandler {
     agent.hookDelivered = true;
     if (debug)
       console.log(
-        `[Pixel Agents] Hook: Agent ${agentId} - ${eventName} (session=${event.session_id.slice(0, 8)}...)`,
+        `[Pixel Agents] Hook: Agent ${agentId} - ${eventName} (session=${sessionId.slice(0, 8)}...)`,
       );
 
     // Dispatch on normalized AgentEvent.kind, not raw hook event names.
@@ -333,11 +341,11 @@ export class HookEventHandler {
         // Both PostToolUse and PostToolUseFailure normalize to toolEnd. Distinguishing
         // them inside handlers would require extra info; the existing behavior was
         // identical for both (agentToolDone + clear currentHookToolId), so one branch suffices.
-        return this.handlePostToolUse(agent, agentId);
+        return this.handlePostToolUse(normEvent, agent, agentId);
       case 'subagentStart':
-        return this.provider.team ? this.handleSubagentStart(event, agent, agentId) : undefined;
+        return this.handleSubagentStart(normEvent, event, sessionId, agent, agentId);
       case 'subagentEnd':
-        return this.provider.team ? this.handleSubagentStop(agent, agentId) : undefined;
+        return this.handleSubagentStop(normEvent, agent, agentId);
       case 'permissionRequest':
         // Handles BOTH the PermissionRequest hook AND the Notification(permission_prompt)
         // hook -- normalizeHookEvent collapses them into one event kind.
@@ -416,7 +424,7 @@ export class HookEventHandler {
     const toolName = normEvent.toolName;
     const toolInput = (normEvent.input as Record<string, unknown> | undefined) ?? {};
     const status = this.provider.formatToolStatus(toolName, toolInput);
-    const hookToolId = `hook-${Date.now()}`;
+    const hookToolId = normEvent.toolId || `hook-${Date.now()}`;
 
     // Track for PostToolUse/SubagentStart correlation (always, even if suppressed below).
     // currentHookIsTeammateSpawn is the authoritative teammate-vs-subagent discriminator.
@@ -436,6 +444,12 @@ export class HookEventHandler {
     agent.isWaiting = false;
     agent.permissionSent = false;
     agent.hadToolsInTurn = true;
+
+    if (agent.hooksOnly) {
+      agent.activeToolIds.add(hookToolId);
+      agent.activeToolStatuses.set(hookToolId, status);
+      agent.activeToolNames.set(hookToolId, toolName);
+    }
 
     // Send tool start + active state to webview (instant, no 500ms JSONL delay).
     // Skip for Task/Agent tools — their sub-agent characters need the stable JSONL
@@ -463,15 +477,25 @@ export class HookEventHandler {
    * Stop hook handles the idle transition. This is here for completeness and
    * to serve as a confirmation event for pending external sessions.
    */
-  private handlePostToolUse(agent: AgentState, agentId: number): void {
-    if (agent.currentHookToolId) {
+  private handlePostToolUse(
+    normEvent: Extract<AgentEvent, { kind: 'toolEnd' }>,
+    agent: AgentState,
+    agentId: number,
+  ): void {
+    const toolId = normEvent.toolId === 'current' ? agent.currentHookToolId : normEvent.toolId;
+    if (toolId) {
       // Suppress tool display when lead has inline teammates (see handlePreToolUse)
       if (!hasInlineTeammates(agentId, this.agents)) {
         this.agents.broadcast({
           type: 'agentToolDone',
           id: agentId,
-          toolId: agent.currentHookToolId,
+          toolId,
         });
+      }
+      if (agent.hooksOnly) {
+        agent.activeToolIds.delete(toolId);
+        agent.activeToolStatuses.delete(toolId);
+        agent.activeToolNames.delete(toolId);
       }
       agent.currentHookToolId = undefined;
       agent.currentHookToolName = undefined;
@@ -492,8 +516,15 @@ export class HookEventHandler {
    * For old-style Task/Agent subagents (inline, no run_in_background), creates
    * the child character immediately via hooks without waiting for JSONL polling.
    */
-  private handleSubagentStart(event: HookEvent, agent: AgentState, agentId: number): void {
-    const agentType = this.provider.team?.extractTeammateNameFromEvent(event) ?? 'unknown';
+  private handleSubagentStart(
+    normEvent: Extract<AgentEvent, { kind: 'subagentStart' }>,
+    event: HookEvent,
+    sessionId: string,
+    agent: AgentState,
+    agentId: number,
+  ): void {
+    const agentType =
+      this.provider.team?.extractTeammateNameFromEvent(event) ?? normEvent.toolName ?? 'unknown';
 
     // Decide path: teammate spawn vs basic within-turn subagent.
     // Two conditions must BOTH hold for the teammate path:
@@ -508,7 +539,35 @@ export class HookEventHandler {
         console.log(
           `[Pixel Agents] Hook: Agent ${agentId} - SubagentStart: teammate "${agentType}" detected, triggering discovery`,
         );
-      this.lifecycleCallbacks.onTeammateDetected?.(agentId, event.session_id, agentType);
+      this.lifecycleCallbacks.onTeammateDetected?.(agentId, sessionId, agentType);
+      return;
+    }
+
+    if (!this.provider.team) {
+      const parentToolId =
+        normEvent.parentToolId === 'current' ? agent.currentHookToolId : normEvent.parentToolId;
+      if (!parentToolId) return;
+      const subToolId = normEvent.toolId;
+      const status = this.provider.formatToolStatus(normEvent.toolName, normEvent.input);
+      let subTools = agent.activeSubagentToolIds.get(parentToolId);
+      if (!subTools) {
+        subTools = new Set();
+        agent.activeSubagentToolIds.set(parentToolId, subTools);
+      }
+      subTools.add(subToolId);
+      let subNames = agent.activeSubagentToolNames.get(parentToolId);
+      if (!subNames) {
+        subNames = new Map();
+        agent.activeSubagentToolNames.set(parentToolId, subNames);
+      }
+      subNames.set(subToolId, normEvent.toolName);
+      this.agents.broadcast({
+        type: 'subagentToolStart',
+        id: agentId,
+        parentToolId,
+        toolId: subToolId,
+        status,
+      });
       return;
     }
 
@@ -561,7 +620,20 @@ export class HookEventHandler {
    *
    * For old-style Task subagents: removes the child character from the office.
    */
-  private handleSubagentStop(agent: AgentState, agentId: number): void {
+  private handleSubagentStop(
+    normEvent: Extract<AgentEvent, { kind: 'subagentEnd' }>,
+    agent: AgentState,
+    agentId: number,
+  ): void {
+    if (!this.provider.team) {
+      const parentToolId =
+        normEvent.parentToolId === 'current' ? agent.currentHookToolId : normEvent.parentToolId;
+      if (!parentToolId) return;
+      agent.activeSubagentToolIds.delete(parentToolId);
+      agent.activeSubagentToolNames.delete(parentToolId);
+      this.agents.broadcast({ type: 'subagentClear', id: agentId, parentToolId });
+      return;
+    }
     // Check if this agent has inline teammates (independent agents with leadAgentId).
     // Just mark them waiting -- SubagentStop fires per-task-iteration; teammates may
     // sit idle for minutes between lead requests before being re-invoked.

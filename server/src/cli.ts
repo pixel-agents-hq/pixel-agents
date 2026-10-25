@@ -32,7 +32,14 @@ import {
   WILDCARD_HOSTNAMES,
 } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import {
+  claudeProvider,
+  copyHookScript,
+  copyOpenClawPlugin,
+  hookProviderById,
+  hookProviders,
+  openClawProvider,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
@@ -145,6 +152,20 @@ function copyHookScriptOrReport(packageRoot: string, context = ''): boolean {
   return false;
 }
 
+function copyProviderBundleOrReport(
+  providerId: string,
+  packageRoot: string,
+  context = '',
+): boolean {
+  if (providerId === claudeProvider.id) return copyHookScriptOrReport(packageRoot, context);
+  if (providerId === openClawProvider.id) {
+    if (copyOpenClawPlugin(packageRoot)) return true;
+    console.error(`[Pixel Agents] Hooks NOT installed${context}: OpenClaw plugin missing.`);
+    return false;
+  }
+  return true;
+}
+
 // ── Terminal status reporting ─────────────────────────────────
 
 /**
@@ -244,7 +265,8 @@ async function main(): Promise<void> {
 
   try {
     // Create runtime first (before server.start, so we can pass it in)
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const runtime = new AgentRuntime(store, claudeProvider, hookProviders);
+    runtime.trackHookWorkspace(process.cwd());
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
@@ -265,10 +287,7 @@ async function main(): Promise<void> {
         // to the Claude provider alone; another provider's install must
         // neither copy it nor be blocked by it.
         grantHooksConsent(provider.id);
-        if (
-          provider.id === claudeProvider.id &&
-          !copyHookScriptOrReport(packageRoot, ' (user toggle)')
-        ) {
+        if (!copyProviderBundleOrReport(provider.id, packageRoot, ' (user toggle)')) {
           return;
         }
         try {

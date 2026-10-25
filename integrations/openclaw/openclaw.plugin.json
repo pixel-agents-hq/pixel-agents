@@ -1,0 +1,15 @@
+{
+  "id": "pixel-agents-openclaw",
+  "name": "Pixel Agents OpenClaw Relay",
+  "description": "Projects content-free OpenClaw lifecycle events into a local Pixel Agents office.",
+  "version": "1.0.0",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
+

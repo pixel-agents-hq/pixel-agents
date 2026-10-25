@@ -1014,6 +1014,7 @@ export function adoptExternalSessionFromHook(
   sessionId: string,
   transcriptPath: string | undefined,
   cwd: string,
+  providerId: string,
   knownJsonlFiles: Set<string>,
   nextAgentIdRef: { current: number },
   agents: AgentStateStore,
@@ -1064,6 +1065,7 @@ export function adoptExternalSessionFromHook(
     if (adoptedAgent) {
       adoptedAgent.sessionId = sessionId;
       adoptedAgent.hookDelivered = true;
+      adoptedAgent.providerId = providerId;
       onAgentCreated?.(adoptedAgent);
     }
   } else {
@@ -1081,6 +1083,7 @@ export function adoptExternalSessionFromHook(
       hooksOnly: true,
       lastDataAt: Date.now(),
       directoryName,
+      providerId,
     });
     assignPaletteIfNeeded(agent, agents);
     agents.set(id, agent);

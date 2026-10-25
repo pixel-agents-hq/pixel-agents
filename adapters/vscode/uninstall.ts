@@ -10,12 +10,18 @@
  */
 import { resetHooksConfig } from '../../server/src/configPersistence.js';
 import { uninstallHooks } from '../../server/src/providers/hook/claude/claudeHookInstaller.js';
+import { uninstallOpenClawHooks } from '../../server/src/providers/hook/openclaw/openclawPluginInstaller.js';
 
 // There is no UI to surface errors to after uninstall — log and exit cleanly
 // (an unhandledRejection here would just be noise in VS Code's uninstall flow).
-uninstallHooks()
-  .catch((err: unknown) => {
-    console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
+Promise.allSettled([uninstallHooks(), uninstallOpenClawHooks()])
+  .then((results) => {
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        const err = result.reason as unknown;
+        console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   })
   .finally(() => {
     resetHooksConfig();

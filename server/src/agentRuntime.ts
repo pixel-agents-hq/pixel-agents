@@ -34,7 +34,6 @@ import {
   startFileWatching,
   startStaleExternalAgentCheck,
 } from './fileWatcher.js';
-import type { HookEvent } from './hookEventHandler.js';
 import { HookEventHandler } from './hookEventHandler.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { PathSet, pathsMatch } from './pathKey.js';
@@ -69,6 +68,8 @@ export class AgentRuntime {
   // recognized as known when a scanner rebuilds the path from the workspace folder
   // -- the two spellings differ by drive-letter case on Windows.
   readonly knownJsonlFiles = new PathSet();
+  /** Workspace roots allowed to create hooks-only agents when Watch All Sessions is off. */
+  readonly hookWorkspaceDirs = new PathSet();
   readonly projectScanTimer = { current: null as ReturnType<typeof setInterval> | null };
   readonly activeAgentId = { current: null as number | null };
   private externalScanTimer: ReturnType<typeof setInterval> | null = null;
@@ -82,12 +83,13 @@ export class AgentRuntime {
   readonly dismissalTracker = new DismissalTracker();
   /** Shadow-store watcher for unnamed background spawns (sub-agents). */
   readonly subagentWatch: SubagentWatch;
-  private hookEventHandler: HookEventHandler;
+  private hookEventHandlers = new Map<string, HookEventHandler>();
   private lifecycleCallbacks: RuntimeLifecycleCallbacks = {};
 
   constructor(
     private readonly store: AgentStateStore,
     provider: HookProvider,
+    providers: readonly HookProvider[] = [provider],
   ) {
     // Wire module-level dependencies
     setDismissalTracker(this.dismissalTracker);
@@ -142,17 +144,26 @@ export class AgentRuntime {
       }
     });
 
-    this.hookEventHandler = new HookEventHandler(
-      store,
-      this.waitingTimers,
-      this.permissionTimers,
-      provider,
-      new SessionRouter(),
-      this.watchAllSessions,
-    );
+    const registeredProviders = new Map<string, HookProvider>();
+    registeredProviders.set(provider.id, provider);
+    for (const candidate of providers) registeredProviders.set(candidate.id, candidate);
+    for (const candidate of registeredProviders.values()) {
+      const handler = new HookEventHandler(
+        store,
+        this.waitingTimers,
+        this.permissionTimers,
+        candidate,
+        new SessionRouter(),
+        this.watchAllSessions,
+      );
+      this.configureHookEventHandler(handler, candidate);
+      this.hookEventHandlers.set(candidate.id, handler);
+    }
+  }
 
-    // Wire hook lifecycle callbacks to shared agent operations
-    this.hookEventHandler.setLifecycleCallbacks({
+  /** Attach provider-aware lifecycle behavior to one hook stream. */
+  private configureHookEventHandler(handler: HookEventHandler, provider: HookProvider): void {
+    handler.setLifecycleCallbacks({
       onExternalSessionDetected: (sessionId, transcriptPath, cwd) => {
         const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
         // Teammate session of a tracked lead? Attach it as a teammate character
@@ -192,7 +203,10 @@ export class AgentRuntime {
             }
           }
         }
-        if (!isTrackedProjectDir(projectDir) && !this.watchAllSessions.current) {
+        const projectTracked =
+          isTrackedProjectDir(projectDir) ||
+          (!transcriptPath && this.hookWorkspaceDirs.has(projectDir));
+        if (!projectTracked && !this.watchAllSessions.current) {
           console.log(
             `[Pixel Agents] Hook: external session ${sessionId.slice(0, 8)}... not adopted ` +
               `(project untracked, Watch All Sessions off)`,
@@ -203,6 +217,7 @@ export class AgentRuntime {
           sessionId,
           transcriptPath,
           cwd,
+          provider.id,
           this.knownJsonlFiles,
           this.store.nextAgentId,
           this.store,
@@ -265,8 +280,10 @@ export class AgentRuntime {
       onSessionEnd: (agentId) => {
         const agent = this.store.get(agentId);
         if (!agent) return;
-        this.dismissalTracker.clearSeededMtime(agent.jsonlFile);
-        this.dismissalTracker.dismiss(agent.jsonlFile);
+        if (agent.jsonlFile) {
+          this.dismissalTracker.clearSeededMtime(agent.jsonlFile);
+          this.dismissalTracker.dismiss(agent.jsonlFile);
+        }
         // Covers real team leads AND leads of background teammates (which
         // have children but no teamName). No-op when childless.
         this.removeTeammates(agentId);
@@ -289,17 +306,26 @@ export class AgentRuntime {
 
   /** Route an incoming hook event to the appropriate agent. */
   handleHookEvent(providerId: string, event: Record<string, unknown>): void {
-    this.hookEventHandler.handleEvent(providerId, event as HookEvent);
+    this.hookEventHandlers.get(providerId)?.handleEvent(providerId, event);
   }
 
   /** Register an agent with the hook event handler for session->agent mapping. */
   registerAgent(sessionId: string, agentId: number): void {
-    this.hookEventHandler.registerAgent(sessionId, agentId);
+    const agent = this.store.get(agentId);
+    const providerId = agent?.providerId ?? 'claude';
+    this.hookEventHandlers.get(providerId)?.registerAgent(sessionId, agentId);
   }
 
   /** Unregister an agent from the hook event handler. */
   unregisterAgent(sessionId: string): void {
-    this.hookEventHandler.unregisterAgent(sessionId);
+    const agent = [...this.store.values()].find((candidate) => candidate.sessionId === sessionId);
+    const providerId = agent?.providerId ?? 'claude';
+    this.hookEventHandlers.get(providerId)?.unregisterAgent(sessionId);
+  }
+
+  /** Allow one workspace to create hooks-only agents without enabling global discovery. */
+  trackHookWorkspace(workspaceDir: string): void {
+    if (workspaceDir) this.hookWorkspaceDirs.add(workspaceDir);
   }
 
   // ── Agent removal (shared cleanup) ──
@@ -556,7 +582,7 @@ export class AgentRuntime {
 
   /** Clean up all scanners, timers, and agents. Called on shutdown. */
   dispose(): void {
-    this.hookEventHandler.dispose();
+    for (const handler of this.hookEventHandlers.values()) handler.dispose();
     this.subagentWatch.dispose();
 
     if (this.projectScanTimer.current) {
