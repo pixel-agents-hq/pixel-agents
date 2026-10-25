@@ -236,6 +236,7 @@ function hookContext(
       ? {
           actorId: opaqueId(`${namespace}:${agentId}${childKey ? `:${childKey}` : ''}`),
           displayName: childKey ? `${displayName} · subtask` : displayName,
+          isSubagent: childKey !== undefined,
         }
       : {}),
   };
@@ -254,6 +255,7 @@ async function announceSession(
     source: 'openclaw',
     ...(typeof context.actorId === 'string' ? { actor_id: context.actorId } : {}),
     ...(typeof context.displayName === 'string' ? { display_name: context.displayName } : {}),
+    ...(typeof context.isSubagent === 'boolean' ? { is_subagent: context.isSubagent } : {}),
     ...(typeof context.workspaceDir === 'string' ? { cwd: context.workspaceDir } : {}),
   });
   return id;

@@ -4,6 +4,7 @@ type Session = {
   actor: string;
   cwd: string;
   name: string;
+  isSubagent: boolean;
   working: boolean;
   tools: Map<string, Tool>;
   changed: number;
@@ -43,6 +44,7 @@ export class SessionActivityAggregator {
           actor: typeof event.actor_id === 'string' ? event.actor_id : sid,
           cwd: typeof event.cwd === 'string' ? event.cwd : '',
           name: typeof event.display_name === 'string' ? event.display_name : '',
+          isSubagent: event.is_subagent === true,
           working: true,
           tools: new Map(),
           changed: 0,
@@ -52,6 +54,7 @@ export class SessionActivityAggregator {
         session.working = true;
         if (typeof event.display_name === 'string') session.name = event.display_name;
         if (typeof event.cwd === 'string') session.cwd = event.cwd;
+        if (typeof event.is_subagent === 'boolean') session.isSubagent = event.is_subagent;
       }
     }
     if (!session) return;
@@ -108,6 +111,7 @@ export class SessionActivityAggregator {
         source: 'openclaw',
         cwd: winner.cwd,
         display_name: winner.name,
+        is_subagent: winner.isSubagent,
       });
       if (rank(winner) === 0) events.push({ event: 'turn_end', session_id: actorId });
       else if (!winner.working) {

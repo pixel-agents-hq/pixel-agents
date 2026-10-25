@@ -128,6 +128,7 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
     assert.equal(JSON.parse(sent.at(-1).options.body).cwd, '/configured-probe-workspace');
     assert.equal(JSON.parse(sent.at(-1).options.body).display_name, 'Friendly Probe');
     const firstActor = JSON.parse(sent.at(-1).options.body).session_id;
+    assert.equal(JSON.parse(sent.at(-1).options.body).is_subagent, false);
     await hooks.get('model_call_started')(
       {},
       { agentId: 'probe', sessionKey: 'agent:probe:another-chat' },
@@ -152,6 +153,7 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
     const childActor = JSON.parse(sent.at(-1).options.body).session_id;
     assert.notEqual(childActor, firstActor, 'genuine delegated children remain distinct');
     assert.equal(JSON.parse(sent.at(-1).options.body).display_name, 'Friendly Probe · subtask');
+    assert.equal(JSON.parse(sent.at(-1).options.body).is_subagent, true);
     await hooks.get('subagent_progress')({
       phase: 'ended',
       childSessionKey: childContext.sessionKey,

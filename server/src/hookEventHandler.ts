@@ -2,7 +2,7 @@ import * as path from 'path';
 
 import type { AgentEvent, HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import { SESSION_END_GRACE_MS } from './constants.js';
+import { OPENCLAW_SUBAGENT_INACTIVITY_MS, SESSION_END_GRACE_MS } from './constants.js';
 import type { SessionRouter } from './sessionRouter.js';
 import { getInlineTeammates, hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -51,6 +51,31 @@ interface SessionLifecycleCallbacks {
 
 export class HookEventHandler {
   private lifecycleCallbacks: SessionLifecycleCallbacks = {};
+  private openClawSubagentTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+  private clearSubagentLease(agentId: number): void {
+    const timer = this.openClawSubagentTimers.get(agentId);
+    if (timer) clearTimeout(timer);
+    this.openClawSubagentTimers.delete(agentId);
+  }
+
+  private refreshSubagentLease(agent: AgentState): void {
+    if (this.provider.id !== 'openclaw') return;
+    this.clearSubagentLease(agent.id);
+    if (agent.openClawSubagent !== true) return;
+    const timer = setTimeout(() => {
+      this.openClawSubagentTimers.delete(agent.id);
+      if (this.agents.get(agent.id) !== agent || agent.openClawSubagent !== true) return;
+      this.unregisterAgent(agent.sessionId);
+      this.handleSessionEnd(
+        { kind: 'sessionEnd', reason: 'subagent_inactivity_timeout' },
+        agent,
+        agent.id,
+      );
+    }, OPENCLAW_SUBAGENT_INACTIVITY_MS);
+    timer.unref?.();
+    this.openClawSubagentTimers.set(agent.id, timer);
+  }
 
   /** Highest HookProvider.protocolVersion this handler understands. */
   private static readonly SUPPORTED_PROTOCOL_VERSION = 1;
@@ -113,6 +138,8 @@ export class HookEventHandler {
 
   /** Remove an agent's session mapping (called on agent removal/terminal close). */
   unregisterAgent(sessionId: string): void {
+    const agentId = this.sessionRouter.resolve(sessionId);
+    if (agentId !== undefined) this.clearSubagentLease(agentId);
     this.sessionRouter.unregister(sessionId);
   }
 
@@ -193,6 +220,8 @@ export class HookEventHandler {
         }
         const agent = id === undefined ? undefined : this.agents.get(id);
         if (agent) {
+          if (typeof event.is_subagent === 'boolean') agent.openClawSubagent = event.is_subagent;
+          this.refreshSubagentLease(agent);
           if (typeof event.display_name === 'string') {
             const name = event.display_name
               .replace(/[\u0000-\u001f\u007f]/g, '')
@@ -363,6 +392,9 @@ export class HookEventHandler {
 
     const agent = this.agents.get(agentId);
     if (!agent) return;
+
+    if (normEvent.kind === 'sessionEnd') this.clearSubagentLease(agentId);
+    else this.refreshSubagentLease(agent);
 
     agent.hookDelivered = true;
     if (debug)
@@ -895,6 +927,8 @@ export class HookEventHandler {
 
   /** Clean up timers and maps. Called when the extension disposes. */
   dispose(): void {
+    for (const timer of this.openClawSubagentTimers.values()) clearTimeout(timer);
+    this.openClawSubagentTimers.clear();
     this.sessionRouter.dispose();
   }
 }

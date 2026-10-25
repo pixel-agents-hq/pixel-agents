@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
+import { OPENCLAW_SUBAGENT_INACTIVITY_MS } from '../src/constants.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import {
   formatOpenClawToolStatus,
@@ -116,6 +117,97 @@ describe('AgentRuntime OpenClaw routing', () => {
   afterEach(() => {
     runtime?.dispose();
     vi.useRealTimers();
+  });
+
+  it('expires only explicitly identified children at two minutes and re-adopts later activity', () => {
+    vi.useFakeTimers();
+    const store = new AgentStateStore();
+    runtime = new AgentRuntime(store, claudeProvider, hookProviders);
+    runtime.watchAllSessions.current = true;
+    const start = (sid: string, extra = {}) =>
+      runtime!.handleHookEvent('openclaw', {
+        event: 'session_start',
+        session_id: sid,
+        cwd: '/workspace',
+        ...extra,
+      });
+    start('normal', { display_name: 'Normal · subtask', is_subagent: false });
+    start('legacy', { display_name: 'Legacy · subtask' });
+    start('child', { display_name: 'Avery · subtask', is_subagent: true });
+    const child = [...store.values()].find((a) => a.sessionId === 'child')!;
+    // Parent activity must not renew a child's independent lease.
+    vi.advanceTimersByTime(OPENCLAW_SUBAGENT_INACTIVITY_MS - 1);
+    start('normal', { is_subagent: false });
+    expect(store.has(child.id)).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(store.has(child.id)).toBe(false);
+    expect([...store.values()].map((a) => a.sessionId).sort()).toEqual(['legacy', 'normal']);
+    vi.advanceTimersByTime(10 * OPENCLAW_SUBAGENT_INACTIVITY_MS);
+    expect(store.size).toBe(2);
+    start('child', { is_subagent: true });
+    expect(store.size).toBe(3);
+    expect([...store.values()].find((a) => a.sessionId === 'child')!.id).not.toBe(child.id);
+  });
+
+  it('renews child leases on model and tool activity and cleans timers on end/dispose', () => {
+    vi.useFakeTimers();
+    const store = new AgentStateStore();
+    runtime = new AgentRuntime(store, claudeProvider, hookProviders);
+    runtime.watchAllSessions.current = true;
+    const start = {
+      event: 'session_start',
+      session_id: 'child',
+      cwd: '/workspace',
+      is_subagent: true,
+    };
+    runtime.handleHookEvent('openclaw', start);
+    vi.advanceTimersByTime(90_000);
+    runtime.handleHookEvent('openclaw', {
+      event: 'tool_start',
+      session_id: 'child',
+      tool_id: 'a',
+      tool_name: 'exec',
+    });
+    vi.advanceTimersByTime(90_000);
+    expect(store.size).toBe(1);
+    runtime.handleHookEvent('openclaw', { event: 'tool_end', session_id: 'child', tool_id: 'a' });
+    vi.advanceTimersByTime(90_000);
+    expect(store.size).toBe(1);
+    runtime.handleHookEvent('openclaw', start);
+    vi.advanceTimersByTime(OPENCLAW_SUBAGENT_INACTIVITY_MS - 1);
+    expect(store.size).toBe(1);
+    runtime.handleHookEvent('openclaw', { event: 'session_end', session_id: 'child' });
+    expect(store.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    runtime.handleHookEvent('openclaw', start);
+    runtime.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('expires a silent child even if its last tool never finished, without expiring normal agents', () => {
+    vi.useFakeTimers();
+    const store = new AgentStateStore();
+    runtime = new AgentRuntime(store, claudeProvider, hookProviders);
+    runtime.watchAllSessions.current = true;
+    for (const [sid, child] of [
+      ['child', true],
+      ['normal', false],
+    ] as const) {
+      runtime.handleHookEvent('openclaw', {
+        event: 'session_start',
+        session_id: sid,
+        cwd: '/workspace',
+        is_subagent: child,
+      });
+      runtime.handleHookEvent('openclaw', {
+        event: 'tool_start',
+        session_id: sid,
+        tool_id: 'a',
+        tool_name: 'exec',
+      });
+    }
+    vi.advanceTimersByTime(OPENCLAW_SUBAGENT_INACTIVITY_MS);
+    expect([...store.values()].map((a) => a.sessionId)).toEqual(['normal']);
   });
 
   it('shows text-only turns immediately, survives stale checks, and resumes the same character', () => {

@@ -1,9 +1,48 @@
 import { SessionActivityAggregator } from '../../../integrations/openclaw/sessionActivity';
+import { OPENCLAW_SUBAGENT_INACTIVITY_MS } from '../../../server/src/constants';
 import { expect, test } from '../../fixtures/standalone';
 import { expectOverlayCount, expectOverlayVisible, getOverlayByText } from '../../helpers/office';
 import { setSettings } from '../../helpers/webview';
 
 test.describe('Standalone / OpenClaw', () => {
+  test('expires only a marked child after two minutes without activity, retaining idle normal agents @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    test.setTimeout(180_000);
+    await setSettings(page, { alwaysShowLabels: true, watchAllSessions: true });
+    const post = async (event: Record<string, unknown>) => {
+      const response = await fetch(`${standalone.hostUrl}/api/hooks/openclaw`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${standalone.hookServerConfig.token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(event),
+      });
+      expect(response.ok).toBe(true);
+    };
+    for (const [id, child, name] of [
+      ['normal', false, 'Normal · subtask'],
+      ['child', true, 'Avery · subtask'],
+    ] as const) {
+      await post({
+        event: 'session_start',
+        session_id: id,
+        cwd: standalone.workspaceDir,
+        display_name: name,
+        is_subagent: child,
+      });
+      await post({ event: 'turn_end', session_id: id });
+    }
+    await expectOverlayCount(page, 2);
+    await expectOverlayVisible(page, 'Avery · subtask');
+    // Exercise the production server timer, not the browser's clock or a shortened lease.
+    await expectOverlayCount(page, 1, OPENCLAW_SUBAGENT_INACTIVITY_MS + 15_000);
+    await expect(getOverlayByText(page, 'Normal · subtask')).toContainText('Idle');
+    await expect(getOverlayByText(page, 'Avery · subtask')).toHaveCount(0);
+  });
+
   test('merges ordinary sessions into one named character with winning activity and separate children @area:standalone', async ({
     page,
     standalone,
@@ -24,10 +63,11 @@ test.describe('Standalone / OpenClaw', () => {
     });
     const send = (session_id: string, event: string, extra = {}) =>
       relay.accept({ session_id, event, ...extra });
-    const start = (session: string, actor = 'main-character', name = 'Avery') =>
+    const start = (session: string, actor = 'main-character', name = 'Avery', isSubagent = false) =>
       send(session, 'session_start', {
         actor_id: actor,
         display_name: name,
+        is_subagent: isSubagent,
         cwd: standalone.workspaceDir,
       });
 
@@ -46,7 +86,7 @@ test.describe('Standalone / OpenClaw', () => {
 
     await start('other-agent', 'builder-character', 'Blake');
     await send('other-agent', 'tool_start', { tool_id: 'browse', tool_name: 'web_fetch' });
-    await start('child-session', 'child-character', 'Avery · subtask');
+    await start('child-session', 'child-character', 'Avery · subtask', true);
     await expectOverlayCount(page, 3);
     await expectOverlayVisible(page, 'Avery · subtask');
     await expect(getOverlayByText(page, 'Blake')).toContainText('Researching the web');
