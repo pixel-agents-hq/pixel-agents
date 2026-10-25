@@ -110,9 +110,20 @@ export function updateContextUsage(
 ): void {
   const tokens = extractContextTokens(record);
   if (tokens <= 0) return;
+  if (!isOwnTurn(agent, record)) return;
   const isSidechain = (record as TranscriptRecord | null)?.isSidechain === true;
-  if (isSidechain && agent.sawMainChainUsage) return;
   applyContextTokens(agentId, agent, agents, tokens, !isSidechain, windowFor(record, provider));
+}
+
+/**
+ * Whether a record is this agent's own turn rather than a sub-agent's.
+ * The positional rule above: a sidechain record is foreign once the file has
+ * produced a main-chain usage turn. Shared with the cascade insight so both
+ * read the same transcript the same way.
+ */
+export function isOwnTurn(agent: AgentState, record: unknown): boolean {
+  const isSidechain = (record as TranscriptRecord | null)?.isSidechain === true;
+  return !(isSidechain && agent.sawMainChainUsage);
 }
 
 /** The provider's window for whichever model wrote this record. */

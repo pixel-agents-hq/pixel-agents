@@ -3,7 +3,8 @@ const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
-import { updateContextUsage } from './contextUsage.js';
+import { isOwnTurn, updateContextUsage } from './contextUsage.js';
+import { addUsage, isEmptyUsage, isRealModelId, latestThinking, spawnInsight } from './insight.js';
 import { hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import {
   cancelPermissionTimer,
@@ -90,6 +91,57 @@ export function formatToolStatus(toolName: string, input: Record<string, unknown
   return hookProvider?.formatToolStatus(toolName, input) ?? `Using ${toolName}`;
 }
 
+/** Fold an assistant record into the agent's cascade insight (model, latest
+ *  thinking, token spend). Own turns only -- a lead's sidechain records are its
+ *  sub-agents' turns and must not move its insight. */
+function updateAgentInsight(
+  agentId: number,
+  agent: AgentState,
+  agents: AgentStateStore,
+  record: { message?: { id?: unknown; model?: unknown; usage?: unknown } },
+  blocks: unknown[],
+): void {
+  if (!isOwnTurn(agent, record)) return;
+
+  const model = record.message?.model;
+  if (isRealModelId(model) && model !== agent.insightModel) {
+    agent.insightModel = model;
+    agents.broadcast({ type: 'agentInsight', id: agentId, model });
+  }
+
+  const thinking = latestThinking(blocks);
+  if (thinking !== undefined && thinking !== agent.insightThinking) {
+    agent.insightThinking = thinking;
+    agents.broadcast({ type: 'agentInsight', id: agentId, thinking });
+  }
+
+  // One record per content block of a single response, each repeating the
+  // same message.id and usage: count a response once.
+  const messageId = record.message?.id;
+  const usage = record.message?.usage;
+  if (
+    typeof messageId === 'string' &&
+    messageId !== agent.lastSpendMessageId &&
+    !isEmptyUsage(usage)
+  ) {
+    agent.lastSpendMessageId = messageId;
+    agent.insightSpend = addUsage(agent.insightSpend, usage);
+    agents.broadcast({ type: 'agentInsight', id: agentId, spend: agent.insightSpend });
+  }
+}
+
+/** Announce what a sub-agent spawn call says about its child. */
+function broadcastSpawnInsight(
+  agentId: number,
+  agents: AgentStateStore,
+  parentToolId: string,
+  input: unknown,
+): void {
+  const fields = spawnInsight(input);
+  if (Object.keys(fields).length === 0) return;
+  agents.broadcast({ type: 'subagentInsight', id: agentId, parentToolId, ...fields });
+}
+
 export function processTranscriptLine(
   agentId: number,
   line: string,
@@ -146,6 +198,7 @@ export function processTranscriptLine(
         name?: string;
         input?: Record<string, unknown>;
       }>;
+      updateAgentInsight(agentId, agent, agents, record, blocks);
       const hasToolUse = blocks.some((b) => b.type === 'tool_use');
 
       if (hasToolUse) {
@@ -204,6 +257,7 @@ export function processTranscriptLine(
             // EXCEPTION: inline teammates need JSONL tool events even in hooks mode so their
             // tool activity is displayed correctly.
             const isSubagentSpawn = isSubagentTool(toolName);
+            if (isSubagentSpawn) broadcastSpawnInsight(agentId, agents, block.id, block.input);
             // A spawn call carrying a `name` is a Teammate-to-be: flag it so
             // the webview never creates a Subtask ghost that the teammate
             // character replaces seconds later.
@@ -269,6 +323,19 @@ export function processTranscriptLine(
             if (block.type === 'tool_result' && block.tool_use_id) {
               const completedToolId = block.tool_use_id;
               const completedToolName = agent.activeToolNames.get(completedToolId);
+
+              // The harness reports the model a spawn actually resolved to (the
+              // call only says an alias like "haiku"), on the async-launch
+              // result and on normal completion alike.
+              const resolvedModel = record.toolUseResult?.resolvedModel;
+              if (isSubagentTool(completedToolName) && isRealModelId(resolvedModel)) {
+                agents.broadcast({
+                  type: 'subagentInsight',
+                  id: agentId,
+                  parentToolId: completedToolId,
+                  model: resolvedModel,
+                });
+              }
 
               // Teammate spawn result (newer harnesses: every Agent spawn is a
               // background teammate of an implicit team; the lead's own records

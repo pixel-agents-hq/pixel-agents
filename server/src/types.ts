@@ -1,5 +1,7 @@
 import type * as vscode from 'vscode';
 
+import type { TokenSpend } from '../../core/src/messages.js';
+
 export interface AgentState {
   id: number;
   sessionId: string;
@@ -57,6 +59,17 @@ export interface AgentState {
   /** True once this transcript produced a main-chain turn, after which
    *  sidechain records belong to sub-agents and stop moving the gauge. */
   sawMainChainUsage?: boolean;
+
+  // -- Cascade insight (server/src/insight.ts); transient, never persisted --
+  /** Last real model id seen on the agent's own turns. */
+  insightModel?: string;
+  /** Latest non-empty thinking text (truncated) from the agent's own turns. */
+  insightThinking?: string;
+  /** Running token spend over the agent's own responses. */
+  insightSpend?: TokenSpend;
+  /** `message.id` of the last response counted in `insightSpend` (Claude Code
+   *  writes one record per content block, all repeating the same id). */
+  lastSpendMessageId?: string;
 
   // -- Agent Teams --
   teamName?: string;

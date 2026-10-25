@@ -139,9 +139,11 @@ export class SubagentWatch {
   }
 
   /** Re-emit shadow-store activity on the main store as subagent* messages.
-   *  Everything not listed here (agentTokenUsage, agentTeamInfo, the shadow's
+   *  Everything not listed here (agentContextUsage, agentTeamInfo, the shadow's
    *  own nested subagent* messages) is deliberately dropped: the sub-character
-   *  has no context gauge, no team badge, and no sub-sub-characters.
+   *  has no context gauge, no team badge, and no sub-sub-characters. The
+   *  shadow's agentInsight (model, thinking, spend) is re-keyed as
+   *  subagentInsight so the sub-character carries its own cascade insight.
    *
    *  Per-tool dones are DEFERRED to the sub's turn end: emitting them as they
    *  happen made the sub-character flap between typing and idle on every
@@ -189,6 +191,21 @@ export class SubagentWatch {
           type: 'subagentToolPermission',
           id: leadId,
           parentToolId: spawnToolUseId,
+        });
+        break;
+      }
+      case 'agentInsight': {
+        const { model, agentType, description, effort, thinking, spend } = message;
+        this.mainStore.broadcast({
+          type: 'subagentInsight',
+          id: leadId,
+          parentToolId: spawnToolUseId,
+          model,
+          agentType,
+          description,
+          effort,
+          thinking,
+          spend,
         });
         break;
       }

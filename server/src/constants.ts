@@ -41,6 +41,10 @@ export const CONTEXT_WINDOW_TIERS = [200_000, 1_000_000] as const;
  *  adoption or restore. Comfortably more than one turn's worth of records. */
 export const CONTEXT_SEED_TAIL_BYTES = 256 * 1024;
 
+// ── Cascade insight ─────────────────────────────────────────
+/** Longest slice of an agent's latest thinking sent to the webview; longer text is cut with an ellipsis. */
+export const THINKING_PREVIEW_MAX_CHARS = 1200;
+
 // ── Global Session Scanning ─────────────────────────────────
 /** Only adopt global JSONL files larger than this (filters out empty/init-only sessions) */
 export const GLOBAL_SCAN_ACTIVE_MIN_SIZE = 3_072; // 3KB
