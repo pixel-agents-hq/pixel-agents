@@ -21,6 +21,7 @@ import {
 describe('directorySuggestions', () => {
   let tempHome: string;
   let originalHome: string | undefined;
+  let originalUserProfile: string | undefined;
   /** Stands in for ~/.claude/projects: one subdirectory per session location. */
   let sessionRoot: string;
 
@@ -32,7 +33,9 @@ describe('directorySuggestions', () => {
   beforeEach(() => {
     tempHome = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-suggest-test-')));
     originalHome = process.env.HOME;
+    originalUserProfile = process.env.USERPROFILE;
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
     sessionRoot = path.join(tempHome, 'sessions');
     fs.mkdirSync(sessionRoot);
   });
@@ -42,6 +45,11 @@ describe('directorySuggestions', () => {
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
     }
     fs.rmSync(tempHome, { recursive: true, force: true });
   });

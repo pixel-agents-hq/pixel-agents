@@ -10,8 +10,10 @@ let tmpBase: string;
 let tmpHome: string;
 let workspaceDir: string;
 
+/** Quote like the real installer does. JSON.stringify is not shell quoting: on
+ *  Windows it doubles every backslash, so the command no longer names the path. */
 function makeNodeCommand(scriptPath: string): string {
-  return `${JSON.stringify(process.execPath)} ${JSON.stringify(scriptPath)}`;
+  return `"${process.execPath}" "${scriptPath}"`;
 }
 
 function writeHookScript(scriptPath: string, outputPath: string): void {
@@ -51,9 +53,12 @@ function runMockClaude(
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [MOCK_CLAUDE_RUNNER, '--session-id', sessionId], {
       cwd: workspaceDir,
+      // Set both HOME (POSIX) and USERPROFILE (Windows) so the child's
+      // os.homedir() resolves to the isolated temp dir on every platform.
       env: {
         ...process.env,
         HOME: tmpHome,
+        USERPROFILE: tmpHome,
       },
       stdio: ['ignore', 'ignore', 'pipe'],
     });

@@ -23,6 +23,7 @@ import {
 describe('directories', () => {
   let tempHome: string;
   let originalHome: string | undefined;
+  let originalUserProfile: string | undefined;
   /** Real directories on disk to point Directories at. */
   let alpha: string;
   let beta: string;
@@ -30,7 +31,9 @@ describe('directories', () => {
   beforeEach(() => {
     tempHome = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-dirs-test-')));
     originalHome = process.env.HOME;
+    originalUserProfile = process.env.USERPROFILE;
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
     alpha = path.join(tempHome, 'alpha');
     beta = path.join(tempHome, 'beta');
     fs.mkdirSync(alpha);
@@ -42,6 +45,11 @@ describe('directories', () => {
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
     }
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
