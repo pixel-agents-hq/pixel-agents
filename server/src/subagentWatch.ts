@@ -22,8 +22,10 @@ import type * as fs from 'fs';
 import { createAgentState } from './agentState.js';
 import { AgentStateStore } from './agentStateStore.js';
 import { readNewLines, startFileWatching } from './fileWatcher.js';
+import type { SubagentInsightFields } from './insight.js';
 import { pathsMatch } from './pathKey.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
+import { rememberSpawnInsight } from './transcriptParser.js';
 import type { AgentState } from './types.js';
 
 /** Shadow ids start far above any real agent id. The transcript parser's
@@ -142,8 +144,9 @@ export class SubagentWatch {
    *  Everything not listed here (agentContextUsage, agentTeamInfo, the shadow's
    *  own nested subagent* messages) is deliberately dropped: the sub-character
    *  has no context gauge, no team badge, and no sub-sub-characters. The
-   *  shadow's agentInsight (model, thinking, spend) is re-keyed as
-   *  subagentInsight so the sub-character carries its own cascade insight.
+   *  shadow's agentInsight (model, effort, thinking, spend) is re-keyed as
+   *  subagentInsight so the sub-character carries its own cascade insight,
+   *  and kept on the lead so a client that connects later gets it too.
    *
    *  Per-tool dones are DEFERRED to the sub's turn end: emitting them as they
    *  happen made the sub-character flap between typing and idle on every
@@ -195,7 +198,21 @@ export class SubagentWatch {
         break;
       }
       case 'agentInsight': {
-        const { model, agentType, description, effort, thinking, spend } = message;
+        // The shadow store's own parser produced this message, so its fields
+        // already have the agentInsight types.
+        const { model, agentType, description, effort, thinking, spend } =
+          message as SubagentInsightFields;
+        const lead = this.mainStore.get(leadId);
+        if (lead) {
+          rememberSpawnInsight(lead, spawnToolUseId, {
+            model,
+            agentType,
+            description,
+            effort,
+            thinking,
+            spend,
+          });
+        }
         this.mainStore.broadcast({
           type: 'subagentInsight',
           id: leadId,

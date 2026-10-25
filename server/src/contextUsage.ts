@@ -147,29 +147,11 @@ export function seedContextUsage(
   const agent = agents.get(agentId);
   if (!agent || agent.contextTokens > 0 || !agent.jsonlFile) return;
 
-  let text: string;
-  try {
-    const stat = fs.statSync(agent.jsonlFile);
-    const start = Math.max(0, stat.size - CONTEXT_SEED_TAIL_BYTES);
-    const length = stat.size - start;
-    if (length <= 0) return;
-    const fd = fs.openSync(agent.jsonlFile, 'r');
-    try {
-      const buf = Buffer.alloc(length);
-      fs.readSync(fd, buf, 0, length, start);
-      text = buf.toString('utf8');
-    } finally {
-      fs.closeSync(fd);
-    }
-    // A mid-file start lands inside a record; drop that fragment.
-    if (start > 0) text = text.slice(text.indexOf('\n') + 1);
-  } catch {
-    return; // unreadable transcript -- the stream will seed it on the next turn
-  }
+  const lines = readTranscriptTail(agent.jsonlFile);
+  if (!lines) return; // unreadable or empty -- the stream will seed it on the next turn
 
   // Newest first. Main-chain wins; sidechain is the fallback that makes
   // teammate transcripts (sidechain-only files) work.
-  const lines = text.split('\n');
   let sidechain: { tokens: number; window: number | undefined } | null = null;
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
@@ -192,4 +174,32 @@ export function seedContextUsage(
   if (sidechain) {
     applyContextTokens(agentId, agent, agents, sidechain.tokens, false, sidechain.window);
   }
+}
+
+/**
+ * The last CONTEXT_SEED_TAIL_BYTES of a transcript as whole lines, oldest
+ * first; null when the file is empty or unreadable. Lets a seeder find the
+ * newest records without replaying history.
+ */
+export function readTranscriptTail(jsonlFile: string): string[] | null {
+  let text: string;
+  try {
+    const stat = fs.statSync(jsonlFile);
+    const start = Math.max(0, stat.size - CONTEXT_SEED_TAIL_BYTES);
+    const length = stat.size - start;
+    if (length <= 0) return null;
+    const fd = fs.openSync(jsonlFile, 'r');
+    try {
+      const buf = Buffer.alloc(length);
+      fs.readSync(fd, buf, 0, length, start);
+      text = buf.toString('utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+    // A mid-file start lands inside a record; drop that fragment.
+    if (start > 0) text = text.slice(text.indexOf('\n') + 1);
+  } catch {
+    return null;
+  }
+  return text.split('\n');
 }

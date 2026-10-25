@@ -231,4 +231,62 @@ describe('resendAgentActivity', () => {
     expect(sent[0]).toMatchObject({ type: 'agentToolStart', id: 1 });
     expect(sent[1]).toMatchObject({ type: 'agentStatus', id: 2, status: 'waiting' });
   });
+
+  it('replays the cascade insight last, so a client that connects later still sees the tier', () => {
+    const store = new AgentStateStore();
+    const spend = { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 };
+    store.set(
+      1,
+      createTestAgent({
+        id: 1,
+        contextTokens: 50_000,
+        insightModel: 'claude-opus-5-5',
+        insightEffort: 'xhigh',
+        insightThinking: 'Plan: read the file',
+        insightSpend: spend,
+      }),
+    );
+    const sent: Array<Record<string, unknown>> = [];
+    resendAgentActivity((msg) => sent.push(msg), store);
+
+    expect(sent.map((m) => m.type)).toEqual(['agentContextUsage', 'agentInsight']);
+    expect(sent[1]).toEqual({
+      type: 'agentInsight',
+      id: 1,
+      model: 'claude-opus-5-5',
+      effort: 'xhigh',
+      thinking: 'Plan: read the file',
+      spend,
+    });
+  });
+
+  it('replays spawn insight only for spawns that are still live', () => {
+    const store = new AgentStateStore();
+    store.set(
+      1,
+      createTestAgent({
+        id: 1,
+        activeToolIds: new Set(['toolu_live']),
+        backgroundAgentToolIds: new Set(['toolu_bg']),
+        insightSpawns: new Map([
+          ['toolu_live', { agentType: 'ecc:explorador', model: 'claude-haiku-5-5' }],
+          ['toolu_bg', { agentType: 'ecc:constructor' }],
+          ['toolu_done', { agentType: 'ecc:mecanico' }],
+        ]),
+      }),
+    );
+    const sent: Array<Record<string, unknown>> = [];
+    resendAgentActivity((msg) => sent.push(msg), store);
+
+    expect(sent.filter((m) => m.type === 'subagentInsight')).toEqual([
+      {
+        type: 'subagentInsight',
+        id: 1,
+        parentToolId: 'toolu_live',
+        agentType: 'ecc:explorador',
+        model: 'claude-haiku-5-5',
+      },
+      { type: 'subagentInsight', id: 1, parentToolId: 'toolu_bg', agentType: 'ecc:constructor' },
+    ]);
+  });
 });

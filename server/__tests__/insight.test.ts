@@ -3,16 +3,21 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { resendAgentActivity } from '../src/agentActivityResend.js';
 import { createAgentState } from '../src/agentState.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { THINKING_PREVIEW_MAX_CHARS } from '../src/constants.js';
 import {
   addUsage,
+  insightSnapshot,
   isEmptyUsage,
+  isLiveSpawn,
   isRealModelId,
   latestThinking,
+  recordEffort,
   spawnInsight,
 } from '../src/insight.js';
+import { seedInsight } from '../src/insightSeed.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import { SubagentWatch } from '../src/subagentWatch.js';
 import { processTranscriptLine, setHookProvider } from '../src/transcriptParser.js';
@@ -98,6 +103,32 @@ describe('insight helpers', () => {
     expect(spawnInsight({ model: '', effort: 3, prompt: 'x' })).toEqual({});
     expect(spawnInsight(null)).toEqual({});
   });
+
+  it('recordEffort reads the effort Claude Code stamps on each turn', () => {
+    expect(recordEffort({ type: 'assistant', effort: 'xhigh' })).toBe('xhigh');
+    expect(recordEffort({ effort: '' })).toBeUndefined();
+    expect(recordEffort({ effort: 3 })).toBeUndefined();
+    expect(recordEffort(null)).toBeUndefined();
+  });
+
+  it('insightSnapshot keeps only what the agent has gathered', () => {
+    const spend = { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 };
+    expect(
+      insightSnapshot(
+        testAgent({ insightModel: 'claude-opus-5-5', insightEffort: 'xhigh', insightSpend: spend }),
+      ),
+    ).toEqual({ model: 'claude-opus-5-5', effort: 'xhigh', spend });
+    expect(insightSnapshot(testAgent())).toEqual({});
+  });
+
+  it('isLiveSpawn is true while the spawn runs in the foreground or in the background', () => {
+    const agent = testAgent();
+    agent.activeToolIds.add('toolu_fg');
+    agent.backgroundAgentToolIds.add('toolu_bg');
+    expect(isLiveSpawn(agent, 'toolu_fg')).toBe(true);
+    expect(isLiveSpawn(agent, 'toolu_bg')).toBe(true);
+    expect(isLiveSpawn(agent, 'toolu_gone')).toBe(false);
+  });
 });
 
 function testAgent(overrides: Partial<AgentState> = {}): AgentState {
@@ -124,10 +155,12 @@ function assistantLine(opts: {
   content: unknown[];
   usage?: unknown;
   isSidechain?: boolean;
+  effort?: string;
 }): string {
   return JSON.stringify({
     type: 'assistant',
     isSidechain: opts.isSidechain ?? false,
+    ...(opts.effort ? { effort: opts.effort } : {}),
     message: {
       ...(opts.id ? { id: opts.id } : {}),
       model: opts.model ?? 'claude-opus-5-5',
@@ -178,6 +211,17 @@ describe('transcriptParser: cascade insight', () => {
     const withModel = insights().filter((m) => m.model !== undefined);
     expect(withModel).toEqual([{ type: 'agentInsight', id: 1, model: 'claude-opus-5-5' }]);
     expect(agent.insightModel).toBe('claude-opus-5-5');
+  });
+
+  it('broadcasts the effort with the model, and again when only the effort changes', () => {
+    feed(assistantLine({ id: 'msg_1', effort: 'xhigh', content: [{ type: 'text', text: 'a' }] }));
+    feed(assistantLine({ id: 'msg_2', effort: 'xhigh', content: [{ type: 'text', text: 'b' }] }));
+    feed(assistantLine({ id: 'msg_3', effort: 'low', content: [{ type: 'text', text: 'c' }] }));
+    expect(insights().filter((m) => m.model !== undefined)).toEqual([
+      { type: 'agentInsight', id: 1, model: 'claude-opus-5-5', effort: 'xhigh' },
+      { type: 'agentInsight', id: 1, model: 'claude-opus-5-5', effort: 'low' },
+    ]);
+    expect(agent.insightEffort).toBe('low');
   });
 
   it('ignores the <synthetic> placeholder model', () => {
@@ -305,6 +349,40 @@ describe('transcriptParser: cascade insight', () => {
     ]);
   });
 
+  it('remembers what the spawn said, merged with the model it resolved to', () => {
+    feed(
+      assistantLine({
+        id: 'msg_1',
+        content: [{ type: 'tool_use', id: 'toolu_A', name: 'Agent', input: SPAWN_INPUT }],
+      }),
+    );
+    feed(
+      JSON.stringify({
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_A', content: 'ok' }] },
+        toolUseResult: { status: 'async_launched', resolvedModel: 'claude-haiku-5-5' },
+      }),
+    );
+    expect(agent.insightSpawns?.get('toolu_A')).toEqual({
+      agentType: 'ecc:explorador',
+      description: 'Buscar usos',
+      model: 'claude-haiku-5-5',
+      effort: 'low',
+    });
+  });
+
+  it('forgets remembered spawns once they are no longer live', () => {
+    const spawn = (id: string) =>
+      assistantLine({
+        id: `msg_${id}`,
+        content: [{ type: 'tool_use', id, name: 'Agent', input: SPAWN_INPUT }],
+      });
+    feed(spawn('toolu_A'));
+    agent.activeToolIds.delete('toolu_A');
+    feed(spawn('toolu_B'));
+    expect([...(agent.insightSpawns?.keys() ?? [])]).toEqual(['toolu_B']);
+  });
+
   it('emits spawn insight even when hooks are delivering', () => {
     agent.hookDelivered = true;
     feed(
@@ -430,5 +508,129 @@ describe('SubagentWatch: shadow agentInsight', () => {
         spend: { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 },
       },
     ]);
+  });
+});
+
+describe('SubagentWatch: shadow insight replay', () => {
+  let tmpRoot: string;
+  let main: AgentStateStore;
+  let watch: SubagentWatch;
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-agents-insight-replay-'));
+    setHookProvider(claudeProvider);
+    main = new AgentStateStore();
+    watch = new SubagentWatch(main);
+  });
+
+  afterEach(() => {
+    watch.dispose();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('keeps the shadow insight on the lead, so a client that connects later still gets it', () => {
+    const jsonl = path.join(tmpRoot, 'agent-x.jsonl');
+    fs.writeFileSync(jsonl, '');
+    const lead = testAgent({ id: 7 });
+    lead.backgroundAgentToolIds.add('toolu_A');
+    lead.insightSpawns = new Map([['toolu_A', { agentType: 'ecc:explorador', model: 'haiku' }]]);
+    main.set(7, lead);
+    watch.watch(lead, 7, { jsonlPath: jsonl, toolUseId: 'toolu_A' });
+
+    const [shadowId] = [...watch.store.keys()];
+    const spend = { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 };
+    watch.store.broadcast({
+      type: 'agentInsight',
+      id: shadowId,
+      model: 'claude-haiku-5-5',
+      thinking: 'looking',
+      spend,
+    });
+
+    const expected = {
+      agentType: 'ecc:explorador',
+      model: 'claude-haiku-5-5',
+      thinking: 'looking',
+      spend,
+    };
+    expect(lead.insightSpawns.get('toolu_A')).toEqual(expected);
+
+    const sent: Array<Record<string, unknown>> = [];
+    resendAgentActivity((m) => sent.push(m), main);
+    expect(sent.filter((m) => m.type === 'subagentInsight')).toEqual([
+      { type: 'subagentInsight', id: 7, parentToolId: 'toolu_A', ...expected },
+    ]);
+  });
+});
+
+describe('seedInsight', () => {
+  let tmpDir: string;
+  let agents: AgentStateStore;
+  let messages: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-agents-insight-seed-'));
+    agents = new AgentStateStore();
+    messages = [];
+    agents.on('broadcast', (m) => messages.push(m as Record<string, unknown>));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function seed(lines: string[], overrides: Partial<AgentState> = {}): AgentState {
+    const jsonlFile = path.join(tmpDir, 'session.jsonl');
+    fs.writeFileSync(jsonlFile, lines.join('\n') + '\n');
+    const agent = testAgent({ jsonlFile, ...overrides });
+    agents.set(agent.id, agent);
+    seedInsight(agent.id, agents);
+    return agent;
+  }
+
+  it('seeds model and effort from the newest main-chain turn of an agent adopted mid-session', () => {
+    const agent = seed([
+      assistantLine({ model: 'claude-sonnet-5-5', effort: 'medium', content: [] }),
+      assistantLine({ model: 'claude-opus-5-5', effort: 'xhigh', content: [] }),
+      assistantLine({ model: '<synthetic>', content: [] }),
+      JSON.stringify({ type: 'user', message: { content: 'a prompt' } }),
+    ]);
+    expect(agent.insightModel).toBe('claude-opus-5-5');
+    expect(agent.insightEffort).toBe('xhigh');
+    expect(messages).toEqual([
+      { type: 'agentInsight', id: 1, model: 'claude-opus-5-5', effort: 'xhigh' },
+    ]);
+  });
+
+  it("prefers the agent's main chain over a newer sidechain record", () => {
+    const agent = seed([
+      assistantLine({ model: 'claude-opus-5-5', content: [] }),
+      assistantLine({ model: 'claude-haiku-5-5', isSidechain: true, content: [] }),
+    ]);
+    expect(agent.insightModel).toBe('claude-opus-5-5');
+  });
+
+  it("falls back to the sidechain for a teammate's sidechain-only transcript", () => {
+    const agent = seed([
+      assistantLine({ model: 'claude-haiku-5-5', effort: 'low', isSidechain: true, content: [] }),
+    ]);
+    expect(agent.insightModel).toBe('claude-haiku-5-5');
+    expect(agent.insightEffort).toBe('low');
+  });
+
+  it('leaves an agent that already knows its model alone', () => {
+    const agent = seed([assistantLine({ model: 'claude-haiku-5-5', content: [] })], {
+      insightModel: 'claude-opus-5-5',
+    });
+    expect(agent.insightModel).toBe('claude-opus-5-5');
+    expect(messages).toEqual([]);
+  });
+
+  it('does nothing for a missing transcript', () => {
+    const agent = testAgent({ jsonlFile: path.join(tmpDir, 'missing.jsonl') });
+    agents.set(agent.id, agent);
+    seedInsight(agent.id, agents);
+    expect(agent.insightModel).toBeUndefined();
+    expect(messages).toEqual([]);
   });
 });

@@ -44,6 +44,7 @@ import {
 } from './constants.js';
 import { seedContextUsage } from './contextUsage.js';
 import type { DismissalTracker } from './dismissalTracker.js';
+import { seedInsight } from './insightSeed.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { pathsMatch } from './pathKey.js';
 import type { SubagentWatch } from './subagentWatch.js';
@@ -110,9 +111,10 @@ export function startFileWatching(
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
 ): void {
   // Every watched agent passes through here, so this is the one place that can
-  // give an agent adopted or restored mid-session a context gauge without
-  // replaying its whole transcript.
+  // give an agent adopted or restored mid-session a context gauge and a model
+  // tier without replaying its whole transcript.
   seedContextUsage(agentId, agents, getHookProvider());
+  seedInsight(agentId, agents);
 
   // Single polling approach: reliable on all platforms (macOS, Linux, WSL2, Windows).
   // Previously used triple-redundant fs.watch + fs.watchFile + setInterval, but

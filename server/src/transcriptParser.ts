@@ -4,7 +4,16 @@ import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
 import { isOwnTurn, updateContextUsage } from './contextUsage.js';
-import { addUsage, isEmptyUsage, isRealModelId, latestThinking, spawnInsight } from './insight.js';
+import {
+  addUsage,
+  isEmptyUsage,
+  isLiveSpawn,
+  isRealModelId,
+  latestThinking,
+  recordEffort,
+  spawnInsight,
+  type SubagentInsightFields,
+} from './insight.js';
 import { hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import {
   cancelPermissionTimer,
@@ -91,22 +100,32 @@ export function formatToolStatus(toolName: string, input: Record<string, unknown
   return hookProvider?.formatToolStatus(toolName, input) ?? `Using ${toolName}`;
 }
 
-/** Fold an assistant record into the agent's cascade insight (model, latest
- *  thinking, token spend). Own turns only -- a lead's sidechain records are its
- *  sub-agents' turns and must not move its insight. */
+/** Fold an assistant record into the agent's cascade insight (model, effort,
+ *  latest thinking, token spend). Own turns only -- a lead's sidechain records
+ *  are its sub-agents' turns and must not move its insight. */
 function updateAgentInsight(
   agentId: number,
   agent: AgentState,
   agents: AgentStateStore,
-  record: { message?: { id?: unknown; model?: unknown; usage?: unknown } },
+  record: { effort?: unknown; message?: { id?: unknown; model?: unknown; usage?: unknown } },
   blocks: unknown[],
 ): void {
   if (!isOwnTurn(agent, record)) return;
 
+  // Model and effort travel together: the badge shows both.
   const model = record.message?.model;
-  if (isRealModelId(model) && model !== agent.insightModel) {
-    agent.insightModel = model;
-    agents.broadcast({ type: 'agentInsight', id: agentId, model });
+  const effort = recordEffort(record);
+  const modelChanged = isRealModelId(model) && model !== agent.insightModel;
+  const effortChanged = effort !== undefined && effort !== agent.insightEffort;
+  if (modelChanged) agent.insightModel = model;
+  if (effortChanged) agent.insightEffort = effort;
+  if ((modelChanged || effortChanged) && agent.insightModel) {
+    agents.broadcast({
+      type: 'agentInsight',
+      id: agentId,
+      model: agent.insightModel,
+      ...(agent.insightEffort ? { effort: agent.insightEffort } : {}),
+    });
   }
 
   const thinking = latestThinking(blocks);
@@ -130,15 +149,36 @@ function updateAgentInsight(
   }
 }
 
-/** Announce what a sub-agent spawn call says about its child. */
+/** Keep a sub-agent's insight on its lead for clients that connect later,
+ *  merged per spawn (undefined fields never erase known ones). Spawns that
+ *  are no longer live are dropped here, so the map never holds more than the
+ *  lead's live spawns. */
+export function rememberSpawnInsight(
+  agent: AgentState,
+  toolId: string,
+  fields: SubagentInsightFields,
+): void {
+  const spawns = (agent.insightSpawns ??= new Map());
+  for (const id of spawns.keys()) {
+    if (id !== toolId && !isLiveSpawn(agent, id)) spawns.delete(id);
+  }
+  const defined = Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => value !== undefined),
+  ) as SubagentInsightFields;
+  spawns.set(toolId, { ...spawns.get(toolId), ...defined });
+}
+
+/** Announce (and remember) what a sub-agent spawn call says about its child. */
 function broadcastSpawnInsight(
   agentId: number,
+  agent: AgentState,
   agents: AgentStateStore,
   parentToolId: string,
   input: unknown,
 ): void {
   const fields = spawnInsight(input);
   if (Object.keys(fields).length === 0) return;
+  rememberSpawnInsight(agent, parentToolId, fields);
   agents.broadcast({ type: 'subagentInsight', id: agentId, parentToolId, ...fields });
 }
 
@@ -257,7 +297,9 @@ export function processTranscriptLine(
             // EXCEPTION: inline teammates need JSONL tool events even in hooks mode so their
             // tool activity is displayed correctly.
             const isSubagentSpawn = isSubagentTool(toolName);
-            if (isSubagentSpawn) broadcastSpawnInsight(agentId, agents, block.id, block.input);
+            if (isSubagentSpawn) {
+              broadcastSpawnInsight(agentId, agent, agents, block.id, block.input);
+            }
             // A spawn call carrying a `name` is a Teammate-to-be: flag it so
             // the webview never creates a Subtask ghost that the teammate
             // character replaces seconds later.
@@ -329,6 +371,7 @@ export function processTranscriptLine(
               // result and on normal completion alike.
               const resolvedModel = record.toolUseResult?.resolvedModel;
               if (isSubagentTool(completedToolName) && isRealModelId(resolvedModel)) {
+                rememberSpawnInsight(agent, completedToolId, { model: resolvedModel });
                 agents.broadcast({
                   type: 'subagentInsight',
                   id: agentId,

@@ -1,4 +1,5 @@
 import type { AgentStateStore } from './agentStateStore.js';
+import { insightSnapshot, isLiveSpawn } from './insight.js';
 import { hasPromotedBackgroundAgent } from './teamUtils.js';
 
 /**
@@ -10,6 +11,9 @@ import { hasPromotedBackgroundAgent } from './teamUtils.js';
  * 3. Background tools with runInBackground + isTeammateSpawn flags, skipping promoted spawns
  * 4. Waiting status
  * 5. Context usage
+ * 6. Cascade insight (model, effort, thinking, spend), then what each live
+ *    spawn said about its child. Insight is only broadcast when it changes, so
+ *    without this a client that connects later would never learn the tier.
  */
 export function resendAgentActivity(
   send: (message: Record<string, unknown>) => void,
@@ -83,6 +87,16 @@ export function resendAgentActivity(
         contextTokens: agent.contextTokens,
         maxContextTokens: agent.maxContextTokens,
       });
+    }
+
+    // 6. Cascade insight
+    const insight = insightSnapshot(agent);
+    if (Object.keys(insight).length > 0) {
+      send({ type: 'agentInsight', id, ...insight });
+    }
+    for (const [parentToolId, fields] of agent.insightSpawns ?? []) {
+      if (!isLiveSpawn(agent, parentToolId)) continue;
+      send({ type: 'subagentInsight', id, parentToolId, ...fields });
     }
   }
 }

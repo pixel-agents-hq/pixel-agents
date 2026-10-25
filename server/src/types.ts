@@ -1,6 +1,7 @@
 import type * as vscode from 'vscode';
 
 import type { TokenSpend } from '../../core/src/messages.js';
+import type { SubagentInsightFields } from './insight.js';
 
 export interface AgentState {
   id: number;
@@ -63,6 +64,8 @@ export interface AgentState {
   // -- Cascade insight (server/src/insight.ts); transient, never persisted --
   /** Last real model id seen on the agent's own turns. */
   insightModel?: string;
+  /** Effort of the agent's latest own turn (Claude Code stamps `effort` on each record). */
+  insightEffort?: string;
   /** Latest non-empty thinking text (truncated) from the agent's own turns. */
   insightThinking?: string;
   /** Running token spend over the agent's own responses. */
@@ -70,6 +73,10 @@ export interface AgentState {
   /** `message.id` of the last response counted in `insightSpend` (Claude Code
    *  writes one record per content block, all repeating the same id). */
   lastSpendMessageId?: string;
+  /** What is known about each live sub-agent (its spawn call, resolved model,
+   *  and its own reasoning and spend), keyed by the spawn's tool_use id. Kept
+   *  so a client that connects later gets it again; pruned to live spawns. */
+  insightSpawns?: Map<string, SubagentInsightFields>;
 
   // -- Agent Teams --
   teamName?: string;

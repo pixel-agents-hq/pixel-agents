@@ -1,10 +1,11 @@
 import type { TokenSpend } from '../../core/src/messages.js';
 import { THINKING_PREVIEW_MAX_CHARS } from './constants.js';
+import type { AgentState } from './types.js';
 
 /**
  * Pure helpers behind the cascade insight (`agentInsight` / `subagentInsight`):
  * which model an agent runs on, its latest reasoning, and what it has spent.
- * The transcript parser feeds them; nothing here touches agent state.
+ * The transcript parser feeds them; nothing here changes agent state.
  */
 
 /** Claude Code writes placeholder ids like `<synthetic>` on locally generated
@@ -74,6 +75,46 @@ export interface SpawnInsight {
 function nonEmpty(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
+
+/** The effort a record ran at. Claude Code stamps `effort` on every turn. */
+export function recordEffort(record: unknown): string | undefined {
+  return nonEmpty((record as { effort?: unknown } | null)?.effort);
+}
+
+export interface AgentInsightFields {
+  model?: string;
+  effort?: string;
+  thinking?: string;
+  spend?: TokenSpend;
+}
+
+type InsightState = Pick<
+  AgentState,
+  'insightModel' | 'insightEffort' | 'insightThinking' | 'insightSpend'
+>;
+
+/** Everything the agent has gathered so far, for a client that connects later.
+ *  Empty when there is nothing yet. */
+export function insightSnapshot(agent: InsightState): AgentInsightFields {
+  const out: AgentInsightFields = {};
+  if (agent.insightModel) out.model = agent.insightModel;
+  if (agent.insightEffort) out.effort = agent.insightEffort;
+  if (agent.insightThinking) out.thinking = agent.insightThinking;
+  if (agent.insightSpend) out.spend = agent.insightSpend;
+  return out;
+}
+
+/** A spawn is live while its tool runs in the foreground or in the background. */
+export function isLiveSpawn(
+  agent: Pick<AgentState, 'activeToolIds' | 'backgroundAgentToolIds'>,
+  toolId: string,
+): boolean {
+  return agent.activeToolIds.has(toolId) || agent.backgroundAgentToolIds.has(toolId);
+}
+
+/** Everything known about one sub-agent: what its spawn call said, the model
+ *  it resolved to, and its own reasoning and spend while it runs. */
+export type SubagentInsightFields = SpawnInsight & { thinking?: string; spend?: TokenSpend };
 
 /** What a sub-agent spawn call says about its child, keeping non-empty strings only. */
 export function spawnInsight(input: unknown): SpawnInsight {
