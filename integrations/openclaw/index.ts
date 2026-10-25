@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { join } from 'node:path';
 
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
@@ -8,17 +8,15 @@ import {
   getPreparedPluginSecretInput,
   resolveConfiguredSecretInputString,
 } from 'openclaw/plugin-sdk/secret-input-runtime';
+import { SessionActivityAggregator } from './sessionActivity.js';
 
 const PROVIDER_ID = 'openclaw';
 const API_PATH = `/api/hooks/${PROVIDER_ID}`;
 const REQUEST_TIMEOUT_MS = 2_000;
-const TURN_END_DELAY_MS = 100;
 const SERVER_DIR = join(homedir(), '.pixel-agents');
 const REGISTRY_DIR = join(SERVER_DIR, 'servers');
 const LEGACY_SERVER_FILE = join(SERVER_DIR, 'server.json');
 const REMOTE_TOKEN_PATH = 'plugins.entries.pixel-agents-openclaw.config.remote.token';
-
-const turnEndTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function opaqueId(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 32);
@@ -42,7 +40,7 @@ function toolId(
     typeof event.toolCallId === 'string' && event.toolCallId
       ? event.toolCallId
       : `${id}:${event.toolName}:${context.runId ?? 'tool'}`;
-  return opaqueId(value);
+  return opaqueId(`${id}:${value}`);
 }
 
 function isLiveProcess(pid: number): boolean {
@@ -187,20 +185,57 @@ function hookContext(
   api: PluginRuntimeApi,
   context: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (typeof context.workspaceDir === 'string') return context;
   // Model/tool hooks can carry agentId without workspaceDir. Recover only the
   // configured workspace identity, never transcripts or source content.
   const agents = api.runtime.config.current().agents as
     | {
         defaults?: { workspace?: string };
-        entries?: Record<string, { workspace?: string }>;
+        entries?: Record<
+          string,
+          { workspace?: string; name?: string; identity?: { name?: string } }
+        >;
+        list?: Array<{
+          id: string;
+          workspace?: string;
+          name?: string;
+          identity?: { name?: string };
+        }>;
       }
     | undefined;
-  const workspaceDir =
+  const agentId =
     typeof context.agentId === 'string'
-      ? (agents?.entries?.[context.agentId]?.workspace ?? agents?.defaults?.workspace)
+      ? context.agentId
+      : typeof context.sessionKey === 'string'
+        ? /^agent:([^:]+):/.exec(context.sessionKey)?.[1]
+        : undefined;
+  const entry = agentId
+    ? (agents?.entries?.[agentId] ?? agents?.list?.find((a) => a.id === agentId))
+    : undefined;
+  const workspaceDir = context.workspaceDir ?? entry?.workspace ?? agents?.defaults?.workspace;
+  const overrides = api.pluginConfig?.agentNames as Record<string, string> | undefined;
+  const displayName = agentId
+    ? overrides?.[agentId] || entry?.identity?.name || entry?.name || agentId
+    : undefined;
+  const namespace =
+    typeof api.pluginConfig?.gatewayId === 'string'
+      ? api.pluginConfig.gatewayId
+      : `${hostname()}:${process.env.OPENCLAW_STATE_DIR ?? homedir()}:${process.env.OPENCLAW_CONFIG_PATH ?? ''}`;
+  // Ordinary chats share an agent. Genuine delegated child sessions remain
+  // distinct; do not change the base UI's spawn-tool character capability.
+  const childKey =
+    typeof context.sessionKey === 'string' && /:(?:subagent|acp):/.test(context.sessionKey)
+      ? context.sessionKey
       : undefined;
-  return workspaceDir ? { ...context, workspaceDir } : context;
+  return {
+    ...context,
+    ...(workspaceDir ? { workspaceDir } : {}),
+    ...(agentId
+      ? {
+          actorId: opaqueId(`${namespace}:${agentId}${childKey ? `:${childKey}` : ''}`),
+          displayName: childKey ? `${displayName} · subtask` : displayName,
+        }
+      : {}),
+  };
 }
 
 async function announceSession(
@@ -214,28 +249,11 @@ async function announceSession(
     event: 'session_start',
     session_id: id,
     source: 'openclaw',
+    ...(typeof context.actorId === 'string' ? { actor_id: context.actorId } : {}),
+    ...(typeof context.displayName === 'string' ? { display_name: context.displayName } : {}),
     ...(typeof context.workspaceDir === 'string' ? { cwd: context.workspaceDir } : {}),
   });
   return id;
-}
-
-function cancelTurnEnd(id: string): void {
-  const timer = turnEndTimers.get(id);
-  if (timer) clearTimeout(timer);
-  turnEndTimers.delete(id);
-}
-
-function scheduleTurnEnd(
-  id: string,
-  postEvent: (event: Record<string, unknown>) => Promise<void>,
-): void {
-  cancelTurnEnd(id);
-  const timer = setTimeout(() => {
-    turnEndTimers.delete(id);
-    void postEvent({ event: 'turn_end', session_id: id });
-  }, TURN_END_DELAY_MS);
-  timer.unref?.();
-  turnEndTimers.set(id, timer);
 }
 
 export default definePluginEntry({
@@ -244,28 +262,39 @@ export default definePluginEntry({
   description: 'Sends content-free lifecycle events to local or remote Pixel Agents servers.',
   register(api) {
     const sendEvent = eventSender(api);
-    const trackedSessions = new Set<string>();
-    const postEvent = async (event: Record<string, unknown>): Promise<void> => {
-      if (typeof event.session_id === 'string') {
-        if (event.event === 'session_start') trackedSessions.add(event.session_id);
-        if (event.event === 'session_end') trackedSessions.delete(event.session_id);
-      }
-      await sendEvent(event);
+    const activity = new SessionActivityAggregator(sendEvent);
+    const postEvent = (event: Record<string, unknown>) => activity.accept(event);
+    const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const cancelIdle = (id: string) => {
+      const timer = idleTimers.get(id);
+      if (timer) clearTimeout(timer);
+      idleTimers.delete(id);
     };
     api.on('model_call_started', async (event, context) => {
-      const id = await announceSession(postEvent, event, hookContext(api, context));
-      if (id) cancelTurnEnd(id);
+      const id = sessionId(event, context);
+      if (id) cancelIdle(id);
+      await announceSession(postEvent, event, hookContext(api, context));
     });
 
+    // Use metadata-only completion hooks. agent_end carries conversation data
+    // and is deliberately not registered or granted conversation access.
     api.on('model_call_ended', async (event, context) => {
       const id = sessionId(event, context);
-      if (id) scheduleTurnEnd(id, postEvent);
+      if (!id) return;
+      cancelIdle(id);
+      const timer = setTimeout(() => {
+        idleTimers.delete(id);
+        void postEvent({ event: 'model_idle', session_id: id });
+      }, 250);
+      timer.unref?.();
+      idleTimers.set(id, timer);
     });
 
     api.on('before_tool_call', async (event, context) => {
+      const sid = sessionId(event, context);
+      if (sid) cancelIdle(sid);
       const id = await announceSession(postEvent, event, hookContext(api, context));
       if (!id) return;
-      cancelTurnEnd(id);
       await postEvent({
         event: 'tool_start',
         session_id: id,
@@ -280,19 +309,10 @@ export default definePluginEntry({
       await postEvent({ event: 'tool_end', session_id: id, tool_id: toolId(event, context, id) });
     });
 
-    // Harnesses do not all emit per-call model events around their final reply.
-    // The authoritative turn boundary must still return the character to idle.
-    api.on('agent_end', async (event, context) => {
-      const id = sessionId(event, context);
-      if (!id) return;
-      cancelTurnEnd(id);
-      await postEvent({ event: 'turn_end', session_id: id });
-    });
-
     api.on('session_end', async (event, context) => {
       const id = sessionId(event, context);
       if (!id) return;
-      cancelTurnEnd(id);
+      cancelIdle(id);
       await postEvent({
         event: 'session_end',
         session_id: id,
@@ -300,19 +320,25 @@ export default definePluginEntry({
       });
     });
 
+    // Metadata-only child completion: remove the actual delegated character,
+    // including background children whose spawn tool returned earlier.
+    const closeChild = async (key: string) => {
+      const id = opaqueId(key);
+      cancelIdle(id);
+      await postEvent({ event: 'session_end', session_id: id });
+    };
+    api.on('subagent_ended', async (event) => {
+      if (typeof event.targetSessionKey === 'string') await closeChild(event.targetSessionKey);
+    });
+    api.on('subagent_progress', async (event) => {
+      if (event.phase === 'ended' && typeof event.childSessionKey === 'string')
+        await closeChild(event.childSessionKey);
+    });
+
     api.on('gateway_stop', async () => {
-      for (const timer of turnEndTimers.values()) clearTimeout(timer);
-      turnEndTimers.clear();
-      await Promise.all(
-        [...trackedSessions].map((id) =>
-          postEvent({
-            event: 'session_end',
-            session_id: id,
-            reason: 'gateway_stop',
-          }),
-        ),
-      );
-      trackedSessions.clear();
+      for (const timer of idleTimers.values()) clearTimeout(timer);
+      idleTimers.clear();
+      await activity.stop();
     });
   },
 });

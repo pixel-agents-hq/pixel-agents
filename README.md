@@ -36,7 +36,7 @@ The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvi
 
 ## Features
 
-- **One agent, one character** — every Claude Code terminal or active OpenClaw session gets its own animated character
+- **One agent, one character** — every Claude Code terminal or configured OpenClaw agent gets its own animated character
 - **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
 - **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
 - **Speech bubbles** — visual indicators when an agent is waiting for input or awaiting permission
@@ -127,9 +127,11 @@ Stop a standalone server with **Ctrl+C**. It removes only its own registration.
 
 When Pixel Agents starts, it can offer to install its bundled OpenClaw relay plugin. Accepting that provider-specific consent prompt runs OpenClaw's normal plugin installer and links a copy stored under `~/.pixel-agents/openclaw-plugin/`. Restart the OpenClaw gateway if OpenClaw asks you to do so.
 
-Start the VS Code extension or standalone CLI, then use OpenClaw normally in a tracked workspace. Each active OpenClaw session appears as a hooks-only character; model calls, tool calls, turn completion, and session completion drive its activity. Pixel Agents does not launch or attach to OpenClaw sessions, and OpenClaw sub-agent sessions appear independently when OpenClaw gives them their own session key.
+Start the VS Code extension or standalone CLI, then use OpenClaw normally in a tracked workspace. Each configured OpenClaw agent has one hooks-only character per Gateway, shared across its ordinary chat sessions. Different configured agents remain separate. Across simultaneous chats the visible priority is **working/generating > tool activity > reading/research > idle**; the most recently updated session wins ties. Finishing one session cannot idle or remove a character while another session is working. Genuine delegated child sessions remain distinct, labeled as subtasks, and close on native child-completion metadata. The base UI's spawn-tool character behavior remains enabled and unchanged. Pixel Agents does not launch or attach to OpenClaw sessions.
 
-The relay is deliberately content-free. It sends only hashed session and tool identifiers, tool names, lifecycle state, and the active workspace directory. It never sends prompts, responses, message bodies, tool parameters, tool results, credentials, tokens, or transcript content. Disable the OpenClaw connection from Pixel Agents settings to uninstall the relay plugin.
+The relay is deliberately content-free. It sends only an opaque Gateway/agent identifier, hashed tool identifiers, configured display names, tool names, lifecycle state, and the active workspace directory. Session arbitration stays in the Gateway relay. It never sends prompts, responses, message bodies, tool parameters, tool results, credentials, tokens, or transcript content. Disable the OpenClaw connection from Pixel Agents settings to uninstall the relay plugin.
+
+Names come from the agent's OpenClaw `identity.name`, then its configured `name`, then its agent ID—never Discord or another channel. Optional manual overrides live in the OpenClaw plugin settings at `plugins.entries.pixel-agents-openclaw.config.agentNames`, for example `{"main":"Rooty Raccoon","azure-audit-mapper":"Rebooto McClickens"}`. These overrides take precedence. For multiple Gateways on the same host/state location, set a unique stable `config.gatewayId` for each; the default namespace uses the hostname and OpenClaw state/config location. Namespace and agent IDs are hashed before delivery.
 
 By default the plugin discovers authenticated Pixel Agents servers for the same OS user and delivers events over loopback. Pixel Agents and OpenClaw do not have to share a host, though: the plugin can also send to one configured remote office using a dedicated hook-only bearer credential. That credential cannot control the Pixel Agents UI, install hooks, launch agents, or attach to terminals.
 

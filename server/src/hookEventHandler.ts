@@ -193,6 +193,17 @@ export class HookEventHandler {
         }
         const agent = id === undefined ? undefined : this.agents.get(id);
         if (agent) {
+          if (typeof event.display_name === 'string') {
+            const name = event.display_name
+              .replace(/[\u0000-\u001f\u007f]/g, '')
+              .trim()
+              .slice(0, 120);
+            if (name && name !== agent.agentName) {
+              agent.agentName = name;
+              this.agents.broadcast({ type: 'agentTeamInfo', id: agent.id, agentName: name });
+              this.agents.persist();
+            }
+          }
           cancelWaitingTimer(agent.id, this.waitingTimers);
           agent.hookDelivered = true;
           agent.isWaiting = false;

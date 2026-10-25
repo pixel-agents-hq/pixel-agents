@@ -18,6 +18,8 @@ describe('openClawProvider', () => {
     expect(openClawProvider.displayName).toBe('OpenClaw');
     expect(openClawProvider.protocolVersion).toBe(1);
     expect(hookProviders).toContain(openClawProvider);
+    expect(openClawProvider.subagentToolNames.has('sessions_spawn')).toBe(true);
+    expect(openClawProvider.subagentToolNames.has('spawn_agent')).toBe(true);
   });
 
   it('rejects payloads without both an event and session id', () => {
@@ -95,10 +97,21 @@ describe('AgentRuntime OpenClaw routing', () => {
     runtime = new AgentRuntime(store, claudeProvider, hookProviders);
     runtime.watchAllSessions.current = true;
     runtime.startStaleCheck();
-    const start = { event: 'session_start', session_id: 'reused', cwd: '/remote/workspace' };
+    const start = {
+      event: 'session_start',
+      session_id: 'reused',
+      cwd: '/remote/workspace',
+      display_name: 'Friendly OpenClaw Agent',
+    };
     runtime.handleHookEvent('openclaw', start);
     expect(store.size).toBe(1);
     const agent = [...store.values()][0];
+    expect(agent.agentName).toBe('Friendly OpenClaw Agent');
+    expect(messages).toContainEqual({
+      type: 'agentTeamInfo',
+      id: agent.id,
+      agentName: 'Friendly OpenClaw Agent',
+    });
     expect(messages).toContainEqual({ type: 'agentStatus', id: agent.id, status: 'active' });
     runtime.handleHookEvent('openclaw', { event: 'turn_end', session_id: 'reused' });
     expect(agent.isWaiting).toBe(true);

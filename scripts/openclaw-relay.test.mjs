@@ -50,6 +50,7 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
     plugin.register({
       pluginConfig: {
         localDiscovery: false,
+        agentNames: { 'probe-manual': 'Manual Desk Name' },
         remote: {
           endpoint: 'http://127.0.0.1:13100/api/hooks/openclaw',
           token: { source: 'file', provider: 'test', id: 'value' },
@@ -58,7 +59,14 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
       runtime: {
         config: {
           current: () => ({
-            agents: { entries: { probe: { workspace: '/configured-probe-workspace' } } },
+            agents: {
+              entries: {
+                probe: {
+                  workspace: '/configured-probe-workspace',
+                  identity: { name: 'Friendly Probe' },
+                },
+              },
+            },
           }),
         },
       },
@@ -82,9 +90,9 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
       { toolName: 'exec', toolCallId: 'private-tool-id', params: { secret: 'never-forward' } },
       context,
     );
-    assert.equal(sent.length, 3);
-    assert.equal(sent[2].options.headers.authorization, 'Bearer fake-hook-only-token-two');
-    assert.equal(JSON.parse(sent[2].options.body).event, 'tool_start');
+    assert.equal(sent.length, 4);
+    assert.equal(sent.at(-1).options.headers.authorization, 'Bearer fake-hook-only-token-two');
+    assert.equal(JSON.parse(sent.at(-1).options.body).event, 'tool_start');
     assert.equal(
       sent.some((item) =>
         /private-session-key|private-tool-id|must-not-forward|never-forward/.test(
@@ -96,17 +104,157 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
     assert.equal(fixture.resolveCalls, 1, 'prepared credentials should avoid cold resolution');
     await hooks.get('model_call_started')({}, { agentId: 'probe', sessionKey: 'agent:probe:test' });
     assert.equal(JSON.parse(sent.at(-1).options.body).cwd, '/configured-probe-workspace');
-    await hooks.get('agent_end')({ messages: ['must-not-forward-final-reply'] }, context);
+    assert.equal(JSON.parse(sent.at(-1).options.body).display_name, 'Friendly Probe');
+    const firstActor = JSON.parse(sent.at(-1).options.body).session_id;
+    await hooks.get('model_call_started')(
+      {},
+      { agentId: 'probe', sessionKey: 'agent:probe:another-chat' },
+    );
+    assert.equal(JSON.parse(sent.at(-1).options.body).session_id, firstActor);
+    await hooks.get('model_call_started')(
+      {},
+      { agentId: 'probe-manual', sessionKey: 'agent:probe-manual:test', workspaceDir: '/manual' },
+    );
+    assert.equal(JSON.parse(sent.at(-1).options.body).display_name, 'Manual Desk Name');
+    assert.notEqual(JSON.parse(sent.at(-1).options.body).session_id, firstActor);
+    const childContext = { agentId: 'probe', sessionKey: 'agent:probe:subagent:test-child' };
+    await hooks.get('model_call_started')({}, childContext);
+    const childActor = JSON.parse(sent.at(-1).options.body).session_id;
+    assert.notEqual(childActor, firstActor, 'genuine delegated children remain distinct');
+    assert.equal(JSON.parse(sent.at(-1).options.body).display_name, 'Friendly Probe · subtask');
+    await hooks.get('subagent_progress')({
+      phase: 'ended',
+      childSessionKey: childContext.sessionKey,
+    });
+    assert.equal(JSON.parse(sent.at(-1).options.body).event, 'session_end');
+    assert.equal(JSON.parse(sent.at(-1).options.body).session_id, childActor);
+    assert.equal(hooks.has('agent_end'), false, 'must not request conversation access');
+    await hooks.get('after_tool_call')(
+      { toolName: 'exec', toolCallId: 'private-tool-id' },
+      context,
+    );
+    await hooks.get('model_call_ended')({}, context);
+    await new Promise((resolve) => setTimeout(resolve, 300));
     assert.equal(JSON.parse(sent.at(-1).options.body).event, 'turn_end');
     await hooks.get('gateway_stop')();
     assert.equal(JSON.parse(sent.at(-1).options.body).event, 'session_end');
     assert.equal(JSON.parse(sent.at(-1).options.body).reason, 'gateway_stop');
-    assert.equal(
-      sent.some((item) => item.options.body.includes('must-not-forward-final-reply')),
-      false,
-    );
   } finally {
     globalThis.fetch = originalFetch;
     delete globalThis.__pixelRelayFixture;
   }
+});
+
+test('session aggregation obeys working > tools > reading > idle and closes only after the last session', async () => {
+  const bundled = await build({
+    entryPoints: ['integrations/openclaw/sessionActivity.ts'],
+    bundle: true,
+    write: false,
+    platform: 'node',
+    format: 'esm',
+  });
+  const { SessionActivityAggregator } = await import(
+    'data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64')
+  );
+  const events = [];
+  const aggregator = new SessionActivityAggregator(async (e) => events.push(e));
+  const send = (session_id, event, extra = {}) =>
+    aggregator.accept({ session_id, event, ...extra });
+  const start = (sid) =>
+    send(sid, 'session_start', {
+      actor_id: 'one-actor',
+      display_name: 'Friendly Agent',
+      cwd: '/workspace',
+    });
+  await start('reading');
+  await send('reading', 'tool_start', { tool_id: 'read-tool', tool_name: 'web_fetch' });
+  assert.equal(events.at(-1).tool_name, 'web_fetch');
+  const beforeIdleFallback = events.length;
+  await send('reading', 'model_idle');
+  assert.equal(
+    events.length,
+    beforeIdleFallback,
+    'model completion must not interrupt a live tool',
+  );
+  await start('tool');
+  await send('tool', 'tool_start', { tool_id: 'exec-tool', tool_name: 'exec' });
+  assert.equal(events.at(-1).tool_name, 'exec');
+  await start('working');
+  assert.equal(events.at(-1).event, 'session_start');
+  assert.equal(events.at(-1).display_name, 'Friendly Agent');
+  const checkpoint = events.length;
+  await send('reading', 'turn_end');
+  assert.ok(
+    !events.slice(checkpoint).some((e) => e.event === 'turn_end'),
+    'another idle session cannot override working',
+  );
+  await send('working', 'turn_end');
+  assert.equal(events.at(-1).tool_name, 'exec');
+  await start('reading');
+  await send('reading', 'tool_start', { tool_id: 'read-tool', tool_name: 'web_fetch' });
+  assert.equal(events.at(-1).tool_name, 'exec');
+  await send('tool', 'turn_end');
+  assert.equal(events.at(-1).tool_name, 'web_fetch');
+  await send('reading', 'turn_end');
+  assert.equal(events.at(-1).event, 'turn_end');
+  assert.deepEqual([...new Set(events.map((e) => e.session_id))], ['one-actor']);
+  await send('reading', 'session_end');
+  await send('tool', 'session_end');
+  assert.ok(!events.some((e) => e.event === 'session_end'));
+  await send('working', 'session_end');
+  assert.equal(events.at(-1).event, 'session_end');
+});
+
+test('separate agents, tools and concurrent delivery stay isolated', async () => {
+  const bundled = await build({
+    entryPoints: ['integrations/openclaw/sessionActivity.ts'],
+    bundle: true,
+    write: false,
+    platform: 'node',
+    format: 'esm',
+  });
+  const { SessionActivityAggregator } = await import(
+    'data:text/javascript;base64,' + Buffer.from(bundled.outputFiles[0].text).toString('base64')
+  );
+  const events = [];
+  const aggregator = new SessionActivityAggregator(async (e) => {
+    await new Promise((r) => setTimeout(r, 1));
+    events.push(e);
+  });
+  await Promise.all([
+    aggregator.accept({
+      event: 'session_start',
+      session_id: 'chat-a',
+      actor_id: 'agent-a',
+      cwd: '/a',
+    }),
+    aggregator.accept({
+      event: 'session_start',
+      session_id: 'chat-b',
+      actor_id: 'agent-b',
+      cwd: '/b',
+    }),
+    aggregator.accept({ event: 'turn_end', session_id: 'chat-a' }),
+  ]);
+  assert.deepEqual(
+    events.filter((e) => e.session_id === 'agent-a').map((e) => e.event),
+    ['session_start', 'session_start', 'turn_end'],
+  );
+  assert.equal(events.filter((e) => e.session_id === 'agent-b').length, 1);
+  await Promise.all([
+    aggregator.accept({ event: 'session_end', session_id: 'chat-a' }),
+    aggregator.accept({
+      event: 'session_start',
+      session_id: 'chat-a-new',
+      actor_id: 'agent-a',
+      cwd: '/a',
+    }),
+  ]);
+  assert.equal(
+    events.filter((e) => e.session_id === 'agent-a').at(-1).event,
+    'session_start',
+    'late close cannot erase a reopened actor',
+  );
+  await aggregator.stop();
+  assert.equal(events.filter((e) => e.reason === 'gateway_stop').length, 2);
 });
