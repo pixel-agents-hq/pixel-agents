@@ -526,6 +526,11 @@ export class HookEventHandler {
         agent.activeToolIds.delete(toolId);
         agent.activeToolStatuses.delete(toolId);
         agent.activeToolNames.delete(toolId);
+        if (agent.activeToolIds.size === 0) {
+          // Return from reading/tool animation to normal working/typing while
+          // the model continues generating, without ending the turn.
+          this.agents.broadcast({ type: 'agentToolsClear', id: agentId });
+        }
       }
       agent.currentHookToolId = undefined;
       agent.currentHookToolName = undefined;

@@ -170,6 +170,8 @@ describe('AgentRuntime OpenClaw routing', () => {
     expect(messages).toContainEqual(
       expect.objectContaining({ type: 'agentToolDone', toolId: 'tool-1' }),
     );
+    expect(messages).toContainEqual({ type: 'agentToolsClear', id: agent.id });
+    expect(agent.isWaiting).toBe(false);
   });
 
   it('does not dispatch OpenClaw events through the Claude provider', () => {
