@@ -1,3 +1,49 @@
+# Nakama Works
+
+**Nakama Works** es un fork de [Pixel Agents](https://github.com/pixel-agents-hq/pixel-agents) para ver **la cascada de agentes en vivo**. Muestra qué modelo usa cada agente y subagente (Haiku, Sonnet, Opus, Fable, Codex), con qué tipo y effort se lanzó, qué está pensando y cuántos tokens lleva gastados.
+
+Todo se lee de los transcripts que Claude Code ya guarda en `~/.claude/projects`, así que **mirar no gasta tokens**.
+
+_Nakama_ (仲間) significa "compañeros de equipo".
+
+> 🚧 En construcción. El avance está en los [pull requests](https://github.com/B3njjaman/nakama-works/pulls?q=is%3Apr).
+
+## Qué agrega a Pixel Agents
+
+| Función               | Qué ves                                                                                                      | Estado   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ | -------- |
+| Color por modelo      | Cada personaje con el color de su modelo: Haiku verde, Sonnet azul, Opus morado, Fable dorado, Codex naranja | En curso |
+| Tipo y effort         | Insignia `Sonnet · ecc:constructor · high` sobre el personaje                                                | En curso |
+| Pensamiento           | Burbuja con lo último que pensó el agente                                                                    | En curso |
+| Quién encarga a quién | Línea punteada de cada subagente a su agente                                                                 | En curso |
+| Tokens                | Gasto acumulado por agente y subagente                                                                       | En curso |
+| Panel de cascada      | Árbol con agentes, subagentes, modelo, effort, estado y gasto                                                | Planeado |
+
+## Para ver el pensamiento
+
+Claude Code guarda el pensamiento cifrado a menos que se lo pidas. Agrega esto a `~/.claude/settings.json`:
+
+```json
+{ "showThinkingSummaries": true }
+```
+
+Según la [documentación oficial](https://code.claude.com/docs/en/settings-reference.md), esto cambia solo lo que se ve, no lo que el modelo genera. Lo que aparece es un **resumen** del pensamiento.
+
+## Personajes propios
+
+Los personajes se cargan desde una carpeta local con **Settings → Add Asset Directory** (ver [docs/external-assets.md](docs/external-assets.md)). Los sprites de personajes con derechos de autor no se suben a este repo.
+
+## Créditos
+
+- [Pixel Agents](https://github.com/pixel-agents-hq/pixel-agents) de Pablo De Lucca y sus colaboradores (MIT) es la base completa: la oficina, los personajes, los hooks y el lector de transcripts. Su licencia se mantiene en [LICENSE](LICENSE).
+- Estas herramientas inspiraron las funciones nuevas. Se tomaron ideas, no código:
+  - [Agent Flow](https://github.com/patoles/agent-flow) (Apache-2.0): el modelo de cada subagente y el grafo de quién llama a quién.
+  - [claude-esp](https://github.com/phiat/claude-esp) (MIT): el pensamiento y el contexto por agente en vivo.
+  - [Agents Observe](https://github.com/simple10/agents-observe) (MIT): la jerarquía de subagentes y la línea de tiempo.
+  - [claude-devtools](https://github.com/matt1398/claude-devtools) (MIT): el gasto de tokens por subagente.
+
+---
+
 <h1 align="center">
   <a href="https://github.com/pixel-agents-hq/pixel-agents/discussions">
     <img src="webview-ui/public/banner.png" alt="Pixel Agents">
