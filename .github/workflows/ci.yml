@@ -100,6 +100,12 @@ jobs:
         run: npm run test -w webview-ui
         continue-on-error: true
 
+      - name: OpenClaw Relay Tests
+        id: openclaw_test
+        if: always() && steps.install_dependencies.outcome == 'success'
+        run: npm run test:openclaw-relay
+        continue-on-error: true
+
       - name: Upload Linux Webview Allure Results
         if: always() && steps.install_dependencies.outcome == 'success'
         uses: actions/upload-artifact@v7
@@ -171,6 +177,7 @@ jobs:
           TYPE_CHECK: ${{ steps.type_check.outcome }}
           LINT: ${{ steps.lint.outcome }}
           WEBVIEW_TEST: ${{ steps.webview_test.outcome }}
+          OPENCLAW_TEST: ${{ steps.openclaw_test.outcome }}
           FORMAT_CHECK: ${{ steps.format_check.outcome }}
           BUILD: ${{ steps.build.outcome }}
           NPM_PACKAGE: ${{ steps.npm_package.outcome }}
@@ -195,6 +202,7 @@ jobs:
             echo "| **Type check** | $(status "$TYPE_CHECK") |"
             echo "| **Lint** | $(status "$LINT") |"
             echo "| **Webview tests** | $(status "$WEBVIEW_TEST") |"
+            echo "| **OpenClaw relay tests** | $(status "$OPENCLAW_TEST") |"
             echo "| **Format check** | $(status "$FORMAT_CHECK") |"
             echo "| **Build** | $(status "$BUILD") |"
             echo "| **npm package artifact** | $(status "$NPM_PACKAGE") |"
@@ -214,6 +222,7 @@ jobs:
           TYPE_CHECK: ${{ steps.type_check.outcome }}
           LINT: ${{ steps.lint.outcome }}
           WEBVIEW_TEST: ${{ steps.webview_test.outcome }}
+          OPENCLAW_TEST: ${{ steps.openclaw_test.outcome }}
           FORMAT_CHECK: ${{ steps.format_check.outcome }}
           BUILD: ${{ steps.build.outcome }}
           NPM_PACKAGE: ${{ steps.npm_package.outcome }}
@@ -222,7 +231,7 @@ jobs:
           failed=0
           for step in CHECKOUT SETUP_NODE INSTALL_DEPENDENCIES \
                       TYPE_CHECK LINT \
-                      WEBVIEW_TEST FORMAT_CHECK BUILD NPM_PACKAGE SERVER_TEST; do
+                      WEBVIEW_TEST OPENCLAW_TEST FORMAT_CHECK BUILD NPM_PACKAGE SERVER_TEST; do
             val=$(printenv "$step" 2>/dev/null || echo "skipped")
             if [ "$val" != "success" ]; then
               echo "::error::$step failed"

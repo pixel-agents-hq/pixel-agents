@@ -486,7 +486,7 @@ export class HookEventHandler {
     agent.permissionSent = false;
     agent.hadToolsInTurn = true;
 
-    if (agent.hooksOnly) {
+    if (agent.hooksOnly && this.provider.id === 'openclaw') {
       agent.activeToolIds.add(hookToolId);
       agent.activeToolStatuses.set(hookToolId, status);
       agent.activeToolNames.set(hookToolId, toolName);
@@ -533,7 +533,7 @@ export class HookEventHandler {
           toolId,
         });
       }
-      if (agent.hooksOnly) {
+      if (agent.hooksOnly && this.provider.id === 'openclaw') {
         agent.activeToolIds.delete(toolId);
         agent.activeToolStatuses.delete(toolId);
         agent.activeToolNames.delete(toolId);

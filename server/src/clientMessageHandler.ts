@@ -24,7 +24,12 @@ import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
-import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
+import {
+  claudeProvider,
+  hookProviderById,
+  hookProviderCapabilities,
+  hookProviders,
+} from './providers/index.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 
@@ -457,8 +462,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // 1. Provider capabilities (must arrive before any agent messages)
   send({
     type: 'providerCapabilities',
-    readingTools: [...claudeProvider.readingTools],
-    subagentToolNames: [...claudeProvider.subagentToolNames],
+    ...hookProviderCapabilities(),
   });
 
   // 1b. Terminal availability. Gates the whole terminal UI (the + Agent button
@@ -539,8 +543,14 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
         console.error(`[Pixel Agents] hooks status check failed for provider ${provider.id}:`, err);
         return false;
       })
-      .then((installed) => {
+      .then(async (installed) => {
         send({ type: 'hooksStatus', providerId: provider.id, installed });
+        if (
+          !installed &&
+          provider.shouldOfferHooks &&
+          !(await provider.shouldOfferHooks().catch(() => false))
+        )
+          return;
         // 4a-bis. First-run consent, asked in the app: this connect is the moment the user can be asked, so the ask
         // rides the handshake and consentGate owns every condition (VS Code calls the same function). The record is
         // re-read here rather than taken from startup — another tab may have answered while this one loaded.

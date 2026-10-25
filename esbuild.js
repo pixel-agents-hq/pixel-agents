@@ -82,6 +82,8 @@ function buildOpenClawPlugin() {
   for (const file of ['package.json', 'openclaw.plugin.json']) {
     fs.copyFileSync(path.join(srcDir, file), path.join(outDir, file));
   }
+  // Ship setup, data boundaries, and limitations with the installable relay.
+  fs.copyFileSync(path.join(__dirname, 'docs', 'openclaw.md'), path.join(outDir, 'README.md'));
   console.log('✓ Built OpenClaw plugin → dist/openclaw-plugin/');
 }
 

@@ -24,6 +24,19 @@ export { copyOpenClawPlugin } from './hook/openclaw/openclawPluginInstaller.js';
  *  one) and `hooksConsentResponse` resolves its provider id against it. */
 export const hookProviders: readonly HookProvider[] = [claudeProvider, openClawProvider];
 
+/** Existing office protocol carries one taxonomy for all observed providers. */
+export function hookProviderCapabilities(): {
+  readingTools: string[];
+  subagentToolNames: string[];
+} {
+  return {
+    readingTools: [...new Set(hookProviders.flatMap((provider) => [...provider.readingTools]))],
+    subagentToolNames: [
+      ...new Set(hookProviders.flatMap((provider) => [...provider.subagentToolNames])),
+    ],
+  };
+}
+
 /** Resolve a wire-supplied provider id, or undefined for an unknown one —
  *  the caller writes nothing on undefined (fail-closed, like a junk choice). */
 export function hookProviderById(id: unknown): HookProvider | undefined {

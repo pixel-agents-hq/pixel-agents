@@ -23,6 +23,7 @@ export const REQUIRED_PACKAGE_FILES = [
   'dist/openclaw-plugin/index.js',
   'dist/openclaw-plugin/openclaw.plugin.json',
   'dist/openclaw-plugin/package.json',
+  'dist/openclaw-plugin/README.md',
   'dist/webview/index.html',
   'icon.png',
   'package.json',

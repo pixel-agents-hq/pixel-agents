@@ -56,6 +56,7 @@ import {
   copyHookScript,
   copyOpenClawPlugin,
   hookProviderById,
+  hookProviderCapabilities,
   hookProviders,
   openClawProvider,
 } from '../../server/src/providers/index.js';
@@ -643,8 +644,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // from the first frame.
         this.webview?.postMessage({
           type: 'providerCapabilities',
-          readingTools: [...claudeProvider.readingTools],
-          subagentToolNames: [...claudeProvider.subagentToolNames],
+          ...hookProviderCapabilities(),
         });
 
         // Settings + Directory→Area mappings MUST be dispatched BEFORE restoreAgents
@@ -722,6 +722,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             providerId: provider.id,
             installed,
           });
+          if (
+            !installed &&
+            provider.shouldOfferHooks &&
+            !(await provider.shouldOfferHooks().catch(() => false))
+          )
+            continue;
           const consentRequest = hooksConsentRequest(
             {
               installed,

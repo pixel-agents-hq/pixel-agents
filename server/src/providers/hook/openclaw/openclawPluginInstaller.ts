@@ -16,6 +16,17 @@ function installedPluginDir(): string {
   return path.join(os.homedir(), '.pixel-agents', OPENCLAW_PLUGIN_INSTALL_DIR);
 }
 
+/** Do not add an OpenClaw first-run prompt to an unconfigured Claude-only office. */
+export async function shouldOfferOpenClawHooks(): Promise<boolean> {
+  const configPath =
+    process.env.OPENCLAW_CONFIG_PATH ??
+    path.join(
+      process.env.OPENCLAW_STATE_DIR ?? path.join(os.homedir(), '.openclaw'),
+      'openclaw.json',
+    );
+  return fs.existsSync(configPath);
+}
+
 /** Copy the bundled plugin into Pixel Agents-owned storage before installation. */
 export function copyOpenClawPlugin(packageRoot: string): boolean {
   const source = path.join(packageRoot, 'dist', OPENCLAW_PLUGIN_DIR);

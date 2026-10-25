@@ -16,6 +16,7 @@ const REQUIRED_FILES = [
   'extension/dist/openclaw-plugin/index.js',
   'extension/dist/openclaw-plugin/openclaw.plugin.json',
   'extension/dist/openclaw-plugin/package.json',
+  'extension/dist/openclaw-plugin/README.md',
   'extension/dist/webview/index.html',
 ];
 const FORBIDDEN_PREFIXES = [

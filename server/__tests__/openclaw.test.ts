@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,9 +10,37 @@ import {
   formatOpenClawToolStatus,
   normalizeOpenClawHookEvent,
 } from '../src/providers/hook/openclaw/openclaw.js';
-import { hookProviders, openClawProvider } from '../src/providers/index.js';
+import {
+  hookProviderCapabilities,
+  hookProviders,
+  openClawProvider,
+} from '../src/providers/index.js';
 
 describe('openClawProvider', () => {
+  it('offers local installation only for a configured OpenClaw profile', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-openclaw-offer-'));
+    const config = path.join(directory, 'openclaw.json');
+    vi.stubEnv('OPENCLAW_CONFIG_PATH', config);
+    try {
+      expect(await openClawProvider.shouldOfferHooks?.()).toBe(false);
+      fs.writeFileSync(config, '{}');
+      expect(await openClawProvider.shouldOfferHooks?.()).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('advertises both providers without removing the original tool taxonomy', () => {
+    const caps = hookProviderCapabilities();
+    for (const provider of [claudeProvider, openClawProvider]) {
+      for (const name of provider.readingTools) expect(caps.readingTools).toContain(name);
+      for (const name of provider.subagentToolNames) expect(caps.subagentToolNames).toContain(name);
+    }
+    expect(new Set(caps.readingTools).size).toBe(caps.readingTools.length);
+    expect(new Set(caps.subagentToolNames).size).toBe(caps.subagentToolNames.length);
+  });
+
   it('registers as a protocol-v1 hook provider', () => {
     expect(openClawProvider.kind).toBe('hook');
     expect(openClawProvider.id).toBe('openclaw');
@@ -197,5 +226,30 @@ describe('AgentRuntime OpenClaw routing', () => {
       cwd: '/workspace',
     });
     expect(store.size).toBe(0);
+  });
+
+  it('does not apply OpenClaw tool cleanup to a Claude hooks-only approval', () => {
+    const store = new AgentStateStore();
+    const messages: Array<Record<string, unknown>> = [];
+    store.on('broadcast', (message) => messages.push(message));
+    runtime = new AgentRuntime(store, claudeProvider, hookProviders);
+    runtime.watchAllSessions.current = true;
+    const session = { session_id: 'claude-hooks-only', cwd: '/test' };
+    runtime.handleHookEvent('claude', { ...session, hook_event_name: 'SessionStart' });
+    runtime.handleHookEvent('claude', {
+      ...session,
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+    });
+    expect(store.size).toBe(1);
+    runtime.handleHookEvent('claude', { ...session, hook_event_name: 'PermissionRequest' });
+    const checkpoint = messages.length;
+    runtime.handleHookEvent('claude', { ...session, hook_event_name: 'PostToolUse' });
+    expect(messages.slice(checkpoint).some((message) => message.type === 'agentToolDone')).toBe(
+      true,
+    );
+    expect(messages.slice(checkpoint).some((message) => message.type === 'agentToolsClear')).toBe(
+      false,
+    );
   });
 });

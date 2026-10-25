@@ -88,6 +88,10 @@ export interface HookProvider {
   uninstallHooks(): Promise<void>;
   /** Check if hooks are currently installed. */
   areHooksInstalled(): Promise<boolean>;
+  /** Optional first-run discovery gate. Remote-only observers can stay registered
+   *  without asking users to install a tool they have not configured locally.
+   *  Does not grant consent or prevent an explicitly requested installation. */
+  shouldOfferHooks?(): Promise<boolean>;
   /** First-run consent copy for THIS provider's hook install: the headline titles the ask, the disclosure is its body
    *  (what is written, what data moves, how to undo; paragraphs split on blank lines). Required, not optional — a
    *  provider that installs anything must state its terms, and the gate ships these verbatim so no client copy can

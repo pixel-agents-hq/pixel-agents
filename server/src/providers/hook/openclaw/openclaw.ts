@@ -3,6 +3,7 @@ import { CONSENT_DISCLOSURE, CONSENT_INSTALL_HEADLINE } from './consentCopy.js';
 import {
   areOpenClawHooksInstalled,
   installOpenClawHooks,
+  shouldOfferOpenClawHooks,
   uninstallOpenClawHooks,
 } from './openclawPluginInstaller.js';
 
@@ -100,6 +101,7 @@ export const openClawProvider: HookProvider = {
   installHooks: async () => installOpenClawHooks(),
   uninstallHooks: uninstallOpenClawHooks,
   areHooksInstalled: areOpenClawHooksInstalled,
+  shouldOfferHooks: shouldOfferOpenClawHooks,
   consentDisclosure: () => ({
     headline: CONSENT_INSTALL_HEADLINE,
     disclosure: CONSENT_DISCLOSURE,

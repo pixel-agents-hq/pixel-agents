@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
 
-test('relay resolves prepared secrets inside hooks and sees later availability and rotation', async () => {
+test('relay resolves prepared secrets inside hooks and sees later availability and rotation', async (t) => {
   const fixture = { token: undefined, resolveCalls: 0, preparedCalls: 0 };
   globalThis.__pixelRelayFixture = fixture;
   const result = await build({
@@ -36,9 +36,29 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
       },
     ],
   });
-  const { default: plugin } = await import(
+  const { default: plugin, remoteEndpoint } = await import(
     'data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64')
   );
+  await t.test('remote endpoints require TLS except for literal loopback destinations', () => {
+    for (const host of ['127.0.0.1', '127.1', '[::1]', 'localhost']) {
+      assert.ok(remoteEndpoint(`http://${host}:3100/api/hooks/openclaw`), host);
+    }
+    assert.equal(
+      remoteEndpoint('https://office.example/api/hooks/openclaw/'),
+      'https://office.example/api/hooks/openclaw',
+    );
+    for (const endpoint of [
+      'http://127.attacker.example/api/hooks/openclaw',
+      'http://office.example/api/hooks/openclaw',
+      'http://192.0.2.1/api/hooks/openclaw',
+      'https://user:password@office.example/api/hooks/openclaw',
+      'https://office.example/api/hooks/openclaw?token=secret',
+      'https://office.example/api/hooks/openclaw#fragment',
+      'https://office.example/redirect',
+      'ftp://localhost/api/hooks/openclaw',
+    ])
+      assert.equal(remoteEndpoint(endpoint), null, endpoint);
+  });
   const hooks = new Map();
   const sent = [];
   const originalFetch = globalThis.fetch;
@@ -66,6 +86,7 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
                   identity: { name: 'Friendly Probe' },
                 },
               },
+              list: [{ id: 'list-probe', name: 'Configured List Name', workspace: '/list' }],
             },
           }),
         },
@@ -85,6 +106,7 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
     await hooks.get('model_call_started')({ prompt: 'must-not-forward' }, context);
     assert.equal(sent.length, 1, 'later availability must not remain cached as unavailable');
     assert.equal(sent[0].options.headers.authorization, 'Bearer fake-hook-only-token-one');
+    assert.equal(sent[0].options.redirect, 'error', 'never redirect bearer credentials');
     fixture.token = 'fake-hook-only-token-two';
     await hooks.get('before_tool_call')(
       { toolName: 'exec', toolCallId: 'private-tool-id', params: { secret: 'never-forward' } },
@@ -117,6 +139,14 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
     );
     assert.equal(JSON.parse(sent.at(-1).options.body).display_name, 'Manual Desk Name');
     assert.notEqual(JSON.parse(sent.at(-1).options.body).session_id, firstActor);
+    await hooks.get('model_call_started')({}, { sessionKey: 'agent:list-probe:chat' });
+    assert.equal(JSON.parse(sent.at(-1).options.body).display_name, 'Configured List Name');
+    assert.equal(JSON.parse(sent.at(-1).options.body).cwd, '/list');
+    await hooks.get('model_call_started')(
+      {},
+      { agentId: 'fallback-agent', sessionKey: 'agent:fallback-agent:chat', workspaceDir: '/test' },
+    );
+    assert.equal(JSON.parse(sent.at(-1).options.body).display_name, 'fallback-agent');
     const childContext = { agentId: 'probe', sessionKey: 'agent:probe:subagent:test-child' };
     await hooks.get('model_call_started')({}, childContext);
     const childActor = JSON.parse(sent.at(-1).options.body).session_id;
@@ -129,8 +159,36 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
     assert.equal(JSON.parse(sent.at(-1).options.body).event, 'session_end');
     assert.equal(JSON.parse(sent.at(-1).options.body).session_id, childActor);
     assert.equal(hooks.has('agent_end'), false, 'must not request conversation access');
+    await t.test('equal agent IDs in different Gateway namespaces remain separate', async () => {
+      const actorIds = [];
+      for (const gatewayId of ['gateway-one', 'gateway-two']) {
+        const scopedHooks = new Map();
+        plugin.register({
+          pluginConfig: {
+            gatewayId,
+            localDiscovery: false,
+            remote: { endpoint: 'https://office.example/api/hooks/openclaw', token: 'fixture' },
+          },
+          runtime: {
+            config: { current: () => ({ agents: { defaults: { workspace: '/test' } } }) },
+          },
+          logger: { warn: () => {} },
+          on: (name, handler) => scopedHooks.set(name, handler),
+        });
+        await scopedHooks.get('model_call_started')(
+          {},
+          {
+            agentId: 'probe',
+            sessionKey: 'agent:probe:same-chat',
+          },
+        );
+        actorIds.push(JSON.parse(sent.at(-1).options.body).session_id);
+        await scopedHooks.get('gateway_stop')();
+      }
+      assert.notEqual(actorIds[0], actorIds[1]);
+    });
     await hooks.get('after_tool_call')(
-      { toolName: 'exec', toolCallId: 'private-tool-id' },
+      { toolName: 'exec', toolCallId: 'private-tool-id', result: 'must-not-forward-result' },
       context,
     );
     await hooks.get('model_call_ended')({}, context);
@@ -139,6 +197,10 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
     await hooks.get('gateway_stop')();
     assert.equal(JSON.parse(sent.at(-1).options.body).event, 'session_end');
     assert.equal(JSON.parse(sent.at(-1).options.body).reason, 'gateway_stop');
+    assert.equal(
+      sent.some((item) => item.options.body.includes('must-not-forward-result')),
+      false,
+    );
   } finally {
     globalThis.fetch = originalFetch;
     delete globalThis.__pixelRelayFixture;

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { homedir, hostname } from 'node:os';
 import { join } from 'node:path';
 
@@ -98,12 +99,13 @@ interface PluginRuntimeApi {
   logger: { warn(message: string): void };
 }
 
-function remoteEndpoint(value: unknown): string | null {
+export function remoteEndpoint(value: unknown): string | null {
   if (typeof value !== 'string' || !value) return null;
   try {
     const url = new URL(value);
+    const host = url.hostname.replace(/^\[|\]$/g, '');
     const loopback =
-      url.hostname === 'localhost' || url.hostname === '::1' || url.hostname.startsWith('127.');
+      host === 'localhost' || host === '::1' || (isIP(host) === 4 && host.startsWith('127.'));
     if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) return null;
     if (url.username || url.password || url.search || url.hash) return null;
     if (url.pathname.replace(/\/$/, '') !== API_PATH) return null;
@@ -156,7 +158,8 @@ async function send(target: RelayTarget, body: string): Promise<void> {
       redirect: 'error',
     });
   } catch {
-    // Visualization must never affect the agent run.
+    // Delivery failures must not fail the agent run. Awaited hooks can still
+    // incur delivery latency, bounded per request (not per whole projection).
   } finally {
     clearTimeout(timeout);
   }
