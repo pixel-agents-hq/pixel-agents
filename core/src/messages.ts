@@ -25,6 +25,8 @@ export type ServerMessage =
   | SubagentToolPermission
   | AgentTeamInfo
   | AgentContextUsage
+  | AgentInsight
+  | SubagentInsight
   | LayoutLoaded
   | FurnitureAssetsLoaded
   | CharacterSpritesLoaded
@@ -199,6 +201,36 @@ export interface AgentContextUsage {
   id: number;
   contextTokens: number;
   maxContextTokens: number;
+}
+
+export interface AgentInsight {
+  type: 'agentInsight';
+  id: number;
+  model?: string;
+  agentType?: string;
+  description?: string;
+  effort?: string;
+  thinking?: string;
+  spend?: TokenSpend;
+}
+
+export interface TokenSpend {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
+export interface SubagentInsight {
+  type: 'subagentInsight';
+  id: number;
+  parentToolId: string;
+  model?: string;
+  agentType?: string;
+  description?: string;
+  effort?: string;
+  thinking?: string;
+  spend?: TokenSpend;
 }
 
 export interface LayoutLoaded {

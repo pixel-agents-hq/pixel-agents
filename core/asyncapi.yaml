@@ -100,6 +100,9 @@ components:
         - $ref: '#/components/schemas/AgentTeamInfo'
         # Context window
         - $ref: '#/components/schemas/AgentContextUsage'
+        # Cascade insight (model, thinking, token spend)
+        - $ref: '#/components/schemas/AgentInsight'
+        - $ref: '#/components/schemas/SubagentInsight'
         # Layout
         - $ref: '#/components/schemas/LayoutLoaded'
         # Assets
@@ -455,6 +458,86 @@ components:
           type: integer
         maxContextTokens:
           type: integer
+
+    TokenSpend:
+      description: |
+        Tokens an agent has spent so far, summed once per model response (a
+        response split across several transcript records is counted once).
+        A running total, NOT a snapshot — compare AgentContextUsage, which is
+        how full the window is right now.
+      type: object
+      additionalProperties: false
+      required: [inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens]
+      properties:
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+        cacheReadTokens:
+          type: integer
+        cacheCreationTokens:
+          type: integer
+
+    AgentInsight:
+      description: |
+        What an agent is running on and thinking, read from its own transcript.
+        A partial update: absent fields keep their previous value. `model` is
+        the id the transcript reports (e.g. `claude-sonnet-5-5`). `thinking` is
+        the latest non-empty thinking text, truncated by the server; it only
+        appears when the CLI writes thinking summaries to the transcript.
+        `agentType` / `description` / `effort` describe how a teammate was
+        spawned, when known. No tokens are spent producing any of it.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentInsight
+        id:
+          type: integer
+        model:
+          type: string
+        agentType:
+          type: string
+        description:
+          type: string
+        effort:
+          type: string
+        thinking:
+          type: string
+        spend:
+          $ref: '#/components/schemas/TokenSpend'
+
+    SubagentInsight:
+      description: |
+        AgentInsight for a sub-agent, keyed like every subagent* message by
+        (lead `id`, spawn `parentToolId`). Spawn-time fields (`agentType`,
+        `description`, `effort`, and `model` as the alias the spawn asked for)
+        come from the lead's spawn call; the resolved `model` id, `thinking`
+        and `spend` follow from the spawn result and the sub-agent's own
+        transcript. A partial update: absent fields keep their previous value.
+      type: object
+      additionalProperties: false
+      required: [type, id, parentToolId]
+      properties:
+        type:
+          const: subagentInsight
+        id:
+          type: integer
+        parentToolId:
+          type: string
+        model:
+          type: string
+        agentType:
+          type: string
+        description:
+          type: string
+        effort:
+          type: string
+        thinking:
+          type: string
+        spend:
+          $ref: '#/components/schemas/TokenSpend'
 
     LayoutLoaded:
       description: |
