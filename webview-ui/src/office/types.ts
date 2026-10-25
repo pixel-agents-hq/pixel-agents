@@ -1,3 +1,5 @@
+import type { TokenSpend } from '../../../core/src/messages.js';
+
 export {
   DEFAULT_COLS,
   DEFAULT_ROWS,
@@ -254,6 +256,19 @@ export interface Character {
   contextTokens: number;
   /** Window `contextTokens` is measured against. */
   maxContextTokens: number;
+
+  // -- Model cascade (agentInsight / subagentInsight; partial updates) --
+  /** Alias ("haiku") from a spawn call, later the resolved id; the latest wins. */
+  model?: string;
+  /** Spawn type, e.g. "ecc:constructor". */
+  agentType?: string;
+  description?: string;
+  effort?: string;
+  /** Latest thinking text. */
+  thinking?: string;
+  /** ms timestamp of the last time `thinking` changed (drives the thought bubble). */
+  thinkingAt?: number;
+  spend?: TokenSpend;
 }
 
 export const PetState = { IDLE: 'idle', WALK: 'walk', FOLLOW: 'follow' } as const;

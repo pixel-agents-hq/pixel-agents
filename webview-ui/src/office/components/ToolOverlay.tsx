@@ -21,10 +21,23 @@ import {
   OVERLAY_LABEL_Z_INDEX,
   TEAM_LEAD_COLOR,
   TEAM_ROLE_COLOR,
+  THOUGHT_BUBBLE_ALONE_OFFSET_PX,
+  THOUGHT_BUBBLE_MAX_WIDTH_PX,
+  THOUGHT_BUBBLE_MS,
+  THOUGHT_BUBBLE_TEXT_COLOR,
+  THOUGHT_PREVIEW_CHARS,
+  TIER_BADGE_SWATCH_PX,
   TOOL_OVERLAY_VERTICAL_OFFSET,
 } from '../../constants.js';
 import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
 import type { OfficeState } from '../engine/officeState.js';
+import {
+  formatTierBadge,
+  isThoughtFresh,
+  modelTier,
+  thoughtPreview,
+  TIER_COLORS,
+} from '../modelTier.js';
 import { overlayProjection } from '../projection.js';
 import { getCachedSprite } from '../sprites/spriteCache.js';
 import { BUBBLE_PERMISSION_SPRITE, BUBBLE_WAITING_SPRITE } from '../sprites/spriteData.js';
@@ -110,6 +123,43 @@ function OverlayBubble({ cached, dpr }: { cached: HTMLCanvasElement; dpr: number
   );
 }
 
+/** Latest thinking, shown as a short-lived bubble above the character. */
+function ThoughtBubble({ text }: { text: string }) {
+  return (
+    <div
+      className="pixel-panel px-8 py-4 leading-none text-center"
+      style={{
+        maxWidth: THOUGHT_BUBBLE_MAX_WIDTH_PX,
+        fontSize: '18px',
+        fontStyle: 'italic',
+        color: THOUGHT_BUBBLE_TEXT_COLOR,
+        overflowWrap: 'anywhere',
+      }}
+      data-testid="thought-bubble"
+    >
+      {text}
+    </div>
+  );
+}
+
+/** Model tier badge: a swatch in the tier color plus "Sonnet · ecc:constructor · high". */
+function TierBadge({ text, color }: { text: string; color: string }) {
+  return (
+    <div
+      className="pixel-panel flex items-center gap-4 px-6 py-2 whitespace-nowrap leading-none"
+      style={{ fontSize: '18px', borderColor: color }}
+      data-testid="tier-badge"
+    >
+      <span
+        aria-hidden="true"
+        className="shrink-0"
+        style={{ width: TIER_BADGE_SWATCH_PX, height: TIER_BADGE_SWATCH_PX, background: color }}
+      />
+      <span>{text}</span>
+    </div>
+  );
+}
+
 export function ToolOverlay({
   officeState,
   agents,
@@ -122,11 +172,12 @@ export function ToolOverlay({
   onCloseAgent,
   alwaysShowOverlay,
 }: ToolOverlayProps) {
-  const [, setTick] = useState(0);
+  // The frame clock: re-renders every frame and dates the thought bubbles.
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     let rafId = 0;
     const tick = () => {
-      setTick((n) => n + 1);
+      setNow(Date.now());
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
@@ -197,16 +248,44 @@ export function ToolOverlay({
           );
         }
 
-        // Only show the label for hovered or selected agents (unless
-        // always-show is on) — the bubble renders regardless.
-        if (!alwaysShowOverlay && !isSelected && !isHovered) {
-          return bubbleNode && <Fragment key={id}>{bubbleNode}</Fragment>;
-        }
+        // Cascade view: tier badge (with the label) and the fresh thought bubble.
+        const tierBadgeText = formatTierBadge(ch);
+        const thoughtText = isThoughtFresh(ch, now, THOUGHT_BUBBLE_MS)
+          ? thoughtPreview(ch.thinking ?? '', THOUGHT_PREVIEW_CHARS)
+          : null;
 
         // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
         const screenX = project.toScreenX(ch.x);
         const screenY = project.toScreenY(ch.y + sittingOffset - TOOL_OVERLAY_VERTICAL_OFFSET);
+
+        // Without a visible label the thought still floats on its own, so the
+        // cascade can be watched without hovering every character.
+        const thoughtAlone = thoughtText ? (
+          <div
+            className="absolute -translate-x-1/2 -translate-y-full pointer-events-none"
+            style={{
+              left: screenX,
+              top: screenY - THOUGHT_BUBBLE_ALONE_OFFSET_PX,
+              zIndex: OVERLAY_LABEL_Z_INDEX,
+            }}
+          >
+            <ThoughtBubble text={thoughtText} />
+          </div>
+        ) : null;
+
+        // Only show the label for hovered or selected agents (unless
+        // always-show is on) — the bubble renders regardless.
+        if (!alwaysShowOverlay && !isSelected && !isHovered) {
+          return (
+            (bubbleNode || thoughtAlone) && (
+              <Fragment key={id}>
+                {bubbleNode}
+                {thoughtAlone}
+              </Fragment>
+            )
+          );
+        }
 
         // A "Done" agent (finished turn: waiting bubble without awaitingInput)
         // shows ONLY its floating green checkmark bubble, never the label panel
@@ -219,6 +298,7 @@ export function ToolOverlay({
           return (
             <Fragment key={id}>
               {bubbleNode}
+              {thoughtAlone}
               <div
                 className="absolute"
                 style={{ left: screenX, top: screenY, pointerEvents: 'none' }}
@@ -298,6 +378,14 @@ export function ToolOverlay({
               data-testid="agent-overlay"
               data-agent-id={id}
             >
+              {(tierBadgeText || thoughtText) && (
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 pb-2 pointer-events-none">
+                  {thoughtText && <ThoughtBubble text={thoughtText} />}
+                  {tierBadgeText && (
+                    <TierBadge text={tierBadgeText} color={TIER_COLORS[modelTier(ch)]} />
+                  )}
+                </div>
+              )}
               <div className="flex items-center border-border px-8 pt-2 pb-4 gap-5 pixel-panel whitespace-nowrap max-w-2xs">
                 {dotColor && (
                   <span

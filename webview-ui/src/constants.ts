@@ -284,6 +284,34 @@ export const CONTEXT_GAUGE_BG = '#222';
 export const TEAM_LEAD_COLOR = '#ffd700';
 export const TEAM_ROLE_COLOR = '#66aaff';
 
+// ── Model cascade view ──────────────────────────────────────
+/** Tier colors: the badge swatch in ToolOverlay and the sub-agent link line. */
+export const TIER_COLOR_HAIKU = '#4ade80';
+export const TIER_COLOR_SONNET = '#60a5fa';
+export const TIER_COLOR_OPUS = '#c084fc';
+export const TIER_COLOR_FABLE = '#facc15';
+export const TIER_COLOR_CODEX = '#fb923c';
+export const TIER_COLOR_UNKNOWN = '#9ca3af';
+/** How long a thought bubble stays up after the thinking text last changed. */
+export const THOUGHT_BUBBLE_MS = 6000;
+/** Lift of a thought bubble shown without its label, above the overlay anchor. */
+export const THOUGHT_BUBBLE_ALONE_OFFSET_PX = 34;
+/** Most insight updates held for characters that do not exist yet (oldest dropped). */
+export const PENDING_INSIGHT_MAX = 64;
+/** Characters of the latest thinking text shown in the bubble. */
+export const THOUGHT_PREVIEW_CHARS = 90;
+export const THOUGHT_BUBBLE_MAX_WIDTH_PX = 260;
+export const THOUGHT_BUBBLE_TEXT_COLOR = 'rgba(255, 255, 255, 0.85)';
+export const TIER_BADGE_SWATCH_PX = 8;
+/** Sub-agent -> parent link line (canvas, drawn behind characters). Dash, gap
+ *  and width are in sprite pixels (scaled by zoom); the anchor is the world-px
+ *  height above a character's feet where the line attaches (about mid-body). */
+export const SUBAGENT_LINK_ALPHA = 0.55;
+export const SUBAGENT_LINK_DASH_SPRITE_PX = 1;
+export const SUBAGENT_LINK_GAP_SPRITE_PX = 2;
+export const SUBAGENT_LINK_WIDTH_SPRITE_PX = 1;
+export const SUBAGENT_LINK_ANCHOR_OFFSET_PX = 10;
+
 // ── Pets ────────────────────────────────────────────────────────
 /** Walking speed in world pixels per second (matches character walk speed visually but slower). */
 export const PET_WALK_SPEED_PX_PER_SEC = 32;

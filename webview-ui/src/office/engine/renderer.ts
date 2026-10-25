@@ -39,10 +39,16 @@ import {
   SELECTED_OUTLINE_ALPHA,
   SELECTION_DASH_PATTERN,
   SELECTION_HIGHLIGHT_COLOR,
+  SUBAGENT_LINK_ALPHA,
+  SUBAGENT_LINK_ANCHOR_OFFSET_PX,
+  SUBAGENT_LINK_DASH_SPRITE_PX,
+  SUBAGENT_LINK_GAP_SPRITE_PX,
+  SUBAGENT_LINK_WIDTH_SPRITE_PX,
   VOID_TILE_DASH_PATTERN,
   VOID_TILE_OUTLINE_COLOR,
 } from '../../constants.js';
 import { getColorizedFloorSprite, hasFloorSprites, WALL_COLOR } from '../floorTiles.js';
+import { modelTier, TIER_COLORS } from '../modelTier.js';
 import { mapOffset } from '../projection.js';
 import {
   getCarpetJunctionSprite,
@@ -340,6 +346,54 @@ interface ZDrawable {
   draw: (ctx: CanvasRenderingContext2D) => void;
 }
 
+/** Anchor of a character's link line, in whole device pixels (same math as the sprite draw). */
+function linkAnchor(
+  ch: Character,
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+): { x: number; y: number } {
+  const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
+  return {
+    x: Math.round(offsetX + ch.x * zoom),
+    y: Math.round(offsetY + (ch.y + sittingOffset - SUBAGENT_LINK_ANCHOR_OFFSET_PX) * zoom),
+  };
+}
+
+/**
+ * Dotted line from each sub-agent to its parent, in the sub-agent's model-tier
+ * color. Drawn before the z-sorted scene so characters stay in front of it.
+ * @internal
+ */
+export function renderSubagentLinks(
+  ctx: CanvasRenderingContext2D,
+  characters: Character[],
+  offsetX: number,
+  offsetY: number,
+  zoom: number,
+): void {
+  const byId = new Map<number, Character>();
+  for (const ch of characters) byId.set(ch.id, ch);
+
+  ctx.save();
+  ctx.globalAlpha = SUBAGENT_LINK_ALPHA;
+  ctx.lineWidth = SUBAGENT_LINK_WIDTH_SPRITE_PX * zoom;
+  ctx.setLineDash([SUBAGENT_LINK_DASH_SPRITE_PX * zoom, SUBAGENT_LINK_GAP_SPRITE_PX * zoom]);
+  for (const sub of characters) {
+    if (!sub.isSubagent || sub.parentAgentId === null || sub.matrixEffect === 'despawn') continue;
+    const parent = byId.get(sub.parentAgentId);
+    if (!parent) continue;
+    const from = linkAnchor(sub, offsetX, offsetY, zoom);
+    const to = linkAnchor(parent, offsetX, offsetY, zoom);
+    ctx.strokeStyle = TIER_COLORS[modelTier(sub)];
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /** @internal */
 export function renderScene(
   ctx: CanvasRenderingContext2D,
@@ -353,6 +407,9 @@ export function renderScene(
   pets: Pet[] = [],
 ): void {
   const drawables: ZDrawable[] = [];
+
+  // Sub-agent links sit under everything in the z-sorted pass.
+  renderSubagentLinks(ctx, characters, offsetX, offsetY, zoom);
 
   // Furniture
   for (const f of furniture) {

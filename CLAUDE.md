@@ -124,6 +124,7 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
       types.ts                       OfficeLayout, Character, etc. + re-exports constants
       toolUtils.ts                   STATUS_TO_TOOL mapping, extractToolName (DOM-free; defaultZoom lives in useEditorActions)
       projection.ts                  World→screen math shared by renderer + DOM overlays (mapOffset, overlayProjection)
+      modelTier.ts                   Cascade insight: model tier, badge text, thought preview, insight merge/hold
       colorize.ts                    Colorize (grayscale→HSL) + Adjust (HSL shift)
       floorTiles.ts                  Floor sprite storage + colorized cache
       wallTiles.ts                   Wall auto-tile: 16 bitmask sprites

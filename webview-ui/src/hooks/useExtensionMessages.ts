@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { HooksConsentRequest } from '../../../core/src/messages.js';
+import { PENDING_INSIGHT_MAX } from '../constants.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
 import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
@@ -9,6 +10,8 @@ import { setGhostHeadlessAgents as setRendererGhostHeadlessAgents } from '../off
 import { setFloorSprites } from '../office/floorTiles.js';
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js';
 import { migrateLayoutColors } from '../office/layout/layoutSerializer.js';
+import type { CascadeInsight, PendingInsight } from '../office/modelTier.js';
+import { applyInsight, holdInsight } from '../office/modelTier.js';
 import { setCarpetSprites } from '../office/sprites/carpetTiles.js';
 import { setPetTemplates } from '../office/sprites/petSpriteData.js';
 import { setCharacterTemplates } from '../office/sprites/spriteData.js';
@@ -244,6 +247,15 @@ export function useExtensionMessages(
   // character to a new tile every turn. Cleared by subagentClear/agentClosed.
   const backgroundParentToolIdsRef = useRef<Record<number, Set<string>>>({});
 
+  // Cascade insight that arrived before its character existed. A subagentInsight
+  // is sent when the spawn tool_use is parsed, ahead of the sub-character; an
+  // agentInsight can beat a buffered agent to the office. Both are partial
+  // updates, so they merge here until applied. Cleared with their owner and
+  // capped at PENDING_INSIGHT_MAX, so leftovers for characters that never
+  // appear cannot pile up.
+  const pendingSubInsightRef = useRef<Map<string, PendingInsight>>(new Map());
+  const pendingAgentInsightRef = useRef<Map<number, PendingInsight>>(new Map());
+
   useEffect(() => {
     // Buffer agents from existingAgents until layout is loaded
     let pendingAgents: PendingAgent[] = [];
@@ -254,6 +266,35 @@ export function useExtensionMessages(
     const noteDirectoryName = (name?: string) => {
       if (!name) return;
       setAgentDirectoryNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    };
+
+    const pendingSub = pendingSubInsightRef.current;
+    const pendingAgent = pendingAgentInsightRef.current;
+    const subInsightKey = (leadId: number, parentToolId: string) => `${leadId}:${parentToolId}`;
+
+    /** Apply insight held for a character that now exists (no-op when none). */
+    const flushAgentInsight = (os: OfficeState, id: number) => {
+      const held = pendingAgent.get(id);
+      const ch = os.characters.get(id);
+      if (!held || !ch) return;
+      applyInsight(ch, held, held.thinkingAt ?? Date.now());
+      pendingAgent.delete(id);
+    };
+    const flushSubInsight = (os: OfficeState, leadId: number, parentToolId: string) => {
+      const key = subInsightKey(leadId, parentToolId);
+      const held = pendingSub.get(key);
+      const subId = os.getSubagentId(leadId, parentToolId);
+      const ch = subId !== null ? os.characters.get(subId) : undefined;
+      if (!held || !ch) return;
+      applyInsight(ch, held, held.thinkingAt ?? Date.now());
+      pendingSub.delete(key);
+    };
+    /** Drop held sub insight for a lead; `keep` spares live background spawns. */
+    const dropSubInsights = (leadId: number, keep?: Set<string>) => {
+      const prefix = `${leadId}:`;
+      for (const key of [...pendingSub.keys()]) {
+        if (key.startsWith(prefix) && !keep?.has(key.slice(prefix.length))) pendingSub.delete(key);
+      }
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -332,6 +373,7 @@ export function useExtensionMessages(
         for (const p of pendingAgents) {
           os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.directoryName);
           if (p.isHeadless) os.setHeadless(p.id, true);
+          flushAgentInsight(os, p.id);
         }
         pendingAgents = [];
         layoutReadyRef.current = true;
@@ -387,9 +429,12 @@ export function useExtensionMessages(
             os.setHeadless(id, true);
           }
         }
+        flushAgentInsight(os, id);
         saveAgentSeats(os);
       } else if (msg.type === 'agentClosed') {
         const id = msg.id as number;
+        pendingAgent.delete(id);
+        dropSubInsights(id);
         setAgents((prev) => prev.filter((a) => a !== id));
         setSelectedAgent((prev) => (prev === id ? null : prev));
         // Drop the drawer tab too. terminalSessionClosed normally does this, but
@@ -433,6 +478,7 @@ export function useExtensionMessages(
         ) {
           saveAgentSeats(os);
         }
+        for (const id of incoming) flushAgentInsight(os, id);
         setAgents((prev) => {
           const ids = new Set(prev);
           const merged = [...prev];
@@ -492,6 +538,7 @@ export function useExtensionMessages(
         ) {
           const label = status.startsWith('Subtask:') ? status.slice('Subtask:'.length).trim() : '';
           const subId = os.addSubagent(id, toolId);
+          flushSubInsight(os, id, toolId);
           setSubagentCharacters((prev) => {
             if (prev.some((s) => s.id === subId)) return prev;
             return [...prev, { id: subId, parentAgentId: id, parentToolId: toolId, label }];
@@ -551,6 +598,9 @@ export function useExtensionMessages(
             prev.filter((s) => s.parentAgentId !== id || bgSet?.has(s.parentToolId)),
           );
         }
+        // A spawn whose sub-character never came (teammate path) must not hold
+        // its insight forever; live background spawns keep theirs.
+        if (!hasInlineTeammates) dropSubInsights(id, bgSet);
         os.setAgentTool(id, null);
         os.clearPermissionBubble(id);
       } else if (msg.type === 'agentSelected') {
@@ -635,6 +685,7 @@ export function useExtensionMessages(
         let subId = os.getSubagentId(id, parentToolId);
         if (subId === null) {
           subId = os.addSubagent(id, parentToolId);
+          flushSubInsight(os, id, parentToolId);
           const newSubId = subId;
           setSubagentCharacters((prev) => {
             if (prev.some((s) => s.id === newSubId)) return prev;
@@ -681,6 +732,7 @@ export function useExtensionMessages(
           }
           return { ...prev, [id]: next };
         });
+        pendingSub.delete(subInsightKey(id, parentToolId));
         // Remove sub-agent character
         os.removeSubagent(id, parentToolId);
         setSubagentCharacters((prev) =>
@@ -841,6 +893,25 @@ export function useExtensionMessages(
           msg.leadAgentId as number | undefined,
           msg.teamUsesTmux as boolean | undefined,
         );
+      } else if (msg.type === 'agentInsight') {
+        const id = msg.id as number;
+        const ch = os.characters.get(id);
+        if (ch) {
+          applyInsight(ch, msg as CascadeInsight, Date.now());
+        } else {
+          holdInsight(pendingAgent, id, msg as CascadeInsight, Date.now(), PENDING_INSIGHT_MAX);
+        }
+      } else if (msg.type === 'subagentInsight') {
+        const id = msg.id as number;
+        const parentToolId = msg.parentToolId as string;
+        const subId = os.getSubagentId(id, parentToolId);
+        const ch = subId !== null ? os.characters.get(subId) : undefined;
+        if (ch) {
+          applyInsight(ch, msg as CascadeInsight, Date.now());
+        } else {
+          const key = subInsightKey(id, parentToolId);
+          holdInsight(pendingSub, key, msg as CascadeInsight, Date.now(), PENDING_INSIGHT_MAX);
+        }
       } else if (msg.type === 'agentContextUsage') {
         const id = msg.id as number;
         os.setAgentContext(id, msg.contextTokens as number, msg.maxContextTokens as number);
