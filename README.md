@@ -166,9 +166,9 @@ The endpoint must be the final `/api/hooks/openclaw` URL. HTTPS is required for 
 
 See the [complete OpenClaw guide](docs/openclaw.md) for fork installation, the session/status model, configuration reference, child behavior, privacy, troubleshooting, limitations, and verification instructions.
 
-![OpenClaw office with friendly names and collapsed activity](docs/images/openclaw-office.png)
+![Live OpenClaw office with six configured agents and a child session](docs/images/openclaw-live-office.png)
 
-Synthetic browser fixture: Avery's ordinary chats share one **Working** character, Blake researches, and a delegated child remains separately identified. No private conversations or live deployment names are shown.
+Live remote OpenClaw office, captured on October 25, 2026: six configured agents plus Gitbert's separately identified child session. Friendly names and current activity labels come from the running integration, not synthetic test events. The earlier synthetic fixture remains available in `docs/images/openclaw-office.png` for comparison.
 
 ## Customizing the Office
 
