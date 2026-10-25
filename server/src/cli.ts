@@ -60,6 +60,8 @@ export interface CliArgs {
   allowedHosts: string[];
   /** --rotate-token: replace the persisted server token before starting. */
   rotateToken: boolean;
+  /** --rotate-relay-token: revoke the hook-only credential before starting. */
+  rotateRelayToken: boolean;
 }
 
 /** Thrown by parseArgs on an invalid --port. Kept separate from process.exit so
@@ -73,6 +75,7 @@ export function parseArgs(argv: string[]): CliArgs {
     terminal: true,
     allowedHosts: [],
     rotateToken: false,
+    rotateRelayToken: false,
   };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port' || argv[i] === '-p') {
@@ -107,6 +110,8 @@ export function parseArgs(argv: string[]): CliArgs {
       i++;
     } else if (argv[i] === '--rotate-token') {
       args.rotateToken = true;
+    } else if (argv[i] === '--rotate-relay-token') {
+      args.rotateRelayToken = true;
     } else if (argv[i] === '--no-terminal') {
       args.terminal = false;
     } else if (argv[i] === '--help') {
@@ -120,6 +125,9 @@ Options:
                         it, only localhost and a specific --host are privileged
   --rotate-token        Replace the server token. Every URL that carried the
                         old one (bookmarks, other devices) stops working
+  --rotate-relay-token  Replace the hook-only remote relay credential. Stop all
+                        Pixel Agents servers first; read the new credential from
+                        ~/.pixel-agents/relay-token after startup
   --no-terminal         Disable the embedded terminal (watch agents only; no
                         launching or attaching from the browser)
   --help                Show this help message`);
@@ -360,11 +368,17 @@ async function main(): Promise<void> {
       ptyManager,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,
+      rotateRelayToken: args.rotateRelayToken,
     });
     currentConfig = { port: config.port, token: config.token };
     if (args.rotateToken) {
       console.log(
         '[Pixel Agents] Server token rotated: URLs carrying the old token no longer grant access. Open the new URL below on each device.',
+      );
+    }
+    if (args.rotateRelayToken) {
+      console.log(
+        '[Pixel Agents] Relay token rotated: remote relays must be updated from ~/.pixel-agents/relay-token.',
       );
     }
 

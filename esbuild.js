@@ -77,7 +77,7 @@ function buildOpenClawPlugin() {
     target: 'node20',
     format: 'esm',
     outfile: path.join(outDir, 'index.js'),
-    external: ['openclaw/plugin-sdk/plugin-entry'],
+    external: ['openclaw/plugin-sdk/plugin-entry', 'openclaw/plugin-sdk/secret-input-runtime'],
   });
   for (const file of ['package.json', 'openclaw.plugin.json']) {
     fs.copyFileSync(path.join(srcDir, file), path.join(outDir, file));

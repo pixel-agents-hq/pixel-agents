@@ -171,6 +171,14 @@ describe('terminal WebSocket auth', () => {
     expect(result.code).toBe(WS_CLOSE_UNAUTHORIZED);
   });
 
+  it('rejects the hook-only relay token', async () => {
+    const relayToken = fs
+      .readFileSync(path.join(tmpBase, '.pixel-agents', 'relay-token'), 'utf-8')
+      .trim();
+    const result = await attach(port, 1, relayToken);
+    expect(result.code).toBe(WS_CLOSE_UNAUTHORIZED);
+  });
+
   it('rejects a token of the same length as the real one', async () => {
     const sameLength = 'x'.repeat(token.length);
     const result = await attach(port, 1, sameLength);

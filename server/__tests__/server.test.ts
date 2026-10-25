@@ -87,11 +87,15 @@ describe('PixelAgentsServer', () => {
   // 3. Hook endpoint requires auth
   it('hook endpoint returns 401 without auth', async () => {
     const config = await server.start();
+    const received: unknown[] = [];
+    server.onHookEvent((_providerId, event) => received.push(event));
     const res = await fetch(`http://127.0.0.1:${config.port}/api/hooks/claude`, {
       method: 'POST',
-      body: '{}',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: 'unauthorized', hook_event_name: 'Stop' }),
     });
     expect(res.status).toBe(401);
+    expect(received).toHaveLength(0);
   });
 
   // 4. Hook endpoint accepts valid auth
@@ -103,6 +107,20 @@ describe('PixelAgentsServer', () => {
       JSON.stringify({ session_id: 'test', hook_event_name: 'Stop' }),
     );
     expect(res.status).toBe(200);
+  });
+
+  it('hook endpoint accepts the dedicated relay token', async () => {
+    const config = await server.start();
+    const relayToken = fs.readFileSync(path.join(serverJsonDir, 'relay-token'), 'utf-8').trim();
+    const res = await postHook(
+      config.port,
+      relayToken,
+      JSON.stringify({ session_id: 'remote', event: 'session_start' }),
+      'openclaw',
+    );
+    expect(res.status).toBe(200);
+    expect(relayToken).not.toBe(config.token);
+    expect(fs.statSync(path.join(serverJsonDir, 'relay-token')).mode & 0o777).toBe(0o600);
   });
 
   // 5. Hook callback fires on valid event
@@ -123,6 +141,27 @@ describe('PixelAgentsServer', () => {
     expect(received[0].providerId).toBe('claude');
     expect(received[0].event.session_id).toBe('abc');
     expect(received[0].event.hook_event_name).toBe('Stop');
+  });
+
+  it('hook callback recognizes OpenClaw lifecycle events', async () => {
+    const config = await server.start();
+    const received: Array<{ providerId: string; event: Record<string, unknown> }> = [];
+    server.onHookEvent((providerId, event) => received.push({ providerId, event }));
+    const relayToken = fs.readFileSync(path.join(serverJsonDir, 'relay-token'), 'utf-8').trim();
+
+    await postHook(
+      config.port,
+      relayToken,
+      JSON.stringify({ session_id: 'openclaw-session', event: 'session_start' }),
+      'openclaw',
+    );
+
+    expect(received).toEqual([
+      {
+        providerId: 'openclaw',
+        event: { session_id: 'openclaw-session', event: 'session_start' },
+      },
+    ]);
   });
 
   // 6. Hook endpoint rejects oversized body
@@ -302,6 +341,26 @@ describe('PixelAgentsServer', () => {
     expect(fs.readFileSync(path.join(serverJsonDir, 'standalone-token'), 'utf-8').trim()).toBe(
       running.token,
     );
+  });
+
+  it('rotateRelayToken replaces the hook-only credential', async () => {
+    await server.start({ embedded: false });
+    const tokenFile = path.join(serverJsonDir, 'relay-token');
+    const first = fs.readFileSync(tokenFile, 'utf-8').trim();
+    server.stop();
+    await server.start({ embedded: false, rotateRelayToken: true });
+    const rotated = fs.readFileSync(tokenFile, 'utf-8').trim();
+    expect(rotated).not.toBe(first);
+    expect(fs.statSync(tokenFile).mode & 0o777).toBe(0o600);
+  });
+
+  it('rotateRelayToken refuses while any Pixel Agents server is running', async () => {
+    await server.start({ embedded: true });
+    const server2 = new PixelAgentsServer();
+    await expect(server2.start({ embedded: false, rotateRelayToken: true })).rejects.toThrow(
+      /already running/,
+    );
+    server2.stop();
   });
 
   // 16. Dead-pid registry entries are pruned on start, never reused

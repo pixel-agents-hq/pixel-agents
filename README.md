@@ -129,7 +129,36 @@ When Pixel Agents starts, it can offer to install its bundled OpenClaw relay plu
 
 Start the VS Code extension or standalone CLI, then use OpenClaw normally in a tracked workspace. Each active OpenClaw session appears as a hooks-only character; model calls, tool calls, turn completion, and session completion drive its activity. Pixel Agents does not launch or attach to OpenClaw sessions, and OpenClaw sub-agent sessions appear independently when OpenClaw gives them their own session key.
 
-The relay is deliberately content-free. It sends only hashed session and tool identifiers, tool names, lifecycle state, and the active workspace directory to authenticated Pixel Agents servers on `127.0.0.1`. It never sends prompts, responses, message bodies, tool parameters, tool results, credentials, tokens, or transcript content. Disable the OpenClaw connection from Pixel Agents settings to uninstall the relay plugin.
+The relay is deliberately content-free. It sends only hashed session and tool identifiers, tool names, lifecycle state, and the active workspace directory. It never sends prompts, responses, message bodies, tool parameters, tool results, credentials, tokens, or transcript content. Disable the OpenClaw connection from Pixel Agents settings to uninstall the relay plugin.
+
+By default the plugin discovers authenticated Pixel Agents servers for the same OS user and delivers events over loopback. Pixel Agents and OpenClaw do not have to share a host, though: the plugin can also send to one configured remote office using a dedicated hook-only bearer credential. That credential cannot control the Pixel Agents UI, install hooks, launch agents, or attach to terminals.
+
+On the Pixel Agents host, run the standalone server on a stable port and place it behind HTTPS (Tailscale Serve or another TLS reverse proxy is recommended). Pixel Agents creates the remote credential at `~/.pixel-agents/relay-token` with mode `0600`; copy its value into an OpenClaw secret provider rather than placing it directly in configuration. Then configure the plugin entry along these lines:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "pixel-agents-openclaw": {
+        "enabled": true,
+        "config": {
+          "localDiscovery": false,
+          "remote": {
+            "endpoint": "https://pixel-agents.example/api/hooks/openclaw",
+            "token": {
+              "source": "store",
+              "provider": "default",
+              "id": "PIXEL_AGENTS_RELAY_TOKEN"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+The endpoint must be the final `/api/hooks/openclaw` URL. HTTPS is required for non-loopback destinations, redirects are refused, and each request times out after two seconds so visualization cannot block an agent run. Leave `localDiscovery` unset (or `true`) to deliver to local servers as well. To revoke the remote credential, stop every Pixel Agents server and restart one with `--rotate-relay-token`, then update the OpenClaw secret and reload its gateway.
 
 ## Customizing the Office
 

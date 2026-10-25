@@ -39,6 +39,8 @@ export interface HttpServerOptions {
   port?: number;
   /** Bearer auth token for hook and WebSocket endpoints */
   token: string;
+  /** Narrow bearer capability accepted only by the hook endpoint. */
+  relayToken: string;
   /** AgentStateStore for WebSocket broadcast piping */
   store: AgentStateStore;
   /** Shared agent lifecycle core (for toggle side effects + standalone restore). Optional in embedded mode. */
@@ -143,7 +145,7 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
   }>(
     `${HOOK_API_PREFIX}/:providerId`,
     {
-      preHandler: bearerAuth(options.token),
+      preHandler: hookBearerAuth(options.token, options.relayToken),
       schema: {
         params: {
           type: 'object',
@@ -158,13 +160,25 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
       const { providerId } = request.params;
       const event = request.body;
 
-      if (event.session_id && event.hook_event_name) {
+      if (event.session_id && (event.hook_event_name || event.event)) {
         options.onHookEvent?.(providerId, event);
       }
 
       reply.send('ok');
     },
   );
+}
+
+function hookBearerAuth(adminToken: string, relayToken: string) {
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | void> => {
+    const authorization = request.headers.authorization;
+    if (
+      !bearerTokenValid(authorization, adminToken) &&
+      !bearerTokenValid(authorization, relayToken)
+    ) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+  };
 }
 
 // ── WebSocket ──────────────────────────────────────────────────
@@ -274,16 +288,6 @@ function registerWebSocketRoute(
       store.off('broadcast', onBroadcast);
     });
   });
-}
-
-// ── Auth Helper ────────────────────────────────────────────────
-
-function bearerAuth(expectedToken: string) {
-  return async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!bearerTokenValid(request.headers.authorization, expectedToken)) {
-      reply.code(401).send('unauthorized');
-    }
-  };
 }
 
 // ── Logging ────────────────────────────────────────────────────

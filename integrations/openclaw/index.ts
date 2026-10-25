@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
+import { resolveConfiguredSecretInputString } from 'openclaw/plugin-sdk/secret-input-runtime';
 
 const PROVIDER_ID = 'openclaw';
 const API_PATH = `/api/hooks/${PROVIDER_ID}`;
@@ -12,6 +13,7 @@ const TURN_END_DELAY_MS = 100;
 const SERVER_DIR = join(homedir(), '.pixel-agents');
 const REGISTRY_DIR = join(SERVER_DIR, 'servers');
 const LEGACY_SERVER_FILE = join(SERVER_DIR, 'server.json');
+const REMOTE_TOKEN_PATH = 'plugins.entries.pixel-agents-openclaw.config.remote.token';
 
 const turnEndTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -84,32 +86,97 @@ function pixelAgentServers(): Array<{ port: number; pid: number; token: string }
   return legacy && isLiveProcess(legacy.pid) ? [legacy] : [];
 }
 
-async function postEvent(event: Record<string, unknown>): Promise<void> {
-  const body = JSON.stringify(event);
-  await Promise.all(
-    pixelAgentServers().map(async (server) => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-      try {
-        await fetch(`http://127.0.0.1:${server.port}${API_PATH}`, {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${server.token}`,
-            'content-type': 'application/json',
-          },
-          body,
-          signal: controller.signal,
-        });
-      } catch {
-        // Visualization must never affect the agent run.
-      } finally {
-        clearTimeout(timeout);
-      }
-    }),
-  );
+interface RelayTarget {
+  endpoint: string;
+  token: string;
+}
+
+interface PluginRuntimeApi {
+  pluginConfig?: Record<string, unknown>;
+  runtime: { config: { current(): Record<string, unknown> } };
+  logger: { warn(message: string): void };
+}
+
+function remoteEndpoint(value: unknown): string | null {
+  if (typeof value !== 'string' || !value) return null;
+  try {
+    const url = new URL(value);
+    const loopback =
+      url.hostname === 'localhost' || url.hostname === '::1' || url.hostname.startsWith('127.');
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) return null;
+    if (url.username || url.password || url.search || url.hash) return null;
+    if (url.pathname.replace(/\/$/, '') !== API_PATH) return null;
+    url.pathname = API_PATH;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function configuredRemoteTarget(api: PluginRuntimeApi): Promise<RelayTarget | null> {
+  const remote = api.pluginConfig?.remote;
+  if (!remote || typeof remote !== 'object') return null;
+  const record = remote as Record<string, unknown>;
+  const endpoint = remoteEndpoint(record.endpoint);
+  if (!endpoint) {
+    api.logger.warn(
+      `pixel-agents: remote.endpoint must be the final ${API_PATH} URL and use HTTPS (HTTP is allowed only for loopback)`,
+    );
+    return null;
+  }
+  const resolved = await resolveConfiguredSecretInputString({
+    config: api.runtime.config.current(),
+    env: process.env,
+    value: record.token,
+    path: REMOTE_TOKEN_PATH,
+  });
+  if (!resolved.value) {
+    api.logger.warn('pixel-agents: remote relay token is unavailable; remote delivery is disabled');
+    return null;
+  }
+  return { endpoint, token: resolved.value };
+}
+
+async function send(target: RelayTarget, body: string): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    await fetch(target.endpoint, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${target.token}`,
+        'content-type': 'application/json',
+      },
+      body,
+      signal: controller.signal,
+      redirect: 'error',
+    });
+  } catch {
+    // Visualization must never affect the agent run.
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function eventSender(api: PluginRuntimeApi): (event: Record<string, unknown>) => Promise<void> {
+  const localDiscovery = api.pluginConfig?.localDiscovery !== false;
+  const remote = configuredRemoteTarget(api);
+  return async (event) => {
+    const body = JSON.stringify(event);
+    const targets: RelayTarget[] = localDiscovery
+      ? pixelAgentServers().map((server) => ({
+          endpoint: `http://127.0.0.1:${server.port}${API_PATH}`,
+          token: server.token,
+        }))
+      : [];
+    const remoteTarget = await remote;
+    if (remoteTarget) targets.push(remoteTarget);
+    await Promise.all(targets.map((target) => send(target, body)));
+  };
 }
 
 async function announceSession(
+  postEvent: (event: Record<string, unknown>) => Promise<void>,
   event: Record<string, unknown>,
   context: Record<string, unknown>,
 ): Promise<string | null> {
@@ -130,7 +197,10 @@ function cancelTurnEnd(id: string): void {
   turnEndTimers.delete(id);
 }
 
-function scheduleTurnEnd(id: string): void {
+function scheduleTurnEnd(
+  id: string,
+  postEvent: (event: Record<string, unknown>) => Promise<void>,
+): void {
   cancelTurnEnd(id);
   const timer = setTimeout(() => {
     turnEndTimers.delete(id);
@@ -143,20 +213,21 @@ function scheduleTurnEnd(id: string): void {
 export default definePluginEntry({
   id: 'pixel-agents-openclaw',
   name: 'Pixel Agents OpenClaw Relay',
-  description: 'Sends content-free lifecycle events to local Pixel Agents servers.',
+  description: 'Sends content-free lifecycle events to local or remote Pixel Agents servers.',
   register(api) {
+    const postEvent = eventSender(api);
     api.on('model_call_started', async (event, context) => {
-      const id = await announceSession(event, context);
+      const id = await announceSession(postEvent, event, context);
       if (id) cancelTurnEnd(id);
     });
 
     api.on('model_call_ended', async (event, context) => {
       const id = sessionId(event, context);
-      if (id) scheduleTurnEnd(id);
+      if (id) scheduleTurnEnd(id, postEvent);
     });
 
     api.on('before_tool_call', async (event, context) => {
-      const id = await announceSession(event, context);
+      const id = await announceSession(postEvent, event, context);
       if (!id) return;
       cancelTurnEnd(id);
       await postEvent({
