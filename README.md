@@ -10,14 +10,14 @@ _Nakama_ (仲間) significa "compañeros de equipo".
 
 ## Qué agrega a Pixel Agents
 
-| Función               | Qué ves                                                                                                      | Estado   |
-| --------------------- | ------------------------------------------------------------------------------------------------------------ | -------- |
-| Color por modelo      | Cada personaje con el color de su modelo: Haiku verde, Sonnet azul, Opus morado, Fable dorado, Codex naranja | En curso |
-| Tipo y effort         | Insignia `Sonnet · ecc:constructor · high` sobre el personaje                                                | En curso |
-| Pensamiento           | Burbuja con lo último que pensó el agente                                                                    | En curso |
-| Quién encarga a quién | Línea punteada de cada subagente a su agente                                                                 | En curso |
-| Tokens                | Gasto acumulado por agente y subagente                                                                       | En curso |
-| Panel de cascada      | Árbol con agentes, subagentes, modelo, effort, estado y gasto                                                | Planeado |
+| Función               | Qué ves                                                                                                      | Estado                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------- |
+| Color por modelo      | Cada personaje con el color de su modelo: Haiku verde, Sonnet azul, Opus morado, Fable dorado, Codex naranja | Listo                         |
+| Tipo y effort         | Insignia `Sonnet · ecc:constructor · high` sobre el personaje                                                | Listo                         |
+| Pensamiento           | Burbuja con lo último que pensó el agente                                                                    | Listo                         |
+| Quién encarga a quién | Línea punteada de cada subagente a su agente                                                                 | Listo                         |
+| Tokens                | Gasto acumulado por agente y subagente                                                                       | Datos listos, falta mostrarlo |
+| Panel de cascada      | Árbol con agentes, subagentes, modelo, effort, estado y gasto                                                | Planeado                      |
 
 ## Para ver el pensamiento
 
