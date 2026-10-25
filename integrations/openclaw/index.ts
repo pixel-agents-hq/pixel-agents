@@ -4,7 +4,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
-import { resolveConfiguredSecretInputString } from 'openclaw/plugin-sdk/secret-input-runtime';
+import {
+  getPreparedPluginSecretInput,
+  resolveConfiguredSecretInputString,
+} from 'openclaw/plugin-sdk/secret-input-runtime';
 
 const PROVIDER_ID = 'openclaw';
 const API_PATH = `/api/hooks/${PROVIDER_ID}`;
@@ -124,12 +127,15 @@ async function configuredRemoteTarget(api: PluginRuntimeApi): Promise<RelayTarge
     );
     return null;
   }
-  const resolved = await resolveConfiguredSecretInputString({
-    config: api.runtime.config.current(),
-    env: process.env,
-    value: record.token,
-    path: REMOTE_TOKEN_PATH,
-  });
+  const prepared = getPreparedPluginSecretInput('pixel-agents-openclaw', 'remote.token');
+  const resolved = prepared.value
+    ? prepared
+    : await resolveConfiguredSecretInputString({
+        config: api.runtime.config.current(),
+        env: process.env,
+        value: record.token,
+        path: REMOTE_TOKEN_PATH,
+      });
   if (!resolved.value) {
     api.logger.warn('pixel-agents: remote relay token is unavailable; remote delivery is disabled');
     return null;
@@ -160,7 +166,6 @@ async function send(target: RelayTarget, body: string): Promise<void> {
 
 function eventSender(api: PluginRuntimeApi): (event: Record<string, unknown>) => Promise<void> {
   const localDiscovery = api.pluginConfig?.localDiscovery !== false;
-  const remote = configuredRemoteTarget(api);
   return async (event) => {
     const body = JSON.stringify(event);
     const targets: RelayTarget[] = localDiscovery
@@ -169,10 +174,33 @@ function eventSender(api: PluginRuntimeApi): (event: Record<string, unknown>) =>
           token: server.token,
         }))
       : [];
-    const remoteTarget = await remote;
+    // Resolve inside an active hook, after the Gateway has published its
+    // prepared secret snapshot. Never cache an unavailable startup value;
+    // retries and credential rotations must be visible to subsequent events.
+    const remoteTarget = await configuredRemoteTarget(api);
     if (remoteTarget) targets.push(remoteTarget);
     await Promise.all(targets.map((target) => send(target, body)));
   };
+}
+
+function hookContext(
+  api: PluginRuntimeApi,
+  context: Record<string, unknown>,
+): Record<string, unknown> {
+  if (typeof context.workspaceDir === 'string') return context;
+  // Model/tool hooks can carry agentId without workspaceDir. Recover only the
+  // configured workspace identity, never transcripts or source content.
+  const agents = api.runtime.config.current().agents as
+    | {
+        defaults?: { workspace?: string };
+        entries?: Record<string, { workspace?: string }>;
+      }
+    | undefined;
+  const workspaceDir =
+    typeof context.agentId === 'string'
+      ? (agents?.entries?.[context.agentId]?.workspace ?? agents?.defaults?.workspace)
+      : undefined;
+  return workspaceDir ? { ...context, workspaceDir } : context;
 }
 
 async function announceSession(
@@ -215,9 +243,17 @@ export default definePluginEntry({
   name: 'Pixel Agents OpenClaw Relay',
   description: 'Sends content-free lifecycle events to local or remote Pixel Agents servers.',
   register(api) {
-    const postEvent = eventSender(api);
+    const sendEvent = eventSender(api);
+    const trackedSessions = new Set<string>();
+    const postEvent = async (event: Record<string, unknown>): Promise<void> => {
+      if (typeof event.session_id === 'string') {
+        if (event.event === 'session_start') trackedSessions.add(event.session_id);
+        if (event.event === 'session_end') trackedSessions.delete(event.session_id);
+      }
+      await sendEvent(event);
+    };
     api.on('model_call_started', async (event, context) => {
-      const id = await announceSession(postEvent, event, context);
+      const id = await announceSession(postEvent, event, hookContext(api, context));
       if (id) cancelTurnEnd(id);
     });
 
@@ -227,7 +263,7 @@ export default definePluginEntry({
     });
 
     api.on('before_tool_call', async (event, context) => {
-      const id = await announceSession(postEvent, event, context);
+      const id = await announceSession(postEvent, event, hookContext(api, context));
       if (!id) return;
       cancelTurnEnd(id);
       await postEvent({
@@ -244,6 +280,15 @@ export default definePluginEntry({
       await postEvent({ event: 'tool_end', session_id: id, tool_id: toolId(event, context, id) });
     });
 
+    // Harnesses do not all emit per-call model events around their final reply.
+    // The authoritative turn boundary must still return the character to idle.
+    api.on('agent_end', async (event, context) => {
+      const id = sessionId(event, context);
+      if (!id) return;
+      cancelTurnEnd(id);
+      await postEvent({ event: 'turn_end', session_id: id });
+    });
+
     api.on('session_end', async (event, context) => {
       const id = sessionId(event, context);
       if (!id) return;
@@ -258,6 +303,16 @@ export default definePluginEntry({
     api.on('gateway_stop', async () => {
       for (const timer of turnEndTimers.values()) clearTimeout(timer);
       turnEndTimers.clear();
+      await Promise.all(
+        [...trackedSessions].map((id) =>
+          postEvent({
+            event: 'session_end',
+            session_id: id,
+            reason: 'gateway_stop',
+          }),
+        ),
+      );
+      trackedSessions.clear();
     });
   },
 });
