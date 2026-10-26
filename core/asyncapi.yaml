@@ -143,6 +143,7 @@ components:
         - $ref: '#/components/schemas/SetSoundEnabled'
         - $ref: '#/components/schemas/SetLastSeenVersion'
         - $ref: '#/components/schemas/SetAlwaysShowLabels'
+        - $ref: '#/components/schemas/SetShowThinking'
         - $ref: '#/components/schemas/SetGhostHeadlessAgents'
         - $ref: '#/components/schemas/SetHooksEnabled'
         - $ref: '#/components/schemas/HooksConsentResponse'
@@ -756,6 +757,12 @@ components:
           type: boolean
         alwaysShowLabels:
           type: boolean
+        showThinking:
+          type: boolean
+          description: >-
+            Whether agents' thinking text is shared. When false the server
+            withholds `thinking` from every insight message, so a shared office
+            never receives it. Absent means true.
         ghostHeadlessAgents:
           type: boolean
         hooksEnabled:
@@ -1148,6 +1155,19 @@ components:
       properties:
         type:
           const: setAlwaysShowLabels
+        enabled:
+          type: boolean
+
+    SetShowThinking:
+      description: >-
+        Share or withhold agents' thinking text. Off stops the server from
+        sending it to any client and clears the bubbles already shown.
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setShowThinking
         enabled:
           type: boolean
 

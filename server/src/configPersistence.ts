@@ -8,6 +8,8 @@ export interface AdapterSettings {
   soundEnabled: boolean;
   lastSeenVersion: string;
   alwaysShowLabels: boolean;
+  /** Whether agents' thinking text is shared with clients. On by default. */
+  showThinking: boolean;
   ghostHeadlessAgents: boolean;
   watchAllSessions: boolean;
   hooksInfoShown: boolean;
@@ -28,6 +30,7 @@ export const ADAPTER_SETTING_KEYS = [
   'soundEnabled',
   'lastSeenVersion',
   'alwaysShowLabels',
+  'showThinking',
   'ghostHeadlessAgents',
   'watchAllSessions',
   'hooksInfoShown',
@@ -77,6 +80,7 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   soundEnabled: true,
   lastSeenVersion: '',
   alwaysShowLabels: false,
+  showThinking: true,
   ghostHeadlessAgents: false,
   watchAllSessions: false,
   hooksInfoShown: false,
@@ -174,6 +178,10 @@ function parseAdapterSettings(raw: unknown): AdapterSettings {
       typeof obj.alwaysShowLabels === 'boolean'
         ? obj.alwaysShowLabels
         : DEFAULT_ADAPTER_SETTINGS.alwaysShowLabels,
+    showThinking:
+      typeof obj.showThinking === 'boolean'
+        ? obj.showThinking
+        : DEFAULT_ADAPTER_SETTINGS.showThinking,
     ghostHeadlessAgents:
       typeof obj.ghostHeadlessAgents === 'boolean'
         ? obj.ghostHeadlessAgents

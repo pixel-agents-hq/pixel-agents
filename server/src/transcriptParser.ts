@@ -9,6 +9,7 @@ import {
   isEmptyUsage,
   isLiveSpawn,
   isRealModelId,
+  isThinkingShared,
   latestThinking,
   recordEffort,
   spawnInsight,
@@ -129,7 +130,8 @@ function updateAgentInsight(
   }
 
   const thinking = latestThinking(blocks);
-  if (thinking !== undefined && thinking !== agent.insightThinking) {
+  // While thinking is not shared it is neither sent nor kept.
+  if (isThinkingShared() && thinking !== undefined && thinking !== agent.insightThinking) {
     agent.insightThinking = thinking;
     agents.broadcast({ type: 'agentInsight', id: agentId, thinking });
   }

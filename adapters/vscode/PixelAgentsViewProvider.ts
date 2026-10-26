@@ -41,6 +41,7 @@ import {
 } from '../../server/src/directories.js';
 import { collectDirectorySuggestions } from '../../server/src/directorySuggestions.js';
 import { setDirectoryNameResolver, setTerminalAdapter } from '../../server/src/fileWatcher.js';
+import { applyShowThinking, setThinkingShared } from '../../server/src/insight.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
 import {
   readLayoutFromFile,
@@ -76,6 +77,7 @@ import {
   GLOBAL_KEY_LAST_SEEN_VERSION,
   GLOBAL_KEY_SHOW_AREAS,
   GLOBAL_KEY_SHOW_HOST_DIRECTORIES,
+  GLOBAL_KEY_SHOW_THINKING,
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
@@ -129,6 +131,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   ) {
     this.adapter = adapter;
     this.store.setAdapter(this.adapter);
+    setThinkingShared(this.adapter.getSetting<boolean>(GLOBAL_KEY_SHOW_THINKING, true));
     // Workspace folders are this host's Directory contribution, so a folder
     // added to or removed from the workspace changes the union the drawer
     // shows. Registered once here (not per resolveWebviewView) and buffered
@@ -527,6 +530,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.adapter.setSetting(GLOBAL_KEY_LAST_SEEN_VERSION, message.version as string);
       } else if (message.type === 'setAlwaysShowLabels') {
         this.adapter.setSetting(GLOBAL_KEY_ALWAYS_SHOW_LABELS, message.enabled);
+      } else if (message.type === 'setShowThinking') {
+        if (typeof message.enabled === 'boolean') {
+          this.adapter.setSetting(GLOBAL_KEY_SHOW_THINKING, message.enabled);
+          applyShowThinking(this.store, message.enabled);
+        }
       } else if (message.type === 'setGhostHeadlessAgents') {
         this.adapter.setSetting(GLOBAL_KEY_GHOST_HEADLESS_AGENTS, message.enabled);
       } else if (message.type === 'setHooksEnabled') {
@@ -653,6 +661,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           GLOBAL_KEY_ALWAYS_SHOW_LABELS,
           false,
         );
+        const showThinking = this.adapter.getSetting<boolean>(GLOBAL_KEY_SHOW_THINKING, true);
         const ghostHeadlessAgents = this.adapter.getSetting<boolean>(
           GLOBAL_KEY_GHOST_HEADLESS_AGENTS,
           false,
@@ -680,6 +689,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           extensionVersion,
           watchAllSessions,
           alwaysShowLabels,
+          showThinking,
           ghostHeadlessAgents,
           hooksEnabled,
           hooksInfoShown,

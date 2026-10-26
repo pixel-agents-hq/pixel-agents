@@ -22,7 +22,7 @@ import type * as fs from 'fs';
 import { createAgentState } from './agentState.js';
 import { AgentStateStore } from './agentStateStore.js';
 import { readNewLines, startFileWatching } from './fileWatcher.js';
-import type { SubagentInsightFields } from './insight.js';
+import { isThinkingShared, shareableInsight, type SubagentInsightFields } from './insight.js';
 import { pathsMatch } from './pathKey.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
 import { rememberSpawnInsight } from './transcriptParser.js';
@@ -200,8 +200,10 @@ export class SubagentWatch {
       case 'agentInsight': {
         // The shadow store's own parser produced this message, so its fields
         // already have the agentInsight types.
-        const { model, agentType, description, effort, thinking, spend } =
-          message as SubagentInsightFields;
+        const fields = message as SubagentInsightFields;
+        const { model, agentType, description, effort, spend } = fields;
+        // While thinking is not shared it is neither sent nor kept.
+        const thinking = isThinkingShared() ? fields.thinking : undefined;
         const lead = this.mainStore.get(leadId);
         if (lead) {
           rememberSpawnInsight(lead, spawnToolUseId, {
@@ -213,16 +215,21 @@ export class SubagentWatch {
             spend,
           });
         }
-        this.mainStore.broadcast({
-          type: 'subagentInsight',
-          id: leadId,
-          parentToolId: spawnToolUseId,
+        const shared = shareableInsight({
           model,
           agentType,
           description,
           effort,
           thinking,
           spend,
+        });
+        // A change that was only thinking leaves nothing to send.
+        if (Object.values(shared).every((value) => value === undefined)) break;
+        this.mainStore.broadcast({
+          type: 'subagentInsight',
+          id: leadId,
+          parentToolId: spawnToolUseId,
+          ...shared,
         });
         break;
       }

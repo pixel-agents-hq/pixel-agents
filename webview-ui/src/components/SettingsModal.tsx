@@ -15,6 +15,9 @@ interface SettingsModalProps {
   onToggleDebugMode: () => void;
   alwaysShowOverlay: boolean;
   onToggleAlwaysShowOverlay: () => void;
+  /** Whether agents' thinking is shared (server-side) and shown as bubbles. */
+  showThinking: boolean;
+  onToggleShowThinking: () => void;
   /** Whether headless agents (adopted, no terminal to focus) render translucent. */
   ghostHeadlessAgents: boolean;
   onToggleGhostHeadlessAgents: () => void;
@@ -51,6 +54,8 @@ export function SettingsModal({
   onToggleDebugMode,
   alwaysShowOverlay,
   onToggleAlwaysShowOverlay,
+  showThinking,
+  onToggleShowThinking,
   ghostHeadlessAgents,
   onToggleGhostHeadlessAgents,
   externalAssetDirectories,
@@ -203,6 +208,11 @@ export function SettingsModal({
         label="Always Show Labels"
         checked={alwaysShowOverlay}
         onChange={onToggleAlwaysShowOverlay}
+      />
+      <Checkbox
+        label="Show Agent Thinking"
+        checked={showThinking}
+        onChange={onToggleShowThinking}
       />
       {/* Headless agents are the office's only terminal-less citizens in VS Code.
           Standalone has no terminals at all, so nothing there would ever ghost. */}

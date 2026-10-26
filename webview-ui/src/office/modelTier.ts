@@ -81,6 +81,19 @@ export function isThoughtFresh(c: CascadeState, now: number, windowMs: number): 
   return !!c.thinking && c.thinkingAt !== undefined && now - c.thinkingAt < windowMs;
 }
 
+/** The thought bubble's text, or null when none shows: the user turned
+ *  thinking off, or the thought is stale or empty. */
+export function thoughtBubbleText(
+  c: CascadeState,
+  showThinking: boolean,
+  now: number,
+  windowMs: number,
+  maxChars: number,
+): string | null {
+  if (!showThinking || !isThoughtFresh(c, now, windowMs)) return null;
+  return thoughtPreview(c.thinking ?? '', maxChars);
+}
+
 /** Fold a partial update into `target`: absent fields keep their value. */
 export function applyInsight(target: CascadeState, patch: CascadeInsight, now: number): void {
   if (patch.model !== undefined) target.model = patch.model;

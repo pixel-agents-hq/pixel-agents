@@ -1,5 +1,5 @@
 import type { AgentStateStore } from './agentStateStore.js';
-import { insightSnapshot, isLiveSpawn } from './insight.js';
+import { insightSnapshot, isLiveSpawn, shareableInsight } from './insight.js';
 import { hasPromotedBackgroundAgent } from './teamUtils.js';
 
 /**
@@ -90,13 +90,13 @@ export function resendAgentActivity(
     }
 
     // 6. Cascade insight
-    const insight = insightSnapshot(agent);
+    const insight = shareableInsight(insightSnapshot(agent));
     if (Object.keys(insight).length > 0) {
       send({ type: 'agentInsight', id, ...insight });
     }
     for (const [parentToolId, fields] of agent.insightSpawns ?? []) {
       if (!isLiveSpawn(agent, parentToolId)) continue;
-      send({ type: 'subagentInsight', id, parentToolId, ...fields });
+      send({ type: 'subagentInsight', id, parentToolId, ...shareableInsight(fields) });
     }
   }
 }

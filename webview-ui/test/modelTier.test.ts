@@ -8,6 +8,7 @@ import {
   mergeInsight,
   modelTier,
   type PendingInsight,
+  thoughtBubbleText,
   thoughtPreview,
   TIER_LABELS,
 } from '../src/office/modelTier.js';
@@ -134,5 +135,23 @@ describe('holdInsight', () => {
     holdInsight(held, 'c', { model: 'opus' }, 4, 2);
     expect([...held.keys()]).toEqual(['a', 'c']);
     expect(held.get('a')).toMatchObject({ model: 'haiku', effort: 'low' });
+  });
+});
+
+describe('thoughtBubbleText', () => {
+  const fresh = { thinking: 'a  plan\nto follow', thinkingAt: 1000 };
+
+  it('shows the flattened, cut thought while it is fresh and thinking is on', () => {
+    expect(thoughtBubbleText(fresh, true, 1500, 5000, 100)).toBe('a plan to follow');
+    expect(thoughtBubbleText(fresh, true, 1500, 5000, 6)).toBe('a plan…');
+  });
+
+  it('shows nothing when thinking is off, however fresh the thought', () => {
+    expect(thoughtBubbleText(fresh, false, 1500, 5000, 100)).toBeNull();
+  });
+
+  it('shows nothing when stale or cleared', () => {
+    expect(thoughtBubbleText(fresh, true, 7000, 5000, 100)).toBeNull();
+    expect(thoughtBubbleText({ thinking: '', thinkingAt: 1000 }, true, 1500, 5000, 100)).toBeNull();
   });
 });

@@ -31,13 +31,7 @@ import {
 } from '../../constants.js';
 import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
 import type { OfficeState } from '../engine/officeState.js';
-import {
-  formatTierBadge,
-  isThoughtFresh,
-  modelTier,
-  thoughtPreview,
-  TIER_COLORS,
-} from '../modelTier.js';
+import { formatTierBadge, modelTier, thoughtBubbleText, TIER_COLORS } from '../modelTier.js';
 import { overlayProjection } from '../projection.js';
 import { getCachedSprite } from '../sprites/spriteCache.js';
 import { BUBBLE_PERMISSION_SPRITE, BUBBLE_WAITING_SPRITE } from '../sprites/spriteData.js';
@@ -61,6 +55,8 @@ interface ToolOverlayProps {
   panRef: React.RefObject<{ x: number; y: number }>;
   onCloseAgent: (id: number) => void;
   alwaysShowOverlay: boolean;
+  /** Off hides every thought bubble (the "Show Agent Thinking" setting). */
+  showThinking: boolean;
 }
 
 /** Derive a short human-readable activity string from tools/status */
@@ -171,6 +167,7 @@ export function ToolOverlay({
   panRef,
   onCloseAgent,
   alwaysShowOverlay,
+  showThinking,
 }: ToolOverlayProps) {
   // The frame clock: re-renders every frame and dates the thought bubbles.
   const [now, setNow] = useState(() => Date.now());
@@ -250,9 +247,13 @@ export function ToolOverlay({
 
         // Cascade view: tier badge (with the label) and the fresh thought bubble.
         const tierBadgeText = formatTierBadge(ch);
-        const thoughtText = isThoughtFresh(ch, now, THOUGHT_BUBBLE_MS)
-          ? thoughtPreview(ch.thinking ?? '', THOUGHT_PREVIEW_CHARS)
-          : null;
+        const thoughtText = thoughtBubbleText(
+          ch,
+          showThinking,
+          now,
+          THOUGHT_BUBBLE_MS,
+          THOUGHT_PREVIEW_CHARS,
+        );
 
         // Position above character
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;

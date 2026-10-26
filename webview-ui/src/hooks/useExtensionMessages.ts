@@ -122,6 +122,8 @@ interface ExtensionMessageState {
   watchAllSessions: boolean;
   setWatchAllSessions: (v: boolean) => void;
   alwaysShowLabels: boolean;
+  showThinking: boolean;
+  setShowThinking: (v: boolean) => void;
   ghostHeadlessAgents: boolean;
   setGhostHeadlessAgents: (v: boolean) => void;
   hooksEnabled: boolean;
@@ -207,6 +209,7 @@ export function useExtensionMessages(
   const [extensionVersion, setExtensionVersion] = useState('');
   const [watchAllSessions, setWatchAllSessions] = useState(false);
   const [alwaysShowLabels, setAlwaysShowLabels] = useState(false);
+  const [showThinking, setShowThinking] = useState(true);
   const [ghostHeadlessAgents, setGhostHeadlessAgentsState] = useState(false);
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInstalled, setHooksInstalled] = useState<Record<string, boolean>>({});
@@ -802,6 +805,9 @@ export function useExtensionMessages(
         if (typeof msg.alwaysShowLabels === 'boolean') {
           setAlwaysShowLabels(msg.alwaysShowLabels as boolean);
         }
+        if (typeof msg.showThinking === 'boolean') {
+          setShowThinking(msg.showThinking as boolean);
+        }
         if (typeof msg.ghostHeadlessAgents === 'boolean') {
           applyGhostHeadlessAgents(msg.ghostHeadlessAgents as boolean);
         }
@@ -961,6 +967,8 @@ export function useExtensionMessages(
     watchAllSessions,
     setWatchAllSessions,
     alwaysShowLabels,
+    showThinking,
+    setShowThinking,
     ghostHeadlessAgents,
     setGhostHeadlessAgents: applyGhostHeadlessAgents,
     hooksEnabled,

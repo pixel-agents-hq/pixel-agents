@@ -102,6 +102,8 @@ function App() {
     watchAllSessions,
     setWatchAllSessions,
     alwaysShowLabels,
+    showThinking,
+    setShowThinking,
     ghostHeadlessAgents,
     setGhostHeadlessAgents,
     hooksEnabled,
@@ -207,6 +209,14 @@ function App() {
       return newVal;
     });
   }, []);
+
+  // Toggle "Show Agent Thinking". Optimistic, like the other toggles; the server
+  // stops sending thinking and clears the bubbles other tabs already show.
+  const handleToggleShowThinking = useCallback(() => {
+    const newVal = !showThinking;
+    setShowThinking(newVal);
+    transport.send({ type: 'setShowThinking', enabled: newVal });
+  }, [showThinking, setShowThinking]);
 
   // Toggle "Display headless as ghosts". setGhostHeadlessAgents also updates the
   // renderer's module copy, so the office redraws on the next frame.
@@ -579,6 +589,7 @@ function App() {
             panRef={editor.panRef}
             onCloseAgent={handleCloseAgent}
             alwaysShowOverlay={alwaysShowOverlay}
+            showThinking={showThinking}
           />
         </>
       ) : (
@@ -823,6 +834,8 @@ function App() {
         onToggleDebugMode={handleToggleDebugMode}
         alwaysShowOverlay={alwaysShowOverlay}
         onToggleAlwaysShowOverlay={handleToggleAlwaysShowOverlay}
+        showThinking={showThinking}
+        onToggleShowThinking={handleToggleShowThinking}
         ghostHeadlessAgents={ghostHeadlessAgents}
         onToggleGhostHeadlessAgents={handleToggleGhostHeadlessAgents}
         externalAssetDirectories={externalAssetDirectories}

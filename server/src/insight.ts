@@ -1,4 +1,5 @@
 import type { TokenSpend } from '../../core/src/messages.js';
+import type { AgentStateStore } from './agentStateStore.js';
 import { THINKING_PREVIEW_MAX_CHARS } from './constants.js';
 import type { AgentState } from './types.js';
 
@@ -129,4 +130,53 @@ export function spawnInsight(input: unknown): SpawnInsight {
   if (model) out.model = model;
   if (effort) out.effort = effort;
   return out;
+}
+
+// -- Sharing thinking -------------------------------------------------------
+// The "Show Agent Thinking" setting is a privacy switch for a shared office, so
+// it is enforced where the messages are made: while off, `thinking` never
+// leaves the server. The agent still records it (`insightThinking`), so nothing
+// is lost; turning the setting back on shows only what comes next.
+
+let thinkingShared = true;
+
+/** Set whether thinking text may be broadcast. Prefer `applyShowThinking` when
+ *  the change comes from the user, since turning it off must also clear. */
+export function setThinkingShared(enabled: boolean): void {
+  thinkingShared = enabled;
+}
+
+export function isThinkingShared(): boolean {
+  return thinkingShared;
+}
+
+/** `fields` without `thinking` while sharing is off; unchanged otherwise. */
+export function shareableInsight<T extends { thinking?: string }>(fields: T): T {
+  if (thinkingShared) return fields;
+  const { thinking: _withheld, ...rest } = fields;
+  return rest as T;
+}
+
+/** Apply the setting. Turning it off tells every client to drop the bubbles it
+ *  shows (an empty `thinking` means no bubble) -- once per agent, and once per
+ *  live spawn, that has thinking -- and forgets the stored thinking, so a later
+ *  replay (after turning it back on) cannot show it as new. Turning it on
+ *  replays nothing. */
+export function applyShowThinking(store: AgentStateStore, enabled: boolean): void {
+  const wasShared = thinkingShared;
+  thinkingShared = enabled;
+  if (enabled || !wasShared) return;
+  for (const [id, agent] of store) {
+    if (agent.insightThinking) {
+      agent.insightThinking = undefined;
+      store.broadcast({ type: 'agentInsight', id, thinking: '' });
+    }
+    for (const [parentToolId, fields] of agent.insightSpawns ?? []) {
+      if (!fields.thinking) continue;
+      delete fields.thinking;
+      if (isLiveSpawn(agent, parentToolId)) {
+        store.broadcast({ type: 'subagentInsight', id, parentToolId, thinking: '' });
+      }
+    }
+  }
 }

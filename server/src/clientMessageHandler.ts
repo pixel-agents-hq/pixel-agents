@@ -20,6 +20,7 @@ import {
 } from './directories.js';
 import { collectDirectorySuggestions } from './directorySuggestions.js';
 import { hostDirectory } from './hostDirectory.js';
+import { applyShowThinking } from './insight.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
@@ -80,6 +81,7 @@ export interface ClientMessageContext {
 const KEY_SOUND_ENABLED = 'pixel-agents.soundEnabled';
 const KEY_LAST_SEEN_VERSION = 'pixel-agents.lastSeenVersion';
 const KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
+const KEY_SHOW_THINKING = 'pixel-agents.showThinking';
 const KEY_GHOST_HEADLESS_AGENTS = 'pixel-agents.ghostHeadlessAgents';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
@@ -238,6 +240,14 @@ export function handleClientMessage(
     case 'setAlwaysShowLabels':
       adapter?.setSetting(KEY_ALWAYS_SHOW_LABELS, msg.enabled);
       break;
+
+    case 'setShowThinking': {
+      if (typeof msg.enabled !== 'boolean') break;
+      const enabled = msg.enabled;
+      adapter?.setSetting(KEY_SHOW_THINKING, enabled);
+      applyShowThinking(store, enabled);
+      break;
+    }
 
     case 'setGhostHeadlessAgents':
       adapter?.setSetting(KEY_GHOST_HEADLESS_AGENTS, msg.enabled);
@@ -654,6 +664,7 @@ function settingsSnapshot(adapter: StateAdapter | undefined) {
     extensionVersion: process.env.PIXEL_AGENTS_VERSION ?? '',
     watchAllSessions: adapter?.getSetting(KEY_WATCH_ALL_SESSIONS, false) ?? false,
     alwaysShowLabels: adapter?.getSetting(KEY_ALWAYS_SHOW_LABELS, false) ?? false,
+    showThinking: adapter?.getSetting(KEY_SHOW_THINKING, true) ?? true,
     ghostHeadlessAgents: adapter?.getSetting(KEY_GHOST_HEADLESS_AGENTS, false) ?? false,
     // A single boolean carrying the CLAUDE provider's preference until the
     // Settings UI grows a per-provider list -- its sole webview reader is the
@@ -700,6 +711,7 @@ function refuseReadOnly(
     }
     case 'setSoundEnabled':
     case 'setAlwaysShowLabels':
+    case 'setShowThinking':
     case 'setGhostHeadlessAgents':
     case 'setWatchAllSessions':
     case 'setShowAreas':
