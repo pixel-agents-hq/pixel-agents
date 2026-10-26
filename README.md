@@ -33,7 +33,9 @@ Según la [documentación oficial](https://code.claude.com/docs/en/settings-refe
 
 Los personajes se cargan desde una carpeta local con **Settings → Add Asset Directory** (ver [docs/external-assets.md](docs/external-assets.md)). Los sprites de personajes con derechos de autor no se suben a este repo.
 
-## Créditos
+## Créditos y gracias
+
+Gracias a Pablo De Lucca y a todos los que construyeron [Pixel Agents](https://github.com/pixel-agents-hq/pixel-agents). Sin su oficina, sus personajes y su lector de transcripts, Nakama Works no existiría. Gracias también a los autores de Agent Flow, claude-esp, Agents Observe y claude-devtools: sus ideas guiaron la vista de cascada.
 
 - [Pixel Agents](https://github.com/pixel-agents-hq/pixel-agents) de Pablo De Lucca y sus colaboradores (MIT) es la base completa: la oficina, los personajes, los hooks y el lector de transcripts. Su licencia se mantiene en [LICENSE](LICENSE).
 - Estas herramientas inspiraron las funciones nuevas. Se tomaron ideas, no código:
