@@ -4,10 +4,11 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { PersistedAgent } from '../../core/src/schemas.js';
 import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
-import type { AgentState, PersistedAgent } from '../src/types.js';
+import type { AgentState } from '../src/types.js';
 
 function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
   return {
@@ -24,7 +25,7 @@ function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
     activeToolNames: new Map(),
     activeSubagentToolIds: new Map(),
     activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
+    backgroundSpawns: new Map(),
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,

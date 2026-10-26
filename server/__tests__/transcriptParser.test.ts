@@ -25,7 +25,7 @@ function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
     activeToolNames: new Map(),
     activeSubagentToolIds: new Map(),
     activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
+    backgroundSpawns: new Map(),
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
@@ -125,9 +125,9 @@ describe('transcriptParser: teammate spawn results (new-harness implicit teams)'
     );
 
     // The teammate character replaces the transient Subtask one: the spawn tool
-    // must be cleared, not parked in backgroundAgentToolIds forever (the new
+    // must be cleared, not parked in backgroundSpawns forever (the new
     // harness never writes the queue-operation completion record).
-    expect(agent.backgroundAgentToolIds.size).toBe(0);
+    expect(agent.backgroundSpawns.size).toBe(0);
     expect(agent.activeToolIds.has('toolu_1')).toBe(false);
     expect(messages.some((m) => m.type === 'subagentClear' && m.parentToolId === 'toolu_1')).toBe(
       true,
@@ -325,7 +325,7 @@ describe('transcriptParser: teammate spawn results (new-harness implicit teams)'
       waitingTimers,
       permissionTimers,
     );
-    expect(agent.backgroundAgentToolIds.has('toolu_1')).toBe(true);
+    expect(agent.backgroundSpawns.has('toolu_1')).toBe(true);
     expect(agent.activeToolIds.has('toolu_1')).toBe(true);
     expect(agent.teamName).toBeUndefined();
   });

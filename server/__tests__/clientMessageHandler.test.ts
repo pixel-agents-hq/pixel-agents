@@ -40,7 +40,7 @@ function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
     activeToolNames: new Map(),
     activeSubagentToolIds: new Map(),
     activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
+    backgroundSpawns: new Map(),
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
@@ -463,75 +463,71 @@ describe('clientMessageHandler: saveAgentSeats palette sync', () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
-  it('syncs in-range palette/hueShift onto the matching AgentState', () => {
+  it('fills in the look of an agent that has none', () => {
     store.set(1, createTestAgent({ id: 1 }));
-    store.set(2, createTestAgent({ id: 2, palette: 0, hueShift: 0 }));
 
     handleClientMessage(
-      {
-        type: 'saveAgentSeats',
-        seats: {
-          '1': { palette: 4, hueShift: 120, seatId: 'seat-a' },
-          '2': { palette: 2, hueShift: 60, seatId: 'seat-b' },
-        },
-      },
+      { type: 'saveAgentSeats', seats: { '1': { palette: 4, hueShift: 120, seatId: 'seat-a' } } },
       (m) => sent.push(m),
       ctx,
     );
 
     expect(store.get(1)?.palette).toBe(4);
     expect(store.get(1)?.hueShift).toBe(120);
-    expect(store.get(2)?.palette).toBe(2);
-    expect(store.get(2)?.hueShift).toBe(60);
   });
 
-  it('drops an out-of-range palette and keeps the existing value', () => {
-    store.set(1, createTestAgent({ id: 1, palette: 1, hueShift: 10 }));
+  it('never replaces a look the server already gave the agent', () => {
+    // A browser that reconnects keeps the looks it had before and saves them
+    // back; they must not overwrite what the server assigned meanwhile.
+    store.set(2, createTestAgent({ id: 2, palette: 0, hueShift: 0 }));
 
     handleClientMessage(
-      {
-        type: 'saveAgentSeats',
-        seats: { '1': { palette: 99, hueShift: 50, seatId: null } },
-      },
+      { type: 'saveAgentSeats', seats: { '2': { palette: 2, hueShift: 60, seatId: 'seat-b' } } },
       (m) => sent.push(m),
       ctx,
     );
 
-    expect(store.get(1)?.palette).toBe(1);
-    // hueShift 50 is in range → still synced.
+    expect(store.get(2)?.palette).toBe(0);
+    expect(store.get(2)?.hueShift).toBe(0);
+  });
+
+  it('drops an out-of-range palette', () => {
+    store.set(1, createTestAgent({ id: 1 }));
+
+    handleClientMessage(
+      { type: 'saveAgentSeats', seats: { '1': { palette: 99, hueShift: 50, seatId: null } } },
+      (m) => sent.push(m),
+      ctx,
+    );
+
+    expect(store.get(1)?.palette).toBeUndefined();
+    // hueShift 50 is in range → still filled.
     expect(store.get(1)?.hueShift).toBe(50);
   });
 
-  it('drops a negative hue shift and keeps the existing value', () => {
-    store.set(1, createTestAgent({ id: 1, palette: 0, hueShift: 30 }));
+  it('drops a negative hue shift', () => {
+    store.set(1, createTestAgent({ id: 1 }));
 
     handleClientMessage(
-      {
-        type: 'saveAgentSeats',
-        seats: { '1': { palette: 2, hueShift: -5, seatId: null } },
-      },
+      { type: 'saveAgentSeats', seats: { '1': { palette: 2, hueShift: -5, seatId: null } } },
       (m) => sent.push(m),
       ctx,
     );
 
-    // palette 2 is in range → synced.
     expect(store.get(1)?.palette).toBe(2);
-    expect(store.get(1)?.hueShift).toBe(30);
+    expect(store.get(1)?.hueShift).toBeUndefined();
   });
 
-  it('drops a non-integer palette and keeps the existing value', () => {
-    store.set(1, createTestAgent({ id: 1, palette: 5, hueShift: 0 }));
+  it('drops a non-integer palette', () => {
+    store.set(1, createTestAgent({ id: 1 }));
 
     handleClientMessage(
-      {
-        type: 'saveAgentSeats',
-        seats: { '1': { palette: 2.5, hueShift: 90, seatId: null } },
-      },
+      { type: 'saveAgentSeats', seats: { '1': { palette: 2.5, hueShift: 90, seatId: null } } },
       (m) => sent.push(m),
       ctx,
     );
 
-    expect(store.get(1)?.palette).toBe(5);
+    expect(store.get(1)?.palette).toBeUndefined();
     expect(store.get(1)?.hueShift).toBe(90);
   });
 
@@ -539,10 +535,7 @@ describe('clientMessageHandler: saveAgentSeats palette sync', () => {
     store.set(1, createTestAgent({ id: 1 }));
 
     handleClientMessage(
-      {
-        type: 'saveAgentSeats',
-        seats: { '1': { palette: 0, hueShift: 360, seatId: null } },
-      },
+      { type: 'saveAgentSeats', seats: { '1': { palette: 0, hueShift: 360, seatId: null } } },
       (m) => sent.push(m),
       ctx,
     );
@@ -676,7 +669,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
       activeToolNames: new Map(),
       activeSubagentToolIds: new Map(),
       activeSubagentToolNames: new Map(),
-      backgroundAgentToolIds: new Set(),
+      backgroundSpawns: new Map(),
       isWaiting: false,
       permissionSent: false,
       hadToolsInTurn: false,

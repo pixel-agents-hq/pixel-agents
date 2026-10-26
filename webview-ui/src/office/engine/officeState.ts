@@ -51,6 +51,12 @@ function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } 
   return { dCol: 0, dRow: -1 };
 }
 
+/** Whether a character sits in a chair: helpers stand by their lead, and a
+ *  departing character is leaving. */
+function takesSeat(ch: Character): boolean {
+  return !ch.isSubagent && ch.matrixEffect !== 'despawn';
+}
+
 export class OfficeState {
   layout: OfficeLayout;
   tileMap: TileTypeVal[][];
@@ -87,6 +93,13 @@ export class OfficeState {
   /** Reverse lookup: sub-agent character ID → parent info */
   subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }> = new Map();
   private nextSubagentId = -1;
+  /** Where each sub-agent stood when a resync detached it ("parentId:toolId" →
+   *  spot). A sub the resync replay re-creates returns there without a spawn
+   *  effect; one it doesn't was stale and stays gone. */
+  private resyncSubagentSpots = new Map<
+    string,
+    { x: number; y: number; tileCol: number; tileRow: number; dir: Character['dir'] }
+  >();
 
   /**
    * directoryName → list of Area labels that Directory belongs to.
@@ -194,7 +207,7 @@ export class OfficeState {
 
     // Second pass: assign remaining characters to free seats
     for (const ch of this.characters.values()) {
-      if (ch.seatId) continue;
+      if (ch.seatId || !takesSeat(ch)) continue;
       const seatId = this.findFreeSeat(ch.directoryName);
       if (seatId) {
         this.seats.get(seatId)!.assigned = true;
@@ -590,16 +603,23 @@ export class OfficeState {
     const ch = this.characters.get(id);
     if (!ch) return;
     if (ch.matrixEffect === 'despawn') return; // already despawning
-    // Free seat and clear selection immediately
+    // Give the seat up at once: a departing character holds none, so nothing
+    // (a layout rebuild included) can mark it taken again during the effect.
     if (ch.seatId) {
       const seat = this.seats.get(ch.seatId);
       if (seat) seat.assigned = false;
+      ch.seatId = null;
     }
-    if (this.selectedAgentId === id) this.selectedAgentId = null;
-    if (this.cameraFollowId === id) this.cameraFollowId = null;
+    this.forgetSelection(id);
     // Start despawn animation instead of immediate delete
     startMatrixEffect(ch, 'despawn');
     ch.bubbleType = null;
+  }
+
+  /** Stop selecting and following a character that is leaving. */
+  private forgetSelection(id: number): void {
+    if (this.selectedAgentId === id) this.selectedAgentId = null;
+    if (this.cameraFollowId === id) this.cameraFollowId = null;
   }
 
   /** Find seat uid at a given tile position, or null */
@@ -608,6 +628,21 @@ export class OfficeState {
       if (seat.seatCol === col && seat.seatRow === row) return uid;
     }
     return null;
+  }
+
+  /** Give an agent the server's look and seat (a reconnect's snapshot). The
+   *  seat is taken only when it exists and no one else sits there. */
+  syncAgent(agentId: number, palette?: number, hueShift?: number, seatId?: string): void {
+    const ch = this.characters.get(agentId);
+    if (!ch) return;
+    if (palette !== undefined) {
+      ch.palette = palette;
+      ch.hueShift = hueShift ?? 0;
+    }
+    if (seatId !== undefined && seatId !== ch.seatId) {
+      const seat = this.seats.get(seatId);
+      if (seat && !seat.assigned) this.reassignSeat(agentId, seatId);
+    }
   }
 
   /** Reassign an agent from their current seat to a new seat */
@@ -749,7 +784,14 @@ export class OfficeState {
     if (parentCh) ch.dir = parentCh.dir;
     ch.isSubagent = true;
     ch.parentAgentId = parentAgentId;
-    startMatrixEffect(ch, 'spawn');
+    const spot = this.resyncSubagentSpots.get(key);
+    if (spot) {
+      // Re-created by a resync replay: it never left, so no spawn effect.
+      this.resyncSubagentSpots.delete(key);
+      Object.assign(ch, spot);
+    } else {
+      startMatrixEffect(ch, 'spawn');
+    }
     this.characters.set(id, ch);
 
     this.subagentIdMap.set(key, id);
@@ -782,8 +824,32 @@ export class OfficeState {
     // Clean up tracking maps immediately so keys don't collide
     this.subagentIdMap.delete(key);
     this.subagentMeta.delete(id);
-    if (this.selectedAgentId === id) this.selectedAgentId = null;
-    if (this.cameraFollowId === id) this.cameraFollowId = null;
+    this.forgetSelection(id);
+  }
+
+  /**
+   * Drop every sub-agent at once, without despawn effects, ahead of a resync
+   * snapshot. The snapshot replays the spawns that are still live, and each
+   * comes back on the spot it left (see addSubagent); the rest were missed
+   * clears and don't return.
+   */
+  detachSubagentsForResync(): void {
+    this.resyncSubagentSpots.clear();
+    for (const [key, id] of this.subagentIdMap) {
+      const ch = this.characters.get(id);
+      if (ch && ch.matrixEffect !== 'despawn') {
+        const { x, y, tileCol, tileRow, dir } = ch;
+        this.resyncSubagentSpots.set(key, { x, y, tileCol, tileRow, dir });
+      }
+      if (ch?.seatId) {
+        const seat = this.seats.get(ch.seatId);
+        if (seat) seat.assigned = false;
+      }
+      this.characters.delete(id);
+      this.forgetSelection(id);
+    }
+    this.subagentIdMap.clear();
+    this.subagentMeta.clear();
   }
 
   /** Remove all sub-agents belonging to a parent agent */
@@ -809,8 +875,7 @@ export class OfficeState {
           ch.bubbleType = null;
         }
         this.subagentMeta.delete(id);
-        if (this.selectedAgentId === id) this.selectedAgentId = null;
-        if (this.cameraFollowId === id) this.cameraFollowId = null;
+        this.forgetSelection(id);
         toRemove.push(key);
       }
     }

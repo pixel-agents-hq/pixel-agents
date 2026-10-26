@@ -28,9 +28,15 @@ export interface PersistedAgent {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
-  /** Live background-spawn tool ids on a lead. Persisted so the spawns'
-   *  transcripts are re-adopted after a reload; the spawned children
-   *  themselves are derived state and never persisted. */
+  /** A lead's live background spawns: the tool id each runs under, plus the
+   *  agent (task) id the CLI gave it when known. Persisted so the spawns'
+   *  transcripts are re-adopted after a reload and their completion still
+   *  matches (an agent revived by SendMessage is tied to its transcript only
+   *  by the task id); the spawned children themselves are derived state and
+   *  never persisted. */
+  backgroundSpawns?: { toolId: string; taskId?: string }[];
+  /** Pre-`backgroundSpawns` form (tool ids only), written by releases up to
+   *  v1.5.x. Read on restore; never written. */
   backgroundAgentToolIds?: string[];
   /** Preferred character palette (0-5). Persisted so colors stay stable
    *  across server restarts; assignPaletteIfNeeded is a no-op on restore. */

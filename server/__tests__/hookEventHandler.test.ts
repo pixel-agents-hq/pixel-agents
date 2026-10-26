@@ -22,7 +22,7 @@ function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
     activeToolNames: new Map(),
     activeSubagentToolIds: new Map(),
     activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
+    backgroundSpawns: new Map(),
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
@@ -68,6 +68,65 @@ describe('HookEventHandler', () => {
       claudeProvider,
       new SessionRouter(),
     );
+  });
+
+  // ── SubagentStop with inline teammates ─────────────────────
+
+  /** A lead with two in-process teammates, each with its own transcript. */
+  function leadWithTwoTeammates(): void {
+    agents.set(1, createTestAgent({ id: 1, sessionId: 'sess-1' }));
+    for (const id of [2, 3]) {
+      agents.set(
+        id,
+        createTestAgent({
+          id,
+          sessionId: 'sess-1',
+          leadAgentId: 1,
+          jsonlFile: `/test/sess-1/subagents/agent-${id}.jsonl`,
+        }),
+      );
+    }
+    handler.registerAgent('sess-1', 1);
+  }
+
+  const waitingIds = () =>
+    mockWebview.messages
+      .filter((m) => m.type === 'agentStatus' && m.status === 'waiting')
+      .map((m) => m.id);
+
+  it('SubagentStop naming a teammate transcript marks only that teammate waiting', () => {
+    leadWithTwoTeammates();
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'SubagentStop',
+      session_id: 'sess-1',
+      agent_id: '2',
+      agent_transcript_path: '/test/sess-1/subagents/agent-2.jsonl',
+    });
+
+    expect(waitingIds()).toEqual([2]);
+    expect(agents.get(3)!.isWaiting).toBe(false);
+  });
+
+  it('SubagentStop from a helper that is no teammate marks no teammate waiting', () => {
+    leadWithTwoTeammates();
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'SubagentStop',
+      session_id: 'sess-1',
+      agent_id: 'abc',
+      agent_transcript_path: '/test/sess-1/subagents/agent-abc.jsonl',
+    });
+
+    expect(waitingIds()).toEqual([]);
+  });
+
+  it('SubagentStop without a transcript path (older CLI) still marks every teammate', () => {
+    leadWithTwoTeammates();
+
+    handler.handleEvent('claude', { hook_event_name: 'SubagentStop', session_id: 'sess-1' });
+
+    expect(waitingIds().sort()).toEqual([2, 3]);
   });
 
   // ── PermissionRequest ───────────────────────────────────────
@@ -186,7 +245,7 @@ describe('HookEventHandler', () => {
     agent.activeToolIds.add('bg-tool');
     agent.activeToolStatuses.set('bg-tool', 'Background task');
     agent.activeToolNames.set('bg-tool', 'Agent');
-    agent.backgroundAgentToolIds.add('bg-tool');
+    agent.backgroundSpawns.set('bg-tool', {});
     agents.set(1, agent);
     handler.registerAgent('sess-1', 1);
 

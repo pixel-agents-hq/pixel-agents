@@ -5,6 +5,9 @@ import { namespaceE2EPath } from './run-config';
 
 process.env['ALLURE_LABEL_epic'] ??= 'e2e';
 
+// Allure results are large; only write them on CI or with ALLURE=1.
+const allureEnabled = Boolean(process.env['CI'] || process.env['ALLURE']);
+
 const artifactsDir = namespaceE2EPath(path.join(__dirname, '../test-results/e2e'));
 const allureResultsDir = namespaceE2EPath(path.join(__dirname, '../allure-results/e2e'));
 const htmlReportDir = namespaceE2EPath(path.join(__dirname, '../playwright-report/e2e'));
@@ -23,12 +26,7 @@ export default defineConfig({
         open: 'never',
       },
     ],
-    [
-      'allure-playwright',
-      {
-        resultsDir: allureResultsDir,
-      },
-    ],
+    ...(allureEnabled ? [['allure-playwright', { resultsDir: allureResultsDir }] as const] : []),
   ],
   outputDir: artifactsDir,
   // NOTE: browser-context settings here are no-ops for the VS Code tests

@@ -108,6 +108,8 @@ export class AgentRuntime {
     // -> teammate character, unnamed -> shadow-watched sub-agent), remove when
     // the completion queue-operation lands on the lead.
     setBackgroundAgentDetectedCallback((leadId) => {
+      // The new spawn has to survive a restart, so its completion still matches.
+      this.store.persist();
       scanForBackgroundAgentFiles(
         leadId,
         this.store,
@@ -130,6 +132,10 @@ export class AgentRuntime {
       // Unnamed spawns live in the shadow store; the webview sub-character is
       // cleared by the lead-side queue-op subagentClear, not by this call.
       this.subagentWatch.removeBySpawn(leadId, toolUseId);
+      // Save at once, so the saved list stops naming the finished spawn. (A
+      // notice written while no server was running is caught on restore
+      // instead, by stillRunningSpawns reading the transcript.)
+      this.store.persist();
     });
     // A resumed lead that spawns again belongs to a freshly minted implicit
     // team; its previous team's teammates are defunct. Promoted anonymous
@@ -488,10 +494,6 @@ export class AgentRuntime {
 
     for (const p of persisted) {
       if (!p.isExternal) continue;
-      // Background-spawn children (a leadAgentId but no teamName) are derived
-      // state: the 1s scan re-materializes them from sidecars while their spawn
-      // is live. Restoring them directly would resurrect immortal characters
-      // (also skips stale entries written by older builds that persisted them).
       if (isPersistedSpawnChild(p)) continue;
       try {
         if (!fs.existsSync(p.jsonlFile)) continue;

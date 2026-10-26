@@ -25,7 +25,7 @@ export function createAgentState(init: AgentStateInit): AgentState {
     activeToolNames: new Map(),
     activeSubagentToolIds: new Map(),
     activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
+    backgroundSpawns: new Map(),
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,

@@ -2,6 +2,12 @@ import * as path from 'path';
 
 import type { PersistedAgent } from '../../core/src/schemas.js';
 import type { AgentStateInit } from './agentState.js';
+import {
+  persistBackgroundSpawns,
+  restoreBackgroundSpawns,
+  stillRunningSpawns,
+} from './backgroundSpawns.js';
+import { getHookProvider } from './transcriptParser.js';
 import type { AgentState } from './types.js';
 
 /**
@@ -29,8 +35,7 @@ export function toPersistedAgent(agent: AgentState): PersistedAgent | null {
     isTeamLead: agent.isTeamLead,
     leadAgentId: agent.leadAgentId,
     teamUsesTmux: agent.teamUsesTmux,
-    backgroundAgentToolIds:
-      agent.backgroundAgentToolIds.size > 0 ? [...agent.backgroundAgentToolIds] : undefined,
+    backgroundSpawns: persistBackgroundSpawns(agent.backgroundSpawns),
     palette: agent.palette,
     hueShift: agent.hueShift,
   };
@@ -51,13 +56,21 @@ export function restoredAgentInit(p: PersistedAgent): Omit<AgentStateInit, 'isEx
     sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
     projectDir: p.projectDir,
     jsonlFile: p.jsonlFile,
-    // Live spawn ids survive the restart so the 1s scan can re-adopt the
-    // spawns' transcripts and the completion queue-op still matches.
-    backgroundAgentToolIds: new Set(p.backgroundAgentToolIds ?? []),
+    // Live spawns survive the reload so the 1 s scan can re-adopt their
+    // transcripts and the completion queue-operation still matches. Ones
+    // whose completion is already in the transcript are dropped: the save on
+    // completion can't cover a notice written while no server was running.
+    backgroundSpawns: stillRunningSpawns(
+      restoreBackgroundSpawns(p),
+      p.jsonlFile,
+      getHookProvider()?.team,
+    ),
     directoryName: p.directoryName ?? p.folderName,
     teamName: p.teamName,
     agentName: p.agentName,
-    isTeamLead: p.isTeamLead,
+    // A named agent is a teammate; never restore it as a lead (guards against
+    // state persisted before linkTeammates stopped promoting teammates).
+    isTeamLead: p.agentName ? undefined : p.isTeamLead,
     leadAgentId: p.leadAgentId,
     teamUsesTmux: p.teamUsesTmux,
     palette: p.palette,

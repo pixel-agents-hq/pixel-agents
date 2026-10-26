@@ -4,10 +4,10 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { PersistedAgent } from '../../core/src/schemas.js';
 import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
-import type { PersistedAgent } from '../src/types.js';
 
 function createMockAdapter(initial: PersistedAgent[] = []): StateAdapter & {
   saved: PersistedAgent[][];

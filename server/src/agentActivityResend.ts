@@ -34,7 +34,7 @@ export function resendAgentActivity(
     // 2. Regular (non-background) tools
     for (const [toolId, status] of agent.activeToolStatuses) {
       // Skip background tools here — they're sent separately below with proper flags
-      if (agent.backgroundAgentToolIds.has(toolId)) continue;
+      if (agent.backgroundSpawns.has(toolId)) continue;
 
       const toolName = agent.activeToolNames.get(toolId) ?? '';
       send({
@@ -48,7 +48,7 @@ export function resendAgentActivity(
 
     // 3. Background tools with runInBackground flag. Skip promoted spawns to prevent
     // ghost Subtask characters alongside the real teammate character.
-    for (const toolId of agent.backgroundAgentToolIds) {
+    for (const toolId of agent.backgroundSpawns.keys()) {
       if (hasPromotedBackgroundAgent(id, toolId, store)) continue;
 
       const status = agent.activeToolStatuses.get(toolId);

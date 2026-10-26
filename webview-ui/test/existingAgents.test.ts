@@ -38,15 +38,19 @@ interface AddAgentCall {
 
 /** A fake office that records addAgent calls, mirroring how officeCanvasCursor
  *  tests inject closures instead of constructing a real OfficeState. */
-function fakeOffice(
-  existing: number[] = [],
-): ExistingAgentsOffice & { calls: AddAgentCall[]; headless: number[] } {
+function fakeOffice(existing: number[] = []): ExistingAgentsOffice & {
+  calls: AddAgentCall[];
+  headless: number[];
+  synced: Array<{ id: number } & ExistingAgentMeta>;
+} {
   const ids = new Set(existing);
   const calls: AddAgentCall[] = [];
   const headless: number[] = [];
+  const synced: Array<{ id: number } & ExistingAgentMeta> = [];
   return {
     calls,
     headless,
+    synced,
     characters: { has: (id: number) => ids.has(id) },
     addAgent: (id, palette, hueShift, seatId, skipSpawnEffect, directoryName) => {
       ids.add(id);
@@ -54,6 +58,9 @@ function fakeOffice(
     },
     setHeadless: (id, isHeadless) => {
       if (isHeadless) headless.push(id);
+    },
+    syncAgent: (id, palette, hueShift, seatId) => {
+      synced.push({ id, palette, hueShift, seatId });
     },
   };
 }
@@ -122,6 +129,20 @@ test('layout ready: skips an agent that already exists and reports nothing added
   assert.equal(addedDirectly, false);
   assert.equal(os.calls.length, 0);
   assert.equal(pending.length, 0);
+});
+
+test('layout ready: an agent the office already shows takes the server look and seat', () => {
+  // A reconnecting browser keeps its characters. Their looks and seats may be
+  // stale; saving them back used to reshuffle the office for everyone.
+  const os = fakeOffice([5]);
+  const pending: PendingAgent[] = [];
+  const meta: Record<number, ExistingAgentMeta> = {
+    5: { palette: 2, hueShift: 0, seatId: 'seat-a' },
+  };
+
+  reconcileExistingAgents(os, [5], meta, {}, true, pending);
+
+  assert.deepEqual(os.synced, [{ id: 5, palette: 2, hueShift: 0, seatId: 'seat-a' }]);
 });
 
 test('layout ready: a mixed roster adds only the missing agent', () => {

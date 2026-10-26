@@ -47,9 +47,10 @@ export interface TeamProvider {
    *  events directly; entries without one share the lead's session.
    *
    *  Sidecar-backed entries additionally expose `toolUseId` (the lead's spawn
-   *  tool_use id), `description`, and `name` when the CLI records them. The host
-   *  uses toolUseId to match background spawns (teams OFF) to the lead's live
-   *  spawn tools, and `name` as the classifier: a named spawn is a Teammate, an
+   *  tool_use id), `taskId` (the CLI's own id for the spawned agent),
+   *  `description`, and `name` when the CLI records them. The host uses
+   *  toolUseId — or, for an agent revived under a later tool call, taskId — to
+   *  match background spawns (teams OFF) to the lead's live spawn tools, and `name` as the classifier: a named spawn is a Teammate, an
    *  unnamed one is a Sub-agent (see CONTEXT.md — name is the sole distinction). */
   discoverTeammates(
     projectDir: string,
@@ -60,6 +61,7 @@ export interface TeamProvider {
     teammateName: string;
     sessionId?: string;
     toolUseId?: string;
+    taskId?: string;
     description?: string;
     name?: string;
   }>;
@@ -75,6 +77,25 @@ export interface TeamProvider {
     toolName: string,
     resultContent: unknown,
   ): { teamName: string; teammateName: string } | null;
+
+  /** Detect a background agent left running by a completed tool on the LEAD's
+   *  transcript: an async spawn's launch (Claude: "Async agent launched
+   *  successfully. agentId: <id>"), or a stopped agent revived by a message
+   *  (Claude: a SendMessage result with `resumedAgentId`). The tool stays live
+   *  until the agent's completion notice. `taskId` is the CLI's id for the
+   *  agent when the result names it — completion notices and transcript names
+   *  may use it instead of the tool id. Returns null for any other result. */
+  extractBackgroundAgentFromToolResult?(
+    toolName: string,
+    resultContent: unknown,
+  ): { taskId?: string } | null;
+
+  /** Whether a background agent's completion notice (one notice of a lead's
+   *  queue-operation, see server/src/backgroundSpawns.ts) says the agent is
+   *  still alive: it stopped to wait on background work of its own and will
+   *  notify again. Such a notice must not end the spawn. Claude: the summary
+   *  ends "is waiting on its own background work". */
+  isInterimSpawnNotice?(notice: string): boolean;
 
   /** Return team metadata for a session if it participates in a team.
    *  Provider decides where to look (sidecar file, JSONL header, DB, etc.).

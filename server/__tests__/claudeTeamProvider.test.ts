@@ -3,6 +3,7 @@ import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { claudeTeamProvider } from '../src/providers/hook/claude/claudeTeamProvider.js';
+import { finishedNotice, interimNotice } from './fixtures/taskNotifications.js';
 
 describe('claudeTeamProvider', () => {
   describe('identity', () => {
@@ -132,6 +133,7 @@ describe('claudeTeamProvider', () => {
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('ghost-writer');
       expect(result[0].toolUseId).toBe('toolu_1');
+      expect(result[0].taskId).toBe('a'); // from the transcript's name, agent-<id>.jsonl
       expect(result[0].description).toBe('Write a haiku');
     });
 
@@ -191,6 +193,58 @@ describe('claudeTeamProvider', () => {
         ]),
       ).toBeNull();
       expect(claudeTeamProvider.extractTeammateSpawnFromToolResult!('Agent', undefined)).toBeNull();
+    });
+  });
+
+  describe('isInterimSpawnNotice', () => {
+    const interim = claudeTeamProvider.isInterimSpawnNotice!;
+
+    it('is true for a notice saying the agent waits on its own background work', () => {
+      expect(interim(interimNotice('a38d0d28707132000', 'toolu_01TxjCLvhyBtNqkM64HGeuKQ'))).toBe(
+        true,
+      );
+      expect(interim(interimNotice('a38d0d28707132000'))).toBe(true);
+    });
+
+    it('is false for a finished notice, a crash notice and an older note-less one', () => {
+      expect(interim(finishedNotice('a942476d03fdc3ca7', 'toolu_01JxVtGRRvirZKVdtUsrqyPH'))).toBe(
+        false,
+      );
+      expect(
+        interim(
+          '<task-notification><task-id>a1</task-id><status>stopped</status></task-notification>',
+        ),
+      ).toBe(false);
+      expect(interim('<task-notification> <task-id>a1</task-id> <output>done</output>')).toBe(
+        false,
+      );
+    });
+  });
+
+  describe('extractBackgroundAgentFromToolResult', () => {
+    const extract = claudeTeamProvider.extractBackgroundAgentFromToolResult!;
+
+    it('an async Agent launch names its agent id', () => {
+      expect(
+        extract('Agent', [
+          { type: 'text', text: 'Async agent launched successfully.\nagentId: a4cb86c99458dbe55' },
+        ]),
+      ).toEqual({ taskId: 'a4cb86c99458dbe55' });
+    });
+
+    it('a SendMessage that revived a stopped agent names it', () => {
+      expect(
+        extract(
+          'SendMessage',
+          '{"success":true,"message":"Resuming agent impl-07","resumedAgentId":"ad19f2"}',
+        ),
+      ).toEqual({ taskId: 'ad19f2' });
+    });
+
+    it('anything else starts no background agent', () => {
+      expect(extract('Agent', 'Spawned successfully.')).toBeNull();
+      expect(extract('SendMessage', '{"success":true,"message":"Message sent"}')).toBeNull();
+      expect(extract('Read', 'Async agent launched successfully.')).toBeNull();
     });
   });
 

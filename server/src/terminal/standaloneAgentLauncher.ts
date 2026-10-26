@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import type { HookProvider } from '../../../core/src/provider.js';
+import type { PersistedAgent } from '../../../core/src/schemas.js';
 import { restoredAgentInit } from '../agentPersistence.js';
 import type { AgentRuntime } from '../agentRuntime.js';
 import { createAgentState } from '../agentState.js';
@@ -160,8 +161,10 @@ export function reattachTerminalAgents(deps: LaunchStandaloneAgentDeps): number[
       continue;
     }
 
+    // Restored from where the transcript really is: the finished-spawn check
+    // must read the same file the agent will watch.
     const agent = createAgentState({
-      ...restoredAgentInit(record),
+      ...restoredAgentInit(relocatedRecord(deps.provider, record)),
       isExternal: false,
       providerId: deps.provider.id,
     });
@@ -178,6 +181,34 @@ export function reattachTerminalAgents(deps: LaunchStandaloneAgentDeps): number[
 
   if (restored.length > 0) store.persist();
   return restored;
+}
+
+/**
+ * The saved record with its transcript where it really is, when that isn't
+ * where the record says. Older servers saved the path under the Directory as
+ * given, but the CLI files it under the symlink-resolved path, so such an
+ * agent never got its transcript (and none of its sub-agents) watched. The
+ * session id is a UUID, so the one `<sessionId>.jsonl` under the session roots
+ * is its own. Returns the record itself when nothing moved.
+ */
+function relocatedRecord(provider: HookProvider, record: PersistedAgent): PersistedAgent {
+  if (fs.existsSync(record.jsonlFile)) return record;
+  const name = path.basename(record.jsonlFile);
+  for (const root of provider.getAllSessionRoots?.() ?? []) {
+    let dirs: string[];
+    try {
+      dirs = fs.readdirSync(root);
+    } catch {
+      continue;
+    }
+    for (const dir of dirs) {
+      const file = path.join(root, dir, name);
+      if (!fs.existsSync(file)) continue;
+      console.log(`[Pixel Agents] Terminal: Agent ${record.id} - transcript found at ${file}`);
+      return { ...record, jsonlFile: file, projectDir: path.dirname(file) };
+    }
+  }
+  return record;
 }
 
 /** What every agent with a terminal gets, launched or reattached: a place in

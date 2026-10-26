@@ -19,6 +19,7 @@ import {
   CLAUDE_LARGE_CONTEXT_WINDOW,
   CLAUDE_SMALL_CONTEXT_MODEL_PATTERN,
   CLAUDE_SMALL_CONTEXT_WINDOW,
+  CLAUDE_SUBAGENT_TOOLS,
   CLAUDE_TERMINAL_NAME_PREFIX,
 } from './constants.js';
 
@@ -74,13 +75,32 @@ export function formatToolStatus(toolName: string, input?: unknown): string {
 
 // ── Session dir + launch command ──
 
+/**
+ * Where Claude files a workspace's sessions, the first entry being where a new
+ * one goes. The CLI names the folder after the path it runs in with symlinks
+ * resolved (PWD notwithstanding), so a workspace reached through a symlink has
+ * its sessions under the resolved path: that comes first, the path as given
+ * after it.
+ */
 function getSessionDirs(workspacePath: string): string[] {
+  let resolved = workspacePath;
+  try {
+    resolved = fs.realpathSync(workspacePath);
+  } catch {
+    // Missing: only the path as given.
+  }
+  const dirs = [sessionDirOf(resolved)];
+  if (resolved !== workspacePath) dirs.push(sessionDirOf(workspacePath));
+  return [...new Set(dirs)];
+}
+
+function sessionDirOf(workspacePath: string): string {
   // Claude stores sessions at ~/.claude/projects/<workspace-path-with-dashes>/.
   const dirName = normalizeProjectPath(workspacePath);
   const projectDir = path.join(os.homedir(), '.claude', 'projects', dirName);
 
   // Try exact match first.
-  if (fs.existsSync(projectDir)) return [projectDir];
+  if (fs.existsSync(projectDir)) return projectDir;
 
   // Case-insensitive fallback for Windows: drive letter casing can differ
   // between what VS Code gives us (e.g. "c:\...") and Claude's encoding ("C:\...").
@@ -89,14 +109,14 @@ function getSessionDirs(workspacePath: string): string[] {
     if (fs.existsSync(projectsRoot)) {
       const lowerDirName = dirName.toLowerCase();
       const match = fs.readdirSync(projectsRoot).find((c) => c.toLowerCase() === lowerDirName);
-      if (match) return [path.join(projectsRoot, match)];
+      if (match) return path.join(projectsRoot, match);
     }
   } catch {
     /* ignore scan errors */
   }
 
   // Return the expected path even if it doesn't exist yet (caller tolerates missing dirs).
-  return [projectDir];
+  return projectDir;
 }
 
 function buildLaunchCommand(
@@ -184,7 +204,14 @@ function normalizeHookEvent(
     case 'SubagentStop':
       return {
         sessionId,
-        event: { kind: 'subagentEnd', parentToolId: 'current', toolId: 'current' },
+        event: {
+          kind: 'subagentEnd',
+          parentToolId: 'current',
+          toolId: 'current',
+          // Claude names the sub-agent that stopped by its own transcript.
+          agentTranscriptPath:
+            typeof raw.agent_transcript_path === 'string' ? raw.agent_transcript_path : undefined,
+        },
       };
 
     case 'PermissionRequest':
@@ -305,7 +332,7 @@ export const claudeProvider: HookProvider = {
 
   formatToolStatus,
   permissionExemptTools: new Set(['Task', 'Agent', 'AskUserQuestion']),
-  subagentToolNames: new Set(['Task', 'Agent']),
+  subagentToolNames: CLAUDE_SUBAGENT_TOOLS,
   readingTools: new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']),
   terminalNamePrefix: CLAUDE_TERMINAL_NAME_PREFIX,
   contextWindowForModel,

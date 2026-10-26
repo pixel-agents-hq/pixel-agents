@@ -14,9 +14,9 @@ export function clearAgentActivity(
   // Preserve background agent tools — only clear foreground state.
   // The subagent maps are keyed by parentToolId; deleting a non-parent key is a
   // safe no-op, so no tool-name check is needed here.
-  if (agent.backgroundAgentToolIds.size > 0) {
+  if (agent.backgroundSpawns.size > 0) {
     for (const toolId of agent.activeToolIds) {
-      if (agent.backgroundAgentToolIds.has(toolId)) continue;
+      if (agent.backgroundSpawns.has(toolId)) continue;
       agent.activeToolIds.delete(toolId);
       agent.activeToolStatuses.delete(toolId);
       agent.activeToolNames.delete(toolId);
@@ -40,7 +40,7 @@ export function clearAgentActivity(
   // recognize the re-sent tool as a subagent spawn and never recreates the
   // Subtask sub-character. Skip tools whose spawn became its own character
   // (named background teammate) -- re-sending would spawn a ghost alongside it.
-  for (const toolId of agent.backgroundAgentToolIds) {
+  for (const toolId of agent.backgroundSpawns.keys()) {
     if (hasPromotedBackgroundAgent(agentId, toolId, agents)) continue;
     const status = agent.activeToolStatuses.get(toolId);
     if (status) {

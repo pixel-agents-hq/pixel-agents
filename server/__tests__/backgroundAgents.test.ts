@@ -22,6 +22,7 @@ import {
   setHookProvider,
 } from '../src/transcriptParser.js';
 import type { AgentState } from '../src/types.js';
+import { finishedNotice, interimNotice, noticeRecord } from './fixtures/taskNotifications.js';
 
 const LEAD_SESSION = 'lead-session-1';
 const SPAWN_TOOL_ID = 'toolu_01LMvN98KN4sn1fmvftm7vhk';
@@ -42,7 +43,7 @@ function createLeadAgent(projectDir: string): AgentState {
     activeToolNames: new Map(),
     activeSubagentToolIds: new Map(),
     activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
+    backgroundSpawns: new Map(),
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
@@ -119,6 +120,51 @@ function queueOpCompletionRecord(): string {
     type: 'queue-operation',
     operation: 'enqueue',
     content: `<task-notification> <task-id>a4cb86c99458dbe55</task-id> <tool-use-id>${SPAWN_TOOL_ID}</tool-use-id> <output>done</output>`,
+  });
+}
+
+const SEND_TOOL_ID = 'toolu_sendmessage_01';
+
+/** The lead revives a stopped agent: SendMessage to it, answered "Resuming
+ *  agent" with the agent (task) id. Its sidecar still names the ORIGINAL
+ *  spawn tool id, which a lead resumed in a new process never saw. */
+function sendMessageRecord(to: string): string {
+  return JSON.stringify({
+    type: 'assistant',
+    message: {
+      content: [
+        {
+          type: 'tool_use',
+          id: SEND_TOOL_ID,
+          name: 'SendMessage',
+          input: { to, summary: 'Resume after crash', message: 'carry on' },
+        },
+      ],
+    },
+  });
+}
+
+function resumedResultRecord(name: string): string {
+  return JSON.stringify({
+    type: 'user',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: SEND_TOOL_ID,
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: `Resuming agent ${name}`,
+                resumedAgentId: 'a4cb86c99458dbe55',
+              }),
+            },
+          ],
+        },
+      ],
+    },
   });
 }
 
@@ -289,7 +335,7 @@ describe('background spawns (teams OFF) classified by sidecar name', () => {
     const jsonlPath = seedSidecar();
     spawnAndLaunch();
 
-    expect(lead.backgroundAgentToolIds.has(SPAWN_TOOL_ID)).toBe(true);
+    expect(lead.backgroundSpawns.has(SPAWN_TOOL_ID)).toBe(true);
     // No main-store child, so no agentCreated fires and nothing is persisted.
     expect([...agents.values()].some((a) => a.leadAgentId === 1)).toBe(false);
     // The transient Subtask sub-character must LIVE: no ghost-kill.
@@ -408,7 +454,88 @@ describe('background spawns (teams OFF) classified by sidecar name', () => {
 
     expect(completed).toEqual([{ leadId: 1, toolUseId: SPAWN_TOOL_ID }]);
     expect(watch.isWatching(jsonlPath)).toBe(false);
-    expect(lead.backgroundAgentToolIds.size).toBe(0);
+    expect(lead.backgroundSpawns.size).toBe(0);
+  });
+
+  it('an interim notice leaves the Sub-agent live until its finished notice', () => {
+    // The agent stopped to wait on background work of its own: Claude Code
+    // writes a completion-shaped notice (tool id first, then task id only)
+    // each time it pauses. Only the finished one is its end.
+    const jsonlPath = seedSidecar();
+    spawnAndLaunch();
+    const taskId = 'a4cb86c99458dbe55';
+
+    for (const notice of [interimNotice(taskId, SPAWN_TOOL_ID), interimNotice(taskId)]) {
+      processTranscriptLine(1, noticeRecord(notice), agents, waitingTimers, permissionTimers);
+      expect(completed).toEqual([]);
+      expect(watch.isWatching(jsonlPath)).toBe(true);
+      expect(lead.backgroundSpawns.has(SPAWN_TOOL_ID)).toBe(true);
+      expect(messages.some((m) => m.type === 'subagentClear')).toBe(false);
+    }
+
+    processTranscriptLine(
+      1,
+      noticeRecord(finishedNotice(taskId)),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    expect(completed).toEqual([{ leadId: 1, toolUseId: SPAWN_TOOL_ID }]);
+    expect(watch.isWatching(jsonlPath)).toBe(false);
+    expect(lead.backgroundSpawns.size).toBe(0);
+  });
+
+  it('a crash notice naming the spawn by task id alone ends it', () => {
+    // After a host crash the harness lists the agents that died with the
+    // process by task id only, with no tool-use-id.
+    const jsonlPath = seedSidecar();
+    spawnAndLaunch();
+    const crashNotice = JSON.stringify({
+      type: 'queue-operation',
+      operation: 'enqueue',
+      content:
+        '<task-notification>\n<task-id>a4cb86c99458dbe55</task-id>\n<task-id>aother0000000000</task-id>\n<status>stopped</status>\n</task-notification>',
+    });
+
+    processTranscriptLine(1, crashNotice, agents, waitingTimers, permissionTimers);
+
+    expect(completed).toEqual([{ leadId: 1, toolUseId: SPAWN_TOOL_ID }]);
+    expect(watch.isWatching(jsonlPath)).toBe(false);
+    expect(lead.backgroundSpawns.size).toBe(0);
+    expect(
+      messages.some((m) => m.type === 'subagentClear' && m.parentToolId === SPAWN_TOOL_ID),
+    ).toBe(true);
+  });
+
+  it('a revived agent completing under its SendMessage tool id ends the original spawn', () => {
+    seedSidecar();
+    spawnAndLaunch();
+    const revivedDone = JSON.stringify({
+      type: 'queue-operation',
+      operation: 'enqueue',
+      content:
+        '<task-notification>\n<task-id>a4cb86c99458dbe55</task-id>\n<tool-use-id>toolu_sendmessage_01</tool-use-id>\n<status>completed</status>\n</task-notification>',
+    });
+
+    processTranscriptLine(1, revivedDone, agents, waitingTimers, permissionTimers);
+
+    expect(completed).toEqual([{ leadId: 1, toolUseId: SPAWN_TOOL_ID }]);
+    expect(lead.backgroundSpawns.size).toBe(0);
+  });
+
+  it('a notice for an unknown task id leaves live spawns alone', () => {
+    seedSidecar();
+    spawnAndLaunch();
+    const other = JSON.stringify({
+      type: 'queue-operation',
+      operation: 'enqueue',
+      content: '<task-notification><task-id>bnotours00000000</task-id></task-notification>',
+    });
+
+    processTranscriptLine(1, other, agents, waitingTimers, permissionTimers);
+
+    expect(completed).toEqual([]);
+    expect(lead.backgroundSpawns.has(SPAWN_TOOL_ID)).toBe(true);
   });
 
   it('does not double-watch on a re-scan', () => {
@@ -492,6 +619,52 @@ describe('background spawns (teams OFF) classified by sidecar name', () => {
   });
 
   // ── Named spawn = Teammate ──────────────────────────────────────────
+
+  function scanNow(): void {
+    scanForBackgroundAgentFiles(
+      1,
+      agents,
+      { current: 300 },
+      fileWatchers,
+      pollingTimers,
+      waitingTimers,
+      permissionTimers,
+      () => {},
+      undefined,
+    );
+  }
+
+  it('a named spawn whose sidecar lands before its launch result still becomes a Teammate', () => {
+    // The race seen live: the 1 s scan ran between the spawn call and its
+    // "Async agent launched" result, took the named spawn for in-turn work and
+    // watched it as a Sub-agent for good.
+    const jsonlPath = seedSidecar({ name: 'ghost-writer' });
+    processTranscriptLine(1, namedAgentSpawnRecord(), agents, waitingTimers, permissionTimers);
+    scanNow();
+
+    expect(watch.isWatching(jsonlPath)).toBe(false);
+    expect([...agents.values()].some((a) => a.leadAgentId === 1)).toBe(false);
+
+    processTranscriptLine(1, asyncLaunchResultRecord(), agents, waitingTimers, permissionTimers);
+
+    const teammate = [...agents.values()].find((a) => a.leadAgentId === 1);
+    expect(teammate?.agentName).toBe('ghost-writer');
+    expect(watch.isWatching(jsonlPath)).toBe(false);
+  });
+
+  it('a named spawn run in the foreground is in-turn work: watched, never a Teammate', () => {
+    const jsonlPath = seedSidecar({ name: 'ghost-writer' });
+    const record = JSON.parse(namedAgentSpawnRecord());
+    record.message.content[0].input.run_in_background = false;
+    processTranscriptLine(1, JSON.stringify(record), agents, waitingTimers, permissionTimers);
+
+    const start = messages.find((m) => m.type === 'agentToolStart' && m.toolId === SPAWN_TOOL_ID);
+    expect(start!.isTeammateSpawn).toBeUndefined();
+
+    scanNow();
+    expect(watch.isWatching(jsonlPath)).toBe(true);
+    expect([...agents.values()].some((a) => a.leadAgentId === 1)).toBe(false);
+  });
 
   it('creates a teammate named from the sidecar name and badges the lead', () => {
     const jsonlPath = seedSidecar({ name: 'ghost-writer' });
@@ -603,10 +776,103 @@ describe('background spawns (teams OFF) classified by sidecar name', () => {
 
     expect(completed).toEqual([{ leadId: 1, toolUseId: SPAWN_TOOL_ID }]);
     expect([...agents.values()].some((a) => a.leadAgentId === 1)).toBe(false);
-    expect(lead.backgroundAgentToolIds.size).toBe(0);
+    expect(lead.backgroundSpawns.size).toBe(0);
+  });
+
+  it('an interim notice leaves the teammate in the office', () => {
+    seedSidecar({ name: 'ghost-writer' });
+    spawnAndLaunch();
+
+    processTranscriptLine(
+      1,
+      noticeRecord(interimNotice('a4cb86c99458dbe55', SPAWN_TOOL_ID)),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+
+    expect(completed).toEqual([]);
+    expect([...agents.values()].some((a) => a.leadAgentId === 1)).toBe(true);
+    expect(lead.backgroundSpawns.has(SPAWN_TOOL_ID)).toBe(true);
   });
 
   // ── Shared gate ─────────────────────────────────────────────────────
+
+  // ── Revived by SendMessage ──────────────────────────────────────────
+
+  function revive(name: string): void {
+    processTranscriptLine(1, sendMessageRecord(name), agents, waitingTimers, permissionTimers);
+    processTranscriptLine(1, resumedResultRecord(name), agents, waitingTimers, permissionTimers);
+  }
+
+  it('an unnamed agent revived by SendMessage is watched again under the SendMessage id', () => {
+    // The lead was resumed in a new process: the original spawn is not live.
+    const jsonlPath = seedSidecar();
+    revive('a4cb86c99458dbe55');
+
+    expect(lead.backgroundSpawns.has(SEND_TOOL_ID)).toBe(true);
+    expect(watch.isWatching(jsonlPath)).toBe(true);
+  });
+
+  it('a named agent revived by SendMessage becomes a Teammate again', () => {
+    const jsonlPath = seedSidecar({ name: 'impl-07' });
+    revive('impl-07');
+
+    const teammate = [...agents.values()].find((a) => a.leadAgentId === 1);
+    expect(teammate?.agentName).toBe('impl-07');
+    expect(teammate?.jsonlFile).toBe(jsonlPath);
+    expect(teammate?.spawnToolUseId).toBe(SEND_TOOL_ID);
+  });
+
+  it('a revived agent ends when its completion names the SendMessage id', () => {
+    const jsonlPath = seedSidecar({ name: 'impl-07' });
+    revive('impl-07');
+    const done = JSON.stringify({
+      type: 'queue-operation',
+      operation: 'enqueue',
+      content: `<task-notification><task-id>a4cb86c99458dbe55</task-id><tool-use-id>${SEND_TOOL_ID}</tool-use-id><status>completed</status></task-notification>`,
+    });
+
+    processTranscriptLine(1, done, agents, waitingTimers, permissionTimers);
+
+    expect(completed).toEqual([{ leadId: 1, toolUseId: SEND_TOOL_ID }]);
+    expect([...agents.values()].some((a) => a.jsonlFile === jsonlPath)).toBe(false);
+    expect(lead.backgroundSpawns.size).toBe(0);
+  });
+
+  it('a SendMessage to an agent that is still live adds nothing', () => {
+    const jsonlPath = seedSidecar();
+    spawnAndLaunch();
+    revive('a4cb86c99458dbe55');
+
+    expect([...lead.backgroundSpawns]).toEqual([[SPAWN_TOOL_ID, { taskId: 'a4cb86c99458dbe55' }]]);
+    expect(watch.isWatching(jsonlPath)).toBe(true);
+  });
+
+  it('a plain SendMessage (no revival) is an ordinary tool', () => {
+    processTranscriptLine(1, sendMessageRecord('impl-07'), agents, waitingTimers, permissionTimers);
+    processTranscriptLine(
+      1,
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: SEND_TOOL_ID,
+              content: [{ type: 'text', text: '{"success":true,"message":"Message sent"}' }],
+            },
+          ],
+        },
+      }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+
+    expect(lead.backgroundSpawns.size).toBe(0);
+    expect(lead.activeToolIds.has(SEND_TOOL_ID)).toBe(false);
+  });
 
   it('adopts nothing when the sidecar toolUseId matches no live background spawn', () => {
     // Stale sidecar from an earlier session: same shape, dead toolUseId.
@@ -639,13 +905,13 @@ describe('background spawn persistence & derived team lifecycle', () => {
     };
   }
 
-  it('persists the lead backgroundAgentToolIds and never the spawned children', () => {
+  it('persists the lead background spawns and never the spawned children', () => {
     const store = new AgentStateStore();
     const adapter = fakeAdapter();
     store.setAdapter(adapter);
 
     const lead = createLeadAgent('/tmp/proj');
-    lead.backgroundAgentToolIds.add(SPAWN_TOOL_ID);
+    lead.backgroundSpawns.set(SPAWN_TOOL_ID, {});
     store.set(1, lead);
 
     const child = createLeadAgent('/tmp/proj');
@@ -660,7 +926,39 @@ describe('background spawn persistence & derived team lifecycle', () => {
     const persisted = adapter.saved.at(-1) as Array<Record<string, unknown>>;
     expect(persisted).toHaveLength(1);
     expect(persisted[0].id).toBe(1);
-    expect(persisted[0].backgroundAgentToolIds).toEqual([SPAWN_TOOL_ID]);
+    expect(persisted[0].backgroundSpawns).toEqual([{ toolId: SPAWN_TOOL_ID }]);
+  });
+
+  it('persists and restores the task ids of live spawns (a revival is matched by them)', () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-agents-bg-taskids-'));
+    const leadJsonl = path.join(tmpRoot, `${LEAD_SESSION}.jsonl`);
+    fs.writeFileSync(leadJsonl, '');
+    const store = new AgentStateStore();
+    const adapter = fakeAdapter();
+    store.setAdapter(adapter);
+    const lead = createLeadAgent(tmpRoot);
+    lead.backgroundSpawns.set('toolu_send', { taskId: 'a4cb86c99458dbe55' });
+    store.set(1, lead);
+    store.persist();
+    const persisted = adapter.saved.at(-1) as Array<Record<string, unknown>>;
+    expect(persisted[0].backgroundSpawns).toEqual([
+      { toolId: 'toolu_send', taskId: 'a4cb86c99458dbe55' },
+    ]);
+
+    const restoredStore = new AgentStateStore();
+    restoredStore.setAdapter(
+      fakeAdapter([{ ...persisted[0], isExternal: true, jsonlFile: leadJsonl }]),
+    );
+    const runtime = new AgentRuntime(restoredStore, claudeProvider);
+    try {
+      runtime.restoreExternalAgents();
+      expect(restoredStore.get(1)!.backgroundSpawns.get('toolu_send')).toEqual({
+        taskId: 'a4cb86c99458dbe55',
+      });
+    } finally {
+      runtime.dispose();
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 
   it('drops the LEAD badge when the last teammate leaves', () => {
@@ -718,7 +1016,7 @@ describe('background spawn persistence & derived team lifecycle', () => {
     }
   });
 
-  it('restores the lead set and skips stale child entries (leadAgentId, no teamName)', () => {
+  it('restores the legacy tool-id list and skips stale child entries (leadAgentId, no teamName)', () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-agents-bg-restore-'));
     const leadJsonl = path.join(tmpRoot, `${LEAD_SESSION}.jsonl`);
     const childJsonl = path.join(tmpRoot, 'child.jsonl');
@@ -757,7 +1055,7 @@ describe('background spawn persistence & derived team lifecycle', () => {
 
       expect(store.has(1)).toBe(true);
       expect(store.has(2)).toBe(false);
-      expect(store.get(1)!.backgroundAgentToolIds.has(SPAWN_TOOL_ID)).toBe(true);
+      expect(store.get(1)!.backgroundSpawns.has(SPAWN_TOOL_ID)).toBe(true);
     } finally {
       runtime.dispose();
       fs.rmSync(tmpRoot, { recursive: true, force: true });

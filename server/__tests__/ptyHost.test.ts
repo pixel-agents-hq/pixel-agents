@@ -316,6 +316,108 @@ describe('PTY host', () => {
       await until(() => !after.store.has(1));
     });
 
+    it('finds a transcript the saved record misplaced (filed under the symlink-resolved Directory)', async () => {
+      const before = office();
+      const first = await connect();
+      launchStandaloneAgent(
+        { store: before.store, runtime: before.runtime, ptyManager: first, provider: provider() },
+        { directoryPath: dir },
+      );
+      const launched = before.store.get(1)!;
+      await until(() => spawned.length === 1);
+      // The CLI filed it elsewhere under the session root, not where the record says.
+      const resolvedDir = path.join(dir, 'resolved-sessions');
+      fs.mkdirSync(resolvedDir);
+      const actual = path.join(resolvedDir, path.basename(launched.jsonlFile));
+      fs.writeFileSync(actual, '{"type":"user"}\n');
+      await first.shutdown();
+      clients.splice(clients.indexOf(first), 1);
+      before.runtime.stop();
+
+      const after = office();
+      const second = await connect();
+      reattachTerminalAgents({
+        store: after.store,
+        runtime: after.runtime,
+        ptyManager: second,
+        provider: { ...provider(), getAllSessionRoots: () => [dir] },
+      });
+
+      const agent = after.store.get(1);
+      expect(agent?.jsonlFile).toBe(actual);
+      expect(agent?.projectDir).toBe(resolvedDir);
+      // Its past is history: read from the end, like any reattached transcript.
+      expect(agent?.fileOffset).toBe(fs.statSync(actual).size);
+      expect(after.runtime.knownJsonlFiles.has(actual)).toBe(true);
+      spawned[0].exit(0);
+      await until(() => !after.store.has(1));
+    });
+
+    it('checks saved background spawns against the transcript where it really is', async () => {
+      const before = office();
+      const first = await connect();
+      launchStandaloneAgent(
+        { store: before.store, runtime: before.runtime, ptyManager: first, provider: provider() },
+        { directoryPath: dir },
+      );
+      const launched = before.store.get(1)!;
+      await until(() => spawned.length === 1);
+      await first.shutdown();
+      clients.splice(clients.indexOf(first), 1);
+      before.runtime.stop();
+      // The record names a spawn; the transcript (filed elsewhere, where the
+      // record doesn't say) holds its launch and, written while no server
+      // ran, its completion notice.
+      const adapter = new FileStateAdapter({ namespace: 'standalone' });
+      adapter.saveAgents(
+        adapter
+          .loadAgents()
+          .map((p) => ({ ...p, backgroundSpawns: [{ toolId: 'toolu_bg', taskId: 'a1b2' }] })),
+      );
+      const resolvedDir = path.join(dir, 'resolved-sessions');
+      fs.mkdirSync(resolvedDir);
+      const actual = path.join(resolvedDir, path.basename(launched.jsonlFile));
+      fs.writeFileSync(
+        actual,
+        [
+          JSON.stringify({
+            type: 'user',
+            message: {
+              content: [
+                {
+                  type: 'tool_result',
+                  tool_use_id: 'toolu_bg',
+                  content: 'Async agent launched successfully. agentId: a1b2',
+                },
+              ],
+            },
+          }),
+          JSON.stringify({
+            type: 'queue-operation',
+            operation: 'enqueue',
+            content:
+              '<task-notification>\n<task-id>a1b2</task-id>\n<tool-use-id>toolu_bg</tool-use-id>\n<status>completed</status>\n</task-notification>',
+          }),
+          '',
+        ].join('\n'),
+      );
+
+      const after = office();
+      const second = await connect();
+      reattachTerminalAgents({
+        store: after.store,
+        runtime: after.runtime,
+        ptyManager: second,
+        provider: { ...provider(), getAllSessionRoots: () => [dir] },
+      });
+
+      const agent = after.store.get(1);
+      expect(agent?.jsonlFile).toBe(actual);
+      expect(agent?.backgroundSpawns.size).toBe(0);
+      spawned[0].exit(0);
+      await until(() => !after.store.has(1));
+    });
+
     it('leaves out a terminal with no saved record, and keeps its id from new launches', async () => {
       const before = office();
       const first = await connect();

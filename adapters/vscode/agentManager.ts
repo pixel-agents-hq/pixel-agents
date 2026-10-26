@@ -4,7 +4,13 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { PersistedAgent } from '../../core/src/schemas.js';
 import { resendAgentActivity } from '../../server/src/agentActivityResend.js';
+import {
+  isPersistedSpawnChild,
+  restoredAgentInit,
+  toPersistedAgent,
+} from '../../server/src/agentPersistence.js';
 import { createAgentState } from '../../server/src/agentState.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
@@ -20,7 +26,6 @@ import { assignPaletteIfNeeded } from '../../server/src/paletteAssigner.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
-import type { PersistedAgent } from '../../server/src/types.js';
 import { workspaceDirectories } from './hostDirectories.js';
 
 export function getProjectDirPath(cwd?: string): string {
@@ -272,25 +277,8 @@ export function removeAgent(
 export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): void {
   const persisted: PersistedAgent[] = [];
   for (const agent of agents.values()) {
-    // Background-spawn children are derived state — never persisted (the 1s
-    // scan re-materializes them from sidecars after a restore).
-    if (agent.spawnToolUseId) continue;
-    persisted.push({
-      id: agent.id,
-      sessionId: agent.sessionId,
-      terminalName: agent.terminalRef?.name ?? '',
-      isExternal: agent.isExternal || undefined,
-      jsonlFile: agent.jsonlFile,
-      projectDir: agent.projectDir,
-      directoryName: agent.directoryName,
-      teamName: agent.teamName,
-      agentName: agent.agentName,
-      isTeamLead: agent.isTeamLead,
-      leadAgentId: agent.leadAgentId,
-      teamUsesTmux: agent.teamUsesTmux,
-      backgroundAgentToolIds:
-        agent.backgroundAgentToolIds.size > 0 ? [...agent.backgroundAgentToolIds] : undefined,
-    });
+    const p = toPersistedAgent(agent);
+    if (p) persisted.push(p);
   }
   adapter.saveAgents(persisted);
 }
@@ -332,10 +320,7 @@ export function restoreAgents(
       continue;
     }
 
-    // Background-spawn children (a leadAgentId but no teamName) are derived
-    // state re-materialized by the 1s scan — never restored directly (also
-    // skips stale entries written by older builds that persisted them).
-    if (p.leadAgentId !== undefined && !p.teamName) continue;
+    if (isPersistedSpawnChild(p)) continue;
 
     let terminal: vscode.Terminal | undefined;
     const isExternal = p.isExternal ?? false;
@@ -354,25 +339,9 @@ export function restoreAgents(
     }
 
     const agent = createAgentState({
-      id: p.id,
-      sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
+      ...restoredAgentInit(p),
       terminalRef: terminal,
       isExternal,
-      projectDir: p.projectDir,
-      jsonlFile: p.jsonlFile,
-      // Live spawn ids survive the reload so the 1s scan can re-adopt the
-      // spawns' transcripts and the completion queue-op still matches.
-      backgroundAgentToolIds: new Set(p.backgroundAgentToolIds ?? []),
-      directoryName: p.directoryName ?? p.folderName,
-      teamName: p.teamName,
-      agentName: p.agentName,
-      // A named agent is a teammate; never restore it as a lead (guards against
-      // state persisted before linkTeammates stopped promoting teammates).
-      isTeamLead: p.agentName ? undefined : p.isTeamLead,
-      leadAgentId: p.leadAgentId,
-      teamUsesTmux: p.teamUsesTmux,
-      palette: p.palette,
-      hueShift: p.hueShift,
     });
 
     assignPaletteIfNeeded(agent, store);

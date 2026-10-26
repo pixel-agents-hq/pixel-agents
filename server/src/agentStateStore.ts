@@ -2,8 +2,9 @@ import { EventEmitter } from 'node:events';
 import { appendFileSync } from 'node:fs';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { PersistedAgent } from '../../core/src/schemas.js';
 import { toPersistedAgent } from './agentPersistence.js';
-import type { AgentState, PersistedAgent } from './types.js';
+import type { AgentState } from './types.js';
 
 /**
  * CI / e2e diagnostics: when PIXEL_AGENTS_DEBUG_LOG points to a writable
