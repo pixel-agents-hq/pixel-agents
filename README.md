@@ -8,18 +8,58 @@ _Nakama_ (仲間) significa "compañeros de equipo".
 
 > 🚧 En construcción. El avance está en los [pull requests](https://github.com/B3njjaman/nakama-works/pulls?q=is%3Apr).
 
+<p align="center">
+  <img src="docs/img/cascada.png" alt="La oficina con la insignia de un agente Opus y el panel de cascada abierto: totales por modelo y el árbol de agentes y subagentes" width="760">
+</p>
+
+<sub>Captura con una cascada de ejemplo: un orquestador Opus que encarga a un explorador Haiku y a un revisor Sonnet.</sub>
+
 ## Qué agrega a Pixel Agents
 
-| Función               | Qué ves                                                                                                      | Estado                        |
-| --------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------- |
-| Color por modelo      | Cada personaje con el color de su modelo: Haiku verde, Sonnet azul, Opus morado, Fable dorado, Codex naranja | Listo                         |
-| Tipo y effort         | Insignia `Sonnet · ecc:constructor · high` sobre el personaje                                                | Listo                         |
-| Pensamiento           | Burbuja con lo último que pensó el agente                                                                    | Listo                         |
-| Quién encarga a quién | Línea punteada de cada subagente a su agente                                                                 | Listo                         |
-| Tokens                | Gasto acumulado por agente y subagente                                                                       | Datos listos, falta mostrarlo |
-| Panel de cascada      | Árbol con agentes, subagentes, modelo, effort, estado y gasto                                                | Planeado                      |
+| Función               | Qué ves                                                                                                      | Estado          |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ | --------------- |
+| Color por modelo      | Cada personaje con el color de su modelo: Haiku verde, Sonnet azul, Opus morado, Fable dorado, Codex naranja | Listo           |
+| Tipo, effort y tokens | Insignia `Sonnet · ecc:constructor · high · 1,2M tokens` sobre el personaje                                  | Listo           |
+| Pensamiento           | Burbuja con lo último que pensó el agente; se puede ocultar al compartir la oficina                          | Listo           |
+| Quién encarga a quién | Línea punteada de cada subagente a su agente                                                                 | Listo           |
+| Panel de cascada      | Totales por modelo y árbol de agentes y subagentes con modelo, effort, estado, gasto y última acción         | Listo           |
+| Barra de sesión       | En la consola: modelo, effort, contexto, límites de 5 h y 7 días y costo                                     | Listo           |
+| Nakamas por modelo    | Tus propios personajes, cada uno reservado para un modelo                                                    | En construcción |
 
-## Para ver el pensamiento
+## Cómo usarlo
+
+`npx pixel-agents` instala el Pixel Agents original, no este fork. Para usar Nakama Works hay que armarlo desde el código (Node.js 20 o más nuevo):
+
+```bash
+git clone https://github.com/B3njjaman/nakama-works.git
+cd nakama-works
+npm install
+npm run build
+node dist/cli.js --port 3100
+```
+
+Abre la URL que imprime: trae un `?token=` que te deja lanzar agentes y cambiar ajustes. Si abres `http://127.0.0.1:3100/` sin el token, la oficina queda **solo para mirar**. Esa es la versión que conviene compartir. Con `--no-terminal` el navegador no abre terminales.
+
+Desde VS Code, abre la carpeta y presiona **F5** para lanzar la extensión desde el código.
+
+## Panel de cascada
+
+El botón **Cascade** abre el panel. Arriba muestra cuántos tokens lleva cada modelo. Debajo, cada agente con sus subagentes anidados: color del modelo, estado, nombre, tokens, insignia y última acción. Al tocar una fila, la cámara sigue a ese agente.
+
+- En escritorio es un panel lateral que recuerda si lo dejaste abierto.
+- En el celular es una hoja que sube desde abajo.
+- También está en la oficina de solo lectura.
+- Cerrado no consume nada; abierto se refresca cuatro veces por segundo.
+
+<p align="center">
+  <img src="docs/img/cascada-movil.png" alt="El panel de cascada en un celular, como hoja inferior sobre las fichas de los agentes" width="300">
+</p>
+
+## Gasto de tokens
+
+Cada agente y subagente suma lo que leen sus transcripts: tokens de entrada y de salida, más los de caché, que son el contexto que el modelo vuelve a leer en cada turno. Por eso la cifra crece más rápido que el texto que ves. La cuenta parte cuando la oficina empieza a mirar al agente. Se muestra con coma decimal y sufijos (`48,5k`, `1,2M`), y si el gasto es 0 no aparece.
+
+## Pensamiento
 
 Claude Code guarda el pensamiento cifrado a menos que se lo pidas. Agrega esto a `~/.claude/settings.json`:
 
@@ -29,9 +69,71 @@ Claude Code guarda el pensamiento cifrado a menos que se lo pidas. Agrega esto a
 
 Según la [documentación oficial](https://code.claude.com/docs/en/settings-reference.md), esto cambia solo lo que se ve, no lo que el modelo genera. Lo que aparece es un **resumen** del pensamiento.
 
-## Personajes propios
+Para compartir la oficina sin mostrarlo, apaga **Settings → Show Agent Thinking**. Apagado, el servidor deja de mandar el pensamiento a todos los clientes y tampoco lo guarda. Al volver a encenderlo no reenvía pensamientos viejos.
 
-Los personajes se cargan desde una carpeta local con **Settings → Add Asset Directory** (ver [docs/external-assets.md](docs/external-assets.md)). Los sprites de personajes con derechos de autor no se suben a este repo.
+## Barra de sesión
+
+Una línea bajo el prompt de cada consola, armada con el [`statusLine`](https://code.claude.com/docs/en/statusline.md) de Claude Code:
+
+```
+Opus 5.5 xhigh · ctx 34% · 5h ▰▰▰▱▱ 62% ↺21:40 · 7d ▰▱▱▱▱ 18% ↺lun 09:00 · $1.23
+```
+
+Muestra el modelo y el effort, el contexto usado, los límites de 5 horas y de 7 días (en verde, amarillo o rojo, con la hora en que se reinician) y el costo de la sesión. Los límites solo aparecen en los planes Pro y Max, después de la primera respuesta. No gasta tokens ni usa la red.
+
+Para instalarla, después de `npm run build` copia `dist/hooks/nakama-statusline.js` a `~/.pixel-agents/statusline/` y agrega esto a `~/.claude/settings.json` (con la ruta de tu carpeta de usuario):
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node \"C:/Users/<tu-usuario>/.pixel-agents/statusline/nakama-statusline.js\"",
+    "padding": 0
+  }
+}
+```
+
+Además deja datos para la oficina en `~/.pixel-agents/statusline/`, legibles solo por ti: un archivo por consola y el uso combinado de todas. Nunca guarda la ruta del transcript.
+
+## Nakamas por modelo
+
+Tus propios personajes reemplazan a los de la oficina, y cada colección queda reservada para un modelo. Así ves de un vistazo si un trabajo lo está haciendo Haiku, Sonnet, Opus o Fable.
+
+- El agente aparece como un personaje normal y, cuando se sabe su modelo, se transforma en un Nakama de ese modelo con el mismo efecto de aparición.
+- Sale de las colecciones de su modelo o de las que no tienen modelo. Entre esos, el menos usado; si hay empate, uno al azar.
+- Un agente de Codex, o un modelo que no tiene colección, puede salir con cualquier Nakama.
+
+Se cargan con **Settings → Add Asset Directory**, apuntando a una carpeta con esta forma:
+
+```
+<tu carpeta>/assets/nakamas/
+  modelos.json
+  <colección>/
+    <personaje>/
+      <personaje>_F.png   frente
+      <personaje>_B.png   espalda
+      <personaje>_L.png   mirando a la izquierda
+      <personaje>_R.png   mirando a la derecha
+      posiciones.json     opcional: { "personaje": "Nombre para mostrar" }
+```
+
+Las poses pueden ser de cualquier tamaño, con fondo blanco. Se convierten solas a sprites de 32 px de alto (y hasta 32 de ancho), todas con la misma escala y los pies en el suelo. Las carpetas que empiezan con `_` se ignoran. `modelos.json` dice para qué modelo es cada colección (`haiku`, `sonnet`, `opus`, `fable`, o `null` para cualquiera), y se puede mover un personaje suelto:
+
+```json
+{
+  "colecciones": { "mi_coleccion": "opus", "otra_coleccion": null },
+  "personajes": { "otra_coleccion/Mi_Personaje": "haiku" }
+}
+```
+
+Estado: el índice, el convertidor y el contrato ya están en `main` ([#11](https://github.com/B3njjaman/nakama-works/pull/11)). La asignación en el servidor y el dibujo en la oficina están en revisión. Los sprites de personajes con derechos de autor no se suben a este repo.
+
+## Lo que viene
+
+- Hablarle a cada consola desde la oficina, como si escribieras en esa terminal, sin gastar tokens extra.
+- La barra de sesión dentro de la oficina, con el uso combinado de todas las consolas.
+- Un taller del harness: qué skills, agentes, plugins, hooks y servidores MCP hay instalados, y cuáles usa cada consola.
+- Comparar métodos: qué nivel de la cascada, tipo de agente o skill rinde mejor por token gastado.
 
 ## Créditos y gracias
 
@@ -43,6 +145,8 @@ Gracias a Pablo De Lucca y a todos los que construyeron [Pixel Agents](https://g
   - [claude-esp](https://github.com/phiat/claude-esp) (MIT): el pensamiento y el contexto por agente en vivo.
   - [Agents Observe](https://github.com/simple10/agents-observe) (MIT): la jerarquía de subagentes y la línea de tiempo.
   - [claude-devtools](https://github.com/matt1398/claude-devtools) (MIT): el gasto de tokens por subagente.
+
+Lo que sigue es el README original de Pixel Agents, sin cambios. Sus instrucciones de instalación (`npx pixel-agents`, el Marketplace) son las del proyecto original; para este fork, ver [Cómo usarlo](#cómo-usarlo).
 
 ---
 
