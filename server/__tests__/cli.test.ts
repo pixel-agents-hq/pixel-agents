@@ -152,6 +152,11 @@ describe('parseArgs', () => {
     expect(parseArgs([]).rotateToken).toBe(false);
     expect(parseArgs(['--rotate-token']).rotateToken).toBe(true);
   });
+
+  it('parses --rotate-relay-token', () => {
+    expect(parseArgs([]).rotateRelayToken).toBe(false);
+    expect(parseArgs(['--rotate-relay-token']).rotateRelayToken).toBe(true);
+  });
 });
 
 // The TTY consent prompt is gone: first-run consent is asked in the app, as

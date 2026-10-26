@@ -54,8 +54,11 @@ import { hooksConsentRequest } from '../../server/src/providers/hook/consentGate
 import {
   claudeProvider,
   copyHookScript,
+  copyOpenClawPlugin,
   hookProviderById,
+  hookProviderCapabilities,
   hookProviders,
+  openClawProvider,
 } from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
@@ -196,7 +199,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
-    this.runtime = new AgentRuntime(this.store, claudeProvider);
+    this.runtime = new AgentRuntime(this.store, claudeProvider, hookProviders);
+    for (const directory of this.hostDirectories()) {
+      this.runtime.trackHookWorkspace(directory.path);
+    }
 
     this.initServer();
   }
@@ -298,6 +304,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     if (provider.id === claudeProvider.id && !copyHookScript(this.context.extensionPath)) {
       vscode.window.showErrorMessage(
         'Pixel Agents: could not install the hook script — hooks not installed.',
+      );
+      await this.reportHooksStatus(provider);
+      return;
+    }
+    if (provider.id === openClawProvider.id && !copyOpenClawPlugin(this.context.extensionPath)) {
+      vscode.window.showErrorMessage(
+        'Pixel Agents: could not install the OpenClaw plugin — hooks not installed.',
       );
       await this.reportHooksStatus(provider);
       return;
@@ -631,8 +644,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // from the first frame.
         this.webview?.postMessage({
           type: 'providerCapabilities',
-          readingTools: [...claudeProvider.readingTools],
-          subagentToolNames: [...claudeProvider.subagentToolNames],
+          ...hookProviderCapabilities(),
         });
 
         // Settings + Directory→Area mappings MUST be dispatched BEFORE restoreAgents
@@ -710,6 +722,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             providerId: provider.id,
             installed,
           });
+          if (
+            !installed &&
+            provider.shouldOfferHooks &&
+            !(await provider.shouldOfferHooks().catch(() => false))
+          )
+            continue;
           const consentRequest = hooksConsentRequest(
             {
               installed,

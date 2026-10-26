@@ -25,18 +25,20 @@
 
 Pixel Agents turns the AI coding agents running in your terminals into animated pixel-art characters working in a tiny office. They walk to their desks, sit down, type when they're editing files, read when they're searching, and flag you visually when they're stuck waiting for input.
 
+> **OpenClaw integration branch:** this fork adds an experimental, metadata-only OpenClaw provider and a Gateway relay plugin, including remote offices, friendly names, and multi-session activity aggregation. This is not an upstream release announcement: the Marketplace/npm links below refer to the original project and do not necessarily contain these changes. [Build this fork and read the complete OpenClaw guide](docs/openclaw.md). Original Pixel Agents attribution, MIT license, and Claude Code workflows are retained.
+
 It ships in two forms from the same codebase:
 
 - **VS Code extension** — [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) and [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents). Agents launch into VS Code terminals; characters render in the panel area.
 - **Standalone CLI** — `npx pixel-agents` starts a local server and serves the same office as a browser app, useful for tmux, remote, and non-VS Code workflows.
 
-The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation today; Codex, Gemini, Cursor, and others are on the roadmap.
+The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvider` interface defines the integration boundary. Claude Code is the reference implementation, and an experimental OpenClaw provider can visualize local or remote OpenClaw activity without forwarding conversation content.
 
 ![Pixel Agents screenshot](webview-ui/public/office.png)
 
 ## Features
 
-- **One agent, one character** — every Claude Code terminal gets its own animated character
+- **One agent, one character** — every Claude Code terminal or configured OpenClaw agent gets its own animated character
 - **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
 - **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
 - **Speech bubbles** — visual indicators when an agent is waiting for input or awaiting permission
@@ -65,7 +67,7 @@ Most of this is still ahead. See [Issues](https://github.com/pixel-agents-hq/pix
 
 ## Requirements
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and/or [OpenClaw](https://github.com/openclaw/openclaw) installed and configured
 - **VS Code extension:** VS Code 1.105.0 or later
 - **Standalone CLI:** Node.js 20 or later
 - Windows, Linux, or macOS
@@ -123,6 +125,55 @@ The extension and standalone CLI can run at the same time. Each server registers
 
 Stop a standalone server with **Ctrl+C**. It removes only its own registration.
 
+### Experimental OpenClaw support
+
+When Pixel Agents starts, it can offer to install its bundled OpenClaw relay plugin. Accepting that provider-specific consent prompt runs OpenClaw's normal plugin installer and links a copy stored under `~/.pixel-agents/openclaw-plugin/`. Restart the OpenClaw gateway if OpenClaw asks you to do so.
+
+Start the VS Code extension or standalone CLI, then use OpenClaw normally in a tracked workspace. Each configured OpenClaw agent has one hooks-only character per Gateway, shared across its ordinary chat sessions. Different configured agents remain separate. Across simultaneous chats the visible priority is **working/generating > tool activity > reading/research > idle**; the most recently updated session wins ties. Finishing one session cannot idle or remove a character while another session is working. Genuine delegated child sessions remain distinct, labeled as subtasks, and close on native child-completion metadata. The base UI's spawn-tool character behavior remains enabled and unchanged. Pixel Agents does not launch or attach to OpenClaw sessions.
+
+**Native run completion:** relay v1.2.1 uses metadata-only run lifecycle events so native Codex turns return to idle even without embedded model-call completion hooks. Older hosts retain the model-end fallback.
+
+**Child-only inactivity cleanup:** with relay v1.2.0 and this office build, explicitly marked child-session characters also despawn after **two minutes without activity**. Normal configured agents never expire for being idle, regardless of their display names. This is a visualization lease, not task cancellation; later child activity can re-adopt the character.
+
+The relay is deliberately content-free. It sends only an opaque Gateway/agent identifier, hashed tool identifiers, configured display names, tool names, lifecycle state, and the active workspace directory. Session arbitration stays in the Gateway relay. It never sends prompts, responses, message bodies, tool parameters, tool results, credentials, tokens, or transcript content. To disconnect, uninstall `pixel-agents-openclaw` through OpenClaw on the Gateway host/profile; the existing office Instant Detection toggle controls Claude Code, not the relay.
+
+Names come from the agent's OpenClaw `identity.name`, then its configured `name`, then its agent ID—never Discord or another channel. Optional manual overrides live in the OpenClaw plugin settings at `plugins.entries.pixel-agents-openclaw.config.agentNames`, for example `{"main":"Avery","builder":"Blake"}`. These overrides take precedence. For multiple Gateways on the same host/state location, set a unique stable `config.gatewayId` for each; the default namespace uses the hostname and OpenClaw state/config location. Namespace and agent IDs are hashed before delivery.
+
+By default the plugin discovers authenticated Pixel Agents servers for the same OS user and delivers events over loopback. Pixel Agents and OpenClaw do not have to share a host, though: the plugin can also send to one configured remote office using a dedicated hook-only bearer credential. That credential cannot control the Pixel Agents UI, install hooks, launch agents, or attach to terminals.
+
+On the Pixel Agents host, run the standalone server on a stable port and place it behind HTTPS (Tailscale Serve or another TLS reverse proxy is recommended). Pixel Agents creates the remote credential at `~/.pixel-agents/relay-token` with mode `0600`; copy its value into an OpenClaw secret provider rather than placing it directly in configuration. Then configure the plugin entry along these lines:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "pixel-agents-openclaw": {
+        "enabled": true,
+        "config": {
+          "localDiscovery": false,
+          "remote": {
+            "endpoint": "https://pixel-agents.example/api/hooks/openclaw",
+            "token": {
+              "source": "store",
+              "provider": "default",
+              "id": "PIXEL_AGENTS_RELAY_TOKEN"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+The endpoint must be the final `/api/hooks/openclaw` URL. HTTPS is required for non-loopback destinations and redirects are refused. Delivery is best-effort, with a two-second timeout per HTTP request; hooks await delivery, so a slow office can add latency. There is no durable delivery queue or replay. Leave `localDiscovery` unset (or `true`) to deliver to local servers as well. To revoke the remote credential, stop every Pixel Agents server and restart one with `--rotate-relay-token`, then update the OpenClaw secret and reload its gateway.
+
+See the [complete OpenClaw guide](docs/openclaw.md) for fork installation, the session/status model, configuration reference, child behavior, privacy, troubleshooting, limitations, and verification instructions.
+
+![Live OpenClaw office with six configured agents and a child session](docs/images/openclaw-live-office.png)
+
+Live remote OpenClaw office, captured on October 25, 2026: six configured agents plus Gitbert's separately identified child session. Friendly names and current activity labels come from the running integration, not synthetic test events. The earlier synthetic fixture remains available in `docs/images/openclaw-office.png` for comparison.
+
 ## Customizing the Office
 
 Click **Layout** to edit the office:
@@ -149,14 +200,17 @@ Pixel Agents uses two Claude Code detection paths:
 - **Hooks mode** (default) — a hook script receives Claude events such as `SessionStart`, `PreToolUse`, `PermissionRequest`, and `Stop`. It discovers active Pixel Agents servers and sends authenticated events to each one.
 - **Heuristic mode** (fallback) — when hooks are unavailable, the runtime infers agent status by scanning Claude's JSONL session transcripts under `~/.claude/projects/`. Transcripts are also read in hooks mode for details not present in an event.
 
-The Claude provider normalizes both sources into a shared `AgentEvent` model. `AgentRuntime` updates the central state store, and the active transport sends typed messages to the React webview. The office renders through Canvas 2D with pathfinding and character state machines.
+The OpenClaw provider uses a bundled local plugin and typed OpenClaw lifecycle hooks. It has no transcript fallback and intentionally forwards no conversation or tool payload content.
+
+Each provider normalizes its source events into a shared `AgentEvent` model. `AgentRuntime` routes events by provider, updates the central state store, and the active transport sends typed messages to the React webview. The office renders through Canvas 2D with pathfinding and character state machines.
 
 Pixel Agents does not modify Claude Code. Its hook configuration and persistent data live under `~/.claude/` and `~/.pixel-agents/` respectively.
 
 ### Architecture
 
 - **`core/`** — provider, adapter, transport, schema, and AsyncAPI message contracts with no runtime side effects.
-- **`server/`** — shared Fastify server, agent runtime, persistence, Claude provider, transcript scanning, and standalone CLI.
+- **`server/`** — shared Fastify server, provider-aware agent runtime, persistence, provider implementations, transcript scanning, and standalone CLI.
+- **`integrations/openclaw/`** — the content-free OpenClaw lifecycle relay bundled with Pixel Agents.
 - **`adapters/vscode/`** — the VS Code adapter: terminal, persistence, and webview bridge.
 - **`webview-ui/`** — React 19, Vite, Canvas 2D, and adapter-specific transports for VS Code and browser WebSocket clients.
 
@@ -207,6 +261,7 @@ The staged output serves the combined `e2e`, `server`, and `webview` Allure repo
 
 - **Standalone will not start:** verify Node.js 20+, omit `--port` to choose a free port, or select another fixed port.
 - **An agent is missing:** confirm **Settings → Instant Detection (Hooks)** is on and that the session belongs to the current workspace. Enable **Watch All Sessions** if needed.
+- **An OpenClaw session is missing:** confirm the OpenClaw consent prompt was accepted, run `openclaw plugins list --json` and look for the loaded `pixel-agents-openclaw` plugin, then restart the gateway if the installer requested it.
 - **The UI looks disconnected:** open **Settings → Debug View** to inspect the server connection, transcript path, and latest agent data.
 - **Extension and standalone are both running:** this is supported. Current versions create separate files under `~/.pixel-agents/servers/`; stopping one does not remove the other.
 

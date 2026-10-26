@@ -1014,6 +1014,7 @@ export function adoptExternalSessionFromHook(
   sessionId: string,
   transcriptPath: string | undefined,
   cwd: string,
+  providerId: string,
   knownJsonlFiles: Set<string>,
   nextAgentIdRef: { current: number },
   agents: AgentStateStore,
@@ -1064,6 +1065,7 @@ export function adoptExternalSessionFromHook(
     if (adoptedAgent) {
       adoptedAgent.sessionId = sessionId;
       adoptedAgent.hookDelivered = true;
+      adoptedAgent.providerId = providerId;
       onAgentCreated?.(adoptedAgent);
     }
   } else {
@@ -1081,6 +1083,7 @@ export function adoptExternalSessionFromHook(
       hooksOnly: true,
       lastDataAt: Date.now(),
       directoryName,
+      providerId,
     });
     assignPaletteIfNeeded(agent, agents);
     agents.set(id, agent);
@@ -1494,7 +1497,9 @@ export function startStaleExternalAgentCheck(
     const toRemove: number[] = [];
 
     for (const [id, agent] of agents) {
-      if (!agent.isExternal) continue;
+      // Remote hook providers have no local transcript to stat. Their lifecycle
+      // is owned by session_end, independently of Claude's global hooks flag.
+      if (!agent.isExternal || agent.hooksOnly) continue;
 
       // Only despawn if the JSONL file has been deleted from disk.
       // Inactive external agents stay alive so they can resume when

@@ -32,7 +32,14 @@ import {
   WILDCARD_HOSTNAMES,
 } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import {
+  claudeProvider,
+  copyHookScript,
+  copyOpenClawPlugin,
+  hookProviderById,
+  hookProviders,
+  openClawProvider,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
@@ -53,6 +60,8 @@ export interface CliArgs {
   allowedHosts: string[];
   /** --rotate-token: replace the persisted server token before starting. */
   rotateToken: boolean;
+  /** --rotate-relay-token: revoke the hook-only credential before starting. */
+  rotateRelayToken: boolean;
 }
 
 /** Thrown by parseArgs on an invalid --port. Kept separate from process.exit so
@@ -66,6 +75,7 @@ export function parseArgs(argv: string[]): CliArgs {
     terminal: true,
     allowedHosts: [],
     rotateToken: false,
+    rotateRelayToken: false,
   };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port' || argv[i] === '-p') {
@@ -100,6 +110,8 @@ export function parseArgs(argv: string[]): CliArgs {
       i++;
     } else if (argv[i] === '--rotate-token') {
       args.rotateToken = true;
+    } else if (argv[i] === '--rotate-relay-token') {
+      args.rotateRelayToken = true;
     } else if (argv[i] === '--no-terminal') {
       args.terminal = false;
     } else if (argv[i] === '--help') {
@@ -113,6 +125,9 @@ Options:
                         it, only localhost and a specific --host are privileged
   --rotate-token        Replace the server token. Every URL that carried the
                         old one (bookmarks, other devices) stops working
+  --rotate-relay-token  Replace the hook-only remote relay credential. Stop all
+                        Pixel Agents servers first; read the new credential from
+                        ~/.pixel-agents/relay-token after startup
   --no-terminal         Disable the embedded terminal (watch agents only; no
                         launching or attaching from the browser)
   --help                Show this help message`);
@@ -143,6 +158,20 @@ function copyHookScriptOrReport(packageRoot: string, context = ''): boolean {
   if (copyHookScript(packageRoot)) return true;
   console.error(`[Pixel Agents] Hooks NOT installed${context}: hook script missing.`);
   return false;
+}
+
+function copyProviderBundleOrReport(
+  providerId: string,
+  packageRoot: string,
+  context = '',
+): boolean {
+  if (providerId === claudeProvider.id) return copyHookScriptOrReport(packageRoot, context);
+  if (providerId === openClawProvider.id) {
+    if (copyOpenClawPlugin(packageRoot)) return true;
+    console.error(`[Pixel Agents] Hooks NOT installed${context}: OpenClaw plugin missing.`);
+    return false;
+  }
+  return true;
 }
 
 // ── Terminal status reporting ─────────────────────────────────
@@ -244,7 +273,8 @@ async function main(): Promise<void> {
 
   try {
     // Create runtime first (before server.start, so we can pass it in)
-    const runtime = new AgentRuntime(store, claudeProvider);
+    const runtime = new AgentRuntime(store, claudeProvider, hookProviders);
+    runtime.trackHookWorkspace(process.cwd());
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
@@ -265,10 +295,7 @@ async function main(): Promise<void> {
         // to the Claude provider alone; another provider's install must
         // neither copy it nor be blocked by it.
         grantHooksConsent(provider.id);
-        if (
-          provider.id === claudeProvider.id &&
-          !copyHookScriptOrReport(packageRoot, ' (user toggle)')
-        ) {
+        if (!copyProviderBundleOrReport(provider.id, packageRoot, ' (user toggle)')) {
           return;
         }
         try {
@@ -341,11 +368,17 @@ async function main(): Promise<void> {
       ptyManager,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,
+      rotateRelayToken: args.rotateRelayToken,
     });
     currentConfig = { port: config.port, token: config.token };
     if (args.rotateToken) {
       console.log(
         '[Pixel Agents] Server token rotated: URLs carrying the old token no longer grant access. Open the new URL below on each device.',
+      );
+    }
+    if (args.rotateRelayToken) {
+      console.log(
+        '[Pixel Agents] Relay token rotated: remote relays must be updated from ~/.pixel-agents/relay-token.',
       );
     }
 

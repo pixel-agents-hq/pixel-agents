@@ -226,6 +226,19 @@ describe('/ws connection gate', () => {
 
     expect(result.accepted).toBe(true);
   });
+
+  it('does not accept the hook-only relay token on the WebSocket route', async () => {
+    const config = await server.start({ embedded: true, store: new AgentStateStore() });
+    const relayToken = fs
+      .readFileSync(path.join(tmpBase, '.pixel-agents', 'relay-token'), 'utf-8')
+      .trim();
+
+    const result = await connect(config.port, { Authorization: `Bearer ${relayToken}` });
+    sockets.push(result.socket);
+
+    expect(result.accepted).toBe(false);
+    expect(result.closeCode).toBe(WS_CLOSE_UNAUTHORIZED);
+  });
 });
 
 /**

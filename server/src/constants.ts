@@ -156,6 +156,12 @@ export const DIRECTORY_WRITE_FAILED_REASON =
  *  the tokened URL a browser bookmarked keeps working across restarts. The
  *  embedded (VS Code) server still mints a fresh token per process. */
 export const STANDALONE_TOKEN_FILE_NAME = 'standalone-token';
+/** Dedicated bearer capability accepted only by the lifecycle hook endpoint.
+ *  Unlike the standalone token, it cannot control the UI, launch processes, or
+ *  attach to terminals, so it is safe to provision to remote hook relays. */
+export const RELAY_TOKEN_FILE_NAME = 'relay-token';
+/** Only explicitly identified OpenClaw child sessions expire without new hooks. */
+export const OPENCLAW_SUBAGENT_INACTIVITY_MS = 120_000;
 
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';

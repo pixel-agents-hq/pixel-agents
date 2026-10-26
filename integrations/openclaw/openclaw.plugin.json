@@ -1,0 +1,79 @@
+{
+  "id": "pixel-agents-openclaw",
+  "name": "Pixel Agents OpenClaw Relay",
+  "description": "Projects content-free OpenClaw lifecycle events into a local or remote Pixel Agents office.",
+  "version": "1.2.1",
+  "activation": {
+    "onStartup": true
+  },
+  "configContracts": {
+    "secretInputs": {
+      "paths": [
+        {
+          "path": "remote.token",
+          "expected": "string",
+          "ownerKind": "capability"
+        }
+      ]
+    }
+  },
+  "uiHints": {
+    "agentNames": {
+      "label": "Agent display name overrides",
+      "help": "Map OpenClaw agent IDs to office names. Overrides identity.name and agent name; no channel configuration is needed."
+    },
+    "gatewayId": {
+      "label": "Gateway identity namespace",
+      "help": "Optional stable, unique namespace when multiple Gateways on the same machine share an office. Defaults to host and OpenClaw state/config location."
+    },
+    "localDiscovery": {
+      "label": "Discover local Pixel Agents servers",
+      "help": "Send events to live Pixel Agents servers registered for this OS user. Enabled by default."
+    },
+    "remote.endpoint": {
+      "label": "Remote hook endpoint",
+      "help": "Final URL ending in /api/hooks/openclaw. Use HTTPS except for loopback testing."
+    },
+    "remote.token": {
+      "label": "Remote relay token",
+      "help": "Dedicated hook-only credential from the Pixel Agents server's ~/.pixel-agents/relay-token file.",
+      "sensitive": true
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "$defs": {
+      "secretRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": { "type": "string", "enum": ["env", "file", "exec", "store"] },
+          "provider": { "type": "string" },
+          "id": { "type": "string" }
+        },
+        "required": ["source", "provider", "id"]
+      },
+      "secretInput": {
+        "anyOf": [
+          { "type": "string", "minLength": 1 },
+          { "$ref": "#/$defs/secretRef" }
+        ]
+      }
+    },
+    "properties": {
+      "agentNames": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 120 } },
+      "gatewayId": { "type": "string", "minLength": 1 },
+      "localDiscovery": { "type": "boolean", "default": true },
+      "remote": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["endpoint", "token"],
+        "properties": {
+          "endpoint": { "type": "string", "minLength": 1 },
+          "token": { "$ref": "#/$defs/secretInput" }
+        }
+      }
+    }
+  }
+}

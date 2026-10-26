@@ -62,6 +62,31 @@ function buildHooks() {
   console.log('✓ Built hooks/ → dist/hooks/');
 }
 
+/** Bundle the native OpenClaw relay and copy its manifest/package metadata. */
+function buildOpenClawPlugin() {
+  const srcDir = path.join(__dirname, 'integrations', 'openclaw');
+  const outDir = path.join(__dirname, 'dist', 'openclaw-plugin');
+  const entry = path.join(srcDir, 'index.ts');
+  if (!fs.existsSync(entry)) return;
+  fs.rmSync(outDir, { recursive: true, force: true });
+  fs.mkdirSync(outDir, { recursive: true });
+  require('esbuild').buildSync({
+    entryPoints: [entry],
+    bundle: true,
+    platform: 'node',
+    target: 'node20',
+    format: 'esm',
+    outfile: path.join(outDir, 'index.js'),
+    external: ['openclaw/plugin-sdk/plugin-entry', 'openclaw/plugin-sdk/secret-input-runtime'],
+  });
+  for (const file of ['package.json', 'openclaw.plugin.json']) {
+    fs.copyFileSync(path.join(srcDir, file), path.join(outDir, file));
+  }
+  // Ship setup, data boundaries, and limitations with the installable relay.
+  fs.copyFileSync(path.join(__dirname, 'docs', 'openclaw.md'), path.join(outDir, 'README.md'));
+  console.log('✓ Built OpenClaw plugin → dist/openclaw-plugin/');
+}
+
 /**
  * @type {import('esbuild').Plugin}
  */
@@ -108,6 +133,7 @@ async function main() {
     // Copy assets and hooks after build
     copyAssets();
     buildHooks();
+    buildOpenClawPlugin();
     await buildCli();
     await buildUninstall();
   }

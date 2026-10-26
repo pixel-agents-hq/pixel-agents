@@ -18,6 +18,7 @@ import {
   SERVERS_DIR,
 } from './constants.js';
 import { createHttpServer } from './httpServer.js';
+import { loadOrCreateRelayToken } from './relayToken.js';
 import type { ServerConfig, StandaloneAccess } from './serverConfig.js';
 import { isServerConfig, isServerTarget, sameStandaloneAccess } from './serverConfig.js';
 import { loadOrCreateStandaloneToken } from './serverToken.js';
@@ -79,6 +80,9 @@ export class PixelAgentsServer {
      *  the old one. Refused while another standalone server is running: it
      *  would keep honouring the old token until it restarts. */
     rotateToken?: boolean;
+    /** Replace the hook-only remote relay credential. Refused while any server
+     *  is live because those processes would keep accepting the old token. */
+    rotateRelayToken?: boolean;
   }): Promise<ServerConfig> {
     const embedded = options?.embedded ?? true;
     const wantsSpa = !embedded;
@@ -101,6 +105,11 @@ export class PixelAgentsServer {
     // dead entries first so a crashed server's stale file never blocks
     // discovery of a live one.
     const registry = this.readAndPruneRegistry();
+    if (options?.rotateRelayToken && registry.length > 0) {
+      throw new Error(
+        'A Pixel Agents server is already running and would keep accepting the old relay token. Stop all servers, then run --rotate-relay-token again.',
+      );
+    }
     if (options?.rotateToken && !embedded) {
       const running = registry.find((e) => e.servesSpa);
       if (running) {
@@ -128,6 +137,7 @@ export class PixelAgentsServer {
     const token = embedded
       ? crypto.randomUUID()
       : loadOrCreateStandaloneToken({ rotate: options?.rotateToken ?? false });
+    const relayToken = loadOrCreateRelayToken({ rotate: options?.rotateRelayToken ?? false });
     const store = options?.store;
 
     const { app, port } = await createHttpServer({
@@ -135,6 +145,7 @@ export class PixelAgentsServer {
       host,
       port: options?.port,
       token,
+      relayToken,
       store: store!,
       runtime: options?.runtime,
       staticDir: options?.staticDir,
