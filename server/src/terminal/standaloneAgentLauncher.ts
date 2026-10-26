@@ -23,7 +23,7 @@ import { createAgentState } from '../agentState.js';
 import type { AgentStateStore } from '../agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../constants.js';
 import { clearContextUsage } from '../contextUsage.js';
-import { directoryNameForLaunch } from '../directories.js';
+import { directoryAt } from '../directories.js';
 import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
@@ -44,6 +44,9 @@ export interface LaunchStandaloneAgentOptions {
   /** Read from the host's persisted permission posture by the caller; never a
    *  per-launch choice made in the office. */
   bypassPermissions?: boolean;
+  /** The character picked from the roster (a palette index). Out of range or
+   *  absent, the Directory's default characters apply, else a random pick. */
+  palette?: number;
   cols?: number;
   rows?: number;
 }
@@ -83,6 +86,8 @@ export function launchStandaloneAgent(
 
   const id = store.nextAgentId.current++;
 
+  // The Directory launched into, if the cwd is one: its name and its default characters.
+  const directory = directoryAt(cwd, [hostDirectory()]);
   const agent = createAgentState({
     id,
     sessionId,
@@ -97,14 +102,14 @@ export function launchStandaloneAgent(
     // "Side Project" labels its agents that, not "side-project", and the Areas
     // it was assigned in the modal actually match. Falls back to the basename
     // for a cwd that is no Directory at all.
-    directoryName: directoryNameForLaunch(cwd, [hostDirectory()]) ?? directoryNameFor(cwd),
+    directoryName: directory?.name ?? directoryNameFor(cwd),
     providerId: provider.id,
   });
 
   // Server-side, like every other creation path: the palette rides the
   // agentCreated broadcast and is persisted with the agent, so a reload
   // restores the same character without the webview having to save it back.
-  assignPaletteIfNeeded(agent, store);
+  assignPaletteIfNeeded(agent, store, { picked: options.palette, directory });
 
   let session;
   try {

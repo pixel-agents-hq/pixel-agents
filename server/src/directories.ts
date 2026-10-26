@@ -20,7 +20,12 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type { Directory } from '../../core/src/messages.js';
-import { readConfig, type UserDirectory, writeConfig } from './configPersistence.js';
+import {
+  readConfig,
+  type UserDirectory,
+  withDirectoryCharacters,
+  writeConfig,
+} from './configPersistence.js';
 import { DIRECTORY_WRITE_FAILED_REASON } from './constants.js';
 import { directoryNameFor } from './hostDirectory.js';
 
@@ -33,9 +38,9 @@ export interface HostDirectoryEntry {
 
 export type DirectorySaveResult = { ok: true; path: string } | { ok: false; reason: string };
 
-/** A stored user-defined Directory: the name and resolved path as persisted. */
+/** A stored user-defined Directory, exactly as persisted. */
 export type DirectoryStoreResult =
-  { ok: true; name: string; path: string } | { ok: false; reason: string };
+  { ok: true; directory: UserDirectory } | { ok: false; reason: string };
 
 export type DirectoryRemoveResult = { ok: true } | { ok: false; reason: string };
 
@@ -107,17 +112,18 @@ export function buildDirectoryUnion(
   // User entries are applied second, so they overwrite a host entry at the same
   // path. Insertion order is irrelevant: the result is sorted below.
   for (const user of userDirectories) {
-    byPath.set(normalizeDirectoryPath(user.path), {
-      name: user.name,
-      path: user.path,
-      source: 'user',
-    });
+    byPath.set(normalizeDirectoryPath(user.path), userDirectory(user));
   }
 
   return [...byPath.values()].sort((a, b) => {
     if (a.source !== b.source) return a.source === 'host' ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
+}
+
+/** A stored user-defined Directory as the office sees it. */
+function userDirectory(user: UserDirectory): Directory {
+  return { ...user, source: 'user' };
 }
 
 /** The union for this host, read fresh from the shared config. */
@@ -134,6 +140,9 @@ export function saveUserDirectory(input: {
   name: string;
   path: string;
   previousPath?: string;
+  /** Default characters, as sent (validated here). */
+  characters?: unknown;
+  characterOrder?: unknown;
 }): DirectoryStoreResult {
   const validation = validateDirectoryPath(input.path);
   if (!validation.ok) {
@@ -153,12 +162,13 @@ export function saveUserDirectory(input: {
     const key = normalizeDirectoryPath(entry.path);
     return key !== newKey && key !== previousKey;
   });
-  cfg.directories.push({ name, path: resolvedPath });
+  const stored = withDirectoryCharacters({ name, path: resolvedPath }, input);
+  cfg.directories.push(stored);
 
   if (!writeConfig(cfg)) {
     return { ok: false, reason: DIRECTORY_WRITE_FAILED_REASON };
   }
-  return { ok: true, name, path: resolvedPath };
+  return { ok: true, directory: stored };
 }
 
 /**
@@ -176,10 +186,10 @@ export function removeUserDirectory(rawPath: string): DirectoryRemoveResult {
 }
 
 /**
- * The name of the Directory sitting at `launchPath`, or undefined when the
- * launch went somewhere that isn't one.
+ * The Directory sitting at `launchPath` (default characters included), or
+ * undefined when the launch went somewhere that isn't one.
  *
- * This is what an agent wears as its origin label, and — because Area mappings
+ * Its name is what an agent wears as its origin label, and — because Area mappings
  * are keyed by Directory name — what steers it towards the seats mapped to its
  * project. Both have to be the name the USER gave the Directory: a Directory
  * called "Side Project" pointing at ~/code/side-project must label its agents
@@ -188,14 +198,14 @@ export function removeUserDirectory(rawPath: string): DirectoryRemoveResult {
  * Renaming a Directory therefore only affects launches made after the rename;
  * agents already in the office keep the label they were born with.
  */
-export function directoryNameForLaunch(
+export function directoryAt(
   launchPath: string,
   hostDirectories: HostDirectoryEntry[],
-): string | undefined {
+): Directory | undefined {
   const key = normalizeDirectoryPath(launchPath);
   return listDirectories(hostDirectories).find(
     (directory) => normalizeDirectoryPath(directory.path) === key,
-  )?.name;
+  );
 }
 
 /** What a host must supply to dispatch the Directory client messages. */
@@ -234,6 +244,8 @@ export function handleDirectoryClientMessage(
         name: typeof msg.name === 'string' ? msg.name : '',
         path: submittedPath,
         previousPath: typeof msg.previousPath === 'string' ? msg.previousPath : undefined,
+        characters: msg.characters,
+        characterOrder: msg.characterOrder,
       });
       if (!result.ok) {
         deps.reply({ type: 'directoryRejected', path: submittedPath, reason: result.reason });
@@ -244,10 +256,7 @@ export function handleDirectoryClientMessage(
       // can differ from anything the office typed (an empty name becomes the
       // RESOLVED path's basename -- `~` is the home folder's name, not "~"),
       // and Area mappings are keyed by it, so the office takes it from here.
-      deps.reply({
-        type: 'directorySaved',
-        directory: { name: result.name, path: result.path, source: 'user' },
-      });
+      deps.reply({ type: 'directorySaved', directory: userDirectory(result.directory) });
       return true;
     }
 

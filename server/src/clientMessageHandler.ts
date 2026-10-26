@@ -1,4 +1,5 @@
 import type { StateAdapter } from '../../core/src/adapter.js';
+import { rosterPick } from '../../core/src/paletteUtils.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import { resendAgentActivity } from './agentActivityResend.js';
 import { buildAgentDiagnostics } from './agentDiagnostics.js';
@@ -32,6 +33,7 @@ import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
+import { recentCharactersMessage, recordCharacterUse } from './recentCharacters.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
 import { applyUsageBridgeChoice, usageSnapshotMessages } from './usageLimits.js';
@@ -121,6 +123,14 @@ function shownHostDirectoriesFor(ctx: ClientMessageContext): HostDirectoryEntry[
     : [];
 }
 
+/** The drawer's Directories as this client is sent them (shown host entries + the user's). */
+function directoriesMessage(ctx: ClientMessageContext) {
+  return {
+    type: 'directoriesLoaded',
+    directories: listDirectories(shownHostDirectoriesFor(ctx)),
+  } as const;
+}
+
 /**
  * Handle incoming ClientMessage from a WebSocket client.
  *
@@ -158,13 +168,20 @@ export function handleClientMessage(
       // field: the client sends only where to launch. Every launch comes from a
       // drawer row and carries its Directory's path; no directoryPath falls
       // back to the server cwd (launchStandaloneAgent's own default).
-      launchStandaloneAgent(
+      const picked = rosterPick(msg.palette, getPaletteCount());
+      const launched = launchStandaloneAgent(
         { store, runtime, ptyManager: ctx.ptyManager, provider: claudeProvider },
         {
           directoryPath: msg.directoryPath as string | undefined,
           bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+          palette: picked,
         },
       );
+      // A roster pick moves to the front of every office's roster, once an
+      // agent wears it: a launch that failed (no PTY, no command) records nothing.
+      if (launched === null) break;
+      const recent = recordCharacterUse(picked);
+      if (recent) store.broadcast(recent);
       break;
     }
 
@@ -205,6 +222,10 @@ export function handleClientMessage(
         broadcast: (message) => store.broadcast(message),
         reply: send,
         store,
+        sharedRefsChanged: () => {
+          store.broadcast(directoriesMessage(ctx));
+          store.broadcast(recentCharactersMessage());
+        },
       });
       break;
 
@@ -215,7 +236,7 @@ export function handleClientMessage(
           { palette?: number; repeat?: number; seatId?: string }
         >;
         // The server owns an agent's look: it picks one when the agent is
-        // created (random pick, a teammate inherits its lead's).
+        // created (random pick, roster or Directory pick, a teammate inherits its lead's).
         // A seat save only fills in a look the agent doesn't have yet — a
         // reconnecting browser saves back the looks it had before, and those
         // must not overwrite the server's. Validate ranges to keep a remote
@@ -377,10 +398,7 @@ export function handleClientMessage(
       adapter.setSetting(KEY_SHOW_HOST_DIRECTORIES, msg.enabled);
       // The list is what changed, so every office gets it again -- the same
       // signal a Directory mutation sends.
-      store.broadcast({
-        type: 'directoriesLoaded',
-        directories: listDirectories(shownHostDirectoriesFor(ctx)),
-      });
+      store.broadcast(directoriesMessage(ctx));
       break;
     }
 
@@ -524,6 +542,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // 2. Character profiles (the cast agents are drawn from), then the assets
   //    (from server cache, loaded at startup via pngjs)
   send(characterProfilesLoadedMessage());
+  send(recentCharactersMessage());
   if (cache) {
     send({ type: 'characterSpritesLoaded', characters: cache.characters.characters });
     if (cache.pets) {
@@ -618,10 +637,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // terminalAvailability is: no ptyManager means VS Code embedded mode, whose
   // adapter contributes its own Directories.
   if (ctx.ptyManager) {
-    send({
-      type: 'directoriesLoaded',
-      directories: listDirectories(shownHostDirectoriesFor(ctx)),
-    });
+    send(directoriesMessage(ctx));
   }
 
   // Sync runtime refs with the persisted settings so scanners behave correctly

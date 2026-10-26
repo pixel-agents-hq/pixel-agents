@@ -92,10 +92,15 @@ Bring an agent's terminal to the front. Reserved exclusively for terminals — n
 
 **Card bar**:
 The row of agent cards: one card per running main agent (teammates and sub-agents get none), in an order the user can drag and every open office shares. Pressing a card reaches its agent.
-_Avoid_: agent list, tabs
+_Avoid_: agent list, tabs, roster (that's the characters to launch as)
+
+**Roster**:
+The characters an agent can be launched as, one card each, most recently launched first — opened by the arrow beside the New agent button. Picking one launches a new agent wearing it; its `+ New` adds a character to the cast (it launches nothing).
+_Avoid_: agent picker, agents (it lists characters, not running agents), card bar
 
 **New agent**:
-The `+` card that launches an agent. From it, a Directory is chosen.
+The `+` card that launches an agent. From it, a Directory is chosen; from the roster, a character too.
+_Avoid_: `+ New` (that's the roster's add-a-character slot)
 
 **Item**:
 One wearable part in the Characters view's wardrobe (a hairstyle, a top, a hat, an accessory). Built-in items ship with the app; custom items are ones the user saved from the pixel editor ("Save as new item"), worn by any character and drawn in the colours of the built-in item they started from. A piece sheet is one item's frames alone, uncoloured, as a 128×96 PNG (Export / Import PNG).

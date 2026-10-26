@@ -1,7 +1,9 @@
 import type { KeyboardEvent } from 'react';
 import { useEffect, useState } from 'react';
 
+import type { DirectoryCharacterOrder } from '../../../core/src/messages.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
+import { DirectoryCharactersField } from './DirectoryCharactersField.js';
 import { Button } from './ui/Button.js';
 import { Modal } from './ui/Modal.js';
 
@@ -10,6 +12,9 @@ export interface DirectoryModalValues {
   path: string;
   /** Areas this Directory's future agents should be seated in. */
   areas: string[];
+  /** Default characters for its launches, highest priority first. */
+  characters: number[];
+  characterOrder: DirectoryCharacterOrder;
 }
 
 interface DirectoryModalProps {
@@ -33,7 +38,7 @@ interface DirectoryModalProps {
 
 /**
  * Define a launch target from inside the office: a name, a filesystem path,
- * and which Areas its agents belong in.
+ * which Areas its agents belong in, and which characters they wear.
  *
  * The path is free text (a leading `~` is expanded host-side) and is validated
  * where the filesystem is — the host. This modal never guesses: it sends, then
@@ -59,6 +64,8 @@ export function DirectoryModal({
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
+  const [characters, setCharacters] = useState<number[]>([]);
+  const [characterOrder, setCharacterOrder] = useState<DirectoryCharacterOrder>('priority');
 
   // Refill from whatever the modal was opened on. Keyed on isOpen too, so
   // re-opening Add after a cancelled edit starts blank rather than stale.
@@ -67,6 +74,8 @@ export function DirectoryModal({
     setName(editing?.name ?? '');
     setPath(editing?.path ?? '');
     setSelectedAreas(assignedAreas);
+    setCharacters(editing?.characters ?? []);
+    setCharacterOrder(editing?.characterOrder ?? 'priority');
     // assignedAreas is derived per render; keying the refill on it would reset
     // the multi-select on every keystroke. Opening the modal is the only moment
     // it should be read.
@@ -76,7 +85,13 @@ export function DirectoryModal({
   if (!isOpen) return null;
 
   const submit = () => {
-    onSubmit({ name: name.trim(), path: path.trim(), areas: selectedAreas });
+    onSubmit({
+      name: name.trim(),
+      path: path.trim(),
+      areas: selectedAreas,
+      characters,
+      characterOrder,
+    });
   };
 
   const toggleArea = (label: string) => {
@@ -95,7 +110,8 @@ export function DirectoryModal({
       e.stopPropagation();
       // Enter submits only from the text fields. On a button it is that
       // button's own activation (the browser turns it into a click): Cancel
-      // cancels, an Area toggles, a suggestion fills the path -- none saves.
+      // cancels, an Area toggles, a suggestion fills the path, a character is
+      // added or removed -- none saves.
       if (e.target instanceof HTMLInputElement) {
         e.preventDefault();
         submit();
@@ -186,6 +202,14 @@ export function DirectoryModal({
             </div>
           </div>
         )}
+        <DirectoryCharactersField
+          characters={characters}
+          order={characterOrder}
+          onChange={(nextCharacters, nextOrder) => {
+            setCharacters(nextCharacters);
+            setCharacterOrder(nextOrder);
+          }}
+        />
         {error !== null && (
           <div role="alert" className="text-xs text-danger">
             {error}

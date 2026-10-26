@@ -280,7 +280,7 @@ describe('PTY host', () => {
       const first = await connect();
       const id = launchStandaloneAgent(
         { store: before.store, runtime: before.runtime, ptyManager: first, provider: provider() },
-        { directoryPath: dir },
+        { directoryPath: dir, palette: 2 },
       );
       expect(id).toBe(1);
       const launched = before.store.get(1);
@@ -303,7 +303,7 @@ describe('PTY host', () => {
       expect(restored).toEqual([1]);
       const agent = after.store.get(1);
       expect(agent?.sessionId).toBe(launched?.sessionId);
-      expect(agent?.palette).toBe(launched?.palette);
+      expect(agent?.palette).toBe(2);
       expect(agent?.directoryName).toBe(launched?.directoryName);
       expect(agent?.isExternal).toBe(false);
       expect(agent?.fileOffset).toBe(fs.statSync(launched!.jsonlFile).size);

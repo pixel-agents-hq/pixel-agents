@@ -149,6 +149,26 @@ describe('launchStandaloneAgent', () => {
     expect(broadcasts).toContainEqual({ type: 'terminalSessionOpened', agentId: 1 });
   });
 
+  it('wears the character picked from the roster even when it is taken, the copy in red clothes', () => {
+    const harness = workingPtyManager();
+
+    launch(harness, { palette: 2 });
+    launch(harness, { palette: 2 });
+
+    expect(store.get(1)).toMatchObject({ palette: 2, repeat: 0 });
+    expect(store.get(2)).toMatchObject({ palette: 2, repeat: 1 });
+  });
+
+  it('ignores a picked character that is not in the roster', () => {
+    const harness = workingPtyManager();
+
+    launch(harness, { palette: 999 });
+
+    const palette = store.get(1)?.palette;
+    expect(palette).toBeTypeOf('number');
+    expect(palette).not.toBe(999);
+  });
+
   it('passes bypassPermissions through to the launch command', () => {
     const harness = workingPtyManager();
 

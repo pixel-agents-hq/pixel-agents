@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
+import { readConfig, writeConfig } from '../src/configPersistence.js';
 import {
   assignPaletteIfNeeded,
   getPaletteCount,
@@ -123,6 +124,26 @@ describe('paletteAssigner', () => {
       expect(agent.repeat).toBe(1);
     });
 
+    it("leaves other Directories' default characters free when it can", () => {
+      // Every character but 0 and 1 is some Directory's default.
+      const cfg = readConfig();
+      cfg.directories = [
+        { name: 'A', path: '/a', characters: [2, 3] },
+        {
+          name: 'B',
+          path: '/b',
+          characters: Array.from({ length: PALETTE_COUNT - 4 }, (_, i) => i + 4),
+        },
+      ];
+      writeConfig(cfg);
+      store.set(100, createTestAgent({ id: 100, palette: 0, repeat: 0 }));
+      randomReturns(0.99);
+      const agent = createTestAgent({ id: 1 });
+      assignPaletteIfNeeded(agent, store);
+      expect(agent.palette).toBe(1);
+      expect(agent.repeat).toBe(0);
+    });
+
     it('wears an unworn pick exactly', () => {
       store.set(100, createTestAgent({ id: 100, palette: 0, repeat: 0 }));
       randomReturns(0.99);
@@ -182,6 +203,60 @@ describe('paletteAssigner', () => {
       assignPaletteIfNeeded(agent, store);
       expect(agent.palette).toBe(7);
       expect(agent.repeat).toBe(0);
+    });
+  });
+
+  describe("a launch's look", () => {
+    const dir = (characters: number[], characterOrder?: 'priority' | 'random') => ({
+      name: 'D',
+      path: '/d',
+      source: 'user' as const,
+      characters,
+      characterOrder,
+    });
+
+    it('wears the first default nobody wears, exactly', () => {
+      store.set(100, createTestAgent({ id: 100, palette: 4, repeat: 0 }));
+      const agent = createTestAgent({ id: 1 });
+      assignPaletteIfNeeded(agent, store, { directory: dir([4, 2, 1]) });
+      expect(agent.palette).toBe(2);
+      expect(agent.repeat).toBe(0);
+    });
+
+    it('falls back to a random free character when every priority default is worn', () => {
+      store.set(100, createTestAgent({ id: 100, palette: 4, repeat: 0 }));
+      const agent = createTestAgent({ id: 1 });
+      assignPaletteIfNeeded(agent, store, { directory: dir([4]) });
+      expect(agent.palette).not.toBe(4);
+      expect(agent.repeat).toBe(0);
+    });
+
+    it('random order never repeats a default already in the office', () => {
+      store.set(100, createTestAgent({ id: 100, palette: 4, repeat: 0 }));
+      const agent = createTestAgent({ id: 1 });
+      assignPaletteIfNeeded(agent, store, { directory: dir([4], 'random') });
+      expect(agent.palette).not.toBe(4);
+      expect(agent.repeat).toBe(0);
+    });
+
+    it('wears a roster pick already in the office as its next repeat', () => {
+      store.set(100, createTestAgent({ id: 100, palette: 3, repeat: 0 }));
+      store.set(101, createTestAgent({ id: 101, palette: 3, repeat: 1 }));
+      const agent = createTestAgent({ id: 1 });
+      assignPaletteIfNeeded(agent, store, { picked: 3 });
+      expect(agent).toMatchObject({ palette: 3, repeat: 2 });
+    });
+
+    it("a roster pick wins over the Directory's defaults", () => {
+      const agent = createTestAgent({ id: 1 });
+      assignPaletteIfNeeded(agent, store, { picked: 3, directory: dir([1]) });
+      expect(agent.palette).toBe(3);
+    });
+
+    it('skips defaults past the cast (a deleted character)', () => {
+      const agent = createTestAgent({ id: 1 });
+      assignPaletteIfNeeded(agent, store, { directory: dir([PALETTE_COUNT + 2, 1]) });
+      expect(agent.palette).toBe(1);
     });
   });
 });

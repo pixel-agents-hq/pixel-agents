@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import { rosterPick } from '../../core/src/paletteUtils.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import { buildAgentDiagnostics } from '../../server/src/agentDiagnostics.js';
 import { AgentRuntime } from '../../server/src/agentRuntime.js';
@@ -57,6 +58,7 @@ import {
   watchLayoutFile,
   writeLayoutToFile,
 } from '../../server/src/layoutPersistence.js';
+import { getPaletteCount } from '../../server/src/paletteAssigner.js';
 import { PathSet } from '../../server/src/pathKey.js';
 import type { ConsentEffects } from '../../server/src/providers/hook/consentExecutor.js';
 import { applyConsentChoice } from '../../server/src/providers/hook/consentExecutor.js';
@@ -67,6 +69,7 @@ import {
   hookProviderById,
   hookProviders,
 } from '../../server/src/providers/index.js';
+import { recentCharactersMessage, recordCharacterUse } from '../../server/src/recentCharacters.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import { applyUsageBridgeChoice, usageSnapshotMessages } from '../../server/src/usageLimits.js';
 import {
@@ -478,6 +481,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message.type === 'launchAgent') {
         const prevAgentIds = new Set(this.store.keys());
+        const picked = rosterPick(message.palette, getPaletteCount());
         await launchNewTerminal(
           this.store.nextAgentId,
           this.store.nextTerminalIndex,
@@ -491,14 +495,24 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.runtime.jsonlPollTimers,
           this.runtime.projectScanTimer,
           () => this.store.persist(),
-          // Every launch comes from a drawer row and carries its Directory's
-          // path; no directoryPath leaves launchNewTerminal's own fallback —
-          // the first workspace folder — exactly as it was.
-          message.directoryPath as string | undefined,
-          // Permission posture is a persisted per-host setting, never a
-          // per-launch field: the webview sends only where to launch.
-          this.adapter.getSetting<boolean>(GLOBAL_KEY_BYPASS_PERMISSIONS, false),
+          {
+            // Every launch comes from a drawer row and carries its Directory's
+            // path; no directoryPath leaves launchNewTerminal's own fallback —
+            // the first workspace folder — exactly as it was.
+            directoryPath: message.directoryPath as string | undefined,
+            // Permission posture is a persisted per-host setting, never a
+            // per-launch field: the webview sends only where to launch (and,
+            // picked from the roster, which character).
+            bypassPermissions: this.adapter.getSetting<boolean>(
+              GLOBAL_KEY_BYPASS_PERMISSIONS,
+              false,
+            ),
+            palette: picked,
+          },
         );
+        // A roster pick moves to the front of the roster.
+        const recent = recordCharacterUse(picked);
+        if (recent) this.sendOrBuffer(recent);
         // Register newly created agent(s) with hook handler
         for (const [id, agent] of this.store) {
           if (!prevAgentIds.has(id)) {
@@ -544,6 +558,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           broadcast: send,
           reply: send,
           store: this.store,
+          sharedRefsChanged: () => {
+            this.sendDirectories();
+            send(recentCharactersMessage());
+          },
         });
       } else if (message.type === 'exportFile') {
         await this.exportFile(message.filename, message.dataBase64);
@@ -822,11 +840,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             this.runtime.jsonlPollTimers,
             this.runtime.projectScanTimer,
             () => this.store.persist(),
-            undefined,
-            // Auto-spawn is a launch like any other, so it runs under the same
-            // persisted permission posture.
-            bypassPermissions,
-            autoShowPanel,
+            // No directoryPath: the workspace fallback. Auto-spawn is a launch
+            // like any other, so it runs under the same persisted permission
+            // posture.
+            { bypassPermissions, suppressShow: autoShowPanel },
           );
           for (const [id, agent] of this.store) {
             if (!prevAgentIds.has(id)) {
@@ -875,6 +892,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
         // Character profiles (the cast agents are drawn from), before any asset or layout
         this.webview?.postMessage(characterProfilesLoadedMessage());
+        this.webview?.postMessage(recentCharactersMessage());
 
         // Load furniture assets BEFORE sending layout
         (async () => {

@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, Ref } from 'react';
 
 import { PixelIcon, type PixelIconName } from './PixelIcon.js';
 
@@ -27,6 +27,8 @@ type ButtonSize = keyof typeof sizes;
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** React 19 passes refs to function components as a prop. */
+  ref?: Ref<HTMLButtonElement>;
   /** A pixel icon drawn left of the label, centred on it. */
   icon?: PixelIconName;
 }

@@ -14,6 +14,7 @@ import { expectOverlayCount, expectOverlayVisibleWithTexts } from '../../helpers
 import { appendJsonlRecord, createClaudeTranscript } from '../../helpers/team';
 import {
   addDirectory,
+  directoryPencil,
   getDirectoryModal,
   getDirectorySuggestions,
   getLaunchDrawer,
@@ -121,7 +122,7 @@ test.describe('Standalone / user-defined Directories', () => {
     const row = drawer.getByRole('button', { name: 'Side Project', exact: true });
     // User-defined: no host badge, and a pencil to re-open the modal on it.
     await expect(row.getByText('host', { exact: true })).toHaveCount(0);
-    await expect(drawer.getByRole('button', { name: 'Edit Side Project' })).toBeVisible();
+    await expect(await directoryPencil(page, drawer, 'Side Project')).toBeVisible();
 
     await row.click();
 
@@ -177,11 +178,7 @@ test.describe('Standalone / user-defined Directories', () => {
     await expectOverlayVisibleWithTexts(page, ['Running: npm test', 'Doomed Project']);
 
     // Delete through the pencil's modal.
-    await (
-      await openLaunchDrawer(page)
-    )
-      .getByRole('button', { name: 'Edit Doomed Project' })
-      .click();
+    await (await directoryPencil(page, await openLaunchDrawer(page), 'Doomed Project')).click();
     const modal = getDirectoryModal(page);
     await modal.getByRole('button', { name: 'Delete', exact: true }).click();
     await expect(modal).toBeHidden();

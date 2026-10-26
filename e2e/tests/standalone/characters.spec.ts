@@ -1,10 +1,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import type { Page } from '@playwright/test';
+
 import { expect, test } from '../../fixtures/standalone';
+import { arrangeNextClaudeInvocation, claudeScenario } from '../../helpers/mock-claude';
+import { getLaunchDrawer } from '../../helpers/webview';
 
 // Profile edits reach characters.json only when the view's Save is pressed.
 const SAVE_TIMEOUT_MS = 10_000;
+
+/** Agents opens the roster; a card's hover pencil opens the editor on it. */
+async function editCharacter(page: Page, index: number) {
+  await page.getByRole('button', { name: 'Roster', exact: true }).click();
+  const card = page.getByTestId('character-picker').getByRole('button', { name: /^Launch as / });
+  await card.nth(index).hover();
+  await page
+    .getByTestId('character-picker')
+    .getByRole('button', { name: /^Edit / })
+    .nth(index)
+    .click();
+}
 
 test.describe('Standalone / Characters', () => {
   test('a part picked in the Characters view is saved by Save and survives a reload @area:standalone', async ({
@@ -17,7 +33,7 @@ test.describe('Standalone / Characters', () => {
         ? (JSON.parse(fs.readFileSync(profilesFile, 'utf-8')) as { name?: string; hat?: string }[])
         : null;
 
-    await page.getByRole('button', { name: 'Characters', exact: true }).click();
+    await editCharacter(page, 0);
     const view = page.locator('.chv-panel');
     await expect(view.getByRole('region', { name: 'Roster' })).toBeVisible();
     // the six default profiles
@@ -58,7 +74,7 @@ test.describe('Standalone / Characters', () => {
 
     // a reload reads the saved cast back
     await page.reload();
-    await page.getByRole('button', { name: 'Characters', exact: true }).click();
+    await editCharacter(page, 0);
     await view.getByRole('tab', { name: /Hat/ }).click();
     await expect(view.getByRole('button', { name: 'Plain cap' })).toHaveAttribute(
       'aria-pressed',
@@ -78,7 +94,7 @@ test.describe('Standalone / Characters items', () => {
         ? (JSON.parse(fs.readFileSync(path.join(dir, name), 'utf-8')) as T)
         : null;
 
-    await page.getByRole('button', { name: 'Characters', exact: true }).click();
+    await editCharacter(page, 0);
     const view = page.locator('.chv-panel');
     await view.getByRole('tab', { name: /Hair/ }).click();
     await view.getByRole('button', { name: 'Bob', exact: true }).click();
@@ -109,8 +125,96 @@ test.describe('Standalone / Characters items', () => {
     expect(read<{ hair?: string }[]>('characters.json')?.[0]?.hair).toBe(item.id);
 
     await page.reload();
-    await page.getByRole('button', { name: 'Characters', exact: true }).click();
+    await editCharacter(page, 1);
     await view.getByRole('tab', { name: /Hair/ }).click();
     await expect(view.getByRole('button', { name: 'My bob', exact: true })).toBeVisible();
+  });
+});
+
+test.describe('Standalone / Characters roster', () => {
+  test.skip(process.platform === 'win32', 'PTY spawn of the .cmd mock shim is untested on Windows');
+  test.use({ standaloneOptions: { mockClaude: true } });
+
+  test('Agents opens the roster beside the + button: a click launches as that character, the pencil edits it @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('desktop roster launch').holdOpenFor(60_000).build(),
+    );
+
+    // The toolbar: + (New agent) with the Agents arrow beside it, then
+    // Layout and Settings.
+    const toolbar = page.getByRole('button', { name: 'New agent' }).locator('xpath=../../..');
+    await expect(toolbar.getByRole('button')).toHaveText(['', '', 'Layout', 'Settings']);
+
+    // Roster opens the roster, not the Characters view, starting with + New.
+    const characters = page.getByRole('button', { name: 'Roster', exact: true });
+    await characters.click();
+    const roster = page.getByTestId('character-picker');
+    await expect(roster).toBeVisible();
+    await expect(page.locator('.chv-root')).toHaveCount(0);
+    await expect(roster.getByRole('button', { name: '+ New' })).toBeVisible();
+
+    // A second click closes it; a third reopens it.
+    await characters.click();
+    await expect(roster).toHaveCount(0);
+    await characters.click();
+
+    // A click picks the character and opens the + button's drawer for it…
+    const picked = roster.getByRole('button', { name: /^Launch as / }).nth(3);
+    const name = ((await picked.getAttribute('aria-label')) ?? '').replace('Launch as ', '');
+    await picked.click();
+    await expect(roster).toHaveCount(0);
+    const drawer = getLaunchDrawer(page);
+    await expect(drawer).toContainText(`Launch ${name} in`);
+
+    // …and the agent launched there wears exactly that character.
+    await drawer
+      .getByRole('button', { name: path.basename(standalone.workspaceDir), exact: true })
+      .click();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (window.__pixelAgentsTestHooks?.getCharacters?.() ?? [])
+            .filter((ch) => ch.id > 0 && !ch.isGreeter)
+            .map(({ palette, repeat }) => ({ palette, repeat })),
+        ),
+      )
+      .toEqual([{ palette: 3, repeat: 0 }]);
+
+    // The roster now lists the last-used character first, the rest in cast
+    // order: 3, 0, 1, 2, …
+    await page.getByRole('button', { name: 'Roster', exact: true }).click();
+    await expect(roster.getByRole('button', { name: /^Launch as / }).first()).toHaveAttribute(
+      'aria-label',
+      `Launch as ${name}`,
+    );
+    await page.getByRole('button', { name: 'Roster', exact: true }).click();
+
+    // The pencil on a hovered card opens the view on that character (the
+    // third card: character 1).
+    await editCharacter(page, 2);
+    await expect(page.locator('.chv-panel')).toBeVisible();
+    await expect(page.getByTestId('character-picker')).toHaveCount(0);
+    await expect(page.locator('.chv-card').nth(1)).toHaveAttribute('aria-current', 'true');
+  });
+});
+
+test.describe('Standalone / Characters roster in a narrow window', () => {
+  test.skip(process.platform === 'win32', 'PTY spawn of the .cmd mock shim is untested on Windows');
+  test.use({ standaloneOptions: { mockClaude: true, viewport: { width: 390, height: 844 } } });
+
+  test('a narrow desktop window gets the phone strip but keeps its scrollbar @area:standalone', async ({
+    page,
+    standalone: _launched,
+  }) => {
+    // Phone layout (the + card), but a mouse: the strip still has a scrollbar.
+    await expect(page.getByTitle('Launch agent', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Roster', exact: true }).click();
+    const roster = page.getByTestId('character-picker');
+    await expect(roster).toHaveAttribute('aria-hidden', 'false');
+    await expect(roster.locator('> div')).toHaveCSS('scrollbar-width', 'thin');
   });
 });

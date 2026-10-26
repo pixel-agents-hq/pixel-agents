@@ -30,6 +30,9 @@ interface MobileShellProps {
   onCloseAgent: (agentId: number) => void;
   /** Persist a dragged card order; absent in a read-only office. */
   onReorder?: (order: number[]) => void;
+  /** Opens the Characters view; absent in a read-only office, which hides the
+   *  roster arrow beside the + card. */
+  onOpenCharacters?: () => void;
   /** The software keyboard is up (useKeyboardViewport). */
   keyboardOpen: boolean;
 }
@@ -55,6 +58,7 @@ export function MobileShell({
   onEditDirectory,
   onCloseAgent,
   onReorder,
+  onOpenCharacters,
   keyboardOpen,
 }: MobileShellProps) {
   const shellRef = useRef<HTMLDivElement>(null);
@@ -130,6 +134,9 @@ export function MobileShell({
         directories={directories}
         onAddDirectory={onAddDirectory}
         onEditDirectory={onEditDirectory}
+        // On both pages: the roster's strip slides up over the terminal's
+        // bottom rows only while it is open.
+        onOpenCharacters={onOpenCharacters}
         canLaunch={terminalAvailable}
         launchUnavailableReason={terminalUnavailableReason}
         getAppearance={drawer.getAppearance}

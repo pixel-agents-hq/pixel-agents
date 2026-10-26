@@ -165,6 +165,18 @@ export const ICONS = {
     '.##..##.',
     '.##..##.',
   ],
+  // A true triangle (one pixel in per row each side), centred top to
+  // bottom so it stays centred turned upside down.
+  down: [
+    '........',
+    '........',
+    '########',
+    '.######.',
+    '..####..',
+    '...##...',
+    '........',
+    '........',
+  ],
   // A chevron pointing right (the `terminal` prompt's own): hide the
   // desktop terminal panel off to the right. Six rows, so it centres.
   hide: [

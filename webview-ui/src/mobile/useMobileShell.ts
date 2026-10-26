@@ -14,9 +14,10 @@ export interface MobileShellController {
   toggleView: () => void;
   /** A tap on an agent card. */
   selectCard: (agentId: number) => void;
-  /** A Directory picked from the + card's drawer: launch into it. App
-   *  slides over once the new terminal appears (`drawer.lastLaunched`). */
-  launch: (directory: Directory) => void;
+  /** A Directory picked from the + card's drawer: launch into it (wearing
+   *  `palette` when a character was picked first). App slides over once the
+   *  new terminal appears (`drawer.lastLaunched`). */
+  launch: (directory: Directory, palette?: number) => void;
 }
 
 interface MobileShellInputs {
@@ -24,7 +25,7 @@ interface MobileShellInputs {
   terminalAgentIds: number[];
   drawer: TerminalDrawerController;
   focusedAgentId: number | null;
-  launchAgent: (directory: Directory) => void;
+  launchAgent: (directory: Directory, palette?: number) => void;
 }
 
 /**

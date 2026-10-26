@@ -7,6 +7,9 @@
  * clothes colour) is the webview's business; here a copy is only a number.
  */
 
+import { pickDirectoryCharacter } from './directoryCharacters.js';
+import type { DirectoryCharacterOrder } from './messages.js';
+
 /**
  * An agent's look. `repeat` counts the copies of one character in the
  * office: 0 is the character as drawn, 1 its first repeat, 2 the next…
@@ -34,24 +37,30 @@ export function repeatFor(palette: number, worn: Iterable<WornLook>): number {
 /**
  * A character picked at random for a new agent, by design not the least-used
  * one: who walks in is a surprise. It never repeats one already in the office
- * while some character is free. Only when the whole cast is in the office
+ * while some character is free, and among the free ones it prefers those no
+ * Directory claims as a default (`reserved`), so a Directory's characters stay
+ * available for its own launches. Only when the whole cast is in the office
  * does it repeat one.
  *
  * @param paletteCount - Total number of available palettes (e.g., 6)
  * @param worn - The looks of the agents already in the office
  * @param random - Source of randomness in [0, 1) (tests pass a fixed one)
+ * @param reserved - Palettes to leave for whoever claims them (Directory defaults)
  */
 export function pickRandomPalette(
   paletteCount: number,
   worn: readonly WornLook[],
   random: () => number = Math.random,
+  reserved: ReadonlySet<number> = new Set(),
 ): number {
   const wornPalettes = new Set(worn.map((look) => look.palette));
   const free: number[] = [];
   for (let palette = 0; palette < paletteCount; palette++) {
     if (!wornPalettes.has(palette)) free.push(palette);
   }
-  if (free.length > 0) return free[Math.floor(random() * free.length)];
+  const unclaimed = free.filter((palette) => !reserved.has(palette));
+  const pool = unclaimed.length > 0 ? unclaimed : free;
+  if (pool.length > 0) return pool[Math.floor(random() * pool.length)];
   return Math.floor(random() * paletteCount);
 }
 
@@ -59,15 +68,40 @@ export interface LookRequest {
   paletteCount: number;
   /** The looks of the agents already in the office. */
   worn: readonly WornLook[];
+  /** A character picked from the roster: worn even when someone else wears it. */
+  picked?: number;
+  /** The launch Directory's default characters (pickDirectoryCharacter). */
+  directory?: { characters?: readonly number[]; characterOrder?: DirectoryCharacterOrder };
+  /** Characters a random pick leaves for their Directories (pickRandomPalette). */
+  reserved?: ReadonlySet<number>;
   random?: () => number;
 }
 
+/** A roster pick as it arrives (`launchAgent.palette`, any value), when it
+ *  names a character in the cast: an integer in [0, paletteCount). */
+export function rosterPick(raw: unknown, paletteCount: number): number | undefined {
+  if (typeof raw !== 'number' || !Number.isInteger(raw)) return undefined;
+  return raw >= 0 && raw < paletteCount ? raw : undefined;
+}
+
 /**
- * A new agent's look: a random character no one wears (pickRandomPalette).
- * An agent wearing a character already in the office is its next repeat.
+ * A new agent's look, first match wins: the roster pick, else one of the
+ * launch Directory's defaults no one wears, else a random pick. Whichever it
+ * is, an agent wearing a character already in the office is its next repeat.
  */
 export function chooseLook(request: LookRequest): Look {
-  const { paletteCount, worn, random = Math.random } = request;
-  const palette = pickRandomPalette(paletteCount, worn, random);
+  const { paletteCount, worn, directory, random = Math.random } = request;
+  const wornPalettes = new Set<number>();
+  for (const look of worn) if (look.palette !== undefined) wornPalettes.add(look.palette);
+  const palette =
+    rosterPick(request.picked, paletteCount) ??
+    pickDirectoryCharacter(
+      directory?.characters ?? [],
+      directory?.characterOrder ?? 'priority',
+      paletteCount,
+      wornPalettes,
+      random,
+    ) ??
+    pickRandomPalette(paletteCount, worn, random, request.reserved);
   return { palette, repeat: repeatFor(palette, worn) };
 }

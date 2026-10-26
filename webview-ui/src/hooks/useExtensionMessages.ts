@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { HooksConsentRequest } from '../../../core/src/messages.js';
+import type { Directory, HooksConsentRequest } from '../../../core/src/messages.js';
 import { handleCastMessage } from '../characters/castMessages.js';
 import { castStore } from '../characters/castStore.js';
 import { startOfficeSync } from '../characters/officeSprites.js';
@@ -69,13 +69,8 @@ interface FurnitureAsset {
   frame?: number;
 }
 
-export interface Directory {
-  name: string;
-  path: string;
-  /** Where the entry came from. Host-contributed entries (VS Code's workspace
-   *  folders, standalone's start directory) are read-only in the office. */
-  source: 'user' | 'host';
-}
+/** A Directory as the wire carries it (core/asyncapi.yaml documents its fields). */
+export type { Directory };
 
 /** A refused saveDirectory, shown inline in the Directory modal. `seq` rises
  *  with every rejection so a repeat of the same one still reads as new. */

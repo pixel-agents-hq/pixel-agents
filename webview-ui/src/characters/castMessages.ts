@@ -1,12 +1,15 @@
 /**
  * The cast's server messages, handled here so the message hook only hands them over
  * (like usage/usageStore.ts handleUsageMessage): the character profiles and items, the
- * looks they move agents to, and the external char_N.png sprites.
+ * looks they move agents to, the roster's recency, and the external char_N.png sprites.
  */
 
 import type { CharacterDirectionSprites } from '../../../core/src/assets/types.js';
 import { parseCharacterProfiles } from '../../../core/src/characterProfiles.js';
-import type { CharacterProfilesLoaded } from '../../../core/src/messages.js';
+import type {
+  CharacterProfilesLoaded,
+  RecentCharactersLoaded,
+} from '../../../core/src/messages.js';
 import { parseWardrobeItems } from '../../../core/src/wardrobeItems.js';
 import { castStore } from './castStore.js';
 import { setExternalCharacterSprites } from './officeSprites.js';
@@ -29,6 +32,10 @@ export function handleCastMessage(msg: { type?: unknown }, office: CastOffice): 
       loaded.saveId,
       loaded.items ? (parseWardrobeItems(loaded.items) ?? undefined) : undefined,
     );
+    return true;
+  }
+  if (msg.type === 'recentCharactersLoaded') {
+    castStore.receiveRecent((msg as RecentCharactersLoaded).recent);
     return true;
   }
   if (msg.type === 'characterSpritesLoaded') {

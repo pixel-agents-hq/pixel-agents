@@ -105,6 +105,7 @@ components:
         # Assets
         - $ref: '#/components/schemas/FurnitureAssetsLoaded'
         - $ref: '#/components/schemas/CharacterProfilesLoaded'
+        - $ref: '#/components/schemas/RecentCharactersLoaded'
         - $ref: '#/components/schemas/CharacterSpritesLoaded'
         - $ref: '#/components/schemas/PetSpritesLoaded'
         - $ref: '#/components/schemas/FloorTilesLoaded'
@@ -915,6 +916,23 @@ components:
           items:
             type: integer
 
+    RecentCharactersLoaded:
+      description: |
+        The characters launched most recently, most recent first (indices into
+        the character profiles), shared by every office: the launch roster
+        lists them first, then the rest in cast order. Sent on `webviewReady`
+        and broadcast after every launch that wore a roster pick.
+      type: object
+      additionalProperties: false
+      required: [type, recent]
+      properties:
+        type:
+          const: recentCharactersLoaded
+        recent:
+          type: array
+          items:
+            type: integer
+
     ExternalAssetDirectoriesUpdated:
       description: External asset directory list changed (after add/remove).
       type: object
@@ -1115,6 +1133,13 @@ components:
         directoryPath:
           type: string
           description: Path of the Directory to launch into.
+        palette:
+          type: integer
+          minimum: 0
+          description: >-
+            Character the agent wears, as an index into the character profiles
+            (picked from the roster). Absent, the Directory's default characters
+            apply, else the server picks one at random.
 
     FocusAgent:
       description: Focus an agent's terminal.
@@ -1472,6 +1497,14 @@ components:
         previousPath:
           type: string
           description: Path of the entry being edited. Absent when adding.
+        characters:
+          type: array
+          description: Default characters (profile indices), highest priority first.
+          items:
+            type: integer
+            minimum: 0
+        characterOrder:
+          $ref: '#/components/schemas/DirectoryCharacterOrder'
 
     RemoveDirectory:
       description: >-
@@ -1579,6 +1612,26 @@ components:
           type: string
         source:
           $ref: '#/components/schemas/DirectorySource'
+        characters:
+          type: array
+          description: >-
+            Default characters for agents launched here, as indices into the
+            character profiles, highest priority first. Absent or empty = no
+            defaults (the server picks at random). A roster pick always wins.
+          items:
+            type: integer
+            minimum: 0
+        characterOrder:
+          $ref: '#/components/schemas/DirectoryCharacterOrder'
+
+    DirectoryCharacterOrder:
+      description: |
+        How a launch into a Directory picks from its default `characters`.
+        `priority`: the first one no agent in the office wears; all worn, a random
+        pick from the whole cast. `random`: a random one no agent wears; all worn,
+        a random one of them. Absent = `priority`.
+      type: string
+      enum: [priority, random]
 
     DirectorySource:
       description: |

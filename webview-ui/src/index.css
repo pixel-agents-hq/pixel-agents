@@ -348,6 +348,42 @@
     scrollbar-width: thin;
     scrollbar-color: var(--color-border) var(--color-bg-dark);
   }
+
+  /* A slim sideways scrollbar (the desktop roster): its track transparent, so
+     only the square thumb shows. Overflow is left to the element, which may
+     flip itself to put the bar on top. */
+  .quiet-scrollbar-x::-webkit-scrollbar {
+    height: 6px;
+  }
+  .quiet-scrollbar-x::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .quiet-scrollbar-x::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 0;
+  }
+  .quiet-scrollbar-x::-webkit-scrollbar-thumb:hover {
+    background: var(--color-accent);
+  }
+  /* Firefox only: in Chrome these would override the 6px ::-webkit-scrollbar. */
+  @supports not selector(::-webkit-scrollbar) {
+    .quiet-scrollbar-x {
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-border) transparent;
+    }
+  }
+
+  /* No scrollbar where the finger scrolls (touch screens), whatever the
+     width: a narrow desktop window keeps its .pixel-scrollbar, a phone has
+     nothing to drag it with. After .pixel-scrollbar so it wins. */
+  @media (pointer: coarse) {
+    .touch-no-scrollbar {
+      scrollbar-width: none;
+    }
+    .touch-no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+  }
 }
 
 @keyframes pixel-pulse {

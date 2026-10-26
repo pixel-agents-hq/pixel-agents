@@ -178,10 +178,12 @@ function App() {
   });
 
   const { expectLaunch } = terminalDrawer;
+  // palette: the character picked from the roster (absent = the Directory's
+  // default characters, else a random pick, server-side).
   const launchIntoDirectory = useCallback(
-    (directory: Directory) => {
+    (directory: Directory, palette?: number) => {
       expectLaunch();
-      transport.send({ type: 'launchAgent', directoryPath: directory.path });
+      transport.send({ type: 'launchAgent', directoryPath: directory.path, palette });
     },
     [expectLaunch],
   );
@@ -703,7 +705,8 @@ function App() {
       )}
 
       {/* Mobile: Settings floats top-left (the layout editor stays desktop-
-            only — its tools are drag/hover-driven). */}
+            only — its tools are drag/hover-driven). The roster opens from the
+            arrow on the + card (MobileAgentBar). */}
       {isMobile && !isDebugMode && !officeReadOnly && (
         <div className="absolute mobile-safe-top left-8 z-20 flex gap-6">
           <Button
@@ -714,15 +717,6 @@ function App() {
             icon="settings"
           >
             Settings
-          </Button>
-          <Button
-            size="sm"
-            variant={isCharactersOpen ? 'active' : 'default'}
-            className="border-border! shadow-pixel"
-            onClick={openCharacters}
-            icon="characters"
-          >
-            Characters
           </Button>
         </div>
       )}
@@ -787,6 +781,7 @@ function App() {
           onEditDirectory={directoryEditor.edit}
           onCloseAgent={handleCloseAgent}
           onReorder={officeReadOnly ? undefined : saveCardOrder}
+          onOpenCharacters={officeReadOnly ? undefined : openCharacters}
           keyboardOpen={keyboard.keyboardOpen}
         />
       ) : (

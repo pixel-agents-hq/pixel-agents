@@ -4,6 +4,7 @@ import path from 'node:path';
 import { expect, test } from '../../fixtures/standalone';
 import { buildSeedLayout } from '../../helpers/layout-seed';
 import {
+  directoryPencil,
   getDirectoryAreas,
   getDirectoryModal,
   openDirectoryModal,
@@ -119,7 +120,7 @@ test.describe('Standalone / Directory Area mapping', () => {
 
     // Reopened, the entry still shows its Area.
     const drawer = await openLaunchDrawer(page);
-    await drawer.getByRole('button', { name: `Edit ${hostName}` }).click();
+    await (await directoryPencil(page, drawer, hostName)).click();
     const reopened = getDirectoryModal(page);
     await expect(reopened).toBeVisible();
     await expect(
