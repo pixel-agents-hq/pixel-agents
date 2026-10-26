@@ -384,11 +384,15 @@ function App() {
 
   // Cascade panel row click: like a card click, but a sub-agent's focus goes to
   // its parent's terminal (the sub has none of its own).
-  const handleCascadeSelect = useCallback((agentId: number) => {
-    const os = getOfficeState();
-    transport.send({ type: 'focusAgent', id: os.terminalOwnerOf(agentId) });
-    os.selectAndFollow(agentId);
-  }, []);
+  const handleCascadeSelect = useCallback(
+    (agentId: number) => {
+      const os = getOfficeState();
+      // A read-only office may only watch: focusing a terminal would be refused.
+      if (!officeReadOnly) transport.send({ type: 'focusAgent', id: os.terminalOwnerOf(agentId) });
+      os.selectAndFollow(agentId);
+    },
+    [officeReadOnly],
+  );
 
   const officeState = getOfficeState();
 
@@ -672,18 +676,35 @@ function App() {
         />
       )}
 
-      {/* Mobile: Settings floats top-left (the layout editor stays desktop-
-            only — its tools are drag/hover-driven). */}
-      {isMobile && !isDebugMode && !officeReadOnly && (
-        <div className="absolute mobile-safe-top left-8 z-20 flex gap-4">
+      {/* The cascade panel only shows, so a read-only office keeps it: the one
+          control left where the toolbar would be. */}
+      {!isMobile && officeReadOnly && (
+        <div className="absolute left-10 bottom-10 z-20 pixel-panel p-4">
           <Button
-            size="sm"
-            variant={isSettingsOpen ? 'active' : 'default'}
-            className="border-border! shadow-pixel"
-            onClick={() => setIsSettingsOpen((v) => !v)}
+            variant={isCascadeOpen ? 'active' : 'default'}
+            onClick={toggleCascade}
+            title="Model cascade and token spend"
+            aria-pressed={isCascadeOpen}
           >
-            Settings
+            Cascade
           </Button>
+        </div>
+      )}
+
+      {/* Mobile: Settings floats top-left (the layout editor stays desktop-
+            only — its tools are drag/hover-driven). Read-only keeps Cascade. */}
+      {isMobile && !isDebugMode && (
+        <div className="absolute mobile-safe-top left-8 z-20 flex gap-4">
+          {!officeReadOnly && (
+            <Button
+              size="sm"
+              variant={isSettingsOpen ? 'active' : 'default'}
+              className="border-border! shadow-pixel"
+              onClick={() => setIsSettingsOpen((v) => !v)}
+            >
+              Settings
+            </Button>
+          )}
           <Button
             size="sm"
             variant={isCascadeOpen ? 'active' : 'default'}
