@@ -143,6 +143,38 @@ export const ICONS = {
     '....##..',
     '.....#..',
   ],
+  // A window with its left pane filled (open) or empty (shut): the
+  // desktop sidebar's toggle.
+  sidebarShut: [
+    '########',
+    '#.#....#',
+    '#.#....#',
+    '#.#....#',
+    '#.#....#',
+    '#.#....#',
+    '#.#....#',
+    '########',
+  ],
+  sidebar: [
+    '########',
+    '###....#',
+    '###....#',
+    '###....#',
+    '###....#',
+    '###....#',
+    '###....#',
+    '########',
+  ],
+  menu: [
+    '########',
+    '########',
+    '........',
+    '########',
+    '########',
+    '........',
+    '########',
+    '########',
+  ],
   // The phone's view toggle. Both fill the whole 8×8, like menu, so a
   // square button centres them exactly.
   terminal: [

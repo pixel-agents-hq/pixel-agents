@@ -14,14 +14,18 @@ import { PixelText } from './ui/PixelText.js';
 interface ZoomControlsProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
+  /** The conversation sidebar's toggle, above the zoom buttons (only where there is a sidebar). */
+  sidebar?: { open: boolean; onToggle: () => void };
 }
 
-export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
+export function ZoomControls({ zoom, onZoomChange, sidebar }: ZoomControlsProps) {
   const [showLevel, setShowLevel] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevZoomRef = useRef(zoom);
+  // Bumped per toggle: remounts the icon so its pop plays (never on first paint).
+  const [toggles, setToggles] = useState(0);
 
   const minDisabled = zoom <= ZOOM_MIN;
   const maxDisabled = zoom >= ZOOM_MAX;
@@ -72,6 +76,23 @@ export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
 
       {/* Vertically stacked round buttons — top-left */}
       <div className="absolute top-8 left-8 z-10 flex flex-col gap-4">
+        {sidebar && (
+          <Button
+            size="icon_lg"
+            variant={sidebar.open ? 'active' : 'default'}
+            onClick={() => {
+              setToggles((n) => n + 1);
+              sidebar.onToggle();
+            }}
+            aria-pressed={sidebar.open}
+            className="border-border! shadow-pixel mb-4"
+            title={sidebar.open ? 'Hide conversations' : 'Show conversations'}
+          >
+            <span key={toggles} className={`flex ${toggles > 0 ? 'pixel-pop' : ''}`}>
+              <PixelIcon name={sidebar.open ? 'sidebar' : 'sidebarShut'} />
+            </span>
+          </Button>
+        )}
         <Button
           size="icon_lg"
           onClick={() => onZoomChange(zoom + 1)}

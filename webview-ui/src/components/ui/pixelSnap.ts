@@ -14,3 +14,11 @@ export function devicePixelsPerArtPixel(scale: number, dpr: number): number {
   // The epsilon absorbs float error in a product that should be whole.
   return Math.max(1, Math.floor(scale * dpr + 1e-6));
 }
+
+/** One device pixel less per art pixel than `scale` gives: the crisp size
+ *  just below it. A 1x screen has nothing between 1 and 2 CSS px, so there
+ *  (and wherever it would drop under half of `scale`) `scale` stays. */
+export function devicePixelsOneStepSmaller(scale: number, dpr: number): number {
+  const full = devicePixelsPerArtPixel(scale, dpr);
+  return full - 1 >= full / 2 && dpr >= 2 ? full - 1 : full;
+}

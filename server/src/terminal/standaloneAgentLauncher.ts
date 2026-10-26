@@ -47,6 +47,10 @@ export interface LaunchStandaloneAgentOptions {
   /** The character picked from the roster (a palette index). Out of range or
    *  absent, the Directory's default characters apply, else a random pick. */
   palette?: number;
+  /** Resume this past session instead of starting a new one: same session
+   *  id, same transcript (read from its end), and the seat its agent sat in
+   *  when that one is free. */
+  resume?: { sessionId: string; transcript: string; seatId?: string };
   cols?: number;
   rows?: number;
 }
@@ -67,10 +71,11 @@ export function launchStandaloneAgent(
   }
 
   const cwd = options.directoryPath ?? process.cwd();
-  const sessionId = crypto.randomUUID();
+  const sessionId = options.resume?.sessionId ?? crypto.randomUUID();
 
   const launch = provider.buildLaunchCommand?.(sessionId, cwd, {
     bypassPermissions: options.bypassPermissions,
+    resume: options.resume !== undefined,
   });
   if (!launch) {
     console.error('[Pixel Agents] Terminal: provider.buildLaunchCommand is not implemented');
@@ -82,7 +87,10 @@ export function launchStandaloneAgent(
     console.error('[Pixel Agents] Terminal: provider returned no session dirs');
     return null;
   }
-  const projectDir = dirs[0];
+  // A resumed session's transcript is wherever the CLI filed it (under the
+  // Directory's resolved path, when it was reached through a symlink).
+  const jsonlFile = options.resume?.transcript ?? path.join(dirs[0], `${sessionId}.jsonl`);
+  const projectDir = path.dirname(jsonlFile);
 
   const id = store.nextAgentId.current++;
 
@@ -96,7 +104,7 @@ export function launchStandaloneAgent(
     // restore paths act on -- a PTY agent must be excluded from both.
     isExternal: false,
     projectDir,
-    jsonlFile: path.join(projectDir, `${sessionId}.jsonl`),
+    jsonlFile,
     // The character's origin label (and its Area-mapping key): the name of the
     // Directory it was launched into, as the user named it — so an entry called
     // "Side Project" labels its agents that, not "side-project", and the Areas
@@ -104,7 +112,16 @@ export function launchStandaloneAgent(
     // for a cwd that is no Directory at all.
     directoryName: directory?.name ?? directoryNameFor(cwd),
     providerId: provider.id,
+    seatId: options.resume?.seatId,
   });
+  if (options.resume) {
+    // Its history is the past: replaying it would resurrect finished tools.
+    try {
+      agent.fileOffset = fs.statSync(agent.jsonlFile).size;
+    } catch {
+      // No transcript after all: read it from the start once it appears.
+    }
+  }
 
   // Server-side, like every other creation path: the palette rides the
   // agentCreated broadcast and is persisted with the agent, so a reload
@@ -131,12 +148,14 @@ export function launchStandaloneAgent(
 
   admitTerminalAgent(deps, agent, session);
   // A fresh session starts with an empty context: a full gauge from the spawn on.
-  clearContextUsage(id, store);
+  // A resumed one keeps its gauge, read from its transcript.
+  if (!options.resume) clearContextUsage(id, store);
   runtime.activeAgentId.current = id;
   store.persist();
 
   const pid = session.pid !== null ? ` (pid ${session.pid})` : '';
-  console.log(`[Pixel Agents] Terminal: Agent ${id} - spawned ${launch.command}${pid} in ${cwd}`);
+  const what = options.resume ? `resumed session ${sessionId}` : `spawned ${launch.command}`;
+  console.log(`[Pixel Agents] Terminal: Agent ${id} - ${what}${pid} in ${cwd}`);
   return id;
 }
 
@@ -260,8 +279,9 @@ function admitTerminalAgent(
  *
  * Hooks (the default) already route by sessionId, so this is what backfills tool
  * content and keeps hooks-off standalone working at all. Unlike the VS Code
- * path this does NOT implement /resume reassignment -- standalone always spawns
- * a fresh --session-id, so there's no resume case to detect here.
+ * path this does NOT implement /resume reassignment: a launch either names a
+ * fresh --session-id or --resume's an existing one, so the transcript is
+ * known up front either way.
  */
 function startJsonlPoll(deps: LaunchStandaloneAgentDeps, id: number, agent: AgentState): void {
   const { store, runtime } = deps;

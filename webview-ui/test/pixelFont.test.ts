@@ -7,6 +7,7 @@ import {
   MONTHS,
   splitLabel,
 } from '../src/components/ui/pixelFont.js';
+import { timeAgo } from '../src/conversations/timeAgo.js';
 
 describe('splitLabel', () => {
   it('draws number words in glyphs and leaves the other words as text', () => {
@@ -48,7 +49,12 @@ describe('glyphRects', () => {
   });
 });
 
-describe('MONTHS', () => {
+describe('timeAgo', () => {
+  it('writes an older date with the pixel font month names', () => {
+    const at = new Date(2026, 9, 13, 12).getTime();
+    expect(timeAgo(at, at + 30 * 86_400_000)).toBe('OCT 13');
+  });
+
   it('has a glyph for every letter of every month', () => {
     for (const month of MONTHS) {
       for (const ch of month) expect(GLYPHS[ch]).toBeDefined();

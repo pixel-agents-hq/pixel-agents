@@ -9,22 +9,28 @@ import type { TouchPoint } from '../touch/touchPrimitives.js';
 import { findTouch } from '../touch/touchPrimitives.js';
 
 /**
- * The edge swipe between the mobile shell's two pages, as a pure state
- * machine (DOM-free, tested on the Node runner); useEdgeSwipe feeds it touch
- * events and carries out the effects.
+ * The mobile shell's edge swipes, as a pure state machine (DOM-free, tested
+ * on the Node runner); useEdgeSwipe feeds it touch events and carries out the
+ * effects. Each edge pulls in a panel: in the office the right edge pulls the
+ * terminal and the left edge the menu; in the terminal the left edge pulls
+ * the office back.
  *
  * A touch in the edge strip is ARMED — only preventDefault runs, which keeps
  * iOS's own history edge-swipe away — and is CLAIMED as a swipe only once its
  * movement is clearly horizontal. Until then everything else sees the touch
  * normally, so edge taps still select characters or focus the terminal;
- * vertical intent hands it back for good. A claimed drag moves the track 1:1
+ * vertical intent hands it back for good. A claimed drag moves the panel 1:1
  * with the finger, and the release either commits (distance or flick
  * velocity) or settles back.
  */
 
-/** Which page the swipe heads for: from the office (right edge, swipe left)
- *  to the terminal, or from the terminal (left edge, swipe right) back. */
-export type SwipeTarget = 'terminal' | 'office';
+/** The edge a swipe starts from: from the left edge it runs right, from the
+ *  right edge left. */
+export type SwipeEdge = 'left' | 'right';
+
+/** The edges a swipe may start from now, each with how far its panel
+ *  travels (px). */
+export type SwipeEdges = Partial<Record<SwipeEdge, number>>;
 
 interface Tracking {
   id: number;
@@ -34,7 +40,8 @@ interface Tracking {
   lastT: number;
   /** px/ms, smoothed. */
   velocity: number;
-  width: number;
+  edge: SwipeEdge;
+  travel: number;
 }
 
 export type EdgeSwipeState =
@@ -47,7 +54,13 @@ export type EdgeSwipeEvent =
       /** Fingers currently down — to drop a stale arm whose end never came. */
       touches: readonly TouchPoint[];
       t: number;
-      shell: { left: number; right: number; width: number };
+      shell: { left: number; right: number };
+      edges: SwipeEdges;
+      /** Any touch inside `shell` may start the swipe, not only one in an
+       *  edge strip (an open panel swiped shut). Such an arm leaves the
+       *  touchstart alone: there is no OS edge gesture to keep away, and a
+       *  tap must still click. */
+      anywhere?: boolean;
       /** The touch began on something that opts out (a button, a selection handle). */
       optOut: boolean;
     }
@@ -56,18 +69,19 @@ export type EdgeSwipeEvent =
   | { type: 'cancel'; changed: readonly TouchPoint[] };
 
 export type EdgeSwipeEffect =
-  /** Armed: preventDefault the touchstart and keep listening on its target. */
-  | { type: 'arm' }
+  /** Armed: keep listening on its target, and (`blockNative`) preventDefault
+   *  the touchstart so the OS's own edge swipe stays away. */
+  | { type: 'arm'; blockNative: boolean }
   /** Stop listening on the armed target. */
   | { type: 'release' }
   /** Claimed: tell whatever was underneath that this touch is over; drag 1:1. */
   | { type: 'claim'; touchId: number }
   /** The event belongs to the swipe — stop it reaching anything else. */
   | { type: 'consume' }
-  /** Move the track to this translateX (px). */
-  | { type: 'drag'; translatePx: number }
-  | { type: 'commit' }
-  | { type: 'settle' };
+  /** Pull the edge's panel this far in (px, 0 to its travel). */
+  | { type: 'drag'; edge: SwipeEdge; px: number }
+  | { type: 'commit'; edge: SwipeEdge }
+  | { type: 'settle'; edge: SwipeEdge };
 
 export interface EdgeSwipeStep {
   state: EdgeSwipeState;
@@ -76,14 +90,12 @@ export interface EdgeSwipeStep {
 
 const IDLE: EdgeSwipeState = { phase: 'idle' };
 
+/** +1 for a swipe that runs right (from the left edge), -1 for one running left. */
+const direction = (edge: SwipeEdge) => (edge === 'left' ? 1 : -1);
+
 export const initialEdgeSwipeState: EdgeSwipeState = IDLE;
 
-export function reduceEdgeSwipe(
-  state: EdgeSwipeState,
-  event: EdgeSwipeEvent,
-  target: SwipeTarget,
-): EdgeSwipeStep {
-  const toTerminal = target === 'terminal';
+export function reduceEdgeSwipe(state: EdgeSwipeState, event: EdgeSwipeEvent): EdgeSwipeStep {
   switch (event.type) {
     case 'start': {
       const effects: EdgeSwipeEffect[] = [];
@@ -95,12 +107,16 @@ export function reduceEdgeSwipe(
         effects.push({ type: 'release' });
       }
       if (current.phase !== 'idle') return { state: current, effects };
-      const { touch, shell } = event;
-      const inZone = toTerminal
-        ? touch.clientX >= shell.right - MOBILE_EDGE_SWIPE_ZONE_PX
-        : touch.clientX <= shell.left + MOBILE_EDGE_SWIPE_ZONE_PX;
-      if (!inZone || event.optOut) return { state: current, effects };
-      effects.push({ type: 'arm' });
+      const { touch, shell, edges, anywhere = false } = event;
+      const zone = anywhere ? Infinity : MOBILE_EDGE_SWIPE_ZONE_PX;
+      const edge: SwipeEdge | null =
+        edges.left !== undefined && touch.clientX <= shell.left + zone
+          ? 'left'
+          : edges.right !== undefined && touch.clientX >= shell.right - zone
+            ? 'right'
+            : null;
+      if (!edge || event.optOut) return { state: current, effects };
+      effects.push({ type: 'arm', blockNative: !anywhere });
       return {
         state: {
           phase: 'armed',
@@ -110,7 +126,8 @@ export function reduceEdgeSwipe(
           lastX: touch.clientX,
           lastT: event.t,
           velocity: 0,
-          width: shell.width,
+          edge,
+          travel: edges[edge]!,
         },
         effects,
       };
@@ -137,11 +154,8 @@ export function reduceEdgeSwipe(
       const velocity =
         MOBILE_EDGE_SWIPE_VELOCITY_WEIGHT * ((t.clientX - state.lastX) / dt) +
         (1 - MOBILE_EDGE_SWIPE_VELOCITY_WEIGHT) * state.velocity;
-      const offset = toTerminal
-        ? Math.min(0, Math.max(-state.width, dx))
-        : Math.min(state.width, Math.max(0, dx));
-      const base = toTerminal ? 0 : -state.width;
-      effects.push({ type: 'consume' }, { type: 'drag', translatePx: base + offset });
+      const px = Math.min(state.travel, Math.max(0, dx * direction(state.edge)));
+      effects.push({ type: 'consume' }, { type: 'drag', edge: state.edge, px });
       return {
         state: { ...state, phase: 'claimed', lastX: t.clientX, lastT: event.t, velocity },
         effects,
@@ -153,14 +167,18 @@ export function reduceEdgeSwipe(
         return { state, effects: [] };
       }
       if (state.phase === 'armed') return { state: IDLE, effects: [{ type: 'release' }] };
-      const dir = toTerminal ? -1 : 1;
+      const dir = direction(state.edge);
       const dx = state.lastX - state.startX;
       const commit =
-        dx * dir > state.width * MOBILE_EDGE_SWIPE_COMMIT_RATIO ||
+        dx * dir > state.travel * MOBILE_EDGE_SWIPE_COMMIT_RATIO ||
         state.velocity * dir > MOBILE_EDGE_SWIPE_COMMIT_VELOCITY;
       return {
         state: IDLE,
-        effects: [{ type: 'release' }, { type: 'consume' }, { type: commit ? 'commit' : 'settle' }],
+        effects: [
+          { type: 'release' },
+          { type: 'consume' },
+          { type: commit ? 'commit' : 'settle', edge: state.edge },
+        ],
       };
     }
 
@@ -169,7 +187,7 @@ export function reduceEdgeSwipe(
         return { state, effects: [] };
       }
       const effects: EdgeSwipeEffect[] = [{ type: 'release' }];
-      if (state.phase === 'claimed') effects.push({ type: 'settle' });
+      if (state.phase === 'claimed') effects.push({ type: 'settle', edge: state.edge });
       return { state: IDLE, effects };
     }
   }

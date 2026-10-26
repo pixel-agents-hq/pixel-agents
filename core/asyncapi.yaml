@@ -127,6 +127,7 @@ components:
         - $ref: '#/components/schemas/DirectorySaved'
         - $ref: '#/components/schemas/DirectoryRejected'
         - $ref: '#/components/schemas/DirectorySuggestions'
+        - $ref: '#/components/schemas/ConversationsLoaded'
         # Terminal (standalone embedded terminal control plane)
         - $ref: '#/components/schemas/TerminalAvailability'
         - $ref: '#/components/schemas/TerminalSessionOpened'
@@ -167,6 +168,8 @@ components:
         - $ref: '#/components/schemas/SaveDirectory'
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/RequestDirectorySuggestions'
+        - $ref: '#/components/schemas/RequestConversations'
+        - $ref: '#/components/schemas/ResumeConversation'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
 
@@ -214,6 +217,12 @@ components:
         repeat:
           type: integer
           description: Server-assigned copy of its character the agent is (0 = the character as drawn, n = its nth repeat, which the office draws with its clothes in the nth repeat colour).
+        seatId:
+          type: string
+          description: >-
+            The seat the agent should take when it is free (a resumed
+            conversation's agent returns to where it sat). Absent, the office
+            picks one.
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -1029,6 +1038,59 @@ components:
           items:
             type: string
 
+    ConversationsLoaded:
+      description: |
+        The sidebar's recent conversations: for each Directory, the ones an
+        agent in the office is running (with `agentId`) and its newest past
+        ones (at most five), newest first. Sent point-to-point in reply to `requestConversations`
+        (never broadcast).
+      type: object
+      additionalProperties: false
+      required: [type, directories]
+      properties:
+        type:
+          const: conversationsLoaded
+        directories:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectoryConversations'
+
+    DirectoryConversations:
+      type: object
+      additionalProperties: false
+      required: [name, path, conversations]
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conversation'
+
+    Conversation:
+      type: object
+      additionalProperties: false
+      required: [sessionId, title, updatedAt]
+      properties:
+        sessionId:
+          type: string
+        title:
+          type: string
+          description: The title the coding agent gave the conversation (a user rename wins), else its last prompt.
+        updatedAt:
+          type: number
+          description: When the transcript last changed, in ms since the epoch.
+        palette:
+          type: integer
+          description: The character the conversation's agent wears (running) or wore, when the office saw it.
+        repeat:
+          type: integer
+        agentId:
+          type: integer
+          description: The agent in the office running it right now; absent for a past conversation.
+
     AgentDiagnostics:
       description: Connection diagnostics for all agents (response to requestDiagnostics).
       type: object
@@ -1530,6 +1592,34 @@ components:
       properties:
         type:
           const: requestDirectorySuggestions
+
+    RequestConversations:
+      description: >-
+        Ask for the sidebar's recent conversations; the host replies
+        `conversationsLoaded` to this client only.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: requestConversations
+
+    ResumeConversation:
+      description: >-
+        Resume a past conversation in a new terminal: the agent comes back
+        wearing the character it wore, in the seat it sat in when that seat is
+        free. Ignored when an agent in the office is already running it.
+      type: object
+      additionalProperties: false
+      required: [type, sessionId, directoryPath]
+      properties:
+        type:
+          const: resumeConversation
+        sessionId:
+          type: string
+        directoryPath:
+          type: string
+          description: Path of the Directory the conversation was listed under.
 
     SetShowAreas:
       description: Toggle the Areas overlay (translucent rendering on top of the office).

@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import { PIXEL_ICON_SCALE } from '../../constants.js';
 import { useDevicePixelRatio } from '../../hooks/useDevicePixelRatio.js';
 import { GLYPH_HEIGHT, glyphRects, splitLabel } from './pixelFont.js';
-import { devicePixelsPerArtPixel } from './pixelSnap.js';
+import { devicePixelsOneStepSmaller, devicePixelsPerArtPixel } from './pixelSnap.js';
 import { PixelSvg } from './PixelSvg.js';
 
 /**
@@ -14,13 +14,18 @@ import { PixelSvg } from './PixelSvg.js';
 export function PixelText({
   text,
   scale = PIXEL_ICON_SCALE,
+  smaller = false,
   shadow = false,
   className = '',
   style,
 }: {
   text: string;
-  /** CSS pixels per glyph pixel. Whole numbers only. */
+  /** CSS pixels per glyph pixel; snapped down to whole device pixels, so a
+   *  half step (1.5) is crisp where the screen has the pixels for it. */
   scale?: number;
+  /** One device pixel less per glyph pixel than `scale`: a crisp in-between
+   *  size on 2x and 3x screens (pixelSnap.devicePixelsOneStepSmaller). */
+  smaller?: boolean;
   /** A hard dark shadow under the text and the glyphs alike, for text drawn
    *  over the office (`.pixel-text-shadow`). */
   shadow?: boolean;
@@ -28,7 +33,8 @@ export function PixelText({
   style?: CSSProperties;
 }) {
   const dpr = useDevicePixelRatio();
-  const unit = devicePixelsPerArtPixel(scale, dpr) / dpr;
+  const unit =
+    (smaller ? devicePixelsOneStepSmaller(scale, dpr) : devicePixelsPerArtPixel(scale, dpr)) / dpr;
   return (
     <span
       className={`inline-flex items-center whitespace-nowrap ${shadow ? 'pixel-text-shadow ' : ''}${className}`}

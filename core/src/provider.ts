@@ -190,12 +190,16 @@ export interface HookProvider {
   buildLaunchCommand?(
     sessionId: string,
     cwd: string,
-    opts?: { bypassPermissions?: boolean },
+    opts?: { bypassPermissions?: boolean; resume?: boolean },
   ): {
     command: string;
     args: string[];
     env?: Record<string, string>;
   };
+  /** A session transcript's title as the CLI shows it (a user rename wins over
+   *  the generated one), or undefined when it has none. Read by the sidebar's
+   *  recent conversations; undefined = this provider names no conversations. */
+  conversationTitle?(transcriptPath: string): string | undefined;
 
   /** Optional account-usage reporting (the office's usage bars). */
   readonly usageBridge?: UsageBridge;

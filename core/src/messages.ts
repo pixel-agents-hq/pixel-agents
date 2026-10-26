@@ -48,6 +48,7 @@ export type ServerMessage =
   | DirectorySaved
   | DirectoryRejected
   | DirectorySuggestions
+  | ConversationsLoaded
   | TerminalAvailability
   | TerminalSessionOpened
   | TerminalSessionClosed
@@ -84,6 +85,8 @@ export type ClientMessage =
   | SaveDirectory
   | RemoveDirectory
   | RequestDirectorySuggestions
+  | RequestConversations
+  | ResumeConversation
   | RequestDiagnostics;
 
 export interface ProviderCapabilities {
@@ -99,6 +102,7 @@ export interface AgentCreated {
   isExternal?: boolean;
   palette?: number;
   repeat?: number;
+  seatId?: string;
 }
 
 export interface AgentClosed {
@@ -460,6 +464,26 @@ export interface DirectorySuggestions {
   paths: string[];
 }
 
+export interface ConversationsLoaded {
+  type: 'conversationsLoaded';
+  directories: DirectoryConversations[];
+}
+
+export interface DirectoryConversations {
+  name: string;
+  path: string;
+  conversations: Conversation[];
+}
+
+export interface Conversation {
+  sessionId: string;
+  title: string;
+  updatedAt: number;
+  palette?: number;
+  repeat?: number;
+  agentId?: number;
+}
+
 export interface TerminalAvailability {
   type: 'terminalAvailability';
   available: boolean;
@@ -643,6 +667,16 @@ export interface RemoveDirectory {
 
 export interface RequestDirectorySuggestions {
   type: 'requestDirectorySuggestions';
+}
+
+export interface RequestConversations {
+  type: 'requestConversations';
+}
+
+export interface ResumeConversation {
+  type: 'resumeConversation';
+  sessionId: string;
+  directoryPath: string;
 }
 
 export interface RequestDiagnostics {

@@ -202,6 +202,20 @@ export const WARDROBE_ITEMS_FILE_NAME = 'wardrobe-items.json';
  *  hand-edited source corrupting the stored values with out-of-range values. */
 export const MAX_CHARACTER_REPEAT = 1_000;
 
+// ── Recent conversations (the sidebar) ──────────────────────
+/** What each conversation's agent wore and where it sat, in the persistence dir. */
+export const CONVERSATIONS_FILE_NAME = 'conversations.json';
+/** Most conversations whose look is remembered (the newest are kept). */
+export const CONVERSATION_LOOKS_MAX = 500;
+/** Conversations the sidebar lists per Directory, newest first. */
+export const CONVERSATIONS_PER_DIRECTORY = 5;
+/** Bytes read from each end of a transcript looking for its title. */
+export const CONVERSATION_TITLE_SCAN_BYTES = 256 * 1024;
+/** A title longer than this is cut, with an ellipsis. */
+export const CONVERSATION_TITLE_MAX_CHARS = 120;
+/** A running conversation the coding agent hasn't titled yet. */
+export const NEW_CONVERSATION_TITLE = 'New conversation';
+
 /** Most agent ids a saved card order keeps. The order is pruned to live agents
  *  on every save, so this only bounds a hand-edited or hostile payload. */
 export const MAX_CARD_ORDER_LENGTH = 1_000;

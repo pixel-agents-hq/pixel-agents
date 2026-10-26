@@ -145,9 +145,12 @@ test.describe('Standalone / Characters roster', () => {
     );
 
     // The toolbar: + (New agent) with the Agents arrow beside it, then
-    // Layout and Settings.
+    // Layout; Settings lives at the foot of the conversation sidebar.
     const toolbar = page.getByRole('button', { name: 'New agent' }).locator('xpath=../../..');
-    await expect(toolbar.getByRole('button')).toHaveText(['', '', 'Layout', 'Settings']);
+    await expect(toolbar.getByRole('button')).toHaveText(['', '', 'Layout']);
+    await expect(
+      page.getByTestId('conversation-sidebar').getByRole('button', { name: 'Settings' }),
+    ).toBeVisible();
 
     // Roster opens the roster, not the Characters view, starting with + New.
     const characters = page.getByRole('button', { name: 'Roster', exact: true });

@@ -3,6 +3,7 @@ import { ContextBar } from '../office/ContextBar.js';
 import { contextLeft, useAgentContextUsed } from '../office/contextGauge.js';
 import type { CardVariant, CloseMode } from './cardBar.js';
 import { CharacterMugShot } from './CharacterMugShot.js';
+import { STATUS_DOT } from './statusDot.js';
 import { Button } from './ui/Button.js';
 import { PixelIcon } from './ui/PixelIcon.js';
 
@@ -17,13 +18,6 @@ export type AgentActivity = 'idle' | 'working' | 'attention';
 
 /** Activity plus the drawer-owned "connection broken" state. */
 export type TabStatus = AgentActivity | 'disconnected';
-
-const STATUS_DOT: Record<TabStatus, string> = {
-  idle: 'bg-status-success', // green — turn complete, nothing pending
-  working: 'bg-accent-bright', // blue — actively running
-  attention: 'bg-status-permission', // yellow — needs permission or input
-  disconnected: 'bg-status-error', // red — terminal socket dropped
-};
 
 const CARD_VARIANT: Record<CardVariant, string> = {
   default: 'bg-btn-bg border-transparent hover:bg-btn-hover',

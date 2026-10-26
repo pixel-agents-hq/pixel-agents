@@ -104,13 +104,41 @@ describe('launchStandaloneAgent', () => {
 
   // ── Successful launch ────────────────────────────────────────
 
-  it('a fresh launch reports an empty context (a full gauge) at once', () => {
+  it('resumes a past session: same id, --resume, its transcript read from the end, its old seat asked for', () => {
     const harness = workingPtyManager();
-    const id = launch(harness);
+    const sessionId = '0b8a701c-400d-41ea-801f-40de5e070a8d';
+    const transcript = path.join(projectDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(transcript, '{"type":"user"}\n{"type":"assistant"}\n');
+
+    const id = launch(harness, {
+      directoryPath: tempDir,
+      palette: 3,
+      resume: { sessionId, transcript, seatId: 'chair-7' },
+    });
+
+    const agent = store.get(id!);
+    expect(agent?.sessionId).toBe(sessionId);
+    expect(agent?.jsonlFile).toBe(transcript);
+    expect(agent?.fileOffset).toBe(fs.statSync(transcript).size);
+    expect(agent?.seatId).toBe('chair-7');
+    expect(agent?.palette).toBe(3);
+    expect(harness.spawnArgs[0].args).toEqual(['--resume', sessionId]);
+  });
+
+  it('a fresh launch reports an empty context (a full gauge) at once; a resume does not', () => {
+    const harness = workingPtyManager();
+    const id = launch(harness, { directoryPath: tempDir });
     expect(broadcasts).toContainEqual(
       expect.objectContaining({ type: 'agentContextUsage', id, contextTokens: 0 }),
     );
     expect(store.get(id!)?.contextReported).toBe(true);
+
+    broadcasts.length = 0;
+    const sessionId = '0b8a701c-400d-41ea-801f-40de5e070a8d';
+    const transcript = path.join(projectDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(transcript, '{"type":"user"}\n');
+    launch(harness, { directoryPath: tempDir, resume: { sessionId, transcript } });
+    expect(broadcasts.some((m) => m.type === 'agentContextUsage')).toBe(false);
   });
 
   it('spawns the provider launch command in a PTY and registers the agent', () => {

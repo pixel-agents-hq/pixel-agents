@@ -21,6 +21,12 @@ import {
 } from './configPersistence.js';
 import { MAX_CHARACTER_REPEAT, TERMINAL_REQUIRES_TOKEN_REASON } from './constants.js';
 import {
+  listConversations,
+  liveSessions,
+  recordConversationLooks,
+  resumeRequest,
+} from './conversations.js';
+import {
   handleDirectoryClientMessage,
   type HostDirectoryEntry,
   listDirectories,
@@ -185,6 +191,39 @@ export function handleClientMessage(
       break;
     }
 
+    case 'requestConversations': {
+      if (!ctx.ptyManager) break;
+      send({
+        type: 'conversationsLoaded',
+        directories: listConversations(
+          listDirectories(shownHostDirectoriesFor(ctx)),
+          claudeProvider,
+          liveSessions(store),
+        ),
+      });
+      break;
+    }
+
+    case 'resumeConversation': {
+      if (!runtime || !ctx.ptyManager) break;
+      const resume = resumeRequest(store, claudeProvider, msg);
+      if (!resume) break;
+      launchStandaloneAgent(
+        { store, runtime, ptyManager: ctx.ptyManager, provider: claudeProvider },
+        {
+          directoryPath: resume.directoryPath,
+          bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+          palette: resume.look?.palette,
+          resume: {
+            sessionId: resume.sessionId,
+            transcript: resume.transcript,
+            seatId: resume.look?.seatId,
+          },
+        },
+      );
+      break;
+    }
+
     case 'closeAgent': {
       // Two shapes now: a PTY-backed agent we launched (kill the process -- the
       // counterpart of VS Code's terminalRef.dispose()), or an external agent we
@@ -267,6 +306,8 @@ export function handleClientMessage(
           }
         }
         adapter?.saveSeats(seats);
+        // Kept per session, so a resumed conversation comes back as it was.
+        recordConversationLooks(store, seats);
       }
       break;
 

@@ -11,12 +11,13 @@ import {
   watchCharacterProfiles,
 } from '../src/characterProfilesPersistence.js';
 import { readConfig, writeConfig } from '../src/configPersistence.js';
+import { conversationLook, recordConversationLooks } from '../src/conversations.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
 
 /**
  * Everything that names a character by its index (agents, their saved seats, Directory
- * defaults, the roster's recency) stays on the same character when a save inserts or
- * deletes characters before it.
+ * defaults, the roster's recency, past conversations' looks) stays on the same character
+ * when a save inserts or deletes characters before it.
  */
 const ch = (id: string) => ({ id, name: id, body: 'flat', v: 35 });
 
@@ -118,6 +119,7 @@ describe('saving a list that moves characters', () => {
     agent(2, 1);
     agent(3, 2);
     store.getAdapter()!.saveSeats({ '3': { palette: 2, repeat: 0, seatId: 'chair' } });
+    recordConversationLooks(store, { '3': { seatId: 'chair' } });
     const cfg = readConfig();
     cfg.directories = [{ name: 'Work', path: tempHome, characters: [2, 1] }];
     cfg.recentCharacters = [2, 0, 1];
@@ -134,6 +136,7 @@ describe('saving a list that moves characters', () => {
     expect(store.get(3)!.palette).toBe(3);
     expect(store.getAdapter()!.loadSeats()['3']).toMatchObject({ palette: 3, seatId: 'chair' });
     expect(store.loadPersistedAgents().find((p) => p.id === 3)?.palette).toBe(3);
+    expect(conversationLook('s3')).toMatchObject({ palette: 3, seatId: 'chair' });
     expect(readConfig().directories[0].characters).toEqual([3, 2]);
     expect(readConfig().recentCharacters).toEqual([3, 0, 2]);
     expect(shared).toHaveBeenCalledOnce();

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { devicePixelsPerArtPixel } from '../src/components/ui/pixelSnap.js';
+import {
+  devicePixelsOneStepSmaller,
+  devicePixelsPerArtPixel,
+} from '../src/components/ui/pixelSnap.js';
 
 describe('devicePixelsPerArtPixel', () => {
   it('keeps whole products as they are', () => {
@@ -20,5 +23,16 @@ describe('devicePixelsPerArtPixel', () => {
   it('does not lose a step to float error', () => {
     expect(devicePixelsPerArtPixel(3, 1.1)).toBe(3);
     expect(devicePixelsPerArtPixel(10, 1.1)).toBe(11);
+  });
+});
+
+describe('devicePixelsOneStepSmaller', () => {
+  it('takes one device pixel off on 2x and 3x screens', () => {
+    expect(devicePixelsOneStepSmaller(2, 2)).toBe(3);
+    expect(devicePixelsOneStepSmaller(2, 3)).toBe(5);
+  });
+
+  it('keeps the full size on a 1x screen, where nothing lies between', () => {
+    expect(devicePixelsOneStepSmaller(2, 1)).toBe(2);
   });
 });

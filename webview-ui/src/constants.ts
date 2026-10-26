@@ -718,8 +718,10 @@ export const REPEAT_CLOTHES_SATURATION = 70;
 /** Screen pixels per icon pixel (whole number, so the icon stays crisp). */
 export const PIXEL_ICON_SCALE = 2;
 
-// ── Side panels docked beside the office (the terminal drawer) ──
+// ── Side panels docked beside the office (the terminal drawer, the conversation sidebar) ──
 // Their motion: hooks/useSlidePanel.ts.
+/** The conversation sidebar's width. */
+export const CONVERSATION_SIDEBAR_WIDTH_PX = 260;
 /** Opening: the panel stretches out a touch past its width and settles back. */
 export const SIDE_PANEL_OPEN_MS = 340;
 export const SIDE_PANEL_OPEN_EASE = 'cubic-bezier(0.34, 1.35, 0.64, 1)';
@@ -730,6 +732,20 @@ export const SIDE_PANEL_CLOSE_MS = 200;
 export const SIDE_PANEL_CLOSE_EASE = 'cubic-bezier(0.55, 0, 0.75, 0.2)';
 /** How far the contents travel as they slide in or out. */
 export const SIDE_PANEL_CONTENT_SHIFT_PX = 24;
+/** Agents coming and going in a burst (a reconnect) ask for the list once. */
+export const CONVERSATIONS_REFRESH_DEBOUNCE_MS = 300;
+/** While open, the list is re-asked this often: a running conversation gets its title. */
+export const CONVERSATIONS_REFRESH_INTERVAL_MS = 30_000;
+/** The phone's conversations panel: most of the screen, the office peeking beside it. */
+export const MOBILE_CONVERSATIONS_WIDTH = 'min(340px, 85vw)';
+/** Conversations in the list's "Recent" section, across every Directory. */
+export const RECENT_CONVERSATIONS_COUNT = 5;
+/** localStorage key: the Directory paths this viewer expanded in the conversation list. */
+export const CONVERSATION_EXPANDED_KEY = 'pixel-agents.conversationExpandedDirectories';
+/** localStorage key: whether this viewer shut the desktop conversation sidebar. */
+export const CONVERSATION_SIDEBAR_SHUT_KEY = 'pixel-agents.conversationSidebarShut';
+/** How long a Directory's section takes to unfold or fold in the conversation list. */
+export const CONVERSATION_UNFOLD_MS = 180;
 /** An agent card's height: its mug shot plus 1px padding and 2px border each
  *  side. The phone's + card (square) and the roster's arrow (a narrow tab)
  *  are sized from it, so the bar's first card lines up with the rest. */
