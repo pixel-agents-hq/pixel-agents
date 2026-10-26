@@ -128,7 +128,7 @@ describe('PixelAgentsServer', () => {
   // 6. Hook endpoint rejects oversized body
   it('hook endpoint returns 413 for oversized body', async () => {
     const config = await server.start();
-    const bigBody = 'x'.repeat(70_000); // > 64KB
+    const bigBody = 'x'.repeat(1_100_000); // > 1MB
     const res = await postHook(config.port, config.token, bigBody);
     expect(res.status).toBe(413);
   });

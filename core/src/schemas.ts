@@ -17,6 +17,11 @@ export interface PersistedAgent {
   sessionId?: string;
   terminalName: string;
   isExternal?: boolean;
+  /** The agent exists because a provider pushes events for it — no
+   *  transcript file the office reads (Hermes sessions, or any hooks-only
+   *  external adoption). Persisted so restoreExternalAgents does not prune
+   *  the character for the missing jsonlFile it was never going to have. */
+  hooksOnly?: boolean;
   jsonlFile: string;
   projectDir: string;
   directoryName?: string;

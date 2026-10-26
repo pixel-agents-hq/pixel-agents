@@ -81,7 +81,9 @@ describe('launchStandaloneAgent', () => {
   function launch(harness: PtyHarness, options = {}): number | null {
     return launchStandaloneAgent(
       { store, runtime, ptyManager: harness.manager, provider: provider() },
-      options,
+      // Identity PATH resolution everywhere: these tests pin the provider's
+      // raw command shape; resolveLaunchCommand has its own suite.
+      { resolveCommand: (command, args) => ({ command, args }), ...options },
     );
   }
 
@@ -195,6 +197,47 @@ describe('launchStandaloneAgent', () => {
     expect(id).toBeNull();
     expect(store.size).toBe(0);
     expect(harness.spawnArgs).toHaveLength(0);
+  });
+
+  // ── Push-only provider launch (Hermes shape) ─────────────────
+
+  it('launches a push-only provider with its minted sessionId and no file seams', () => {
+    const harness = workingPtyManager();
+    const cwd = path.join(tempDir, 'workspace');
+    fs.mkdirSync(cwd);
+
+    // No getSessionDirs at all => push-only: the provider mints the session id
+    // (Hermes' id format is an upstream contract) and the launcher must
+    // register exactly that id so later hook events route to this agent.
+    const pushOnly = provider({
+      getSessionDirs: undefined,
+      buildLaunchCommand: (_candidate, _cwd, opts) => ({
+        command: 'hermes',
+        args: [
+          'chat',
+          '--session-id',
+          '20261022_120000_abc123',
+          ...(opts?.bypassPermissions ? ['--yolo'] : []),
+        ],
+        sessionId: '20261022_120000_abc123',
+      }),
+    });
+
+    const id = launchStandaloneAgent(
+      { store, runtime, ptyManager: harness.manager, provider: pushOnly },
+      { directoryPath: cwd, resolveCommand: (command, args) => ({ command, args }) },
+    );
+
+    expect(id).toBe(1);
+    const agent = store.get(1)!;
+    expect(agent.sessionId).toBe('20261022_120000_abc123');
+    expect(agent.jsonlFile).toBe('');
+    expect(agent.projectDir).toBe(cwd);
+    // No transcript pre-registration, no poll timer: there is no file to find.
+    expect(runtime.knownJsonlFiles.size).toBe(0);
+    expect(runtime.jsonlPollTimers.size).toBe(0);
+    expect(harness.spawnArgs[0].file).toBe('hermes');
+    expect(harness.spawnArgs[0].args[0]).toBe('chat');
   });
 
   it('rolls back the agent id when the PTY spawn throws', () => {

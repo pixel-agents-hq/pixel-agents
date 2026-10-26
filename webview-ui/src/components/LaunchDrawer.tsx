@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 
 import { DRAWER_EDIT_LONG_PRESS_MAX_MOVE_PX, DRAWER_EDIT_LONG_PRESS_MS } from '../constants.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
+import type { LaunchProviderOption } from '../launchProvider.js';
 import { Dropdown, DropdownItem } from './ui/Dropdown.js';
 
 interface LaunchDrawerProps {
@@ -16,6 +17,12 @@ interface LaunchDrawerProps {
   onAddDirectory: () => void;
   /** Open the Directory modal pre-filled with this entry (user-defined rows). */
   onEditDirectory: (directory: Directory) => void;
+  /** Launchable providers for the header row. <=1: informative label only;
+   *  >1: clicking cycles the target. Omitted entirely on a single-provider
+   *  server that never sends the capabilities list (legacy parity). */
+  launchProviders?: LaunchProviderOption[];
+  selectedProviderId?: string;
+  onCycleProvider?: () => void;
   className?: string;
 }
 
@@ -44,8 +51,13 @@ export function LaunchDrawer({
   onSelect,
   onAddDirectory,
   onEditDirectory,
+  launchProviders,
+  selectedProviderId,
+  onCycleProvider,
   className = '',
 }: LaunchDrawerProps) {
+  const selected = launchProviders?.find((p) => p.id === selectedProviderId);
+  const canCycle = (launchProviders?.length ?? 0) > 1 && !!onCycleProvider;
   return (
     // Open even with no Directories: `+ Directory` is always worth showing, and
     // an office with an empty list is exactly where it's needed most.
@@ -54,6 +66,29 @@ export function LaunchDrawer({
     // only the rows scroll.
     <Dropdown isOpen={isOpen} fitViewport className={`min-w-128 ${className}`}>
       <div data-testid="launch-drawer" className="flex flex-col min-h-0">
+        {/* Provider header: which CLI a Directory row will spawn. Cycles on
+            click when there is a real choice; a plain label when there isn't
+            (an explicit "launches Claude" beats silence about what you get). */}
+        {selected && (
+          <div className="shrink-0 border-b-2 border-border">
+            <button
+              type="button"
+              onClick={canCycle ? onCycleProvider : undefined}
+              title={
+                canCycle
+                  ? 'Click to switch which CLI the office launches (Hermes Agent, Claude Code, …)'
+                  : undefined
+              }
+              className={`block w-full text-left py-1 px-12 bg-transparent border-none rounded-none whitespace-nowrap text-xs text-text-muted ${
+                canCycle ? 'cursor-pointer hover:bg-btn-bg' : 'cursor-default'
+              }`}
+            >
+              {canCycle
+                ? `▸ Launch as: ${selected.displayName} (switch)`
+                : `▸ Launch as: ${selected.displayName}`}
+            </button>
+          </div>
+        )}
         {/* DropdownItem hard-resets to border-none, so the separator lives on
             this wrapper. Pinned: it never scrolls away with the rows. */}
         <div className="shrink-0 border-b-2 border-border">

@@ -30,13 +30,13 @@ It ships in two forms from the same codebase:
 - **VS Code extension** — [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=pablodelucca.pixel-agents) and [Open VSX](https://open-vsx.org/extension/pablodelucca/pixel-agents). Agents launch into VS Code terminals; characters render in the panel area.
 - **Standalone CLI** — `npx pixel-agents` starts a local server and serves the same office as a browser app, useful for tmux, remote, and non-VS Code workflows.
 
-The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation today; Codex, Gemini, Cursor, and others are on the roadmap.
+The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvider` interface defines the integration boundary so adding a new AI tool is a single subdirectory of code. Claude Code is the reference implementation and [Hermes Agent](https://hermes-agent.nousresearch.com) ships as the second provider today (via its lifecycle hooks); Codex, Gemini, Cursor, and others are on the roadmap.
 
 ![Pixel Agents screenshot](webview-ui/public/office.png)
 
 ## Features
 
-- **One agent, one character** — every Claude Code terminal gets its own animated character
+- **One agent, one character** — every Claude Code or Hermes Agent session gets its own animated character
 - **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
 - **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
 - **Speech bubbles** — visual indicators when an agent is waiting for input or awaiting permission
@@ -65,7 +65,7 @@ Most of this is still ahead. See [Issues](https://github.com/pixel-agents-hq/pix
 
 ## Requirements
 
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and configured
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and/or [Hermes Agent](https://hermes-agent.nousresearch.com) installed and configured (one hook provider is installed per integration detected on your machine; each answers its own first-run consent)
 - **VS Code extension:** VS Code 1.105.0 or later
 - **Standalone CLI:** Node.js 20 or later
 - Windows, Linux, or macOS
@@ -109,7 +109,7 @@ pixel-agents --help
 
 The default bind address is `127.0.0.1`. Binding to `0.0.0.0` exposes the UI and WebSocket to the local network; do this only on a trusted network.
 
-Open the URL the CLI prints - it carries a `?token=` for this server. Any browser can watch the office without it, but installing or removing hooks (which edits your agent tool's own settings file, like the `~/.claude/settings.json`), launching agents from the browser and attaching to their terminals are only offered to a session that has the token, so an untokened client on the network cannot approve or do any of it. Open the bare address instead and the hooks toggle in Settings is refused (reporting the actual install state rather than appearing to work) and the **+ Agent** button explains what it needs. Standalone keeps the same token across restarts (in `~/.pixel-agents/standalone-token`, readable only by you), so a bookmarked or home-screen URL keeps working — as long as the port stays the same too, which takes `--port` (the default port is picked fresh on every start).
+Open the URL the CLI prints - it carries a `?token=` for this server. Any browser can watch the office without it, but installing or removing hooks (which edits your agent tool's own settings file, like the `~/.claude/settings.json` or the Hermes Agent `config.yaml`), launching agents from the browser and attaching to their terminals are only offered to a session that has the token, so an untokened client on the network cannot approve or do any of it. Open the bare address instead and the hooks toggle in Settings is refused (reporting the actual install state rather than appearing to work) and the **+ Agent** button explains what it needs. Standalone keeps the same token across restarts (in `~/.pixel-agents/standalone-token`, readable only by you), so a bookmarked or home-screen URL keeps working — as long as the port stays the same too, which takes `--port` (the default port is picked fresh on every start).
 
 Treat that URL as a secret: the token is a bearer capability, not proof of being local. Whoever holds it can approve the hook install from anywhere the server is reachable — so don't paste the URL into a shared channel, and note that it also lands in your browser history (the server's own request log redacts it).
 

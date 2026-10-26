@@ -18,14 +18,17 @@ import {
   type HostDirectoryEntry,
   listDirectories,
 } from './directories.js';
-import { collectDirectorySuggestions } from './directorySuggestions.js';
+import { collectAllDirectorySuggestions } from './directorySuggestions.js';
 import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
+import { buildProviderCapabilities } from './providerCapabilities.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
+import { setSilentSessionsShown } from './providers/hook/hermes/constants.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
+import type { resolveLaunchCommand } from './terminal/resolveLaunchCommand.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
@@ -74,6 +77,10 @@ export interface ClientMessageContext {
   /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
    *  mode, where the editor owns terminal lifecycle. */
   ptyManager?: PtySessionManager;
+  /** Injectable PATH resolution for launches (see resolveLaunchCommand);
+   *  absent = production resolver. Tests pass an identity so assertions pin
+   *  the provider's raw command and never depend on the host's PATH. */
+  resolveCommand?: typeof resolveLaunchCommand;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -82,6 +89,7 @@ const KEY_LAST_SEEN_VERSION = 'pixel-agents.lastSeenVersion';
 const KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
 const KEY_GHOST_HEADLESS_AGENTS = 'pixel-agents.ghostHeadlessAgents';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
+const KEY_SHOW_HERMES_SILENT_SESSIONS = 'pixel-agents.showHermesSilentSessions';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
 const KEY_BYPASS_PERMISSIONS = 'pixel-agents.bypassPermissions';
@@ -143,15 +151,37 @@ export function handleClientMessage(
       // the browser drawer (a shell running as the operator -- privileged, like
       // every message past the read-only gate above).
       if (!runtime || !ctx.ptyManager) break;
+      // The provider id is echoed by the client like every other provider-
+      // targeted message: an unknown id names nothing to launch, so it is
+      // refused, not defaulted. Absent providerId = legacy wire = Claude.
+      const rawProviderId = msg.providerId as string | undefined;
+      const provider =
+        rawProviderId === undefined ? claudeProvider : hookProviderById(rawProviderId);
+      if (!provider) {
+        send({ type: 'launchRejected', providerId: rawProviderId, reason: 'Unknown provider.' });
+        break;
+      }
+      // A provider without a launch command is push-only (it observes existing
+      // sessions but the office cannot spawn one): say so instead of silently
+      // doing nothing -- the click already commits the user to an action.
+      if (!provider.buildLaunchCommand) {
+        send({
+          type: 'launchRejected',
+          providerId: provider.id,
+          reason: `${provider.displayName} cannot be launched from the office (view-only provider).`,
+        });
+        break;
+      }
       // Permission posture is a persisted per-host setting, never a per-launch
       // field: the client sends only where to launch. Every launch comes from a
       // drawer row and carries its Directory's path; no directoryPath falls
       // back to the server cwd (launchStandaloneAgent's own default).
       launchStandaloneAgent(
-        { store, runtime, ptyManager: ctx.ptyManager, provider: claudeProvider },
+        { store, runtime, ptyManager: ctx.ptyManager, provider },
         {
           directoryPath: msg.directoryPath as string | undefined,
           bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+          resolveCommand: ctx.resolveCommand,
         },
       );
       break;
@@ -247,6 +277,16 @@ export function handleClientMessage(
       const enabled = msg.enabled as boolean;
       adapter?.setSetting(KEY_WATCH_ALL_SESSIONS, enabled);
       if (runtime) runtime.watchAllSessions.current = enabled;
+      break;
+    }
+
+    case 'setShowHermesSilentSessions': {
+      // Persisted per surface, applied immediately: the provider ref it flips is
+      // the same one the wire gate and the store scanner read, so an already
+      // silent cron character needs no re-scan to become visible on the next tick.
+      const enabled = msg.enabled as boolean;
+      adapter?.setSetting(KEY_SHOW_HERMES_SILENT_SESSIONS, enabled);
+      setSilentSessionsShown(enabled);
       break;
     }
 
@@ -355,7 +395,10 @@ export function handleClientMessage(
         broadcast: (message) => store.broadcast(message),
         reply: send,
         suggestions: () =>
-          collectDirectorySuggestions(claudeProvider, shownHostDirectoriesFor(ctx)),
+          // Every registered provider answers: Claude walks its transcript
+          // roots, Hermes reads its session store. The old hardcoding to
+          // claudeProvider made a Hermes-only machine's modal suggest nothing.
+          collectAllDirectorySuggestions(hookProviders, shownHostDirectoriesFor(ctx)),
       });
       break;
 
@@ -454,12 +497,12 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // them.
   send({ type: 'officeAccess', readOnly: ctx.privileged !== true });
 
-  // 1. Provider capabilities (must arrive before any agent messages)
-  send({
-    type: 'providerCapabilities',
-    readingTools: [...claudeProvider.readingTools],
-    subagentToolNames: [...claudeProvider.subagentToolNames],
-  });
+  // 1. Provider capabilities (must arrive before any agent messages) — built
+  // by the shared helper so the VS Code adapter's handshake ships the exact
+  // same shape (see server/src/providerCapabilities.ts).
+  // The spread is load-bearing: WsSend accepts a fresh object literal (an
+  // interface has no implicit index signature, a literal does).
+  send({ ...buildProviderCapabilities() });
 
   // 1b. Terminal availability. Gates the whole terminal UI (the + Agent button
   // and the drawer), so it must land before the client can act on agents.
@@ -528,6 +571,16 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // synchronous handshake; the webview's default (not installed) is the safe
   // assumption until each arrives. One status + at most one ask PER PROVIDER.
   for (const provider of hookProviders) {
+    // Availability first (SYNC probe — see HookProvider.isAvailable): a CLI
+    // that is not on this machine gets NO status message and NO consent ask
+    // (the row is also absent from capabilities.providers, so Settings never
+    // shows it). A throwing probe counts as available — hiding beats erroring
+    // silently.
+    try {
+      if (provider.isAvailable && !provider.isAvailable()) continue;
+    } catch {
+      /* throwing probe => treat as available, fall through to the ask path */
+    }
     // One provider's unreadable settings file must degrade to
     // installed=false (matching the executor's fail-closed read: no choice
     // ever uninstalls on a guess) rather than surface as an unhandled
@@ -653,6 +706,7 @@ function settingsSnapshot(adapter: StateAdapter | undefined) {
     lastSeenVersion: adapter?.getSetting(KEY_LAST_SEEN_VERSION, '') ?? '',
     extensionVersion: process.env.PIXEL_AGENTS_VERSION ?? '',
     watchAllSessions: adapter?.getSetting(KEY_WATCH_ALL_SESSIONS, false) ?? false,
+    showHermesSilentSessions: adapter?.getSetting(KEY_SHOW_HERMES_SILENT_SESSIONS, false) ?? false,
     alwaysShowLabels: adapter?.getSetting(KEY_ALWAYS_SHOW_LABELS, false) ?? false,
     ghostHeadlessAgents: adapter?.getSetting(KEY_GHOST_HEADLESS_AGENTS, false) ?? false,
     // A single boolean carrying the CLAUDE provider's preference until the
@@ -702,6 +756,7 @@ function refuseReadOnly(
     case 'setAlwaysShowLabels':
     case 'setGhostHeadlessAgents':
     case 'setWatchAllSessions':
+    case 'setShowHermesSilentSessions':
     case 'setShowAreas':
     case 'setBypassPermissions':
     case 'setShowHostDirectories':

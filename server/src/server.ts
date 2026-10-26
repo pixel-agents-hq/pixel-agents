@@ -34,7 +34,7 @@ type HookEventCallback = (providerId: string, event: Record<string, unknown>) =>
  * and optionally serves the SPA in standalone mode.
  *
  * Routes (via Fastify in httpServer.ts):
- * - `POST /api/hooks/:providerId` -- hook event (auth required, 64KB body limit)
+ * - `POST /api/hooks/:providerId` -- hook event (auth required, 1MB body limit)
  * - `GET /api/health` -- health check (no auth)
  * - `GET /ws` -- WebSocket for real-time agent state (auth required)
  *

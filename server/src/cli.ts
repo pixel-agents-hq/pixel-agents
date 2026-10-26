@@ -32,7 +32,13 @@ import {
   WILDCARD_HOSTNAMES,
 } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import { setSilentSessionsShown } from './providers/hook/hermes/constants.js';
+import {
+  claudeProvider,
+  copyHookScript,
+  hookProviderById,
+  hookProviders,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
@@ -356,6 +362,7 @@ async function main(): Promise<void> {
     // scanners grow per-provider awareness alongside the Settings UI.
     runtime.hooksEnabled.current = getHooksEnabled(claudeProvider.id);
     runtime.watchAllSessions.current = adapter.getSetting('pixel-agents.watchAllSessions', false);
+    setSilentSessionsShown(adapter.getSetting('pixel-agents.showHermesSilentSessions', false));
 
     // Install hooks on startup if the persisted setting says so — gated on the
     // one-time consent to modify ~/.claude/settings.json.
@@ -393,6 +400,44 @@ async function main(): Promise<void> {
       );
     }
 
+    // Same startup install for every OTHER registered provider (Hermes...).
+    // Re-installing every boot is load-bearing, not redundancy: the
+    // standalone picks a fresh port and token per process unless --port pins
+    // it, so a provider whose credential rides its own config (Hermes'
+    // hooks.outbound url) must be re-pointed exactly like Claude's registry
+    // file is re-read by its hook script. The Claude block above keeps its
+    // bespoke shape (script copy, pre-consent migration) untouched.
+    for (const provider of hookProviders) {
+      if (provider.id === claudeProvider.id) continue;
+      if (!getHooksEnabled(provider.id)) {
+        continue; // user turned this row off; the Settings log line for Claude above already explains the pattern
+      }
+      let available = true;
+      try {
+        available = provider.isAvailable?.() ?? true;
+      } catch {
+        available = true; // a throwing probe must not hide an integration
+      }
+      if (!available) continue; // CLI not on this machine: silently irrelevant
+      let consent = getHooksConsent(provider.id) === 'granted';
+      if (!consent && (await provider.areHooksInstalled().catch(() => false))) {
+        grantHooksConsent(provider.id);
+        consent = true; // pre-consent install migration, same policy as Claude
+      }
+      if (!consent) {
+        console.log(
+          `[Pixel Agents] ${provider.displayName} hooks not installed: modifying ${provider.displayName}'s own settings needs one-time approval — open the URL below to review and approve it.`,
+        );
+        continue;
+      }
+      try {
+        await provider.installHooks(`http://127.0.0.1:${config.port}`, config.token);
+        console.log(`[Pixel Agents] ${provider.displayName} hooks installed`);
+      } catch (err) {
+        console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     // Start scanning for external sessions (Claude running in user's terminal)
     const cwd = process.cwd();
     const dirs = claudeProvider.getSessionDirs?.(cwd);
@@ -403,6 +448,13 @@ async function main(): Promise<void> {
       runtime.startExternalScanning(projectDir);
       runtime.startStaleCheck();
     }
+
+    // Provider session-STORE scanners (Hermes' state.db + lease registry). Not
+    // tied to a workspace directory like the JSONL scan above: structured stores
+    // describe the whole machine, and this is also the ONLY liveness reaper for
+    // hook-adopted Hermes characters (a SIGKILLed CLI/app fires no finalize —
+    // tier-2 ghost fix).
+    runtime.startSessionScanners();
 
     // The URL the operator opens has to be REACHABLE (a wildcard bind address
     // is a bind target, not an address you can browse to — `--host 0.0.0.0`

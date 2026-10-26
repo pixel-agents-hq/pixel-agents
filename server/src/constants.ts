@@ -108,7 +108,13 @@ export const HOOK_EVENT_BUFFER_MS = 5_000;
  *  safety net: if SessionStart never arrives (e.g. the CLI crashes mid-transition),
  *  the agent is cleaned up instead of staying as a zombie with pendingClear forever. */
 export const SESSION_END_GRACE_MS = 2000;
-export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
+/** Hook POST body cap. 64 KB silently killed real Hermes events: a
+ *  post_tool_call carries the tool result in `extra`, and terminal-heavy
+ *  sessions produce 200–600 KB payloads. The route answered 413, Hermes
+ *  logged one WARNING and never retried — the event was gone forever.
+ *  Loopback-only endpoint, one JSON parse per request, discarded after
+ *  routing: 1 MB costs nothing and covers observed payloads with room. */
+export const MAX_HOOK_BODY_SIZE = 1_048_576; // 1MB
 
 // ── Standalone Embedded Terminal ────────────────────────────
 /** PTY module ids tried in order by the loader. @lydell/node-pty ships prebuilt

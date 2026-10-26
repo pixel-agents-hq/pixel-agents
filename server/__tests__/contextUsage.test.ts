@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { CONTEXT_SEED_TAIL_BYTES, DEFAULT_MAX_CONTEXT_TOKENS } from '../src/constants.js';
 import {
+  applyContextUsage,
   extractContextTokens,
   seedContextUsage,
   updateContextUsage,
@@ -132,6 +133,58 @@ describe('widenContextWindow', () => {
 
   it('rounds up past the largest known tier instead of pinning at 100%', () => {
     expect(widenContextWindow(1_400_000, DEFAULT_MAX_CONTEXT_TOKENS)).toBe(2_000_000);
+  });
+
+  it('keeps a provider-declared window below the default when the context fits', () => {
+    // Hermes resolves per-session windows (a 131k llama.cpp slot is NOT a 200k
+    // model); inflating it would silently read the gauge five times too empty.
+    expect(widenContextWindow(5_200, 131_072)).toBe(131_072);
+  });
+
+  it('snaps an overflow of a small declared window up to the next tier', () => {
+    // A 260k context on a declared 131k window proves the declaration stale,
+    // not that anyone ships a 260k tier -- same snap rule as the default.
+    expect(widenContextWindow(260_000, 131_072)).toBe(1_000_000);
+  });
+});
+
+describe('applyContextUsage (pushed snapshots)', () => {
+  let agents: AgentStateStore;
+  let agent: AgentState;
+  let messages: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    agents = new AgentStateStore();
+    agent = createTestAgent();
+    agents.set(1, agent);
+    messages = [];
+    agents.on('broadcast', (msg) => messages.push(msg as Record<string, unknown>));
+  });
+
+  it('honours the provider-declared window, even below the default', () => {
+    applyContextUsage(1, agent, agents, 5_200, 131_072);
+    expect(messages).toEqual([
+      {
+        type: 'agentContextUsage',
+        id: 1,
+        contextTokens: 5_200,
+        maxContextTokens: 131_072,
+      },
+    ]);
+    expect(agent.contextTokens).toBe(5_200);
+    expect(agent.sawMainChainUsage).toBe(true);
+  });
+
+  it('never moves the gauge on a non-positive figure', () => {
+    applyContextUsage(1, agent, agents, 0, undefined);
+    applyContextUsage(1, agent, agents, -5, 131_072);
+    expect(messages).toHaveLength(0);
+    expect(agent.contextTokens).toBe(0);
+  });
+
+  it('estimates the window when the push says nothing about it', () => {
+    applyContextUsage(1, agent, agents, 444_680, undefined);
+    expect(agent.maxContextTokens).toBe(1_000_000);
   });
 });
 

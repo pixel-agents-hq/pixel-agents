@@ -24,9 +24,11 @@ import type { AgentState } from './types.js';
 import {
   bearerTokenValid,
   isAllowedWebSocketOrigin,
+  isLoopbackHost,
   privilegedHostnames,
   redactTokenQuery,
   standaloneHandshakeVerdict,
+  standaloneTokenValid,
 } from './wsAuth.js';
 
 /** Options for creating the HTTP + WebSocket server. */
@@ -143,7 +145,7 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
   }>(
     `${HOOK_API_PREFIX}/:providerId`,
     {
-      preHandler: bearerAuth(options.token),
+      preHandler: hookAuth(options.token),
       schema: {
         params: {
           type: 'object',
@@ -278,11 +280,29 @@ function registerWebSocketRoute(
 
 // ── Auth Helper ────────────────────────────────────────────────
 
-function bearerAuth(expectedToken: string) {
+/**
+ * Auth for `POST /api/hooks/:providerId`. Two credential transports, one
+ * capability:
+ *  1. `Authorization: Bearer <token>` — the header path, used by hook scripts
+ *     that can set arbitrary headers (Claude's `claude-hook.js`).
+ *  2. `?token=<token>` — the query path, for push deliveries that CANNOT set
+ *     custom headers (Hermes' outbound webhooks: fixed header set, see
+ *     `agent/outbound_webhooks.py::_build_delivery`). Accepted only when the
+ *     Host is a loopback name: the query credential already gates the
+ *     standalone `/ws` and `/terminal/:id` handshakes, so this adds no new
+ *     privilege shape, and the request logger redacts it (redactTokenQuery)
+ *     so the token never reaches the log. A non-loopback Host means the
+ *     server was asked to serve the network (--host) or a rebinding attempt —
+ *     in both cases the header path remains the only accepted credential.
+ * Exported so a test can pin both paths and the rejection branches.
+ */
+export function hookAuth(expectedToken: string) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!bearerTokenValid(request.headers.authorization, expectedToken)) {
-      reply.code(401).send('unauthorized');
+    if (bearerTokenValid(request.headers.authorization, expectedToken)) return;
+    if (isLoopbackHost(request.headers.host) && standaloneTokenValid(request.url, expectedToken)) {
+      return;
     }
+    reply.code(401).send('unauthorized');
   };
 }
 

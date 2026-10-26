@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { HookProvider } from '../../core/src/provider.js';
 import { resendAgentActivity } from '../../server/src/agentActivityResend.js';
 import { createAgentState } from '../../server/src/agentState.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
@@ -23,14 +24,17 @@ import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/time
 import type { PersistedAgent } from '../../server/src/types.js';
 import { workspaceDirectories } from './hostDirectories.js';
 
-export function getProjectDirPath(cwd?: string): string {
+export function getProjectDirPath(cwd?: string, provider: HookProvider = claudeProvider): string {
   // Fall back to home directory when no workspace folder is open (common on Linux/macOS
   // when VS Code is launched without a folder). The provider's getSessionDirs already
   // implements the Windows case-insensitive fallback for drive-letter casing.
+  // ONLY for providers that have transcript directories — push-only providers
+  // (Hermes: one SQLite store, no per-project JSONL) deliberately register no
+  // getSessionDirs, and this function must never be reached for them.
   const workspacePath = cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
-  const dirs = claudeProvider.getSessionDirs?.(workspacePath) ?? [];
+  const dirs = provider.getSessionDirs?.(workspacePath) ?? [];
   if (dirs.length === 0) {
-    throw new Error('claudeProvider.getSessionDirs returned no directories');
+    throw new Error(`${provider.displayName} returned no session directories`);
   }
   const projectDir = dirs[0];
   console.log(`[Pixel Agents] Terminal: Project dir: ${workspacePath} → ${projectDir}`);
@@ -53,6 +57,7 @@ export async function launchNewTerminal(
   directoryPath?: string,
   bypassPermissions?: boolean,
   suppressShow?: boolean,
+  provider: HookProvider = claudeProvider,
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
   // Use home directory as fallback cwd when no workspace is open (common on Linux/macOS).
@@ -60,10 +65,26 @@ export async function launchNewTerminal(
   // dir hash Claude Code will use for JSONL transcript files.
   const cwd = directoryPath || folders?.[0]?.uri.fsPath || os.homedir();
   const isMultiRoot = !!(folders && folders.length > 1);
+
+  // Build the launch command BEFORE creating the terminal, exactly like the
+  // standalone launcher does: the command may carry an env overlay (Hermes
+  // pins PWD to the launch cwd) that VS Code's createTerminal accepts, and a
+  // provider can mint its own session id — Hermes' id format is a validated
+  // upstream contract (`<YYYYmmdd_HHMMSS>_<6hex>`), so the candidate uuid only
+  // seeds providers that honour it. The id we finally register must be the one
+  // the launched process will carry in its hook events.
+  const candidateSessionId = crypto.randomUUID();
+  const launch = provider.buildLaunchCommand?.(candidateSessionId, cwd, { bypassPermissions });
+  if (!launch) {
+    throw new Error(`${provider.displayName} cannot be launched from the office`);
+  }
+  const sessionId = launch.sessionId ?? candidateSessionId;
+
   const idx = nextTerminalIndexRef.current++;
   const terminal = vscode.window.createTerminal({
-    name: `${CLAUDE_TERMINAL_NAME_PREFIX} #${idx}`,
+    name: `${provider.terminalNamePrefix ?? CLAUDE_TERMINAL_NAME_PREFIX} #${idx}`,
     cwd,
+    ...(launch.env ? { env: launch.env } : {}),
   });
   // When suppressShow is set (auto-spawn + autoShowPanel), keep the panel view
   // on Pixel Agents instead of switching to Terminal. Claude Code still runs
@@ -73,18 +94,27 @@ export async function launchNewTerminal(
     terminal.show();
   }
 
-  const sessionId = crypto.randomUUID();
-  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
-  if (!launch) {
-    throw new Error('claudeProvider.buildLaunchCommand is not implemented');
-  }
   terminal.sendText([launch.command, ...launch.args].join(' '));
 
-  const projectDir = getProjectDirPath(cwd);
+  // File seams are for providers that own transcript files on disk — the same
+  // contract the standalone launcher enforces (standaloneAgentLauncher.ts):
+  // a push-only provider (no getSessionDirs) has no JSONL to pre-register, no
+  // project to /clear-scan, and no file to poll. Its session announces itself
+  // through hook events carrying the sessionId registered above; point a
+  // scanner at its store-shaped home instead and it would mis-adopt unrelated
+  // JSONLs. So EVERY transcript-touching step below rides this flag.
+  const dirs = provider.getSessionDirs?.(cwd);
+  if (dirs !== undefined && dirs.length === 0) {
+    throw new Error(`${provider.displayName} returned no session directories`);
+  }
+  const expectsTranscript = dirs !== undefined;
+  const projectDir = expectsTranscript ? getProjectDirPath(cwd, provider) : cwd;
+  const expectedFile = expectsTranscript ? path.join(projectDir, `${sessionId}.jsonl`) : '';
 
   // Pre-register expected JSONL file so project scan won't treat it as a /clear file
-  const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
-  knownJsonlFiles.add(expectedFile);
+  if (expectsTranscript) {
+    knownJsonlFiles.add(expectedFile);
+  }
 
   // Create agent immediately (before JSONL file exists)
   const id = nextAgentIdRef.current++;
@@ -115,6 +145,10 @@ export async function launchNewTerminal(
     projectDir,
     jsonlFile: expectedFile,
     directoryName,
+    providerId: provider.id,
+    // The marker restore paths use to skip the transcript machinery for an
+    // agent that has none (mirror of standaloneAgentLauncher's jsonlFile: '').
+    hooksOnly: expectsTranscript ? undefined : true,
   });
 
   assignPaletteIfNeeded(agent, agents);
@@ -122,6 +156,15 @@ export async function launchNewTerminal(
   activeAgentIdRef.current = id;
   persistAgents();
   console.log(`[Pixel Agents] Terminal: Agent ${id} - created for terminal ${terminal.name}`);
+
+  if (!expectsTranscript) {
+    // A push-only launch is fully wired: the process carries the sessionId we
+    // registered (the caller's registerAgent loop routes its hook events).
+    // No /clear project scan, no JSONL poll — see the file-seams decision
+    // above; running either would walk a directory that holds no transcripts
+    // of this provider and invent characters from foreign JSONLs.
+    return;
+  }
 
   ensureProjectScan(
     projectDir,
@@ -341,11 +384,20 @@ export function restoreAgents(
     const isExternal = p.isExternal ?? false;
 
     if (isExternal) {
-      // External agents — restore if JSONL file still exists on disk
-      try {
-        if (!fs.existsSync(p.jsonlFile)) continue;
-      } catch {
-        continue;
+      // External agents — restore if JSONL file still exists on disk. A
+      // hooks-only external agent has no transcript by definition (the
+      // provider pushes); pruning it for the missing file would delete a
+      // character whose session is alive — same rule standalone's
+      // restoreExternalAgents applies. Without a sessionId it could never
+      // route anything, so those records are dropped.
+      if (p.hooksOnly) {
+        if (!p.sessionId) continue;
+      } else {
+        try {
+          if (!fs.existsSync(p.jsonlFile)) continue;
+        } catch {
+          continue;
+        }
       }
     } else {
       // Terminal agents — find matching terminal by name
@@ -360,6 +412,10 @@ export function restoreAgents(
       isExternal,
       projectDir: p.projectDir,
       jsonlFile: p.jsonlFile,
+      // A restored push-only agent keeps its marker: its liveness signal is
+      // the provider's push stream, and the file machinery below must stay
+      // off for it exactly like at launch.
+      hooksOnly: p.hooksOnly,
       // Live spawn ids survive the reload so the 1s scan can re-adopt the
       // spawns' transcripts and the completion queue-op still matches.
       backgroundAgentToolIds: new Set(p.backgroundAgentToolIds ?? []),
@@ -386,7 +442,14 @@ export function restoreAgents(
       console.log(
         `[Pixel Agents] Terminal: Agent ${p.id} - restored → terminal "${p.terminalName}"`,
       );
-      justRestoredTerminalIds.push(p.id);
+      // The 10s "no data received" sweep below culls dead terminals VS Code
+      // restored after a window reload — its evidence is a transcript that
+      // never produced a line. A hooks-only agent can NEVER produce one (no
+      // file exists), so sweeping it would delete a live character whose
+      // terminal is open. It is not a candidate.
+      if (!p.hooksOnly) {
+        justRestoredTerminalIds.push(p.id);
+      }
     }
 
     if (p.id > maxId) maxId = p.id;
@@ -399,48 +462,53 @@ export function restoreAgents(
 
     restoredProjectDir = p.projectDir;
 
-    // Start file watching if JSONL exists, skipping to end of file
-    try {
-      if (fs.existsSync(p.jsonlFile)) {
-        const stat = fs.statSync(p.jsonlFile);
-        agent.fileOffset = stat.size;
-        startFileWatching(
-          p.id,
-          p.jsonlFile,
-          store,
-          fileWatchers,
-          pollingTimers,
-          waitingTimers,
-          permissionTimers,
-        );
-      } else {
-        // Poll for the file to appear
-        const pollTimer = setInterval(() => {
-          try {
-            if (fs.existsSync(agent.jsonlFile)) {
-              console.log(`[Pixel Agents] Terminal: Agent ${p.id} - found JSONL file`);
-              clearInterval(pollTimer);
-              jsonlPollTimers.delete(p.id);
-              const stat = fs.statSync(agent.jsonlFile);
-              agent.fileOffset = stat.size;
-              startFileWatching(
-                p.id,
-                agent.jsonlFile,
-                store,
-                fileWatchers,
-                pollingTimers,
-                waitingTimers,
-                permissionTimers,
-              );
+    // Start file watching if JSONL exists, skipping to end of file. A
+    // hooks-only agent skips this entirely: existsSync('') is false, and the
+    // poll branch below would otherwise spin forever on a path that will
+    // never exist — a push-only provider's transcript does not live on disk.
+    if (!agent.hooksOnly) {
+      try {
+        if (fs.existsSync(p.jsonlFile)) {
+          const stat = fs.statSync(p.jsonlFile);
+          agent.fileOffset = stat.size;
+          startFileWatching(
+            p.id,
+            p.jsonlFile,
+            store,
+            fileWatchers,
+            pollingTimers,
+            waitingTimers,
+            permissionTimers,
+          );
+        } else {
+          // Poll for the file to appear
+          const pollTimer = setInterval(() => {
+            try {
+              if (fs.existsSync(agent.jsonlFile)) {
+                console.log(`[Pixel Agents] Terminal: Agent ${p.id} - found JSONL file`);
+                clearInterval(pollTimer);
+                jsonlPollTimers.delete(p.id);
+                const stat = fs.statSync(agent.jsonlFile);
+                agent.fileOffset = stat.size;
+                startFileWatching(
+                  p.id,
+                  agent.jsonlFile,
+                  store,
+                  fileWatchers,
+                  pollingTimers,
+                  waitingTimers,
+                  permissionTimers,
+                );
+              }
+            } catch {
+              /* file may not exist yet */
             }
-          } catch {
-            /* file may not exist yet */
-          }
-        }, JSONL_POLL_INTERVAL_MS);
-        jsonlPollTimers.set(p.id, pollTimer);
+          }, JSONL_POLL_INTERVAL_MS);
+          jsonlPollTimers.set(p.id, pollTimer);
+        }
+      } catch {
+        /* ignore errors during restore */
       }
-    } catch {
-      /* ignore errors during restore */
     }
   }
 

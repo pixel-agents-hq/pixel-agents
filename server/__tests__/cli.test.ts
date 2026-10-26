@@ -454,7 +454,21 @@ describe('dist/cli.js entry-point guard', () => {
         string,
         unknown
       >;
-      expect(JSON.stringify(settings)).toContain(installedHook);
+      // Walk the parsed settings instead of substring-matching JSON.stringify:
+      // on Windows the serialized text escapes the path's backslashes, so a
+      // naive contains(installedHook) never matches even when the install is right.
+      const commands: string[] = [];
+      const hooksByEvent = settings.hooks as
+        Record<string, { hooks?: { command?: string }[] }[]> | undefined;
+      for (const entries of Object.values(hooksByEvent ?? {})) {
+        for (const matcher of entries) {
+          for (const hook of matcher.hooks ?? []) {
+            if (typeof hook.command === 'string') commands.push(hook.command);
+          }
+        }
+      }
+      expect(commands.length).toBeGreaterThan(0);
+      expect(commands.every((command) => command.includes(installedHook))).toBe(true);
     } finally {
       await stopChild(child);
       fs.rmSync(tmpHome, { recursive: true, force: true });

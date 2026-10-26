@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { Directory } from '../hooks/useExtensionMessages.js';
+import { useLaunchProviderSelection } from '../hooks/useLaunchProviderSelection.js';
+import type { LaunchProviderOption } from '../launchProvider.js';
 import { isBrowserRuntime } from '../runtime.js';
 import { transport } from '../transport/index.js';
 import { LaunchDrawer } from './LaunchDrawer.js';
@@ -20,6 +22,9 @@ interface BottomToolbarProps {
   terminalAvailable: boolean;
   /** Why the terminal is off (shown on the disabled button's tooltip). */
   terminalUnavailableReason: string | null;
+  /** Launchable providers (server-reported). 0/1 entries: no choice UI; >1:
+   *  the drawer header cycles through them, persisted per device. */
+  launchProviders: LaunchProviderOption[];
 }
 
 export function BottomToolbar({
@@ -32,9 +37,14 @@ export function BottomToolbar({
   onEditDirectory,
   terminalAvailable,
   terminalUnavailableReason,
+  launchProviders,
 }: BottomToolbarProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const launchRef = useRef<HTMLDivElement>(null);
+
+  // The drawer's current launch target (shared with the mobile bar via the
+  // hook, so both layouts offer the same picker).
+  const { selectedProviderId, cycleProvider } = useLaunchProviderSelection(launchProviders);
 
   // Close the launch drawer on outside press (the dropdown convention here).
   useEffect(() => {
@@ -57,7 +67,11 @@ export function BottomToolbar({
 
   const handleDirectorySelect = (directory: Directory) => {
     setIsDrawerOpen(false);
-    transport.send({ type: 'launchAgent', directoryPath: directory.path });
+    transport.send({
+      type: 'launchAgent',
+      directoryPath: directory.path,
+      providerId: selectedProviderId,
+    });
   };
 
   // Standalone can launch agents whenever the server has a working PTY. When it
@@ -108,6 +122,9 @@ export function BottomToolbar({
               setIsDrawerOpen(false);
               onEditDirectory(directory);
             }}
+            launchProviders={launchProviders}
+            selectedProviderId={selectedProviderId}
+            onCycleProvider={cycleProvider}
           />
         </div>
       )}

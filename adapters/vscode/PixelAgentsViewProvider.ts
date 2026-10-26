@@ -39,7 +39,7 @@ import {
   type HostDirectoryEntry,
   listDirectories,
 } from '../../server/src/directories.js';
-import { collectDirectorySuggestions } from '../../server/src/directorySuggestions.js';
+import { collectAllDirectorySuggestions } from '../../server/src/directorySuggestions.js';
 import { setDirectoryNameResolver, setTerminalAdapter } from '../../server/src/fileWatcher.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
 import {
@@ -48,9 +48,11 @@ import {
   writeLayoutToFile,
 } from '../../server/src/layoutPersistence.js';
 import { PathSet } from '../../server/src/pathKey.js';
+import { buildProviderCapabilities } from '../../server/src/providerCapabilities.js';
 import type { ConsentEffects } from '../../server/src/providers/hook/consentExecutor.js';
 import { applyConsentChoice } from '../../server/src/providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from '../../server/src/providers/hook/consentGate.js';
+import { setSilentSessionsShown } from '../../server/src/providers/hook/hermes/constants.js';
 import {
   claudeProvider,
   copyHookScript,
@@ -75,6 +77,7 @@ import {
   GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
   GLOBAL_KEY_SHOW_AREAS,
+  GLOBAL_KEY_SHOW_HERMES_SILENT_SESSIONS,
   GLOBAL_KEY_SHOW_HOST_DIRECTORIES,
   GLOBAL_KEY_SOUND_ENABLED,
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
@@ -461,32 +464,58 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message.type === 'launchAgent') {
-        const prevAgentIds = new Set(this.store.keys());
-        await launchNewTerminal(
-          this.store.nextAgentId,
-          this.store.nextTerminalIndex,
-          this.store,
-          this.runtime.activeAgentId,
-          this.runtime.knownJsonlFiles,
-          this.runtime.fileWatchers,
-          this.runtime.pollingTimers,
-          this.runtime.waitingTimers,
-          this.runtime.permissionTimers,
-          this.runtime.jsonlPollTimers,
-          this.runtime.projectScanTimer,
-          () => this.store.persist(),
-          // Every launch comes from a drawer row and carries its Directory's
-          // path; no directoryPath leaves launchNewTerminal's own fallback —
-          // the first workspace folder — exactly as it was.
-          message.directoryPath as string | undefined,
-          // Permission posture is a persisted per-host setting, never a
-          // per-launch field: the webview sends only where to launch.
-          this.adapter.getSetting<boolean>(GLOBAL_KEY_BYPASS_PERMISSIONS, false),
-        );
-        // Register newly created agent(s) with hook handler
-        for (const [id, agent] of this.store) {
-          if (!prevAgentIds.has(id)) {
-            this.runtime.registerAgent(agent.sessionId, id);
+        // Provider resolution mirrors the standalone WS handler exactly: an
+        // absent providerId is the legacy wire (Claude), an unknown id names
+        // nothing to launch and is REFUSED loudly (the webview toasts a
+        // launchRejected — a click that does nothing silently is worse than a
+        // "no"), and a view-only provider says so. Only then does the
+        // terminal-side launcher run, under the same persisted permission
+        // posture as every other launch.
+        const rawProviderId = message.providerId as string | undefined;
+        const provider =
+          rawProviderId === undefined ? claudeProvider : hookProviderById(rawProviderId);
+        if (!provider) {
+          this.webview?.postMessage({
+            type: 'launchRejected',
+            providerId: rawProviderId,
+            reason: 'Unknown provider.',
+          });
+        } else if (!provider.buildLaunchCommand) {
+          this.webview?.postMessage({
+            type: 'launchRejected',
+            providerId: provider.id,
+            reason: `${provider.displayName} cannot be launched from the office (view-only provider).`,
+          });
+        } else {
+          const prevAgentIds = new Set(this.store.keys());
+          await launchNewTerminal(
+            this.store.nextAgentId,
+            this.store.nextTerminalIndex,
+            this.store,
+            this.runtime.activeAgentId,
+            this.runtime.knownJsonlFiles,
+            this.runtime.fileWatchers,
+            this.runtime.pollingTimers,
+            this.runtime.waitingTimers,
+            this.runtime.permissionTimers,
+            this.runtime.jsonlPollTimers,
+            this.runtime.projectScanTimer,
+            () => this.store.persist(),
+            // Every launch comes from a drawer row and carries its Directory's
+            // path; no directoryPath leaves launchNewTerminal's own fallback —
+            // the first workspace folder — exactly as it was.
+            message.directoryPath as string | undefined,
+            // Permission posture is a persisted per-host setting, never a
+            // per-launch field: the webview sends only where to launch.
+            this.adapter.getSetting<boolean>(GLOBAL_KEY_BYPASS_PERMISSIONS, false),
+            undefined, // suppressShow: the manual launch always surfaces its terminal
+            provider,
+          );
+          // Register newly created agent(s) with hook handler
+          for (const [id, agent] of this.store) {
+            if (!prevAgentIds.has(id)) {
+              this.runtime.registerAgent(agent.sessionId, id);
+            }
           }
         }
       } else if (message.type === 'focusAgent') {
@@ -509,8 +538,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             agent.terminalRef.dispose();
           } else {
             // External agent -- remove from tracking and dismiss the file
-            // so the external scanner doesn't re-adopt it
-            this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
+            // so the external scanner doesn't re-adopt it. A hooks-only
+            // external agent (a provider that pushes: Hermes) has NO file to
+            // dismiss — dismissing '' would key a junk entry, and there is no
+            // file scanner to re-adopt it anyway; the dismissal bookkeeping
+            // exists for the JSONL walk alone.
+            if (agent.jsonlFile) {
+              this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
+            }
             this.runtime.removeAgent(message.id);
           }
         }
@@ -558,7 +593,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           broadcast: (m) => this.sendOrBuffer(m),
           reply: (m) => this.sendOrBuffer(m),
           suggestions: () =>
-            collectDirectorySuggestions(claudeProvider, this.shownHostDirectories()),
+            // Same multi-provider answer as the standalone office: transcript
+            // roots AND structured session stores (Hermes) suggest directories.
+            collectAllDirectorySuggestions(hookProviders, this.shownHostDirectories()),
         });
       } else if (message.type === 'setShowHostDirectories') {
         if (typeof message.enabled === 'boolean') {
@@ -581,6 +618,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         const cfg = readConfig();
         cfg.vscode.areaMappings = mappings;
         writeConfig(cfg);
+      } else if (message.type === 'setShowHermesSilentSessions') {
+        const enabled = message.enabled as boolean;
+        this.adapter.setSetting(GLOBAL_KEY_SHOW_HERMES_SILENT_SESSIONS, enabled);
+        setSilentSessionsShown(enabled);
       } else if (message.type === 'setWatchAllSessions') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_WATCH_ALL_SESSIONS, enabled);
@@ -626,14 +667,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         for (const msg of buffered) {
           this.webview?.postMessage(msg);
         }
-        // Provider capabilities: tool taxonomy for webview animation + subagent rendering.
-        // Sent once before restoreAgents so characters render with correct animations
-        // from the first frame.
-        this.webview?.postMessage({
-          type: 'providerCapabilities',
-          readingTools: [...claudeProvider.readingTools],
-          subagentToolNames: [...claudeProvider.subagentToolNames],
-        });
+        // Provider capabilities: the shared handshake shape (tool taxonomy
+        // merged across every AVAILABLE provider + the `providers` list that
+        // drives the Settings rows and the launch drawer). Same builder the
+        // standalone WS path uses — the embedded webview must never receive a
+        // Claude-only snapshot, or Hermes vanishes from the UI and its tools
+        // animate under the wrong rules. Sent once before restoreAgents so
+        // characters render with correct animations from the first frame.
+        this.webview?.postMessage(buildProviderCapabilities());
 
         // Settings + Directory→Area mappings MUST be dispatched BEFORE restoreAgents
         // and the auto-spawn path. Both paths emit `agentCreated` postMessages via
@@ -658,6 +699,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           false,
         );
         this.runtime.watchAllSessions.current = watchAllSessions;
+        const showHermesSilentSessions = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_SHOW_HERMES_SILENT_SESSIONS,
+          false,
+        );
+        setSilentSessionsShown(showHermesSilentSessions);
         // settingsLoaded.hooksEnabled stays a single boolean carrying the
         // CLAUDE provider's preference until the Settings UI grows a
         // per-provider list — its sole webview reader is the hooks tooltip.
@@ -679,6 +725,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           lastSeenVersion,
           extensionVersion,
           watchAllSessions,
+          showHermesSilentSessions,
           alwaysShowLabels,
           ghostHeadlessAgents,
           hooksEnabled,
@@ -827,6 +874,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
 
         this.runtime.startStaleCheck();
+
+        // Provider session-STORE scanners (Hermes' state.db + lease registry):
+        // hook-less adoption, sub-agent correlation, and the only liveness
+        // reaper for characters whose source process died without a goodbye.
+        this.runtime.startSessionScanners();
 
         // Load furniture assets BEFORE sending layout
         (async () => {
@@ -1025,8 +1077,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           if (agent.isTeamLead) {
             this.runtime.removeTeammates(id);
           }
-          // Dismiss JSONL so external scanner doesn't re-adopt it
-          this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
+          // Dismiss JSONL so external scanner doesn't re-adopt it. Push-only
+          // providers have no file to dismiss (same guard as closeAgent).
+          if (agent.jsonlFile) {
+            this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
+          }
           this.runtime.unregisterAgent(agent.sessionId);
           this.runtime.removeAgent(id);
         }

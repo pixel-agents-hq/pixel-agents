@@ -30,6 +30,18 @@ export type AgentEvent =
        *  its response (Stop). Drives the "Waiting for input" vs "Done" label.
        *  Absent/false = the agent finished its turn (Done). */
       awaitingInput?: boolean;
+      /** Context snapshot finalized by this turn, for providers that PUSH it on
+       *  the turn-end event instead of keeping a transcript the server can poll
+       *  (Hermes: its per-turn token totals + resolved window). Absent = this
+       *  turn said nothing about context; the gauge keeps its previous value. */
+      usage?: {
+        /** Tokens the finalized turn's last request carried (prompt side + what
+         *  the model wrote). Matches the transcript-derived figure's semantics. */
+        contextTokens: number;
+        /** The window that context counts against, provider-resolved. Absent =
+         *  the server keeps its estimate and widens it if the context exceeds. */
+        maxContextTokens?: number;
+      };
     }
   | {
       kind: 'subagentStart';
@@ -50,6 +62,14 @@ export type AgentEvent =
     }
   | { kind: 'progress'; toolId: string; data: unknown }
   | { kind: 'permissionRequest' }
+  /**
+   * A pending permission was resolved by the human at the provider's own
+   * surface (Hermes' `post_approval_response`). The handler reverses
+   * permissionRequest's bubble. Claude never emits it — its JSONL polling
+   * broadcasts `agentToolPermissionClear` instead — so this exists for
+   * push-only providers that have no file watcher to retire the bubble.
+   */
+  | { kind: 'permissionResolved' }
   | {
       kind: 'sessionStart';
       source?: string;
@@ -72,6 +92,19 @@ export interface HookProvider {
    *  version it doesn't understand. Bump on every breaking change to AgentEvent
    *  / TeamProvider / HookProvider. Start at 1. */
   readonly protocolVersion: number;
+
+  /** Whether this provider's CLI is present on THIS machine right now. Surfaces
+   *  use it to stay silent about tools the user does not have: the webviewReady
+   *  consent loop skips unavailable providers (no status, no first-run ask),
+   *  and the capabilities broadcast lists only available ones so Settings rows
+   *  cannot offer a nonexistent integration. SYNC by contract — the handshake
+   *  message order is a wire invariant and cannot wait on a promise; a
+   *  provider needing an expensive probe (spawn, network) caches its answer.
+   *  Undefined = always available (the conservative default: a provider
+   *  without this member behaves exactly as before the member existed). A
+   *  THROWING probe counts as available: a flaky check must never silently
+   *  hide an integration the user already uses. */
+  isAvailable?(): boolean;
 
   /** Normalize a raw hook event payload into an AgentEvent.
    *  Each CLI sends different JSON (Claude: snake_case, Copilot: camelCase, etc.)
@@ -129,7 +162,46 @@ export interface HookProvider {
   readonly sessionFilePattern?: string;
   /** Parse one line of a transcript file into an AgentEvent. */
   parseTranscriptLine?(line: string): AgentEvent | null;
-  /** Build CLI launch command for +Agent button. */
+
+  /** Structured per-session activity records ("recently worked-in" directories)
+   *  for the Directory modal, for providers whose session store is NOT a
+   *  transcript directory the file collectors can walk (Hermes keeps SQLite, not
+   *  per-directory JSONL). Most-recent-first is NOT required — the collector
+   *  sorts by `lastActiveMs` and merges across providers. Undefined = the
+   *  provider has no structured store (file-fallback roots cover it, or nothing). */
+  directorySuggestions?(): { cwd: string; lastActiveMs: number }[];
+
+  /** Pathless sessions: a provider whose sessions can legitimately carry
+   *  NEITHER a transcript path NOR a working directory (Hermes' desktop
+   *  gateway rows store `cwd = NULL` and there is no per-session file) must
+   *  have a sessionStart without either STAGED as a pending external session
+   *  anyway — the ordinary `transcriptPath || cwd` staging gate exists to
+   *  filter a file provider's transient sessions, and without this opt-in it
+   *  would silently swallow the store scanner's birth two-beat, leaving the
+   *  session invisible forever. Undefined/false keeps the gate closed
+   *  (Claude's transient-session filter stays exactly as before). */
+  readonly stagesPathlessSessions?: boolean;
+
+  /** Session-store scanner: the non-file twin of the heuristic mode above.
+   *  A provider whose sessions live somewhere `fs.watch` cannot poll (a SQLite
+   *  store plus a process registry) may expose this so the runtime gets the
+   *  same three capabilities:
+   *    - hook-less adoption of live sessions (synthetic sessionStart + activity
+   *      replay through `emit`, i.e. exactly the hook pipeline's front door),
+   *    - liveness reaping (a session the store reports as ended, or whose lease
+   *      pid is gone, is finalized even when the CLI died without a goodbye),
+   *    - sub-agent correlation the wire does not carry (the store knows
+   *      parent↔child; the event envelope often does not).
+   *  The scanner drives ONLY transitions it observed since the previous tick —
+   *  it is delta-based so hook-delivered sessions are never double-rendered.
+   *  Return null when the store cannot be opened on this host (the capability
+   *  is then simply absent; nothing else changes). */
+  createSessionScanner?(ctx: SessionScannerContext): SessionScanner | null;
+  /** Build CLI launch command for +Agent button. `sessionId` is the id the
+   *  office generated (Claude honours it via --session-id). Providers whose
+   *  session-id format is an upstream contract they mint themselves (Hermes)
+   *  may mint their own and return it as `sessionId`: the launcher then
+   *  registers THAT id, so hook events for the spawned process route to it. */
   buildLaunchCommand?(
     sessionId: string,
     cwd: string,
@@ -138,6 +210,7 @@ export interface HookProvider {
     command: string;
     args: string[];
     env?: Record<string, string>;
+    sessionId?: string;
   };
 
   // ── Optional team/subagent extension (Agent Teams on Claude; empty for single-agent CLIs) ──
@@ -145,6 +218,39 @@ export interface HookProvider {
   /** Optional reference to a TeamProvider. When set, the hook handler registers team-aware
    *  branches (subagent routing, teammate discovery, permission forwarding, etc.). */
   readonly team?: TeamProvider;
+}
+
+// ── Session-store scanner (the non-file twin of heuristic mode) ──
+
+/** Everything a provider's session scanner may ask the runtime, and the one
+ *  door it may use to speak back. Events are fed as RAW wire-shaped envelopes
+ *  through `emit` — they run through that provider's `normalizeHookEvent` and
+ *  the full hook pipeline (pending-session adoption, session→agent routing,
+ *  event buffering), exactly like a real hook delivery. A scanner therefore
+ *  cannot invent a second rendering path: what it emits is what the CLI itself
+ *  would have POSTed, or the provider's documented scanner-only wire names. */
+export interface SessionScannerContext {
+  /** The provider's own id — stamped on every emitted event's routing. */
+  readonly providerId: string;
+  /** Deliver one raw event envelope into the hook pipeline. */
+  emit(event: Record<string, unknown>): void;
+  /** Whether the session is already driven by live signals: registered with a
+   *  character, pending confirmation, or owned by a known agent. A scanner
+   *  skips ADOPTION and activity replay for such sessions (hooks got there
+   *  first) but still owns their LIVENESS, which no hook can prove after a
+   *  process that died without a goodbye. */
+  isSessionLive(sessionId: string): boolean;
+  /** Directory-union policy for adoption, mirroring the hook adoption gate:
+   *  a session outside a tracked Directory is adopted only while "Watch All
+   *  Sessions" is on. */
+  isAdoptableDir(cwd: string): boolean;
+}
+
+/** Lifecycle handle returned by `HookProvider.createSessionScanner`. The
+ *  runtime calls start() once (idempotent) and stop() on dispose. */
+export interface SessionScanner {
+  start(): void;
+  stop(): void;
 }
 
 // TODO(provider type taxonomy): FileProvider (polling-only CLIs) and StreamProvider

@@ -33,6 +33,7 @@ function settle(): Promise<void> {
 describe('clientMessageHandler: hooks consent flow', () => {
   let tempHome: string;
   let originalHome: string | undefined;
+  let originalProfile: string | undefined;
   let store: AgentStateStore;
   let sent: Array<Record<string, unknown>>;
   let ctx: ClientMessageContext;
@@ -76,7 +77,10 @@ describe('clientMessageHandler: hooks consent flow', () => {
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-consent-flow-'));
     originalHome = process.env.HOME;
+    originalProfile = process.env.USERPROFILE;
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
+    // win32 os.homedir() reads USERPROFILE, not HOME (see cli.test's dual stub) — mirror it.
 
     store = new AgentStateStore();
     store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
@@ -89,6 +93,11 @@ describe('clientMessageHandler: hooks consent flow', () => {
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalProfile;
     }
     store.dispose();
     fs.rmSync(tempHome, { recursive: true, force: true });

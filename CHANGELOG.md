@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- **Hermes Agent is the second HookProvider** ([#438](https://github.com/pixel-agents-hq/pixel-agents/pull/438)) — `hermes` sessions live in the office like Claude Code terminals do: their own character, tool-driven animations, permission bubbles and a context gauge. Hermes has no hook script — installing means one `hooks.outbound` stanza in its `config.yaml`, and the installer refuses (never rewrites) files it did not author. **Settings gains a hooks row per provider**, consent is asked per provider, and machines without Hermes are never asked about it.
+- **Launch any provider from the office** ([#438](https://github.com/pixel-agents-hq/pixel-agents/pull/438)) — the **+ Agent** drawer picks Claude Code or Hermes Agent; the launch is provider-agnostic on both hosts (VS Code terminal or server-side PTY), carries the provider's own session id and env, and a refused launch answers with a toast instead of silence. Push-only providers such as Hermes are registered as hooks-only agents: no transcript file is polled for a session that has none.
+- **Adoption without hooks, from Hermes' session store** ([#438](https://github.com/pixel-agents-hq/pixel-agents/pull/438)) — Hermes keeps one SQLite `state.db` plus a lease registry instead of per-project JSONL, so a read-only store scanner adopts sessions born before the server started, replays their tool activity, renders `delegate_task` children as sub-characters, and reaps characters whose process died or whose lease was pruned. Directory suggestions merge the file walk with the store, so a Hermes-only machine gets suggestions too.
+
+### Changes
+
+- **Show Hermes cron/batch/… (opt-in)** ([#438](https://github.com/pixel-agents-hq/pixel-agents/pull/438)) — scheduled (`cron`, `batch`), transient (`oneshot`) and unattributable (`unknown`) Hermes runs were never characters and never could be seen; a Settings row, stored per surface like every other setting, opts into drawing them. `subagent` is deliberately outside the switch: those children already render as Subtask sub-characters, so opening the wire for them would double-render rather than reveal.
+
+- **Hook payloads cap at 1 MB, not 64 KB** ([#438](https://github.com/pixel-agents-hq/pixel-agents/pull/438)) — a `post_tool_call` carries the tool result; terminal-heavy sessions reached 200–600 KB and the event was rejected and lost forever, taking the session's confirm beat with it.
+
+### Fixes
+
+- **Provider-declared context windows are no longer floored at 200k** ([#438](https://github.com/pixel-agents-hq/pixel-agents/pull/438)) — the gauge widened only ever upwards, so a 131k local session read 2.6% used instead of 4%.
+
+### Maintenance
+
+- Runtime dependency `yaml` (MIT, zero-dependency) for the Hermes `config.yaml` installer, bundled into the extension and CLI like the rest.
+
 ## v1.5.0
 
 ### Features

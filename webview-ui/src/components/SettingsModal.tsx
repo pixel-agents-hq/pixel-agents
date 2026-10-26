@@ -21,12 +21,19 @@ interface SettingsModalProps {
   externalAssetDirectories: string[];
   watchAllSessions: boolean;
   onToggleWatchAllSessions: () => void;
-  /** ACTUAL install state (the hooksStatus message), not the hooksEnabled
-   *  preference. The preference defaults to true while first-run consent is
-   *  still pending, so binding the checkbox to it renders "on" over an empty
-   *  ~/.claude/settings.json. */
-  hooksInstalled: boolean;
-  onToggleHooksEnabled: () => void;
+  /** One row per hook provider the server reports as available: the Claude row
+   *  keeps the legacy "Instant Detection (Hooks)" label, others read
+   *  "<displayName> hooks". Rows carry the ACTUAL install state (the
+   *  hooksStatus message), not the hooksEnabled preference — the preference
+   *  defaults to true while first-run consent is still pending, so binding the
+   *  checkbox to it renders "on" over an empty settings file. */
+  hookProviderRows: { id: string; label: string; installed: boolean }[];
+  /** Hermes-only opt-in, rendered beside that provider's hooks row because the
+   *  silent set is a Hermes concept (`HERMES_TOGGLEABLE_SILENT_SOURCES`), and
+   *  hidden entirely when the machine has no Hermes. */
+  showHermesSilentSessions: boolean;
+  onToggleShowHermesSilentSessions: () => void;
+  onToggleHooks: (providerId: string, installed: boolean) => void;
   /** Whether the areas overlay is rendered outside of the Areas edit tool. */
   showAreas: boolean;
   onToggleShowAreas: () => void;
@@ -56,8 +63,10 @@ export function SettingsModal({
   externalAssetDirectories,
   watchAllSessions,
   onToggleWatchAllSessions,
-  hooksInstalled,
-  onToggleHooksEnabled,
+  hookProviderRows,
+  onToggleHooks,
+  showHermesSilentSessions,
+  onToggleShowHermesSilentSessions,
   showAreas,
   onToggleShowAreas,
   showAreasAvailable,
@@ -194,11 +203,27 @@ export function SettingsModal({
         checked={watchAllSessions}
         onChange={onToggleWatchAllSessions}
       />
-      <Checkbox
-        label="Instant Detection (Hooks)"
-        checked={hooksInstalled}
-        onChange={onToggleHooksEnabled}
-      />
+      {/* One hooks row per available provider (server-reported). The provider
+          order follows the capabilities registry; each row toggles exactly
+          that provider's install state. */}
+      {hookProviderRows.map((row) => (
+        <Checkbox
+          key={row.id}
+          label={row.label}
+          checked={row.installed}
+          onChange={() => onToggleHooks(row.id, row.installed)}
+        />
+      ))}
+      {/* Hermes-shaped opt-in, so it sits with the Hermes row and only exists
+          while that provider is available. Covers cron/batch/oneshot/unknown —
+          NOT 'subagent', whose children are already drawn as Subtasks. */}
+      {hookProviderRows.some((row) => row.id === 'hermes') && (
+        <Checkbox
+          label="Show Hermes cron/batch/…"
+          checked={showHermesSilentSessions}
+          onChange={onToggleShowHermesSilentSessions}
+        />
+      )}
       <Checkbox
         label="Always Show Labels"
         checked={alwaysShowOverlay}

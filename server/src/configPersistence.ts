@@ -10,6 +10,9 @@ export interface AdapterSettings {
   alwaysShowLabels: boolean;
   ghostHeadlessAgents: boolean;
   watchAllSessions: boolean;
+  /** Opt-in visibility of Hermes' silent sources (cron/batch/oneshot/unknown).
+   *  Stored per surface like every other setting, applied to the provider ref. */
+  showHermesSilentSessions: boolean;
   hooksInfoShown: boolean;
   showAreas: boolean;
   areaMappings: Record<string, string[]>;
@@ -30,6 +33,7 @@ export const ADAPTER_SETTING_KEYS = [
   'alwaysShowLabels',
   'ghostHeadlessAgents',
   'watchAllSessions',
+  'showHermesSilentSessions',
   'hooksInfoShown',
   'showAreas',
   'areaMappings',
@@ -79,6 +83,7 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   alwaysShowLabels: false,
   ghostHeadlessAgents: false,
   watchAllSessions: false,
+  showHermesSilentSessions: false,
   hooksInfoShown: false,
   showAreas: false,
   areaMappings: {},
@@ -182,6 +187,10 @@ function parseAdapterSettings(raw: unknown): AdapterSettings {
       typeof obj.watchAllSessions === 'boolean'
         ? obj.watchAllSessions
         : DEFAULT_ADAPTER_SETTINGS.watchAllSessions,
+    showHermesSilentSessions:
+      typeof obj.showHermesSilentSessions === 'boolean'
+        ? obj.showHermesSilentSessions
+        : DEFAULT_ADAPTER_SETTINGS.showHermesSilentSessions,
     hooksInfoShown:
       typeof obj.hooksInfoShown === 'boolean'
         ? obj.hooksInfoShown
