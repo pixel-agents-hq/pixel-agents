@@ -31,6 +31,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
       consentCopy.ts                 Claude's first-run consent disclosure text (scope/data/undo), served through consentDisclosure()
       constants.ts                   Claude hook event names, script path
       hooks/claude-hook.ts           Hook script (CJS+shebang, bundled to dist/hooks/claude-hook.js)
+      statusline/                    Session bar: Claude Code statusLine command (nakama-statusline.ts, bundled to dist/hooks/nakama-statusline.js) + pure parse/format/snapshot logic (statusLine.ts). Prints model·effort, context, 5h/7d plan limits and spend under the prompt; leaves owner-only snapshots in ~/.pixel-agents/statusline/ (zero tokens, no network). Never throws, never writes transcript paths or values of unknown keys
     providers/hook/consentGate.ts    Provider-agnostic consent POLICY: when to ask (hooksConsentRequest per provider) and what an answer means (consentActionFor(choice, {installed, consent}) — see docs/adr/0001)
     providers/hook/consentExecutor.ts Provider-agnostic consent EXECUTION: applyConsentChoice(providerId, choice, ConsentEffects) runs the six actions in one order for both surfaces, and SERIALIZES answers per process across ALL providers
     providers/index.ts               Provider registry (claudeProvider + the hookProviders list the consent gate loops over)
@@ -363,6 +364,7 @@ Per-agent runtime data: provider reference, session key, transcript-fallback fie
   layout.json              OfficeLayout (shared across surfaces)
   server.json              { port, pid, authToken }
   hooks/claude-hook.js     Bundled hook script (CJS, shebang)
+  statusline/              Session bar: nakama-statusline.js, usage.json (account-wide 5h/7d limits, merged so usage never moves backwards within a window), sessions/<sessionId>.json, last-input-shape.json (payload keys + types only)
 ```
 
 `FileStateAdapter({ namespace })` backs both runtimes. Per-namespace settings: `soundEnabled`, `lastSeenVersion`, `alwaysShowLabels`, `showThinking`, `watchAllSessions`, `hooksInfoShown` (the hooks preference is per-provider and machine-global, at the config top level). Running both surfaces in parallel never clobbers either.
@@ -562,11 +564,11 @@ npm test                   # webview + server vitest
 npm run e2e                # Playwright
 ```
 
-`esbuild.js` runs three bundles:
+`esbuild.js` runs three bundle steps:
 
 1. **Extension** (`dist/extension.js`) from `adapters/vscode/extension.ts`. External: `vscode`.
 2. **CLI** (`dist/cli.js`) from `server/src/cli.ts`. Externals pulled at install time (`fastify`, `@fastify/*`).
-3. **Hook scripts** (`dist/hooks/claude-hook.js`) from `server/src/providers/hook/claude/hooks/claude-hook.ts`. CJS, shebang.
+3. **Hook scripts** (`dist/hooks/claude-hook.js` and the session bar `dist/hooks/nakama-statusline.js`) from `server/src/providers/hook/claude/hooks/claude-hook.ts` and `.../statusline/nakama-statusline.ts`. CJS, shebang, flat output (`entryNames: '[name]'` — the installer copies `dist/hooks/claude-hook.js` by that exact path).
 
 `define: { 'process.env.PIXEL_AGENTS_VERSION': JSON.stringify(version) }` stamps the package version into all bundles.
 

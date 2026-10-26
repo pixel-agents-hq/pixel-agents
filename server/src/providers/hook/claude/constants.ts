@@ -85,3 +85,50 @@ export const CLAUDE_SMALL_CONTEXT_WINDOW = 200_000;
  *  guessing small for a large model pins every gauge in the red, while the
  *  reverse is a quiet under-read that the runtime's widening still corrects. */
 export const CLAUDE_SMALL_CONTEXT_MODEL_PATTERN = /haiku|claude-[123]|-4-[01]\b/i;
+
+// ── Session bar (Claude Code statusLine) ────────────────────
+//
+// The statusLine command prints one line under the prompt and leaves small
+// JSON snapshots that Nakama reads: no hook, no network, zero tokens.
+/** Output filename after esbuild compiles nakama-statusline.ts. */
+export const STATUSLINE_SCRIPT_NAME = 'nakama-statusline.js';
+/** Folder (under SERVER_JSON_DIR) for the script and its snapshots. */
+export const STATUSLINE_DIR = 'statusline';
+/** One snapshot per session: `<sessionId>.json`. */
+export const STATUSLINE_SESSIONS_DIR = 'sessions';
+/** Latest account-wide plan limits (5-hour and 7-day). */
+export const STATUSLINE_USAGE_FILE = 'usage.json';
+/** Key names and types of the last payload, to notice schema changes. */
+export const STATUSLINE_SHAPE_FILE = 'last-input-shape.json';
+/** Claude Code closes stdin right away; this only guards a stuck pipe. */
+export const STATUSLINE_STDIN_TIMEOUT_MS = 1_000;
+/** Session snapshots older than this are deleted when a prune runs. */
+export const STATUSLINE_PRUNE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/** Fraction of runs that prune, so the folder stays small at ~no cost. */
+export const STATUSLINE_PRUNE_CHANCE = 0.02;
+/** Orphaned `*.tmp` files (a run killed mid-write) older than this are swept. */
+export const STATUSLINE_TMP_MAX_AGE_MS = 60 * 60 * 1000;
+/** Rename retries when Windows holds the target open (antivirus, a reader). */
+export const STATUSLINE_RENAME_ATTEMPTS = 3;
+export const STATUSLINE_RENAME_RETRY_MS = 10;
+/** Two `resets_at` this close (seconds) name the same plan window. */
+export const STATUSLINE_SAME_WINDOW_SLACK_S = 300;
+/** Bar look: cells, glyphs, and the usage that turns it yellow / red. */
+export const STATUSLINE_BAR_CELLS = 5;
+export const STATUSLINE_BAR_FULL = '▰';
+export const STATUSLINE_BAR_EMPTY = '▱';
+export const STATUSLINE_WARN_PCT = 50;
+export const STATUSLINE_DANGER_PCT = 80;
+export const STATUSLINE_SEPARATOR = ' · ';
+export const STATUSLINE_UNKNOWN = '—';
+export const STATUSLINE_FALLBACK_NAME = 'Nakama';
+export const STATUSLINE_LOCALE = 'es-CL';
+export const STATUSLINE_ANSI = {
+  green: '\u001b[32m',
+  yellow: '\u001b[33m',
+  red: '\u001b[31m',
+  reset: '\u001b[0m',
+} as const;
+/** describeShape bounds: nesting depth and keys recorded per object. */
+export const STATUSLINE_SHAPE_MAX_DEPTH = 4;
+export const STATUSLINE_SHAPE_MAX_KEYS = 50;

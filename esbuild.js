@@ -50,13 +50,28 @@ function buildHooks() {
     'claude-hook.ts',
   );
   if (!fs.existsSync(entry)) return;
+  // The session bar (Claude Code statusLine command) ships beside the hook script.
+  const statusLine = path.join(
+    __dirname,
+    'server',
+    'src',
+    'providers',
+    'hook',
+    'claude',
+    'statusline',
+    'nakama-statusline.ts',
+  );
   require('esbuild').buildSync({
-    entryPoints: [entry],
+    entryPoints: [entry, statusLine],
     bundle: true,
     platform: 'node',
     target: 'node18',
     format: 'cjs',
     outdir: path.join(__dirname, 'dist', 'hooks'),
+    // Flat output: two entries in different folders would otherwise land in
+    // dist/hooks/hooks/ and dist/hooks/statusline/, and the installer copies
+    // dist/hooks/claude-hook.js by that exact path.
+    entryNames: '[name]',
     banner: { js: '#!/usr/bin/env node' },
   });
   console.log('✓ Built hooks/ → dist/hooks/');
