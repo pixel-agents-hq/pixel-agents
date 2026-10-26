@@ -10,16 +10,16 @@ interface MobileTerminalPageProps {
   agentIds: number[];
   /** The pane to show (useTerminalDrawer's resolution). */
   shownAgentId: number | null;
-  onStatusChange: (agentId: number, status: TerminalConnectionStatus) => void;
+  onStatusChange: (agentId: number, status: TerminalConnectionStatus | null) => void;
   /** Input into the shown pane, for the key bar. */
   inputRef: Ref<TerminalInputHandle>;
 }
 
 /**
  * The mobile shell's terminal page — the full-screen pane the office slides
- * away to reveal. One TerminalPane per launched agent, all mounted (buffers
- * and sockets survive switches, same as the desktop drawer), only the shown
- * one visible.
+ * away to reveal. Only the shown agent's TerminalPane is mounted: a phone
+ * can't hold every agent's xterm, and a switch gets the screen back from the
+ * server's replay.
  *
  * autoFocus is off: on a phone, focusing xterm summons the software keyboard
  * over half the viewport, so the keyboard should only appear when the user
@@ -48,6 +48,7 @@ export function MobileTerminalPage({
         paneClassName="left-4 right-4 bottom-4 mobile-safe-pane-top"
         fontSizePx={MOBILE_TERMINAL_FONT_SIZE_PX}
         autoFocus={false}
+        keepHidden={false}
         inputRef={inputRef}
       />
     </div>

@@ -18,7 +18,7 @@ export interface KeyChord {
 
 /**
  * Alt+C (Option+C on a Mac) with a selection = "Copy as text": the selection
- * re-flowed (flowTerminalCopy) instead of verbatim. Chosen because no browser
+ * re-flowed (terminalCopyText's 'text' mode) instead of verbatim. Chosen because no browser
  * claims it (Chrome and Firefox reserve Ctrl/Cmd+Shift+C for DevTools; Alt+C
  * opens no menu) and because, gated on a selection like Ctrl+C, it costs the
  * terminal nothing: without a selection the key still reaches the PTY (Meta-C

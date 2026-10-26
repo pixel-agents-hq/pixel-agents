@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import type { HookProvider } from '../../../core/src/provider.js';
+import { restoredAgentInit } from '../agentPersistence.js';
 import type { AgentRuntime } from '../agentRuntime.js';
 import { createAgentState } from '../agentState.js';
 import type { AgentStateStore } from '../agentStateStore.js';
@@ -25,12 +26,12 @@ import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import type { AgentState } from '../types.js';
-import type { PtySessionManager } from './ptySessionManager.js';
+import type { TerminalSession, TerminalSessions } from './terminalSessions.js';
 
 export interface LaunchStandaloneAgentDeps {
   store: AgentStateStore;
   runtime: AgentRuntime;
-  ptyManager: PtySessionManager;
+  ptyManager: TerminalSessions;
   provider: HookProvider;
 }
 
@@ -80,29 +81,6 @@ export function launchStandaloneAgent(
 
   const id = store.nextAgentId.current++;
 
-  let session;
-  try {
-    session = ptyManager.create({
-      agentId: id,
-      command: launch.command,
-      args: launch.args,
-      cwd,
-      env: launch.env,
-      cols: options.cols,
-      rows: options.rows,
-    });
-  } catch (err) {
-    // Roll the id back so a failed spawn doesn't burn an agent id.
-    store.nextAgentId.current--;
-    console.error(`[Pixel Agents] Terminal: spawn failed: ${String(err)}`);
-    return null;
-  }
-
-  // Pre-register the expected JSONL so the project scanner doesn't mistake it
-  // for a /clear file, exactly as the VS Code path does.
-  const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
-  runtime.knownJsonlFiles.add(expectedFile);
-
   const agent = createAgentState({
     id,
     sessionId,
@@ -111,7 +89,7 @@ export function launchStandaloneAgent(
     // restore paths act on -- a PTY agent must be excluded from both.
     isExternal: false,
     projectDir,
-    jsonlFile: expectedFile,
+    jsonlFile: path.join(projectDir, `${sessionId}.jsonl`),
     // The character's origin label (and its Area-mapping key): the name of the
     // Directory it was launched into, as the user named it — so an entry called
     // "Side Project" labels its agents that, not "side-project", and the Areas
@@ -125,15 +103,99 @@ export function launchStandaloneAgent(
   // agentCreated broadcast and is persisted with the agent, so a reload
   // restores the same character without the webview having to save it back.
   assignPaletteIfNeeded(agent, store);
-  store.set(id, agent);
-  runtime.activeAgentId.current = id;
 
-  runtime.registerAgent(sessionId, id);
+  let session;
+  try {
+    session = ptyManager.create({
+      agentId: id,
+      command: launch.command,
+      args: launch.args,
+      cwd,
+      env: { ...processEnv(), ...launch.env },
+      cols: options.cols,
+      rows: options.rows,
+    });
+  } catch (err) {
+    // Roll the id back so a failed spawn doesn't burn an agent id.
+    store.nextAgentId.current--;
+    console.error(`[Pixel Agents] Terminal: spawn failed: ${String(err)}`);
+    return null;
+  }
+
+  admitTerminalAgent(deps, agent, session);
+  runtime.activeAgentId.current = id;
   store.persist();
 
-  console.log(
-    `[Pixel Agents] Terminal: Agent ${id} - spawned ${launch.command} (pid ${session.pid}) in ${cwd}`,
-  );
+  const pid = session.pid !== null ? ` (pid ${session.pid})` : '';
+  console.log(`[Pixel Agents] Terminal: Agent ${id} - spawned ${launch.command}${pid} in ${cwd}`);
+  return id;
+}
+
+/**
+ * Bring back the agents whose terminals outlived the last server (only the
+ * PTY host keeps them; in process there are none). Runs before the server
+ * accepts connections, so the first office to connect already sees them —
+ * and before anything persists, which would drop them from the saved list.
+ *
+ * Each agent is rebuilt from the saved list (team, look, spawns): shutting
+ * down never empties it. Its transcript is read from its current end: what it
+ * did while no server was watching is history, and replaying it would
+ * resurrect finished tools.
+ */
+export function reattachTerminalAgents(deps: LaunchStandaloneAgentDeps): number[] {
+  const { store, ptyManager } = deps;
+  const saved = new Map(store.loadPersistedAgents().map((p) => [p.id, p]));
+  const restored: number[] = [];
+
+  for (const session of ptyManager.survivors()) {
+    const id = session.agentId;
+    // Never hand a new launch an id a live terminal still holds.
+    if (id >= store.nextAgentId.current) store.nextAgentId.current = id + 1;
+    if (store.has(id)) continue;
+    const record = saved.get(id);
+    if (!record) {
+      console.warn(
+        `[Pixel Agents] Terminal: Agent ${id} - running in the PTY host with no saved record; left out of the office.`,
+      );
+      continue;
+    }
+
+    const agent = createAgentState({
+      ...restoredAgentInit(record),
+      isExternal: false,
+      providerId: deps.provider.id,
+    });
+    try {
+      agent.fileOffset = fs.statSync(agent.jsonlFile).size;
+    } catch {
+      // No transcript yet: it starts from the beginning once it appears.
+    }
+    assignPaletteIfNeeded(agent, store);
+    admitTerminalAgent(deps, agent, session);
+    restored.push(id);
+    console.log(`[Pixel Agents] Terminal: Agent ${id} - reattached (pid ${session.pid})`);
+  }
+
+  if (restored.length > 0) store.persist();
+  return restored;
+}
+
+/** What every agent with a terminal gets, launched or reattached: a place in
+ *  the office, its drawer tab, its removal when the process ends, and its
+ *  transcript watched. */
+function admitTerminalAgent(
+  deps: LaunchStandaloneAgentDeps,
+  agent: AgentState,
+  session: TerminalSession,
+): void {
+  const { store, runtime } = deps;
+  const id = agent.id;
+
+  // Pre-register the expected JSONL so the project scanner doesn't mistake it
+  // for a /clear file, exactly as the VS Code path does.
+  runtime.knownJsonlFiles.add(agent.jsonlFile);
+  store.set(id, agent);
+  runtime.registerAgent(agent.sessionId, id);
 
   // Tell the UI a terminal exists for this agent, so the drawer opens a tab.
   // A separate message (rather than a field on agentCreated) keeps the protocol
@@ -152,8 +214,6 @@ export function launchStandaloneAgent(
   });
 
   startJsonlPoll(deps, id, agent);
-
-  return id;
 }
 
 /**
@@ -201,4 +261,16 @@ function startJsonlPoll(deps: LaunchStandaloneAgentDeps, id: number, agent: Agen
   }, JSONL_POLL_INTERVAL_MS);
 
   runtime.jsonlPollTimers.set(id, timer);
+}
+
+/** This process's env as plain strings (process.env is `string | undefined`-valued,
+ *  a PTY env all-strings): what an agent's terminal runs with, under its own
+ *  variables. Built here, by the server, so a PTY host started long ago by an
+ *  older server never lends its own. */
+function processEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
 }

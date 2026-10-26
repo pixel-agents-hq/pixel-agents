@@ -72,7 +72,13 @@ function harness(overrides: Partial<PtyModuleResolution> = {}): Harness {
 }
 
 function create(manager: PtySessionManager, agentId = 1) {
-  return manager.create({ agentId, command: 'claude', args: ['--session-id', 'x'], cwd: '/tmp' });
+  return manager.create({
+    agentId,
+    command: 'claude',
+    args: ['--session-id', 'x'],
+    cwd: '/tmp',
+    env: {},
+  });
 }
 
 describe('PtySessionManager availability', () => {
@@ -328,12 +334,12 @@ describe('PtySession snapshot', () => {
     const session = create(manager, 1);
     spawned[0].emit('hello ');
     spawned[0].emit('world');
-    expect(stripAnsi(await session.snapshot())).toContain('hello world');
+    expect(stripAnsi((await session.replay()).data)).toContain('hello world');
   });
 
   it('is empty before any output', async () => {
     const { manager } = harness();
-    expect(stripAnsi(await create(manager, 1).snapshot())).toBe('');
+    expect(stripAnsi((await create(manager, 1).replay()).data)).toBe('');
   });
 
   it('reflects the current screen, not the raw byte history', async () => {
@@ -346,9 +352,26 @@ describe('PtySession snapshot', () => {
     spawned[0].emit('\x1b[2J\x1b[3J\x1b[H'); // clear screen + scrollback, home
     spawned[0].emit('AFTER');
 
-    const snapshot = stripAnsi(await session.snapshot());
+    const snapshot = stripAnsi((await session.replay()).data);
     expect(snapshot).toContain('AFTER');
     expect(snapshot).not.toContain('SECRET');
+  });
+
+  it('keeps the mouse encoding a TUI chose, so a fresh client reports wheels as it expects', async () => {
+    // The serialize addon restores mouse TRACKING (?1000h) but not its
+    // ENCODING: a client fed only that reported wheels in the old X10 bytes,
+    // which Claude Code (SGR, ?1006h) ignores — touch scrolling was dead after
+    // every reload or reconnect until a tap's focus report woke the TUI.
+    const { manager, spawned } = harness();
+    const session = create(manager, 1);
+    spawned[0].emit('\x1b[?1000h\x1b[?1006h');
+    const { data } = await session.replay();
+    expect(data).toContain('\x1b[?1000h');
+    expect(data).toContain('\x1b[?1006h');
+
+    const plain = create(manager, 2);
+    spawned[1].emit('no mouse');
+    expect((await plain.replay()).data).not.toMatch(/\x1b\[\?10(06|16)h/);
   });
 
   it('bounds retained scrollback, keeping the most recent lines', async () => {
@@ -358,7 +381,7 @@ describe('PtySession snapshot', () => {
     const lines = Array.from({ length: total }, (_, i) => `L${String(i).padStart(6, '0')}`);
     spawned[0].emit(lines.join('\r\n'));
 
-    const snapshot = stripAnsi(await session.snapshot());
+    const snapshot = stripAnsi((await session.replay()).data);
     expect(snapshot).toContain(`L${String(total - 1).padStart(6, '0')}`);
     expect(snapshot).not.toContain('L000000');
   });

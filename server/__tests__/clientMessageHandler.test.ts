@@ -758,7 +758,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
   it('webviewReady tells an untokened client the terminal is unavailable, and why', () => {
     const { manager } = workingPtyManager();
     store.set(1, makeAgent(1));
-    manager.create({ agentId: 1, command: 'claude', args: [], cwd: tempHome });
+    manager.create({ agentId: 1, command: 'claude', args: [], cwd: tempHome, env: {} });
 
     dispatch({ type: 'webviewReady' }, ctx({ ptyManager: manager, privileged: false }));
 
@@ -787,7 +787,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     const { manager } = workingPtyManager();
     store.set(1, makeAgent(1));
     store.set(2, makeAgent(2));
-    manager.create({ agentId: 1, command: 'claude', args: [], cwd: tempHome });
+    manager.create({ agentId: 1, command: 'claude', args: [], cwd: tempHome, env: {} });
 
     dispatch({ type: 'webviewReady' }, ctx({ ptyManager: manager }));
 
@@ -1129,7 +1129,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
   it('closeAgent kills the PTY and removes the agent', () => {
     const { manager, spawned } = workingPtyManager();
     store.set(5, makeAgent(5));
-    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome });
+    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome, env: {} });
 
     dispatch({ type: 'closeAgent', id: 5 }, ctx({ runtime, ptyManager: manager }));
 
@@ -1141,7 +1141,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
   it('closeAgent from an untokened client leaves a PTY-backed agent running', () => {
     const { manager, spawned } = workingPtyManager();
     store.set(5, makeAgent(5));
-    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome });
+    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome, env: {} });
 
     dispatch(
       { type: 'closeAgent', id: 5 },
@@ -1157,7 +1157,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     const { manager } = workingPtyManager();
     store.set(5, { ...makeAgent(5), isTeamLead: true });
     store.set(6, { ...makeAgent(6), leadAgentId: 5, agentName: 'review-helper' });
-    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome });
+    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome, env: {} });
 
     dispatch({ type: 'closeAgent', id: 5 }, ctx({ runtime, ptyManager: manager }));
 

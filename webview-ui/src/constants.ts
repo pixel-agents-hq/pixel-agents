@@ -376,13 +376,10 @@ export const TERMINAL_RESIZE_DEBOUNCE_MS = 100;
 export const TERMINAL_LINK_PROTOCOLS: readonly string[] = ['http:', 'https:'];
 /** window.open features for terminal links: no opener handle, no Referer. */
 export const TERMINAL_LINK_WINDOW_FEATURES = 'noopener,noreferrer';
-/** THE plain-URL pattern of the terminal pane: TerminalPane hands it to
- *  @xterm/addon-web-links (`urlRegex`) for mouse clicks and urlAtCell matches
- *  it for touch taps, so a URL that is clickable is exactly one that is
- *  tappable. Equivalent to the addon's built-in strictUrlRegex. Deliberately
- *  NOT global: the addon rebuilds it as `new RegExp(source, flags + 'g')`, so
- *  a `g` here would throw on the duplicate flag; matchAll callers make their
- *  own global copy. */
+/** THE plain-URL pattern of the terminal pane: one lookup (urlsOnLine) serves
+ *  mouse clicks and touch taps, so a URL that is clickable is exactly one that
+ *  is tappable. Equivalent to @xterm/addon-web-links' strictUrlRegex. Not
+ *  global; matchAll callers make their own global copy. */
 export const TERMINAL_URL_PATTERN =
   /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/;
 /** Largest OSC 52 clipboard write the terminal honours (clipboardKeys.ts),
@@ -455,6 +452,14 @@ export const TOUCH_TAP_MAX_DURATION_MS = 350;
  *  text selection instead of scrolling: the word under the finger is
  *  selected, and dragging then extends the selection cell by cell. */
 export const TERMINAL_LONG_PRESS_MS = 500;
+/** How far from the cursor row the input area's ruled edges are looked for
+ *  (a long multi-line prompt can sit this many rows above or below it). */
+export const TERMINAL_INPUT_AREA_MAX_SCAN_ROWS = 20;
+/** A row is a rule (the prompt box's top or bottom edge) when at least this
+ *  many of its non-space characters are box-drawing lines… */
+export const TERMINAL_RULE_MIN_CHARS = 8;
+/** …and they make up at least this share of them. */
+export const TERMINAL_RULE_MIN_SHARE = 0.8;
 /** Vertical gap between the selection's top row and the floating copy pill
  *  hovering above it (clears the start handle's knob). */
 export const TERMINAL_COPY_PILL_GAP_PX = 56;
@@ -532,14 +537,17 @@ export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{
   /** Byte sequence a tap writes to the PTY. Absent on the trackpad key — a
    *  plain tap there deliberately does nothing. */
   sequence?: string;
-  /** Press-hold-slide emits arrow keys with the finger in all four
-   *  directions, echoing the iOS space-bar trackpad (whose real caret
-   *  gesture can't reach xterm — its textarea must stay empty for input
-   *  diffing). Drives Claude Code's TUI menus (/resume, /model) and the
+  /** Press-hold-slide emits arrow keys with the finger, along the first
+   *  direction it moves in (touch/trackpad.ts), echoing the iOS space-bar
+   *  trackpad (whose real caret gesture can't reach xterm — its textarea
+   *  must stay empty for input diffing). Drives Claude Code's TUI menus (/resume, /model) and the
    *  input-line cursor; the iOS keyboard has no arrows of its own. */
   trackpad?: boolean;
 }> = [
   { label: '/', sequence: '/' },
+  // The iOS keyboard has no tab key: Claude Code completes paths and
+  // commands with it.
+  { label: 'tab', sequence: '\t' },
   { label: 'shift+tab', sequence: '\x1b[Z' },
   { label: 'esc', sequence: '\x1b' },
   { label: '✜', trackpad: true },
@@ -550,7 +558,7 @@ export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{
 ];
 /** Finger travel per emitted arrow while sliding on the trackpad key. */
 export const MOBILE_TRACKPAD_STEP_PX = 16;
-/** The paste key's prompt where script can't read the clipboard (plain-http
+/** The Paste pill's prompt where script can't read the clipboard (plain-http
  *  origins): the user pastes into the native field instead. */
 export const MOBILE_PASTE_PROMPT = 'Paste into the terminal:';
 /** visualViewport.height within this many px of innerHeight = nothing to

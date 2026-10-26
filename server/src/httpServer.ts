@@ -18,8 +18,8 @@ import {
   WS_CLOSE_FORBIDDEN_ORIGIN,
   WS_CLOSE_UNAUTHORIZED,
 } from './constants.js';
-import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { registerTerminalRoutes } from './terminal/terminalRoutes.js';
+import type { TerminalSessions } from './terminal/terminalSessions.js';
 import type { AgentState } from './types.js';
 import {
   bearerTokenValid,
@@ -55,7 +55,7 @@ export interface HttpServerOptions {
   onReloadAssets?: ReloadAssetsSideEffect;
   /** PTY terminals for standalone-launched agents. Absent = terminal feature off
    *  (VS Code embedded mode, where the editor owns terminals). */
-  ptyManager?: PtySessionManager;
+  ptyManager?: TerminalSessions;
   /** Extra Host names (beyond loopback and a specific bind address) a
    *  privileged standalone handshake may arrive under -- e.g. a reverse proxy's
    *  public name. See wsAuth.privilegedHostnames. */

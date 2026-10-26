@@ -23,6 +23,11 @@ import {
 } from '../src/constants.js';
 import type { IPty, PtyModule } from '../src/terminal/ptyModule.js';
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
+import type {
+  TerminalReplay,
+  TerminalSession,
+  TerminalSessions,
+} from '../src/terminal/terminalSessions.js';
 
 let tmpBase: string;
 
@@ -136,7 +141,7 @@ describe('terminal WebSocket auth', () => {
     });
     port = config.port;
     token = config.token;
-    ptyManager.create({ agentId: 1, command: 'claude', args: [], cwd: tmpBase });
+    ptyManager.create({ agentId: 1, command: 'claude', args: [], cwd: tmpBase, env: {} });
   });
 
   afterEach(() => {
@@ -251,5 +256,65 @@ describe('terminal WebSocket auth', () => {
     expect(frames[0].cols).toBeTypeOf('number');
     expect(frames[0].rows).toBeTypeOf('number');
     expect(frames[1]).toEqual({ type: 'output', data: 'after-attach' });
+  });
+  it('drops output the replay already holds when it streams in while the replay travels', async () => {
+    // The PTY host case: the screen comes back over a socket, and output keeps
+    // flowing meanwhile. A chunk numbered at or below the replay's own number
+    // is already drawn in it; sending it again would print it twice.
+    const listeners = new Set<(chunk: string, seq: number) => void>();
+    const session: TerminalSession = {
+      agentId: 5,
+      pid: 1,
+      cols: 80,
+      rows: 24,
+      hasExited: false,
+      onData: (l) => {
+        listeners.add(l);
+        return () => listeners.delete(l);
+      },
+      onExit: () => () => {},
+      replay: () =>
+        new Promise<TerminalReplay>((resolve) => {
+          for (const l of listeners) l('in-replay', 1);
+          for (const l of listeners) l('after-replay', 2);
+          resolve({ data: 'screen+in-replay', seq: 1, cols: 80, rows: 24 });
+        }),
+      write: () => {},
+      resize: () => {},
+    };
+    const sessions: TerminalSessions = {
+      enabled: true,
+      isAvailable: () => true,
+      unavailableReason: () => null,
+      moduleId: () => 'fake',
+      create: () => session,
+      get: (id) => (id === 5 ? session : undefined),
+      has: (id) => id === 5,
+      dispose: () => {},
+      survivors: () => [],
+      shutdown: async () => {},
+    };
+    server.stop();
+    server = new PixelAgentsServer();
+    const config = await server.start({
+      store: new AgentStateStore(),
+      embedded: false,
+      ptyManager: sessions,
+    });
+
+    const ws = new WebSocket(terminalUrl(config.port, 5, config.token));
+    const frames: Array<Record<string, unknown>> = [];
+    await new Promise<void>((resolve, reject) => {
+      ws.on('message', (raw: Buffer | string) => {
+        frames.push(JSON.parse(raw.toString()) as Record<string, unknown>);
+        if (frames.length === 2) resolve();
+      });
+      ws.on('error', reject);
+      setTimeout(() => reject(new Error('timed out waiting for terminal frames')), 5_000);
+    });
+    ws.close();
+
+    expect(frames[0]).toMatchObject({ type: 'replay', data: 'screen+in-replay' });
+    expect(frames[1]).toEqual({ type: 'output', data: 'after-replay' });
   });
 });

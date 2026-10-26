@@ -28,13 +28,22 @@ import {
 import {
   MAX_PORT,
   MIN_PORT,
+  PTY_HOST_SCRIPT,
   TERMINAL_DISABLED_BY_FLAG_REASON,
   WILDCARD_HOSTNAMES,
 } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
+import {
+  defaultPtyHostSocket,
+  ptyHostLogFile,
+  socketPathProblem,
+} from './terminal/ptyHostProtocol.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
+import { RemotePtySessions, startPtyHostProcess } from './terminal/remotePtySessions.js';
+import { reattachTerminalAgents } from './terminal/standaloneAgentLauncher.js';
+import type { TerminalSessions } from './terminal/terminalSessions.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -53,6 +62,11 @@ export interface CliArgs {
   allowedHosts: string[];
   /** --rotate-token: replace the persisted server token before starting. */
   rotateToken: boolean;
+  /** --pty-host (development only): keep the agents' terminals in a separate
+   *  long-lived process, so restarting the server doesn't end them. */
+  ptyHost: boolean;
+  /** --pty-host-socket: where that process listens (default under ~/.pixel-agents). */
+  ptyHostSocket?: string;
 }
 
 /** Thrown by parseArgs on an invalid --port. Kept separate from process.exit so
@@ -66,6 +80,7 @@ export function parseArgs(argv: string[]): CliArgs {
     terminal: true,
     allowedHosts: [],
     rotateToken: false,
+    ptyHost: false,
   };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port' || argv[i] === '-p') {
@@ -102,6 +117,14 @@ export function parseArgs(argv: string[]): CliArgs {
       args.rotateToken = true;
     } else if (argv[i] === '--no-terminal') {
       args.terminal = false;
+    } else if (argv[i] === '--pty-host') {
+      args.ptyHost = true;
+    } else if (argv[i] === '--pty-host-socket') {
+      const raw = argv[i + 1];
+      if (!raw) throw new CliArgsError('Missing value for --pty-host-socket: expected a path.');
+      args.ptyHost = true;
+      args.ptyHostSocket = path.resolve(raw);
+      i++;
     } else if (argv[i] === '--help') {
       console.log(`Usage: pixel-agents [options]
 
@@ -115,6 +138,11 @@ Options:
                         old one (bookmarks, other devices) stops working
   --no-terminal         Disable the embedded terminal (watch agents only; no
                         launching or attaching from the browser)
+  --pty-host            Development only: run agents' terminals in a separate
+                        process that outlives the server, so restarting it
+                        (e.g. to update it) leaves agents running
+  --pty-host-socket <path>
+                        That process's socket (implies --pty-host)
   --help                Show this help message`);
       process.exit(0);
     }
@@ -160,7 +188,7 @@ function copyHookScriptOrReport(packageRoot: string, context = ''): boolean {
  * warning (there is no shell surface to warn about).
  */
 function reportTerminalStatus(
-  ptyManager: PtySessionManager,
+  ptyManager: TerminalSessions,
   host: string,
   enabledByFlag: boolean,
 ): void {
@@ -191,6 +219,44 @@ function reportTerminalStatus(
         `[Pixel Agents] name with --allowed-host instead.`,
     );
   }
+}
+
+// ── PTY host (development only) ───────────────────────────────
+
+/** Connect to the PTY host, starting one (dist/pty-host.js) if none runs. */
+async function connectPtyHost(distRoot: string, socketPath: string): Promise<RemotePtySessions> {
+  const problem = socketPathProblem(socketPath);
+  if (problem) throw new Error(problem);
+  const sessions = await RemotePtySessions.connect({
+    socketPath,
+    startHost: () =>
+      startPtyHostProcess(path.join(distRoot, PTY_HOST_SCRIPT), socketPath, ptyHostLogFile()),
+  });
+  const running = sessions.survivors().length;
+  console.log(
+    `[Pixel Agents] PTY host (pid ${sessions.hostPid}) on ${socketPath}: ${running} running terminal(s). ` +
+      `Restarting this server leaves them running; stopping the host ends them.`,
+  );
+  return sessions;
+}
+
+/**
+ * The terminals for agents this server launches. Construction is cheap -- the
+ * native module is resolved (and probed) lazily on first use, so a user who
+ * never opens a terminal never pays for it. With --no-terminal, a disabled
+ * manager reports "unavailable" through the same plumbing (availability
+ * broadcast, session route, launcher), so nothing downstream special-cases it.
+ *
+ * --pty-host (development only) moves them into a separate process that
+ * outlives this one, so a restart leaves running agents alone. Throws when no
+ * PTY host can be reached.
+ */
+async function openTerminalSessions(args: CliArgs, distRoot: string): Promise<TerminalSessions> {
+  if (!args.terminal) return PtySessionManager.disabled(TERMINAL_DISABLED_BY_FLAG_REASON);
+  if (args.ptyHost) {
+    return connectPtyHost(distRoot, args.ptyHostSocket ?? defaultPtyHostSocket());
+  }
+  return new PtySessionManager();
 }
 
 // ── Main ──────────────────────────────────────────────────────
@@ -233,18 +299,27 @@ async function main(): Promise<void> {
   // ── Create server ──
   const server = new PixelAgentsServer();
 
-  // Terminals for agents this server launches. Construction is cheap -- the
-  // native module is resolved (and probed) lazily on first use, so a user who
-  // never opens a terminal never pays for it. With --no-terminal, a disabled
-  // manager reports "unavailable" through the same plumbing (availability
-  // broadcast, session route, launcher), so nothing downstream special-cases it.
-  const ptyManager = args.terminal
-    ? new PtySessionManager()
-    : PtySessionManager.disabled(TERMINAL_DISABLED_BY_FLAG_REASON);
+  // Terminals for agents this server launches.
+  const ptyManager = await openTerminalSessions(args, distRoot).catch((err: unknown) => {
+    console.error(`[Pixel Agents] --pty-host: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  });
 
   try {
     // Create runtime first (before server.start, so we can pass it in)
     const runtime = new AgentRuntime(store, claudeProvider);
+
+    // Agents whose terminals outlived the last server (--pty-host): back in
+    // the office before any browser connects.
+    const reattached = reattachTerminalAgents({
+      store,
+      runtime,
+      ptyManager,
+      provider: claudeProvider,
+    });
+    if (reattached.length > 0) {
+      console.log(`[Pixel Agents] Reattached ${reattached.length} running agent(s)`);
+    }
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
@@ -423,11 +498,14 @@ async function main(): Promise<void> {
       if (shuttingDown) return;
       shuttingDown = true;
       console.log('\nShutting down...');
-      // Kill child terminals before the runtime tears their agents down, and
-      // wait for them: exiting now would cancel the SIGKILL escalation and
-      // leave a child that ignores SIGHUP orphaned on a dead server.
-      await ptyManager.disposeAll();
-      runtime.dispose();
+      // In process: kill child terminals and wait for them (each exit closes
+      // its agent): exiting now would cancel the SIGKILL escalation and leave
+      // a child that ignores SIGHUP orphaned on a dead server. With the PTY
+      // host: just disconnect; the agents keep running.
+      await ptyManager.shutdown();
+      // Stop, not dispose: the saved list keeps whoever is still running, for
+      // the next server to restore (external agents) or reattach (the PTY host's).
+      runtime.stop();
       server.stop();
       process.exit(0);
     }

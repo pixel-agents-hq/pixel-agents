@@ -26,13 +26,13 @@ import {
   WS_CLOSE_UNAUTHORIZED,
 } from '../constants.js';
 import { isAllowedWebSocketOrigin, standaloneHandshakeVerdict } from '../wsAuth.js';
-import type { PtySessionManager } from './ptySessionManager.js';
+import type { TerminalSessions } from './terminalSessions.js';
 
 export interface TerminalRoutesOptions {
   token: string;
   /** Host names a privileged handshake may arrive under (wsAuth.privilegedHostnames). */
   allowedHostnames: ReadonlySet<string>;
-  ptyManager?: PtySessionManager;
+  ptyManager?: TerminalSessions;
 }
 
 /** Minimal structural view of the socket, so tests don't need a real WebSocket. */
@@ -99,30 +99,43 @@ export function registerTerminalRoutes(app: FastifyInstance, options: TerminalRo
       // snapshot of the mirrored screen (valid on a fresh terminal, unlike a
       // raw byte ring), and it must be the FIRST frame: any output or exit
       // arriving while the snapshot is being taken is queued and flushed right
-      // after it. The snapshot's flush-write semantics (see PtySession) mean a
-      // queued chunk is never also inside the snapshot — no byte is dropped or
-      // doubled across the handoff.
+      // after it. Chunks are numbered and the replay says the last one it
+      // holds, so a queued chunk already inside it is dropped — no byte is
+      // dropped or doubled across the handoff, even when the screen comes from
+      // the PTY host and output keeps streaming while its reply travels.
       let replaySent = false;
-      const preReplay: string[] = [];
-      const forward = (frame: string): void => {
-        if (replaySent) send(frame);
-        else preReplay.push(frame);
+      const preReplay: Array<{ seq: number | null; frame: string }> = [];
+      /** Send a frame, or queue it until the replay is out. `seq` numbers an
+       *  output chunk (null for the exit, which no replay holds). */
+      const forward = (frame: string, seq: number | null): void => {
+        if (!replaySent) preReplay.push({ seq, frame });
+        else send(frame);
       };
 
-      const offData = session.onData((chunk) => {
-        forward(encodeTerminalFrame({ type: 'output', data: chunk }));
+      const offData = session.onData((chunk, seq) => {
+        forward(encodeTerminalFrame({ type: 'output', data: chunk }), seq);
       });
 
       const offExit = session.onExit((exit) => {
         forward(
           encodeTerminalFrame({ type: 'exit', exitCode: exit.exitCode, signal: exit.signal }),
+          null,
         );
       });
 
-      void session.snapshot().then((data) => {
-        send(encodeTerminalFrame({ type: 'replay', data, cols: session.cols, rows: session.rows }));
+      void session.replay().then((replay) => {
+        send(
+          encodeTerminalFrame({
+            type: 'replay',
+            data: replay.data,
+            cols: replay.cols,
+            rows: replay.rows,
+          }),
+        );
         replaySent = true;
-        for (const frame of preReplay) send(frame);
+        for (const { seq, frame } of preReplay) {
+          if (seq === null || seq > replay.seq) send(frame);
+        }
         preReplay.length = 0;
       });
 

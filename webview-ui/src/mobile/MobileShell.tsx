@@ -6,10 +6,8 @@ import { MobileKeyBar } from '../components/MobileKeyBar.js';
 import { MobileTerminalPage } from '../components/MobileTerminalPage.js';
 import type { TerminalInputHandle } from '../components/TerminalPane.js';
 import { Button } from '../components/ui/Button.js';
-import { MOBILE_PASTE_PROMPT } from '../constants.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import type { TerminalDrawerController } from '../hooks/useTerminalDrawer.js';
-import { readClipboardText } from '../terminal/clipboard.js';
 import { TRACK_TRANSITION, trackTransform, useEdgeSwipe } from './useEdgeSwipe.js';
 import type { MobileShellController } from './useMobileShell.js';
 
@@ -66,13 +64,6 @@ export function MobileShell({
 
   const inputRef = useRef<TerminalInputHandle>(null);
   const handleKey = useCallback((sequence: string) => inputRef.current?.send(sequence), []);
-  const handlePaste = useCallback(() => {
-    // A no-op when the user dismisses Safari's paste-permission callout (or
-    // the plain-http prompt) or the clipboard is empty.
-    void readClipboardText(MOBILE_PASTE_PROMPT).then((text) => {
-      if (text) inputRef.current?.paste(text);
-    });
-  }, []);
 
   return (
     <>
@@ -138,9 +129,7 @@ export function MobileShell({
 
       {/* Accessory keys for the TUI, only while the software keyboard is up —
           the last flex child, so it sits directly above the keyboard. */}
-      {shell.view === 'terminal' && keyboardOpen && (
-        <MobileKeyBar onKey={handleKey} onPaste={handlePaste} />
-      )}
+      {shell.view === 'terminal' && keyboardOpen && <MobileKeyBar onKey={handleKey} />}
     </>
   );
 }

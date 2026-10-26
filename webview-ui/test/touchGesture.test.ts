@@ -38,6 +38,7 @@ const ROW_H = 20;
 const COLS = 40;
 const SCREEN = ['hello world', '', 'see https://example.com/x now'];
 const URL = 'https://example.com/x';
+const INPUT_ROW = 10;
 
 const probe: GestureProbe = {
   cellAt: (x, y) => ({ col: Math.floor(x / CELL_W), row: Math.floor(y / ROW_H) }),
@@ -52,6 +53,8 @@ const probe: GestureProbe = {
   },
   rowHeightPx: () => ROW_H,
   cols: () => COLS,
+  // Rows from INPUT_ROW down are the prompt box.
+  inInputArea: ({ row }) => row >= INPUT_ROW,
 };
 
 const CELL: TouchHit = { kind: 'cell' };
@@ -381,5 +384,36 @@ describe('selection handles', () => {
     const r = run([{ kind: 'dismiss' }], selected);
     expect(r.state.phase).toBe('idle');
     expect(kinds(r.effects)).toEqual(['clearSelection', 'hidePill', 'hideHandles']);
+  });
+});
+
+describe('paste in the input area', () => {
+  const inInput = touch(1, 30, INPUT_ROW * ROW_H + 5);
+
+  it('a long press there offers Paste instead of selecting', () => {
+    const r = run([start(inInput, 0), { kind: 'longPress' }]);
+    expect(r.state).toMatchObject({ phase: 'pasteOffered', touchId: 1 });
+    expect(r.effects).toContainEqual({ kind: 'showPastePill', cell: { col: 3, row: INPUT_ROW } });
+    expect(kinds(r.effects)).not.toContain('select');
+  });
+
+  it('a wobble while held selects nothing, and lifting leaves the pill up', () => {
+    let r = run([start(inInput, 0), { kind: 'longPress' }]);
+    r = run([move(touch(1, 60, INPUT_ROW * ROW_H + 9), 600)], r.state);
+    expect(kinds(r.effects)).not.toContain('select');
+    r = run([end(touch(1, 60, INPUT_ROW * ROW_H + 9), 700)], r.state);
+    expect(r.state.phase).toBe('idle');
+    expect(kinds(r.effects)).not.toContain('hidePill');
+    expect(kinds(r.effects)).toContain('unbindRescue');
+  });
+
+  it('the next touch elsewhere clears the pill', () => {
+    const held = run([start(inInput, 0), { kind: 'longPress' }, end(inInput, 700)]).state;
+    expect(kinds(run([start(touch(2, 5, 5), 900)], held).effects)).toContain('hidePill');
+  });
+
+  it('a long press outside the input area still selects', () => {
+    const r = run([start(touch(1, 15, 5), 0), { kind: 'longPress' }]);
+    expect(r.state.phase).toBe('selecting');
   });
 });

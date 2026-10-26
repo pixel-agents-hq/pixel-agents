@@ -315,10 +315,46 @@ movements assume screen state a fresh client doesn't have, so replaying it produ
 overlapping fragments — and since the PTY size usually hasn't changed across a reload, no
 SIGWINCH ever arrived to trigger a repaint. The snapshot is valid on a fresh terminal at any
 attach point by construction. Output racing the snapshot is queued server-side and flushed after
-the replay frame, so no byte is dropped or doubled across the handoff.
+the replay frame. Output chunks are numbered and the replay names the last one it holds, so the
+flush skips chunks already drawn in it: no byte is dropped or doubled across the handoff, even
+when the snapshot arrives over the PTY host's socket while output keeps streaming.
 
 Closing the WS does **not** kill the PTY — only `closeAgent` (or the process exiting) does. So a
 reload reattaches to a still-running Claude session.
+
+### PTY host (development only)
+
+By default the terminals live in the server process (`PtySessionManager`) and a server
+restart ends every agent. That is the shipped behaviour and stays so: one process, gone when
+the office stops. For developing Pixel Agents from inside an office it is painful — every
+update cuts the agents mid-turn — so `pixel-agents --pty-host` moves them into a separate
+long-lived process:
+
+```
+server (restarts freely)                 PTY host (dist/pty-host.js)          OS
+────────────────────────                 ───────────────────────────          ──
+RemotePtySessions ── Unix socket ──────▶ startPtyHost()
+  (TerminalSessions)  newline JSON         └─ PtySessionManager            ─▶ claude …
+                      ptyHostProtocol.ts      (runs with the env it is sent)
+```
+
+- Both managers implement `TerminalSessions` (`server/src/terminal/terminalSessions.ts`); launch,
+  attach and close never know which one they talk to.
+- The server connects before it starts listening. With no host on the socket it starts one,
+  detached into its own session (so launchd stopping the server's process group misses it),
+  logging to `~/.pixel-agents/pty-host/host.log`. The host exits after a minute with no terminal
+  and no server.
+- `reattachTerminalAgents` rebuilds each surviving terminal's agent from the saved agent list
+  before any browser connects, reading its transcript from the current end. Shutdown keeps that
+  list in both modes: it calls `runtime.stop()` (timers and watchers only), never
+  `runtime.dispose()`, which would save an emptied list. In process, each terminal's exit has
+  already closed its agent by then.
+- Each spawn carries the whole env (the launcher builds it, the host lends none of its own), and a host speaking another
+  `PTY_HOST_PROTOCOL` is refused: stop it (this ends its agents) and start the server again.
+- Hook events fired while no server is up are lost; an agent's status catches up on its next one.
+- Security: the socket spawns shells, so it lives in a 0700 directory and is chmod 0600
+  (ssh-agent's model). `dist/pty-host.js` is not in the npm `files` allowlist, so a published
+  install fails `--pty-host` with a pointer to a development build.
 
 ## In scope
 

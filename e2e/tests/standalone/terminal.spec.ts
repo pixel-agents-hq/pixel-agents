@@ -206,6 +206,99 @@ test.describe('Standalone / terminal', () => {
     await page.keyboard.press('Alt+C');
     await expect.poll(lastWrite).toBe(`${first} ${second.trimStart()}`);
   });
+
+  test('a URL Claude Code broke across rows opens and copies whole @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'Linux x86_64' });
+      const written: string[] = [];
+      (window as unknown as { __clip: string[] }).__clip = written;
+      Object.defineProperty(Navigator.prototype, 'clipboard', {
+        get: () => ({
+          writeText: (text: string) => {
+            written.push(text);
+            return Promise.resolve();
+          },
+        }),
+      });
+    });
+    await page.reload();
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('terminal broken link').holdOpenFor(60_000).build(),
+    );
+    await clickAddAgent(page);
+    const terminal = page.locator('.xterm').first();
+    await expect(terminal).toContainText('mock claude session', { timeout: 15_000 });
+    await terminal.click();
+
+    // What Claude Code draws for a URL longer than its row: the row filled
+    // to the last column, a real newline, the rest after an indent. Typed
+    // through the PTY echo at the terminal's width.
+    const cols = await page.evaluate(() => {
+      const screen = document.querySelector('.xterm-screen');
+      const rows = document.querySelector('.xterm-rows');
+      const walker = document.createTreeWalker(rows ?? document.body, NodeFilter.SHOW_TEXT);
+      const node = walker.nextNode();
+      if (!screen || !node) throw new Error('no terminal text');
+      const range = document.createRange();
+      range.setStart(node, 0);
+      range.setEnd(node, 1);
+      return Math.round(screen.getBoundingClientRect().width / range.getBoundingClientRect().width);
+    });
+    const head = 'https://example.com/' + 'a'.repeat(cols - 'https://example.com/'.length);
+    const tail = 'tail-of-the-link';
+    await page.keyboard.type(head);
+    await page.keyboard.press('Enter');
+    await page.keyboard.type(`     ${tail}`);
+    await expect(terminal).toContainText(tail);
+
+    /** Screen point of `needle`'s first (or last) character. */
+    const pointOf = (needle: string, edge: 'start' | 'end') =>
+      page.evaluate(
+        ({ needle, edge }) => {
+          const rows = document.querySelector('.xterm-rows');
+          const walker = document.createTreeWalker(rows ?? document.body, NodeFilter.SHOW_TEXT);
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            const i = n.textContent?.indexOf(needle) ?? -1;
+            if (i < 0) continue;
+            const range = document.createRange();
+            const at = edge === 'start' ? i : i + needle.length - 1;
+            range.setStart(n, at);
+            range.setEnd(n, at + 1);
+            const r = range.getBoundingClientRect();
+            return { x: edge === 'start' ? r.left + 1 : r.right - 1, y: r.top + r.height / 2 };
+          }
+          throw new Error(`not on screen: ${needle}`);
+        },
+        { needle, edge },
+      );
+
+    // A click on the first half opens all of it.
+    const popups: string[] = [];
+    page.on('popup', (p) => popups.push(p.url()));
+    const onHead = await pointOf('example.com', 'start');
+    await page.mouse.move(onHead.x, onHead.y);
+    await page.mouse.click(onHead.x, onHead.y);
+    await expect.poll(() => popups.length).toBe(1);
+    expect(popups[0]).toBe(head + tail);
+
+    // A plain copy of both rows gives the link back without the break.
+    const from = await pointOf('https://', 'start');
+    const to = await pointOf(tail, 'end');
+    await page.mouse.move(to.x, to.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x, from.y, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.press('Control+Shift+C');
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { __clip: string[] }).__clip.at(-1) ?? null),
+      )
+      .toBe(head + tail);
+  });
 });
 
 test.describe('Standalone / terminal disabled', () => {

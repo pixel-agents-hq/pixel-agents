@@ -34,6 +34,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     providers/hook/consentGate.ts    Provider-agnostic consent POLICY: when to ask (hooksConsentRequest per provider) and what an answer means (consentActionFor(choice, {installed, consent}) — see docs/adr/0001)
     providers/hook/consentExecutor.ts Provider-agnostic consent EXECUTION: applyConsentChoice(providerId, choice, ConsentEffects) runs the six actions in one order for both surfaces, and SERIALIZES answers per process across ALL providers
     providers/index.ts               Provider registry (claudeProvider + the hookProviders list the consent gate loops over)
+    agentPersistence.ts              What of an agent survives a reload, and what a restored agent starts from (both surfaces)
     agentRuntime.ts                  Lifecycle core: timers, scanners, HookEventHandler, SessionRouter, DismissalTracker
     agentStateStore.ts               EventEmitter-backed single source of truth (typed mutations + events)
     sessionRouter.ts                 session_id → agent_id mapping, event buffering, pending external sessions
@@ -46,6 +47,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     fileStateAdapter.ts              Namespaced ~/.pixel-agents/ persistence
     configPersistence.ts             { vscode, standalone, externalAssetDirectories, hooksConsent: {providerId: granted|declined}, hooksEnabled: {providerId: boolean} }
     layoutPersistence.ts             ~/.pixel-agents/layout.json with atomic tmp+rename
+    terminal/                        Standalone terminals (TerminalSessions): in process (ptySessionManager.ts, the default) or, dev only, a PTY host that outlives the server (ptyHost.ts, remotePtySessions.ts, ptyHostProtocol.ts)
     fileWatcher.ts                   Hybrid fs.watch + 500ms polling, JSONL line buffering, /clear detection
     transcriptParser.ts              JSONL parsing for heuristic / file-fallback mode
     timerManager.ts                  Waiting / permission timers
@@ -86,11 +88,11 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
       AgentCard.tsx, AgentCardBar.tsx  Agent cards (mug shot + status dot); the right-edge bar on desktop/VS Code
       cardBar.ts                     Pure card-bar rules: cardVariant, mergeOrder, reorderByPointer (Node-tested)
       TerminalDrawer.tsx             Desktop standalone: right-docked panel, cards as tabs
-      TerminalPaneStack.tsx          Every agent's TerminalPane mounted, the shown one visible (both shells)
+      TerminalPaneStack.tsx          The agents' TerminalPanes, the shown one visible: desktop keeps every pane mounted, the phone only the shown one (memory; a pane that mounts gets its screen back from the server's replay)
       TerminalPane.tsx               One xterm bound to one agent's PTY
       MobileAgentBar.tsx             Mobile bottom card scroller (+ launch card, long-press reorder)
       MobileTerminalPage.tsx         Mobile terminal page (a TerminalPaneStack)
-      MobileKeyBar.tsx               Accessory keys above the software keyboard (esc, shift+tab, trackpad, paste)
+      MobileKeyBar.tsx               Accessory keys above the software keyboard (/, tab, shift+tab, esc, the trackpad, line break)
     mobile/                          The phone shell (standalone only, see "Mobile shell")
       MobileShell.tsx                Sliding office/terminal track + card bar + key bar
       useMobileShell.ts              Page state and navigation rules (toggle, card tap, launch-then-slide)
@@ -99,13 +101,17 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
       useEdgeSwipe.ts                DOM adapter for the reducer (capture listeners, detached-target rescue)
     touch/
       touchPrimitives.ts             findTouch (track one finger by id) + withinTapSlop (the one tap metric)
+      trackpad.ts                    Key bar trackpad: arrows per step, locked to the first axis moved on (pure)
     terminal/                        Standalone terminal (xterm) support
       terminalClient.ts              /terminal/:agentId socket (reconnect, replay)
-      terminalLinks.ts               Safe link opener + urlAtCell (one URL pattern for clicks and taps)
-      touchGesture.ts                Terminal touch state machine: scroll, flick, tap, long-press select, handles (pure reducer)
+      terminalLinks.ts               Safe link opener + urlsOnLine/urlAtCell (one URL lookup for clicks and taps, across wraps)
+      linkProvider.ts                The mouse side: an xterm link provider over urlsOnLine
+      hardWrap.ts                    hardWrapIndent: a row Claude Code broke mid-token (filled to the last column, indented carry-on, a token too long to fit) — joined by links and every copy
+      touchGesture.ts                Terminal touch state machine: scroll, flick, tap, long-press select (Paste in the input area), handles (pure reducer)
       touchInput.ts                  DOM adapter: listeners, flick rAF, long-press timer, detached-target rescue
       selectionMath.ts               Word expansion, range ordering, handle clamping (pure)
-      selectionOverlay.ts            Copy pill (Copy | Copy as text) + selection handles (DOM; styled in index.css)
+      selectionOverlay.ts            Copy pill (Copy | Copy as text), Paste pill + selection handles (DOM; styled in index.css)
+      inputArea.ts                   The TUI's input area: cursor row out to the prompt box's rules (pure)
       clipboard.ts                   The one clipboard write/read: Clipboard API on secure origins; plain http falls back to a copy event (write) / a native prompt (paste)
       flowCopy.ts                    terminalCopyText: verbatim by default; opt-in re-flow of Claude Code's soft wraps (pure)
       clipboardKeys.ts               Clipboard chords (Ctrl+C/Ctrl+Shift+C copy, Alt+C copy as text, Ctrl+V paste) + OSC 52 decode (pure)
@@ -426,7 +432,7 @@ Custom ESLint rules (`eslint-rules/pixel-agents-rules.mjs`) enforce: `no-inline-
 
 **Sound notifications**: Ascending two-note chime (E5 → E6) via Web Audio API plays when waiting bubble appears (`agentStatus: 'waiting'`). `notificationSound.ts` manages AudioContext lifecycle; `unlockAudio()` on canvas mousedown resumes the context (webviews start suspended). Toggled via Settings modal. Persisted per-namespace in `~/.pixel-agents/config.json`.
 
-**Mobile shell** (standalone only): below `MOBILE_MEDIA_QUERY` the browser renders `mobile/MobileShell` instead of the desktop layout — office and terminal as two full-screen pages in a 200%-wide sliding track (both always laid out, never `display:none`, so the canvas and xterm keep dimensions); the track's transform makes it the containing block of `position: fixed`, so modals and other viewport overlays mount at App's top level, never inside the office region), the agent cards in a bottom scroller, and `MobileKeyBar` above the software keyboard. "Keyboard open" and "clamp the shell" are separate answers (`mobile/keyboardViewport.ts`, sampled by `useKeyboardViewport`) because the two resize policies differ: iOS shrinks only the visual viewport (open, and the shell is clamped to it so the PTY resizes instead of hiding its input line), Android `interactive-widget=resizes-content` shrinks both (open, nothing to clamp). Open = an editable focused AND the visual viewport `KEYBOARD_MIN_HEIGHT_PX` below the tallest height seen at the current width (per-orientation baseline). `useIsMobile` is gated on `isBrowserRuntime`: a narrow VS Code panel must never get it (it broke every VS Code e2e shard once). Navigation rules live in `useMobileShell`: the >_ / Office toggle and the edge swipe share one handler; a card tap in the office is two-step (focus the character, then open its terminal), in the terminal it switches panes; + slides over only for launches made from it (a reload re-announcing sessions stays on the office). The terminal-pane model (active vs shown pane, socket status, `statusFor`) is `useTerminalDrawer`, shared with the desktop drawer. Touch rules: every gesture tracks ONE finger by identifier (`findTouch`) and uses one tap slop (`withinTapSlop`); gesture decisions are pure reducers with thin DOM adapters (`edgeSwipe.ts`/`useEdgeSwipe.ts`, `terminal/touchGesture.ts`/`touchInput.ts`), because WebKit keeps addressing a gesture's events to its touchstart node — when terminal rows repaint, that node detaches and events stop bubbling, so each adapter binds "rescue" listeners on the touch target. **Terminal copy is verbatim by default** (Cmd/Ctrl+C, the browser's Copy, the pill's Copy): `flowTerminalCopy` is a heuristic that joins a long row with a two-space-indented next line, which is also what YAML under a long key or a method body under a long signature look like, so re-flowing is opt-in only — Alt+C (Option+C) on desktop, "Copy as text" on the pill. Every write goes through `terminal/clipboard.ts`. PWA: `manifest.webmanifest` (icon paths relative — the file is served verbatim), conventional-path icons in `public/`, `?v=N` cache-busters on icon links.
+**Mobile shell** (standalone only): below `MOBILE_MEDIA_QUERY` the browser renders `mobile/MobileShell` instead of the desktop layout — office and terminal as two full-screen pages in a 200%-wide sliding track (both always laid out, never `display:none`, so the canvas and xterm keep dimensions); the track's transform makes it the containing block of `position: fixed`, so modals and other viewport overlays mount at App's top level, never inside the office region), the agent cards in a bottom scroller, and `MobileKeyBar` above the software keyboard. "Keyboard open" and "clamp the shell" are separate answers (`mobile/keyboardViewport.ts`, sampled by `useKeyboardViewport`) because the two resize policies differ: iOS shrinks only the visual viewport (open, and the shell is clamped to it so the PTY resizes instead of hiding its input line), Android `interactive-widget=resizes-content` shrinks both (open, nothing to clamp). Open = an editable focused AND the visual viewport `KEYBOARD_MIN_HEIGHT_PX` below the tallest height seen at the current width (per-orientation baseline). `useIsMobile` is gated on `isBrowserRuntime`: a narrow VS Code panel must never get it (it broke every VS Code e2e shard once). Navigation rules live in `useMobileShell`: the >_ / Office toggle and the edge swipe share one handler; a card tap in the office is two-step (focus the character, then open its terminal), in the terminal it switches panes; + slides over only for launches made from it (a reload re-announcing sessions stays on the office). The terminal-pane model (active vs shown pane, socket status, `statusFor`) is `useTerminalDrawer`, shared with the desktop drawer. Touch rules: every gesture tracks ONE finger by identifier (`findTouch`) and uses one tap slop (`withinTapSlop`); gesture decisions are pure reducers with thin DOM adapters (`edgeSwipe.ts`/`useEdgeSwipe.ts`, `terminal/touchGesture.ts`/`touchInput.ts`; the key bar's trackpad locks to the first axis a slide moves on, `touch/trackpad.ts`), because WebKit keeps addressing a gesture's events to its touchstart node — when terminal rows repaint, that node detaches and events stop bubbling, so each adapter binds "rescue" listeners on the touch target. **Terminal copy is verbatim by default**, except that a token Claude Code broke across rows (a URL, a path: `hardWrap.ts`) always comes back whole — that break's signature is one an intended newline doesn't have, and links (tap or click) follow it the same way (Cmd/Ctrl+C, the browser's Copy, the pill's Copy; paste is a long press on the input area — the cursor's row out to the prompt box's rules (`terminal/inputArea.ts`) — not a key): re-flowing (`terminalCopyText`'s `'text'` mode) is a heuristic that joins a long row with a two-space-indented next line, which is also what YAML under a long key or a method body under a long signature look like, so re-flowing is opt-in only — Alt+C (Option+C) on desktop, "Copy as text" on the pill. Every write goes through `terminal/clipboard.ts`. PWA: `manifest.webmanifest` (icon paths relative — the file is served verbatim), conventional-path icons in `public/`, `?v=N` cache-busters on icon links.
 
 **Seats**: Derived from chair furniture. `layoutToSeats()` creates a seat at every footprint tile of every chair. Multi-tile chairs produce multiple seats keyed `uid` / `uid:1` / `uid:2`. Facing direction priority: 1) chair `orientation` from catalog (front→DOWN, back→UP, left→LEFT, right→RIGHT), 2) adjacent desk direction, 3) forward (DOWN). Click character → select (white outline) → click available seat → reassign.
 
@@ -577,6 +583,8 @@ cd webview-ui && npm run dev        # Vite dev server (separate terminal)
 ```
 
 The webview Vite dev server is **not** included in `npm run watch` — it has to be run separately.
+
+**Updating a running office without ending its agents (development only)**: `pixel-agents --pty-host` keeps the agents' terminals in a separate long-lived process (`dist/pty-host.js`, socket `~/.pixel-agents/pty-host/host.sock`, override with `--pty-host-socket`), so a server restart leaves them running and the next server reattaches them (same id, look, screen). The shipped default keeps them in process and ends them with the server. Details: `docs/design/standalone-terminal.md` → "PTY host".
 
 **F5 in VS Code** launches the Extension Development Host with the local extension loaded.
 
