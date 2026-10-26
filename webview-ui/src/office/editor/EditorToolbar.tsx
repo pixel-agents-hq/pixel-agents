@@ -59,6 +59,7 @@ interface EditorToolbarProps {
   /** Arm/disarm the colour-only eyedropper offered by the colour sliders. */
   onColorPickToggle: () => void;
   onFurnitureTypeChange: (type: string) => void;
+  onDeleteSelected: () => void;
   loadedAssets?: LoadedAssetData;
   activePetTypes: number[];
   petCount: number;
@@ -108,6 +109,7 @@ export function EditorToolbar({
   onPickedFurnitureColorChange,
   onColorPickToggle,
   onFurnitureTypeChange,
+  onDeleteSelected,
   loadedAssets,
   activePetTypes,
   petCount,
@@ -549,6 +551,14 @@ export function EditorToolbar({
                 Copy
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onDeleteSelected}
+              title="Delete selected furniture (Del)"
+            >
+              Delete
+            </Button>
           </div>
 
           {/* Carpet sub-panel: variant carousel + compact color controls.

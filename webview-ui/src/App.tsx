@@ -543,6 +543,7 @@ function App() {
                   onPickedFurnitureColorChange={editor.handlePickedFurnitureColorChange}
                   onColorPickToggle={editor.handleColorPickToggle}
                   onFurnitureTypeChange={editor.handleFurnitureTypeChange}
+                  onDeleteSelected={editor.handleDeleteSelected}
                   loadedAssets={loadedAssets}
                   activePetTypes={officeState.getActivePetTypes()}
                   petCount={getPetCount()}
