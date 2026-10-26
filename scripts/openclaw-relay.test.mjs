@@ -60,6 +60,7 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
       assert.equal(remoteEndpoint(endpoint), null, endpoint);
   });
   const hooks = new Map();
+  const subscriptions = [];
   const sent = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (endpoint, options) => {
@@ -92,6 +93,7 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
         },
       },
       logger: { warn: () => {} },
+      registerAgentEventSubscription: (subscription) => subscriptions.push(subscription),
       on: (name, handler) => hooks.set(name, handler),
     });
     assert.equal(
@@ -196,6 +198,58 @@ test('relay resolves prepared secrets inside hooks and sees later availability a
     await hooks.get('model_call_ended')({}, context);
     await new Promise((resolve) => setTimeout(resolve, 300));
     assert.equal(JSON.parse(sent.at(-1).options.body).event, 'turn_end');
+    await t.test(
+      'native lifecycle completes without model hooks and ignores older run endings',
+      async () => {
+        assert.equal(subscriptions.length, 1);
+        const subscription = subscriptions[0];
+        assert.deepEqual(subscription.streams, ['lifecycle']);
+        const native = { agentId: 'native', sessionKey: 'agent:native:chat', runId: 'native-one' };
+        const emit = (phase, context = native) =>
+          subscription.handle({
+            ...context,
+            stream: 'lifecycle',
+            data: { phase, error: 'must-not-forward-native-error' },
+          });
+        await emit('start');
+        assert.equal(JSON.parse(sent.at(-1).options.body).event, 'session_start');
+        await hooks.get('before_tool_call')(
+          { toolName: 'exec', toolCallId: 'native-tool' },
+          native,
+        );
+        await hooks.get('after_tool_call')({ toolName: 'exec', toolCallId: 'native-tool' }, native);
+        await hooks.get('model_call_ended')({}, native);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        assert.equal(
+          JSON.parse(sent.at(-1).options.body).event,
+          'session_start',
+          'model fallback cannot idle an active native run between calls',
+        );
+        await emit('end');
+        assert.equal(JSON.parse(sent.at(-1).options.body).event, 'turn_end');
+        const count = sent.length;
+        await hooks.get('model_call_started')({}, native);
+        assert.equal(sent.length, count, 'late model start cannot reopen a completed native run');
+        const next = { ...native, runId: 'native-two' };
+        await emit('start', next);
+        await emit('end', native);
+        assert.equal(JSON.parse(sent.at(-1).options.body).event, 'session_start');
+        await emit('error', next);
+        assert.equal(JSON.parse(sent.at(-1).options.body).event, 'turn_end');
+        // One session's completion must preserve another genuinely active chat.
+        const parallel = { ...native, sessionKey: 'agent:native:second-chat', runId: 'parallel' };
+        await emit('start', next);
+        await emit('start', parallel);
+        await emit('end', next);
+        assert.equal(JSON.parse(sent.at(-1).options.body).event, 'session_start');
+        await emit('end', parallel);
+        assert.equal(JSON.parse(sent.at(-1).options.body).event, 'turn_end');
+        assert.equal(
+          sent.some((item) => item.options.body.includes('must-not-forward-native-error')),
+          false,
+        );
+      },
+    );
     await hooks.get('gateway_stop')();
     assert.equal(JSON.parse(sent.at(-1).options.body).event, 'session_end');
     assert.equal(JSON.parse(sent.at(-1).options.body).reason, 'gateway_stop');

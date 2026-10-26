@@ -84,19 +84,20 @@ The most recently updated session wins ties. Within the winning tool session, a 
 
 Tool names, not tool arguments/results, drive labels: `exec`/`exec_command` → "Running a command", `apply_patch` → "Editing files", `web_fetch`/`web__run` → "Researching the web", `browser` → "Using the browser", memory tools → "Checking memory", and spawn tools → "Starting a sub-agent". Unknown tools retain a generic "Using <tool-name>" label. The priority classifier recognizes read/search/fetch/browse-style names; the visual reading-tool set is provider-defined, so an unfamiliar custom tool can have reading priority without a specialized reading animation.
 
-Hooks drive the projection:
+Metadata lifecycle events and hooks drive the projection:
 
-| OpenClaw hook                                | Relay behavior                                                                                                   |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `model_call_started`                         | Announce/re-adopt the character and mark its source session working                                              |
-| `model_call_ended`                           | Schedule a 250 ms idle fallback; a new model/tool call cancels it, and active tools prevent it from forcing idle |
-| `before_tool_call`                           | Correlate the session and hashed call ID, then mark the tool active                                              |
-| `after_tool_call`                            | Finish that correlated tool; resume working between calls                                                        |
-| `session_end`                                | Remove that session's contribution                                                                               |
-| `subagent_ended` / ended `subagent_progress` | Close the identified delegated child session                                                                     |
-| `gateway_stop`                               | Attempt to close this relay's characters and clear timers                                                        |
+| OpenClaw hook                                | Relay behavior                                                                                                                                            |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lifecycle stream `start` / `end` / `error`   | Authoritative run start/completion, including native Codex; older run endings cannot idle a newer run                                                     |
+| `model_call_started`                         | Announce/re-adopt the character and mark its source session working                                                                                       |
+| `model_call_ended`                           | Without an active lifecycle-tracked run, schedule a 250 ms idle fallback; a new model/tool call cancels it, and active tools prevent it from forcing idle |
+| `before_tool_call`                           | Correlate the session and hashed call ID, then mark the tool active                                                                                       |
+| `after_tool_call`                            | Finish that correlated tool; resume working between calls                                                                                                 |
+| `session_end`                                | Remove that session's contribution                                                                                                                        |
+| `subagent_ended` / ended `subagent_progress` | Close the identified delegated child session                                                                                                              |
+| `gateway_stop`                               | Attempt to close this relay's characters and clear timers                                                                                                 |
 
-The model-end timer is a metadata-only completion fallback, not a guaranteed full-turn completion signal. A long gap between model calls can briefly look idle; a missing completion hook can leave a character active. Delivery order is serialized per character to prevent older HTTP completions from overwriting newer projections.
+Relay v1.2.1 subscribes only to the `lifecycle` agent-event stream and reads run/session identity and the start/end/error phase, never assistant, tool-output, or other content streams. Run completion clears its source session even when a native harness does not emit embedded model-call hooks. On older hosts without this subscription API, the model-end timer remains a metadata-only fallback: a long gap between calls can briefly look idle, and missing completion can leave a character active. Delivery order is serialized per character to prevent older HTTP completions from overwriting newer projections.
 
 ## Child sessions and original spawn-tool characters
 
@@ -218,7 +219,7 @@ Coordinate any required Gateway restart rather than interrupting active work. Re
 - **No character:** confirm the plugin is enabled/loaded, activity has actually occurred, a workspace is available, workspace filtering permits it, the tunnel/TLS endpoint works, and authentication is valid. Do not print bearer tokens when collecting diagnostics.
 - **Wrong name:** set `identity.name` or the plugin `agentNames` override. Existing characters receive new names on subsequent events; no channel configuration is consulted.
 - **Too many ordinary characters:** verify stable agent IDs and distinct, stable Gateway namespaces; delegated child sessions are intentionally separate. Missing agent identity falls back to separate sessions.
-- **Always idle/active:** check whether the installed OpenClaw version emits model/tool completion hooks. A 250 ms model-end fallback is not authoritative full-turn telemetry.
+- **Always idle/active:** use relay v1.2.1 or newer on a host with lifecycle subscriptions for native harness completion. Older hosts rely on model/tool completion hooks and a non-authoritative 250 ms model-end fallback.
 - **Old child remains:** verify that native completion metadata includes the child's session key. Returning from a background spawn tool alone does not end that child.
 - **Server restarted:** trigger new activity; no idle roster replay is implemented.
 

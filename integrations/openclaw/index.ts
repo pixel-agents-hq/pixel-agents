@@ -270,13 +270,52 @@ export default definePluginEntry({
     const activity = new SessionActivityAggregator(sendEvent);
     const postEvent = (event: Record<string, unknown>) => activity.accept(event);
     const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const lifecycleRuns = new Map<string, { runId: string; active: boolean }>();
     const cancelIdle = (id: string) => {
       const timer = idleTimers.get(id);
       if (timer) clearTimeout(timer);
       idleTimers.delete(id);
     };
+    // Run lifecycle is authoritative for native harnesses, including Codex,
+    // whose model-call diagnostics need not pass through the embedded loop.
+    // Subscribe ONLY to lifecycle metadata, never assistant/tool/output streams.
+    api.registerAgentEventSubscription?.({
+      id: 'pixel-agents-run-lifecycle',
+      streams: ['lifecycle'],
+      async handle(event) {
+        if (event.stream !== 'lifecycle') return;
+        const phase = event.data.phase;
+        if (phase !== 'start' && phase !== 'end' && phase !== 'error') return;
+        const context = {
+          sessionKey: event.sessionKey,
+          sessionId: event.sessionId,
+          agentId: event.agentId,
+          runId: event.runId,
+        };
+        const id = sessionId({}, context);
+        if (!id) return;
+        const current = lifecycleRuns.get(id);
+        if (phase === 'start') {
+          lifecycleRuns.set(id, { runId: event.runId, active: true });
+          cancelIdle(id);
+          await announceSession(postEvent, {}, hookContext(api, context));
+        } else {
+          // A delayed terminal from an older run must not idle its successor.
+          if (current && current.runId !== event.runId) return;
+          lifecycleRuns.set(id, { runId: event.runId, active: false });
+          cancelIdle(id);
+          await postEvent({ event: 'turn_end', session_id: id });
+        }
+      },
+    });
     api.on('model_call_started', async (event, context) => {
       const id = sessionId(event, context);
+      if (
+        id &&
+        lifecycleRuns.get(id)?.active === false &&
+        lifecycleRuns.get(id)?.runId === (context.runId ?? event.runId)
+      )
+        return;
       if (id) cancelIdle(id);
       await announceSession(postEvent, event, hookContext(api, context));
     });
@@ -286,6 +325,7 @@ export default definePluginEntry({
     api.on('model_call_ended', async (event, context) => {
       const id = sessionId(event, context);
       if (!id) return;
+      if (lifecycleRuns.get(id)?.active) return;
       cancelIdle(id);
       const timer = setTimeout(() => {
         idleTimers.delete(id);
@@ -318,6 +358,7 @@ export default definePluginEntry({
       const id = sessionId(event, context);
       if (!id) return;
       cancelIdle(id);
+      lifecycleRuns.delete(id);
       await postEvent({
         event: 'session_end',
         session_id: id,
@@ -330,6 +371,7 @@ export default definePluginEntry({
     const closeChild = async (key: string) => {
       const id = opaqueId(key);
       cancelIdle(id);
+      lifecycleRuns.delete(id);
       await postEvent({ event: 'session_end', session_id: id });
     };
     api.on('subagent_ended', async (event) => {
@@ -343,6 +385,7 @@ export default definePluginEntry({
     api.on('gateway_stop', async () => {
       for (const timer of idleTimers.values()) clearTimeout(timer);
       idleTimers.clear();
+      lifecycleRuns.clear();
       await activity.stop();
     });
   },
