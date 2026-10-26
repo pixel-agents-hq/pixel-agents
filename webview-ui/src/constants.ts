@@ -303,6 +303,28 @@ export const THOUGHT_PREVIEW_CHARS = 90;
 export const THOUGHT_BUBBLE_MAX_WIDTH_PX = 260;
 export const THOUGHT_BUBBLE_TEXT_COLOR = 'rgba(255, 255, 255, 0.85)';
 export const TIER_BADGE_SWATCH_PX = 8;
+/** The token-spend tail of the tier badge reads as secondary text. */
+export const TIER_BADGE_SPEND_OPACITY = 0.6;
+
+// ── Cascade panel (CascadePanel) ────────────────────────────
+/** How often the open panel re-reads the imperative office state (about 4 Hz). */
+export const CASCADE_PANEL_REFRESH_MS = 250;
+/** localStorage key for open/closed (per viewer, not synced through the server). */
+export const CASCADE_PANEL_STORAGE_KEY = 'pixel-agents.cascadePanelOpen';
+export const CASCADE_PANEL_WIDTH_PX = 320;
+/** Desktop: gap between the panel and the office edge / the card bar. */
+export const CASCADE_PANEL_MARGIN_PX = 10;
+/** Desktop: panel top, clear of the top-edge controls. */
+export const CASCADE_PANEL_TOP_PX = 40;
+/** Desktop: panel bottom, clear of the bottom toolbar. */
+export const CASCADE_PANEL_BOTTOM_PX = 64;
+/** Mobile sheet: at most half the viewport. */
+export const CASCADE_SHEET_MAX_HEIGHT = '50dvh';
+/** Above the character overlays (41-43), below the intro bubble. */
+export const CASCADE_PANEL_Z_INDEX = 44;
+/** Left padding added per nesting level in the tree. */
+export const CASCADE_INDENT_PX = 14;
+export const CASCADE_STATUS_DOT_PX = 8;
 /** Sub-agent -> parent link line (canvas, drawn behind characters). Dash, gap
  *  and width are in sprite pixels (scaled by zoom); the anchor is the world-px
  *  height above a character's feet where the line attaches (about mid-body). */

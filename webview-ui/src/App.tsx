@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { toMajorMinor } from './changelogData.js';
 import { AgentCardBar } from './components/AgentCardBar.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
+import { CascadePanel } from './components/CascadePanel.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
@@ -18,6 +19,7 @@ import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
 import { OFFICE_CANVAS_TEST_ID } from './constants.js';
+import { useCascadePanelOpen } from './hooks/useCascadePanelOpen.js';
 import { useDirectoryEditor } from './hooks/useDirectoryEditor.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
@@ -141,6 +143,11 @@ function App() {
   // full-screen pages with the cards in a bottom bar. Desktop keeps the
   // right-docked drawer.
   const isMobile = useIsMobile();
+  // Desktop remembers the cascade panel; a phone always starts with it closed.
+  const [isCascadeOpen, toggleCascade] = useCascadePanelOpen(!isMobile);
+  // The agent card bar overlays the office's right edge whenever it has cards
+  // (the terminal drawer renders it from terminalAgentIds); never on mobile.
+  const cardBarShown = !isMobile && (terminalAvailable ? terminalAgentIds : agents).length > 0;
   // Software keyboard: whether it is up (the key bar shows), and the height
   // to clamp the shell to so the terminal shrinks (and the PTY resizes)
   // instead of hiding its input line under the keys (iOS only — Android
@@ -373,6 +380,14 @@ function App() {
   const handleCardSelect = useCallback((agentId: number) => {
     transport.send({ type: 'focusAgent', id: agentId });
     getOfficeState().selectAndFollow(agentId);
+  }, []);
+
+  // Cascade panel row click: like a card click, but a sub-agent's focus goes to
+  // its parent's terminal (the sub has none of its own).
+  const handleCascadeSelect = useCallback((agentId: number) => {
+    const os = getOfficeState();
+    transport.send({ type: 'focusAgent', id: os.terminalOwnerOf(agentId) });
+    os.selectAndFollow(agentId);
   }, []);
 
   const officeState = getOfficeState();
@@ -647,6 +662,8 @@ function App() {
           onToggleEditMode={editor.handleToggleEditMode}
           isSettingsOpen={isSettingsOpen}
           onToggleSettings={() => setIsSettingsOpen((v) => !v)}
+          isCascadeOpen={isCascadeOpen}
+          onToggleCascade={toggleCascade}
           directories={directories}
           onAddDirectory={directoryEditor.add}
           onEditDirectory={directoryEditor.edit}
@@ -658,7 +675,7 @@ function App() {
       {/* Mobile: Settings floats top-left (the layout editor stays desktop-
             only — its tools are drag/hover-driven). */}
       {isMobile && !isDebugMode && !officeReadOnly && (
-        <div className="absolute mobile-safe-top left-8 z-20">
+        <div className="absolute mobile-safe-top left-8 z-20 flex gap-4">
           <Button
             size="sm"
             variant={isSettingsOpen ? 'active' : 'default'}
@@ -667,7 +684,28 @@ function App() {
           >
             Settings
           </Button>
+          <Button
+            size="sm"
+            variant={isCascadeOpen ? 'active' : 'default'}
+            className="border-border! shadow-pixel"
+            onClick={toggleCascade}
+            aria-pressed={isCascadeOpen}
+          >
+            Cascade
+          </Button>
         </div>
+      )}
+
+      {isCascadeOpen && !isDebugMode && (
+        <CascadePanel
+          officeState={officeState}
+          agentTools={agentTools}
+          subagentTools={subagentTools}
+          subagentCharacters={subagentCharacters}
+          isMobile={isMobile}
+          cardBarShown={cardBarShown}
+          onSelect={handleCascadeSelect}
+        />
       )}
 
       <VersionIndicator

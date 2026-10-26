@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyInsight,
   formatTierBadge,
+  formatTokens,
   holdInsight,
   isThoughtFresh,
   mergeInsight,
@@ -11,6 +12,7 @@ import {
   thoughtBubbleText,
   thoughtPreview,
   TIER_LABELS,
+  totalTokens,
 } from '../src/office/modelTier.js';
 
 describe('modelTier', () => {
@@ -153,5 +155,49 @@ describe('thoughtBubbleText', () => {
   it('shows nothing when stale or cleared', () => {
     expect(thoughtBubbleText(fresh, true, 7000, 5000, 100)).toBeNull();
     expect(thoughtBubbleText({ thinking: '', thinkingAt: 1000 }, true, 1500, 5000, 100)).toBeNull();
+  });
+});
+
+describe('totalTokens', () => {
+  it('sums the four counters; 0 without a spend', () => {
+    expect(
+      totalTokens({
+        inputTokens: 1,
+        outputTokens: 2,
+        cacheReadTokens: 30,
+        cacheCreationTokens: 400,
+      }),
+    ).toBe(433);
+    expect(totalTokens(undefined)).toBe(0);
+  });
+});
+
+describe('formatTokens', () => {
+  it('prints small values as they are', () => {
+    expect(formatTokens(0)).toBe('0');
+    expect(formatTokens(950)).toBe('950');
+    expect(formatTokens(999)).toBe('999');
+  });
+
+  it('uses a comma decimal and drops a trailing ,0', () => {
+    expect(formatTokens(1_000)).toBe('1k');
+    expect(formatTokens(12_340)).toBe('12,3k');
+    expect(formatTokens(1_234_567)).toBe('1,2M');
+    expect(formatTokens(2_000_000)).toBe('2M');
+  });
+
+  it('rolls a value that rounds to 1000 into the next unit', () => {
+    expect(formatTokens(999_950)).toBe('1M');
+    expect(formatTokens(999_949)).toBe('999,9k');
+    expect(formatTokens(999_940)).toBe('999,9k');
+    expect(formatTokens(999_999_950)).toBe('1B');
+  });
+
+  it('stays sane for huge, negative and non-finite values', () => {
+    expect(formatTokens(3_500_000_000)).toBe('3,5B');
+    expect(formatTokens(5e15)).toBe('5000000B');
+    expect(formatTokens(-5)).toBe('0');
+    expect(formatTokens(Number.NaN)).toBe('0');
+    expect(formatTokens(Number.POSITIVE_INFINITY)).toBe('0');
   });
 });

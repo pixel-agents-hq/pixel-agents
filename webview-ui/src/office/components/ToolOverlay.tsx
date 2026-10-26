@@ -26,12 +26,20 @@ import {
   THOUGHT_BUBBLE_MS,
   THOUGHT_BUBBLE_TEXT_COLOR,
   THOUGHT_PREVIEW_CHARS,
+  TIER_BADGE_SPEND_OPACITY,
   TIER_BADGE_SWATCH_PX,
   TOOL_OVERLAY_VERTICAL_OFFSET,
 } from '../../constants.js';
 import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
 import type { OfficeState } from '../engine/officeState.js';
-import { formatTierBadge, modelTier, thoughtBubbleText, TIER_COLORS } from '../modelTier.js';
+import {
+  formatTierBadge,
+  formatTokens,
+  modelTier,
+  thoughtBubbleText,
+  TIER_COLORS,
+  totalTokens,
+} from '../modelTier.js';
 import { overlayProjection } from '../projection.js';
 import { getCachedSprite } from '../sprites/spriteCache.js';
 import { BUBBLE_PERMISSION_SPRITE, BUBBLE_WAITING_SPRITE } from '../sprites/spriteData.js';
@@ -139,7 +147,7 @@ function ThoughtBubble({ text }: { text: string }) {
 }
 
 /** Model tier badge: a swatch in the tier color plus "Sonnet · ecc:constructor · high". */
-function TierBadge({ text, color }: { text: string; color: string }) {
+function TierBadge({ text, color, tokens }: { text: string; color: string; tokens: number }) {
   return (
     <div
       className="pixel-panel flex items-center gap-4 px-6 py-2 whitespace-nowrap leading-none"
@@ -151,7 +159,15 @@ function TierBadge({ text, color }: { text: string; color: string }) {
         className="shrink-0"
         style={{ width: TIER_BADGE_SWATCH_PX, height: TIER_BADGE_SWATCH_PX, background: color }}
       />
-      <span>{text}</span>
+      <span>
+        {text}
+        {tokens > 0 && (
+          <span style={{ opacity: TIER_BADGE_SPEND_OPACITY }}>
+            {' '}
+            · {formatTokens(tokens)} tokens
+          </span>
+        )}
+      </span>
     </div>
   );
 }
@@ -383,7 +399,11 @@ export function ToolOverlay({
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 pb-2 pointer-events-none">
                   {thoughtText && <ThoughtBubble text={thoughtText} />}
                   {tierBadgeText && (
-                    <TierBadge text={tierBadgeText} color={TIER_COLORS[modelTier(ch)]} />
+                    <TierBadge
+                      text={tierBadgeText}
+                      color={TIER_COLORS[modelTier(ch)]}
+                      tokens={totalTokens(ch.spend)}
+                    />
                   )}
                 </div>
               )}

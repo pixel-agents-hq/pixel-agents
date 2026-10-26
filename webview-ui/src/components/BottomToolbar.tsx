@@ -11,6 +11,8 @@ interface BottomToolbarProps {
   onToggleEditMode: () => void;
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
+  isCascadeOpen: boolean;
+  onToggleCascade: () => void;
   directories: Directory[];
   /** Drawer's pinned `+ Directory` row — opens the Directory modal empty. */
   onAddDirectory: () => void;
@@ -27,6 +29,8 @@ export function BottomToolbar({
   onToggleEditMode,
   isSettingsOpen,
   onToggleSettings,
+  isCascadeOpen,
+  onToggleCascade,
   directories,
   onAddDirectory,
   onEditDirectory,
@@ -117,6 +121,14 @@ export function BottomToolbar({
         title="Edit office layout"
       >
         Layout
+      </Button>
+      <Button
+        variant={isCascadeOpen ? 'active' : 'default'}
+        onClick={onToggleCascade}
+        title="Model cascade and token spend"
+        aria-pressed={isCascadeOpen}
+      >
+        Cascade
       </Button>
       <Button
         variant={isSettingsOpen ? 'active' : 'default'}

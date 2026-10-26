@@ -69,6 +69,38 @@ export function formatTierBadge(c: CascadeInsight): string | null {
   return [TIER_LABELS[tier], c.agentType, c.effort].filter(Boolean).join(' · ');
 }
 
+/** Sum of all four token counters of a spend; 0 without one. */
+export function totalTokens(spend: TokenSpend | undefined): number {
+  if (!spend) return 0;
+  return spend.inputTokens + spend.outputTokens + spend.cacheReadTokens + spend.cacheCreationTokens;
+}
+
+/** Magnitude suffixes, smallest first; each is 1000x the one before. */
+const TOKEN_UNITS = ['k', 'M', 'B'] as const;
+const TOKEN_UNIT_STEP = 1000;
+const TOKEN_TENTHS = 10;
+
+/** `950` -> "950", `12340` -> "12,3k", `1234567` -> "1,2M". Comma decimal, a
+ *  trailing ",0" dropped. Negative and non-finite values read as "0". */
+export function formatTokens(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  if (n < TOKEN_UNIT_STEP) return String(Math.round(n));
+  // Work in whole tenths of the unit (integers), so rounding never goes
+  // through a float product like 999.95 * 10.
+  let unit = 0;
+  let divisor = TOKEN_UNIT_STEP / TOKEN_TENTHS;
+  let tenths = Math.round(n / divisor);
+  // Climb while the rounded value would print as 1000+ (999_950 -> "1M", not "1000k").
+  while (unit < TOKEN_UNITS.length - 1 && tenths >= TOKEN_UNIT_STEP * TOKEN_TENTHS) {
+    unit++;
+    divisor *= TOKEN_UNIT_STEP;
+    tenths = Math.round(n / divisor);
+  }
+  const whole = Math.floor(tenths / TOKEN_TENTHS);
+  const frac = tenths % TOKEN_TENTHS;
+  return `${whole}${frac === 0 ? '' : `,${frac}`}${TOKEN_UNITS[unit]}`;
+}
+
 /** First `maxChars` characters of the thinking text on one line, ellipsis when
  *  cut. Counts code points, so an emoji is never split in half. */
 export function thoughtPreview(text: string, maxChars: number): string {
