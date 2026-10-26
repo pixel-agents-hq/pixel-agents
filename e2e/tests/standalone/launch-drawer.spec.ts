@@ -62,7 +62,7 @@ test.describe('Standalone / launch drawer', () => {
 
     // A plain press opens the drawer instead of launching: the first click's
     // only effect is the list.
-    await page.getByRole('button', { name: '+ Agent' }).click();
+    await page.getByRole('button', { name: 'New agent' }).click();
     const drawer = getLaunchDrawer(page);
     await expect(drawer).toBeVisible();
 

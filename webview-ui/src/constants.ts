@@ -17,6 +17,10 @@ export const WANDER_MOVES_BEFORE_REST_MIN = 3;
 export const WANDER_MOVES_BEFORE_REST_MAX = 6;
 export const SEAT_REST_MIN_SEC = 120.0;
 export const SEAT_REST_MAX_SEC = 240.0;
+/** A helper (sub-agent) stays within this many tiles of its lead, any direction. */
+export const HELPER_FOLLOW_RADIUS_TILES = 2;
+/** A helper between two tool calls keeps sitting; it stands only after waiting this long. */
+export const HELPER_STAND_UP_DELAY_SEC = 3;
 
 // ── Matrix Effect ────────────────────────────────────────────
 export const MATRIX_EFFECT_DURATION_SEC = 0.3;
@@ -46,11 +50,14 @@ export const HEADLESS_CHARACTER_ALPHA = 0.5;
 export const GHOST_PREVIEW_SPRITE_ALPHA = 0.5;
 export const GHOST_PREVIEW_TINT_ALPHA = 0.25;
 export const SELECTION_DASH_PATTERN: [number, number] = [4, 3];
-export const BUTTON_MIN_RADIUS = 6;
-export const BUTTON_RADIUS_ZOOM_FACTOR = 3;
-export const BUTTON_ICON_SIZE_FACTOR = 0.45;
-export const BUTTON_LINE_WIDTH_MIN = 1.5;
-export const BUTTON_LINE_WIDTH_ZOOM_FACTOR = 0.5;
+/** The selected furniture's rotate / delete buttons, in CSS pixels (drawn in
+ *  whole device pixels): the toolbar's 8×8 icons at their scale, padded. */
+export const SELECTION_BUTTON_ICON_SCALE = 2;
+export const SELECTION_BUTTON_PADDING_PX = 4;
+/** Their hard shadow's offset, as on every pixel panel. */
+export const SELECTION_BUTTON_SHADOW_PX = 2;
+/** Space between the buttons, and between them and the item below. */
+export const SELECTION_BUTTON_GAP_PX = 4;
 export const BUBBLE_FADE_DURATION_SEC = 0.5;
 export const BUBBLE_SITTING_OFFSET_PX = 10;
 export const BUBBLE_VERTICAL_OFFSET_PX = 24;
@@ -69,9 +76,14 @@ export const GHOST_BORDER_STROKE = 'rgba(255, 255, 255, 0.06)';
 export const GHOST_VALID_TINT = '#00ff00';
 export const GHOST_INVALID_TINT = '#ff0000';
 export const SELECTION_HIGHLIGHT_COLOR = '#007fd4';
-export const DELETE_BUTTON_BG = 'rgba(200, 50, 50, 0.85)';
-export const ROTATE_BUTTON_BG = 'rgba(50, 120, 200, 0.85)';
-export const BUTTON_ICON_COLOR = '#fff';
+/** --color-danger, --color-accent, --color-shadow (index.css): canvas can't read CSS variables. */
+export const DELETE_BUTTON_BG = '#d14249';
+export const ROTATE_BUTTON_BG = '#6030ff';
+/** Hovered or pressed: a lighter danger red, and --color-accent-bright. */
+export const DELETE_BUTTON_HOVER_BG = '#e3666c';
+export const ROTATE_BUTTON_HOVER_BG = '#746fff';
+export const BUTTON_ICON_COLOR = '#ffffff';
+export const BUTTON_SHADOW_COLOR = '#0a0a14';
 export const CANVAS_FALLBACK_TILE_COLOR = '#444';
 export const CANVAS_ERROR_TILE_COLOR = '#FF00FF';
 export const WALL_COLOR = '#3A3A5C';
@@ -172,6 +184,8 @@ export const VISUAL_COLOR_PICKER_COMPACT_WIDTH_PX = 160;
 export const VISUAL_COLOR_PICKER_SWATCH_PX = 22;
 /** Gap (px) between the collapsed trigger and the expanded popup panel. */
 export const VISUAL_COLOR_PICKER_POPUP_GAP_PX = 6;
+/** The hex field's border + left padding: where its pixel-font copy starts. */
+export const VISUAL_COLOR_PICKER_HEX_INSET_PX = 2 + 2;
 
 // ── Notification Sound (done: ascending chime) ─────────────
 export const NOTIFICATION_NOTE_1_HZ = 659.25; // E5
@@ -208,7 +222,11 @@ export const AUTO_ON_FACING_DEPTH = 3;
 export const AUTO_ON_SIDE_DEPTH = 2;
 export const CHARACTER_HIT_HALF_WIDTH = 8;
 export const CHARACTER_HIT_HEIGHT = 24;
+/** World px from a character's feet to its sprite's top edge (the tallest hair). */
 export const TOOL_OVERLAY_VERTICAL_OFFSET = 32;
+/** CSS px between the label's bottom and the sprite's top edge (or the bubble
+ *  over it). Negative: most hair stops a little below that edge. */
+export const TOOL_OVERLAY_GAP_PX = -2;
 
 // ── Greeter + Intro bubble ──────────────────────────────────
 /** Reserved character id for the Intro's greeter. Far outside both real agent
@@ -220,7 +238,8 @@ export const GREETER_ID = -1_000_000_000;
  *  on top of it must cover it rather than slide underneath. */
 export const INTRO_BUBBLE_Z_INDEX = 45;
 /** ToolOverlay stacking: status label panels (selected one on top), then the
- *  characters' speech bubbles above every label — all below the Intro bubble. */
+ *  characters' speech bubbles above every label. Local to the office layer
+ *  (App wraps ToolOverlay in a z-0 box), so they never rise above the UI. */
 export const OVERLAY_LABEL_Z_INDEX = 41;
 export const OVERLAY_LABEL_SELECTED_Z_INDEX = 42;
 export const OVERLAY_BUBBLE_Z_INDEX = 43;
@@ -347,6 +366,14 @@ export const TERMINAL_DRAWER_MAX_WIDTH_RATIO = 0.8;
 export const TERMINAL_SIDEBAR_WIDTH_PX = 72;
 /** Grab width of the drag handle on the panel's left edge. */
 export const TERMINAL_DRAWER_RESIZE_HANDLE_PX = 6;
+/** How long a launch (or resume) this client sent waits for its terminal:
+ *  the next terminal to open within this answers it and comes in focused.
+ *  A spawn that fails never opens one, and no message says so, so the wait
+ *  ends here rather than claiming the next terminal some other device opens. */
+export const LAUNCH_ANSWER_TIMEOUT_MS = 10_000;
+/** The hide ribbon below the cards: its width at rest, as a share of a
+ *  card's (hovered, it reaches the cards' left edge). */
+export const TERMINAL_HIDE_RIBBON_REST_RATIO = 0.75;
 
 // Mug shot: a square crop of the agent's front-facing sprite, focused on the
 // face, shown in each terminal tab in place of an "Agent N" label. Sprites are
@@ -505,8 +532,8 @@ export const XTERM_SCREEN_SELECTOR = '.xterm-screen';
  *  terminal (see isTypingInTerminal). */
 export const XTERM_HELPER_TEXTAREA_CLASS = 'xterm-helper-textarea';
 
-// ── Mobile card bar (MobileAgentBar) ─────────────────────────
-/** Holding a card motionless this long arms drag-to-reorder in the mobile bar. */
+// ── Agent card bars (AgentCardList) ──────────────────────────
+/** Holding a card motionless this long arms touch drag-to-reorder. */
 export const CARD_REORDER_LONG_PRESS_MS = 400;
 /** Holding a drawer's Directory row this long opens its edit modal — the touch
  *  stand-in for the pencil, which only exists where rows can be hovered. */
@@ -516,9 +543,9 @@ export const DRAWER_EDIT_LONG_PRESS_MAX_MOVE_PX = 10;
 /** Gap a viewport-fitted Dropdown (the launch drawer) keeps from the top of
  *  the viewport when its content is taller than the room above its anchor. */
 export const DROPDOWN_VIEWPORT_MARGIN_PX = 8;
-/** localStorage key for the mobile bar's custom card order (per device — a
- *  presentation preference, deliberately not synced through the server). */
-export const MOBILE_CARD_ORDER_STORAGE_KEY = 'pixel-agents.mobileCardOrder';
+/** How long a toolbar menu (or modal) takes to roll shut: keep it equal to
+ *  the menu-pop-out / modal-pop-out durations in index.css. */
+export const MENU_POP_OUT_MS = 130;
 /** Breathing room kept between a card and the scroller edge when the bar
  *  auto-scrolls the focused agent's card into view. */
 export const CARD_SCROLL_INTO_VIEW_MARGIN_PX = 8;
@@ -529,35 +556,60 @@ export const TERMINAL_SEQ_ARROW_UP = '\x1b[A';
 export const TERMINAL_SEQ_ARROW_DOWN = '\x1b[B';
 export const TERMINAL_SEQ_ARROW_RIGHT = '\x1b[C';
 export const TERMINAL_SEQ_ARROW_LEFT = '\x1b[D';
+/** Arrow key → the bytes it writes to the PTY (the key bar's trackpad). */
+export const TERMINAL_ARROW_SEQUENCES = {
+  up: TERMINAL_SEQ_ARROW_UP,
+  down: TERMINAL_SEQ_ARROW_DOWN,
+  left: TERMINAL_SEQ_ARROW_LEFT,
+  right: TERMINAL_SEQ_ARROW_RIGHT,
+} as const;
 /** Accessory keys shown above the iOS keyboard in terminal view — the keys a
- *  Claude Code TUI needs that the software keyboard lacks. `sequence` is the
- *  raw bytes written to the PTY: shift+tab is CSI Z (back-tab). */
-export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{
-  label: string;
-  /** Byte sequence a tap writes to the PTY. Absent on the trackpad key — a
-   *  plain tap there deliberately does nothing. */
-  sequence?: string;
+ *  Claude Code TUI needs that the software keyboard lacks. Each key's
+ *  `sequence` is the raw bytes a tap writes to the PTY: shift+tab is CSI Z
+ *  (back-tab). The trackpad sits in the middle of the bar: the `left` keys
+ *  fill the left half, the `right` keys the right. */
+export const MOBILE_KEY_BAR: {
+  left: ReadonlyArray<{ label: string; sequence: string }>;
   /** Press-hold-slide emits arrow keys with the finger, along the first
    *  direction it moves in (touch/trackpad.ts), echoing the iOS space-bar
    *  trackpad (whose real caret gesture can't reach xterm — its textarea
    *  must stay empty for input diffing). Drives Claude Code's TUI menus (/resume, /model) and the
-   *  input-line cursor; the iOS keyboard has no arrows of its own. */
-  trackpad?: boolean;
-}> = [
-  { label: '/', sequence: '/' },
-  // The iOS keyboard has no tab key: Claude Code completes paths and
-  // commands with it.
-  { label: 'tab', sequence: '\t' },
-  { label: 'shift+tab', sequence: '\x1b[Z' },
-  { label: 'esc', sequence: '\x1b' },
-  { label: '✜', trackpad: true },
-  // Line break without submitting: Claude Code's backslash+Enter escape —
-  // its universal form (shift+enter needs a /terminal-setup rebind that
-  // can't exist on a phone keyboard).
-  { label: '↵', sequence: '\\\r' },
-];
-/** Finger travel per emitted arrow while sliding on the trackpad key. */
-export const MOBILE_TRACKPAD_STEP_PX = 16;
+   *  input-line cursor; the iOS keyboard has no arrows of its own. A plain
+   *  tap on it deliberately does nothing. */
+  pad: { label: string };
+  right: ReadonlyArray<{ label: string; sequence: string }>;
+} = {
+  left: [
+    { label: '/', sequence: '/' },
+    // The iOS keyboard has no tab key: Claude Code completes paths and
+    // commands with it.
+    { label: 'tab', sequence: '\t' },
+    { label: 'shift+tab', sequence: '\x1b[Z' },
+  ],
+  pad: { label: 'Arrow keys' },
+  right: [
+    { label: 'esc', sequence: '\x1b' },
+    // Forward delete: the iOS keyboard's ⌫ only deletes backwards.
+    { label: 'del', sequence: '\x1b[3~' },
+    // Line break without submitting: Claude Code's backslash+Enter escape —
+    // its universal form (shift+enter needs a /terminal-setup rebind that
+    // can't exist on a phone keyboard).
+    { label: '↵', sequence: '\\\r' },
+  ],
+};
+/** The trackpad key's slide (touch/trackpad.ts): finger travel per left/right
+ *  arrow (twice as fast as up/down: a line has far more columns than a menu
+ *  has rows), per up/down arrow, the travel from a pivot that picks the axis,
+ *  and the speed (px/ms, i.e. 100 px/s) below which the finger is resting — a
+ *  rest is a new pivot, where the slide may switch axis. */
+export const MOBILE_TRACKPAD = {
+  stepX: 8,
+  stepY: 16,
+  decidePx: 16,
+  pauseSpeed: 0.1,
+} as const;
+/** How long the trackpad's arrows nudge toward each arrow it sends. */
+export const MOBILE_TRACKPAD_NUDGE_MS = 90;
 /** The Paste pill's prompt where script can't read the clipboard (plain-http
  *  origins): the user pastes into the native field instead. */
 export const MOBILE_PASTE_PROMPT = 'Paste into the terminal:';
@@ -568,3 +620,28 @@ export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
  *  (with an editable focused) = the software keyboard is up. Well above an
  *  address bar collapsing (~56 px), well below any on-screen keyboard. */
 export const KEYBOARD_MIN_HEIGHT_PX = 150;
+
+// ── Pixel icons ─────────────────────────────────────────────
+/** Screen pixels per icon pixel (whole number, so the icon stays crisp). */
+export const PIXEL_ICON_SCALE = 2;
+
+// ── Side panels docked beside the office (the terminal drawer) ──
+// Their motion: hooks/useSlidePanel.ts.
+/** Opening: the panel stretches out a touch past its width and settles back. */
+export const SIDE_PANEL_OPEN_MS = 340;
+export const SIDE_PANEL_OPEN_EASE = 'cubic-bezier(0.34, 1.35, 0.64, 1)';
+/** Its contents slide in once the panel is mostly out. */
+export const SIDE_PANEL_CONTENT_DELAY_MS = 90;
+/** Closing is quicker and doesn't bounce: contents fade first, the panel snaps shut. */
+export const SIDE_PANEL_CLOSE_MS = 200;
+export const SIDE_PANEL_CLOSE_EASE = 'cubic-bezier(0.55, 0, 0.75, 0.2)';
+/** How far the contents travel as they slide in or out. */
+export const SIDE_PANEL_CONTENT_SHIFT_PX = 24;
+/** An agent card's height: its mug shot plus 1px padding and 2px border each
+ *  side. The phone's + card (square) is sized from it, so the bar's first
+ *  card lines up with the rest. */
+export const AGENT_CARD_HEIGHT_PX = MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM + 2 * (1 + 2);
+/** An agent card's width: its mug shot, the 1px gap, the close/status column
+ *  (one 8×8 PixelIcon wide), and 1px padding and 2px border each side. */
+export const AGENT_CARD_WIDTH_PX =
+  MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM + 1 + 8 * PIXEL_ICON_SCALE + 2 * (1 + 2);

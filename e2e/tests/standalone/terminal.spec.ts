@@ -1,3 +1,5 @@
+import type { Page } from '@playwright/test';
+
 import { expect, test } from '../../fixtures/standalone';
 import { preToolUseBash, sendHookEvent, sessionStartStartup } from '../../helpers/hooks';
 import {
@@ -14,6 +16,23 @@ import { clickAddAgent, setSettings } from '../../helpers/webview';
  * follows the scenario-builder rule (e2e/README.md "Mocking model & rules"):
  * the mock performs all timed actions; the test only clicks and observes.
  */
+/** The agent cards' titles, in screen order along the bar's axis. */
+async function cardsInOrder(page: Page, axis: 'x' | 'y'): Promise<string[]> {
+  const cards = page.locator('[title^="Agent "]');
+  const placed = await Promise.all(
+    (await cards.all()).map(async (card) => ({
+      title: (await card.getAttribute('title')) ?? '',
+      box: await card.boundingBox(),
+    })),
+  );
+  return placed
+    .filter((c) => c.box)
+    .sort((a, b) => a.box![axis] - b.box![axis])
+    .map((c) => c.title);
+}
+const cardsTopToBottom = (page: Page) => cardsInOrder(page, 'y');
+const cardsLeftToRight = (page: Page) => cardsInOrder(page, 'x');
+
 test.describe('Standalone / terminal', () => {
   // The PTY spawns `claude` (the mock's bash wrapper) directly, not through a
   // shell. Windows would need a cmd.exe hop to run the .cmd shim — untested
@@ -107,11 +126,52 @@ test.describe('Standalone / terminal', () => {
 
     // The narrowest window that still gets the desktop drawer (below it the
     // mobile shell takes over): the drawer gives way so the office keeps its
-    // card bar, and the panel's own close button stays on screen.
+    // card bar, and the panel's hide tab stays on screen.
     await page.setViewportSize({ width: 800, height: 800 });
-    await expect(page.getByTitle('Close terminal')).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTitle('Hide terminal')).toBeInViewport({ ratio: 1 });
     await expect(page.getByTitle('Agent 1')).toBeInViewport({ ratio: 1 });
     await expect(page.getByTitle('Agent 2')).toBeInViewport({ ratio: 1 });
+  });
+
+  test('a card dragged on the desktop moves on an open phone too, and stays after a reload @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    await waitForClaudeHookSetup(standalone.tmpHome);
+    for (const n of [1, 2]) {
+      await arrangeNextClaudeInvocation(
+        standalone.tmpHome,
+        claudeScenario(`standalone card order ${n}`).holdOpenFor(60_000).build(),
+      );
+      await clickAddAgent(page);
+      await expect(page.getByTitle(`Agent ${n}`)).toBeVisible({ timeout: 15_000 });
+    }
+
+    // A phone already showing the office: its bar lists the same cards.
+    const phone = await page.context().newPage();
+    await phone.setViewportSize({ width: 390, height: 844 });
+    await phone.goto(page.url());
+    await expect(phone.getByTitle('Agent 2')).toBeVisible({ timeout: 30_000 });
+    expect(await cardsLeftToRight(phone)).toEqual(['Agent 1', 'Agent 2']);
+
+    // Drag Agent 2 above Agent 1 in the desktop column.
+    const from = (await page.getByTitle('Agent 2').boundingBox())!;
+    const to = (await page.getByTitle('Agent 1').boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + 4, { steps: 8 });
+    await page.mouse.up();
+
+    expect(await cardsTopToBottom(page)).toEqual(['Agent 2', 'Agent 1']);
+    // No reload: the server tells the open phone.
+    await expect
+      .poll(() => cardsLeftToRight(phone), { timeout: 10_000 })
+      .toEqual(['Agent 2', 'Agent 1']);
+    await phone.close();
+
+    await page.reload();
+    await expect(page.getByTitle('Agent 2')).toBeVisible({ timeout: 30_000 });
+    expect(await cardsTopToBottom(page)).toEqual(['Agent 2', 'Agent 1']);
   });
 
   test('copies are verbatim; Alt+C copies the selection re-flowed as text @area:standalone', async ({
@@ -309,7 +369,7 @@ test.describe('Standalone / terminal disabled', () => {
     standalone,
   }) => {
     // The launch surface is off, with the reason discoverable on the button.
-    const addAgent = page.getByRole('button', { name: '+ Agent' });
+    const addAgent = page.getByRole('button', { name: 'New agent' });
     await expect(addAgent).toBeVisible();
     await expect(addAgent).toBeDisabled();
     await expect(addAgent).toHaveAttribute('title', 'Terminal disabled with --no-terminal.');

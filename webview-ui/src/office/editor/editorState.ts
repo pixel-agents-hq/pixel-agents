@@ -20,6 +20,9 @@ export interface FurniturePlacement {
   color?: ColorValue | null;
 }
 
+/** The selected item's on-canvas buttons. */
+export type SelectionButton = 'rotate' | 'delete';
+
 export class EditorState {
   isEditMode = false;
   activeTool: EditTool = EditTool.SELECT;
@@ -33,6 +36,11 @@ export class EditorState {
    * pick) replaces both in one assignment.
    */
   placing: FurniturePlacement | null = null;
+
+  /** The selected item's button under the pointer, and the one held down: a
+   *  press acts on release over the same button, as a DOM button does. */
+  selectionButtonHover: SelectionButton | null = null;
+  selectionButtonPressed: SelectionButton | null = null;
 
   // Floor color settings (applied to new tiles when painting)
   floorColor: ColorValue = { ...DEFAULT_FLOOR_COLOR };

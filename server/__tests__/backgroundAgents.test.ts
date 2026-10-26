@@ -900,6 +900,8 @@ describe('background spawn persistence & derived team lifecycle', () => {
       },
       loadSeats: () => ({}),
       saveSeats: () => {},
+      loadCardOrder: () => [],
+      saveCardOrder: () => {},
       getSetting: <T>(_key: string, defaultValue: T) => defaultValue,
       setSetting: () => {},
     };

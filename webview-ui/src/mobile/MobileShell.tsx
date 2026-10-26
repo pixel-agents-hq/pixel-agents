@@ -6,6 +6,7 @@ import { MobileKeyBar } from '../components/MobileKeyBar.js';
 import { MobileTerminalPage } from '../components/MobileTerminalPage.js';
 import type { TerminalInputHandle } from '../components/TerminalPane.js';
 import { Button } from '../components/ui/Button.js';
+import { PixelIcon } from '../components/ui/PixelIcon.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import type { TerminalDrawerController } from '../hooks/useTerminalDrawer.js';
 import { TRACK_TRANSITION, trackTransform, useEdgeSwipe } from './useEdgeSwipe.js';
@@ -27,6 +28,8 @@ interface MobileShellProps {
   onAddDirectory: () => void;
   onEditDirectory: (directory: Directory) => void;
   onCloseAgent: (agentId: number) => void;
+  /** Persist a dragged card order; absent in a read-only office. */
+  onReorder?: (order: number[]) => void;
   /** The software keyboard is up (useKeyboardViewport). */
   keyboardOpen: boolean;
 }
@@ -51,6 +54,7 @@ export function MobileShell({
   onAddDirectory,
   onEditDirectory,
   onCloseAgent,
+  onReorder,
   keyboardOpen,
 }: MobileShellProps) {
   const shellRef = useRef<HTMLDivElement>(null);
@@ -64,6 +68,7 @@ export function MobileShell({
 
   const inputRef = useRef<TerminalInputHandle>(null);
   const handleKey = useCallback((sequence: string) => inputRef.current?.send(sequence), []);
+  const lineCols = useCallback(() => inputRef.current?.cols() ?? 0, []);
 
   return (
     <>
@@ -97,13 +102,16 @@ export function MobileShell({
         {/* View toggle — pinned outside the track so it never slides. */}
         {terminalAvailable && (
           <div className="absolute mobile-safe-top right-8 z-40">
+            {/* Square, like the menu button opposite it: same size, inset
+                and border, the icon centred. */}
             <Button
-              size="sm"
+              size="icon_lg"
               className="border-border! shadow-pixel"
               onClick={shell.toggleView}
               title={shell.view === 'office' ? 'Show terminal' : 'Show office'}
+              aria-label={shell.view === 'office' ? 'Show terminal' : 'Show office'}
             >
-              {shell.view === 'office' ? '>_' : 'Office'}
+              <PixelIcon name={shell.view === 'office' ? 'terminal' : 'office'} />
             </Button>
           </div>
         )}
@@ -117,6 +125,7 @@ export function MobileShell({
         activeAgentId={shell.view === 'terminal' ? drawer.activeAgentId : null}
         onSelectAgent={shell.selectCard}
         onCloseAgent={onCloseAgent}
+        onReorder={onReorder}
         onLaunchDirectory={shell.launch}
         directories={directories}
         onAddDirectory={onAddDirectory}
@@ -129,7 +138,9 @@ export function MobileShell({
 
       {/* Accessory keys for the TUI, only while the software keyboard is up —
           the last flex child, so it sits directly above the keyboard. */}
-      {shell.view === 'terminal' && keyboardOpen && <MobileKeyBar onKey={handleKey} />}
+      {shell.view === 'terminal' && keyboardOpen && (
+        <MobileKeyBar onKey={handleKey} lineCols={lineCols} />
+      )}
     </>
   );
 }

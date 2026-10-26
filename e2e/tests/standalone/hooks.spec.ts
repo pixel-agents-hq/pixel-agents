@@ -190,7 +190,7 @@ test.describe('Standalone / hooks consent', () => {
     void standalone;
     const spectator = await openSpectator(page);
     try {
-      for (const name of ['Settings', 'Layout', '+ Agent']) {
+      for (const name of ['Settings', 'Layout', 'New agent']) {
         await expect(spectator.getByRole('button', { name, exact: true })).toHaveCount(0);
       }
       await expect(spectator.getByText('View only', { exact: true })).toBeVisible();

@@ -21,6 +21,11 @@ export interface StateAdapter {
   loadSeats(): Record<string, { palette?: number; hueShift?: number; seatId?: string }>;
   saveSeats(seats: Record<string, { palette?: number; hueShift?: number; seatId?: string }>): void;
 
+  /** The agent cards' order (agent ids, first card first), shared by every
+   *  client of this surface. [] = creation order. */
+  loadCardOrder(): number[];
+  saveCardOrder(order: number[]): void;
+
   // ── User-level settings (shared file, namespaced per adapter) ─────
 
   getSetting<T>(key: string, defaultValue: T): T;

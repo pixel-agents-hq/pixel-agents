@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useLayoutEffect, useRef, useState } from 'react';
 
 import { DROPDOWN_VIEWPORT_MARGIN_PX } from '../../constants.js';
+import { popClass, usePresence } from '../../hooks/usePresence.js';
 
 interface DropdownProps {
   isOpen: boolean;
@@ -20,6 +21,8 @@ interface DropdownProps {
 export function Dropdown({ isOpen, children, className = '', fitViewport = false }: DropdownProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined);
+  // Kept on screen while it rolls shut.
+  const { mounted, closing } = usePresence(isOpen);
 
   // Measured rather than expressed in CSS: the anchor sits at a different
   // height on every shell (desktop toolbar, phone card bar above a software
@@ -43,14 +46,14 @@ export function Dropdown({ isOpen, children, className = '', fitViewport = false
     };
   }, [isOpen, fitViewport]);
 
-  if (!isOpen) return null;
+  if (!mounted) return null;
 
   return (
     <div className="absolute bottom-full left-0 pb-10 z-10">
       <div
         ref={panelRef}
         style={fitViewport ? { maxHeight } : undefined}
-        className={`bg-bg border-2 border-border rounded-none shadow-pixel p-4 ${
+        className={`bg-bg border-2 border-border rounded-none shadow-pixel p-4 ${popClass(closing)} ${
           fitViewport ? 'flex flex-col' : ''
         } ${className}`}
       >

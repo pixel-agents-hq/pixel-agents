@@ -193,3 +193,7 @@ export const PALETTE_COUNT = 6;
  *  clientMessageHandler to guard saveAgentSeats payloads from a remote or
  *  hand-edited source corrupting the stored values with out-of-range values. */
 export const HUE_SHIFT_MAX_DEG = 360;
+
+/** Most agent ids a saved card order keeps. The order is pruned to live agents
+ *  on every save, so this only bounds a hand-edited or hostile payload. */
+export const MAX_CARD_ORDER_LENGTH = 1_000;

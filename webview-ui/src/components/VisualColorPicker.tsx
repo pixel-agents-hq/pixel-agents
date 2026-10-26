@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   VISUAL_COLOR_PICKER_COMPACT_WIDTH_PX,
+  VISUAL_COLOR_PICKER_HEX_INSET_PX,
   VISUAL_COLOR_PICKER_HUE_GRADIENT,
   VISUAL_COLOR_PICKER_HUE_WIDTH_PX,
   VISUAL_COLOR_PICKER_MARKER_BORDER,
@@ -31,6 +32,7 @@ import {
   VISUAL_COLOR_PICKER_SV_SIZE_PX,
   VISUAL_COLOR_PICKER_SWATCH_PX,
 } from '../constants.js';
+import { PixelInputText } from './ui/PixelInputText.js';
 import type { ColorValue } from './ui/types.js';
 
 interface VisualColorPickerProps {
@@ -272,25 +274,31 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
             flexShrink: 0,
           }}
         />
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputHex}
-          onChange={(e) => handleHexChange(e.target.value)}
-          onClick={(e) => {
-            e.stopPropagation();
-            setExpanded(true);
-          }}
-          className="flex-1 min-w-0 bg-bg text-text border-2 border-border px-2 py-0.5 font-mono text-[12px]"
-          spellCheck={false}
-          maxLength={7}
-        />
+        <PixelInputText
+          text={inputHex.toUpperCase()}
+          insetPx={VISUAL_COLOR_PICKER_HEX_INSET_PX}
+          className="flex-1 min-w-0"
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputHex}
+            onChange={(e) => handleHexChange(e.target.value)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(true);
+            }}
+            className="flex-1 min-w-0 bg-bg text-text border-2 border-border px-2 py-0.5 font-mono text-[12px]"
+            spellCheck={false}
+            maxLength={7}
+          />
+        </PixelInputText>
       </div>
 
       {/* Expanded: popup to the right of the trigger, bottom-aligned. */}
       {expanded && (
         <div
-          className="absolute z-20 flex flex-col gap-4 py-4 px-6 bg-bg-dark border-2 border-border"
+          className="fade-in absolute z-20 flex flex-col gap-4 py-4 px-6 bg-bg-dark border-2 border-border"
           style={{ left: '100%', bottom: 0, marginLeft: VISUAL_COLOR_PICKER_POPUP_GAP_PX }}
           onClick={(e) => e.stopPropagation()}
         >

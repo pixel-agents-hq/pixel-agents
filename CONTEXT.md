@@ -90,6 +90,13 @@ _Avoid_: track
 **Focus**:
 Bring an agent's terminal to the front. Reserved exclusively for terminals — never the in-office highlight.
 
+**Card bar**:
+The row of agent cards: one card per running main agent (teammates and sub-agents get none), in an order the user can drag and every open office shares. Pressing a card reaches its agent.
+_Avoid_: agent list, tabs
+
+**New agent**:
+The `+` card that launches an agent. From it, a Directory is chosen.
+
 ## First Run
 
 **Intro**:

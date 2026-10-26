@@ -263,6 +263,37 @@ export async function selectCharacter(frame: OverlaySurface, agentId: number): P
   }, agentId);
 }
 
+/**
+ * Expect one sub-agent per label, each wearing its own. A sub-agent's label
+ * shows only while it is hovered or selected (the lead's label already names
+ * the latest subtask; otherwise its overlay is an empty marker), so this
+ * selects each sub-agent (negative id) in turn and reads its label.
+ */
+export async function expectSubagentLabels(
+  frame: OverlaySurface,
+  labels: string[],
+  timeout = OVERLAY_TIMEOUT_MS,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const texts: string[] = [];
+        for (const id of (await readAgentOverlayIds(frame)).filter((id) => id < 0)) {
+          await selectCharacter(frame, id);
+          const overlay = getOverlayByAgentId(frame, id);
+          // ToolOverlay re-renders on the next frame; an empty marker stays empty.
+          await expect(overlay)
+            .toHaveText(/\S/, { timeout: 1_000 })
+            .catch(() => undefined);
+          texts.push((await overlay.textContent().catch(() => null)) ?? '');
+        }
+        return labels.map((label) => texts.filter((text) => text.includes(label)).length);
+      },
+      { timeout, message: `one sub-agent labelled each of: ${labels.join(', ')}` },
+    )
+    .toEqual(labels.map(() => 1));
+}
+
 export async function closeAgentFromOverlay(
   frame: OverlaySurface,
   options: { agentId?: number; text?: string },

@@ -80,6 +80,7 @@ function makeChar(id: number, col: number, row: number): Character {
     bubbleTimer: 0,
     seatTimer: 0,
     isSubagent: false,
+    helperIdleSec: 0,
     parentAgentId: null,
     matrixEffect: null,
     matrixEffectTimer: 0,

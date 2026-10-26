@@ -5,6 +5,7 @@ import { buildAgentDiagnostics } from './agentDiagnostics.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './assetLoader.js';
+import { cardOrderMessage, saveCardOrder } from './cardOrder.js';
 import {
   getHooksConsent,
   getHooksEnabled,
@@ -300,6 +301,13 @@ export function handleClientMessage(
       writeConfig(cfg);
       send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
       void ctx.onReloadAssets?.(send);
+      break;
+    }
+
+    case 'saveCardOrder': {
+      const loaded = saveCardOrder(adapter, msg.order, (id) => store.has(id));
+      // Every open office follows the reorder, the sender's included.
+      if (loaded) store.broadcast(loaded);
       break;
     }
 
@@ -611,6 +619,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
       seatId: persisted?.seatId,
     };
   }
+  // Before the agents, so their cards appear in order rather than reshuffle.
+  send(cardOrderMessage(adapter));
   send({
     type: 'existingAgents',
     agents: agentIds,
@@ -715,6 +725,10 @@ function refuseReadOnly(
         type: 'externalAssetDirectoriesUpdated',
         dirs: readConfig().externalAssetDirectories,
       });
+      return;
+    case 'saveCardOrder':
+      // The bar showed the reorder already: put it back.
+      send(cardOrderMessage(ctx.store.getAdapter()));
       return;
     case 'saveAreaMappings':
       send({ type: 'areaMappingsLoaded', mappings: readConfig().standalone.areaMappings ?? {} });

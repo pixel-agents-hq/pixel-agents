@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { HooksConsentRequest } from '../../../core/src/messages.js';
+import { cardOrderOf } from '../components/cardBar.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
 import { reconcileExistingAgents, staleAgentIds } from '../office/engine/existingAgents.js';
@@ -93,8 +94,6 @@ interface ExtensionMessageState {
   selectedAgent: number | null;
   agentTools: Record<number, ToolActivity[]>;
   agentStatuses: Record<number, string>;
-  /** Agents whose last turn ended awaiting user input (vs a plain done). */
-  agentAwaitingInput: Record<number, boolean>;
   /** Latch: true once an agent has had any activity (first tool or status). */
   agentSeenActivity: Record<number, boolean>;
   subagentTools: Record<number, Record<string, ToolActivity[]>>;
@@ -158,6 +157,12 @@ interface ExtensionMessageState {
   terminalUnavailableReason: string | null;
   /** Agent ids with a live server-side PTY, in the order they opened. */
   terminalAgentIds: number[];
+  /** The agents that get a card, in the card order every client shares:
+   *  `agents` minus Teammates, the server's order first, newer agents after. */
+  cardAgents: number[];
+  /** Reorder the cards (a finished drag): shown at once, saved by the server,
+   *  which tells every open office. */
+  saveCardOrder: (order: number[]) => void;
 }
 
 /** Drop one key from a keyed-by-agent record without touching identity when
@@ -182,7 +187,6 @@ export function useExtensionMessages(
   const [selectedAgent, setSelectedAgent] = useState<number | null>(null);
   const [agentTools, setAgentTools] = useState<Record<number, ToolActivity[]>>({});
   const [agentStatuses, setAgentStatuses] = useState<Record<number, string>>({});
-  const [agentAwaitingInput, setAgentAwaitingInput] = useState<Record<number, boolean>>({});
   const [agentSeenActivity, setAgentSeenActivity] = useState<Record<number, boolean>>({});
   const markSeenActivity = (id: number) =>
     setAgentSeenActivity((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
@@ -227,6 +231,21 @@ export function useExtensionMessages(
   const [terminalUnavailableReason, setTerminalUnavailableReason] = useState<string | null>(null);
   /** Agent ids with a live PTY, in the order their terminals opened. */
   const [terminalAgentIds, setTerminalAgentIds] = useState<number[]>([]);
+  /** Agents that are Teammates (they have a Lead). They get no card. */
+  const [teammateIds, setTeammateIds] = useState<ReadonlySet<number>>(new Set());
+  const markTeammate = (id: number) =>
+    setTeammateIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+  const unmarkTeammate = (id: number) =>
+    setTeammateIds((prev) => (prev.has(id) ? new Set([...prev].filter((t) => t !== id)) : prev));
+  const [cardOrder, setCardOrder] = useState<number[]>([]);
+  const cardAgents = useMemo(
+    () => cardOrderOf(cardOrder, agents, teammateIds),
+    [cardOrder, agents, teammateIds],
+  );
+  const saveCardOrder = useCallback((order: number[]) => {
+    setCardOrder(order);
+    transport.send({ type: 'saveCardOrder', order });
+  }, []);
 
   // The renderer keeps its own module-level copy (read every rAF frame), so both
   // sources of truth move together — the persisted value on settingsLoaded and
@@ -264,9 +283,9 @@ export function useExtensionMessages(
       // an agent can be removed without its PTY ever reporting an exit (e.g.
       // stale cleanup), and a tab for a gone agent would attach to nothing.
       setTerminalAgentIds((prev) => prev.filter((a) => a !== id));
+      unmarkTeammate(id);
       setAgentTools((prev) => omitKey(prev, id));
       setAgentStatuses((prev) => omitKey(prev, id));
-      setAgentAwaitingInput((prev) => omitKey(prev, id));
       setAgentSeenActivity((prev) => omitKey(prev, id));
       setSubagentTools((prev) => omitKey(prev, id));
       // Remove all sub-agent characters belonging to this agent
@@ -291,7 +310,6 @@ export function useExtensionMessages(
       setSubagentTools({});
       setAgentTools({});
       setAgentStatuses({});
-      setAgentAwaitingInput({});
       backgroundParentToolIdsRef.current = {};
       for (const id of incoming) {
         os.setAgentTool(id, null);
@@ -398,6 +416,7 @@ export function useExtensionMessages(
           setSelectedAgent(id);
         }
         if (isTeammate && teammateParentId !== undefined) {
+          markTeammate(id);
           // Teammate: inherit parent's palette and workspace directoryName (teammate runs
           // in the same workspace as the lead). Name shown via agentName (teamRoleLabel).
           // Seat them at the free seat closest to the lead so the team clusters.
@@ -598,11 +617,6 @@ export function useExtensionMessages(
           if (status === 'active') return omitKey(prev, id);
           return { ...prev, [id]: status };
         });
-        setAgentAwaitingInput((prev) => {
-          const awaiting = status === 'waiting' && msg.awaitingInput === true;
-          if ((prev[id] ?? false) === awaiting) return prev;
-          return { ...prev, [id]: awaiting };
-        });
         os.setAgentActive(id, status === 'active');
         if (status === 'waiting') {
           os.showWaitingBubble(id, msg.awaitingInput === true);
@@ -757,6 +771,8 @@ export function useExtensionMessages(
         const sets = msg.sets as string[][][][];
         console.log(`[Webview] Received ${sets.length} carpet variant(s)`);
         setCarpetSprites(sets);
+      } else if (msg.type === 'cardOrderLoaded') {
+        setCardOrder(msg.order);
       } else if (msg.type === 'areaMappingsLoaded') {
         const mappings = (msg.mappings ?? {}) as Record<string, string[]>;
         setAreaMappings(mappings);
@@ -867,6 +883,13 @@ export function useExtensionMessages(
         }
       } else if (msg.type === 'agentTeamInfo') {
         const id = msg.id as number;
+        // Each team-info message is the agent's whole team state: a lead id
+        // makes it a Teammate, none makes it a main agent again.
+        if (msg.leadAgentId !== undefined) {
+          markTeammate(id);
+        } else {
+          unmarkTeammate(id);
+        }
         os.setTeamInfo(
           id,
           msg.teamName as string | undefined,
@@ -912,10 +935,11 @@ export function useExtensionMessages(
 
   return {
     agents,
+    cardAgents,
+    saveCardOrder,
     selectedAgent,
     agentTools,
     agentStatuses,
-    agentAwaitingInput,
     agentSeenActivity,
     subagentTools,
     subagentCharacters,

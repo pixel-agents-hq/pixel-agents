@@ -23,6 +23,8 @@ function createMockAdapter(initial: PersistedAgent[] = []): StateAdapter & {
     },
     loadSeats: () => ({}),
     saveSeats: () => {},
+    loadCardOrder: () => [],
+    saveCardOrder: () => {},
     getSetting: <T>(_key: string, defaultValue: T): T => defaultValue,
     setSetting: vi.fn<(key: string, value: unknown) => void>(),
   };

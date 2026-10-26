@@ -1,6 +1,7 @@
-import type { CardVariant } from './cardBar.js';
+import type { CardVariant, CloseMode } from './cardBar.js';
 import { CharacterMugShot } from './CharacterMugShot.js';
 import { Button } from './ui/Button.js';
+import { PixelIcon } from './ui/PixelIcon.js';
 
 /** How a given agent's character looks, for the tab mug shot. */
 export interface AgentAppearance {
@@ -27,15 +28,25 @@ const CARD_VARIANT: Record<CardVariant, string> = {
   active: 'bg-active-bg border-accent',
 };
 
+// `hover` fades with opacity rather than visibility, so the × stays a
+// hit target (a pointer over it hovers the card anyway).
+const CLOSE_MODE: Record<CloseMode, string> = {
+  shown: '',
+  hover: 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity',
+  hidden: 'invisible',
+};
+
 interface AgentCardProps {
   agentId: number;
   variant: CardVariant;
   appearance: AgentAppearance;
   status: TabStatus | null;
-  /** When false the × is invisible (not removed — the card keeps its width so
-   *  the bar doesn't reflow). Mobile only shows it on the active terminal tab
-   *  to keep a stray tap from killing an agent. */
-  showClose?: boolean;
+  /** How the × shows. It is never removed (the card keeps its width so the
+   *  bar doesn't reflow): `hover` (desktop) shows it while the card is
+   *  hovered or the × has keyboard focus; `hidden` keeps it invisible — the
+   *  phone shows it only on the active terminal tab, so a stray tap can't
+   *  close an agent. */
+  close?: CloseMode;
   onSelect: (agentId: number) => void;
   onClose: (agentId: number) => void;
 }
@@ -48,13 +59,13 @@ export function AgentCard({
   variant,
   appearance,
   status,
-  showClose = true,
+  close = 'shown',
   onSelect,
   onClose,
 }: AgentCardProps) {
   return (
     <div
-      className={`pointer-events-auto flex items-stretch gap-1 p-1 cursor-pointer border-2 shrink-0 ${CARD_VARIANT[variant]}`}
+      className={`group pointer-events-auto flex items-stretch gap-1 p-1 cursor-pointer border-2 shrink-0 ${CARD_VARIANT[variant]}`}
       onClick={() => onSelect(agentId)}
       title={`Agent ${agentId}`}
     >
@@ -71,17 +82,15 @@ export function AgentCard({
             onClose(agentId);
           }}
           title="Close agent"
-          className={`leading-none ${showClose ? '' : 'invisible'}`}
+          className={CLOSE_MODE[close]}
         >
-          ×
+          <PixelIcon name="close" />
         </Button>
-        {/* 1px left: optically centres the solid square under the pixel-font ×
-            glyph, which sits a hair left in its cell. mb (not pb) lifts it off
-            the card's bottom edge: the span is a fixed-size empty box, so
-            padding is invisible — only margin moves it. */}
-        <span
-          className={`size-6 shrink-0 relative -left-1 mb-2 ${status ? STATUS_DOT[status] : ''}`}
-        />
+        {/* mb lifts the round dot off the card's bottom edge; with no status
+            it keeps its place, invisible. */}
+        <span className={`flex shrink-0 mb-2 ${status ? STATUS_DOT[status] : 'invisible'}`}>
+          <PixelIcon name="dot" scale={1} />
+        </span>
       </div>
     </div>
   );

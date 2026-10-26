@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { DRAWER_EDIT_LONG_PRESS_MAX_MOVE_PX, DRAWER_EDIT_LONG_PRESS_MS } from '../constants.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import { Dropdown, DropdownItem } from './ui/Dropdown.js';
+import { PixelIcon } from './ui/PixelIcon.js';
 
 interface LaunchDrawerProps {
   isOpen: boolean;
@@ -56,12 +57,12 @@ export function LaunchDrawer({
       <div data-testid="launch-drawer" className="flex flex-col min-h-0">
         {/* DropdownItem hard-resets to border-none, so the separator lives on
             this wrapper. Pinned: it never scrolls away with the rows. */}
-        <div className="shrink-0 border-b-2 border-border">
+        <div className="shrink-0 border-b-2 border-border menu-item menu-item-last">
           <DropdownItem onClick={onAddDirectory} className="text-base text-accent-bright">
             + Directory
           </DropdownItem>
         </div>
-        <div className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain pixel-scrollbar">
+        <div className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain pixel-scrollbar menu-stagger-up">
           {directories.map((directory) => (
             <DirectoryRow
               key={directory.path}
@@ -169,9 +170,7 @@ function DirectoryRow({ directory, onSelect, onEditDirectory }: DirectoryRowProp
           title="Edit directory"
           className="shrink-0 self-stretch flex items-center px-8 bg-transparent border-none rounded-none cursor-pointer text-sm leading-none text-text-muted hover:text-text opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:hidden"
         >
-          <span className="material-symbols-sharp text-[12px]" aria-hidden="true">
-            edit
-          </span>
+          <PixelIcon name="pencil" />
         </button>
       )}
     </div>

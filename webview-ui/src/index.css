@@ -1,9 +1,4 @@
 @import 'tailwindcss';
-/* Material Symbols Sharp, weight 700 (the single-weight package keeps the
-   FILL/GRAD/opsz axes variable). Imported into the base layer: the package's
-   own rules are unlayered and would otherwise outrank every Tailwind utility
-   (its font-size: 24px silently beat text-[...] sizing). */
-@import '@material-symbols/font-700/sharp.css' layer(base);
 
 @font-face {
   font-family: 'FS Pixel Sans';
@@ -329,18 +324,6 @@
     scrollbar-width: thin;
     scrollbar-color: var(--color-border) var(--color-bg-dark);
   }
-
-  /* Material Symbols defaults for this project: Sharp style (imported in
-     main.tsx at weight 700), FILL 1, GRAD 0, opsz 24. The package CSS pins
-     font-size to 24px; 1em instead, so an icon tracks the text beside it. */
-  .material-symbols-sharp {
-    font-variation-settings:
-      'FILL' 1,
-      'GRAD' 0,
-      'opsz' 24;
-    font-size: 1em;
-    line-height: 1;
-  }
 }
 
 @keyframes pixel-pulse {
@@ -351,4 +334,228 @@
   50% {
     opacity: 0.3;
   }
+}
+
+/* ── Menu juice ───────────────────────────────────────────────
+   Toolbar menus pop up out of their button like a game's: the panel unrolls
+   upward (a clip reveal, so no pixel is ever scaled), overshoots its spot and
+   settles; its rows then slide in one after another. Closing rolls it back
+   down into the button, quickly. The clip leaves 6px around the box so the
+   hard shadow shows. Close durations = MENU_POP_OUT_MS (constants.ts).
+   Openings fill backwards only: once played they leave no clip or transform
+   behind (a lingering clip hid the launch drawer's pencil, which hangs off
+   its right edge). */
+@keyframes menu-pop-in {
+  0% {
+    clip-path: inset(100% -6px -6px -6px);
+    transform: translateY(10px);
+  }
+  55% {
+    clip-path: inset(-6px -6px -6px -6px);
+    transform: translateY(-5px);
+  }
+  78% {
+    transform: translateY(2px);
+  }
+  100% {
+    clip-path: inset(-6px -6px -6px -6px);
+    transform: translateY(0);
+  }
+}
+@keyframes menu-pop-out {
+  0% {
+    clip-path: inset(-6px -6px -6px -6px);
+    transform: translateY(0);
+  }
+  100% {
+    clip-path: inset(100% -6px -6px -6px);
+    transform: translateY(8px);
+  }
+}
+@keyframes menu-item-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  65% {
+    opacity: 1;
+    transform: translateX(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+/* A modal: drops in from a little above, lands with a bounce. */
+@keyframes modal-pop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(6px);
+  }
+  80% {
+    transform: translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes modal-pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes backdrop-out {
+  to {
+    opacity: 0;
+  }
+}
+.menu-pop-in {
+  animation: menu-pop-in 280ms cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+}
+.menu-pop-out {
+  animation: menu-pop-out 130ms cubic-bezier(0.5, 0, 0.9, 0.4) both;
+  pointer-events: none;
+}
+.modal-pop-in {
+  animation: modal-pop-in 320ms cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+}
+.modal-pop-out {
+  animation: modal-pop-out 130ms ease-in both;
+  pointer-events: none;
+}
+.backdrop-in {
+  animation: backdrop-in 200ms ease-out backwards;
+}
+.backdrop-out {
+  animation: backdrop-out 130ms ease-in both;
+  pointer-events: none;
+}
+/* Rows of an opening menu, one after another (.menu-item: a single row
+   outside the staggered list, first in line). */
+.menu-item,
+.menu-stagger-up > * {
+  animation: menu-item-in 220ms ease-out backwards;
+  animation-delay: 60ms;
+}
+/* .menu-stagger-up: the same cascade from the last row up, for a menu that
+   unrolls upward out of its button (the nearest row lands first). Its
+   .menu-item, above the list, comes in last. */
+.menu-item-last {
+  animation-delay: 300ms;
+}
+.menu-stagger-up > :nth-last-child(1) {
+  animation-delay: 90ms;
+}
+.menu-stagger-up > :nth-last-child(2) {
+  animation-delay: 115ms;
+}
+.menu-stagger-up > :nth-last-child(3) {
+  animation-delay: 140ms;
+}
+.menu-stagger-up > :nth-last-child(4) {
+  animation-delay: 165ms;
+}
+.menu-stagger-up > :nth-last-child(5) {
+  animation-delay: 190ms;
+}
+.menu-stagger-up > :nth-last-child(6) {
+  animation-delay: 215ms;
+}
+.menu-stagger-up > :nth-last-child(7) {
+  animation-delay: 240ms;
+}
+.menu-stagger-up > :nth-last-child(8) {
+  animation-delay: 265ms;
+}
+.menu-stagger-up > :nth-last-child(n + 9) {
+  animation-delay: 290ms;
+}
+/* Quieter: what opens inside a menu (the Layout editor's tab panels, the
+   colour sliders and picker, the roster's cards) just fades in, its items one
+   after another, with no snap. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.fade-in,
+.fade-stagger > * {
+  animation: fade-in 220ms ease-out backwards;
+}
+.fade-stagger > :nth-child(1) {
+  animation-delay: 0ms;
+}
+.fade-stagger > :nth-child(2) {
+  animation-delay: 40ms;
+}
+.fade-stagger > :nth-child(3) {
+  animation-delay: 80ms;
+}
+.fade-stagger > :nth-child(4) {
+  animation-delay: 120ms;
+}
+.fade-stagger > :nth-child(5) {
+  animation-delay: 160ms;
+}
+.fade-stagger > :nth-child(6) {
+  animation-delay: 200ms;
+}
+.fade-stagger > :nth-child(7) {
+  animation-delay: 240ms;
+}
+.fade-stagger > :nth-child(8) {
+  animation-delay: 280ms;
+}
+.fade-stagger > :nth-child(9) {
+  animation-delay: 320ms;
+}
+.fade-stagger > :nth-child(10) {
+  animation-delay: 360ms;
+}
+.fade-stagger > :nth-child(n + 11) {
+  animation-delay: 400ms;
+}
+/* Toolbar buttons press down into their shadow. */
+.press-juice {
+  transition: transform 60ms ease-out;
+}
+.press-juice:active:not(:disabled) {
+  transform: translateY(2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-pop-in,
+  .menu-pop-out,
+  .fade-in,
+  .fade-stagger > *,
+  .modal-pop-in,
+  .modal-pop-out,
+  .backdrop-in,
+  .backdrop-out,
+  .menu-item,
+  .menu-stagger-up > * {
+    animation: none;
+  }
+  .press-juice:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* PixelInputText: the field's own text hides behind the pixel-font copy
+   until the field is focused for editing. */
+.pixel-veil:not(:focus-within) input {
+  color: transparent;
+}
+.pixel-veil:focus-within .pixel-veil-text {
+  display: none;
 }

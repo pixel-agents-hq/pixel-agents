@@ -1244,6 +1244,7 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
       { type: 'saveAreaMappings', mappings: { Lab: ['project'] } },
       { type: 'setShowAreas', enabled: true },
       { type: 'setBypassPermissions', enabled: true },
+      { type: 'saveCardOrder', order: [2, 1] },
       { type: 'saveDirectory', name: 'Project', path: directory },
       { type: 'removeDirectory', path: directory },
       { type: 'requestDirectorySuggestions' },
@@ -1257,6 +1258,7 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
     const replyTypes = new Set(sent.map((m) => m.type));
     expect([...replyTypes].sort()).toEqual([
       'areaMappingsLoaded',
+      'cardOrderLoaded',
       'externalAssetDirectoriesUpdated',
       'settingsLoaded',
     ]);
@@ -1307,5 +1309,89 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
       privileged: true,
     });
     expect(sent[0]).toEqual({ type: 'officeAccess', readOnly: false });
+  });
+});
+
+/**
+ * The agent cards' order is the server's, so the desktop office and the phone
+ * show the same cards in the same order.
+ */
+describe('clientMessageHandler: card order', () => {
+  let tempHome: string;
+  let originalHome: string | undefined;
+  let store: AgentStateStore;
+  let sent: Array<Record<string, unknown>>;
+  let broadcasts: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cmh-cardorder-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
+    store = new AgentStateStore();
+    store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
+    store.on('broadcast', (m) => broadcasts.push(m as Record<string, unknown>));
+    for (const id of [1, 2, 3]) store.set(id, createTestAgent({ id }));
+    sent = [];
+    broadcasts = [];
+  });
+
+  afterEach(() => {
+    process.env.HOME = originalHome;
+    store.dispose();
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  const tokened = (): ClientMessageContext => ({ store, cache: null, privileged: true });
+
+  it('saves a reorder and tells every open office', () => {
+    handleClientMessage(
+      { type: 'saveCardOrder', order: [3, 1, 2] },
+      (m) => sent.push(m),
+      tokened(),
+    );
+
+    expect(broadcasts).toEqual([{ type: 'cardOrderLoaded', order: [3, 1, 2] }]);
+    expect(store.getAdapter()!.loadCardOrder()).toEqual([3, 1, 2]);
+  });
+
+  it('keeps only agents that exist, each once', () => {
+    handleClientMessage(
+      { type: 'saveCardOrder', order: [3, 99, 3, -1, 1.5, 'x', 1] },
+      (m) => sent.push(m),
+      tokened(),
+    );
+
+    expect(store.getAdapter()!.loadCardOrder()).toEqual([3, 1]);
+  });
+
+  it('ignores a payload that is not an order', () => {
+    handleClientMessage({ type: 'saveCardOrder', order: 'nope' }, (m) => sent.push(m), tokened());
+
+    expect(broadcasts).toEqual([]);
+    expect(store.getAdapter()!.loadCardOrder()).toEqual([]);
+  });
+
+  it('sends the order on connect, before the agents', () => {
+    store.getAdapter()!.saveCardOrder([2, 1]);
+
+    handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), tokened());
+
+    const types = sent.map((m) => m.type);
+    expect(sent).toContainEqual({ type: 'cardOrderLoaded', order: [2, 1] });
+    expect(types.indexOf('cardOrderLoaded')).toBeLessThan(types.indexOf('existingAgents'));
+  });
+
+  it('answers a read-only reorder with the real order', () => {
+    store.getAdapter()!.saveCardOrder([2, 1]);
+
+    handleClientMessage({ type: 'saveCardOrder', order: [1, 2] }, (m) => sent.push(m), {
+      store,
+      cache: null,
+      privileged: false,
+    });
+
+    expect(sent).toEqual([{ type: 'cardOrderLoaded', order: [2, 1] }]);
+    expect(broadcasts).toEqual([]);
+    expect(store.getAdapter()!.loadCardOrder()).toEqual([2, 1]);
   });
 });

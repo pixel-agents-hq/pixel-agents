@@ -4,6 +4,7 @@ import type { OfficeState } from '../office/engine/officeState.js';
 import type { ToolActivity } from '../office/types.js';
 import { transport } from '../transport/index.js';
 import { Button } from './ui/Button.js';
+import { PixelIcon } from './ui/PixelIcon.js';
 
 interface AgentDiagnostics {
   id: number;
@@ -125,7 +126,7 @@ export function DebugView({
             className={`opacity-70 ${isSelected ? 'text-white' : ''}`}
             title="Close agent"
           >
-            ✕
+            <PixelIcon name="close" />
           </Button>
         </span>
         {(tools.length > 0 || status === 'waiting') && (
