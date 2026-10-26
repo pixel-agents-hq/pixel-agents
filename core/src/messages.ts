@@ -31,6 +31,7 @@ export type ServerMessage =
   | FurnitureAssetsLoaded
   | CharacterSpritesLoaded
   | PetSpritesLoaded
+  | NakamaSpritesLoaded
   | FloorTilesLoaded
   | WallTilesLoaded
   | CarpetTilesLoaded
@@ -213,6 +214,7 @@ export interface AgentInsight {
   effort?: string;
   thinking?: string;
   spend?: TokenSpend;
+  nakamaId?: string;
 }
 
 export interface TokenSpend {
@@ -232,6 +234,7 @@ export interface SubagentInsight {
   effort?: string;
   thinking?: string;
   spend?: TokenSpend;
+  nakamaId?: string;
 }
 
 export interface LayoutLoaded {
@@ -292,6 +295,20 @@ export interface PetSpriteFrameSet {
   walkUp: string[][][];
   idleUp: string[][][];
   walkRight: string[][][];
+}
+
+export interface NakamaSpritesLoaded {
+  type: 'nakamaSpritesLoaded';
+  nakamas: NakamaSpriteSet[];
+}
+
+export interface NakamaSpriteSet {
+  id: string;
+  name: string;
+  down: string[][];
+  up: string[][];
+  left: string[][];
+  right: string[][];
 }
 
 export interface FloorTilesLoaded {

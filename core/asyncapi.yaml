@@ -109,6 +109,7 @@ components:
         - $ref: '#/components/schemas/FurnitureAssetsLoaded'
         - $ref: '#/components/schemas/CharacterSpritesLoaded'
         - $ref: '#/components/schemas/PetSpritesLoaded'
+        - $ref: '#/components/schemas/NakamaSpritesLoaded'
         - $ref: '#/components/schemas/FloorTilesLoaded'
         - $ref: '#/components/schemas/WallTilesLoaded'
         - $ref: '#/components/schemas/CarpetTilesLoaded'
@@ -508,6 +509,13 @@ components:
           type: string
         spend:
           $ref: '#/components/schemas/TokenSpend'
+        nakamaId:
+          type: string
+          description: |
+            The Nakama (`<collection>/<character>`) this agent is drawn as,
+            chosen by the server once the model is known; an empty string
+            means none (back to the regular character). Its sprites always
+            arrive in a `nakamaSpritesLoaded` sent before this id.
 
     SubagentInsight:
       description: |
@@ -539,6 +547,13 @@ components:
           type: string
         spend:
           $ref: '#/components/schemas/TokenSpend'
+        nakamaId:
+          type: string
+          description: |
+            The Nakama (`<collection>/<character>`) this sub-agent is drawn as,
+            chosen by the server once the model is known; an empty string
+            means none (back to the regular character). Its sprites always
+            arrive in a `nakamaSpritesLoaded` sent before this id.
 
     LayoutLoaded:
       description: |
@@ -615,6 +630,54 @@ components:
           description: Display names parallel-indexed to `pets` (sourced from each pet's manifest.json).
           items:
             type: string
+
+    NakamaSpritesLoaded:
+      description: |
+        Office sprites of Nakamas: character art the owner keeps in an asset
+        directory (`assets/nakamas/<collection>/<character>/`), each converted
+        to four static poses. Additive: entries are merged into what the client
+        already has, keyed by `id`. Sent before any `nakamaId` that names
+        them, and on connect for every Nakama in use.
+      type: object
+      additionalProperties: false
+      required: [type, nakamas]
+      properties:
+        type:
+          const: nakamaSpritesLoaded
+        nakamas:
+          type: array
+          items:
+            $ref: '#/components/schemas/NakamaSpriteSet'
+
+    NakamaSpriteSet:
+      description: |
+        One Nakama's poses, all the same size: 32 px tall, at most 32 px wide,
+        feet on the bottom row. Each pose is a 2D hex string array (rows of
+        pixels; '' = transparent). `left` is drawn facing left (not a mirror).
+      type: object
+      additionalProperties: false
+      required: [id, name, down, up, left, right]
+      properties:
+        id:
+          type: string
+          description: '`<collection>/<character>` folder names; stable across restarts.'
+        name:
+          type: string
+        down:
+          $ref: '#/components/schemas/NakamaPose'
+        up:
+          $ref: '#/components/schemas/NakamaPose'
+        left:
+          $ref: '#/components/schemas/NakamaPose'
+        right:
+          $ref: '#/components/schemas/NakamaPose'
+
+    NakamaPose:
+      type: array
+      items:
+        type: array
+        items:
+          type: string
 
     PetSpriteFrameSet:
       description: One pet's frames keyed by direction + state. All arrays are 3D hex-string arrays (frames × rows × pixels).

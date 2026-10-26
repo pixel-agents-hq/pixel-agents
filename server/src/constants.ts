@@ -178,3 +178,11 @@ export const PALETTE_COUNT = 6;
  *  clientMessageHandler to guard saveAgentSeats payloads from a remote or
  *  hand-edited source corrupting the stored values with out-of-range values. */
 export const HUE_SHIFT_MAX_DEG = 360;
+
+// ── Nakamas (local character art, never in the repo) ──
+/** Folder under `<asset dir>/assets/` holding `<collection>/<character>/` Nakamas. */
+export const NAKAMAS_ASSET_SUBDIR = 'nakamas';
+/** Owner-edited tier map at the Nakamas root: collections and per-character overrides. */
+export const NAKAMAS_MODELS_FILE = 'modelos.json';
+/** Per-character metadata file; its `personaje` field is the display name. */
+export const NAKAMAS_POSITIONS_FILE = 'posiciones.json';
