@@ -157,6 +157,26 @@ _Avoid_: map, scene, room, level
 The office's spatial arrangement: the tile grid, floors, walls, carpets, areas, and furniture. It is the part of the office that the editor edits and that can be exported and shared.
 _Avoid_: floor plan, blueprint, map
 
+**Office view**:
+A way of drawing the office. Every office view draws the same layout and the same characters; switching views changes how the office looks, never what is in it. There are two: Flat and Diorama.
+_Avoid_: renderer (that's the code), mode, theme, skin
+
+**Flat**:
+The office view drawn as top-down pixel-art sprites on the tile grid. The default.
+_Avoid_: classic, 2D, legacy
+
+**Diorama**:
+The opt-in office view that draws the office as a lit miniature: pixel-textured blocks, a tilted camera, light, shadow and lens effects.
+_Avoid_: 3D mode, HD view
+
+**Silhouette**:
+How Diorama shows a character or pet standing behind a wall: a flat figure in one neutral colour, drawn through the wall. It says only "someone is there"; status still shows through speech bubbles. Not a Ghost: a ghost is about the agent (headless), a silhouette only about the view.
+_Avoid_: x-ray, outline, ghost
+
+**Mood**:
+The lighting atmosphere a layout carries — sunlight, ambient light and colour grade, such as a sunny afternoon or a night shift. Part of the layout, so it travels with an exported layout. Only Diorama draws it.
+_Avoid_: time of day, theme, weather
+
 **Tile**:
 One cell of the office grid.
 
@@ -179,6 +199,10 @@ The assignment of a directory to one or more areas. Many directories may share a
 **Furniture**:
 A placeable item in the layout — desks, chairs, storage, electronics, decor.
 _Avoid_: object, prop, item
+
+**Workshop**:
+The host's personal collection of furniture under construction, live in every office on that host as it changes. Furniture leaves the workshop by being promoted into the bundled set that ships with Pixel Agents.
+_Avoid_: sandbox, drafts, custom assets
 
 **Desk**:
 Furniture that seats face and that hosts surface items. An agent's character sitting at its desk is the visual expression of being active.

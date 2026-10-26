@@ -41,6 +41,17 @@ export const MATRIX_TRAIL_DIM_THRESHOLD = 0.66;
 
 // ── Rendering ────────────────────────────────────────────────
 export const CHARACTER_SITTING_OFFSET_PX = 6;
+/** Office blinks, per character on its own clock. A gap is BLINK_GAP_MIN_SEC plus a random
+ *  wait that is usually short and now and then long (exponential, mean BLINK_GAP_MEAN_SEC,
+ *  capped at BLINK_GAP_MAX_SEC), stretched by BLINK_FOCUS_STRETCH while working at the desk
+ *  (people blink less when they concentrate). BLINK_DOUBLE_CHANCE of blinks come twice. */
+export const BLINK_SHUT_SEC = [0.1, 0.17] as const;
+export const BLINK_GAP_MIN_SEC = 1.5;
+export const BLINK_GAP_MEAN_SEC = 3.5;
+export const BLINK_GAP_MAX_SEC = 11;
+export const BLINK_FOCUS_STRETCH = 1.5;
+export const BLINK_DOUBLE_CHANCE = 0.15;
+export const BLINK_DOUBLE_GAP_SEC = [0.15, 0.3] as const;
 export const CHARACTER_Z_SORT_OFFSET = 0.5;
 export const OUTLINE_Z_SORT_OFFSET = 0.001;
 export const SELECTED_OUTLINE_ALPHA = 1.0;
@@ -783,3 +794,65 @@ export const USAGE_BAR_TICK_MS = 30_000;
 export const USAGE_BARS_LEFT_PX = 8 + 40 + 8;
 /** The provider whose plan the usage bars show (the one with a usage bridge today). */
 export const USAGE_PROVIDER_ID = 'claude';
+
+// ── Loading screen (a lamp-lit corner of the office while it loads) ──
+/** The loading screen's zoom, as the office counts it: DEVICE pixels per
+ *  sprite pixel (the office at 5x on the phone, 3x on desktop). */
+export const LOADING_ZOOM = 5;
+export const LOADING_ZOOM_DESKTOP = 3;
+/** The loading screen's background: the dark room the scene's floor fades into. */
+export const LOADING_SCREEN_BG = '#000000';
+/** The scene's floor: the office's wood planks in the default layout's colour (colorize). */
+export const LOADING_FLOOR_COLOR = { h: 25, s: 48, b: -43, c: -88 } as const;
+/** How far the floor's vignette darkens it into the background, at its edge (0-1). */
+export const LOADING_VIGNETTE_DARKEST = 0.6;
+/** Gradient stops along the floor's fade and vignette (both eased). */
+export const LOADING_FADE_STOPS = 8;
+/** Black at `alpha`: the floor's fade and vignette masks (only alpha matters). */
+export const loadingShade = (alpha: number): string => `rgba(0, 0, 0, ${alpha})`;
+/** "Loading the office": a dot more every step, up to three, then none again. */
+export const LOADING_DOTS_MS = 400;
+export const LOADING_MAX_DOTS = 3;
+
+// ── Office radio (procedural 8-bit background music, music/) ──
+/** How far ahead of the audio clock notes are scheduled. */
+export const MUSIC_LOOKAHEAD_SEC = 0.2;
+/** Lookahead while the tab is hidden, where timers can run late. */
+export const MUSIC_LOOKAHEAD_HIDDEN_SEC = 1.5;
+/** The scheduler's tick. */
+export const MUSIC_TICK_MS = 25;
+/** How long a skipped tune takes to fade out. */
+export const MUSIC_SKIP_FADE_SEC = 0.25;
+/** A low-pass over the whole mix that rounds off the square waves. */
+export const MUSIC_TONE_CUTOFF_HZ = 4000;
+/** Starting volume, 0-1. */
+export const MUSIC_DEFAULT_VOLUME = 0.45;
+/** A new tune's name won't repeat any of this many before it (it rerolls up to MUSIC_NAME_REROLLS times). */
+export const MUSIC_RECENT_NAMES = 12;
+export const MUSIC_NAME_REROLLS = 8;
+/** localStorage key for the radio's volume and mood (per browser). */
+export const MUSIC_STORAGE_KEY = 'pixel-agents.radio';
+/** The compact player's width. */
+export const MUSIC_PLAYER_WIDTH_PX = 364;
+/** The player's visualizer: how many bars, and the band of the mix they span. */
+export const MUSIC_VISUALIZER_BARS = 14;
+export const MUSIC_VISUALIZER_LOW_HZ = 70;
+export const MUSIC_VISUALIZER_HIGH_HZ = 4500;
+/** The tallest visualizer bar and the volume slider's track, in CSS px. */
+export const MUSIC_VISUALIZER_HEIGHT_PX = 20;
+export const MUSIC_VOLUME_SLIDER_HEIGHT_PX = 88;
+/** Gap between the player and the office's foot. */
+export const MUSIC_PLAYER_BOTTOM_PX = 10;
+/** Phone: a release faster than this (px/ms) settles the player the way it was flicked. */
+export const MUSIC_FLICK_PX_PER_MS = 0.4;
+/** Phone: a release slower than this long ago (ms) counts as no flick. */
+export const MUSIC_FLICK_MAX_AGE_MS = 100;
+/** Phone: how long the player takes to settle open or shut after a release or a tap. */
+export const MUSIC_SHEET_SETTLE_MS = 220;
+export const MUSIC_SHEET_EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+/** Gap between the player's bar and the version label riding above it. */
+export const MUSIC_VERSION_GAP_PX = 6;
+/** The version label's spot in the office's bottom-right corner, with no player under it. */
+export const VERSION_LABEL_BOTTOM_PX = 10;
+/** The update notice / changelog tooltip, this far above the label's spot. */
+export const VERSION_NOTICE_ABOVE_PX = 34;

@@ -40,8 +40,21 @@ export interface ExistingAgentsOffice {
     directoryName?: string,
   ) => void;
   setHeadless: (id: number, headless: boolean) => void;
+  /** Start an agent at rest: not working, resting in its chair if it has one. */
+  restAgent: (id: number) => void;
   /** Give an agent the office already shows the server's look and seat. */
   syncAgent: (id: number, palette?: number, repeat?: number, seatId?: string) => void;
+}
+
+/**
+ * Put a restored agent in the office, at once and at rest. The snapshot doesn't say who
+ * is working: the replay that follows it does (a running tool makes its agent active), so
+ * an agent starts out idle, resting in its chair, instead of typing at a turn long over.
+ */
+export function restoreAgent(os: ExistingAgentsOffice, p: PendingAgent): void {
+  os.addAgent(p.id, p.palette, p.repeat, p.seatId, true, p.directoryName);
+  if (p.isHeadless) os.setHeadless(p.id, true);
+  os.restAgent(p.id);
 }
 
 /**
@@ -74,8 +87,7 @@ export function reconcileExistingAgents(
     };
     if (layoutReady) {
       if (!os.characters.has(p.id)) {
-        os.addAgent(p.id, p.palette, p.repeat, p.seatId, true, p.directoryName);
-        if (p.isHeadless) os.setHeadless(p.id, true);
+        restoreAgent(os, p);
         addedDirectly = true;
       } else {
         // Already shown (a reconnect): the snapshot is the truth. Keeping the

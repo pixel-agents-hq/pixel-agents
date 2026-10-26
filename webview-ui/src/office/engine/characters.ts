@@ -17,6 +17,7 @@ import type { CharacterSprites } from '../sprites/spriteData.js';
 import { isReadingToolName } from '../toolUtils.js';
 import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../types.js';
 import { CharacterState, Direction, TILE_SIZE } from '../types.js';
+import { startBlink } from './blink.js';
 
 /** Whether a tool should show the reading animation (vs typing). Taxonomy comes
  *  from the active HookProvider via the `providerCapabilities` message. */
@@ -87,6 +88,7 @@ export function createCharacter(
     matrixEffect: null,
     matrixEffectTimer: 0,
     matrixEffectSeeds: [],
+    ...startBlink(),
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };
@@ -251,7 +253,7 @@ export function updateCharacter(
               if (ch.seatTimer < 0) {
                 ch.seatTimer = 0;
               } else {
-                ch.seatTimer = randomRange(SEAT_REST_MIN_SEC, SEAT_REST_MAX_SEC);
+                restInChair(ch);
               }
               ch.wanderCount = 0;
               ch.wanderLimit = randomInt(
@@ -423,6 +425,9 @@ function settle(ch: Character, facing: Direction | null): void {
 export function getCharacterSprite(ch: Character, sprites: CharacterSprites): SpriteData {
   switch (ch.state) {
     case CharacterState.TYPE:
+      // Resting in its chair (a turn over, or back from wandering). Helpers have no
+      // chair: they stand once idle, and keep typing through the gaps between tools.
+      if (!ch.isActive && !ch.isSubagent) return sprites.seated[ch.dir];
       if (isReadingTool(ch.currentTool)) {
         return sprites.reading[ch.dir][ch.frame % 2];
       }
@@ -434,6 +439,11 @@ export function getCharacterSprite(ch: Character, sprites: CharacterSprites): Sp
     default:
       return sprites.walk[ch.dir][1];
   }
+}
+
+/** Sit out a usual rest in the chair before standing up to wander. */
+export function restInChair(ch: Character): void {
+  ch.seatTimer = randomRange(SEAT_REST_MIN_SEC, SEAT_REST_MAX_SEC);
 }
 
 function randomRange(min: number, max: number): number {

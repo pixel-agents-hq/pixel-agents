@@ -10,6 +10,7 @@ import { DebugView } from './components/DebugView.js';
 import { DirectoryModal } from './components/DirectoryModal.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
+import { LoadingScene } from './components/LoadingScene.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TerminalDrawer } from './components/TerminalDrawer.js';
@@ -35,6 +36,7 @@ import { MobileMenu, MobileMenuButton } from './mobile/MobileMenu.js';
 import { MobileShell } from './mobile/MobileShell.js';
 import { useMobileMenu } from './mobile/useMobileMenu.js';
 import { useMobileShell } from './mobile/useMobileShell.js';
+import { MusicPlayer } from './music/MusicPlayer.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -519,7 +521,7 @@ function App() {
     })();
 
   if (!layoutReady) {
-    return <div className="w-full h-full flex items-center justify-center ">Loading...</div>;
+    return <LoadingScene />;
   }
 
   // The office region is shared by both shells: desktop mounts it as the
@@ -732,6 +734,9 @@ function App() {
       {isMobile && !isDebugMode && !officeReadOnly && (
         <MobileMenuButton active={menu.open} onClick={menu.show} />
       )}
+
+      {/* The office radio: bottom-right, centred on a phone (the version label sits above it). */}
+      {!isDebugMode && <MusicPlayer mobile={isMobile} />}
 
       <VersionIndicator
         currentVersion={extensionVersion}
