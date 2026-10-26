@@ -1,6 +1,4 @@
-import type { ColorValue } from '../../components/ui/types.js';
-import { PALETTE_COUNT } from '../../constants.js';
-import { adjustSprite } from '../colorize.js';
+import { DEFAULT_CHARACTER_PROFILES } from '../../../../core/src/defaultCharacterProfiles.js';
 import type { Direction, SpriteData } from '../types.js';
 import { Direction as Dir } from '../types.js';
 import bubblePermissionData from './bubble-permission.json';
@@ -39,16 +37,49 @@ interface LoadedCharacterData {
 
 let loadedCharacters: LoadedCharacterData[] | null = null;
 
-/** Set pre-colored character sprites loaded from PNG assets. Call this when characterSpritesLoaded message arrives. */
-export function setCharacterTemplates(data: LoadedCharacterData[]): void {
+/** A palette's sheet as its nth repeat (repeat ≥ 1), or null to draw it as is. */
+type RepeatSource = (palette: number, repeat: number) => LoadedCharacterData | null;
+let repeats: RepeatSource | null = null;
+
+/**
+ * Set the character sprites (the cast's sheets, then external char_N.png) and
+ * where their repeats come from, together: both describe the same cast.
+ */
+export function setCharacterTemplates(
+  data: LoadedCharacterData[],
+  repeatSource: RepeatSource | null = null,
+): void {
   loadedCharacters = data;
+  repeats = repeatSource;
   // Clear cache so sprites are rebuilt from loaded data
   spriteCache.clear();
+  templatesVersion++;
+  for (const listener of templateListeners) listener();
 }
 
-/** Return the number of loaded character palettes, or PALETTE_COUNT as fallback. */
+/**
+ * The number of character palettes: the drawn profiles plus external sprites once the cast
+ * has rendered, the default cast's size until then (what the server starts from too).
+ */
 export function getLoadedCharacterCount(): number {
-  return loadedCharacters ? loadedCharacters.length : PALETTE_COUNT;
+  return loadedCharacters ? loadedCharacters.length : DEFAULT_CHARACTER_PROFILES.length;
+}
+
+let templatesVersion = 0;
+const templateListeners = new Set<() => void>();
+
+/**
+ * Which set of character sprites is current: it changes on every setCharacterTemplates,
+ * so anything drawn once from the sprites (a mug shot) knows to draw again.
+ */
+export function getCharacterTemplatesVersion(): number {
+  return templatesVersion;
+}
+
+/** Hear of every setCharacterTemplates. Returns the unsubscribe. */
+export function subscribeCharacterTemplates(listener: () => void): () => void {
+  templateListeners.add(listener);
+  return () => templateListeners.delete(listener);
 }
 
 /** Flip a SpriteData horizontally (for generating left sprites from right) */
@@ -68,44 +99,6 @@ export interface CharacterSprites {
 
 const spriteCache = new Map<string, CharacterSprites>();
 
-/** Apply hue shift to every sprite in a CharacterSprites set */
-function hueShiftSprites(sprites: CharacterSprites, hueShift: number): CharacterSprites {
-  const color: ColorValue = { h: hueShift, s: 0, b: 0, c: 0 };
-  const shift = (s: SpriteData) => adjustSprite(s, color);
-  const shiftWalk = (
-    arr: [SpriteData, SpriteData, SpriteData, SpriteData],
-  ): [SpriteData, SpriteData, SpriteData, SpriteData] => [
-    shift(arr[0]),
-    shift(arr[1]),
-    shift(arr[2]),
-    shift(arr[3]),
-  ];
-  const shiftPair = (arr: [SpriteData, SpriteData]): [SpriteData, SpriteData] => [
-    shift(arr[0]),
-    shift(arr[1]),
-  ];
-  return {
-    walk: {
-      [Dir.DOWN]: shiftWalk(sprites.walk[Dir.DOWN]),
-      [Dir.UP]: shiftWalk(sprites.walk[Dir.UP]),
-      [Dir.RIGHT]: shiftWalk(sprites.walk[Dir.RIGHT]),
-      [Dir.LEFT]: shiftWalk(sprites.walk[Dir.LEFT]),
-    } as Record<Direction, [SpriteData, SpriteData, SpriteData, SpriteData]>,
-    typing: {
-      [Dir.DOWN]: shiftPair(sprites.typing[Dir.DOWN]),
-      [Dir.UP]: shiftPair(sprites.typing[Dir.UP]),
-      [Dir.RIGHT]: shiftPair(sprites.typing[Dir.RIGHT]),
-      [Dir.LEFT]: shiftPair(sprites.typing[Dir.LEFT]),
-    } as Record<Direction, [SpriteData, SpriteData]>,
-    reading: {
-      [Dir.DOWN]: shiftPair(sprites.reading[Dir.DOWN]),
-      [Dir.UP]: shiftPair(sprites.reading[Dir.UP]),
-      [Dir.RIGHT]: shiftPair(sprites.reading[Dir.RIGHT]),
-      [Dir.LEFT]: shiftPair(sprites.reading[Dir.LEFT]),
-    } as Record<Direction, [SpriteData, SpriteData]>,
-  };
-}
-
 /** Create a transparent placeholder sprite of given dimensions */
 function emptySprite(w: number, h: number): SpriteData {
   const rows: string[][] = [];
@@ -115,8 +108,9 @@ function emptySprite(w: number, h: number): SpriteData {
   return rows;
 }
 
-export function getCharacterSprites(paletteIndex: number, hueShift = 0): CharacterSprites {
-  const cacheKey = `${paletteIndex}:${hueShift}`;
+/** A character's sprites: its own sheet, or the nth repeat's (its clothes recoloured). */
+export function getCharacterSprites(paletteIndex: number, repeat = 0): CharacterSprites {
+  const cacheKey = `${paletteIndex}:${repeat}`;
   const cached = spriteCache.get(cacheKey);
   if (cached) return cached;
 
@@ -124,7 +118,8 @@ export function getCharacterSprites(paletteIndex: number, hueShift = 0): Charact
 
   if (loadedCharacters) {
     // Use pre-colored character sprites directly (no palette swapping)
-    const char = loadedCharacters[paletteIndex % loadedCharacters.length];
+    const palette = paletteIndex % loadedCharacters.length;
+    const char = (repeat ? repeats?.(palette, repeat) : null) ?? loadedCharacters[palette];
     const d = char.down;
     const u = char.up;
     const rt = char.right;
@@ -175,11 +170,6 @@ export function getCharacterSprites(paletteIndex: number, hueShift = 0): Charact
         [Dir.LEFT]: pairSet,
       },
     };
-  }
-
-  // Apply hue shift if non-zero
-  if (hueShift !== 0) {
-    sprites = hueShiftSprites(sprites, hueShift);
   }
 
   spriteCache.set(cacheKey, sprites);

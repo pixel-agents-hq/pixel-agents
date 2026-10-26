@@ -104,6 +104,7 @@ components:
         - $ref: '#/components/schemas/LayoutLoaded'
         # Assets
         - $ref: '#/components/schemas/FurnitureAssetsLoaded'
+        - $ref: '#/components/schemas/CharacterProfilesLoaded'
         - $ref: '#/components/schemas/CharacterSpritesLoaded'
         - $ref: '#/components/schemas/PetSpritesLoaded'
         - $ref: '#/components/schemas/FloorTilesLoaded'
@@ -141,6 +142,7 @@ components:
         - $ref: '#/components/schemas/CloseAgent'
         - $ref: '#/components/schemas/SaveAgentSeats'
         - $ref: '#/components/schemas/SaveLayout'
+        - $ref: '#/components/schemas/SaveCharacterProfiles'
         - $ref: '#/components/schemas/SetSoundEnabled'
         - $ref: '#/components/schemas/SetLastSeenVersion'
         - $ref: '#/components/schemas/SetAlwaysShowLabels'
@@ -152,6 +154,7 @@ components:
         - $ref: '#/components/schemas/SetWatchAllSessions'
         - $ref: '#/components/schemas/ExportLayout'
         - $ref: '#/components/schemas/ImportLayout'
+        - $ref: '#/components/schemas/ExportFile'
         - $ref: '#/components/schemas/OpenSessionsFolder'
         - $ref: '#/components/schemas/AddExternalAssetDirectory'
         - $ref: '#/components/schemas/RemoveExternalAssetDirectory'
@@ -207,9 +210,9 @@ components:
         palette:
           type: integer
           description: Server-assigned character palette index.
-        hueShift:
+        repeat:
           type: integer
-          description: Server-assigned hue shift in degrees (0-360).
+          description: Server-assigned copy of its character the agent is (0 = the character as drawn, n = its nth repeat, which the office draws with its clothes in the nth repeat colour).
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -506,8 +509,56 @@ components:
               items:
                 type: string
 
+    CharacterProfilesLoaded:
+      description: |
+        The character profiles agents are drawn from (~/.pixel-agents/characters.json, or
+        the six defaults). Profile N is palette N. Sent after webviewReady before
+        characterSpritesLoaded, again when another process rewrites characters.json, and
+        as the answer to every saveCharacterProfiles (see saveId).
+      type: object
+      additionalProperties: false
+      required: [type, profiles]
+      properties:
+        type:
+          const: characterProfilesLoaded
+        profiles:
+          type: array
+          description: |
+            The saved profiles, exactly as persisted. A valid current-format save comes
+            back byte-identical (JSON.stringify of the sent list equals that of this one).
+          items:
+            $ref: '#/components/schemas/CharacterProfile'
+        agentLooks:
+          type: array
+          description: |
+            The agents whose look this list changed: their characters moved to other indices
+            (a character inserted or deleted before them), or theirs was deleted and they
+            got a new one. Apply together with the list, so no frame draws an agent from the
+            wrong character. Absent when no agent's look changed.
+          items:
+            $ref: '#/components/schemas/AgentLook'
+        saveId:
+          type: string
+          description: |
+            Present only when this message answers a saveCharacterProfiles: the saveId that
+            save carried. A save that persisted is broadcast to every client with its
+            saveId; a save that was refused (invalid list, failed write) is answered to the
+            sender alone, with the profiles still on disk and the refused save's saveId.
+            Absent on the initial load and on reloads after an external file change.
+        items:
+          type: array
+          description: |
+            The custom wardrobe items (~/.pixel-agents/wardrobe-items.json): parts the
+            user saved from the pixel editor, wearable by every character. Always sent by
+            this server; absent from an older one.
+          items:
+            $ref: '#/components/schemas/WardrobeItem'
+
     CharacterSpritesLoaded:
-      description: Pre-colored character sprite sets (6 palettes), sent once at startup.
+      description: |
+        Pre-colored character sprite sets from external asset directories (char_N.png),
+        worn by the palettes after the character profiles. Possibly empty; sent once at
+        startup and again when the directories change.
       type: object
       additionalProperties: false
       required: [type, characters]
@@ -1113,6 +1164,33 @@ components:
           type: object
           description: Opaque layout object; format owned by the rendering layer.
 
+    SaveCharacterProfiles:
+      description: |
+        Replace the character profiles (~/.pixel-agents/characters.json). The server
+        validates the list and persists it. It always answers with characterProfilesLoaded
+        carrying this saveId: broadcast to every client on success, sent to this client
+        alone (with the profiles still saved) when the list is refused or the write fails.
+      type: object
+      additionalProperties: false
+      required: [type, profiles, saveId]
+      properties:
+        type:
+          const: saveCharacterProfiles
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/CharacterProfile'
+        saveId:
+          type: string
+          description: Client-chosen id for this save, echoed in the answering characterProfilesLoaded.
+        items:
+          type: array
+          description: |
+            The custom wardrobe items to save alongside the profiles. Absent = leave the
+            saved items as they are.
+          items:
+            $ref: '#/components/schemas/WardrobeItem'
+
     SetSoundEnabled:
       type: object
       additionalProperties: false
@@ -1254,6 +1332,22 @@ components:
       properties:
         type:
           const: exportLayout
+
+    ExportFile:
+      description: |
+        Save a file the client generated (a character sheet PNG, a roster zip, a profile
+        JSON) through the host-native save dialog. Embedded hosts only; a browser client
+        downloads it itself.
+      type: object
+      additionalProperties: false
+      required: [type, filename, dataBase64]
+      properties:
+        type:
+          const: exportFile
+        filename:
+          type: string
+        dataBase64:
+          type: string
 
     ImportLayout:
       description: Trigger layout import via host-native open dialog.
@@ -1441,7 +1535,7 @@ components:
 
     AgentSeatMeta:
       description: |
-        Seat metadata associated with an agent (palette index, hue shift, seat ID).
+        Seat metadata associated with an agent (palette index, clothes hue, seat ID).
         Used in `existingAgents.agentMeta`. All fields optional because some agents
         may not have a seat assignment yet.
       type: object
@@ -1449,7 +1543,7 @@ components:
       properties:
         palette:
           type: integer
-        hueShift:
+        repeat:
           type: integer
         seatId:
           type: string
@@ -1460,11 +1554,11 @@ components:
         null when the agent is unseated (left their chair). All other fields required.
       type: object
       additionalProperties: false
-      required: [palette, hueShift, seatId]
+      required: [palette, repeat, seatId]
       properties:
         palette:
           type: integer
-        hueShift:
+        repeat:
           type: integer
         seatId:
           type: [string, 'null']
@@ -1492,6 +1586,156 @@ components:
         and are read-only in the office; `user` entries are defined by the user.
       type: string
       enum: [user, host]
+
+    WardrobeItem:
+      description: |
+        A custom wardrobe part (core/src/wardrobeItems.ts): one piece's 128x96 sheet,
+        uncoloured, saved from the pixel editor (an item saved before the seated frame is
+        112x96; the webview derives its seated frame). It takes the colours of the part it was
+        started from (base). Validated by parseWardrobeItems.
+      type: object
+      additionalProperties: false
+      required: [id, piece, label, base, png]
+      properties:
+        id:
+          type: string
+          description: The part id characters wear it under ('custom_' + letters and digits).
+        piece:
+          type: string
+          description: The slot it is worn in ('hair', 'top', 'hat', ...).
+        label:
+          type: string
+        base:
+          type: string
+          description: The built-in part it was started from; its colourways and palette apply.
+        png:
+          type: string
+          description: The 128x96 sheet (older items 112x96) as a base64 PNG.
+
+    CharacterProfile:
+      description: |
+        One character (core/src/characterProfiles.ts): a wardrobe part id per slot, colours
+        and pixel edits. The webview composes it into a 128x96 sheet; part ids mean
+        something only to it. Open (additionalProperties) so older formats still reach the
+        migration in parseCharacterProfiles, which is the authoritative validator.
+      type: object
+      additionalProperties: true
+      required: [body]
+      properties:
+        id:
+          type: string
+          description: |
+            The character's permanent id (letters, digits, '-' and '_', up to 64). Agents,
+            Directory defaults, the roster's recency and past conversations name a character
+            by its index in the list; when a save inserts, deletes or moves characters, the
+            server matches the old and new lists by this id and renumbers those references.
+            Unique in a list. Absent on profiles saved before ids existed; the validator
+            gives those `char-<index>`.
+        name:
+          type: string
+        body:
+          type: string
+          description: Body build ('flat' or 'bust'). The only required part.
+        eyeShape:
+          type: string
+          description: Eye shape id; absent = the body's own.
+        eyeRows:
+          type: string
+          description: Which eye pixel takes the eye colour ('top', 'bottom' or 'both'); absent = bottom.
+        utop:
+          type: string
+        under:
+          type: string
+        hair:
+          type: string
+        beard:
+          type: string
+        top:
+          type: string
+        jacket:
+          type: string
+        pants:
+          type: string
+        shoes:
+          type: string
+        full:
+          type: string
+        hat:
+          type: string
+        necklace:
+          type: string
+        lanyard:
+          type: string
+        earrings:
+          type: string
+        shades:
+          type: string
+        hairshades:
+          type: string
+        watch:
+          type: string
+        colors:
+          type: object
+          description: Colour per colour key (skin, eyes, hair, top, ...).
+          additionalProperties:
+            $ref: '#/components/schemas/CharacterColor'
+        edits:
+          type: object
+          description: Pixel edits per pixel set id ('<piece>:<part id>').
+          additionalProperties:
+            $ref: '#/components/schemas/CharacterPixelEdits'
+        v:
+          type: number
+          description: Profile format version (older versions are migrated on read).
+
+    AgentLook:
+      description: An agent's look (see agentCreated.palette and repeat).
+      type: object
+      additionalProperties: false
+      required: [id, palette, repeat]
+      properties:
+        id:
+          type: number
+        palette:
+          type: number
+        repeat:
+          type: number
+
+    CharacterColor:
+      description: A part's colour, HSBC sliders optionally over one of the part's exact colourways.
+      type: object
+      additionalProperties: false
+      required: [h, s, b, c]
+      properties:
+        h:
+          type: number
+        s:
+          type: number
+        b:
+          type: number
+        c:
+          type: number
+        colorize:
+          type: boolean
+        palette:
+          type: string
+          description: Name of an exact colour swap from the part's art (e.g. a skin tone).
+
+    CharacterPixelEdits:
+      description: |
+        Uncoloured pixel edits on one piece. `cells[frame][pixel]` is '#rrggbb' to paint
+        or null to erase (frame 0-23 = row * 8 + frame, pixel y*16+x). There is no revision counter (the
+        renderer caches by content); an older format's `rev` is dropped by the migration.
+      type: object
+      additionalProperties: false
+      required: [cells]
+      properties:
+        cells:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: [string, 'null']
 
     CharacterSpriteSet:
       description: |

@@ -12,7 +12,6 @@ export interface CharacterDirectionSprites {
 export interface AssetIndex {
   floors: string[];
   walls: string[];
-  characters: string[];
   defaultLayout: string | null;
 }
 

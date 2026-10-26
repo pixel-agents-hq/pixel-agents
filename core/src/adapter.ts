@@ -18,8 +18,8 @@ export interface StateAdapter {
   loadAgents(): PersistedAgent[];
   saveAgents(agents: PersistedAgent[]): void;
 
-  loadSeats(): Record<string, { palette?: number; hueShift?: number; seatId?: string }>;
-  saveSeats(seats: Record<string, { palette?: number; hueShift?: number; seatId?: string }>): void;
+  loadSeats(): Record<string, { palette?: number; repeat?: number; seatId?: string }>;
+  saveSeats(seats: Record<string, { palette?: number; repeat?: number; seatId?: string }>): void;
 
   /** The agent cards' order (agent ids, first card first), shared by every
    *  client of this surface. [] = creation order. */

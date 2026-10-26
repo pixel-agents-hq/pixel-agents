@@ -459,6 +459,20 @@ export async function openLaunchDrawer(surface: WebviewSurface): Promise<Locator
   return drawer;
 }
 
+/**
+ * A user Directory row's edit pencil. It shows while the row is hovered, and
+ * hangs outside the drawer's list (beside its right border), so it is looked
+ * up on the surface rather than inside the drawer.
+ */
+export async function directoryPencil(
+  surface: WebviewSurface,
+  drawer: Locator,
+  name: string,
+): Promise<Locator> {
+  await drawer.getByRole('button', { name, exact: true }).hover();
+  return surface.getByRole('button', { name: `Edit ${name}` });
+}
+
 /** The Directory modal, once opened from the drawer's `+ Directory` / pencil. */
 export function getDirectoryModal(surface: WebviewSurface): Locator {
   return surface.locator('[data-testid="directory-modal"]');

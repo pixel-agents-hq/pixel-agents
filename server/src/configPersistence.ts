@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { CONFIG_FILE_NAME, LAYOUT_FILE_DIR } from './constants.js';
+import { CONFIG_FILE_NAME, PIXEL_AGENTS_DIR } from './constants.js';
 
 export interface AdapterSettings {
   soundEnabled: boolean;
@@ -87,7 +87,7 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
 };
 
 function getConfigFilePath(): string {
-  return path.join(os.homedir(), LAYOUT_FILE_DIR, CONFIG_FILE_NAME);
+  return path.join(os.homedir(), PIXEL_AGENTS_DIR, CONFIG_FILE_NAME);
 }
 
 /** Coerce a loose object into the per-provider consent map, dropping entries whose value is not exactly 'granted' or

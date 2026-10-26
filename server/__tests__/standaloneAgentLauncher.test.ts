@@ -131,7 +131,7 @@ describe('launchStandaloneAgent', () => {
     // agentCreated broadcast carries it and a reload restores the same look
     // without the webview having to persist a client-side pick.
     expect(agent?.palette).toBeTypeOf('number');
-    expect(agent?.hueShift).toBeTypeOf('number');
+    expect(agent?.repeat).toBeTypeOf('number');
 
     // The real claude launch command, spawned in the requested cwd.
 

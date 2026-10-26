@@ -190,14 +190,13 @@ async function verifyInstalledTarball(tarballPath) {
       throw new Error('Installed CLI did not serve the standalone SPA JavaScript bundle');
     }
 
-    await waitFor(
-      () => /Assets loaded: \d+ characters, \d+ pets, \d+ furniture items/.test(output),
-      'asset summary',
-    );
-    const counts = /Assets loaded: (\d+) characters, (\d+) pets, (\d+) furniture items/.exec(
-      output,
-    );
-    if (!counts || counts.slice(1).some((value) => Number(value) <= 0)) {
+    const assetSummary =
+      /Assets loaded: (\d+) character profiles, (\d+) external characters, (\d+) pets, (\d+) furniture items/;
+    await waitFor(() => assetSummary.test(output), 'asset summary');
+    const counts = assetSummary.exec(output);
+    // External characters come only from user-added asset directories, so a clean
+    // install has none; the profiles, pets and furniture all ship with the package.
+    if (!counts || [counts[1], counts[3], counts[4]].some((value) => Number(value) <= 0)) {
       throw new Error(`Installed package did not load non-empty bundled assets:\n${output}`);
     }
 

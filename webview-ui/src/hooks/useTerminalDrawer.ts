@@ -14,7 +14,7 @@ import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 import { answersLaunch } from './launchLatch.js';
 
 /** A character not (yet) in the office — the mug shot falls back to palette 0. */
-const DEFAULT_APPEARANCE: AgentAppearance = { palette: 0, hueShift: 0 };
+const DEFAULT_APPEARANCE: AgentAppearance = { palette: 0, repeat: 0 };
 
 interface TerminalDrawerInputs {
   /** Agent ids with a live server-side PTY, in open order (control plane). */
@@ -184,11 +184,11 @@ export function useTerminalDrawer({
   );
 
   // A terminal tab shows the agent's character (front-facing mug shot), so it
-  // reads the same palette/hueShift the office assigned that character.
+  // reads the same palette/repeat the office assigned that character.
   const getAppearance = useCallback(
     (id: number): AgentAppearance => {
       const ch = getOfficeState().characters.get(id);
-      return ch ? { palette: ch.palette, hueShift: ch.hueShift } : DEFAULT_APPEARANCE;
+      return ch ? { palette: ch.palette, repeat: ch.repeat } : DEFAULT_APPEARANCE;
     },
     [getOfficeState],
   );

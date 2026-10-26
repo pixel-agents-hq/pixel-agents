@@ -545,7 +545,7 @@ export class AgentRuntime {
 
   // ── Cleanup ──
 
-  /** Clean up all scanners, timers, and agents. Called on shutdown. */
+  /** Clean up all scanners, timers, and agents. */
   dispose(): void {
     this.stop();
     for (const id of [...this.store.keys()]) {

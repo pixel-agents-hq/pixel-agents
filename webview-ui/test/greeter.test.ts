@@ -60,7 +60,7 @@ test('spawns in from the bottom-left corner, standing, without a seat', () => {
   assert.equal(ch.seatId, null, 'the greeter never takes a seat');
   assert.equal(ch.state, CharacterState.IDLE);
   assert.equal(ch.palette, 0, 'char_0 sprite');
-  assert.equal(ch.hueShift, 0);
+  assert.equal(ch.repeat, 0);
   assert.equal(ch.matrixEffect, 'spawn', 'materializes with the matrix effect');
 });
 

@@ -320,7 +320,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
   OfficeState.prototype.addAgent = function (
     id,
     preferredPalette,
-    preferredHueShift,
+    preferredRepeat,
     preferredSeatId,
     skipSpawnEffect,
     directoryName,
@@ -330,7 +330,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       this,
       id,
       preferredPalette,
-      preferredHueShift,
+      preferredRepeat,
       preferredSeatId,
       skipSpawnEffect,
       directoryName,

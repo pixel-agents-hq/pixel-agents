@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
+import { CharactersView } from './characters/ui/CharactersView.js';
 import { AgentCardBar } from './components/AgentCardBar.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
@@ -138,6 +139,12 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   // The Layout editor's panel, kept on screen while it rolls shut.
   const editorPanel = usePresence(editor.isEditMode);
+  const [isCharactersOpen, setIsCharactersOpen] = useState(false);
+  const openCharacters = useCallback(() => {
+    setIsSettingsOpen(false);
+    setIsCharactersOpen(true);
+  }, []);
+  const closeCharacters = useCallback(() => setIsCharactersOpen(false), []);
   const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
@@ -346,7 +353,8 @@ function App() {
 
   const [editorTickForKeyboard, setEditorTickForKeyboard] = useState(0);
   useEditorKeyboard(
-    editor.isEditMode,
+    // the Characters view has its own undo and shortcuts
+    editor.isEditMode && !isCharactersOpen,
     editorState,
     editor.handleDeleteSelected,
     editor.handleRotateSelected,
@@ -683,6 +691,8 @@ function App() {
           onToggleEditMode={editor.handleToggleEditMode}
           isSettingsOpen={isSettingsOpen}
           onToggleSettings={() => setIsSettingsOpen((v) => !v)}
+          isCharactersOpen={isCharactersOpen}
+          onOpenCharacters={openCharacters}
           directories={directories}
           onAddDirectory={directoryEditor.add}
           onEditDirectory={directoryEditor.edit}
@@ -695,7 +705,7 @@ function App() {
       {/* Mobile: Settings floats top-left (the layout editor stays desktop-
             only — its tools are drag/hover-driven). */}
       {isMobile && !isDebugMode && !officeReadOnly && (
-        <div className="absolute mobile-safe-top left-8 z-20">
+        <div className="absolute mobile-safe-top left-8 z-20 flex gap-6">
           <Button
             size="sm"
             variant={isSettingsOpen ? 'active' : 'default'}
@@ -704,6 +714,15 @@ function App() {
             icon="settings"
           >
             Settings
+          </Button>
+          <Button
+            size="sm"
+            variant={isCharactersOpen ? 'active' : 'default'}
+            className="border-border! shadow-pixel"
+            onClick={openCharacters}
+            icon="characters"
+          >
+            Characters
           </Button>
         </div>
       )}
@@ -730,6 +749,7 @@ function App() {
           onClose={handleIntroClose}
           escapeSuppressed={
             isSettingsOpen ||
+            isCharactersOpen ||
             isChangelogOpen ||
             isHooksInfoOpen ||
             showMigrationNotice ||
@@ -867,6 +887,10 @@ function App() {
         onClose={() => setIsChangelogOpen(false)}
         currentVersion={extensionVersion}
       />
+
+      {isCharactersOpen && !officeReadOnly && (
+        <CharactersView phone={isMobile} onClose={closeCharacters} />
+      )}
 
       <SettingsModal
         isOpen={isSettingsOpen}

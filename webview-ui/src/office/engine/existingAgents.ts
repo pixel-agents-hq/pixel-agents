@@ -14,7 +14,7 @@
 /** Per-agent seat metadata carried by the existingAgents message. */
 export interface ExistingAgentMeta {
   palette?: number;
-  hueShift?: number;
+  repeat?: number;
   seatId?: string;
 }
 
@@ -22,7 +22,7 @@ export interface ExistingAgentMeta {
 export interface PendingAgent {
   id: number;
   palette?: number;
-  hueShift?: number;
+  repeat?: number;
   seatId?: string;
   directoryName?: string;
   isHeadless?: boolean;
@@ -34,14 +34,14 @@ export interface ExistingAgentsOffice {
   addAgent: (
     id: number,
     preferredPalette?: number,
-    preferredHueShift?: number,
+    preferredRepeat?: number,
     preferredSeatId?: string,
     skipSpawnEffect?: boolean,
     directoryName?: string,
   ) => void;
   setHeadless: (id: number, headless: boolean) => void;
   /** Give an agent the office already shows the server's look and seat. */
-  syncAgent: (id: number, palette?: number, hueShift?: number, seatId?: string) => void;
+  syncAgent: (id: number, palette?: number, repeat?: number, seatId?: string) => void;
 }
 
 /**
@@ -67,21 +67,21 @@ export function reconcileExistingAgents(
     const p: PendingAgent = {
       id,
       palette: m?.palette,
-      hueShift: m?.hueShift,
+      repeat: m?.repeat,
       seatId: m?.seatId,
       directoryName: directoryNames[id],
       isHeadless: headlessAgents[id] === true,
     };
     if (layoutReady) {
       if (!os.characters.has(p.id)) {
-        os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.directoryName);
+        os.addAgent(p.id, p.palette, p.repeat, p.seatId, true, p.directoryName);
         if (p.isHeadless) os.setHeadless(p.id, true);
         addedDirectly = true;
       } else {
         // Already shown (a reconnect): the snapshot is the truth. Keeping the
         // office's own look and seat and saving them back reshuffled the
         // office for every other viewer.
-        os.syncAgent(p.id, p.palette, p.hueShift, p.seatId);
+        os.syncAgent(p.id, p.palette, p.repeat, p.seatId);
       }
     } else {
       pending.push(p);

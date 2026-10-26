@@ -1,5 +1,15 @@
 /** Pixel icons in the text colour: `#` is a lit pixel, anything else is empty. */
 export const ICONS = {
+  characters: [
+    '..####..',
+    '.######.',
+    '.######.',
+    '.#.##.#.',
+    '.#.##.#.',
+    '..####..',
+    '.######.',
+    '########',
+  ],
   // A round status dot (a filled square reads as a stop button).
   dot: [
     '..####..',
@@ -102,6 +112,37 @@ export const ICONS = {
     '.##.....',
     '#.......',
   ],
+  check: [
+    '........',
+    '......##',
+    '......##',
+    '.....##.',
+    '##..###.',
+    '######..',
+    '.####...',
+    '..##....',
+  ],
+  more: [
+    '........',
+    '........',
+    '........',
+    '##.##.##',
+    '##.##.##',
+    '........',
+    '........',
+    '........',
+  ],
+  // `down` turned to point left: the same true triangle.
+  prev: [
+    '.....#..',
+    '....##..',
+    '...###..',
+    '..####..',
+    '..####..',
+    '...###..',
+    '....##..',
+    '.....#..',
+  ],
   // The phone's view toggle. Both fill the whole 8×8, like menu, so a
   // square button centres them exactly.
   terminal: [
@@ -135,6 +176,17 @@ export const ICONS = {
     '...##...',
     '..##....',
     '........',
+  ],
+  // `down` turned to point right: the same true triangle.
+  next: [
+    '..#.....',
+    '..##....',
+    '..###...',
+    '..####..',
+    '..####..',
+    '..###...',
+    '..##....',
+    '..#.....',
   ],
   warning: [
     '...##...',

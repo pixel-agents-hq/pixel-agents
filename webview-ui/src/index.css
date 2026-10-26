@@ -17,9 +17,17 @@
   --color-accent: #6030ff;
   --color-accent-bright: #746fff;
 
+  /* Raised panels (the Characters view's panes) and their hovered items */
+  --color-panel: #252538;
+  --color-panel-hover: #33334a;
+
   /* Text */
   --color-text: rgba(255, 255, 255, 0.9);
   --color-text-muted: rgba(255, 255, 255, 0.5);
+  /* Opaque text for the Characters view, which draws over varied panes */
+  --color-text-solid: #e6e6ee;
+  --color-text-muted-solid: #8a8aa6;
+  --color-text-on-accent: #ffffff;
 
   /* Buttons */
   --color-btn-bg: rgb(53, 52, 69);
@@ -39,8 +47,22 @@
   --color-status-success: #89d185;
   --color-status-error: var(--color-danger);
 
+  /* The character preview's room: checkered floor, wall and its seams, figure shadows */
+  --color-preview-floor: #3a3550;
+  --color-preview-floor-alt: #34304a;
+  --color-preview-wall: #2b2942;
+  --color-preview-wall-seam: #25233a;
+  --color-figure-shadow: rgba(10, 10, 20, 0.45);
+
   /* Shadow */
-  --shadow-pixel: 2px 2px 0px #0a0a14;
+  --color-shadow: #0a0a14;
+  --shadow-pixel: 2px 2px 0px var(--color-shadow);
+  /* A pressed button: half the offset, as if pushed into its shadow */
+  --shadow-pixel-pressed: 1px 1px 0px var(--color-shadow);
+  /* A 4px ledge of shadow under (or above) a full-width bar: the phone preview's
+     floor edge and the phone dock's top edge */
+  --shadow-ledge-down: 0 4px 0 var(--color-shadow);
+  --shadow-ledge-up: 0 -4px 0 var(--color-shadow);
 
   /* Non-utility values */
   --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%);

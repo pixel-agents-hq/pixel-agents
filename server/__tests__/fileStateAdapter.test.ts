@@ -145,7 +145,7 @@ describe('FileStateAdapter', () => {
 
   it('writes state at ~/.pixel-agents/<namespace>-state.json', () => {
     const adapter = new FileStateAdapter({ namespace: 'vscode' });
-    adapter.saveSeats({ '1': { palette: 2, hueShift: 45 } });
+    adapter.saveSeats({ '1': { palette: 2, repeat: 45 } });
     const stateFile = path.join(tempHome, '.pixel-agents', 'vscode-state.json');
     expect(fs.existsSync(stateFile)).toBe(true);
   });

@@ -9,12 +9,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type * as vscode from 'vscode';
 
-import {
-  CHAR_COUNT,
-  CHAR_FRAMES_PER_ROW,
-  MAX_PET_PNG_SIZE,
-  WALL_BITMASK_COUNT,
-} from '../../core/src/assets/constants.js';
+import { MAX_PET_PNG_SIZE, WALL_BITMASK_COUNT } from '../../core/src/assets/constants.js';
 import type {
   FurnitureAsset,
   FurnitureManifest,
@@ -471,47 +466,6 @@ export function sendFloorTilesToWebview(
 export interface LoadedCharacterSprites {
   /** Pre-colored characters, each with 7 frames per direction */
   characters: CharacterDirectionSprites[];
-}
-
-export function mergeCharacterSprites(
-  a: LoadedCharacterSprites,
-  b: LoadedCharacterSprites,
-): LoadedCharacterSprites {
-  return { characters: [...a.characters, ...b.characters] };
-}
-
-/**
- * Load pre-colored character sprites from assets/characters/ (6 PNGs, each 112×96).
- * Each PNG has 3 direction rows (down, up, right) × 7 frames (16×32 each).
- */
-export async function loadCharacterSprites(
-  assetsRoot: string,
-): Promise<LoadedCharacterSprites | null> {
-  try {
-    const charDir = path.join(assetsRoot, 'assets', 'characters');
-    const characters: CharacterDirectionSprites[] = [];
-
-    for (let ci = 0; ci < CHAR_COUNT; ci++) {
-      const filePath = path.join(charDir, `char_${ci}.png`);
-      if (!fs.existsSync(filePath)) {
-        console.log(`[AssetLoader] No character sprite found at: ${filePath}`);
-        return null;
-      }
-
-      const pngBuffer = fs.readFileSync(filePath);
-      characters.push(decodeCharacterPng(pngBuffer));
-    }
-
-    console.log(
-      `[AssetLoader] ✅ Loaded ${characters.length} character sprites (${CHAR_FRAMES_PER_ROW} frames × 3 directions each)`,
-    );
-    return { characters };
-  } catch (err) {
-    console.error(
-      `[AssetLoader] ❌ Error loading character sprites: ${err instanceof Error ? err.message : err}`,
-    );
-    return null;
-  }
 }
 
 /**

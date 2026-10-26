@@ -725,7 +725,7 @@ export function scanForTeammateFiles(
 
     if (parentAgent?.palette !== undefined) {
       agent.palette = parentAgent.palette;
-      agent.hueShift = parentAgent.hueShift ?? 0;
+      agent.repeat = parentAgent.repeat ?? 0;
     } else {
       assignPaletteIfNeeded(agent, agents);
     }
@@ -876,7 +876,7 @@ export function scanForBackgroundAgentFiles(
 
     if (lead.palette !== undefined) {
       agent.palette = lead.palette;
-      agent.hueShift = lead.hueShift ?? 0;
+      agent.repeat = lead.repeat ?? 0;
     } else {
       assignPaletteIfNeeded(agent, agents);
     }

@@ -10,7 +10,7 @@ export default defineConfig({
     globals: true,
     testTimeout: 10_000,
     include: ['__tests__/**/*.test.ts'],
-    setupFiles: ['allure-vitest/setup'],
+    setupFiles: ['allure-vitest/setup', '__tests__/isolateHome.setup.ts'],
     reporters: [
       'default',
       ...(allureEnabled

@@ -27,6 +27,7 @@ export type ServerMessage =
   | AgentContextUsage
   | LayoutLoaded
   | FurnitureAssetsLoaded
+  | CharacterProfilesLoaded
   | CharacterSpritesLoaded
   | PetSpritesLoaded
   | FloorTilesLoaded
@@ -58,6 +59,7 @@ export type ClientMessage =
   | CloseAgent
   | SaveAgentSeats
   | SaveLayout
+  | SaveCharacterProfiles
   | SetSoundEnabled
   | SetLastSeenVersion
   | SetAlwaysShowLabels
@@ -69,6 +71,7 @@ export type ClientMessage =
   | SetWatchAllSessions
   | ExportLayout
   | ImportLayout
+  | ExportFile
   | OpenSessionsFolder
   | AddExternalAssetDirectory
   | RemoveExternalAssetDirectory
@@ -94,7 +97,7 @@ export interface AgentCreated {
   directoryName?: string;
   isExternal?: boolean;
   palette?: number;
-  hueShift?: number;
+  repeat?: number;
 }
 
 export interface AgentClosed {
@@ -117,7 +120,7 @@ export interface ExistingAgents {
 
 export interface AgentSeatMeta {
   palette?: number;
-  hueShift?: number;
+  repeat?: number;
   seatId?: string;
 }
 
@@ -239,6 +242,68 @@ export interface FurnitureAssetMessage {
   rotationScheme?: string;
   animationGroup?: string;
   frame?: number;
+}
+
+export interface CharacterProfilesLoaded {
+  type: 'characterProfilesLoaded';
+  profiles: CharacterProfile[];
+  agentLooks?: AgentLook[];
+  saveId?: string;
+  items?: WardrobeItem[];
+}
+
+export interface CharacterProfile {
+  id?: string;
+  name?: string;
+  body: string;
+  eyeShape?: string;
+  eyeRows?: string;
+  utop?: string;
+  under?: string;
+  hair?: string;
+  beard?: string;
+  top?: string;
+  jacket?: string;
+  pants?: string;
+  shoes?: string;
+  full?: string;
+  hat?: string;
+  necklace?: string;
+  lanyard?: string;
+  earrings?: string;
+  shades?: string;
+  hairshades?: string;
+  watch?: string;
+  colors?: Record<string, CharacterColor>;
+  edits?: Record<string, CharacterPixelEdits>;
+  v?: number;
+}
+
+export interface CharacterColor {
+  h: number;
+  s: number;
+  b: number;
+  c: number;
+  colorize?: boolean;
+  palette?: string;
+}
+
+export interface CharacterPixelEdits {
+  cells: Record<string, Record<string, string | null>>;
+}
+
+export interface AgentLook {
+  id: number;
+  palette: number;
+  repeat: number;
+}
+
+export interface WardrobeItem {
+  id: string;
+  piece: string;
+  label: string;
+  base: string;
+  png: string;
 }
 
 export interface CharacterSpritesLoaded {
@@ -433,13 +498,20 @@ export interface SaveAgentSeats {
 
 export interface SeatAssignment {
   palette: number;
-  hueShift: number;
+  repeat: number;
   seatId: string | null;
 }
 
 export interface SaveLayout {
   type: 'saveLayout';
   layout: Record<string, any>;
+}
+
+export interface SaveCharacterProfiles {
+  type: 'saveCharacterProfiles';
+  profiles: CharacterProfile[];
+  saveId: string;
+  items?: WardrobeItem[];
 }
 
 export interface SetSoundEnabled {
@@ -497,6 +569,12 @@ export interface ExportLayout {
 
 export interface ImportLayout {
   type: 'importLayout';
+}
+
+export interface ExportFile {
+  type: 'exportFile';
+  filename: string;
+  dataBase64: string;
 }
 
 export interface OpenSessionsFolder {

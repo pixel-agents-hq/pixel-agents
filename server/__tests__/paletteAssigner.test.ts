@@ -1,9 +1,36 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
-import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT } from '../src/constants.js';
-import { assignPaletteIfNeeded, setPaletteCount } from '../src/paletteAssigner.js';
+import {
+  assignPaletteIfNeeded,
+  getPaletteCount,
+  setExternalCharacterCount,
+} from '../src/paletteAssigner.js';
 import type { AgentState } from '../src/types.js';
+
+const PALETTE_COUNT = DEFAULT_CHARACTER_PROFILES.length;
+
+const tempHomes: string[] = [];
+
+/** A fresh $HOME whose characters.json holds `count` profiles (none = the defaults). */
+function useHomeWithProfiles(count?: number): void {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-palette-'));
+  tempHomes.push(home);
+  process.env.HOME = home;
+  if (count === undefined) return;
+  const dir = path.join(home, '.pixel-agents');
+  fs.mkdirSync(dir, { recursive: true });
+  const profiles = Array.from({ length: count }, (_, i) => ({
+    name: `P${i}`,
+    body: 'flat',
+    v: 35,
+  }));
+  fs.writeFileSync(path.join(dir, 'characters.json'), JSON.stringify(profiles));
+}
 
 function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
   return {
@@ -36,62 +63,89 @@ function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
 
 describe('paletteAssigner', () => {
   let store: AgentStateStore;
+  let originalHome: string | undefined;
 
   beforeEach(() => {
+    originalHome = process.env.HOME;
+    useHomeWithProfiles();
     store = new AgentStateStore();
   });
 
   afterEach(() => {
-    // Reset module-level count so tests don't leak into each other.
-    setPaletteCount(PALETTE_COUNT);
+    // Reset module-level state so tests don't leak into each other.
+    process.env.HOME = originalHome;
+    for (const home of tempHomes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
+    setExternalCharacterCount(0);
+    vi.restoreAllMocks();
   });
+
+  /** Make Math.random return `values` in turn (then the last one forever). */
+  function randomReturns(...values: number[]): void {
+    let i = 0;
+    vi.spyOn(Math, 'random').mockImplementation(() => values[Math.min(i++, values.length - 1)]);
+  }
 
   describe('assignPaletteIfNeeded', () => {
     it('is a no-op when palette is already set', () => {
-      const agent = createTestAgent({ id: 1, palette: 3, hueShift: 10 });
+      const agent = createTestAgent({ id: 1, palette: 3, repeat: 10 });
       assignPaletteIfNeeded(agent, store);
       expect(agent.palette).toBe(3);
-      expect(agent.hueShift).toBe(10);
+      expect(agent.repeat).toBe(10);
     });
 
-    it('assigns a palette in [0, PALETTE_COUNT) with no hue shift on an empty store (first round)', () => {
+    it('assigns a palette in [0, PALETTE_COUNT) as no repeat on an empty store', () => {
       const agent = createTestAgent({ id: 1 });
       assignPaletteIfNeeded(agent, store);
       expect(agent.palette).toBeGreaterThanOrEqual(0);
       expect(agent.palette).toBeLessThan(PALETTE_COUNT);
-      expect(agent.hueShift).toBe(0);
+      expect(agent.repeat).toBe(0);
     });
 
-    it('picks a least-used palette (one of the palettes at the minimum count)', () => {
-      // Seed counts: 0->3, 1->2, 2->1, 3->1, 4->1, 5->1. minCount=1,
-      // available = [2, 3, 4, 5].
-      const palettes = [0, 0, 0, 1, 1, 2, 3, 4, 5];
-      for (let i = 0; i < palettes.length; i++) {
-        store.set(100 + i, createTestAgent({ id: 100 + i, palette: palettes[i], hueShift: 0 }));
+    it('never repeats a character in the office while another is free', () => {
+      for (let p = 0; p < PALETTE_COUNT - 1; p++) {
+        store.set(100 + p, createTestAgent({ id: 100 + p, palette: p, repeat: 0 }));
       }
+      randomReturns(0);
       const agent = createTestAgent({ id: 1 });
       assignPaletteIfNeeded(agent, store);
-      expect([2, 3, 4, 5]).toContain(agent.palette);
-      // minCount > 0 → hue shift in [45, 315].
-      expect(agent.hueShift).toBeGreaterThanOrEqual(45);
-      expect(agent.hueShift).toBeLessThanOrEqual(HUE_SHIFT_MAX_DEG);
+      expect(agent.palette).toBe(PALETTE_COUNT - 1);
+      expect(agent.repeat).toBe(0);
+    });
+
+    it('repeats, as the first repeat, only once the whole cast is in the office', () => {
+      for (let p = 0; p < PALETTE_COUNT; p++) {
+        store.set(100 + p, createTestAgent({ id: 100 + p, palette: p, repeat: 0 }));
+      }
+      randomReturns(0, 0.5);
+      const agent = createTestAgent({ id: 1 });
+      assignPaletteIfNeeded(agent, store);
+      expect(agent.palette).toBe(0);
+      expect(agent.repeat).toBe(1);
+    });
+
+    it('wears an unworn pick exactly', () => {
+      store.set(100, createTestAgent({ id: 100, palette: 0, repeat: 0 }));
+      randomReturns(0.99);
+      const agent = createTestAgent({ id: 1 });
+      assignPaletteIfNeeded(agent, store);
+      expect(agent.palette).toBe(PALETTE_COUNT - 1);
+      expect(agent.repeat).toBe(0);
     });
 
     it('counts only agents with a defined in-range palette', () => {
-      // Two agents with undefined palette and one out-of-range must not move
-      // the minCount, so the first real assignment stays in the first round
-      // (hueShift === 0) and can pick any of [0..5].
+      // Agents with an undefined or out-of-range palette wear no character of
+      // the cast, so the first real assignment is no repeat and can pick any of [0..5].
       store.set(10, createTestAgent({ id: 10 })); // palette undefined
       store.set(11, createTestAgent({ id: 11, palette: 99 })); // out of range
       const agent = createTestAgent({ id: 1 });
       assignPaletteIfNeeded(agent, store);
       expect(agent.palette).toBeGreaterThanOrEqual(0);
       expect(agent.palette).toBeLessThan(PALETTE_COUNT);
-      expect(agent.hueShift).toBe(0);
+      expect(agent.repeat).toBe(0);
     });
 
     it('does not mutate the store', () => {
-      store.set(1, createTestAgent({ id: 1, palette: 2, hueShift: 0 }));
+      store.set(1, createTestAgent({ id: 1, palette: 2, repeat: 0 }));
       const before = new Map<number, AgentState>();
       for (const [id, a] of store) before.set(id, { ...a });
 
@@ -102,26 +156,32 @@ describe('paletteAssigner', () => {
         const prev = before.get(id);
         expect(prev).toBeDefined();
         expect(a.palette).toBe(prev?.palette);
-        expect(a.hueShift).toBe(prev?.hueShift);
+        expect(a.repeat).toBe(prev?.repeat);
       }
     });
   });
 
-  describe('setPaletteCount', () => {
-    it('picks from [0, N) when set above the default 6', () => {
-      setPaletteCount(8);
-      // Six agents get 0..5; the seventh must pick from [0, 8) -- if the
-      // count were still 6, it would re-pick 0..5 and never 6 or 7.
-      for (let i = 0; i < 6; i++) {
-        store.set(100 + i, createTestAgent({ id: 100 + i, palette: i, hueShift: 0 }));
-      }
-      // minCount across 0..5 is 1, and palettes 6,7 are at count 0 -- the
-      // least-used set is {6, 7}, so the pick must be 6 or 7.
+  describe('palette count', () => {
+    it('counts the saved character profiles plus external sprites', () => {
+      useHomeWithProfiles(10);
+      setExternalCharacterCount(3);
+      expect(getPaletteCount()).toBe(13);
+    });
+
+    it('counts the six defaults when no profiles are saved', () => {
+      expect(getPaletteCount()).toBe(PALETTE_COUNT);
+    });
+
+    it('picks from [0, N) when the cast grows past the default 6', () => {
+      useHomeWithProfiles(7);
+      setExternalCharacterCount(1);
+      // The top of the random range lands on palette 7: if the count were
+      // still 6, it could never pick 6 or 7.
+      randomReturns(0.99);
       const agent = createTestAgent({ id: 999 });
       assignPaletteIfNeeded(agent, store);
-      expect(agent.palette).toBeGreaterThanOrEqual(6);
-      expect(agent.palette).toBeLessThan(8);
-      expect(agent.hueShift).toBe(0); // minCount === 0 for 6 and 7
+      expect(agent.palette).toBe(7);
+      expect(agent.repeat).toBe(0);
     });
   });
 });

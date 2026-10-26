@@ -25,8 +25,17 @@ import {
   sendPetSpritesToWebview,
   sendWallTilesToWebview,
 } from '../../server/src/assetLoader.js';
-import { loadAllCharacters, loadAllFurniture, loadAllPets } from '../../server/src/assetReload.js';
+import {
+  loadAllFurniture,
+  loadAllPets,
+  loadExternalCharacters,
+} from '../../server/src/assetReload.js';
 import { cardOrderMessage, saveCardOrder } from '../../server/src/cardOrder.js';
+import {
+  characterProfilesLoadedMessage,
+  handleCharacterProfilesClientMessage,
+  watchCharacterProfiles,
+} from '../../server/src/characterProfilesPersistence.js';
 import {
   getHooksConsent,
   getHooksEnabled,
@@ -42,7 +51,7 @@ import {
 } from '../../server/src/directories.js';
 import { collectDirectorySuggestions } from '../../server/src/directorySuggestions.js';
 import { setDirectoryNameResolver, setTerminalAdapter } from '../../server/src/fileWatcher.js';
-import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
+import type { JsonFileWatcher } from '../../server/src/jsonFileWatcher.js';
 import {
   readLayoutFromFile,
   watchLayoutFile,
@@ -115,7 +124,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   private assetsRoot: string | null = null;
 
   // Cross-window layout sync
-  layoutWatcher: LayoutWatcher | null = null;
+  layoutWatcher: JsonFileWatcher | null = null;
+  private characterProfilesWatcher: { dispose(): void }; // characters.json, shared cross-process
 
   // Pixel Agents Server (hook event reception)
   private pixelAgentsServer: PixelAgentsServer | null = null;
@@ -131,6 +141,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   ) {
     this.adapter = adapter;
     this.store.setAdapter(this.adapter);
+    this.characterProfilesWatcher = watchCharacterProfiles((m) => this.sendOrBuffer(m), this.store);
     // Workspace folders are this host's Directory contribution, so a folder
     // added to or removed from the workspace changes the union the drawer
     // shows. Registered once here (not per resolveWebviewView) and buffered
@@ -150,7 +161,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         teamName: agent.teamName,
         hooksOnly: agent.hooksOnly || undefined,
         palette: agent.palette,
-        hueShift: agent.hueShift,
+        repeat: agent.repeat,
       });
     });
     this.store.on('agentRemoved', (id) => {
@@ -526,8 +537,17 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       } else if (message.type === 'saveCardOrder') {
         const loaded = saveCardOrder(this.adapter, message.order, (id) => this.store.has(id));
         if (loaded) this.sendOrBuffer(loaded);
+      } else if (message.type === 'saveCharacterProfiles') {
+        // One office here: the broadcast and the refused-save reply are the same channel.
+        const send = (m: Record<string, unknown>) => this.sendOrBuffer(m);
+        handleCharacterProfilesClientMessage(message, {
+          broadcast: send,
+          reply: send,
+          store: this.store,
+        });
+      } else if (message.type === 'exportFile') {
+        await this.exportFile(message.filename, message.dataBase64);
       } else if (message.type === 'saveLayout') {
-        this.layoutWatcher?.markOwnWrite();
         writeLayoutToFile(message.layout as Record<string, unknown>);
       } else if (message.type === 'setSoundEnabled') {
         this.adapter.setSetting(GLOBAL_KEY_SOUND_ENABLED, message.enabled);
@@ -853,6 +873,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
         this.runtime.startStaleCheck();
 
+        // Character profiles (the cast agents are drawn from), before any asset or layout
+        this.webview?.postMessage(characterProfilesLoadedMessage());
+
         // Load furniture assets BEFORE sending layout
         (async () => {
           try {
@@ -889,14 +912,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             // Load bundled default layout
             this.defaultLayout = loadDefaultLayout(assetsRoot);
 
-            // Load character sprites (bundled + external)
-            const charSprites = await this.loadAllCharacterSprites();
-            if (charSprites && this.webview) {
-              console.log(
-                `[Extension] ${charSprites.characters.length} character sprites loaded, sending to webview`,
-              );
-              sendCharacterSpritesToWebview(this.webview, charSprites);
-            }
+            // Character sprites from external directories (the built-in cast is the profiles)
+            const charSprites = await this.loadExternalCharacterSprites();
+            if (this.webview) sendCharacterSpritesToWebview(this.webview, charSprites);
 
             // Load pet sprites (bundled + external)
             const petSprites = await this.loadAllPetSprites();
@@ -1018,7 +1036,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             vscode.window.showErrorMessage('Pixel Agents: Invalid layout file.');
             return;
           }
-          this.layoutWatcher?.markOwnWrite();
           writeLayoutToFile(imported);
           this.webview?.postMessage({ type: 'layoutLoaded', layout: imported });
           vscode.window.showInformationMessage('Pixel Agents: Layout imported successfully.');
@@ -1099,9 +1116,28 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     return loadAllFurniture(this.assetsRoot, readConfig().externalAssetDirectories);
   }
 
-  private async loadAllCharacterSprites(): Promise<LoadedCharacterSprites | null> {
-    if (!this.assetsRoot) return null;
-    return loadAllCharacters(this.assetsRoot, readConfig().externalAssetDirectories);
+  private loadExternalCharacterSprites(): Promise<LoadedCharacterSprites> {
+    return loadExternalCharacters(readConfig().externalAssetDirectories);
+  }
+
+  /** Save a file the webview generated (character sheet, roster zip, profile JSON) via the save dialog. */
+  private async exportFile(filename: unknown, dataBase64: unknown): Promise<void> {
+    if (typeof filename !== 'string' || typeof dataBase64 !== 'string') return;
+    const safeName = path.basename(filename) || 'export';
+    const ext = path.extname(safeName).slice(1);
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(path.join(os.homedir(), safeName)),
+      filters: ext ? { [ext.toUpperCase()]: [ext] } : undefined,
+    });
+    if (!uri) return;
+    try {
+      fs.writeFileSync(uri.fsPath, Buffer.from(dataBase64, 'base64'));
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`Pixel Agents: Failed to save ${uri.fsPath}: ${reason}`);
+      return;
+    }
+    vscode.window.showInformationMessage(`Pixel Agents: Saved ${path.basename(uri.fsPath)}.`);
   }
 
   private async loadAllPetSprites(): Promise<LoadedPetSprites | null> {
@@ -1124,10 +1160,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   private async reloadAndSendCharacters(): Promise<void> {
     if (!this.assetsRoot || !this.webview) return;
     try {
-      const chars = await this.loadAllCharacterSprites();
-      if (chars) {
-        sendCharacterSpritesToWebview(this.webview, chars);
-      }
+      sendCharacterSpritesToWebview(this.webview, await this.loadExternalCharacterSprites());
     } catch (err) {
       console.error('[Extension] Error reloading character sprites:', err);
     }
@@ -1159,6 +1192,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.runtime.dispose();
     this.layoutWatcher?.dispose();
     this.layoutWatcher = null;
+    this.characterProfilesWatcher.dispose();
     this.store.dispose();
   }
 }

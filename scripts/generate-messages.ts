@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   // We need to re-export the unions and the FurnitureAssetMessage interface as
   // top-level named exports. Modelina prepends `interface Foo` (no `export`) by
   // default when emitted via .generate(); we add `export` to every declaration.
-  const body = filtered.map((m) => exportify(m.result)).join('\n\n');
+  const body = filtered.map((m) => exportify(dropOpenObjectField(m.result))).join('\n\n');
 
   fs.writeFileSync(OUTPUT_PATH, HEADER + body + '\n', 'utf-8');
   console.log(`[generate-messages] wrote ${OUTPUT_PATH} (${filtered.length} models)`);
@@ -124,6 +124,16 @@ async function main(): Promise<void> {
     // we want to see them but not fail generation.
     console.warn('[generate-messages] eslint --fix reported issues (non-fatal).');
   }
+}
+
+/**
+ * An open schema (`additionalProperties: true`, e.g. CharacterProfile, kept open so older
+ * formats still reach their migration) makes Modelina invent a property literally named
+ * `additionalProperties`. No message carries that key; drop it. TypeScript already lets a
+ * value with extra keys flow into the interface, which is all "open" needs here.
+ */
+function dropOpenObjectField(decl: string): string {
+  return decl.replace(/^\s*additionalProperties\?: Record<string, any>;\n/gm, '');
 }
 
 /**

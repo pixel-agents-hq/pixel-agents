@@ -1,4 +1,4 @@
-import { pickDiversePalette } from '../../../../core/src/paletteUtils.js';
+import { chooseLook } from '../../../../core/src/paletteUtils.js';
 import {
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
@@ -449,26 +449,10 @@ export class OfficeState {
     );
   }
 
-  /**
-   * Pick a diverse palette for a new agent based on currently active agents.
-   * First 6 agents each get a unique skin (random order). Beyond 6, skins
-   * repeat in balanced rounds with a random hue shift (≥45°).
-   */
-  private pickDiversePalette(): { palette: number; hueShift: number } {
-    // Count how many non-sub-agents use each base palette (0-5)
-    const paletteCount = getLoadedCharacterCount();
-    const counts = new Array(paletteCount).fill(0) as number[];
-    for (const ch of this.characters.values()) {
-      if (ch.isSubagent) continue;
-      if (ch.palette < paletteCount) counts[ch.palette]++;
-    }
-    return pickDiversePalette(paletteCount, counts);
-  }
-
   addAgent(
     id: number,
     preferredPalette?: number,
-    preferredHueShift?: number,
+    preferredRepeat?: number,
     preferredSeatId?: string,
     skipSpawnEffect?: boolean,
     directoryName?: string,
@@ -477,14 +461,15 @@ export class OfficeState {
     if (this.characters.has(id)) return;
 
     let palette: number;
-    let hueShift: number;
+    let repeat: number;
     if (preferredPalette !== undefined) {
       palette = preferredPalette;
-      hueShift = preferredHueShift ?? 0;
+      repeat = preferredRepeat ?? 0;
     } else {
-      const pick = this.pickDiversePalette();
-      palette = pick.palette;
-      hueShift = pick.hueShift;
+      // The server gave no look (core chooseLook: a random character, a repeat
+      // only once the whole cast is in).
+      const worn = [...this.characters.values()].filter((ch) => !ch.isSubagent);
+      ({ palette, repeat } = chooseLook({ paletteCount: getLoadedCharacterCount(), worn }));
     }
 
     // Try preferred seat first, then (for teammates) the seat closest to the
@@ -511,7 +496,7 @@ export class OfficeState {
     if (seatId) {
       const seat = this.seats.get(seatId)!;
       seat.assigned = true;
-      ch = createCharacter(id, palette, seatId, seat, hueShift);
+      ch = createCharacter(id, palette, seatId, seat, repeat);
     } else {
       // No seats — teammates spawn beside their anchor, others at a random walkable tile
       let spawn = anchorAt ? this.closestFreeWalkableTile(anchorAt.col, anchorAt.row) : null;
@@ -521,7 +506,7 @@ export class OfficeState {
             ? this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)]
             : { col: 1, row: 1 };
       }
-      ch = createCharacter(id, palette, null, null, hueShift);
+      ch = createCharacter(id, palette, null, null, repeat);
       ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
       ch.y = spawn.row * TILE_SIZE + TILE_SIZE / 2;
       ch.tileCol = spawn.col;
@@ -646,16 +631,26 @@ export class OfficeState {
 
   /** Give an agent the server's look and seat (a reconnect's snapshot). The
    *  seat is taken only when it exists and no one else sits there. */
-  syncAgent(agentId: number, palette?: number, hueShift?: number, seatId?: string): void {
+  syncAgent(agentId: number, palette?: number, repeat?: number, seatId?: string): void {
     const ch = this.characters.get(agentId);
     if (!ch) return;
     if (palette !== undefined) {
       ch.palette = palette;
-      ch.hueShift = hueShift ?? 0;
+      ch.repeat = repeat ?? 0;
     }
     if (seatId !== undefined && seatId !== ch.seatId) {
       const seat = this.seats.get(seatId);
       if (seat && !seat.assigned) this.reassignSeat(agentId, seatId);
+    }
+  }
+
+  /** Give an agent a new look (its character moved in the list); its sub-agents wear it too. */
+  setAgentLook(agentId: number, palette: number, repeat: number): void {
+    for (const ch of this.characters.values()) {
+      if (ch.id === agentId || (ch.isSubagent && ch.parentAgentId === agentId)) {
+        ch.palette = palette;
+        ch.repeat = repeat;
+      }
     }
   }
 
@@ -779,7 +774,7 @@ export class OfficeState {
     const id = this.nextSubagentId--;
     const parentCh = this.characters.get(parentAgentId);
     const palette = parentCh ? parentCh.palette : 0;
-    const hueShift = parentCh ? parentCh.hueShift : 0;
+    const repeat = parentCh ? parentCh.repeat : 0;
 
     // Spawn on the free walkable tile closest to the parent's seat (or to the
     // parent, when it has none) — where the helper will stay.
@@ -791,7 +786,7 @@ export class OfficeState {
         this.walkableTiles[0];
     }
 
-    const ch = createCharacter(id, palette, null, null, hueShift);
+    const ch = createCharacter(id, palette, null, null, repeat);
     ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
     ch.y = spawn.row * TILE_SIZE + TILE_SIZE / 2;
     ch.tileCol = spawn.col;
@@ -1261,12 +1256,12 @@ export class OfficeState {
    *  it is not in `characters`. */
   getPersistableSeats(): Record<
     number,
-    { palette: number; hueShift: number; seatId: string | null }
+    { palette: number; repeat: number; seatId: string | null }
   > {
-    const seats: Record<number, { palette: number; hueShift: number; seatId: string | null }> = {};
+    const seats: Record<number, { palette: number; repeat: number; seatId: string | null }> = {};
     for (const ch of this.characters.values()) {
       if (ch.isSubagent) continue;
-      seats[ch.id] = { palette: ch.palette, hueShift: ch.hueShift, seatId: ch.seatId };
+      seats[ch.id] = { palette: ch.palette, repeat: ch.repeat, seatId: ch.seatId };
     }
     return seats;
   }

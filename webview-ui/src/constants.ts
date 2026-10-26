@@ -184,6 +184,8 @@ export const VISUAL_COLOR_PICKER_COMPACT_WIDTH_PX = 160;
 export const VISUAL_COLOR_PICKER_SWATCH_PX = 22;
 /** The hex field's border + left padding: where its pixel-font copy starts. */
 export const VISUAL_COLOR_PICKER_HEX_INSET_PX = 2 + 2;
+/** The Characters colour panel's hex field: border + left padding (.chv-pick-hex). */
+export const CHARACTER_HEX_INSET_PX = 2 + 6;
 /** Gap (px) between the collapsed trigger and the expanded popup panel. */
 export const VISUAL_COLOR_PICKER_POPUP_GAP_PX = 6;
 
@@ -216,8 +218,6 @@ export const WAITING_BUBBLE_DURATION_SEC = 2.0;
 export const DISMISS_BUBBLE_FAST_FADE_SEC = 0.3;
 export const INACTIVE_SEAT_TIMER_MIN_SEC = 3.0;
 export const INACTIVE_SEAT_TIMER_RANGE_SEC = 2.0;
-/** Default/fallback palette count (bundled characters). Actual count comes from getLoadedCharacterCount(). */
-export const PALETTE_COUNT = 6;
 export const AUTO_ON_FACING_DEPTH = 3;
 export const AUTO_ON_SIDE_DEPTH = 2;
 export const CHARACTER_HIT_HALF_WIDTH = 8;
@@ -630,6 +630,61 @@ export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
  *  (with an editable focused) = the software keyboard is up. Well above an
  *  address bar collapsing (~56 px), well below any on-screen keyboard. */
 export const KEYBOARD_MIN_HEIGHT_PX = 150;
+
+// ── Characters view ─────────────────────────────────────────
+/** Stacking order for the Characters view: over the whole office UI and every
+ *  modal (ui/Modal 50, ChangelogModal 51, the hooks notice 52), since it is
+ *  opened from them and takes the screen while it is up. */
+export const CHARACTERS_VIEW_Z_INDEX = 60;
+/** How long a status line stays up (it also clears on the next press). */
+export const CHARACTERS_STATUS_MS = { ok: 2500, err: 6000 } as const;
+/** A destructive button (Clear frame, Remove) acts on a second press within this long. */
+export const CHARACTERS_ARM_MS = 2500;
+/** Desktop preview sizing: the export sheet's CSS px per sprite pixel stays in this
+ *  range, the big preview figure is HERO_PER_SHEET times it (never under HERO_MIN_SCALE;
+ *  the four turn figures match the sheet), and the wardrobe keeps MIN_WARDROBE_W px. */
+export const CHARACTERS_SHEET_SCALE = { min: 1.5, max: 3 } as const;
+export const CHARACTERS_HERO_PER_SHEET = 8 / 3;
+export const CHARACTERS_HERO_MIN_SCALE = 3;
+export const CHARACTERS_MIN_WARDROBE_W = 420;
+/** Phone preview figures (CSS px per sprite pixel); the sheet fits its box, at least
+ *  `sheetMinDevicePx` device pixels per sprite pixel. */
+export const CHARACTERS_PHONE_SCALES = { hero: 4, turn: 2, sheetMinDevicePx: 1 } as const;
+/** Pixel editor scale: as big as fits; desktop within deskMin-deskMax CSS px per sprite
+ *  pixel, phones at least phoneMinDevicePx device pixels. */
+export const CHARACTER_EDITOR_SCALE = { deskMin: 6, deskMax: 14, phoneMinDevicePx: 4 } as const;
+/** Preview animation: ms per frame of each loop, and the blink (shut BLINK_MS
+ *  every BLINK_GAP_MS[0]-[1] ms, the first after BLINK_FIRST_MS). */
+export const CHARACTER_ANIM_MS = { walk: 150, type: 300, read: 600 } as const;
+export const CHARACTER_BLINK_MS = 150;
+export const CHARACTER_BLINK_GAP_MS = [2000, 6000] as const;
+export const CHARACTER_BLINK_FIRST_MS = 2500;
+/** Canvas colours of the pixel editor and the export sheet. Canvas code can't read
+ *  CSS tokens, so the ones that match a token repeat its value (named alongside). */
+export const CHARACTER_EDITOR_COLORS = {
+  /** = --color-bg-thumb */
+  checkerLight: '#2a2a3a',
+  checkerDark: '#232334',
+  grid: 'rgba(255, 255, 255, 0.07)',
+  hover: '#ffffff',
+  /** Marks a frame that has edits on the sheet (= --color-warning). */
+  edited: '#ff8d14',
+  /** Outlines the frame being edited on the sheet (= --color-accent-bright). */
+  frame: '#746fff',
+} as const;
+/** The pencil's colour when a piece has none of its own. */
+export const CHARACTER_PAINT_FALLBACK = '#000000';
+/** The cast store: the office's sprites follow saved changes at most this often; changes
+ *  this close merge into one undo step (unless a press groups them), and history keeps
+ *  this many steps. */
+export const CAST_OFFICE_SYNC_MS = 150;
+export const CAST_HISTORY = { mergeMs: 500, limit: 100 } as const;
+/** A repeated character's clothes colours, in order (characters/repeatClothes.ts):
+ *  the nth repeat wears the nth, as a hue in degrees — red, blue, green, yellow,
+ *  purple, cyan, pink, then orange, lime, indigo, teal, magenta; past the end it cycles. */
+export const REPEAT_CLOTHES_HUES = [0, 220, 120, 55, 275, 185, 320, 28, 90, 245, 160, 340] as const;
+/** Saturation (0-100) a repeat's clothes are colorized at, keeping each piece's shading. */
+export const REPEAT_CLOTHES_SATURATION = 70;
 
 // ── Pixel icons ─────────────────────────────────────────────
 /** Screen pixels per icon pixel (whole number, so the icon stays crisp). */

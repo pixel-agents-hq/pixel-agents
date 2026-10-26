@@ -186,8 +186,9 @@ export interface Character {
   currentTool: string | null;
   /** Palette index (0-5) */
   palette: number;
-  /** Hue shift in degrees (0 = no shift, ≥45 for repeated palettes) */
-  hueShift: number;
+  /** Which copy of its character this is (0 = the first, n = its nth repeat,
+   *  drawn in the nth repeat clothes colour; characters/repeatClothes.ts) */
+  repeat: number;
   /** Animation frame index */
   frame: number;
   /** Time accumulator for animation */

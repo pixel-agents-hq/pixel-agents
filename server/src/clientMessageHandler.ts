@@ -7,13 +7,18 @@ import type { AgentStateStore } from './agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './assetLoader.js';
 import { cardOrderMessage, saveCardOrder } from './cardOrder.js';
 import {
+  characterProfilesLoadedMessage,
+  handleCharacterProfilesClientMessage,
+  refusedSaveAnswer,
+} from './characterProfilesPersistence.js';
+import {
   getHooksConsent,
   getHooksEnabled,
   readConfig,
   setHooksEnabled,
   writeConfig,
 } from './configPersistence.js';
-import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT, TERMINAL_REQUIRES_TOKEN_REASON } from './constants.js';
+import { MAX_CHARACTER_REPEAT, TERMINAL_REQUIRES_TOKEN_REASON } from './constants.js';
 import {
   handleDirectoryClientMessage,
   type HostDirectoryEntry,
@@ -22,6 +27,7 @@ import {
 import { collectDirectorySuggestions } from './directorySuggestions.js';
 import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
+import { getPaletteCount } from './paletteAssigner.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
@@ -47,7 +53,7 @@ export type ReloadAssetsSideEffect = (send: WsSend) => Promise<void> | void;
 
 /** Cached assets loaded at server startup. Sent to each WebSocket client on webviewReady. */
 export interface AssetCache {
-  characters: LoadedCharacterSprites | null;
+  characters: LoadedCharacterSprites;
   pets: LoadedPetSprites | null;
   floorTiles: string[][][] | null;
   wallTiles: string[][][][] | null;
@@ -127,7 +133,7 @@ export function handleClientMessage(
   send: WsSend,
   ctx: ClientMessageContext,
 ): void {
-  const { store, runtime, cache } = ctx;
+  const { store, runtime } = ctx;
   const adapter = store.getAdapter();
 
   // Tokenless is read-only. Refused HERE, once, rather than per message, so a
@@ -192,22 +198,31 @@ export function handleClientMessage(
       }
       break;
 
+    case 'saveCharacterProfiles':
+      // Shared with the VS Code adapter. A save that lands is broadcast to every office
+      // (each draws agents from the profiles); a refused one is answered to this client.
+      handleCharacterProfilesClientMessage(msg, {
+        broadcast: (message) => store.broadcast(message),
+        reply: send,
+        store,
+      });
+      break;
+
     case 'saveAgentSeats':
       if (msg.seats) {
         const seats = msg.seats as Record<
           string,
-          { palette?: number; hueShift?: number; seatId?: string }
+          { palette?: number; repeat?: number; seatId?: string }
         >;
         // The server owns an agent's look: it picks one when the agent is
-        // created (diverse pick, roster pick, a teammate inherits its lead's).
+        // created (random pick, a teammate inherits its lead's).
         // A seat save only fills in a look the agent doesn't have yet — a
         // reconnecting browser saves back the looks it had before, and those
         // must not overwrite the server's. Validate ranges to keep a remote
         // client (or a hand-edited payload) from storing out-of-range values
-        // that would render as a glitch. Palette ceiling is dynamic: external
-        // asset directories can add char_N.png beyond the bundled 6, so read
-        // the count from the asset cache instead of hardcoding PALETTE_COUNT.
-        const paletteCount = cache?.characters?.characters.length ?? PALETTE_COUNT;
+        // that would render as a glitch. Palette ceiling is dynamic: the
+        // character profiles plus any char_N.png from external asset dirs.
+        const paletteCount = getPaletteCount();
         for (const [idStr, meta] of Object.entries(seats)) {
           const id = Number(idStr);
           const agent = store.get(id);
@@ -221,12 +236,12 @@ export function handleClientMessage(
               agent.palette = meta.palette;
             }
             if (
-              meta.hueShift !== undefined &&
-              Number.isInteger(meta.hueShift) &&
-              meta.hueShift >= 0 &&
-              meta.hueShift <= HUE_SHIFT_MAX_DEG
+              meta.repeat !== undefined &&
+              Number.isInteger(meta.repeat) &&
+              meta.repeat >= 0 &&
+              meta.repeat <= MAX_CHARACTER_REPEAT
             ) {
-              agent.hueShift = meta.hueShift;
+              agent.repeat = meta.repeat;
             }
           }
         }
@@ -506,11 +521,11 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     });
   }
 
-  // 2. Assets (from server cache, loaded at startup via pngjs)
+  // 2. Character profiles (the cast agents are drawn from), then the assets
+  //    (from server cache, loaded at startup via pngjs)
+  send(characterProfilesLoadedMessage());
   if (cache) {
-    if (cache.characters) {
-      send({ type: 'characterSpritesLoaded', characters: cache.characters.characters });
-    }
+    send({ type: 'characterSpritesLoaded', characters: cache.characters.characters });
     if (cache.pets) {
       send({
         type: 'petSpritesLoaded',
@@ -624,7 +639,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const directoryNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   const persistedSeats = adapter?.loadSeats() ?? {};
-  const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
+  const agentMeta: Record<number, { palette?: number; repeat?: number; seatId?: string }> = {};
   for (const [id, agent] of store) {
     agentIds.push(id);
     if (agent.directoryName) {
@@ -636,7 +651,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     const persisted = persistedSeats[String(id)];
     agentMeta[id] = {
       palette: agent.palette,
-      hueShift: agent.hueShift,
+      repeat: agent.repeat,
       seatId: persisted?.seatId,
     };
   }
@@ -753,6 +768,10 @@ function refuseReadOnly(
       return;
     case 'saveAreaMappings':
       send({ type: 'areaMappingsLoaded', mappings: readConfig().standalone.areaMappings ?? {} });
+      return;
+    case 'saveCharacterProfiles':
+      // Answered like any refused save, so the editor drops the edit instead of keeping it.
+      send(refusedSaveAnswer(msg));
       return;
   }
 }

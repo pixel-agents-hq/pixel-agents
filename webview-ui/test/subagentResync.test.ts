@@ -90,7 +90,7 @@ test("syncAgent: a reconnect's snapshot gives a shown agent the server look and 
   os.syncAgent(1, 2, 0, 'b');
 
   const ch = os.characters.get(1)!;
-  assert.deepEqual([ch.palette, ch.hueShift, ch.seatId], [2, 0, 'b']);
+  assert.deepEqual([ch.palette, ch.repeat, ch.seatId], [2, 0, 'b']);
   assert.equal(os.seats.get('a')!.assigned, false);
   assert.equal(os.seats.get('b')!.assigned, true);
 });

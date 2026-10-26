@@ -14,10 +14,11 @@ import { AgentRuntime } from './agentRuntime.js';
 import { AgentStateStore } from './agentStateStore.js';
 import {
   buildAssetCache,
-  loadAllCharacters,
   loadAllFurniture,
   loadAllPets,
+  loadExternalCharacters,
 } from './assetReload.js';
+import { getCharacterProfiles, watchCharacterProfiles } from './characterProfilesPersistence.js';
 import type { AssetCache, ReloadAssetsSideEffect } from './clientMessageHandler.js';
 import {
   getHooksConsent,
@@ -284,17 +285,24 @@ async function main(): Promise<void> {
     distRoot,
     readConfig().externalAssetDirectories,
   );
-  const charCount = assetCache.characters?.characters.length ?? 0;
+  const profileCount = getCharacterProfiles().length;
+  const charCount = assetCache.characters.characters.length;
   const petCount = assetCache.pets?.pets.length ?? 0;
   const furnitureCount = assetCache.furniture?.catalog.length ?? 0;
   console.log(
-    `[Pixel Agents] Assets loaded: ${charCount} characters, ${petCount} pets, ${furnitureCount} furniture items`,
+    `[Pixel Agents] Assets loaded: ${profileCount} character profiles, ${charCount} external characters, ${petCount} pets, ${furnitureCount} furniture items`,
   );
 
   // ── Store + adapter (shared settings + standalone-scoped agents/seats) ──
   const store = new AgentStateStore();
   const adapter = new FileStateAdapter({ namespace: 'standalone' });
   store.setAdapter(adapter);
+
+  // characters.json is shared with the VS Code surface (and hand-editable): follow it.
+  const characterProfilesWatcher = watchCharacterProfiles(
+    (message) => store.broadcast(message),
+    store,
+  );
 
   // ── Create server ──
   const server = new PixelAgentsServer();
@@ -376,16 +384,14 @@ async function main(): Promise<void> {
     const onReloadAssets: ReloadAssetsSideEffect = async (send): Promise<void> => {
       const externalDirs = readConfig().externalAssetDirectories;
       const [characters, pets, furniture] = await Promise.all([
-        loadAllCharacters(distRoot, externalDirs),
+        loadExternalCharacters(externalDirs),
         loadAllPets(distRoot, externalDirs),
         loadAllFurniture(distRoot, externalDirs),
       ]);
       assetCache.characters = characters;
       assetCache.pets = pets;
       assetCache.furniture = furniture;
-      if (characters) {
-        send({ type: 'characterSpritesLoaded', characters: characters.characters });
-      }
+      send({ type: 'characterSpritesLoaded', characters: characters.characters });
       if (pets) {
         send({
           type: 'petSpritesLoaded',
@@ -508,6 +514,7 @@ async function main(): Promise<void> {
       // a child that ignores SIGHUP orphaned on a dead server. With the PTY
       // host: just disconnect; the agents keep running.
       await ptyManager.shutdown();
+      characterProfilesWatcher.dispose();
       // Stop, not dispose: the saved list keeps whoever is still running, for
       // the next server to restore (external agents) or reattach (the PTY host's).
       runtime.stop();

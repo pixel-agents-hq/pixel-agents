@@ -177,10 +177,10 @@ export const DIRECTORY_WRITE_FAILED_REASON =
  *  embedded (VS Code) server still mints a fresh token per process. */
 export const STANDALONE_TOKEN_FILE_NAME = 'standalone-token';
 
-// ── Layout/Config Persistence ──────────────────────────────
-export const LAYOUT_FILE_DIR = '.pixel-agents';
+// ── ~/.pixel-agents Persistence ────────────────────────────
+export const PIXEL_AGENTS_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';
-export const LAYOUT_FILE_POLL_INTERVAL_MS = 2000;
+export const JSON_FILE_POLL_INTERVAL_MS = 2000;
 export const LAYOUT_REVISION_KEY = 'layoutRevision';
 export const CONFIG_FILE_NAME = 'config.json';
 
@@ -192,15 +192,15 @@ export const USAGE_LIMITS_FILE_NAME = 'usage-limits.json';
 export const USAGE_UNCHANGED_REFRESH_MS = 60_000;
 
 // ── Avatar Customization ────────────────────────────────────
-/** Number of pre-colored bundled character palettes (char_0.png–char_5.png).
- *  Mirrors `PALETTE_COUNT` in webview-ui/src/constants.ts; kept separate
- *  because the server has no DOM/sprite access and cannot import the webview
- *  constant. The two values must stay in sync. */
-export const PALETTE_COUNT = 6;
-/** Inclusive upper bound for a valid agent hue shift, in degrees. Used by
+/** The character profiles agents are drawn from, in the persistence dir (shared by both surfaces). */
+export const CHARACTER_PROFILES_FILE_NAME = 'characters.json';
+/** The custom wardrobe items saved from the pixel editor, beside characters.json. */
+export const WARDROBE_ITEMS_FILE_NAME = 'wardrobe-items.json';
+/** Inclusive upper bound for a valid agent repeat (which copy of its character
+ *  it is; there are never nearly this many agents in an office). Used by
  *  clientMessageHandler to guard saveAgentSeats payloads from a remote or
  *  hand-edited source corrupting the stored values with out-of-range values. */
-export const HUE_SHIFT_MAX_DEG = 360;
+export const MAX_CHARACTER_REPEAT = 1_000;
 
 /** Most agent ids a saved card order keeps. The order is pruned to live agents
  *  on every save, so this only bounds a hand-edited or hostile payload. */

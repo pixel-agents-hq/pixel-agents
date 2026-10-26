@@ -6,9 +6,6 @@ vi.mock('../src/assetLoader.js', () => ({
   loadFurnitureAssets: vi.fn((dir: string) =>
     Promise.resolve({ catalog: [{ id: `furn:${dir}` }], sprites: new Map([[`s:${dir}`, []]]) }),
   ),
-  loadCharacterSprites: vi.fn((dir: string) =>
-    Promise.resolve({ characters: [`char-root:${dir}`] }),
-  ),
   loadExternalCharacterSprites: vi.fn((dir: string) =>
     Promise.resolve({ characters: [`char-ext:${dir}`] }),
   ),
@@ -26,7 +23,6 @@ vi.mock('../src/assetLoader.js', () => ({
     catalog: [...a.catalog, ...b.catalog],
     sprites: new Map([...a.sprites, ...b.sprites]),
   })),
-  mergeCharacterSprites: vi.fn((a, b) => ({ characters: [...a.characters, ...b.characters] })),
   mergePetSprites: vi.fn((a, b) => ({
     pets: [...a.pets, ...b.pets],
     manifests: [...a.manifests, ...b.manifests],
@@ -36,27 +32,26 @@ vi.mock('../src/assetLoader.js', () => ({
 import * as assetLoader from '../src/assetLoader.js';
 import {
   buildAssetCache,
-  loadAllCharacters,
   loadAllFurniture,
   loadAllPets,
+  loadExternalCharacters,
 } from '../src/assetReload.js';
+import { getPaletteCount } from '../src/paletteAssigner.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe('assetReload helpers', () => {
-  it('loadAllCharacters uses the bundled loader for root and the external loader for extras (asymmetry)', async () => {
-    const result = await loadAllCharacters('root', ['e1', 'e2']);
+  it('loadExternalCharacters loads only the external dirs (the built-in cast is the profiles)', async () => {
+    const result = await loadExternalCharacters(['e1', 'e2']);
 
-    expect(result?.characters).toEqual(['char-root:root', 'char-ext:e1', 'char-ext:e2']);
-    // Root → loadCharacterSprites only; externals → loadExternalCharacterSprites only.
-    expect(vi.mocked(assetLoader.loadCharacterSprites).mock.calls.map((c) => c[0])).toEqual([
-      'root',
-    ]);
+    expect(result.characters).toEqual(['char-ext:e1', 'char-ext:e2']);
     expect(vi.mocked(assetLoader.loadExternalCharacterSprites).mock.calls.map((c) => c[0])).toEqual(
       ['e1', 'e2'],
     );
+    // the palette count = profiles (6 defaults) + these two
+    expect(getPaletteCount()).toBe(8);
   });
 
   it('loadAllPets uses the bundled loader for root and the external loader for extras (asymmetry)', async () => {
@@ -82,18 +77,17 @@ describe('assetReload helpers', () => {
     ]);
   });
 
-  it('loadAll* with no external dirs returns the bundled result without merging', async () => {
-    const result = await loadAllCharacters('root', []);
-    expect(result?.characters).toEqual(['char-root:root']);
-    expect(vi.mocked(assetLoader.mergeCharacterSprites)).not.toHaveBeenCalled();
+  it('loadExternalCharacters with no external dirs is an empty list', async () => {
+    const result = await loadExternalCharacters([]);
+    expect(result.characters).toEqual([]);
     expect(vi.mocked(assetLoader.loadExternalCharacterSprites)).not.toHaveBeenCalled();
   });
 
   it('buildAssetCache reproduces the wrap/unwrap asymmetry', async () => {
     const cache = await buildAssetCache('dist', []);
 
-    // Wrapped: characters/pets/furniture keep their wrapper objects.
-    expect(cache.characters).toEqual({ characters: ['char-root:dist'] });
+    // Wrapped: characters/pets/furniture keep their wrapper objects (no external characters here).
+    expect(cache.characters).toEqual({ characters: [] });
     expect(cache.pets).toEqual({ pets: ['pet-root:dist'], manifests: [{ name: 'm:dist' }] });
     expect(cache.furniture?.catalog).toEqual([{ id: 'furn:dist' }]);
     // Unwrapped: floor/wall/carpet store the inner array, not the wrapper.
@@ -106,7 +100,7 @@ describe('assetReload helpers', () => {
   it('buildAssetCache merges external dirs into characters/pets/furniture at startup', async () => {
     const cache = await buildAssetCache('dist', ['ext']);
 
-    expect(cache.characters?.characters).toEqual(['char-root:dist', 'char-ext:ext']);
+    expect(cache.characters.characters).toEqual(['char-ext:ext']);
     expect(cache.pets?.pets).toEqual(['pet-root:dist', 'pet-ext:ext']);
     expect(cache.furniture?.catalog).toEqual([{ id: 'furn:dist' }, { id: 'furn:ext' }]);
     // Floor/wall/carpet are bundled-only: loaded from dist, never from the external dir.
