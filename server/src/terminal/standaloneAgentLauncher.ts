@@ -22,6 +22,7 @@ import type { AgentRuntime } from '../agentRuntime.js';
 import { createAgentState } from '../agentState.js';
 import type { AgentStateStore } from '../agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../constants.js';
+import { clearContextUsage } from '../contextUsage.js';
 import { directoryNameForLaunch } from '../directories.js';
 import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
@@ -124,6 +125,8 @@ export function launchStandaloneAgent(
   }
 
   admitTerminalAgent(deps, agent, session);
+  // A fresh session starts with an empty context: a full gauge from the spawn on.
+  clearContextUsage(id, store);
   runtime.activeAgentId.current = id;
   store.persist();
 

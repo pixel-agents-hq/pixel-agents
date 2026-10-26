@@ -414,6 +414,7 @@ async function main(): Promise<void> {
       onSetHooksEnabled,
       onReloadAssets,
       ptyManager,
+      packageRoot,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,
     });
@@ -425,6 +426,10 @@ async function main(): Promise<void> {
     }
 
     reportTerminalStatus(ptyManager, args.host, args.terminal);
+
+    // An installed usage bridge runs the script from ~/.pixel-agents/hooks/:
+    // bring it up to this version's copy.
+    claudeProvider.usageBridge?.refreshScript(packageRoot);
 
     // Sync runtime refs with persisted settings BEFORE first scan tick. The
     // runtime's single hooksEnabled ref follows the Claude provider until the

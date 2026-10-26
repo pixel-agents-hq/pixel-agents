@@ -9,6 +9,9 @@
 // ── Hook API ─────────────────────────────────────────────────
 
 export const HOOK_API_PREFIX = '/api/hooks';
+/** Path prefix for a provider's account usage reports (`/api/usage/:providerId`),
+ *  sent by the status line bridge. Bearer-authenticated like the hook route. */
+export const USAGE_API_PREFIX = '/api/usage';
 export const SERVER_JSON_DIR = '.pixel-agents';
 export const SERVER_JSON_NAME = 'server.json';
 export const HOOK_SCRIPTS_DIR = '.pixel-agents/hooks';

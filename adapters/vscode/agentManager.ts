@@ -14,6 +14,7 @@ import {
 import { createAgentState } from '../../server/src/agentState.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
+import { clearContextUsage } from '../../server/src/contextUsage.js';
 import { directoryNameForLaunch } from '../../server/src/directories.js';
 import {
   ensureProjectScan,
@@ -124,6 +125,8 @@ export async function launchNewTerminal(
 
   assignPaletteIfNeeded(agent, agents);
   agents.set(id, agent);
+  // A fresh session starts with an empty context: a full gauge from the spawn on.
+  clearContextUsage(id, agents);
   activeAgentIdRef.current = id;
   persistAgents();
   console.log(`[Pixel Agents] Terminal: Agent ${id} - created for terminal ${terminal.name}`);

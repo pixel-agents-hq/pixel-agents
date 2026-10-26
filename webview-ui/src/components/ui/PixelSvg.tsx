@@ -2,7 +2,8 @@ import type { CSSProperties } from 'react';
 
 /**
  * Pixel art as an SVG in the text colour: one rect per run (pixelGrid.ts
- * `gridRuns`), `unit` CSS px per art pixel. Callers snap `unit` to whole
+ * `gridRuns`; a run carrying a fill, from `colorRuns`, is drawn in it),
+ * `unit` CSS px per art pixel. Callers snap `unit` to whole
  * device pixels (pixelSnap.ts), so every row and column comes out equal.
  */
 export function PixelSvg({
@@ -13,7 +14,7 @@ export function PixelSvg({
   className = '',
   style,
 }: {
-  rects: ReadonlyArray<readonly [x: number, y: number, w: number]>;
+  rects: ReadonlyArray<readonly [x: number, y: number, w: number, fill?: string]>;
   /** Art pixels across and down. */
   width: number;
   height: number;
@@ -32,8 +33,8 @@ export function PixelSvg({
       className={`shrink-0 ${className}`}
       style={style}
     >
-      {rects.map(([x, y, w]) => (
-        <rect key={`${x}:${y}`} x={x} y={y} width={w} height={1} />
+      {rects.map(([x, y, w, fill]) => (
+        <rect key={`${x}:${y}`} x={x} y={y} width={w} height={1} fill={fill} />
       ))}
     </svg>
   );

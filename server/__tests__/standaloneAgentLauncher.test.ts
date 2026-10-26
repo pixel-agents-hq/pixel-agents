@@ -104,6 +104,15 @@ describe('launchStandaloneAgent', () => {
 
   // ── Successful launch ────────────────────────────────────────
 
+  it('a fresh launch reports an empty context (a full gauge) at once', () => {
+    const harness = workingPtyManager();
+    const id = launch(harness);
+    expect(broadcasts).toContainEqual(
+      expect.objectContaining({ type: 'agentContextUsage', id, contextTokens: 0 }),
+    );
+    expect(store.get(id!)?.contextReported).toBe(true);
+  });
+
   it('spawns the provider launch command in a PTY and registers the agent', () => {
     const harness = workingPtyManager();
     const cwd = path.join(tempDir, 'workspace');

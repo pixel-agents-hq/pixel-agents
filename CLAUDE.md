@@ -27,10 +27,19 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     providers/hook/claude/           Reference HookProvider — only place that knows Claude specifics
       claude.ts                      normalizeHookEvent for 11 Claude events, formatToolStatus, file fallback
       claudeTeamProvider.ts          TeamProvider: reads ~/.claude/teams/<name>/config.json
-      claudeHookInstaller.ts         Consent-gated install/uninstall in ~/.claude/settings.json (abort on unparseable file or non-array hooks.<Event>; one-time .pixel-agents.backup, exclusive-create, no backup ⇒ no write — but skipped when the replaced content is entirely our own install's output, since backing up our own file masquerades as the user's original (`settingsHoldOnlyOurHooks`, compared against makeHookEntry — the WRITER — so a field added to what we write can't silently revive the bug; only `command`/`timeout` may differ, they vary across installs); every write failure THROWS; mode preserved, 0600 on create; re-read verify immediately before rename + retry; hook identity = `/.pixel-agents/hooks/claude-hook.js` suffix anchored at both ends of the command's first token, case-insensitive; `areHooksInstalled` = ANY of our commands on ANY event)
+      claudeHookInstaller.ts         Consent-gated install/uninstall of our hook entries (abort on non-object hooks or non-array hooks.<Event>; `areHooksInstalled` = ANY of our commands on ANY event)
+      claudeHookEntries.ts           Our hook entries as data, pure: makeHookEntry (the WRITER), hook identity (`/.pixel-agents/hooks/claude-hook.js` suffix anchored at both ends of the command's first token, case-insensitive), hooksHoldOnlyOurs (compared against makeHookEntry; only `command`/`timeout` may differ, they vary across installs)
+      claudeSettingsFile.ts          ~/.claude/settings.json itself, for every writer (hooks, status line): mutateClaudeSettings, the one guarded read-modify-write (abort on unparseable file; one-time .pixel-agents.backup, exclusive-create, no backup ⇒ no write — but skipped when the replaced content is entirely our own output, since backing up our own file masquerades as the user's original: `settingsHoldOnlyOurOutput`, each key checked against its WRITER (`hooks` → hooksHoldOnlyOurs, `statusLine` → isBareOurStatusLine) so a field added to what we write can't silently revive the bug; every write failure THROWS; mode preserved, 0600 on create; re-read verify immediately before rename + retry)
+      bundledScripts.ts              bundledScriptPath / copyBundledScript: the one spelling of ~/.pixel-agents/hooks/<name> and the copy from the package
       consentCopy.ts                 Claude's first-run consent disclosure text (scope/data/undo), served through consentDisclosure()
+      commandIdentity.ts             firstCommandToken / commandRunsScript: the ONE "does this settings.json command run our script?" parser (hooks + status line)
+      statusLineBridge.ts            The usage bridge's statusLine command: make / recognize / read back the wrapped user command (base64url after --wrap, so no shell metachar leaks); makeBareStatusLine (the WRITER) + isBareOurStatusLine (compared against it)
+      statusLineInstaller.ts         Wrap/unwrap ~/.claude/settings.json statusLine through claudeSettingsFile's mutateClaudeSettings (refuses non-command shapes and hand-edited wraps; a replaced status line is the user's)
+      claudeUsageBridge.ts           Claude's UsageBridge: disclosure, rate_limits → ReportedUsage, install/uninstall
       constants.ts                   Claude hook event names, script path
       hooks/claude-hook.ts           Hook script (CJS+shebang, bundled to dist/hooks/claude-hook.js)
+      hooks/claude-statusline.ts     Status line bridge (dist/hooks/claude-statusline.js): runs the wrapped user status line untouched, POSTs ONLY rate_limits + session_id + context_window's used_percentage/context_window_size to /api/usage/claude
+      hooks/serverRegistry.ts        Both scripts' route to the servers: live registry entries (else legacy server.json) + best-effort POST
     providers/hook/consentGate.ts    Provider-agnostic consent POLICY: when to ask (hooksConsentRequest per provider) and what an answer means (consentActionFor(choice, {installed, consent}) — see docs/adr/0001)
     providers/hook/consentExecutor.ts Provider-agnostic consent EXECUTION: applyConsentChoice(providerId, choice, ConsentEffects) runs the six actions in one order for both surfaces, and SERIALIZES answers per process across ALL providers
     providers/index.ts               Provider registry (claudeProvider + the hookProviders list the consent gate loops over)
@@ -49,6 +58,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     configPersistence.ts             { vscode, standalone, externalAssetDirectories, hooksConsent: {providerId: granted|declined}, hooksEnabled: {providerId: boolean} }
     layoutPersistence.ts             ~/.pixel-agents/layout.json with atomic tmp+rename
     terminal/                        Standalone terminals (TerminalSessions): in process (ptySessionManager.ts, the default) or, dev only, a PTY host that outlives the server (ptyHost.ts, remotePtySessions.ts, ptyHostProtocol.ts)
+    usageLimits.ts                   Usage bars: last report per provider (~/.pixel-agents/usage-limits.json), merge + throttle, usageLimits/usageBridgeStatus messages (usageSnapshotMessages = both surfaces' handshake), applyUsageBridgeChoice; PRIVILEGED_BROADCAST_TYPES
     cardOrder.ts                     The agent cards' order, one per surface for every client (desktop and phone): parse, load, save (pruned to live agents)
     fileWatcher.ts                   Hybrid fs.watch + 500ms polling, JSONL line buffering, /clear detection
     transcriptParser.ts              JSONL parsing for heuristic / file-fallback mode
@@ -92,7 +102,7 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
       ui/pixelGrid.ts                gridRuns / litBox: a '#' grid as horizontal runs and its lit box, for the SVGs and the canvas alike (DOM-free)
       ui/PixelSvg.tsx                The one pixel-art SVG (runs as rects, crispEdges) behind PixelIcon and PixelText
       ui/PixelIcon.tsx               PixelIcon renderer (whole device pixels per icon pixel, pixelSnap.ts)
-      AgentCard.tsx                  One agent card (mug shot + status dot + ×)
+      AgentCard.tsx                  One agent card (mug shot + status dot + ×, its context left along the foot — office/contextGauge.ts + office/ContextBar.tsx, shared with the label's gauge)
       AgentCardList.tsx              The card bar's cards for BOTH shells: same agents, same server-owned order, same reorder + highlight rules, focused card kept in view; AgentCardBar (desktop/VS Code column) and MobileAgentBar (phone row) only wrap it
       useCardReorder.ts              Drag-to-reorder: touch long-press (phone) or mouse drag (desktop), along the bar's axis; previews, then commits
       cardBar.ts                     Pure card-bar rules: cardOrderOf (main agents only — Teammates get none — in the saved order, via mergeOrder), cardVariant, closeMode (the ×), reorderByPointer (Node-tested)
@@ -102,6 +112,7 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
       MobileAgentBar.tsx             Mobile bottom bar: the + launch card, then the AgentCardList row
       MobileTerminalPage.tsx         Mobile terminal page (a TerminalPaneStack)
       MobileKeyBar.tsx               Accessory keys above the software keyboard (/, tab, shift+tab, the square arrow trackpad centred on the bar, esc, forward del, line break)
+    usage/                           UsageBars (top-left, no panel: heart + weekly bar over an equal 5-hour bar, % inside each; hover/tap any of it = the heart beats and each bar's reset time shows right of it) + PixelHeart (multi-colour art through PixelSvg + pixelGrid `colorRuns`; the beat flashes a one-pixel-bigger frame) (numbers through PixelText) + usageBarView (pure: share left, colour band, reset-since-report = full, heartbeat period, freshness) + usageStore (each provider's usageBridgeStatus/usageLimits outside React; `seq` counts status arrivals) + useUsageBridge (status, limits, this caller's `pending` request — answered by the next ARRIVAL, since a failed install re-reports the same value — and `setEnabled`; read by the Intro, Settings and App)
     mobile/                          The phone shell (standalone only, see "Mobile shell")
       MobileShell.tsx                Sliding office/terminal track + card bar + key bar
       useMobileShell.ts              Page state and navigation rules (toggle, card tap, launch-then-slide)
@@ -249,8 +260,8 @@ Adding a new CLI integration is one subdirectory under `server/src/providers/hoo
 
 `core/asyncapi.yaml` is the contract. Pinned to **3.0.0** because `@asyncapi/modelina@5.10.1` declares `supportedVersions: ['3.0.0']` only; bumping to 3.1.0 produces `export type Root = any`. Revisit when Modelina ships 3.1.0 support.
 
-- **40 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + context usage, assets, access (`officeAccess` — sent first on `webviewReady`; `readOnly` hides every control a read-only office would only have refused), settings (`bypassPermissionsUpdated` — the skip-permissions posture, broadcast to every office on change because every launch reads it) + directories (`directoriesLoaded`, `directorySaved` — a save's ack to its sender, carrying the entry as stored, whose name keys the Area mapping; `directoryRejected`, `directorySuggestions`), terminal, card order (`cardOrderLoaded` — sent on `webviewReady` before `existingAgents`, broadcast after every save), diagnostics.
-- **28 ClientMessage variants** (client → server): lifecycle (`webviewReady`, `launchAgent`, `focusAgent`, `closeAgent`), layout (`saveAgentSeats`, `saveLayout`, `exportLayout`, `importLayout`), card order (`saveCardOrder`), settings (`setSoundEnabled`, `setHooksEnabled`, `setWatchAllSessions`, `setAlwaysShowLabels`, `setHooksInfoShown`, `setLastSeenVersion`, `setBypassPermissions`, `setShowHostDirectories` — whether the host's own Directories are listed, off by default; only the list is gated, launches still name agents after them), directories (`saveDirectory`, `removeDirectory`, `requestDirectorySuggestions`), terminal, discovery + assets, diagnostics.
+- **42 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + context usage, assets, access (`officeAccess` — sent first on `webviewReady`; `readOnly` hides every control a read-only office would only have refused), settings (`bypassPermissionsUpdated` — the skip-permissions posture, broadcast to every office on change because every launch reads it) + directories (`directoriesLoaded`, `directorySaved` — a save's ack to its sender, carrying the entry as stored, whose name keys the Area mapping; `directoryRejected`, `directorySuggestions`), terminal, card order (`cardOrderLoaded` — sent on `webviewReady` before `existingAgents`, broadcast after every save), usage bars (`usageBridgeStatus`, `usageLimits` — privileged sockets only), diagnostics.
+- **29 ClientMessage variants** (client → server): lifecycle (`webviewReady`, `launchAgent`, `focusAgent`, `closeAgent`), layout (`saveAgentSeats`, `saveLayout`, `exportLayout`, `importLayout`), card order (`saveCardOrder`), settings (`setSoundEnabled`, `setHooksEnabled`, `setUsageBridgeEnabled`, `setWatchAllSessions`, `setAlwaysShowLabels`, `setHooksInfoShown`, `setLastSeenVersion`, `setBypassPermissions`, `setShowHostDirectories` — whether the host's own Directories are listed, off by default; only the list is gated, launches still name agents after them), directories (`saveDirectory`, `removeDirectory`, `requestDirectorySuggestions`), terminal, discovery + assets, diagnostics.
 
 Both unions use `oneOf` with `discriminator: type`. Every concrete message sets `additionalProperties: false`.
 
@@ -348,12 +359,13 @@ Two extracted classes that replaced ad-hoc module state. `SessionRouter` owns `s
 
 Fastify v5 with `@fastify/cors`, `@fastify/websocket`, and (in standalone) `@fastify/static`:
 
-| Method | Path                     | Purpose                                 |
-| ------ | ------------------------ | --------------------------------------- |
-| POST   | `/api/hooks/:providerId` | Bearer-authenticated hook event ingress |
-| GET    | `/api/health`            | Liveness: `{ ok, version, port, pid }`  |
-| GET    | `/ws`                    | Bidirectional protocol channel          |
-| GET    | `/*` (standalone only)   | Webview SPA via `@fastify/static`       |
+| Method | Path                     | Purpose                                                |
+| ------ | ------------------------ | ------------------------------------------------------ |
+| POST   | `/api/hooks/:providerId` | Bearer-authenticated hook event ingress                |
+| POST   | `/api/usage/:providerId` | Bearer-authenticated usage report (status line bridge) |
+| GET    | `/api/health`            | Liveness: `{ ok, version, port, pid }`                 |
+| GET    | `/ws`                    | Bidirectional protocol channel                         |
+| GET    | `/*` (standalone only)   | Webview SPA via `@fastify/static`                      |
 
 `/ws` is gated in **two tiers**, because messages over this socket launch shells, grant durable machine-wide hook consent, and rewrite persisted state.
 
@@ -381,7 +393,9 @@ Per-agent runtime data: provider reference, session key, transcript-fallback fie
   standalone-state.json    { agents, seats, cardOrder }
   layout.json              OfficeLayout (shared across surfaces)
   server.json              { port, pid, authToken }
+  usage-limits.json        { [providerId]: { fiveHour?, sevenDay?, updatedAt } } — last plan-usage report (usage bars)
   hooks/claude-hook.js     Bundled hook script (CJS, shebang)
+  hooks/claude-statusline.js  Status line bridge script (only while Usage Bars is on)
 ```
 
 `FileStateAdapter({ namespace })` backs both runtimes. Per-namespace settings: `soundEnabled`, `lastSeenVersion`, `alwaysShowLabels`, `watchAllSessions`, `hooksInfoShown` (the hooks preference is per-provider and machine-global, at the config top level). Running both surfaces in parallel never clobbers either.
@@ -419,12 +433,19 @@ When a sub-agent runs a non-exempt tool, `startPermissionTimer` fires on the par
 
 Every agent's context gauge. Fed from `message.usage` on assistant records by `processTranscriptLine`, broadcast as `agentContextUsage` and rendered by `ToolOverlay`.
 
-- **Snapshot, not a total.** Context = the newest turn's `input_tokens + cache_creation_input_tokens + cache_read_input_tokens + output_tokens`. Summing turns measures spend, not occupancy, and misses the cached tokens that ARE the context (`input_tokens` is single digits once caching kicks in). Falls on compaction and `/clear` for free.
+- **Snapshot, not a total.** Context = the newest turn's `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` — no output tokens, exactly as Claude Code's own `context_window.used_percentage` counts it. Summing turns measures spend, not occupancy, and misses the cached tokens that ARE the context (`input_tokens` is single digits once caching kicks in). Falls on compaction and `/clear` for free.
 - **All-zero usage means "no news"** — synthetic records (API errors, interrupts) report zeros and must not blank the gauge.
+- **/clear is a real 0.** The fresh transcript (`reassignAgentToFile`, read whole) resets the agent to 0 tokens and says so (`clearContextUsage`), and a reported 0 is re-sent on every connect (`contextReported`); since the server never forwards a meaningless zero, the office trusts any 0 it hears and draws it as a FULL bar, over the character and on its card alike (`contextUsedShare`, `Character.contextReported`). A resumed session keeps its gauge.
 - **Sidechain rule**: a lead's sidechain records are its sub-agents' turns and must not move its gauge; a teammate's own transcript is sidechain top to bottom and would otherwise never report. Positional latch (`sawMainChainUsage`): once a file produces a main-chain turn, later sidechain records belong to someone else.
 - **The window comes from the provider**, not from the runtime: `HookProvider.contextWindowForModel(model)` (Claude: 1M for the current line, 200k for Haiku and the older models, `undefined` for ids it can't place). Transcripts state usage but never the limit, and guessing 200k for a 1M model reads five times too full. `widenContextWindow` is the backstop for unrecognized models and unknown-larger windows — it only ever widens, since a context that doesn't fit disproves the assumption while a shrinking one proves nothing.
 - **`seedContextUsage` runs once per agent in `startFileWatching`** — the single seam every watched agent passes through. Agents adopted or restored mid-session start at end-of-file, so without a tail read they'd have no gauge until their next turn.
+- **The CLI's own number wins.** With Usage Bars on, the status line bridge also reports each session's `context_window` (`used_percentage` + `context_window_size`); `applyReportedContext` sets the agent running that session to it and keeps the reported window (`reportedContextWindow`) for its later transcript estimates, so the gauge reads what the status line reads.
 - Sub-agents get no gauge: no session of their own, and the shadow store never forwards `agentContextUsage`.
+- **Drawn as a health bar** (`office/ContextBar.tsx`, the card's and the label's alike): the fill is the context LEFT (full when empty, draining as it fills), the colour still warns by the share used, in the user's status line steps (green < 33% used, yellow — the usage bars' — to 66%, red past it); `data-context-pct` stays the share used (e2e reads it).
+
+## Usage bars
+
+Top-left of the office (right of the zoom buttons; on the phone, right of the Settings button): how much of the Claude Code plan is left — a weekly bar over a 5-hour bar of the same size, told apart like a game's health and stamina all the way down: weekly green → yellow (≤50%) → red (≤20%), 5-hour blue → purple → red, the share left printed inside each (left-aligned, in the pixel number font), no panel behind. A pixel heart sits left of them (`usage/PixelHeart.tsx`: outlined, shaded, colours in `USAGE_HEART_COLORS`; the beat flashes a one-pixel-bigger frame over it, whole pixels, never a scale). Hovering any of it (on a phone: a tap, undone by a tap elsewhere — hover is off there, since a tap's emulated mouseenter would cancel its own toggle) makes the heart beat at a pace proportional to the WEEKLY share left (`USAGE_HEART_MAX_BPM` at full, slower as it runs down, still when empty) and shows each bar's name and reset time just right of it (on a phone, below the bars) ("Weekly · resets in 3d 11h", "5-hour · …") (the age of the numbers is the hover title). Claude Code hands out `rate_limits` ONLY to its status line (subscribers, after a session's first reply), so the data comes from a **usage bridge** (`HookProvider.usageBridge`): Settings → Usage Bars, after a confirm showing the provider's disclosure (the click is the consent — never installed silently, not tied to hooks consent), WRAPS the user's `statusLine` in `~/.claude/settings.json` (`statusLine` is one command, not a list): `node ~/.pixel-agents/hooks/claude-statusline.js --wrap <base64url of their command>`. The script runs their command with the same stdin/env/cwd and passes output + exit code through, and POSTs only `rate_limits` and the session's context share (`session_id`, `used_percentage`, `context_window_size`) to every live server. No status line → a bare bridge that prints nothing (which hides Claude Code's footer hints — disclosed). Off / VS Code uninstall restores their command byte for byte; a status line replaced after us is left alone; non-command shapes and hand-edited wraps are refused. A bare bridge counts as our own output in the backup predicate. With no session running the bars keep the last report (persisted), a window past `resetsAt` shows full, and "updated N ago" says how old the rest is. A project-scope `statusLine` overrides ours, so sessions there don't report. Usage is account data: `usageLimits`/`usageBridgeStatus` go to privileged sockets only.
 
 ## Office UI
 
@@ -434,7 +455,7 @@ Every agent's context gauge. Fed from `message.usage` on assistant records by `p
 
 **Pixel icons are 8×8.** Every UI icon is an 8×8 grid in `components/ui/pixelIcons.ts` (`#` = lit pixel, drawn in the text colour), rendered at `PIXEL_ICON_SCALE` whole screen pixels per icon pixel (2 → 16 px). Never scale an icon fractionally: blurred edges break the pixel look. `PixelIcon` also guards against the display doing it: at a browser zoom or scaled display (1.25x, 1.5x) it draws each icon pixel as the whole number of DEVICE pixels at or below `scale` (`components/ui/pixelSnap.ts`, ratio from `hooks/useDevicePixelRatio.ts`), else some rows come out a device pixel thicker than others. Position needs no help — the browser paints each box from a whole device pixel, so nudging one by its fractional offset shifts it a full pixel. To shrink one, step the whole-number scale down (`<PixelIcon name="dot" scale={1} />`, 8 px — the agent card's status dot) or draw the shape smaller inside the 8×8 (`zoomIn`/`zoomOut`). Buttons take `icon="<name>"` and draw it left of the label, vertically centred.
 
-**Numbers use the pixel number font.** A 3×5 font drawn as pixel art (`components/ui/pixelFont.ts` glyphs + `splitLabel`, `PixelText.tsx`): only number words ("73%", "-40", "3d 11h", "3x", "v1.5", "1 / 21", an upper-cased hex "#1E1E2E", a month "OCT 13" from `MONTHS`, never the locale's) become glyphs, everything else stays in FS Pixel Sans. Use `<PixelText text=… />` wherever the UI prints a number (slider values, zoom level, version); a text field shows it through `PixelInputText` (the field's own text is transparent until focused). A new character needs its glyph and the `NUMBER_WORD` pattern.
+**Numbers use the pixel number font.** A 3×5 font drawn as pixel art (`components/ui/pixelFont.ts` glyphs + `splitLabel`, `PixelText.tsx`): only number words ("73%", "-40", "3d 11h", "3x", "v1.5", "1 / 21", an upper-cased hex "#1E1E2E", a month "OCT 13" from `MONTHS`, never the locale's) become glyphs, everything else stays in FS Pixel Sans. Use `<PixelText text=… />` wherever the UI prints a number (slider values, zoom level, version, usage bars); a text field shows it through `PixelInputText` (the field's own text is transparent until focused). A new character needs its glyph and the `NUMBER_WORD` pattern.
 
 Custom ESLint rules (`eslint-rules/pixel-agents-rules.mjs`) enforce: `no-inline-colors` (hex/rgb/rgba/hsl/hsla literals only in `constants.ts`), `pixel-shadow` (must use `var(--pixel-shadow)` or `2px 2px 0px`), `pixel-font` (must reference FS Pixel Sans). All `error`-level — they block PRs.
 

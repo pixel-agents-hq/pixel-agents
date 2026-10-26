@@ -129,3 +129,56 @@ describe('resuming a session', () => {
     }
   });
 });
+
+describe('clearing a session', () => {
+  it('reads the fresh /clear transcript as an empty context, a real 0 sent to the office', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-agents-clear-'));
+    const fileWatchers = new Map<number, fs.FSWatcher>();
+    const pollingTimers = new Map<number, ReturnType<typeof setInterval>>();
+    try {
+      setHookProvider(claudeProvider);
+      setFileWatcherHookProvider(claudeProvider);
+      setDismissalTracker(new DismissalTracker());
+      const cleared = path.join(dir, 'cleared-session.jsonl');
+      fs.writeFileSync(
+        cleared,
+        `${JSON.stringify({ type: 'user', message: { content: '<command-name>/clear</command-name>' } })}\n`,
+      );
+
+      const agents = new AgentStateStore();
+      const messages: Array<Record<string, unknown>> = [];
+      agents.on('broadcast', (m) => messages.push(m as Record<string, unknown>));
+      const agent = createAgentState({
+        id: 1,
+        sessionId: 'old-session',
+        isExternal: false,
+        projectDir: dir,
+        jsonlFile: path.join(dir, 'old-session.jsonl'),
+      });
+      agent.contextTokens = 150_000;
+      agent.maxContextTokens = 1_000_000;
+      agent.contextReported = true;
+      agents.set(1, agent);
+
+      reassignAgentToFile(
+        1,
+        cleared,
+        agents,
+        fileWatchers,
+        pollingTimers,
+        new Map(),
+        new Map(),
+        () => {},
+      );
+
+      expect(agent.contextTokens).toBe(0);
+      expect(messages.filter((m) => m.type === 'agentContextUsage')).toEqual([
+        { type: 'agentContextUsage', id: 1, contextTokens: 0, maxContextTokens: 1_000_000 },
+      ]);
+    } finally {
+      for (const w of fileWatchers.values()) w.close();
+      for (const t of pollingTimers.values()) clearInterval(t);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

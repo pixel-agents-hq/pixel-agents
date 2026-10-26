@@ -14,19 +14,26 @@ import { PixelSvg } from './PixelSvg.js';
 export function PixelText({
   text,
   scale = PIXEL_ICON_SCALE,
+  shadow = false,
   className = '',
   style,
 }: {
   text: string;
   /** CSS pixels per glyph pixel. Whole numbers only. */
   scale?: number;
+  /** A hard dark shadow under the text and the glyphs alike, for text drawn
+   *  over the office (`.pixel-text-shadow`). */
+  shadow?: boolean;
   className?: string;
   style?: CSSProperties;
 }) {
   const dpr = useDevicePixelRatio();
   const unit = devicePixelsPerArtPixel(scale, dpr) / dpr;
   return (
-    <span className={`inline-flex items-center whitespace-nowrap ${className}`} style={style}>
+    <span
+      className={`inline-flex items-center whitespace-nowrap ${shadow ? 'pixel-text-shadow ' : ''}${className}`}
+      style={style}
+    >
       {splitLabel(text).map((part, i) => {
         if (!part.glyphs) {
           return (

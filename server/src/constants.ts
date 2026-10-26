@@ -70,6 +70,7 @@ export {
   SERVER_JSON_DIR,
   SERVER_JSON_NAME,
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
+  USAGE_API_PREFIX,
 } from '../../core/src/constants.js';
 
 // ── Multi-Server Discovery ──────────────────────────────────
@@ -182,6 +183,13 @@ export const LAYOUT_FILE_NAME = 'layout.json';
 export const LAYOUT_FILE_POLL_INTERVAL_MS = 2000;
 export const LAYOUT_REVISION_KEY = 'layoutRevision';
 export const CONFIG_FILE_NAME = 'config.json';
+
+// ── Usage bars (plan rate limits) ───────────────────────────
+/** The last usage report per provider, in the persistence dir (shared by both surfaces). */
+export const USAGE_LIMITS_FILE_NAME = 'usage-limits.json';
+/** An unchanged usage report is still passed on (and saved) once this old, so
+ *  the office's "updated N min ago" stays true while a session is open. */
+export const USAGE_UNCHANGED_REFRESH_MS = 60_000;
 
 // ── Avatar Customization ────────────────────────────────────
 /** Number of pre-colored bundled character palettes (char_0.png–char_5.png).

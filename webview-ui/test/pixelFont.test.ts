@@ -27,6 +27,8 @@ describe('splitLabel', () => {
     }
     expect(splitLabel('OCT 13')).toEqual([{ glyphs: true, text: 'OCT 13' }]);
     expect(splitLabel('now')).toEqual([{ glyphs: false, text: 'now' }]);
+    // a bar's name stays in the UI font, like "Weekly"
+    expect(splitLabel('5-hour')).toEqual([{ glyphs: false, text: '5-hour' }]);
     expect(splitLabel('73%')).toEqual([{ glyphs: true, text: '73%' }]);
     expect(splitLabel('--')).toEqual([{ glyphs: true, text: '--' }]);
   });

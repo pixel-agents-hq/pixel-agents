@@ -7,6 +7,7 @@
  * speculation.
  */
 
+import type { UsageWindow } from './messages.js';
 import type { TeamProvider } from './teamProvider.js';
 
 // ── Normalized Events (all provider types produce these) ──────
@@ -68,6 +69,55 @@ export type AgentEvent =
       cwd?: string;
     }
   | { kind: 'sessionEnd'; reason?: string };
+
+// ── Account usage (plan rate limits) ──────────────────────────
+
+/** The account's plan limits as one report states them (windows on the wire
+ *  type, `UsageWindow`). Each window may be absent on its own. */
+export interface ReportedUsage {
+  fiveHour?: UsageWindow;
+  sevenDay?: UsageWindow;
+}
+
+/** One session's context as the CLI itself measures it (Claude: the status
+ *  line's `context_window`), which the office's gauge prefers over its own
+ *  transcript estimate. */
+export interface ReportedContext {
+  sessionId: string;
+  /** Share of the window in use, 0-100. */
+  usedPercentage: number;
+  /** The session's window, in tokens. */
+  windowTokens: number;
+}
+
+/**
+ * How a provider reports the account's plan usage to the server: a small
+ * script the CLI runs, installed into the CLI's own settings (Claude: the
+ * status line, which is the only place Claude Code hands out its rate
+ * limits). The script POSTs to `/api/usage/:providerId`; the provider turns
+ * the body into a ReportedUsage. Install is always an explicit user choice.
+ */
+export interface UsageBridge {
+  /** What installing writes, what data moves, how to undo it — shown before
+   *  the user confirms (paragraphs split on blank lines). */
+  readonly disclosure: string;
+  /** Whether the bridge is installed in the CLI's settings. */
+  isInstalled(): boolean;
+  /** Copy the bridge script from `packageRoot` (the extension / npm package
+   *  root, holding dist/hooks/) and install it. Throws, before any write, when
+   *  it cannot be installed without rewriting something the user wrote. */
+  install(packageRoot: string): Promise<void>;
+  /** Restore the CLI's settings to what they were. Throws when it cannot. */
+  uninstall(): Promise<void>;
+  /** Re-copy an installed bridge's script (startup: a new version ships a new
+   *  script). No-op when not installed. */
+  refreshScript(packageRoot: string): void;
+  /** Validate a report POSTed by the script; null for anything malformed. */
+  normalizeReport(raw: unknown): ReportedUsage | null;
+  /** The reporting session's context from the same POST; null when it
+   *  carries none (before the session's first response) or is malformed. */
+  normalizeContext(raw: unknown): ReportedContext | null;
+}
 
 // ── Hook-based Provider (CLIs with hooks APIs) ────────────────
 
@@ -146,6 +196,9 @@ export interface HookProvider {
     args: string[];
     env?: Record<string, string>;
   };
+
+  /** Optional account-usage reporting (the office's usage bars). */
+  readonly usageBridge?: UsageBridge;
 
   // ── Optional team/subagent extension (Agent Teams on Claude; empty for single-agent CLIs) ──
 

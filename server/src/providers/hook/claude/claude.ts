@@ -14,6 +14,7 @@ import {
   uninstallHooks as installerUninstallHooks,
 } from './claudeHookInstaller.js';
 import { claudeTeamProvider } from './claudeTeamProvider.js';
+import { claudeUsageBridge } from './claudeUsageBridge.js';
 import { CONSENT_DISCLOSURE, CONSENT_INSTALL_HEADLINE } from './consentCopy.js';
 import {
   CLAUDE_LARGE_CONTEXT_WINDOW,
@@ -343,4 +344,5 @@ export const claudeProvider: HookProvider = {
   buildLaunchCommand,
 
   team: claudeTeamProvider,
+  usageBridge: claudeUsageBridge,
 };

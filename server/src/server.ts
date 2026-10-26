@@ -73,6 +73,8 @@ export class PixelAgentsServer {
     onSetHooksEnabled?: SetHooksEnabledSideEffect;
     onReloadAssets?: ReloadAssetsSideEffect;
     ptyManager?: TerminalSessions;
+    /** Package root holding dist/hooks/ (standalone; see HttpServerOptions). */
+    packageRoot?: string;
     /** Extra privileged Host names (standalone; see wsAuth.privilegedHostnames). */
     allowedHosts?: readonly string[];
     /** Replace the persisted standalone token, revoking every URL that carried
@@ -143,6 +145,7 @@ export class PixelAgentsServer {
       onSetHooksEnabled: options?.onSetHooksEnabled,
       onReloadAssets: options?.onReloadAssets,
       ptyManager: options?.ptyManager,
+      packageRoot: options?.packageRoot,
       allowedHosts: standalone?.allowedHosts,
     });
 

@@ -1,3 +1,6 @@
+import { CARD_CONTEXT_BAR_HEIGHT_PX, CARD_MUGSHOT_CROP_TOP_ROW } from '../constants.js';
+import { ContextBar } from '../office/ContextBar.js';
+import { contextLeft, useAgentContextUsed } from '../office/contextGauge.js';
 import type { CardVariant, CloseMode } from './cardBar.js';
 import { CharacterMugShot } from './CharacterMugShot.js';
 import { Button } from './ui/Button.js';
@@ -63,13 +66,18 @@ export function AgentCard({
   onSelect,
   onClose,
 }: AgentCardProps) {
+  const contextUsed = useAgentContextUsed(agentId);
   return (
     <div
-      className={`group pointer-events-auto flex items-stretch gap-1 p-1 cursor-pointer border-2 shrink-0 ${CARD_VARIANT[variant]}`}
+      className={`group relative pointer-events-auto flex items-stretch gap-1 p-1 cursor-pointer border-2 shrink-0 ${CARD_VARIANT[variant]}`}
       onClick={() => onSelect(agentId)}
       title={`Agent ${agentId}`}
     >
-      <CharacterMugShot palette={appearance.palette} hueShift={appearance.hueShift} />
+      <CharacterMugShot
+        palette={appearance.palette}
+        hueShift={appearance.hueShift}
+        cropTop={CARD_MUGSHOT_CROP_TOP_ROW}
+      />
       {/* Close on top, status dot at the bottom, both centred over the
           same column beside the mug shot. */}
       <div className="flex flex-col items-center justify-between shrink-0">
@@ -84,14 +92,30 @@ export function AgentCard({
           title="Close agent"
           className={CLOSE_MODE[close]}
         >
-          <PixelIcon name="close" />
+          {/* The × is drawn a pixel left of its grid's centre: nudged right,
+              its centre lines up with the status dot's. */}
+          <PixelIcon name="close" className="translate-x-1" />
         </Button>
-        {/* mb lifts the round dot off the card's bottom edge; with no status
-            it keeps its place, invisible. */}
-        <span className={`flex shrink-0 mb-2 ${status ? STATUS_DOT[status] : 'invisible'}`}>
+        {/* Lifted clear of the context bar along the card's foot; with no
+            status it keeps its place, invisible. */}
+        <span
+          className={`flex shrink-0 ${status ? STATUS_DOT[status] : 'invisible'}`}
+          style={{ marginBottom: CARD_CONTEXT_BAR_HEIGHT_PX + 3 }}
+        >
           <PixelIcon name="dot" scale={1} />
         </span>
       </div>
+      {/* The agent's context left, along the card's whole foot (the same
+          gauge as over its character); none before its first turn. */}
+      {contextUsed !== null && (
+        <ContextBar
+          used={contextUsed}
+          height={CARD_CONTEXT_BAR_HEIGHT_PX}
+          className="absolute left-0 right-0 bottom-0 pointer-events-none"
+          title={`${Math.round(contextLeft(contextUsed) * 100)}% context left`}
+          testId="card-context-bar"
+        />
+      )}
     </div>
   );
 }

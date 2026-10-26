@@ -16,6 +16,8 @@ interface CharacterMugShotProps {
   hueShift: number;
   /** On-screen side length in CSS px. Defaults to MUGSHOT_DISPLAY_PX. */
   size?: number;
+  /** First sprite row of the crop. Defaults to MUGSHOT_CROP_TOP_ROW. */
+  cropTop?: number;
 }
 
 /**
@@ -29,6 +31,7 @@ export function CharacterMugShot({
   palette,
   hueShift,
   size = MUGSHOT_DISPLAY_PX,
+  cropTop = MUGSHOT_CROP_TOP_ROW,
 }: CharacterMugShotProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -49,7 +52,7 @@ export function CharacterMugShot({
     ctx.drawImage(
       full,
       MUGSHOT_CROP_LEFT_COL * MUGSHOT_RENDER_ZOOM,
-      MUGSHOT_CROP_TOP_ROW * MUGSHOT_RENDER_ZOOM,
+      cropTop * MUGSHOT_RENDER_ZOOM,
       side,
       side,
       0,
@@ -57,7 +60,7 @@ export function CharacterMugShot({
       side,
       side,
     );
-  }, [palette, hueShift]);
+  }, [palette, hueShift, cropTop]);
 
   return (
     <canvas

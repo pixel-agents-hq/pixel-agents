@@ -59,6 +59,7 @@ import {
   hookProviders,
 } from '../../server/src/providers/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
+import { applyUsageBridgeChoice, usageSnapshotMessages } from '../../server/src/usageLimits.js';
 import {
   getProjectDirPath,
   launchNewTerminal,
@@ -274,6 +275,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         if (hooksEnabled) {
           void this.installHooksIfConsented(config.port, config.token);
         }
+        // An installed usage bridge runs the script from ~/.pixel-agents/hooks/:
+        // bring it up to this version's copy.
+        claudeProvider.usageBridge?.refreshScript(this.context.extensionPath);
         console.log(`[Pixel Agents] Server: ready on port ${config.port}`);
       })
       .catch((e) => {
@@ -539,6 +543,18 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // junk consent choice.
         const provider = hookProviderById(message.providerId);
         if (provider) void this.setHooksEnabled(provider, message.enabled as boolean);
+      } else if (message.type === 'setUsageBridgeEnabled') {
+        const provider = hookProviderById(message.providerId);
+        if (provider?.usageBridge && typeof message.enabled === 'boolean') {
+          void applyUsageBridgeChoice(provider, this.context.extensionPath, message.enabled).then(
+            (status) => {
+              if (status.error) {
+                vscode.window.showErrorMessage(`Pixel Agents: ${status.error}`);
+              }
+              this.sendOrBuffer({ ...status });
+            },
+          );
+        }
       } else if (message.type === 'hooksConsentResponse') {
         const provider = hookProviderById(message.providerId);
         if (provider) {
@@ -725,6 +741,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           );
           if (consentRequest) this.webview?.postMessage(consentRequest);
         }
+
+        // Usage bars: install state and the last known account usage.
+        for (const message of usageSnapshotMessages()) this.webview?.postMessage(message);
 
         // Directory→Area mappings (must arrive before any agentCreated/existingAgents
         // so OfficeState.findFreeSeat has the dict when characters are placed).

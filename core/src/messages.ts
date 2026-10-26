@@ -37,6 +37,8 @@ export type ServerMessage =
   | BypassPermissionsUpdated
   | HooksStatus
   | HooksConsentRequest
+  | UsageBridgeStatus
+  | UsageLimits
   | ExternalAssetDirectoriesUpdated
   | AreaMappingsLoaded
   | CardOrderLoaded
@@ -62,6 +64,7 @@ export type ClientMessage =
   | SetGhostHeadlessAgents
   | SetHooksEnabled
   | HooksConsentResponse
+  | SetUsageBridgeEnabled
   | SetHooksInfoShown
   | SetWatchAllSessions
   | ExportLayout
@@ -317,6 +320,27 @@ export interface HooksConsentRequest {
   disclosure: string;
 }
 
+export interface UsageBridgeStatus {
+  type: 'usageBridgeStatus';
+  providerId: string;
+  installed: boolean;
+  disclosure: string;
+  error?: string;
+}
+
+export interface UsageLimits {
+  type: 'usageLimits';
+  providerId: string;
+  fiveHour?: UsageWindow;
+  sevenDay?: UsageWindow;
+  updatedAt?: number;
+}
+
+export interface UsageWindow {
+  usedPercentage: number;
+  resetsAt: number;
+}
+
 export interface ExternalAssetDirectoriesUpdated {
   type: 'externalAssetDirectoriesUpdated';
   dirs: string[];
@@ -451,6 +475,12 @@ export interface HooksConsentResponse {
 }
 
 export type HooksConsentChoice = 'install' | 'notNow' | 'never';
+
+export interface SetUsageBridgeEnabled {
+  type: 'setUsageBridgeEnabled';
+  providerId: string;
+  enabled: boolean;
+}
 
 export interface SetHooksInfoShown {
   type: 'setHooksInfoShown';

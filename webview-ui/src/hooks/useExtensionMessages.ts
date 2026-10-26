@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HooksConsentRequest } from '../../../core/src/messages.js';
 import { cardOrderOf } from '../components/cardBar.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
+import { clearAgentContextUsed, setAgentContextUsed } from '../office/contextGauge.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
 import { reconcileExistingAgents, staleAgentIds } from '../office/engine/existingAgents.js';
 import type { OfficeState } from '../office/engine/officeState.js';
@@ -23,6 +24,7 @@ import { setWallSprites } from '../office/wallTiles.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
 import { transport } from '../transport/index.js';
 import { onReconnect } from '../transport/onReconnect.js';
+import { handleUsageMessage } from '../usage/usageStore.js';
 
 /**
  * A Headless agent is one the office adopted from outside (`claude -p`, a session
@@ -293,6 +295,7 @@ export function useExtensionMessages(
       os.removeAllSubagents(id);
       setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id));
       os.removeAgent(id);
+      clearAgentContextUsed(id);
     };
 
     // A dropped socket (a phone's screen going off, a server restart) loses
@@ -340,6 +343,9 @@ export function useExtensionMessages(
           parentToolId: msg.parentToolId,
         });
       }
+
+      // Usage bars (usage/usageStore.ts): the bridge's state and the plan usage.
+      if (handleUsageMessage(msg)) return;
 
       if (msg.type === 'providerCapabilities') {
         setProviderCapabilities({
@@ -901,6 +907,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentContextUsage') {
         const id = msg.id as number;
         os.setAgentContext(id, msg.contextTokens as number, msg.maxContextTokens as number);
+        setAgentContextUsed(id, msg.contextTokens as number, msg.maxContextTokens as number);
       }
     };
     const unsubscribe = transport.onMessage(handler);

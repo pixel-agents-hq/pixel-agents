@@ -76,7 +76,7 @@ export function resendAgentActivity(
     }
 
     // 5. Context usage
-    if (agent.contextTokens > 0) {
+    if (agent.contextTokens > 0 || agent.contextReported) {
       send({
         type: 'agentContextUsage',
         id,

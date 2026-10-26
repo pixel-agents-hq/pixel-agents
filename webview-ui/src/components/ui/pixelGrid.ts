@@ -25,6 +25,27 @@ export function gridRuns(
   return out;
 }
 
+/** A grid in several colours merged into horizontal runs (x, y, width, the
+ *  run's character), row by row: each run is one character repeated, and
+ *  `clear` marks no pixel. The multi-colour form of gridRuns. */
+export function colorRuns(
+  rows: readonly string[],
+  clear = '.',
+): Array<[x: number, y: number, w: number, ch: string]> {
+  const out: Array<[number, number, number, string]> = [];
+  rows.forEach((row, y) => {
+    let x = 0;
+    while (x < row.length) {
+      const ch = row[x];
+      let end = x + 1;
+      while (row[end] === ch) end++;
+      if (ch !== clear) out.push([x, y, end - x, ch]);
+      x = end;
+    }
+  });
+  return out;
+}
+
 /** The box around a grid's lit pixels (inclusive), to centre what is drawn
  *  rather than the grid. An unlit grid gives an empty box (min > max). */
 export function litBox(rows: readonly string[]): {

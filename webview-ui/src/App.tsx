@@ -45,6 +45,8 @@ import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
+import { UsageBars } from './usage/UsageBars.js';
+import { useUsageBridge } from './usage/useUsageBridge.js';
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
@@ -126,6 +128,7 @@ function App() {
     cardAgents,
     saveCardOrder,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
+  const usage = useUsageBridge();
 
   // Show migration notice once layout reset is detected
   const [migrationNoticeDismissed, setMigrationNoticeDismissed] = useState(false);
@@ -531,6 +534,9 @@ function App() {
           {/* Mobile: pinch replaces the zoom buttons, and the toolbar's
                 jobs move to the card bar (+) and the floating Settings button. */}
           {!isMobile && <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />}
+
+          {/* The Claude Code plan's usage, top-left (Settings → Usage Bars). */}
+          {usage.status?.installed && <UsageBars limits={usage.limits} mobile={isMobile} />}
 
           {/* Vignette overlay */}
           <div

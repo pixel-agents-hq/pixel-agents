@@ -115,6 +115,9 @@ components:
         - $ref: '#/components/schemas/BypassPermissionsUpdated'
         - $ref: '#/components/schemas/HooksStatus'
         - $ref: '#/components/schemas/HooksConsentRequest'
+        # Usage bars (the account's plan limits)
+        - $ref: '#/components/schemas/UsageBridgeStatus'
+        - $ref: '#/components/schemas/UsageLimits'
         - $ref: '#/components/schemas/ExternalAssetDirectoriesUpdated'
         - $ref: '#/components/schemas/AreaMappingsLoaded'
         - $ref: '#/components/schemas/CardOrderLoaded'
@@ -144,6 +147,7 @@ components:
         - $ref: '#/components/schemas/SetGhostHeadlessAgents'
         - $ref: '#/components/schemas/SetHooksEnabled'
         - $ref: '#/components/schemas/HooksConsentResponse'
+        - $ref: '#/components/schemas/SetUsageBridgeEnabled'
         - $ref: '#/components/schemas/SetHooksInfoShown'
         - $ref: '#/components/schemas/SetWatchAllSessions'
         - $ref: '#/components/schemas/ExportLayout'
@@ -738,6 +742,58 @@ components:
         installed:
           type: boolean
 
+    UsageBridgeStatus:
+      description: |
+        Whether the provider's usage bridge is installed — the script that
+        reports the account's plan usage (Claude: a wrapper around the user's
+        status line in ~/.claude/settings.json). Install state, never intent:
+        sent on connect, and after every `setUsageBridgeEnabled` with the
+        outcome. Privileged connections only, like `usageLimits`.
+      type: object
+      additionalProperties: false
+      required: [type, providerId, installed, disclosure]
+      properties:
+        type:
+          const: usageBridgeStatus
+        providerId:
+          type: string
+          description: The provider this is about (HookProvider.id).
+        installed:
+          type: boolean
+        disclosure:
+          type: string
+          description: >-
+            What installing writes, what data moves and how to undo it — the
+            provider's own copy, shown before the user confirms (paragraphs
+            split on blank lines).
+        error:
+          type: string
+          description: Why the last change failed (sent to the asker only).
+
+    UsageLimits:
+      description: |
+        The account's plan usage, as the provider's usage bridge last reported
+        it: sent on connect and whenever a report moves the numbers (or the
+        last one is a minute old). Reports only arrive while a CLI session is
+        open, so `updatedAt` says how fresh the numbers are; a window past its
+        `resetsAt` has reset since. No windows = nothing reported yet.
+        Privileged connections only: it is the operator's account data.
+      type: object
+      additionalProperties: false
+      required: [type, providerId]
+      properties:
+        type:
+          const: usageLimits
+        providerId:
+          type: string
+        fiveHour:
+          $ref: '#/components/schemas/UsageWindow'
+        sevenDay:
+          $ref: '#/components/schemas/UsageWindow'
+        updatedAt:
+          type: number
+          description: When the last report arrived (epoch milliseconds).
+
     HooksConsentRequest:
       description: |
         Ask this client to run the first-run hooks consent dialog. Sent during the
@@ -1116,6 +1172,22 @@ components:
         enabled:
           type: boolean
 
+    SetUsageBridgeEnabled:
+      description: |
+        Settings → Usage Bars: install the provider's usage bridge (the user
+        confirmed its disclosure — this is the consent) or restore the user's
+        settings. Answered with `usageBridgeStatus`.
+      type: object
+      additionalProperties: false
+      required: [type, providerId, enabled]
+      properties:
+        type:
+          const: setUsageBridgeEnabled
+        providerId:
+          type: string
+        enabled:
+          type: boolean
+
     HooksConsentResponse:
       description: |
         The user's answer to `hooksConsentRequest` — an ABSOLUTE statement of
@@ -1353,6 +1425,19 @@ components:
           const: requestDiagnostics
 
     # ── Supporting schemas ─────────────────────────────────────────
+
+    UsageWindow:
+      description: One rate-limit window of the account's plan.
+      type: object
+      additionalProperties: false
+      required: [usedPercentage, resetsAt]
+      properties:
+        usedPercentage:
+          type: number
+          description: Share of the window used, 0-100.
+        resetsAt:
+          type: number
+          description: When the window resets (Unix epoch SECONDS).
 
     AgentSeatMeta:
       description: |

@@ -182,10 +182,10 @@ export const VISUAL_COLOR_PICKER_MARKER_SHADOW = '0 0 0 1px rgba(0,0,0,0.6)';
 export const VISUAL_COLOR_PICKER_COMPACT_WIDTH_PX = 160;
 /** Swatch square size shown in the collapsed trigger. */
 export const VISUAL_COLOR_PICKER_SWATCH_PX = 22;
-/** Gap (px) between the collapsed trigger and the expanded popup panel. */
-export const VISUAL_COLOR_PICKER_POPUP_GAP_PX = 6;
 /** The hex field's border + left padding: where its pixel-font copy starts. */
 export const VISUAL_COLOR_PICKER_HEX_INSET_PX = 2 + 2;
+/** Gap (px) between the collapsed trigger and the expanded popup panel. */
+export const VISUAL_COLOR_PICKER_POPUP_GAP_PX = 6;
 
 // ── Notification Sound (done: ascending chime) ─────────────
 export const NOTIFICATION_NOTE_1_HZ = 659.25; // E5
@@ -288,15 +288,25 @@ export const INTRO_CAMERA_DOWN_SHIFT_PX = 50;
 /** Window assumed before the runtime reports one (it always does for agents
  *  that have taken a turn; this only covers characters created ahead of it). */
 export const DEFAULT_MAX_CONTEXT_TOKENS = 200_000;
-export const CONTEXT_WARN_THRESHOLD = 0.6;
-export const CONTEXT_DANGER_THRESHOLD = 0.8;
-export const CONTEXT_CRITICAL_THRESHOLD = 0.95;
+/** The gauge's colour steps by share USED, as the user's Claude Code status
+ *  line colours its context bar: green under a third, yellow to two thirds,
+ *  red past it. */
+export const CONTEXT_YELLOW_THRESHOLD = 0.33;
+export const CONTEXT_RED_THRESHOLD = 0.66;
 export const CONTEXT_GAUGE_WIDTH_PX = 40;
 export const CONTEXT_GAUGE_HEIGHT_PX = 4;
+/** Space between an agent's label and its context gauge. */
+export const CONTEXT_GAUGE_GAP_PX = 4;
+/** The context bar along the foot of each agent card. */
+export const CARD_CONTEXT_BAR_HEIGHT_PX = 3;
+/** A card's mug shot starts this many sprite rows down (the shared default is
+ *  0): the character sits higher, a little air above the head, clear of the
+ *  context bar along the card's foot. */
+export const CARD_MUGSHOT_CROP_TOP_ROW = 1;
 export const CONTEXT_GAUGE_COLOR_OK = '#44cc44';
-export const CONTEXT_GAUGE_COLOR_WARN = '#ffcc00';
-export const CONTEXT_GAUGE_COLOR_DANGER = '#ff8800';
-export const CONTEXT_GAUGE_COLOR_CRITICAL = '#ff2222';
+/** The usage bars' yellow (the weekly bar at half or less). */
+export const CONTEXT_GAUGE_COLOR_YELLOW = 'var(--color-status-permission)';
+export const CONTEXT_GAUGE_COLOR_RED = '#ff2222';
 export const CONTEXT_GAUGE_BG = '#222';
 
 // ── Agent Teams ─────────────────────────────────────────────
@@ -645,3 +655,30 @@ export const AGENT_CARD_HEIGHT_PX = MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM +
  *  (one 8×8 PixelIcon wide), and 1px padding and 2px border each side. */
 export const AGENT_CARD_WIDTH_PX =
   MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM + 1 + 8 * PIXEL_ICON_SCALE + 2 * (1 + 2);
+
+// ── Usage bars (top-left: the account's Claude Code plan usage) ──
+/** Width of both bars: the weekly one on top, the 5-hour one under it. */
+export const USAGE_BAR_WIDTH_PX = 150;
+/** The heart's pace with the whole weekly plan left; it slows in proportion
+ *  as the plan runs down, and stops when it is empty. */
+export const USAGE_HEART_MAX_BPM = 100;
+/** Both bars' height (told apart by colour, not size); the share left is printed inside. */
+export const USAGE_BAR_HEIGHT_PX = 16;
+/** The heart's colours, by the letters of its art (usage/PixelHeart.tsx):
+ *  outline, red, shade and highlight. */
+export const USAGE_HEART_COLORS: Record<string, string> = {
+  o: '#14101c',
+  r: '#e8283c',
+  d: '#a8142c',
+  w: '#ffffff',
+};
+/** At or below this share left, a bar turns the warning colour. */
+export const USAGE_BAR_WARN_FRACTION = 0.5;
+/** At or below this share left, a bar turns the danger colour. */
+export const USAGE_BAR_LOW_FRACTION = 0.2;
+/** How often the bars re-read the clock (resets and "updated N ago" move with it). */
+export const USAGE_BAR_TICK_MS = 30_000;
+/** Distance from the office's left edge: past the 40px button column at left 8. */
+export const USAGE_BARS_LEFT_PX = 8 + 40 + 8;
+/** The provider whose plan the usage bars show (the one with a usage bridge today). */
+export const USAGE_PROVIDER_ID = 'claude';

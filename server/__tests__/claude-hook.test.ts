@@ -233,6 +233,21 @@ describe('claude-hook.js integration', () => {
     expect(debugText).not.toMatch(/POST event=Stop sid=malforme port=70000\b/);
   });
 
+  // The "no server" exit is ONE debug line: event, session and why together.
+  itBuilt('logs a missing server as one line naming the event and the reason', async () => {
+    const debugLog = path.join(tmpBase, 'hook-debug.log');
+    const { code } = await runHookScript(
+      JSON.stringify({ session_id: 'no-server-x', hook_event_name: 'Stop' }),
+      { PIXEL_AGENTS_DEBUG_LOG: debugLog },
+    );
+    expect(code).toBe(0);
+    const lines = fs.readFileSync(debugLog, 'utf-8').trim().split('\n');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(
+      /HOOKSCRIPT exit reason=no-server-json event=Stop sid=no-serve path=\S+server\.json err=/,
+    );
+  });
+
   // 10. Registry present but empty falls back to the legacy server.json
   itBuilt('falls back to legacy server.json when the registry directory is empty', async () => {
     fs.mkdirSync(path.join(tmpBase, '.pixel-agents', 'servers'), { recursive: true });
