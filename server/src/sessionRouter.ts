@@ -25,6 +25,7 @@ export interface BufferedEvent {
 export class SessionRouter {
   private sessionToAgentId = new Map<string, number>();
   private pendingSessions = new Map<string, PendingExternalSession>();
+  private adoptionOffered = new Set<string>();
   private buffer: BufferedEvent[] = [];
   private bufferTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -69,6 +70,20 @@ export class SessionRouter {
     this.pendingSessions.delete(sessionId);
   }
 
+  // ── Sessions first seen mid-session (no SessionStart) ─────────────
+
+  /** True the first time it is called for a session, false afterwards, so an
+   *  unknown session is offered to the host for adoption at most once. */
+  offerAdoption(sessionId: string): boolean {
+    if (this.adoptionOffered.has(sessionId)) return false;
+    this.adoptionOffered.add(sessionId);
+    return true;
+  }
+
+  forgetAdoptionOffer(sessionId: string): void {
+    this.adoptionOffered.delete(sessionId);
+  }
+
   // ── Event buffering ────────────────────────────────────────────────
 
   bufferEvent(providerId: string, event: { session_id: string; [key: string]: unknown }): void {
@@ -100,6 +115,7 @@ export class SessionRouter {
     this.sessionToAgentId.clear();
     this.buffer = [];
     this.pendingSessions.clear();
+    this.adoptionOffered.clear();
   }
 
   // ── Private ────────────────────────────────────────────────────────

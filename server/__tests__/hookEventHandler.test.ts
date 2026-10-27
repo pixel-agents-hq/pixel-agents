@@ -582,6 +582,69 @@ describe('HookEventHandler', () => {
     expect(agent?.isWaiting).toBe(true);
   });
 
+  // ── Sessions already running when the server started ─────────
+
+  it('adopts an unknown session on its first event when its SessionStart was missed', () => {
+    const onExternalSessionDetected = vi.fn((sessionId: string) => {
+      agents.set(2, createTestAgent({ id: 2, sessionId, projectDir: '/projects/test' }));
+      handler.registerAgent(sessionId, 2);
+    });
+    handler.setLifecycleCallbacks({ onExternalSessionDetected });
+
+    // No SessionStart: the session began before this server was listening.
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'early-sess',
+      transcript_path: '/projects/test/early-sess.jsonl',
+      cwd: '/projects/test',
+      tool_name: 'Read',
+      tool_input: { file_path: '/src/server.ts' },
+    });
+
+    expect(onExternalSessionDetected).toHaveBeenCalledWith(
+      'early-sess',
+      '/projects/test/early-sess.jsonl',
+      '/projects/test',
+    );
+    const toolMsg = mockWebview.messages.find((m) => m.type === 'agentToolStart');
+    expect(toolMsg?.id).toBe(2);
+  });
+
+  it('does not adopt an unknown session from its SessionEnd', () => {
+    const onExternalSessionDetected = vi.fn();
+    handler.setLifecycleCallbacks({ onExternalSessionDetected });
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'SessionEnd',
+      session_id: 'ending-sess',
+      transcript_path: '/projects/test/ending-sess.jsonl',
+      cwd: '/projects/test',
+      reason: 'exit',
+    });
+
+    expect(onExternalSessionDetected).not.toHaveBeenCalled();
+  });
+
+  it('offers a declined unknown session for adoption only once', () => {
+    // Host declines (e.g. project untracked, Watch All Sessions off).
+    const onExternalSessionDetected = vi.fn();
+    handler.setLifecycleCallbacks({ onExternalSessionDetected });
+
+    for (const name of ['PreToolUse', 'PostToolUse', 'Stop']) {
+      handler.handleEvent('claude', {
+        hook_event_name: name,
+        session_id: 'foreign-sess',
+        transcript_path: '/other/foreign-sess.jsonl',
+        cwd: '/other',
+        tool_name: 'Read',
+        tool_input: {},
+      });
+    }
+
+    expect(onExternalSessionDetected).toHaveBeenCalledTimes(1);
+    expect(mockWebview.messages).toHaveLength(0);
+  });
+
   // ── Resume ──────────────────────────────────────────────────
 
   it('SessionStart(source=resume) calls onSessionResume', () => {

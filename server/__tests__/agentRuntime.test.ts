@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -74,5 +75,43 @@ describe('AgentRuntime -- D5 foreign-session gate', () => {
     runtime.startProjectScan(dir); // marks `dir` as owned/tracked
     fireSessionStartThenStop('d5-tracked-dir', dir);
     expect(store.size).toBe(1);
+  });
+});
+
+describe('AgentRuntime -- sessions already running when the server started', () => {
+  let runtime: AgentRuntime;
+  let store: AgentStateStore;
+  let dir: string;
+
+  afterEach(() => {
+    runtime?.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('adopts the session once from its first event, without a SessionStart', () => {
+    store = new AgentStateStore();
+    runtime = new AgentRuntime(store, claudeProvider);
+    runtime.watchAllSessions.current = true;
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-early-'));
+    const sessionId = crypto.randomUUID();
+    const transcriptPath = path.join(dir, `${sessionId}.jsonl`);
+    fs.writeFileSync(transcriptPath, '');
+
+    for (const name of ['PreToolUse', 'PostToolUse', 'Stop']) {
+      runtime.handleHookEvent('claude', {
+        hook_event_name: name,
+        session_id: sessionId,
+        transcript_path: transcriptPath,
+        cwd: dir,
+        tool_name: 'Read',
+        tool_input: {},
+      });
+    }
+
+    expect(store.size).toBe(1);
+    const agent = [...store.values()][0];
+    expect(agent.jsonlFile).toBe(transcriptPath);
+    expect(agent.sessionId).toBe(sessionId);
+    expect(agent.isWaiting).toBe(true);
   });
 });

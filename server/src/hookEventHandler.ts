@@ -254,6 +254,7 @@ export class HookEventHandler {
     }
 
     // --- All other events: standard agent lookup ---
+    if (normEvent.kind === 'sessionEnd') this.sessionRouter.forgetAdoptionOffer(event.session_id);
     // If SessionEnd arrives for a pending external session, discard it (transient session)
     if (normEvent.kind === 'sessionEnd' && this.sessionRouter.hasPending(event.session_id)) {
       this.sessionRouter.discardPending(event.session_id);
@@ -271,6 +272,7 @@ export class HookEventHandler {
         console.log(
           `[Pixel Agents] Hook: ${eventName} confirmed external session ${event.session_id.slice(0, 8)}..., notifying host`,
         );
+      this.sessionRouter.offerAdoption(pending.sessionId);
       this.lifecycleCallbacks.onExternalSessionDetected?.(
         pending.sessionId,
         pending.transcriptPath,
@@ -289,6 +291,28 @@ export class HookEventHandler {
           agentId = id;
           break;
         }
+      }
+    }
+    // A session already running when this server started (or restarted) never
+    // sends a SessionStart we can see, so it never becomes pending. Its first
+    // other event confirms it the same way a pending session is confirmed above.
+    // The host still decides (tracked project / Watch All Sessions, dismissals,
+    // a transcript an agent already watches); each session is offered once.
+    if (agentId === undefined && normEvent.kind !== 'sessionEnd') {
+      const transcriptPath =
+        typeof event.transcript_path === 'string' ? event.transcript_path : undefined;
+      const cwd = typeof event.cwd === 'string' ? event.cwd : undefined;
+      if ((transcriptPath || cwd) && this.sessionRouter.offerAdoption(event.session_id)) {
+        if (debug)
+          console.log(
+            `[Pixel Agents] Hook: ${eventName} from unseen session ${event.session_id.slice(0, 8)}..., notifying host`,
+          );
+        this.lifecycleCallbacks.onExternalSessionDetected?.(
+          event.session_id,
+          transcriptPath,
+          cwd ?? '',
+        );
+        agentId = this.sessionRouter.resolve(event.session_id);
       }
     }
     if (agentId === undefined) {
