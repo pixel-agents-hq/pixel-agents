@@ -516,8 +516,16 @@ async function main() {
     `mock claude session ${shortId(sessionId)}${scenario.name ? ` — scenario: ${scenario.name}` : ''}`,
   );
 
+  // A POSIX PTY echoes typed input on its own; a Windows console only echoes
+  // while a process is reading it. Read (and drop) it, as the real CLI would,
+  // so terminal tests see their keystrokes on both.
+  const readsInput = process.platform === 'win32' && process.stdin.isTTY;
+  if (readsInput) process.stdin.resume();
+
   const context = buildContext(homeDir, scenario, sessionId, cwd);
   await playScenario(homeDir, scenario, context);
+
+  if (readsInput) process.stdin.destroy();
 }
 
 main()

@@ -152,9 +152,6 @@ async function launchTerminal(
 }
 
 test.describe('Standalone / mobile shell', () => {
-  // Same POSIX-only PTY launch as the terminal spec (the .cmd mock shim is
-  // untested under a server-side PTY on Windows).
-  test.skip(process.platform === 'win32', 'PTY spawn of the .cmd mock shim is untested on Windows');
   test.use({
     hasTouch: true,
     isMobile: true,

@@ -1,8 +1,11 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { TERMINAL_MIRROR_SCROLLBACK_LINES } from '../src/constants.js';
 import type { IPty, PtyModule, PtyModuleResolution } from '../src/terminal/ptyModule.js';
-import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
+import { PtySessionManager, resolveWindowsCommand } from '../src/terminal/ptySessionManager.js';
 
 /**
  * Fake PTY. Tests never spawn a real process: they'd be slow, platform-specific,
@@ -122,7 +125,8 @@ describe('PtySessionManager lifecycle', () => {
   it('spawns with the requested command, cwd, and TERM', () => {
     const { manager, spawnArgs } = harness();
     create(manager, 7);
-    expect(spawnArgs[0].file).toBe('claude');
+    // On Windows the bare command is resolved to its full path on PATH.
+    expect(spawnArgs[0].file).toMatch(/(^|[\\/])claude(\.exe)?$/i);
     expect(spawnArgs[0].args).toEqual(['--session-id', 'x']);
     expect(spawnArgs[0].options.cwd).toBe('/tmp');
     expect((spawnArgs[0].options.env as Record<string, string>).TERM).toBeTruthy();
@@ -361,5 +365,36 @@ describe('PtySession snapshot', () => {
     const snapshot = stripAnsi(await session.snapshot());
     expect(snapshot).toContain(`L${String(total - 1).padStart(6, '0')}`);
     expect(snapshot).not.toContain('L000000');
+  });
+});
+
+describe('resolveWindowsCommand', () => {
+  function binDir(files: string[]): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pa-bin-'));
+    for (const file of files) fs.writeFileSync(path.join(dir, file), '');
+    return dir;
+  }
+
+  it('appends the PATHEXT extension ConPTY would not', () => {
+    const dir = binDir(['claude.exe']);
+    const env = { PATH: dir, PATHEXT: '.com;.exe;.cmd' };
+    expect(resolveWindowsCommand('claude', ['-v'], env)).toEqual({
+      command: path.join(dir, 'claude.exe'),
+      args: ['-v'],
+    });
+  });
+
+  it('runs a .cmd shim through cmd.exe', () => {
+    const dir = binDir(['claude.cmd']);
+    const env = { PATH: dir, PATHEXT: '.exe;.cmd', ComSpec: 'C:\\Windows\\cmd.exe' };
+    expect(resolveWindowsCommand('claude', ['-v'], env)).toEqual({
+      command: 'C:\\Windows\\cmd.exe',
+      args: ['/d', '/c', path.join(dir, 'claude.cmd'), '-v'],
+    });
+  });
+
+  it('leaves an unresolvable command unchanged', () => {
+    const env = { PATH: binDir([]), PATHEXT: '.exe' };
+    expect(resolveWindowsCommand('claude', [], env)).toEqual({ command: 'claude', args: [] });
   });
 });

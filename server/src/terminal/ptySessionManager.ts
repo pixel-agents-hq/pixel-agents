@@ -13,6 +13,8 @@
 
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
+import * as fs from 'fs';
+import * as path from 'path';
 
 import {
   TERMINAL_DEFAULT_COLS,
@@ -340,11 +342,45 @@ function spawnPty(
   }
   Object.assign(env, options.env ?? {}, { TERM: TERMINAL_TERM_NAME });
 
-  return module.spawn(options.command, options.args, {
+  const { command, args } =
+    process.platform === 'win32'
+      ? resolveWindowsCommand(options.command, options.args, env)
+      : { command: options.command, args: options.args };
+
+  return module.spawn(command, args, {
     name: TERMINAL_TERM_NAME,
     cols,
     rows,
     cwd: options.cwd,
     env,
   });
+}
+
+/**
+ * ConPTY looks a bare command up on PATH without PATHEXT, so `claude` fails with
+ * "File not found" even though `claude.exe` is on PATH. Resolve it the way a shell
+ * would; a .cmd/.bat shim (an npm global install) can't be a PTY's process
+ * directly, so it runs through cmd.exe.
+ */
+export function resolveWindowsCommand(
+  command: string,
+  args: string[],
+  env: Record<string, string>,
+): { command: string; args: string[] } {
+  const pathVar = env.PATH ?? env.Path ?? '';
+  const exts = (env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean);
+  const candidates = path.extname(command) ? [command] : exts.map((ext) => command + ext);
+  const dirs = path.isAbsolute(command) ? [''] : pathVar.split(';').filter(Boolean);
+
+  for (const dir of dirs) {
+    for (const candidate of candidates) {
+      const full = dir ? path.join(dir, candidate) : candidate;
+      if (!fs.existsSync(full)) continue;
+      if (/\.(cmd|bat)$/i.test(full)) {
+        return { command: env.ComSpec ?? 'cmd.exe', args: ['/d', '/c', full, ...args] };
+      }
+      return { command: full, args };
+    }
+  }
+  return { command, args };
 }

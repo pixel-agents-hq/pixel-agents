@@ -127,7 +127,8 @@ describe('launchStandaloneAgent', () => {
     // The real claude launch command, spawned in the requested cwd.
 
     expect(harness.spawnArgs).toHaveLength(1);
-    expect(harness.spawnArgs[0].file).toBe('claude');
+    // On Windows the bare command is resolved to its full path on PATH.
+    expect(harness.spawnArgs[0].file).toMatch(/(^|[\\/])claude(\.exe)?$/i);
     expect(harness.spawnArgs[0].args).toEqual(['--session-id', agent?.sessionId]);
     expect(harness.spawnArgs[0].options.cwd).toBe(cwd);
     expect(harness.manager.has(1)).toBe(true);

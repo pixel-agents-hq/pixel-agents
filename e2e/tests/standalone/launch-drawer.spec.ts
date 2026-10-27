@@ -37,9 +37,6 @@ import {
  * hovers, clicks and observes.
  */
 test.describe('Standalone / launch drawer', () => {
-  // Same POSIX-only constraint as the terminal spec: the PTY spawns the mock's
-  // bash wrapper directly, and the .cmd shim needs a cmd.exe hop.
-  test.skip(process.platform === 'win32', 'PTY spawn of the .cmd mock shim is untested on Windows');
   test.use({ standaloneOptions: { mockClaude: true } });
 
   test('the server start directory is a badged host row that launches an agent labeled with it @area:standalone', async ({
@@ -91,7 +88,6 @@ test.describe('Standalone / launch drawer', () => {
  * machine-wide in the shared config, and launchable from the drawer.
  */
 test.describe('Standalone / user-defined Directories', () => {
-  test.skip(process.platform === 'win32', 'PTY spawn of the .cmd mock shim is untested on Windows');
   test.use({ standaloneOptions: { mockClaude: true } });
 
   test('a Directory added in the modal launches an agent and is still there after a reload @area:standalone', async ({
