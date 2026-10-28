@@ -83,12 +83,43 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
     components/                      React UI (toolbars, modals, settings)
       BottomToolbar.tsx, ZoomControls.tsx, SettingsModal.tsx, InfoModal.tsx,
       Tooltip.tsx, DebugView.tsx, ui/Button.tsx, ...
+      AgentCard.tsx, AgentCardBar.tsx  Agent cards (mug shot + status dot); the right-edge bar on desktop/VS Code
+      cardBar.ts                     Pure card-bar rules: cardVariant, mergeOrder, reorderByPointer (Node-tested)
+      TerminalDrawer.tsx             Desktop standalone: right-docked panel, cards as tabs
+      TerminalPaneStack.tsx          Every agent's TerminalPane mounted, the shown one visible (both shells)
+      TerminalPane.tsx               One xterm bound to one agent's PTY
+      MobileAgentBar.tsx             Mobile bottom card scroller (+ launch card, long-press reorder)
+      MobileTerminalPage.tsx         Mobile terminal page (a TerminalPaneStack)
+      MobileKeyBar.tsx               Accessory keys above the software keyboard (esc, shift+tab, trackpad, paste)
+    mobile/                          The phone shell (standalone only, see "Mobile shell")
+      MobileShell.tsx                Sliding office/terminal track + card bar + key bar
+      useMobileShell.ts              Page state and navigation rules (toggle, card tap, launch-then-slide)
+      edgeSwipe.ts                   Edge-swipe state machine (pure reducer, Node-runner tested)
+      keyboardViewport.ts            Software-keyboard decision: open vs per-width baseline, clamp only when the visual viewport is shorter (pure)
+      useEdgeSwipe.ts                DOM adapter for the reducer (capture listeners, detached-target rescue)
+    touch/
+      touchPrimitives.ts             findTouch (track one finger by id) + withinTapSlop (the one tap metric)
+    terminal/                        Standalone terminal (xterm) support
+      terminalClient.ts              /terminal/:agentId socket (reconnect, replay)
+      terminalLinks.ts               Safe link opener + urlAtCell (one URL pattern for clicks and taps)
+      touchGesture.ts                Terminal touch state machine: scroll, flick, tap, long-press select, handles (pure reducer)
+      touchInput.ts                  DOM adapter: listeners, flick rAF, long-press timer, detached-target rescue
+      selectionMath.ts               Word expansion, range ordering, handle clamping (pure)
+      selectionOverlay.ts            Copy pill (Copy | Copy as text) + selection handles (DOM; styled in index.css)
+      clipboard.ts                   The one clipboard write/read: Clipboard API on secure origins; plain http falls back to a copy event (write) / a native prompt (paste)
+      flowCopy.ts                    terminalCopyText: verbatim by default; opt-in re-flow of Claude Code's soft wraps (pure)
+      clipboardKeys.ts               Clipboard chords (Ctrl+C/Ctrl+Shift+C copy, Alt+C copy as text, Ctrl+V paste) + OSC 52 decode (pure)
+      terminalDom.ts                 xterm screen geometry + isTypingInTerminal
     hooks/
       useExtensionMessages.ts        Message handler — translates ServerMessage into OfficeState mutations
       useEditorActions.ts            Editor state + callbacks
+      useFurnitureColorActions.ts    Furniture colour sliders + colour-only eyedropper
       useEditorKeyboard.ts           Keyboard shortcuts (R, T, Esc, Ctrl+Z/Y)
       introTourState.ts              Intro tour wire-state machine (pure reducer, Node-runner tested)
       useIntroTour.ts                Wires the reducer to React + transport (snapshot, verdict, choices)
+      useTerminalDrawer.ts           Terminal-pane model for both shells: active/shown pane, socket status, card lookups
+      useIsMobile.ts                 Mobile breakpoint — always false in the VS Code webview
+      useKeyboardViewport.ts         Samples the viewport: keyboard open (key bar) + iOS shell clamp height
     office/
       types.ts                       OfficeLayout, Character, etc. + re-exports constants
       toolUtils.ts                   STATUS_TO_TOOL mapping, extractToolName (DOM-free; defaultZoom lives in useEditorActions)
@@ -101,7 +132,8 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
         spriteCache.ts               SpriteData → offscreen canvas, per-zoom WeakMap
       editor/
         editorActions.ts             Pure layout ops
-        editorState.ts               Imperative state (tools, ghost, selection, undo/redo, drag)
+        editorState.ts               Imperative state (tools, ghost, selection, undo/redo + undo session, drag, placing)
+        editorRenderState.ts         buildEditorRenderState: ghosts + selection for the renderer (pure)
         EditorToolbar.tsx
       layout/
         furnitureCatalog.ts          Dynamic catalog from loaded assets
@@ -116,7 +148,8 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
         matrixEffectState.ts         Effect state: startMatrixEffect/advanceMatrixEffect (DOM-free)
       components/
         OfficeCanvas.tsx             Canvas, resize, DPR, mouse hit-testing, drag-to-move
-        ToolOverlay.tsx              Activity label above hovered/selected character
+        useCanvasTouchGestures.ts    Touch pan / pinch zoom / tap on the canvas
+        ToolOverlay.tsx              Activity label + speech bubbles (DOM, above the labels) per character
 
 e2e/                                 Playwright suite (real VS Code + mock-claude scenarios)
   playwright.config.ts
@@ -196,8 +229,8 @@ Adding a new CLI integration is one subdirectory under `server/src/providers/hoo
 
 `core/asyncapi.yaml` is the contract. Pinned to **3.0.0** because `@asyncapi/modelina@5.10.1` declares `supportedVersions: ['3.0.0']` only; bumping to 3.1.0 produces `export type Root = any`. Revisit when Modelina ships 3.1.0 support.
 
-- **27 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + context usage, assets, settings + workspace, diagnostics.
-- **18 ClientMessage variants** (client → server): lifecycle (`webviewReady`, `launchAgent`, `focusAgent`, `closeAgent`), layout (`saveAgentSeats`, `saveLayout`, `exportLayout`, `importLayout`), settings (`setSoundEnabled`, `setHooksEnabled`, `setWatchAllSessions`, `setAlwaysShowLabels`, `setHooksInfoShown`, `setLastSeenVersion`), discovery + assets, diagnostics.
+- **39 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + context usage, assets, access (`officeAccess` — sent first on `webviewReady`; `readOnly` hides every control a read-only office would only have refused), settings (`bypassPermissionsUpdated` — the skip-permissions posture, broadcast to every office on change because every launch reads it) + directories (`directoriesLoaded`, `directorySaved` — a save's ack to its sender, carrying the entry as stored, whose name keys the Area mapping; `directoryRejected`, `directorySuggestions`), terminal, diagnostics.
+- **27 ClientMessage variants** (client → server): lifecycle (`webviewReady`, `launchAgent`, `focusAgent`, `closeAgent`), layout (`saveAgentSeats`, `saveLayout`, `exportLayout`, `importLayout`), settings (`setSoundEnabled`, `setHooksEnabled`, `setWatchAllSessions`, `setAlwaysShowLabels`, `setHooksInfoShown`, `setLastSeenVersion`, `setBypassPermissions`, `setShowHostDirectories` — whether the host's own Directories are listed, off by default; only the list is gated, launches still name agents after them), directories (`saveDirectory`, `removeDirectory`, `requestDirectorySuggestions`), terminal, discovery + assets, diagnostics.
 
 Both unions use `oneOf` with `discriminator: type`. Every concrete message sets `additionalProperties: false`.
 
@@ -302,10 +335,10 @@ Fastify v5 with `@fastify/cors`, `@fastify/websocket`, and (in standalone) `@fas
 | GET    | `/ws`                    | Bidirectional protocol channel          |
 | GET    | `/*` (standalone only)   | Webview SPA via `@fastify/static`       |
 
-`/ws` is gated in **two tiers**, because `setHooksEnabled(true)` over this socket is a durable, machine-wide consent grant plus a hook install.
+`/ws` is gated in **two tiers**, because messages over this socket launch shells, grant durable machine-wide hook consent, and rewrite persisted state.
 
 1. **Connection** (`isAllowedWebSocketOrigin`): embedded requires the Bearer token; standalone requires a same-origin handshake. A missing Origin still connects (non-browser clients send none). This tier is weak by design — a DNS-rebound page sends `Origin` and `Host` as the same attacker-chosen name and IS accepted (`httpServerWs.test.ts` pins that).
-2. **Privileged messages** (`standaloneTokenValid`, `ClientMessageContext.privileged`): proved by an out-of-band secret — embedded via its Bearer token, standalone via the server token in the `/ws` `?token=` query, which the CLI prints in the local URL and the SPA forwards (`webview-ui/src/transport/index.ts`). **Never a network position**: peer address, `Host` and `Origin` all ride the channel a proxy speaks, so a LAN-bound forwarder piping bytes to 127.0.0.1 satisfies all three. The token is a replayable bearer capability, not evidence of locality — it also reaches browser history and Fastify's request log, so the printed URL is documented to the user as a secret. An untokened client still watches the office; it just cannot change `~/.claude/settings.json`.
+2. **Privileged messages** (`standaloneTokenValid`, `ClientMessageContext.privileged`): proved by an out-of-band secret — embedded via its Bearer token, standalone via the server token in the `/ws` `?token=` query, which the CLI prints in the local URL and the SPA forwards (`webview-ui/src/transport/index.ts`). **Never a network position**: peer address, `Host` and `Origin` all ride the channel a proxy speaks, so a LAN-bound forwarder piping bytes to 127.0.0.1 satisfies all three. The token is a replayable bearer capability, not evidence of locality — it reaches browser history (Fastify's request log redacts it, `wsAuth.redactTokenQuery`), so the printed URL is documented to the user as a secret. Standalone persists it in `~/.pixel-agents/standalone-token` (0600) so a bookmarked URL survives restarts; `--rotate-token` replaces it (revoking every device at once; refused while another standalone server is running, since it would keep honouring the old one). The terminal socket (`/terminal/:agentId`) carries it the same way and both sockets decide privilege with ONE predicate, `wsAuth.standaloneHandshakeVerdict`: the token AND an allowed `Host` — loopback, a specific `--host`, or a name passed with `--allowed-host` (anti-DNS-rebinding defence in depth). The allowlist is explicit rather than "loopback when loopback-bound" because a reverse proxy (Tailscale Serve) forwards to 127.0.0.1 under its public name; a loopback-only rule forced `--host 0.0.0.0`, exposing the port and the token in transit to the LAN. **An unprivileged client is read-only**: it may load and watch the office (`webviewReady`) and NOTHING else — every other message is refused by one gate at the top of `handleClientMessage` (`refuseReadOnly`), so a new message type is privileged by default. Where the UI updates optimistically (settings toggles, hooks toggle, asset directories, area mappings), the refused client is re-sent the real state. A tokened connection under an unlisted Host is read-only too and logs the `--allowed-host` hint. A second standalone launch reuses a running server only when its access matches (`ServerConfig.standalone`: terminal on/off, bind host, allowed hosts) — otherwise `--no-terminal` would silently attach to a server with a shell.
 
 The **hooks preference is persisted only after the install/uninstall settled and the on-disk result agrees** — writing it first strands the user when an uninstall fails: entries still firing, but a persisted hooks-off makes the next startup skip the consent/install path entirely.
 
@@ -393,23 +426,25 @@ Custom ESLint rules (`eslint-rules/pixel-agents-rules.mjs`) enforce: `no-inline-
 
 **Sound notifications**: Ascending two-note chime (E5 → E6) via Web Audio API plays when waiting bubble appears (`agentStatus: 'waiting'`). `notificationSound.ts` manages AudioContext lifecycle; `unlockAudio()` on canvas mousedown resumes the context (webviews start suspended). Toggled via Settings modal. Persisted per-namespace in `~/.pixel-agents/config.json`.
 
+**Mobile shell** (standalone only): below `MOBILE_MEDIA_QUERY` the browser renders `mobile/MobileShell` instead of the desktop layout — office and terminal as two full-screen pages in a 200%-wide sliding track (both always laid out, never `display:none`, so the canvas and xterm keep dimensions); the track's transform makes it the containing block of `position: fixed`, so modals and other viewport overlays mount at App's top level, never inside the office region), the agent cards in a bottom scroller, and `MobileKeyBar` above the software keyboard. "Keyboard open" and "clamp the shell" are separate answers (`mobile/keyboardViewport.ts`, sampled by `useKeyboardViewport`) because the two resize policies differ: iOS shrinks only the visual viewport (open, and the shell is clamped to it so the PTY resizes instead of hiding its input line), Android `interactive-widget=resizes-content` shrinks both (open, nothing to clamp). Open = an editable focused AND the visual viewport `KEYBOARD_MIN_HEIGHT_PX` below the tallest height seen at the current width (per-orientation baseline). `useIsMobile` is gated on `isBrowserRuntime`: a narrow VS Code panel must never get it (it broke every VS Code e2e shard once). Navigation rules live in `useMobileShell`: the >_ / Office toggle and the edge swipe share one handler; a card tap in the office is two-step (focus the character, then open its terminal), in the terminal it switches panes; + slides over only for launches made from it (a reload re-announcing sessions stays on the office). The terminal-pane model (active vs shown pane, socket status, `statusFor`) is `useTerminalDrawer`, shared with the desktop drawer. Touch rules: every gesture tracks ONE finger by identifier (`findTouch`) and uses one tap slop (`withinTapSlop`); gesture decisions are pure reducers with thin DOM adapters (`edgeSwipe.ts`/`useEdgeSwipe.ts`, `terminal/touchGesture.ts`/`touchInput.ts`), because WebKit keeps addressing a gesture's events to its touchstart node — when terminal rows repaint, that node detaches and events stop bubbling, so each adapter binds "rescue" listeners on the touch target. **Terminal copy is verbatim by default** (Cmd/Ctrl+C, the browser's Copy, the pill's Copy): `flowTerminalCopy` is a heuristic that joins a long row with a two-space-indented next line, which is also what YAML under a long key or a method body under a long signature look like, so re-flowing is opt-in only — Alt+C (Option+C) on desktop, "Copy as text" on the pill. Every write goes through `terminal/clipboard.ts`. PWA: `manifest.webmanifest` (icon paths relative — the file is served verbatim), conventional-path icons in `public/`, `?v=N` cache-busters on icon links.
+
 **Seats**: Derived from chair furniture. `layoutToSeats()` creates a seat at every footprint tile of every chair. Multi-tile chairs produce multiple seats keyed `uid` / `uid:1` / `uid:2`. Facing direction priority: 1) chair `orientation` from catalog (front→DOWN, back→UP, left→LEFT, right→RIGHT), 2) adjacent desk direction, 3) forward (DOWN). Click character → select (white outline) → click available seat → reassign.
 
 ## Layout Editor
 
-Toggle via "Layout" button. Tools: SELECT (default), Floor paint, Wall paint, Erase (set tiles to VOID), Furniture place, Furniture pick (eyedropper for furniture type), Eyedropper (floor).
+Toggle via "Layout" button. Tools: SELECT (default), Floor paint, Wall paint, Erase (set tiles to VOID), Furniture place, Furniture Copy (`FURNITURE_PICK`: type + colour off a placed item), colour Copy (`COLOR_PICK`: colour only), Eyedropper (floor/wall). `handleEditorTileAction` is a per-tool switch; the layout maths lives in pure `editorActions.ts` functions. Clicks on placed items (select, drag) never reach it — the canvas resolves them.
 
 **Floor**: 7 patterns from `floors.png` (grayscale 16×16), colorizable via HSBC sliders (Photoshop Colorize). Color baked per-tile on paint. Eyedropper picks pattern+color.
 
 **Walls**: Separate Wall paint tool. Click/drag to add walls; click/drag existing walls to remove (toggle direction set by first tile of drag, tracked by `wallDragAdding`). HSBC color sliders (Colorize mode) apply to all wall tiles at once. Eyedropper on a wall tile picks its color and switches to Wall tool. Furniture cannot be placed on wall tiles, but background rows may overlap walls.
 
-**Furniture**: Ghost preview (green/red validity). R key rotates, T key toggles on/off state. Drag-to-move in SELECT. Delete button (red X) + rotate button (blue arrow) on selected items. Any selected furniture shows HSBC color sliders (Color toggle + Clear button); color stored per-item in `PlacedFurniture.color?`. Single undo entry per color-editing session (tracked by `colorEditUidRef`). Pick tool copies type+color from placed item. Surface items preferred when clicking stacked furniture.
+**Furniture**: Ghost preview (green/red validity); `buildEditorRenderState` (`office/editor/`) builds the frame's `ghosts[]` + one `ghostValid`. R key rotates, T key toggles on/off state — a selected placed item wins over the catalog type. Drag-to-move in SELECT; **Alt-drag drops a copy** (cursor `copy`, Alt sampled live so it can flip mid-drag; the copy is left selected). The canvas only reports the gesture (`onDrop(uid, col, row, { duplicate })`); `handleDrop` → pure `dropFurniture` validates, commits and sets selection. **Desks carry their riders**: surface items standing on an `isDesk` item (`getSurfaceRiders`) move, rotate (spot swung round the desk top) and get copied with it; the whole group must fit or nothing happens. Delete button (red X) + rotate button (blue arrow) on selected items. **Selecting a placed item closes the open tool tab and opens its HSBC colour sliders** (Reset + Copy buttons); color stored per-item in `PlacedFurniture.color?`. Hit-testing is ONE `furnitureAt` (surface items win over the desk under them) — select, drag, cursor and both Copy tools agree. Placement state is `editorState.placing: { type, color? }`: the Copy tool's lifted colour styles that copy only — `color: null` is a copied ABSENCE of colour, so an uncoloured item's copy stays uncoloured under a palette colour; `undefined` (a plain catalog pick) takes `pickedFurnitureColor` (`placementColor()`); palette sliders override either. Colour Copy takes the clicked item's colour into whichever sliders armed it, then returns to that tool.
 
-**Undo/Redo**: 50-level, Ctrl+Z/Y. EditActionBar (top-center when dirty): Undo, Redo, Save, Reset.
+**Undo/Redo**: 50-level, Ctrl+Z/Y. EditActionBar (top-center when dirty): Undo, Redo, Save, Reset. **Stroke-scoped undo**: every edit goes through `commitLayout(layout, session)`; edits sharing `editorState.undoSession` collapse into one entry — `'stroke'` (one floor / wall / erase / carpet click-drag), `'wallColor'`, `` `color:<uid>` `` (a slider run on one item). `null` = discrete edit (its own entry; a colour eyedrop is one). Mouse up / leave, tool change, Esc, selection changes and undo/redo end the session (`endStroke`). Area paint stays per-tile.
 
 **Multi-stage Esc**: exit furniture pick → deselect catalog → close tool tab → deselect furniture → close editor.
 
-**Erase tool**: Sets tiles to `TileType.VOID` (transparent, non-walkable, no furniture). Right-click in floor/wall/erase tools also erases to VOID (drag-erasing supported). Context menu suppressed in edit mode.
+**Erase tool**: Sets tiles to `TileType.VOID` (transparent, non-walkable, no furniture) **and deletes any furniture whose footprint the stroke passes through** (`removeFurnitureAt`). Right-click in floor/wall/erase tools also erases to VOID + furniture (drag-erasing supported). Context menu suppressed in edit mode.
 
 **Grid expansion**: In floor/wall/erase tools, a ghost border (dashed outline) appears 1 tile outside the grid. Clicking a ghost tile calls `expandLayout()` to grow the grid by 1 tile in that direction. New tiles are VOID. Furniture positions and character positions shift when expanding left/up. Max: `MAX_COLS`×`MAX_ROWS` (64×64). Default: `DEFAULT_COLS`×`DEFAULT_ROWS` (20×11). Characters outside bounds after resize relocated to random walkable tiles.
 
@@ -482,6 +517,11 @@ Run: `npm run test:webview`.
 ### End-to-end (Playwright)
 
 `e2e/` contains Playwright tests against a real VS Code Electron instance and a standalone Fastify server. CI runs the suite on Linux, macOS, and Windows in three shards at `--workers=1`. The generated [e2e inventory](e2e/README.md) is the source of truth for current specs, scenarios, and `@area:` coverage.
+
+**Running VS Code e2e locally needs explicit approval.** The VS Code specs (`e2e/tests/claude/**`) launch real VS Code windows one after another, which cover the screen and steal keyboard focus from whatever the user is typing in. Ask the user before running any of them, and when approved:
+
+- Run them **once, at the end of an implementation** — never as an intermediate check.
+- **Never from a subagent**: delegated work verifies with typecheck, lint, unit tests, and the standalone specs (`e2e/tests/standalone/**`, headless browser, no windows).
 
 **Mock claude**: Tests never invoke real `claude`. A bash script (`e2e/fixtures/mock-claude`) is copied into an isolated `bin/` and prepended to `PATH`. The scenario runner (`mock-claude-runner.cjs`) honors `claudeScenario(...).at(ms).appendJsonl(record).emitHook(event).holdOpenFor(ms).build()` to drive timed JSONL writes and hook events.
 

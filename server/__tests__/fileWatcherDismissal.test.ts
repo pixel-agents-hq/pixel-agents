@@ -81,6 +81,7 @@ describe('fileWatcher dismissal state', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-fw-dismissal-'));
     projectDir = tmpDir;
+    setHookProvider({ ...claudeProvider, getAllSessionRoots: () => [] });
 
     tracker = new DismissalTracker();
     setDismissalTracker(tracker);
@@ -425,17 +426,18 @@ describe('fileWatcher dismissal state', () => {
       } finally {
         clearInterval(timer);
         vi.useRealTimers();
-        setHookProvider(claudeProvider);
       }
 
-      expect([...agents.values()].find((agent) => agent.jsonlFile === namedFile)?.folderName).toBe(
-        'mobile_client_new',
-      );
       expect(
-        [...agents.values()].find((agent) => agent.jsonlFile.endsWith('hyphen.jsonl'))?.folderName,
+        [...agents.values()].find((agent) => agent.jsonlFile === namedFile)?.directoryName,
+      ).toBe('mobile_client_new');
+      expect(
+        [...agents.values()].find((agent) => agent.jsonlFile.endsWith('hyphen.jsonl'))
+          ?.directoryName,
       ).toBe('my-openclaw');
       expect(
-        [...agents.values()].find((agent) => agent.jsonlFile.endsWith('broken.jsonl'))?.folderName,
+        [...agents.values()].find((agent) => agent.jsonlFile.endsWith('broken.jsonl'))
+          ?.directoryName,
       ).toBe('label');
     });
 
@@ -459,7 +461,7 @@ describe('fileWatcher dismissal state', () => {
         () => {},
       );
 
-      expect([...agents.values()][0]?.folderName).toBe('personal_ai_work');
+      expect([...agents.values()][0]?.directoryName).toBe('personal_ai_work');
     });
 
     it('adopts workspace JSONL sessions when hooks and Watch All Sessions are both enabled', () => {

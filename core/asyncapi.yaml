@@ -110,12 +110,21 @@ components:
         - $ref: '#/components/schemas/WallTilesLoaded'
         - $ref: '#/components/schemas/CarpetTilesLoaded'
         # Settings & config
+        - $ref: '#/components/schemas/OfficeAccess'
         - $ref: '#/components/schemas/SettingsLoaded'
+        - $ref: '#/components/schemas/BypassPermissionsUpdated'
         - $ref: '#/components/schemas/HooksStatus'
         - $ref: '#/components/schemas/HooksConsentRequest'
         - $ref: '#/components/schemas/ExternalAssetDirectoriesUpdated'
         - $ref: '#/components/schemas/AreaMappingsLoaded'
-        - $ref: '#/components/schemas/WorkspaceFolders'
+        - $ref: '#/components/schemas/DirectoriesLoaded'
+        - $ref: '#/components/schemas/DirectorySaved'
+        - $ref: '#/components/schemas/DirectoryRejected'
+        - $ref: '#/components/schemas/DirectorySuggestions'
+        # Terminal (standalone embedded terminal control plane)
+        - $ref: '#/components/schemas/TerminalAvailability'
+        - $ref: '#/components/schemas/TerminalSessionOpened'
+        - $ref: '#/components/schemas/TerminalSessionClosed'
         # Diagnostics
         - $ref: '#/components/schemas/AgentDiagnostics'
       discriminator: type
@@ -143,6 +152,11 @@ components:
         - $ref: '#/components/schemas/RemoveExternalAssetDirectory'
         - $ref: '#/components/schemas/SaveAreaMappings'
         - $ref: '#/components/schemas/SetShowAreas'
+        - $ref: '#/components/schemas/SetBypassPermissions'
+        - $ref: '#/components/schemas/SetShowHostDirectories'
+        - $ref: '#/components/schemas/SaveDirectory'
+        - $ref: '#/components/schemas/RemoveDirectory'
+        - $ref: '#/components/schemas/RequestDirectorySuggestions'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
 
@@ -180,7 +194,7 @@ components:
           const: agentCreated
         id:
           type: integer
-        folderName:
+        directoryName:
           type: string
         isExternal:
           type: boolean
@@ -219,7 +233,7 @@ components:
         changes that the client missed. Includes seat/palette assignments.
       type: object
       additionalProperties: false
-      required: [type, agents, agentMeta, folderNames, externalAgents]
+      required: [type, agents, agentMeta, directoryNames, externalAgents]
       properties:
         type:
           const: existingAgents
@@ -232,9 +246,9 @@ components:
           description: Map of agent ID (string) to seat metadata.
           additionalProperties:
             $ref: '#/components/schemas/AgentSeatMeta'
-        folderNames:
+        directoryNames:
           type: object
-          description: Map of agent ID (string) to workspace folder name.
+          description: Map of agent ID (string) to Directory name.
           additionalProperties:
             type: string
         externalAgents:
@@ -644,6 +658,8 @@ components:
         - hooksInfoShown
         - externalAssetDirectories
         - showAreas
+        - bypassPermissions
+        - showHostDirectories
       properties:
         type:
           const: settingsLoaded
@@ -668,6 +684,33 @@ components:
           items:
             type: string
         showAreas:
+          type: boolean
+        bypassPermissions:
+          type: boolean
+          description: >-
+            Persistent per-host permission posture. While true, every launch on
+            this host runs the CLI with its skip-permissions flag.
+        showHostDirectories:
+          type: boolean
+          description: >-
+            Persistent per-host choice whether the host's own Directories (VS
+            Code's workspace folders, standalone's start directory) are listed
+            in `directoriesLoaded`. Off by default.
+
+    BypassPermissionsUpdated:
+      description: |
+        The host's skip-permissions posture changed (an accepted
+        `setBypassPermissions`). Broadcast to every connected office, the one
+        that sent it included, so every Settings toggle shows the posture the
+        next launch will actually use. `enabled` is the persisted value read
+        back after the write, not an echo of the request.
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: bypassPermissionsUpdated
+        enabled:
           type: boolean
 
     HooksStatus:
@@ -730,8 +773,8 @@ components:
 
     AreaMappingsLoaded:
       description: |
-        Workspace-folder-to-Area mappings. Folder names map to one or more Area
-        labels; new agents from that folder prefer seats inside those Areas.
+        Directory-to-Area mappings. Directory names map to one or more Area
+        labels; new agents from that Directory prefer seats inside those Areas.
       type: object
       additionalProperties: false
       required: [type, mappings]
@@ -740,7 +783,7 @@ components:
           const: areaMappingsLoaded
         mappings:
           type: object
-          description: Map of folder name (string) to array of Area labels.
+          description: Map of Directory name (string) to array of Area labels.
           additionalProperties:
             type: array
             items:
@@ -759,18 +802,88 @@ components:
           items:
             type: string
 
-    WorkspaceFolders:
-      description: Multi-root workspace folders (VS Code only).
+    DirectoriesLoaded:
+      description: |
+        The Directories agents can be launched into: the union of the user-defined
+        entries (machine-wide, shared by every host) and the host's own native
+        context, contributed as `source: host` entries — VS Code its workspace
+        folders, standalone the directory the server was started from. Deduped by
+        path with the user-defined entry winning, and ordered alphabetically by
+        name.
+
+        Rebroadcast to every connected office after every Directory mutation
+        (`saveDirectory`, `removeDirectory`). A client learns its own delete
+        succeeded from this; a save is acked separately by `directorySaved`.
       type: object
       additionalProperties: false
-      required: [type, folders]
+      required: [type, directories]
       properties:
         type:
-          const: workspaceFolders
-        folders:
+          const: directoriesLoaded
+        directories:
           type: array
           items:
-            $ref: '#/components/schemas/WorkspaceFolder'
+            $ref: '#/components/schemas/Directory'
+
+    DirectorySaved:
+      description: |
+        A `saveDirectory` was accepted and persisted. Sent point-to-point to the
+        requesting client (never broadcast), right after the `directoriesLoaded`
+        rebroadcast. Carries the entry exactly as stored: the host resolves the
+        path (tilde expansion, absolute resolution) and names an unnamed entry
+        after the resolved basename, so `directory.name` can differ from
+        anything the client typed. Area mappings are keyed by Directory name,
+        so a client assigning Areas in the same save keys them by this name.
+      type: object
+      additionalProperties: false
+      required: [type, directory]
+      properties:
+        type:
+          const: directorySaved
+        directory:
+          $ref: '#/components/schemas/Directory'
+
+    DirectoryRejected:
+      description: |
+        A `saveDirectory` failed host-side validation, or a `saveDirectory` /
+        `removeDirectory` could not be written to the shared config. Sent
+        point-to-point to the requesting client (never broadcast) and nothing
+        changed on disk; the Directory modal stays open and shows `reason` inline.
+      type: object
+      additionalProperties: false
+      required: [type, path, reason]
+      properties:
+        type:
+          const: directoryRejected
+        path:
+          type: string
+          description: The path exactly as submitted, before tilde expansion.
+        reason:
+          type: string
+          description: Human-readable cause, shown inline in the Directory modal.
+
+    DirectorySuggestions:
+      description: |
+        Candidate paths for the Directory modal, recovered from the working
+        directories recorded in the coding agent's own session transcripts across
+        every session root — places the user has already run agents in, so adding
+        a Directory on a phone rarely means typing one out.
+
+        Sent point-to-point in reply to `requestDirectorySuggestions` (never
+        broadcast). Already deduped, existence-checked and stripped of anything
+        already in the Directory union, so the modal renders the list as-is; an
+        empty list means the modal shows no suggestions section.
+      type: object
+      additionalProperties: false
+      required: [type, paths]
+      properties:
+        type:
+          const: directorySuggestions
+        paths:
+          type: array
+          description: Absolute directory paths, ordered for stable display.
+          items:
+            type: string
 
     AgentDiagnostics:
       description: Connection diagnostics for all agents (response to requestDiagnostics).
@@ -785,6 +898,74 @@ components:
           description: Per-agent diagnostic info; shape opaque to the protocol.
           items:
             type: object
+
+    # ── Terminal control plane (standalone embedded terminal) ──────
+    # Only the CONTROL plane lives in this contract. The terminal's raw byte
+    # stream is deliberately outside it, on a dedicated WebSocket endpoint
+    # (GET /terminal/:agentId): it is unstructured, high-frequency data that
+    # would otherwise pass through this discriminated union and the store's
+    # broadcast fan-out (which would also leak one agent's output to every
+    # connected client). See docs/design/standalone-terminal.md.
+
+    OfficeAccess:
+      description: >-
+        Whether this connection may change anything. A read-only office (no
+        valid server token, or a Host outside the allowlist) can load and watch
+        the office but every change it sends is refused, so the client hides
+        the controls that would send one. Sent first on webviewReady; a client
+        that never receives it is not read-only.
+      type: object
+      additionalProperties: false
+      required: [type, readOnly]
+      properties:
+        type:
+          const: officeAccess
+        readOnly:
+          type: boolean
+
+    TerminalAvailability:
+      description: >-
+        Whether this server can host embedded terminals. Standalone only; the
+        VS Code surface owns its own terminals and never receives this. When
+        false, the client hides terminal UI and shows `reason`.
+      type: object
+      additionalProperties: false
+      required: [type, available]
+      properties:
+        type:
+          const: terminalAvailability
+        available:
+          type: boolean
+        reason:
+          type: string
+          description: Human-readable cause when unavailable (e.g. no PTY module installed).
+
+    TerminalSessionOpened:
+      description: >-
+        A PTY-backed terminal now exists for this agent; the client may attach to
+        GET /terminal/:agentId. Re-sent on webviewReady for every live session so
+        a reconnecting client rebuilds its tabs.
+      type: object
+      additionalProperties: false
+      required: [type, agentId]
+      properties:
+        type:
+          const: terminalSessionOpened
+        agentId:
+          type: integer
+
+    TerminalSessionClosed:
+      description: The agent's terminal process exited; its socket is no longer attachable.
+      type: object
+      additionalProperties: false
+      required: [type, agentId]
+      properties:
+        type:
+          const: terminalSessionClosed
+        agentId:
+          type: integer
+        exitCode:
+          type: integer
 
     # ── Client message variants ────────────────────────────────────
 
@@ -805,11 +986,9 @@ components:
       properties:
         type:
           const: launchAgent
-        folderPath:
+        directoryPath:
           type: string
-          description: Workspace folder path (for multi-root workspaces).
-        bypassPermissions:
-          type: boolean
+          description: Path of the Directory to launch into.
 
     FocusAgent:
       description: Focus an agent's terminal.
@@ -1030,7 +1209,7 @@ components:
           type: string
 
     SaveAreaMappings:
-      description: Persist folder-to-Area mappings for seat assignment.
+      description: Persist Directory-to-Area mappings for seat assignment.
       type: object
       additionalProperties: false
       required: [type, mappings]
@@ -1043,6 +1222,83 @@ components:
             type: array
             items:
               type: string
+
+    SetBypassPermissions:
+      description: >-
+        Persist the host's skip-permissions posture. Applied host-side when
+        building the launch command; never sent per launch.
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setBypassPermissions
+        enabled:
+          type: boolean
+
+    SetShowHostDirectories:
+      description: >-
+        Persist whether the host's own Directories are listed. Answered with a
+        `directoriesLoaded` broadcast of the list as it now stands. Hiding them
+        only changes the list: agents launched in a host Directory are still
+        named after it.
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setShowHostDirectories
+        enabled:
+          type: boolean
+
+    SaveDirectory:
+      description: |
+        Add or edit a user-defined Directory. `previousPath` identifies the entry
+        being edited; absent means this is a new one.
+
+        The host expands a leading `~`, then requires the path to exist and to be
+        a directory. On success it rebroadcasts `directoriesLoaded`; on failure it
+        replies `directoryRejected` and persists nothing.
+      type: object
+      additionalProperties: false
+      required: [type, name, path]
+      properties:
+        type:
+          const: saveDirectory
+        name:
+          type: string
+          description: Display name. Empty falls back to the path's basename.
+        path:
+          type: string
+          description: Filesystem path; a leading `~` is expanded host-side.
+        previousPath:
+          type: string
+          description: Path of the entry being edited. Absent when adding.
+
+    RemoveDirectory:
+      description: >-
+        Delete a user-defined Directory. Agents already running in it are left
+        untouched.
+      type: object
+      additionalProperties: false
+      required: [type, path]
+      properties:
+        type:
+          const: removeDirectory
+        path:
+          type: string
+
+    RequestDirectorySuggestions:
+      description: >-
+        Ask the host for tappable path suggestions for the Directory modal; it
+        replies `directorySuggestions` to this client only. Sent when the modal
+        opens, so the list reflects the sessions on disk right then.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: requestDirectorySuggestions
 
     SetShowAreas:
       description: Toggle the Areas overlay (translucent rendering on top of the office).
@@ -1096,15 +1352,29 @@ components:
         seatId:
           type: [string, 'null']
 
-    WorkspaceFolder:
+    Directory:
+      description: |
+        A named filesystem location agents can be launched into. `source` marks
+        where the entry came from: `host` entries are contributed by the host
+        (VS Code's workspace folders, standalone's start directory) and are
+        read-only in the office; `user` entries are defined by the user.
       type: object
       additionalProperties: false
-      required: [name, path]
+      required: [name, path, source]
       properties:
         name:
           type: string
         path:
           type: string
+        source:
+          $ref: '#/components/schemas/DirectorySource'
+
+    DirectorySource:
+      description: |
+        Where a Directory came from. `host` entries are contributed by the host
+        and are read-only in the office; `user` entries are defined by the user.
+      type: string
+      enum: [user, host]
 
     CharacterSpriteSet:
       description: |

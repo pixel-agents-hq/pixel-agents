@@ -27,6 +27,37 @@ export const DISCORD_INVITE_URL = 'https://discord.gg/Yk7jXebv9H';
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '1.5',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Embedded terminal in the browser: launch, watch and drive agents from npx pixel-agents',
+          'Mobile web app: swipe between office and terminal, touch input, and a key bar above the keyboard',
+          'Agent cards with mug shots and status, in VS Code and the browser',
+          'Directories: launch agents into workspace folders or your own, with path suggestions and Areas',
+          'Layout editor: Alt+drag copies, desks carry their items, stroke undo, and a colour eyedropper',
+        ],
+      },
+      {
+        title: 'Changes',
+        items: [
+          'Skip permissions is now a Settings toggle applied to every launch (off by default)',
+          'Workspace folders and the standalone start directory are listed in the drawer only when turned on in Settings',
+          'The standalone access token survives restarts; --rotate-token replaces it',
+        ],
+      },
+    ],
+    contributors: [
+      {
+        name: '@pablodelucca',
+        url: 'https://github.com/pablodelucca',
+        description:
+          'Embedded terminal, mobile web app, agent cards, Directories, and layout editor upgrades',
+      },
+    ],
+  },
+  {
     version: '1.4',
     sections: [
       {

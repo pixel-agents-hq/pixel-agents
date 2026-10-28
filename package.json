@@ -2,7 +2,7 @@
   "name": "pixel-agents",
   "displayName": "Pixel Agents",
   "description": "Pixel art office where your Claude Code agents come to life as animated characters",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "publisher": "pablodelucca",
   "repository": {
     "type": "git",
@@ -129,7 +129,8 @@
     "@types/node": "26.x",
     "@types/pngjs": "^6.0.5",
     "@types/vscode": "^1.105.0",
-    "@vscode/test-electron": "^2.5.2",
+    "@types/ws": "^8.18.1",
+    "@vscode/test-electron": "^3.1.0",
     "allure-commandline": "^2.38.1",
     "allure-playwright": "^3.7.1",
     "esbuild": "^0.28.0",
@@ -172,5 +173,8 @@
     "webapi-parser": {
       "ajv": "^6.15.0"
     }
+  },
+  "optionalDependencies": {
+    "@lydell/node-pty": "^1.2.0-beta.12"
   }
 }

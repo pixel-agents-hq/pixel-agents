@@ -16,6 +16,8 @@ declare global {
         isHeadless?: boolean;
         isGreeter?: boolean;
       }>;
+      /** The character the camera follows (null = free camera). */
+      getCameraFollowId?: () => number | null;
       /** Effective "Display headless as ghosts" setting the renderer is using. */
       getGhostHeadlessAgents?: () => boolean;
       // ── Carpet + Areas observability (added for carpet/areas e2e) ──
@@ -35,19 +37,31 @@ declare global {
       getAreas?: () => Array<{ label: string; color: string }>;
       /** Sparse list of area-painted tiles with their grid coords. */
       getAreaTiles?: () => Array<{ col: number; row: number; label: string }>;
-      /** Folder→Area mappings received by OfficeState. */
+      /** Directory→Area mappings received by OfficeState. */
       getAreaMappings?: () => Record<string, string[]>;
       /** Effective show-areas gate (settings toggle OR active area edit). */
       getShowAreas?: () => boolean;
       /** Count of placed furniture instances — lets a spec assert furniture
        *  placed onto a carpet tile (surface placement) without it being blocked. */
       getFurnitureCount?: () => number;
+      /** The layout's tile grid — lets a spec assert floor paint / erase (which
+       *  render only on the canvas) and that one undo reverts a whole stroke. */
+      getTiles?: () => { cols: number; rows: number; tiles: number[] };
+      /** Placed furniture with grid coords, so a spec can assert exactly which
+       *  item an erase stroke removed (getFurnitureCount only gives a total). */
+      getFurniture?: () => Array<{
+        uid: string;
+        type: string;
+        col: number;
+        row: number;
+        color?: ColorValue;
+      }>;
       /** Seated top-level agents with the area their seat falls in (or null). */
       getAgentSeats?: () => Array<{
         id: number;
         seatId: string | null;
         areaLabel: string | null;
-        folderName?: string;
+        directoryName?: string;
       }>;
       /** All seats with grid coords + the area their tile falls in — lets a spec
        *  paint an Area over a known seat without hardcoding layout coordinates. */
@@ -62,6 +76,15 @@ declare global {
        *  bypassing only canvas pixel→tile geometry (mirrors petClick). */
       editorTileAction?: (col: number, row: number) => void;
       editorEraseAction?: (col: number, row: number) => void;
+      /** Release a furniture drag at (col,row) via the real drop handler (a copy
+       *  with `duplicate`, as Alt does) — skips the whole mouse gesture: press,
+       *  movement, the Alt modifier and pixel→tile geometry. The drop rules
+       *  themselves (group validity, riders, selection) still run. */
+      editorDrop?: (uid: string, col: number, row: number, duplicate?: boolean) => void;
+      /** Centre of tile (col,row) in CSS pixels relative to the office canvas,
+       *  through the renderer's own projection (zoom + pan) — lets a spec drive
+       *  the REAL canvas mouse gesture at a known tile. Null before mount. */
+      getTileCenter?: (col: number, row: number) => { x: number; y: number } | null;
       getPets?: () => Array<{
         id: string;
         name: string;
@@ -135,6 +158,8 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
   // The ghost setting lives in the renderer module (read every rAF frame), not
   // in OfficeState, so e2e reads it from there to assert what is actually drawn.
   hooks.getGhostHeadlessAgents = () => isGhostHeadlessAgentsEnabled();
+
+  hooks.getCameraFollowId = () => officeStateRef.current?.cameraFollowId ?? null;
 
   hooks.selectAgent = (id) => {
     const os = officeStateRef.current;
@@ -244,6 +269,28 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
     return os.furniture.length;
   };
 
+  hooks.getTiles = () => {
+    const os = officeStateRef.current;
+    if (!os) return { cols: 0, rows: 0, tiles: [] };
+    const layout = os.getLayout();
+    return { cols: layout.cols, rows: layout.rows, tiles: [...layout.tiles] };
+  };
+
+  // Read from the layout (the persisted PlacedFurniture list), not os.furniture
+  // — the latter holds render instances (walls, auto-state swaps) that don't map
+  // 1:1 to what the editor placed.
+  hooks.getFurniture = () => {
+    const os = officeStateRef.current;
+    if (!os) return [];
+    return os.getLayout().furniture.map((f) => ({
+      uid: f.uid,
+      type: f.type,
+      col: f.col,
+      row: f.row,
+      color: f.color,
+    }));
+  };
+
   hooks.getAgentSeats = () => {
     const os = officeStateRef.current;
     if (!os) return [];
@@ -253,7 +300,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
         id: ch.id,
         seatId: ch.seatId,
         areaLabel: ch.seatId ? os.seatZone(ch.seatId) : null,
-        folderName: ch.folderName,
+        directoryName: ch.directoryName,
       }));
   };
 
@@ -276,7 +323,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
     preferredHueShift,
     preferredSeatId,
     skipSpawnEffect,
-    folderName,
+    directoryName,
     nearAgentId,
   ) {
     origAddAgent.call(
@@ -286,7 +333,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       preferredHueShift,
       preferredSeatId,
       skipSpawnEffect,
-      folderName,
+      directoryName,
       nearAgentId,
     );
     const ch = this.characters.get(id);

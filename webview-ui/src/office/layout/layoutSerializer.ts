@@ -122,14 +122,18 @@ export function getBlockedTiles(
   return tiles;
 }
 
-/** Get tiles blocked for placement purposes — skips top backgroundTiles rows per item */
+/**
+ * Get tiles blocked for placement purposes — skips top backgroundTiles rows per item.
+ * `excluded` uids don't block (a desk moving together with the items on its
+ * surface excludes the whole group, so the group's own tiles never block the move).
+ */
 export function getPlacementBlockedTiles(
   furniture: PlacedFurniture[],
-  excludeUid?: string,
+  excluded?: ReadonlySet<string>,
 ): Set<string> {
   const tiles = new Set<string>();
   for (const item of furniture) {
-    if (item.uid === excludeUid) continue;
+    if (excluded?.has(item.uid)) continue;
     const entry = getCatalogEntry(item.type);
     if (!entry) continue;
     const bgRows = entry.backgroundTiles || 0;

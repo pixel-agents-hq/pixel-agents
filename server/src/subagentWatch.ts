@@ -19,8 +19,8 @@
 
 import type * as fs from 'fs';
 
+import { createAgentState } from './agentState.js';
 import { AgentStateStore } from './agentStateStore.js';
-import { DEFAULT_MAX_CONTEXT_TOKENS } from './constants.js';
 import { readNewLines, startFileWatching } from './fileWatcher.js';
 import { pathsMatch } from './pathKey.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -68,35 +68,18 @@ export class SubagentWatch {
   /** Start watching an unnamed background spawn's transcript for the given lead. */
   watch(lead: AgentState, leadId: number, entry: SubagentWatchEntry): void {
     const id = this.store.nextAgentId.current++;
-    const agent: AgentState = {
+    const agent = createAgentState({
       id,
       // Shares the lead's session like the transcript it mirrors. Never
       // registered with the session router.
       sessionId: lead.sessionId,
-      terminalRef: undefined,
       isExternal: true,
       projectDir: lead.projectDir,
       jsonlFile: entry.jsonlPath,
-      fileOffset: 0,
-      lineBuffer: '',
-      activeToolIds: new Set(),
-      activeToolStatuses: new Map(),
-      activeToolNames: new Map(),
-      activeSubagentToolIds: new Map(),
-      activeSubagentToolNames: new Map(),
-      backgroundAgentToolIds: new Set(),
-      isWaiting: false,
-      permissionSent: false,
-      hadToolsInTurn: false,
-      hookDelivered: false,
       lastDataAt: Date.now(),
-      linesProcessed: 0,
-      seenUnknownRecordTypes: new Set(),
-      contextTokens: 0,
-      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       leadAgentId: leadId,
       spawnToolUseId: entry.toolUseId,
-    };
+    });
 
     this.subKeys.set(id, { leadId, spawnToolUseId: entry.toolUseId });
     this.store.set(id, agent);

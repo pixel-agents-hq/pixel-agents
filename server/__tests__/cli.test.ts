@@ -119,6 +119,39 @@ describe('parseArgs', () => {
   it('parses --host', () => {
     expect(parseArgs(['--host', '0.0.0.0']).host).toBe('0.0.0.0');
   });
+
+  // 11. Terminal is on by default; --no-terminal opts out
+  it('defaults terminal to enabled', () => {
+    expect(parseArgs([]).terminal).toBe(true);
+  });
+
+  it('disables the terminal with --no-terminal, independently of other flags', () => {
+    expect(parseArgs(['--no-terminal']).terminal).toBe(false);
+    expect(parseArgs(['--no-terminal', '--port', '3100'])).toMatchObject({
+      terminal: false,
+      port: 3100,
+    });
+  });
+
+  // 12. --allowed-host is repeatable and validated; --rotate-token is a switch
+  it('collects repeated --allowed-host values', () => {
+    expect(parseArgs([]).allowedHosts).toEqual([]);
+    expect(
+      parseArgs(['--allowed-host', 'mac.tailnet.ts.net', '--allowed-host', 'other.example'])
+        .allowedHosts,
+    ).toEqual(['mac.tailnet.ts.net', 'other.example']);
+  });
+
+  it('rejects a missing, malformed or wildcard --allowed-host', () => {
+    expect(() => parseArgs(['--allowed-host'])).toThrow(/Missing value/);
+    expect(() => parseArgs(['--allowed-host', 'evil@127.0.0.1'])).toThrow(CliArgsError);
+    expect(() => parseArgs(['--allowed-host', '0.0.0.0'])).toThrow(CliArgsError);
+  });
+
+  it('parses --rotate-token', () => {
+    expect(parseArgs([]).rotateToken).toBe(false);
+    expect(parseArgs(['--rotate-token']).rotateToken).toBe(true);
+  });
 });
 
 // The TTY consent prompt is gone: first-run consent is asked in the app, as

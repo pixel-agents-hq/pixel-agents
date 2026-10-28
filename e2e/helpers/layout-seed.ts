@@ -83,8 +83,10 @@ export function buildSeedLayout(opts: SeedLayoutOptions = {}): Record<string, un
 /**
  * Mirrors server/src/configPersistence.ts DEFAULT_ADAPTER_SETTINGS, except
  * alwaysShowLabels — the e2e baseline turns labels on so overlay text is
- * assertable without hover (same default the launch-level seed applies when a
- * test passes no seedConfig; see e2e/helpers/launch.ts).
+ * assertable without hover — and showHostDirectories, on so the workspace
+ * folders the launch helpers click are drawer rows (same baseline the
+ * launch-level seed applies when a test passes no seedConfig; see
+ * e2e/helpers/launch.ts).
  */
 const DEFAULT_ADAPTER_SETTINGS = {
   soundEnabled: true,
@@ -94,10 +96,11 @@ const DEFAULT_ADAPTER_SETTINGS = {
   hooksInfoShown: false,
   showAreas: false,
   areaMappings: {} as Record<string, string[]>,
+  showHostDirectories: true,
 };
 
 export interface SeedConfigOptions {
-  /** Folder name → Area labels (written into the vscode namespace). */
+  /** Directory name → Area labels (written into the vscode namespace). */
   areaMappings?: Record<string, string[]>;
   /** Persisted Show Areas state for the vscode namespace. */
   showAreas?: boolean;

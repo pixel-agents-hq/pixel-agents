@@ -56,6 +56,8 @@ interface EditorToolbarProps {
   /** Color applied to newly placed furniture (tints the palette + ghost). */
   pickedFurnitureColor: ColorValue | null;
   onPickedFurnitureColorChange: (color: ColorValue | null) => void;
+  /** Arm/disarm the colour-only eyedropper offered by the colour sliders. */
+  onColorPickToggle: () => void;
   onFurnitureTypeChange: (type: string) => void;
   loadedAssets?: LoadedAssetData;
   activePetTypes: number[];
@@ -71,8 +73,8 @@ interface EditorToolbarProps {
   // Area state + handlers
   areas: AreaDefinition[];
   selectedAreaLabel: string | null;
-  workspaceFolders: { name: string; path: string }[];
-  /** Whether the Areas tool is offered (layout has areas OR some folder is mappable). */
+  directories: { name: string; path: string }[];
+  /** Whether the Areas tool is offered (layout has areas OR some Directory is mappable). */
   areasAvailable: boolean;
   areaMappings: Record<string, string[]>;
   onSelectArea: (label: string | null) => void;
@@ -80,7 +82,7 @@ interface EditorToolbarProps {
   onRemoveArea: (label: string) => void;
   onRenameArea: (oldLabel: string, newLabel: string) => void;
   onAreaColorChange: (label: string, color: string) => void;
-  onAreaMappingChange: (folderName: string, areaLabel: string, action: 'add' | 'remove') => void;
+  onAreaMappingChange: (directoryName: string, areaLabel: string, action: 'add' | 'remove') => void;
 }
 
 const THUMB_ZOOM = 2;
@@ -104,6 +106,7 @@ export function EditorToolbar({
   onSelectedFurnitureColorChange,
   pickedFurnitureColor,
   onPickedFurnitureColorChange,
+  onColorPickToggle,
   onFurnitureTypeChange,
   loadedAssets,
   activePetTypes,
@@ -117,7 +120,7 @@ export function EditorToolbar({
   onCarpetAccentColorChange,
   areas,
   selectedAreaLabel,
-  workspaceFolders,
+  directories,
   areasAvailable,
   areaMappings,
   onSelectArea,
@@ -180,8 +183,12 @@ export function EditorToolbar({
   const isFurnitureActive =
     activeTool === EditTool.FURNITURE_PLACE ||
     activeTool === EditTool.FURNITURE_PICK ||
+    // Colour eyedropper armed from the new-furniture sliders: this panel holds
+    // them, so it has to stay open while the user goes to click an item.
+    (activeTool === EditTool.COLOR_PICK && !selectedFurnitureUid) ||
     isCarpetActive;
   const isPetsActive = activeTool === EditTool.PETS;
+  const isColorPicking = activeTool === EditTool.COLOR_PICK;
   const carpetVariantCount = getCarpetSetCount();
 
   /**
@@ -290,15 +297,15 @@ export function EditorToolbar({
       {/* Sub-panel: Floor tiles — stacked bottom-to-top via column-reverse */}
       {isFloorActive && (
         <div className="flex flex-col-reverse gap-4">
-          {/* Color toggle + Pick — just above tool row */}
+          {/* Copy + Color toggle — just above tool row */}
           <div className="flex gap-4 items-center">
             <Button
               variant={activeTool === EditTool.EYEDROPPER ? 'active' : 'ghost'}
               size="sm"
               onClick={() => onToolChange(EditTool.EYEDROPPER)}
-              title="Pick floor pattern + color from existing tile"
+              title="Copy floor pattern + color from existing tile"
             >
-              Pick
+              Copy
             </Button>
             <Button
               variant={showColor ? 'active' : 'ghost'}
@@ -448,7 +455,7 @@ export function EditorToolbar({
                   onRename={(newLabel) => onRenameArea(area.label, newLabel)}
                   onRemove={() => onRemoveArea(area.label)}
                   onColorChange={(c) => onAreaColorChange(area.label, c)}
-                  workspaceFolders={workspaceFolders}
+                  directories={directories}
                   areaMappings={areaMappings}
                   onAreaMappingChange={onAreaMappingChange}
                 />
@@ -461,7 +468,7 @@ export function EditorToolbar({
       {/* Sub-panel: Furniture — stacked bottom-to-top via column-reverse */}
       {isFurnitureActive && (
         <div className="flex flex-col-reverse gap-4">
-          {/* Category tabs + contextual Pick button — just above tool row */}
+          {/* Category tabs + contextual Copy button — just above tool row */}
           <div className="flex gap-4 flex-wrap items-center">
             {getActiveCategories().map((cat) => (
               <Button
@@ -493,31 +500,6 @@ export function EditorToolbar({
               </Button>
             )}
             <div className="w-[1px] h-14 bg-white/15 mx-2 shrink-0" />
-            {activeCategory === CARPET_CATEGORY_ID ? (
-              <Button
-                variant={activeTool === EditTool.CARPET_PICK ? 'active' : 'ghost'}
-                size="sm"
-                onClick={() =>
-                  onToolChange(
-                    activeTool === EditTool.CARPET_PICK
-                      ? EditTool.CARPET_PAINT
-                      : EditTool.CARPET_PICK,
-                  )
-                }
-                title="Pick carpet variant + colors from existing tile (P)"
-              >
-                Pick
-              </Button>
-            ) : (
-              <Button
-                variant={activeTool === EditTool.FURNITURE_PICK ? 'active' : 'ghost'}
-                size="sm"
-                onClick={() => onToolChange(EditTool.FURNITURE_PICK)}
-                title="Pick furniture type from placed item"
-              >
-                Pick
-              </Button>
-            )}
             {/* Color toggle — available across the whole Furniture tab. Carpet
                 edits main+accent; other categories edit the new-furniture color. */}
             <Button
@@ -540,6 +522,33 @@ export function EditorToolbar({
             >
               Color
             </Button>
+            {/* Copy — the eyedropper tools, named for what they do: take the
+                settings off something already placed. */}
+            {activeCategory === CARPET_CATEGORY_ID ? (
+              <Button
+                variant={activeTool === EditTool.CARPET_PICK ? 'active' : 'ghost'}
+                size="sm"
+                onClick={() =>
+                  onToolChange(
+                    activeTool === EditTool.CARPET_PICK
+                      ? EditTool.CARPET_PAINT
+                      : EditTool.CARPET_PICK,
+                  )
+                }
+                title="Copy carpet variant + colors from existing tile (P)"
+              >
+                Copy
+              </Button>
+            ) : (
+              <Button
+                variant={activeTool === EditTool.FURNITURE_PICK ? 'active' : 'ghost'}
+                size="sm"
+                onClick={() => onToolChange(EditTool.FURNITURE_PICK)}
+                title="Copy furniture type from placed item"
+              >
+                Copy
+              </Button>
+            )}
           </div>
 
           {/* Carpet sub-panel: variant carousel + compact color controls.
@@ -631,43 +640,28 @@ export function EditorToolbar({
               value={pickedFurnitureColor ?? DEFAULT_FURNITURE_COLOR}
               onChange={onPickedFurnitureColorChange}
               showColorizeToggle
+              onCopy={onColorPickToggle}
+              copyActive={isColorPicking}
               onReset={() => onPickedFurnitureColorChange(null)}
             />
           )}
         </div>
       )}
 
-      {/* Selected furniture color panel — shows when any placed furniture item is selected */}
+      {/* Selected furniture color panel — shows when any placed furniture item
+          is selected. Selecting an item is already the deliberate act, so the
+          sliders open straight away rather than behind a Color toggle, and
+          restoring the original sprite is the picker's own Reset (same control
+          the new-furniture picker offers). */}
       {selectedFurnitureUid && (
-        <div className="flex flex-col-reverse gap-4">
-          <div className="flex gap-4 items-center">
-            <Button
-              variant={showFurnitureColor ? 'active' : 'default'}
-              size="sm"
-              onClick={() => setShowFurnitureColor((v) => !v)}
-              title="Adjust selected furniture color"
-            >
-              Color
-            </Button>
-            {selectedFurnitureColor && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onSelectedFurnitureColorChange(null)}
-                title="Remove color (restore original)"
-              >
-                Clear
-              </Button>
-            )}
-          </div>
-          {showFurnitureColor && (
-            <ColorPicker
-              value={effectiveColor}
-              onChange={onSelectedFurnitureColorChange}
-              showColorizeToggle
-            />
-          )}
-        </div>
+        <ColorPicker
+          value={effectiveColor}
+          onChange={onSelectedFurnitureColorChange}
+          showColorizeToggle
+          onCopy={onColorPickToggle}
+          copyActive={isColorPicking}
+          onReset={() => onSelectedFurnitureColorChange(null)}
+        />
       )}
     </div>
   );
@@ -758,7 +752,7 @@ function AreaCard({
   onRename,
   onRemove,
   onColorChange,
-  workspaceFolders,
+  directories,
   areaMappings,
   onAreaMappingChange,
 }: {
@@ -768,9 +762,9 @@ function AreaCard({
   onRename: (newLabel: string) => void;
   onRemove: () => void;
   onColorChange: (color: string) => void;
-  workspaceFolders: { name: string; path: string }[];
+  directories: { name: string; path: string }[];
   areaMappings: Record<string, string[]>;
-  onAreaMappingChange: (folderName: string, areaLabel: string, action: 'add' | 'remove') => void;
+  onAreaMappingChange: (directoryName: string, areaLabel: string, action: 'add' | 'remove') => void;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState(area.label);
@@ -784,8 +778,8 @@ function AreaCard({
     [areaMappings, area.label],
   );
   const availableFolders = useMemo(
-    () => workspaceFolders.filter((f) => !mappedFolders.includes(f.name)),
-    [workspaceFolders, mappedFolders],
+    () => directories.filter((f) => !mappedFolders.includes(f.name)),
+    [directories, mappedFolders],
   );
 
   const commitRename = () => {

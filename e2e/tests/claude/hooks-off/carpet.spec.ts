@@ -257,7 +257,7 @@ test.describe('Carpet', () => {
   });
 
   // 'the Carpet controls live inside the Furniture panel' was removed in the
-  // 2026-07 review (Pablo's verdict): redundant — selectCarpetTool transits the
+  // 2026-07 maintainer review: redundant — selectCarpetTool transits the
   // same "Paint carpets" button in every carpet test and the thumbnail is
   // asserted in the sprites-load test above — and it pinned internal UI
   // arrangement (carpet-as-Furniture-category, c917772), which a harmless

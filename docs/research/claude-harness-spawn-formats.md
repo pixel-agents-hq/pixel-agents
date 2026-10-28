@@ -1,4 +1,4 @@
-# Claude Code harness: sub-agent and teammate spawn formats
+# Claude Code 2.1.220 harness: sub-agent and teammate spawn formats
 
 Research note investigating two claims about how the current Claude Code CLI spawns
 sub-agents and teammates, and what it writes to disk. Relevant to this repo because
@@ -7,7 +7,7 @@ formats.
 
 **Investigated:** 2026-07-29
 **CLI under test:** `claude --version` → `2.1.220 (Claude Code)`
-(binary at `/Users/pablo/.local/share/claude/versions/2.1.220`)
+(binary at `~/.local/share/claude/versions/2.1.220`)
 **Evidence base:** official docs, the official changelog, the installed binary, and a
 machine-wide sweep of every JSONL transcript under `~/.claude/projects/` — 939 files
 across 46 project directories, spanning 30 distinct CLI versions (2.1.170 – 2.1.220)
@@ -152,7 +152,7 @@ Verified against this very session. The researcher agent that produced this docu
 spawned as a named teammate, and its transcript is a top-level UUID session:
 
 ```
-$ ls ~/.claude/projects/-Users-pablo-Desktop-pixels-pixel-agents/39fff716-….jsonl
+$ ls ~/.claude/projects/<this-repo-project-dir>/39fff716-….jsonl
 $ grep -o '"teamName":"[^"]*"'  39fff716-….jsonl | sort -u   → "teamName":"session-1b296605"
 $ grep -o '"agentName":"[^"]*"' 39fff716-….jsonl | sort -u   → "agentName":"harness-researcher"
 $ grep -o '"version":"[0-9.]*"' 39fff716-….jsonl | sort -u   → "version":"2.1.220"

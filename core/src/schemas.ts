@@ -19,6 +19,9 @@ export interface PersistedAgent {
   isExternal?: boolean;
   jsonlFile: string;
   projectDir: string;
+  directoryName?: string;
+  /** Pre-Directory spelling of `directoryName`, written by releases up to
+   *  v1.4.x. Read as a fallback on restore; never written. */
   folderName?: string;
   teamName?: string;
   agentName?: string;

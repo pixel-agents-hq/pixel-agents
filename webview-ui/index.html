@@ -2,9 +2,31 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>webview-ui</title>
+    <link rel="icon" type="image/png" href="/icons/icon-256.png?v=2" />
+    <!-- viewport-fit=cover: draw under the iPhone notch/home bar (safe-area
+         insets pad the card bar back out). user-scalable=no: pinch belongs to
+         the office canvas zoom, not page zoom. interactive-widget: Android
+         resizes the layout when the keyboard opens, so xterm re-fits. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no, interactive-widget=resizes-content"
+    />
+    <!-- The standalone page URL carries the server token (?token=); never send it as a Referer. -->
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#1e1e2e" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- iOS "Add to Home Screen": standalone chrome-less launch -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Pixel Agents" />
+    <link rel="apple-touch-icon" href="/icons/icon-256.png?v=2" />
+    <!-- public/ also holds favicon.ico, apple-touch-icon.png and
+         apple-touch-icon-precomposed.png at their conventional paths: browsers
+         and iOS probe those without a <link>, and the standalone server's SPA
+         fallback would otherwise answer the probe with index.html, leaving a
+         stale cached icon in place forever. Bump ?v= on every icon change. -->
+    <title>Pixel Agents</title>
   </head>
   <body>
     <div id="root"></div>

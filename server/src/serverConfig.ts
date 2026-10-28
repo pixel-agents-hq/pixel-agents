@@ -10,6 +10,21 @@ export interface ServerTarget {
   debugLog?: string;
 }
 
+/**
+ * What a standalone server exposes, as the operator asked for it at launch.
+ * Recorded so a second `npx pixel-agents` reuses a running server only when it
+ * would have started the SAME one -- otherwise `--no-terminal` or a narrower
+ * `--host` would be silently ignored in favour of a server that has a shell.
+ */
+export interface StandaloneAccess {
+  /** Whether the browser may launch agents and attach to their terminals. */
+  terminal: boolean;
+  /** Bind address. */
+  host: string;
+  /** Normalized, sorted `--allowed-host` names. */
+  allowedHosts: string[];
+}
+
 /** Complete per-server discovery record stored in the multi-server registry. */
 export interface ServerConfig extends ServerTarget {
   /** Timestamp (ms) when the server started. */
@@ -18,6 +33,34 @@ export interface ServerConfig extends ServerTarget {
   servesSpa: boolean;
   /** Registry record format version. */
   protocol: number;
+  /** Standalone servers only. Absent on an entry written before this field
+   *  existed, which then never matches a standalone request (start fresh). */
+  standalone?: StandaloneAccess;
+}
+
+/** Whether a running server's access matches what this launch asked for.
+ *  Embedded servers carry none and match each other. */
+export function sameStandaloneAccess(
+  running: StandaloneAccess | undefined,
+  wanted: StandaloneAccess | undefined,
+): boolean {
+  if (running === undefined || wanted === undefined) return running === wanted;
+  return (
+    running.terminal === wanted.terminal &&
+    running.host === wanted.host &&
+    running.allowedHosts.length === wanted.allowedHosts.length &&
+    running.allowedHosts.every((h, i) => h === wanted.allowedHosts[i])
+  );
+}
+
+function isStandaloneAccess(value: unknown): value is StandaloneAccess {
+  return (
+    isRecord(value) &&
+    typeof value.terminal === 'boolean' &&
+    typeof value.host === 'string' &&
+    Array.isArray(value.allowedHosts) &&
+    value.allowedHosts.every((h) => typeof h === 'string')
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -46,6 +89,7 @@ export function isServerConfig(value: unknown): value is ServerConfig {
     Number.isSafeInteger(value.startedAt) &&
     (value.startedAt as number) >= 0 &&
     typeof value.servesSpa === 'boolean' &&
-    value.protocol === SERVER_REGISTRY_PROTOCOL_VERSION
+    value.protocol === SERVER_REGISTRY_PROTOCOL_VERSION &&
+    (value.standalone === undefined || isStandaloneAccess(value.standalone))
   );
 }
