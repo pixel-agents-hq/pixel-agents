@@ -26,6 +26,7 @@ import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import type { AgentState } from '../types.js';
+import { terminalEnv } from './terminalEnv.js';
 import type { TerminalSession, TerminalSessions } from './terminalSessions.js';
 
 export interface LaunchStandaloneAgentDeps {
@@ -111,7 +112,9 @@ export function launchStandaloneAgent(
       command: launch.command,
       args: launch.args,
       cwd,
-      env: { ...processEnv(), ...launch.env },
+      // The locale too (terminalEnv), here as well as in the PTY: a PTY host
+      // started by an older server spawns with the env it is handed.
+      env: terminalEnv({ ...processEnv(), ...launch.env }),
       cols: options.cols,
       rows: options.rows,
     });

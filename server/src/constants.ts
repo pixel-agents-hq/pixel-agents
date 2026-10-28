@@ -141,6 +141,10 @@ export const TERMINAL_DEFAULT_COLS = 80;
 export const TERMINAL_DEFAULT_ROWS = 24;
 /** TERM value exported into the PTY. */
 export const TERMINAL_TERM_NAME = 'xterm-256color';
+/** LANG exported into the PTY when the server's environment names no locale
+ *  (a launchd service has none): without one, macOS tools such as pbcopy
+ *  read UTF-8 as Mac Roman, and "í" reaches the clipboard as "√≠". */
+export const TERMINAL_DEFAULT_LANG = 'en_US.UTF-8';
 /** Grace period between SIGHUP and SIGKILL when disposing a PTY. */
 export const TERMINAL_KILL_GRACE_MS = 2_000;
 /** How long shutdown waits past the SIGKILL escalation for the exits to land. */
