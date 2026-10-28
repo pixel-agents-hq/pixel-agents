@@ -12,6 +12,7 @@ export type ServerMessage =
   | AgentCreated
   | AgentClosed
   | AgentSelected
+  | AgentDeselected
   | ExistingAgents
   | AgentStatus
   | AgentToolStart
@@ -100,6 +101,7 @@ export interface AgentCreated {
   id: number;
   directoryName?: string;
   isExternal?: boolean;
+  isHeadless?: boolean;
   palette?: number;
   repeat?: number;
   seatId?: string;
@@ -115,12 +117,18 @@ export interface AgentSelected {
   id: number;
 }
 
+export interface AgentDeselected {
+  type: 'agentDeselected';
+  id: number;
+}
+
 export interface ExistingAgents {
   type: 'existingAgents';
   agents: number[];
   agentMeta: Record<string, AgentSeatMeta>;
   directoryNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
+  headlessAgents?: Record<string, boolean>;
 }
 
 export interface AgentSeatMeta {

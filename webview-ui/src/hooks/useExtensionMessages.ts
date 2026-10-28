@@ -13,6 +13,7 @@ import {
   restoreAgent,
   staleAgentIds,
 } from '../office/engine/existingAgents.js';
+import { resolveHeadless } from '../office/engine/headlessAgent.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { setGhostHeadlessAgents as setRendererGhostHeadlessAgents } from '../office/engine/renderer.js';
 import { setFloorSprites } from '../office/floorTiles.js';
@@ -32,16 +33,10 @@ import { transport } from '../transport/index.js';
 import { onReconnect } from '../transport/onReconnect.js';
 import { handleUsageMessage } from '../usage/usageStore.js';
 
-/**
- * A Headless agent is one the office adopted from outside (`claude -p`, a session
- * picked up by Watch All Sessions) and therefore has no terminal to focus. Its
- * character renders translucent so it reads as untouchable at a glance.
- *
- * Standalone is exempt: that adapter has no terminals at all, so every agent
- * would qualify and the cue would distinguish nothing.
- */
-const isHeadlessAgent = (isExternal: boolean | undefined): boolean =>
-  isExternal === true && !isBrowserRuntime;
+/** See resolveHeadless (office/engine/headlessAgent.ts) for the full rationale;
+ *  this just binds it to our runtime's isBrowserRuntime. */
+const isHeadlessAgent = (isExternal: boolean | undefined, explicitHeadless?: boolean): boolean =>
+  resolveHeadless(isExternal, explicitHeadless, isBrowserRuntime);
 
 export interface SubagentCharacter {
   id: number;
@@ -459,7 +454,12 @@ export function useExtensionMessages(
           const seatId = msg.seatId as string | undefined;
           os.addAgent(id, palette, repeat, seatId, undefined, directoryName);
           noteDirectoryName(directoryName);
-          if (isHeadlessAgent(msg.isExternal as boolean | undefined)) {
+          if (
+            isHeadlessAgent(
+              msg.isExternal as boolean | undefined,
+              msg.isHeadless as boolean | undefined,
+            )
+          ) {
             os.setHeadless(id, true);
           }
         }
@@ -475,10 +475,13 @@ export function useExtensionMessages(
         const meta = (msg.agentMeta || {}) as Record<number, ExistingAgentMeta>;
         const directoryNames = (msg.directoryNames || {}) as Record<number, string>;
         const externalAgents = (msg.externalAgents || {}) as Record<number, boolean>;
+        const explicitHeadlessAgents = (msg.headlessAgents || {}) as Record<number, boolean>;
         const headlessAgents: Record<number, boolean> = {};
         for (const id of incoming) {
           noteDirectoryName(directoryNames[id]);
-          if (isHeadlessAgent(externalAgents[id])) headlessAgents[id] = true;
+          if (isHeadlessAgent(externalAgents[id], explicitHeadlessAgents[id])) {
+            headlessAgents[id] = true;
+          }
         }
         // Order-independent restore: add agents now if the layout (and its seats)
         // is already built, otherwise buffer them for the next layoutLoaded.
@@ -620,6 +623,18 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentSelected') {
         const id = msg.id as number;
         setSelectedAgent(id);
+        // <DebugView> reads the `selectedAgent` state above; <ToolOverlay> on the
+        // office canvas reads officeState.selectedAgentId instead (set only by
+        // canvas clicks otherwise). Set both so external selection (e.g. a
+        // Discord-bridge backend implementing this protocol) opens the label
+        // panel there too. Unlike a real click, this does NOT set cameraFollowId,
+        // dismiss bubbles, or toggle off on a repeat id — it's a raw selection
+        // write, not a full click.
+        os.selectedAgentId = id;
+      } else if (msg.type === 'agentDeselected') {
+        const id = msg.id as number;
+        setSelectedAgent((prev) => (prev === id ? null : prev));
+        if (os.selectedAgentId === id) os.selectedAgentId = null;
       } else if (msg.type === 'agentStatus') {
         const id = msg.id as number;
         const status = msg.status as string;
