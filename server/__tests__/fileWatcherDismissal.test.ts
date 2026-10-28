@@ -27,10 +27,12 @@ import {
   scanExternalDir,
   scanForNewJsonlFiles,
   setDismissalTracker,
+  setHookProvider,
   setTeamProvider,
   startExternalSessionScanning,
 } from '../src/fileWatcher.js';
 import { PathSet } from '../src/pathKey.js';
+import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import { claudeTeamProvider } from '../src/providers/hook/claude/claudeTeamProvider.js';
 import type { AgentState } from '../src/types.js';
 
@@ -79,6 +81,7 @@ describe('fileWatcher dismissal state', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-fw-dismissal-'));
     projectDir = tmpDir;
+    setHookProvider({ ...claudeProvider, getAllSessionRoots: () => [] });
 
     tracker = new DismissalTracker();
     setDismissalTracker(tracker);
@@ -383,7 +386,84 @@ describe('fileWatcher dismissal state', () => {
     });
   });
 
-  describe('startExternalSessionScanning: hooks mode workspace discovery', () => {
+  describe('startExternalSessionScanning: global and workspace discovery', () => {
+    it('uses transcript cwd for global labels and falls back on malformed records', () => {
+      const root = path.join(tmpDir, 'projects');
+      const namedDir = path.join(root, '-Users-test-mobile-client-new');
+      const hyphenDir = path.join(root, '-Users-test-my-openclaw');
+      const fallbackDir = path.join(root, '-Users-test-broken-label');
+      fs.mkdirSync(namedDir, { recursive: true });
+      fs.mkdirSync(hyphenDir);
+      fs.mkdirSync(fallbackDir);
+      const namedFile = path.join(namedDir, 'named.jsonl');
+      fs.writeFileSync(
+        namedFile,
+        JSON.stringify({ cwd: '/Users/test/mobile_client_new', text: 'x'.repeat(3100) }) + '\n',
+      );
+      fs.writeFileSync(
+        path.join(hyphenDir, 'hyphen.jsonl'),
+        JSON.stringify({ cwd: '/Users/test/my-openclaw', text: 'x'.repeat(3100) }) + '\n',
+      );
+      fs.writeFileSync(path.join(fallbackDir, 'broken.jsonl'), 'not json\n' + 'x'.repeat(3100));
+      setHookProvider({ ...claudeProvider, getAllSessionRoots: () => [root] });
+
+      vi.useFakeTimers();
+      const timer = startExternalSessionScanning(
+        projectDir,
+        knownJsonlFiles,
+        nextAgentIdRef,
+        agents,
+        fileWatchers,
+        pollingTimers,
+        waitingTimers,
+        permissionTimers,
+        new Map(),
+        () => {},
+        { current: true },
+      );
+      try {
+        vi.advanceTimersByTime(EXTERNAL_SCAN_INTERVAL_MS);
+      } finally {
+        clearInterval(timer);
+        vi.useRealTimers();
+      }
+
+      expect(
+        [...agents.values()].find((agent) => agent.jsonlFile === namedFile)?.directoryName,
+      ).toBe('mobile_client_new');
+      expect(
+        [...agents.values()].find((agent) => agent.jsonlFile.endsWith('hyphen.jsonl'))
+          ?.directoryName,
+      ).toBe('my-openclaw');
+      expect(
+        [...agents.values()].find((agent) => agent.jsonlFile.endsWith('broken.jsonl'))
+          ?.directoryName,
+      ).toBe('label');
+    });
+
+    it('uses hook cwd before the lossy encoded project directory', () => {
+      const encodedDir = path.join(tmpDir, '-Users-test-personal-ai-work');
+      fs.mkdirSync(encodedDir);
+      const transcript = path.join(encodedDir, 'hook.jsonl');
+      fs.writeFileSync(transcript, '{"type":"user"}\n');
+
+      adoptExternalSessionFromHook(
+        'hook',
+        transcript,
+        '/Users/test/personal_ai_work',
+        knownJsonlFiles,
+        nextAgentIdRef,
+        agents,
+        fileWatchers,
+        pollingTimers,
+        waitingTimers,
+        permissionTimers,
+        () => {},
+      );
+
+      expect([...agents.values()][0]?.directoryName).toBe('personal_ai_work');
+    });
+
     it('adopts workspace JSONL sessions when hooks and Watch All Sessions are both enabled', () => {
       vi.useFakeTimers();
       const projectScanTimerRef: { current: ReturnType<typeof setInterval> | null } = {
