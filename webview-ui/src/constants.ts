@@ -740,7 +740,7 @@ export const CONVERSATIONS_REFRESH_INTERVAL_MS = 30_000;
 export const MOBILE_CONVERSATIONS_WIDTH = 'min(340px, 85vw)';
 /** Conversations in the list's "Recent" section, across every Directory. */
 export const RECENT_CONVERSATIONS_COUNT = 5;
-/** Past conversations a Directory lists until "Show more" (the server's CONVERSATIONS_PER_DIRECTORY). */
+/** Conversations a Directory lists until "Show more", running ones included (the server's CONVERSATIONS_PER_DIRECTORY). */
 export const CONVERSATIONS_PER_DIRECTORY = 5;
 /** How many more each "Show more" press lists. */
 export const CONVERSATIONS_SHOW_MORE_STEP = 5;

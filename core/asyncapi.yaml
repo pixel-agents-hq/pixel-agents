@@ -1043,9 +1043,9 @@ components:
     ConversationsLoaded:
       description: |
         The sidebar's recent conversations: for each Directory, the ones an
-        agent in the office is running (with `agentId`) and its newest past
-        ones (five, or as many as the request's `limits` asked for that
-        Directory), newest first. Sent point-to-point in reply to
+        agent in the office is running (with `agentId`) and its past ones,
+        newest first: five in all, or as many as the request's `limits` asked
+        for that Directory. Sent point-to-point in reply to
         `requestConversations` (never broadcast).
       type: object
       additionalProperties: false
@@ -1641,7 +1641,7 @@ components:
     RequestConversations:
       description: >-
         Ask for the sidebar's recent conversations; the host replies
-        `conversationsLoaded` to this client only. `limits`: how many past
+        `conversationsLoaded` to this client only. `limits`: how many
         conversations to list for a Directory (its "Show more"); the rest
         get five.
       type: object

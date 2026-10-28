@@ -64,7 +64,7 @@ export function ConversationList({
     conversation.agentId !== undefined
       ? onOpenAgent(conversation.agentId)
       : onResume(conversation.sessionId, directory.path);
-  // Past conversations per Directory beyond the default ("Show more"):
+  // Conversations per Directory beyond the default five ("Show more"):
   // forgotten when a section opens or shuts, and on reload.
   const [limits, setLimits] = useState<ConversationLimits>({});
   const list = useConversations(open, limits);
@@ -224,7 +224,7 @@ interface SectionProps {
   press: (conversation: Conversation, directory: DirectoryConversations) => () => void;
   statusFor: ConversationListProps['statusFor'];
   roomy: boolean;
-  /** Lists CONVERSATIONS_SHOW_MORE_STEP more of its past conversations. */
+  /** Lists CONVERSATIONS_SHOW_MORE_STEP more of its conversations. */
   onShowMore: () => void;
   /** Opens the search on this Directory's conversations. */
   onSearch?: () => void;

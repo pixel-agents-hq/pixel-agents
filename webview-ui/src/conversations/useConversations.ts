@@ -26,13 +26,13 @@ export interface ConversationList {
   receivedAt: number;
 }
 
-/** Past conversations to list per Directory, where not the default five. */
+/** Conversations to list per Directory, where not the default five. */
 export type ConversationLimits = Readonly<Record<string, number>>;
 
 /**
  * The sidebar's recent conversations, asked of the server while `open` (the
  * list reads transcripts from disk, so nothing is fetched while it's shut).
- * `limits`: how many past ones a Directory lists ("Show more"); a change asks
+ * `limits`: how many a Directory lists ("Show more"); a change asks
  * again at once. Null until the first answer.
  */
 export function useConversations(

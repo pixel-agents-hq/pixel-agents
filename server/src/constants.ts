@@ -224,7 +224,7 @@ export const MAX_CHARACTER_REPEAT = 1_000;
 export const CONVERSATIONS_FILE_NAME = 'conversations.json';
 /** Most conversations whose look is remembered (the newest are kept). */
 export const CONVERSATION_LOOKS_MAX = 500;
-/** Conversations the sidebar lists per Directory, newest first. */
+/** Conversations the sidebar lists per Directory to begin with (running ones included), newest first. */
 export const CONVERSATIONS_PER_DIRECTORY = 5;
 /** Most conversations a Directory's "Show more" or a search may ask for. */
 export const CONVERSATIONS_LIMIT_MAX = 2_000;

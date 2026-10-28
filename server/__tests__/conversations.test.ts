@@ -107,7 +107,7 @@ describe('conversations', () => {
     });
   });
 
-  it('lists the running ones, then the newest five past ones, leaving out untitled past ones', () => {
+  it('lists the newest five, running ones included, leaving out untitled past ones', () => {
     for (let i = 1; i <= 8; i++) {
       transcript(uuid(i), line({ type: 'ai-title', aiTitle: `Chat ${i}` }), i * 60_000);
     }
@@ -127,12 +127,25 @@ describe('conversations', () => {
       'Chat 6',
       'Chat 5',
       'Chat 4',
-      'Chat 2',
-      'New conversation',
     ]);
+    expect(listed.more).toBe(true);
     expect(listed.conversations[0]).toMatchObject({ sessionId: uuid(8), updatedAt: 8 * 60_000 });
     expect(listed.conversations[0].agentId).toBeUndefined();
-    expect(listed.conversations[5]).toMatchObject({ agentId: 3, palette: 4, repeat: 0 });
+    // Asked for all: the running ones with their agents, the untitled
+    // running one as "New conversation".
+    const all = listConversations(
+      [directory],
+      provider,
+      live,
+      conversationLimitsFrom([{ directoryPath: '/work/web', count: 20 }]),
+    )[0];
+    expect(all.conversations.map((c) => c.title).slice(-3)).toEqual([
+      'Chat 2',
+      'Chat 1',
+      'New conversation',
+    ]);
+    expect(all.conversations.at(-3)).toMatchObject({ agentId: 3, palette: 4, repeat: 0 });
+    expect(all.more).toBeUndefined();
   });
 
   it('lists as many past ones as a Directory asks for, and says whether older ones exist', () => {

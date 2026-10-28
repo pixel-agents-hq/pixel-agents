@@ -284,13 +284,12 @@ function clampLimit(count: number): number {
 }
 
 /**
- * Each Directory's conversations, newest first: the ones an agent in the
- * office is running (with its id and what it wears now; titled "New
- * conversation" until the coding agent titles it) and its newest past ones,
- * interleaved by when they were last written. Only the past ones are capped,
- * at the Directory's `limits` entry (else CONVERSATIONS_PER_DIRECTORY), and
- * `more` says older ones exist; a past one without a title (a session that
- * never got a prompt) is left out.
+ * Each Directory's newest conversations: the ones an agent in the office is
+ * running (with its id and what it wears now; titled "New conversation" until
+ * the coding agent titles it) and past ones, by when they were last written,
+ * at most the Directory's `limits` entry (else CONVERSATIONS_PER_DIRECTORY)
+ * of them all told; `more` says older ones exist. A past one without a title
+ * (a session that never got a prompt) is left out.
  */
 export function listConversations(
   directories: readonly Directory[],
@@ -303,21 +302,16 @@ export function listConversations(
   const listed = directories.map((directory): DirectoryConversations => {
     const limit = limits.get(directory.path) ?? CONVERSATIONS_PER_DIRECTORY;
     const conversations: Conversation[] = [];
-    let past = 0;
     let more = false;
     for (const file of directoryTranscripts(directory, provider)) {
       found.add(file.path);
-      const running = live.has(path.basename(file.path, '.jsonl'));
-      // Past the cap, only running ones (and the first titled past one, which
-      // says there are more) are read.
-      if (!running && past >= limit) {
-        if (!more && cachedTitle(provider, file)) more = true;
+      // Past the cap, titles are read only until one says there are more.
+      if (conversations.length >= limit) {
+        if (!more) more = conversationOf(file, provider, live, looks) !== null;
         continue;
       }
       const conversation = conversationOf(file, provider, live, looks);
-      if (!conversation) continue;
-      conversations.push(conversation);
-      if (!running) past++;
+      if (conversation) conversations.push(conversation);
     }
     return {
       name: directory.name,
