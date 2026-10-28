@@ -740,6 +740,16 @@ export const CONVERSATIONS_REFRESH_INTERVAL_MS = 30_000;
 export const MOBILE_CONVERSATIONS_WIDTH = 'min(340px, 85vw)';
 /** Conversations in the list's "Recent" section, across every Directory. */
 export const RECENT_CONVERSATIONS_COUNT = 5;
+/** Past conversations a Directory lists until "Show more" (the server's CONVERSATIONS_PER_DIRECTORY). */
+export const CONVERSATIONS_PER_DIRECTORY = 5;
+/** How many more each "Show more" press lists. */
+export const CONVERSATIONS_SHOW_MORE_STEP = 5;
+/** Search results asked for at a time (scrolling near the end asks for more). */
+export const CONVERSATION_SEARCH_PAGE = 50;
+/** Typing pause before a search is sent. */
+export const CONVERSATION_SEARCH_DEBOUNCE_MS = 200;
+/** How close to the end of the results (px) scrolling asks for the next page. */
+export const CONVERSATION_SEARCH_PREFETCH_PX = 120;
 /** localStorage key: the Directory paths this viewer expanded in the conversation list. */
 export const CONVERSATION_EXPANDED_KEY = 'pixel-agents.conversationExpandedDirectories';
 /** localStorage key: whether this viewer shut the desktop conversation sidebar. */

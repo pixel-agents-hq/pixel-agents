@@ -279,6 +279,17 @@ export const ICONS = {
     '........',
     '........',
   ],
+  // A magnifying glass: the lens top-left, the handle out to the corner.
+  search: [
+    '.####...',
+    '#....#..',
+    '#....#..',
+    '#....#..',
+    '#....#..',
+    '.####...',
+    '.....##.',
+    '......##',
+  ],
 } as const satisfies Record<string, readonly string[]>;
 
 export type PixelIconName = keyof typeof ICONS;

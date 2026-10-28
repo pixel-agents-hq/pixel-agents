@@ -226,6 +226,12 @@ export const CONVERSATIONS_FILE_NAME = 'conversations.json';
 export const CONVERSATION_LOOKS_MAX = 500;
 /** Conversations the sidebar lists per Directory, newest first. */
 export const CONVERSATIONS_PER_DIRECTORY = 5;
+/** Most conversations a Directory's "Show more" or a search may ask for. */
+export const CONVERSATIONS_LIMIT_MAX = 2_000;
+/** Most Directories a requestConversations may set a limit for. */
+export const CONVERSATIONS_LIMIT_ENTRIES_MAX = 200;
+/** A search query longer than this is cut. */
+export const CONVERSATION_QUERY_MAX_CHARS = 200;
 /** Bytes read from each end of a transcript looking for its title. */
 export const CONVERSATION_TITLE_SCAN_BYTES = 256 * 1024;
 /** A title longer than this is cut, with an ellipsis. */

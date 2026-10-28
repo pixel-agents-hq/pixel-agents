@@ -3,12 +3,21 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { isRecord } from '../../core/src/isRecord.js';
-import type { AgentLook, Directory, DirectoryConversations } from '../../core/src/messages.js';
+import type {
+  AgentLook,
+  Conversation,
+  Directory,
+  DirectoryConversations,
+  FoundConversation,
+} from '../../core/src/messages.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import {
   CONVERSATION_LOOKS_MAX,
+  CONVERSATION_QUERY_MAX_CHARS,
   CONVERSATIONS_FILE_NAME,
+  CONVERSATIONS_LIMIT_ENTRIES_MAX,
+  CONVERSATIONS_LIMIT_MAX,
   CONVERSATIONS_PER_DIRECTORY,
   NEW_CONVERSATION_TITLE,
   PIXEL_AGENTS_DIR,
@@ -213,17 +222,12 @@ interface TranscriptFile {
  * Titles already read, by transcript path, with the size and mtime they were
  * read at. A title is a function of the file, so an entry is used only while
  * both still match (any write changes them). Untitled results are kept too, or
- * every untitled session would be re-read on each listing. Entries a listing
- * didn't look at are dropped after it.
+ * every untitled session would be re-read on each listing. A listing drops
+ * the entries of transcripts it no longer finds (a search shares them).
  */
 const titleCache = new Map<string, { size: number; mtimeMs: number; title: string | undefined }>();
 
-function cachedTitle(
-  provider: HookProvider,
-  file: TranscriptFile,
-  seen: Set<string>,
-): string | undefined {
-  seen.add(file.path);
+function cachedTitle(provider: HookProvider, file: TranscriptFile): string | undefined {
   const hit = titleCache.get(file.path);
   if (hit && hit.size === file.size && hit.mtimeMs === file.mtimeMs) return hit.title;
   const title = provider.conversationTitle?.(file.path);
@@ -231,48 +235,164 @@ function cachedTitle(
   return title;
 }
 
+/** Every transcript of a Directory, newest first. */
+function directoryTranscripts(directory: Directory, provider: HookProvider): TranscriptFile[] {
+  return sessionDirsFor(provider, directory.path)
+    .flatMap(transcriptsIn)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+/** A transcript as a listed conversation, or null when it has no title (a
+ *  past session that never got a prompt; a running one is "New conversation"). */
+function conversationOf(
+  file: TranscriptFile,
+  provider: HookProvider,
+  live: ReadonlyMap<string, LiveSession>,
+  looks: Looks,
+): Conversation | null {
+  const sessionId = path.basename(file.path, '.jsonl');
+  const running = live.get(sessionId);
+  const title = cachedTitle(provider, file) ?? (running && NEW_CONVERSATION_TITLE);
+  if (!title) return null;
+  const look = running ?? looks[sessionId];
+  return {
+    sessionId,
+    title,
+    updatedAt: file.mtimeMs,
+    palette: look?.palette,
+    repeat: look?.repeat,
+    agentId: running?.agentId,
+  };
+}
+
+/** How many past conversations a Directory lists: its `limits` entry, within
+ *  bounds, else CONVERSATIONS_PER_DIRECTORY. */
+export function conversationLimitsFrom(limits: unknown): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!Array.isArray(limits)) return out;
+  for (const entry of limits.slice(0, CONVERSATIONS_LIMIT_ENTRIES_MAX)) {
+    if (!isRecord(entry) || typeof entry.directoryPath !== 'string') continue;
+    const count = entry.count;
+    if (typeof count !== 'number' || !Number.isInteger(count)) continue;
+    out.set(entry.directoryPath, clampLimit(count));
+  }
+  return out;
+}
+
+function clampLimit(count: number): number {
+  return Math.min(Math.max(count, 1), CONVERSATIONS_LIMIT_MAX);
+}
+
 /**
  * Each Directory's conversations, newest first: the ones an agent in the
  * office is running (with its id and what it wears now; titled "New
  * conversation" until the coding agent titles it) and its newest past ones,
  * interleaved by when they were last written. Only the past ones are capped,
- * at CONVERSATIONS_PER_DIRECTORY, and a past one without a title (a session
- * that never got a prompt) is left out.
+ * at the Directory's `limits` entry (else CONVERSATIONS_PER_DIRECTORY), and
+ * `more` says older ones exist; a past one without a title (a session that
+ * never got a prompt) is left out.
  */
 export function listConversations(
   directories: readonly Directory[],
   provider: HookProvider,
   live: ReadonlyMap<string, LiveSession>,
+  limits: ReadonlyMap<string, number> = new Map(),
 ): DirectoryConversations[] {
   const looks = readLooks();
-  const seen = new Set<string>();
-  const listed = directories.map((directory) => {
-    const conversations: DirectoryConversations['conversations'] = [];
+  const found = new Set<string>();
+  const listed = directories.map((directory): DirectoryConversations => {
+    const limit = limits.get(directory.path) ?? CONVERSATIONS_PER_DIRECTORY;
+    const conversations: Conversation[] = [];
     let past = 0;
-    const files = sessionDirsFor(provider, directory.path)
-      .flatMap(transcriptsIn)
-      .sort((a, b) => b.mtimeMs - a.mtimeMs);
-    for (const file of files) {
-      const sessionId = path.basename(file.path, '.jsonl');
-      const running = live.get(sessionId);
-      if (!running && past >= CONVERSATIONS_PER_DIRECTORY) continue;
-      const title = cachedTitle(provider, file, seen) ?? (running && NEW_CONVERSATION_TITLE);
-      if (!title) continue;
-      const look = running ?? looks[sessionId];
-      conversations.push({
-        sessionId,
-        title,
-        updatedAt: file.mtimeMs,
-        palette: look?.palette,
-        repeat: look?.repeat,
-        agentId: running?.agentId,
-      });
+    let more = false;
+    for (const file of directoryTranscripts(directory, provider)) {
+      found.add(file.path);
+      const running = live.has(path.basename(file.path, '.jsonl'));
+      // Past the cap, only running ones (and the first titled past one, which
+      // says there are more) are read.
+      if (!running && past >= limit) {
+        if (!more && cachedTitle(provider, file)) more = true;
+        continue;
+      }
+      const conversation = conversationOf(file, provider, live, looks);
+      if (!conversation) continue;
+      conversations.push(conversation);
       if (!running) past++;
     }
-    return { name: directory.name, path: directory.path, conversations };
+    return {
+      name: directory.name,
+      path: directory.path,
+      conversations,
+      ...(more ? { more } : {}),
+    };
   });
-  for (const cached of titleCache.keys()) if (!seen.has(cached)) titleCache.delete(cached);
+  for (const cached of titleCache.keys()) if (!found.has(cached)) titleCache.delete(cached);
   return listed;
+}
+
+/** What a search asks for. */
+export interface ConversationQuery {
+  query: string;
+  /** Only this Directory's (else every Directory's). */
+  directoryPath?: string;
+  limit: number;
+}
+
+/** A `searchConversations` request, checked; null when malformed. */
+export function conversationQueryFrom(msg: {
+  query?: unknown;
+  directoryPath?: unknown;
+  limit?: unknown;
+}): ConversationQuery | null {
+  if (typeof msg.query !== 'string' || typeof msg.limit !== 'number') return null;
+  if (!Number.isInteger(msg.limit)) return null;
+  if (msg.directoryPath !== undefined && typeof msg.directoryPath !== 'string') return null;
+  return {
+    query: msg.query.slice(0, CONVERSATION_QUERY_MAX_CHARS),
+    ...(msg.directoryPath !== undefined ? { directoryPath: msg.directoryPath } : {}),
+    limit: clampLimit(msg.limit),
+  };
+}
+
+/** Whether `title` holds every word of `query` (any case). */
+export function titleMatches(title: string, query: string): boolean {
+  const lower = title.toLowerCase();
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => lower.includes(word));
+}
+
+/**
+ * The conversations whose title matches `query` (titleMatches), across every
+ * Directory or the one asked for, newest first, at most `limit`; `more`: at
+ * least one more matches. A session listed under two Directories counts once.
+ */
+export function searchConversations(
+  directories: readonly Directory[],
+  provider: HookProvider,
+  live: ReadonlyMap<string, LiveSession>,
+  { query, directoryPath, limit }: ConversationQuery,
+): { results: FoundConversation[]; more: boolean } {
+  const looks = readLooks();
+  const files = directories
+    .filter((d) => directoryPath === undefined || d.path === directoryPath)
+    .flatMap((directory) =>
+      directoryTranscripts(directory, provider).map((file) => ({ file, directory })),
+    )
+    .sort((a, b) => b.file.mtimeMs - a.file.mtimeMs);
+  const results: FoundConversation[] = [];
+  const sessions = new Set<string>();
+  for (const { file, directory } of files) {
+    const conversation = conversationOf(file, provider, live, looks);
+    if (!conversation || sessions.has(conversation.sessionId)) continue;
+    if (!titleMatches(conversation.title, query)) continue;
+    if (results.length === limit) return { results, more: true };
+    sessions.add(conversation.sessionId);
+    results.push({ directoryPath: directory.path, directoryName: directory.name, conversation });
+  }
+  return { results, more: false };
 }
 
 /** A project dir's transcripts. */

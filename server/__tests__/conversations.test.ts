@@ -7,13 +7,16 @@ import type { Directory } from '../../core/src/messages.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import { createAgentState } from '../src/agentState.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
-import { CONVERSATION_TITLE_SCAN_BYTES } from '../src/constants.js';
+import { CONVERSATION_TITLE_SCAN_BYTES, CONVERSATIONS_LIMIT_MAX } from '../src/constants.js';
 import {
+  conversationLimitsFrom,
   conversationLook,
+  conversationQueryFrom,
   listConversations,
   liveSessions,
   recordConversationLooks,
   resumeRequest,
+  searchConversations,
 } from '../src/conversations.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import { conversationTitle } from '../src/providers/hook/claude/conversationTitle.js';
@@ -130,6 +133,113 @@ describe('conversations', () => {
     expect(listed.conversations[0]).toMatchObject({ sessionId: uuid(8), updatedAt: 8 * 60_000 });
     expect(listed.conversations[0].agentId).toBeUndefined();
     expect(listed.conversations[5]).toMatchObject({ agentId: 3, palette: 4, repeat: 0 });
+  });
+
+  it('lists as many past ones as a Directory asks for, and says whether older ones exist', () => {
+    for (let i = 1; i <= 8; i++) {
+      transcript(uuid(i), line({ type: 'ai-title', aiTitle: `Chat ${i}` }), i * 60_000);
+    }
+    // Untitled and the oldest: no "more" for it alone.
+    transcript(uuid(9), line({ type: 'user' }), 1);
+    const list = (count?: number) =>
+      listConversations(
+        [directory],
+        provider,
+        new Map(),
+        count === undefined
+          ? undefined
+          : conversationLimitsFrom([{ directoryPath: '/work/web', count }]),
+      )[0];
+    expect(list().conversations).toHaveLength(5);
+    expect(list().more).toBe(true);
+    expect(
+      list(7)
+        .conversations.map((c) => c.title)
+        .at(-1),
+    ).toBe('Chat 2');
+    expect(list(7).more).toBe(true);
+    expect(list(8).conversations).toHaveLength(8);
+    expect(list(8).more).toBeUndefined();
+  });
+
+  it('reads limits defensively', () => {
+    expect(conversationLimitsFrom('nope').size).toBe(0);
+    const limits = conversationLimitsFrom([
+      { directoryPath: '/a', count: 10 },
+      { directoryPath: '/b', count: 1.5 },
+      { directoryPath: 3, count: 10 },
+      { directoryPath: '/c', count: 0 },
+      { directoryPath: '/d', count: 1e9 },
+    ]);
+    expect([...limits]).toEqual([
+      ['/a', 10],
+      ['/c', 1],
+      ['/d', CONVERSATIONS_LIMIT_MAX],
+    ]);
+  });
+
+  describe('searchConversations', () => {
+    const other: Directory = { name: 'Api', path: '/work/api', source: 'user' };
+    let otherDir: string;
+    const twoDirs: HookProvider = {
+      ...claudeProvider,
+      getSessionDirs: (p) => [p === '/work/api' ? otherDir : projectDir],
+    };
+
+    beforeEach(() => {
+      otherDir = path.join(dir, 'api-sessions');
+      fs.mkdirSync(otherDir);
+      transcript(uuid(1), line({ type: 'ai-title', aiTitle: 'Fix the Login bug' }), 60_000);
+      transcript(uuid(2), line({ type: 'ai-title', aiTitle: 'Write docs' }), 120_000);
+      transcript(uuid(3), line({ type: 'user' }), 180_000);
+      const file = path.join(otherDir, `${uuid(4)}.jsonl`);
+      fs.writeFileSync(file, line({ type: 'ai-title', aiTitle: 'Login endpoint' }));
+      fs.utimesSync(file, 240, 240);
+    });
+
+    const search = (query: string, limit = 50, directoryPath?: string) =>
+      searchConversations([directory, other], twoDirs, new Map(), {
+        query,
+        limit,
+        ...(directoryPath ? { directoryPath } : {}),
+      });
+
+    it('finds titles holding every word, any case, newest first, across Directories', () => {
+      const { results, more } = search('login');
+      expect(results.map((r) => [r.directoryName, r.conversation.title])).toEqual([
+        ['Api', 'Login endpoint'],
+        ['Web', 'Fix the Login bug'],
+      ]);
+      expect(more).toBe(false);
+      expect(search('LOGIN bug').results).toHaveLength(1);
+      expect(search('login nope').results).toHaveLength(0);
+    });
+
+    it('lists every titled one for an empty query, a page at a time', () => {
+      expect(search('').results.map((r) => r.conversation.title)).toEqual([
+        'Login endpoint',
+        'Write docs',
+        'Fix the Login bug',
+      ]);
+      const page = search('', 2);
+      expect(page.results).toHaveLength(2);
+      expect(page.more).toBe(true);
+    });
+
+    it('keeps to one Directory when asked', () => {
+      expect(search('', 50, '/work/web').results.map((r) => r.directoryPath)).toEqual([
+        '/work/web',
+        '/work/web',
+      ]);
+    });
+
+    it('checks the request', () => {
+      expect(conversationQueryFrom({ query: 'x', limit: 10 })).toEqual({ query: 'x', limit: 10 });
+      expect(conversationQueryFrom({ query: 'x', limit: 0 })).toEqual({ query: 'x', limit: 1 });
+      expect(conversationQueryFrom({ query: 3, limit: 10 })).toBeNull();
+      expect(conversationQueryFrom({ query: 'x', limit: 2.5 })).toBeNull();
+      expect(conversationQueryFrom({ query: 'x', limit: 1, directoryPath: 4 })).toBeNull();
+    });
   });
 
   it('remembers what an agent wore and where it sat, under its session', () => {

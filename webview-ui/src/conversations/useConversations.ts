@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { DirectoryConversations } from '../../../core/src/messages.js';
 import {
@@ -26,18 +26,36 @@ export interface ConversationList {
   receivedAt: number;
 }
 
+/** Past conversations to list per Directory, where not the default five. */
+export type ConversationLimits = Readonly<Record<string, number>>;
+
 /**
  * The sidebar's recent conversations, asked of the server while `open` (the
  * list reads transcripts from disk, so nothing is fetched while it's shut).
- * Null until the first answer.
+ * `limits`: how many past ones a Directory lists ("Show more"); a change asks
+ * again at once. Null until the first answer.
  */
-export function useConversations(open: boolean): ConversationList | null {
+export function useConversations(
+  open: boolean,
+  limits: ConversationLimits = {},
+): ConversationList | null {
   const [list, setList] = useState<ConversationList | null>(null);
+  const limitsRef = useRef(limits);
+  limitsRef.current = limits;
+  const limitsKey = JSON.stringify(limits);
 
   useEffect(() => {
     if (!open) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const request = () => transport.send({ type: 'requestConversations' });
+    const request = () => {
+      const entries = Object.entries(limitsRef.current);
+      transport.send({
+        type: 'requestConversations',
+        ...(entries.length > 0
+          ? { limits: entries.map(([directoryPath, count]) => ({ directoryPath, count })) }
+          : {}),
+      });
+    };
     const unsubscribe = transport.onMessage((msg) => {
       if (msg.type === 'conversationsLoaded') {
         setList({ directories: msg.directories, receivedAt: Date.now() });
@@ -53,7 +71,7 @@ export function useConversations(open: boolean): ConversationList | null {
       clearInterval(every);
       unsubscribe();
     };
-  }, [open]);
+  }, [open, limitsKey]);
 
   return list;
 }
