@@ -170,11 +170,11 @@ export async function openMonitorTerminal(window: Page, tmpHome: string): Promis
 
     const tailScript = path.join(__dirname, '..', 'fixtures', 'tail-follow.cjs');
     const invoke = `"${process.execPath}" "${tailScript}" monitor "${testLog}" "${externalLog}"`;
-    // PowerShell (Windows default profile) needs the call operator for a
-    // quoted executable path; POSIX shells execute quoted paths directly.
+    // The fixture pins cmd.exe on Windows. It and POSIX shells both execute
+    // the quoted executable path directly.
     const terminalInput = window.locator('.xterm:visible textarea.xterm-helper-textarea').last();
     await terminalInput.focus();
-    await window.keyboard.insertText(process.platform === 'win32' ? `& ${invoke}` : invoke);
+    await window.keyboard.insertText(invoke);
     await window.keyboard.press('Enter');
   } catch (error) {
     console.warn(

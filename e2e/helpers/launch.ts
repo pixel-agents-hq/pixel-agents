@@ -260,6 +260,17 @@ export async function launchVSCode(
     'workbench.secondarySideBar.defaultVisibility': 'hidden',
     'chat.commandCenter.enabled': false,
   };
+  if (IS_WINDOWS) {
+    // Use the bundled .cmd mock in a predictable shell. Host PowerShell
+    // profiles and module trust prompts can otherwise consume launch commands.
+    userSettings['terminal.integrated.profiles.windows'] = {
+      e2e: {
+        path: process.env['ComSpec'] ?? 'C:\\Windows\\System32\\cmd.exe',
+        args: ['/d'],
+      },
+    };
+    userSettings['terminal.integrated.defaultProfile.windows'] = 'e2e';
+  }
   if (process.platform === 'darwin') {
     userSettings['terminal.integrated.profiles.osx'] = {
       e2e: {
