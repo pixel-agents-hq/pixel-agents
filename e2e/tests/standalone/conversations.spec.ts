@@ -5,7 +5,14 @@ import { expect, test } from '../../fixtures/standalone';
 import { arrangeNextClaudeInvocation, claudeScenario } from '../../helpers/mock-claude';
 import { expectOverlayCount } from '../../helpers/office';
 import { buildTurnDurationRecord } from '../../helpers/team';
-import { getLaunchDrawer, setSettings } from '../../helpers/webview';
+import {
+  directoryPencil,
+  getDirectoryModal,
+  getLaunchDrawer,
+  openDirectoryModal,
+  openLaunchDrawer,
+  setSettings,
+} from '../../helpers/webview';
 
 /**
  * The conversation sidebar: an agent's conversation, once it leaves the
@@ -140,5 +147,30 @@ test.describe('Standalone / conversation sidebar', () => {
       )
       .toEqual({ palette: before.palette, repeat: before.repeat, seatId: before.seatId });
     await expect(running).toHaveCount(1);
+  });
+
+  test('a Directory added or deleted gains or loses its section at once, no reload @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    const target = path.join(standalone.workspaceDir, 'sidebar-section');
+    fs.mkdirSync(target, { recursive: true });
+    const sidebar = page.getByTestId('conversation-sidebar');
+    await expect(sidebar).toBeVisible();
+    const section = sidebar.locator('button[aria-expanded]').filter({ hasText: 'Sidebar Section' });
+    // Well inside the list's 30 s poll: only the Directory change can explain it.
+    const promptly = { timeout: 10_000 };
+
+    const modal = await openDirectoryModal(page);
+    await modal.getByPlaceholder('Project name').fill('Sidebar Section');
+    await modal.getByPlaceholder('~/code/my-project').fill(target);
+    await modal.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(modal).toBeHidden();
+    await expect(section).toHaveCount(1, promptly);
+
+    const drawer = await openLaunchDrawer(page);
+    await (await directoryPencil(page, drawer, 'Sidebar Section')).click();
+    await getDirectoryModal(page).getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(section).toHaveCount(0, promptly);
   });
 });

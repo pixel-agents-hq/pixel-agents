@@ -8,10 +8,17 @@ import {
 import { transport } from '../transport/index.js';
 
 /** Messages after which the list may have changed: an agent arrived (its
- *  conversation leaves the list), left (it joins), a reconnect resynced, or
- *  an agent's turn started or ended (its transcript now exists, or its title
- *  was written — the desktop sidebar stays open, so nothing else would ask). */
-const REFRESH_ON = new Set(['agentCreated', 'agentClosed', 'existingAgents', 'agentStatus']);
+ *  conversation leaves the list), left (it joins), a reconnect resynced, an
+ *  agent's turn started or ended (its transcript now exists, or its title
+ *  was written — the desktop sidebar stays open, so nothing else would ask),
+ *  or a Directory was added, renamed or removed (one section per Directory). */
+const REFRESH_ON = new Set([
+  'agentCreated',
+  'agentClosed',
+  'existingAgents',
+  'agentStatus',
+  'directoriesLoaded',
+]);
 
 export interface ConversationList {
   directories: DirectoryConversations[];
