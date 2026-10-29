@@ -135,6 +135,24 @@ describe('claudeProvider', () => {
       expect(result?.event.kind).toBe('subagentEnd');
     });
 
+    it('carries agent_id as subagentId on SubagentStart and SubagentStop', () => {
+      const start = claudeProvider.normalizeHookEvent({
+        hook_event_name: 'SubagentStart',
+        session_id: 'sess-1',
+        agent_id: 'a6b7c3afd6e8f9309',
+        agent_type: 'general-purpose',
+      });
+      const stop = claudeProvider.normalizeHookEvent({
+        hook_event_name: 'SubagentStop',
+        session_id: 'sess-1',
+        agent_id: 'a6b7c3afd6e8f9309',
+      });
+      expect(start?.event.kind === 'subagentStart' && start.event.subagentId).toBe(
+        'a6b7c3afd6e8f9309',
+      );
+      expect(stop?.event.kind === 'subagentEnd' && stop.event.subagentId).toBe('a6b7c3afd6e8f9309');
+    });
+
     it('normalizes PermissionRequest to permissionRequest', () => {
       const result = claudeProvider.normalizeHookEvent({
         hook_event_name: 'PermissionRequest',

@@ -46,6 +46,10 @@ export interface AgentState {
    *  routing in SubagentStart. Set in PreToolUse, NOT cleared in PostToolUse (survives
    *  the PostToolUse-before-SubagentStart race); overwritten on the next PreToolUse. */
   currentHookIsTeammateSpawn?: boolean;
+  /** Sub-agents run by a forking tool (provider `forkingToolNames`), keyed by the
+   *  CLI's sub-agent id, valued by the parent tool id their character hangs off.
+   *  Hooks are their only signal: no agent_progress reaches the JSONL path. */
+  forkedSubagents?: Map<string, string>;
 
   // -- Context window usage (server/src/contextUsage.ts) --
   /** Tokens in the agent's context as of its newest turn; 0 until one is seen.
