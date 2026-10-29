@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { readConfig } from '../src/configPersistence.js';
 import {
@@ -17,20 +17,20 @@ import {
 
 /**
  * The shared Directory module both hosts drive. Everything here goes through the
- * real shared config file, with $HOME redirected to a fresh temp dir per test —
+ * real shared config file, with the home redirected to a fresh temp dir per test —
  * the same isolation the other config-touching suites use.
  */
 describe('directories', () => {
   let tempHome: string;
-  let originalHome: string | undefined;
   /** Real directories on disk to point Directories at. */
   let alpha: string;
   let beta: string;
 
   beforeEach(() => {
     tempHome = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-dirs-test-')));
-    originalHome = process.env.HOME;
-    process.env.HOME = tempHome;
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
+    vi.stubEnv('HOME', tempHome);
+    vi.stubEnv('USERPROFILE', tempHome);
     alpha = path.join(tempHome, 'alpha');
     beta = path.join(tempHome, 'beta');
     fs.mkdirSync(alpha);
@@ -38,11 +38,7 @@ describe('directories', () => {
   });
 
   afterEach(() => {
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
+    vi.unstubAllEnvs();
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DIRECTORY_SUGGESTION_HEAD_BYTES, DIRECTORY_SUGGESTION_LIMIT } from '../src/constants.js';
 import { saveUserDirectory } from '../src/directories.js';
@@ -14,13 +14,12 @@ import {
  * Recovering "places you've already worked" out of the coding agent's session
  * transcripts, so the Directory modal can offer them as taps.
  *
- * Everything runs against real files with $HOME redirected to a temp dir, the
+ * Everything runs against real files with the home redirected to a temp dir, the
  * same isolation directories.test.ts uses — the point of this seam is what it
  * reads off a disk that looks like a used machine.
  */
 describe('directorySuggestions', () => {
   let tempHome: string;
-  let originalHome: string | undefined;
   /** Stands in for ~/.claude/projects: one subdirectory per session location. */
   let sessionRoot: string;
 
@@ -31,18 +30,15 @@ describe('directorySuggestions', () => {
 
   beforeEach(() => {
     tempHome = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-suggest-test-')));
-    originalHome = process.env.HOME;
-    process.env.HOME = tempHome;
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
+    vi.stubEnv('HOME', tempHome);
+    vi.stubEnv('USERPROFILE', tempHome);
     sessionRoot = path.join(tempHome, 'sessions');
     fs.mkdirSync(sessionRoot);
   });
 
   afterEach(() => {
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
+    vi.unstubAllEnvs();
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 

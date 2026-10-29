@@ -231,6 +231,42 @@ jobs:
           done
           exit "$failed"
 
+  windows-server-tests:
+    name: Windows Server Tests
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # CLI integration tests browse the SPA as well as executing the hook.
+      - name: Build Server Test Fixtures
+        run: npm run build:extension && npm run build:webview
+
+      - name: Server Tests
+        env:
+          HOME: ${{ runner.temp }}/pixel-agents-server-tests
+          USERPROFILE: ${{ runner.temp }}/pixel-agents-server-tests
+        run: npm run test:server
+
+      - name: Upload Windows Server Allure Results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-results-server-windows
+          if-no-files-found: warn
+          path: allure-results/server
+
   npm-package-node20:
     name: npm Package Smoke (Node 20)
     runs-on: ubuntu-latest
@@ -425,13 +461,14 @@ jobs:
 
   # Single aggregate status check to require in branch protection, instead of
   # pinning every job/shard name (which silently breaks when a shard is renamed
-  # or the shard count changes). Green only when ci, npm-package-node20, and the
-  # whole e2e matrix all succeed.
+  # or the shard count changes). Green only when ci, Windows server tests,
+  # npm-package-node20, and the whole e2e matrix all succeed.
   required-checks:
     name: Required Checks
     if: always()
     needs:
       - ci
+      - windows-server-tests
       - npm-package-node20
       - e2e
     runs-on: ubuntu-latest
@@ -439,9 +476,11 @@ jobs:
       - name: Verify all required jobs succeeded
         run: |
           echo "ci=${{ needs.ci.result }}"
+          echo "windows-server-tests=${{ needs.windows-server-tests.result }}"
           echo "npm-package-node20=${{ needs.npm-package-node20.result }}"
           echo "e2e=${{ needs.e2e.result }}"
           if [ "${{ needs.ci.result }}" != "success" ] \
+            || [ "${{ needs.windows-server-tests.result }}" != "success" ] \
             || [ "${{ needs.npm-package-node20.result }}" != "success" ] \
             || [ "${{ needs.e2e.result }}" != "success" ]; then
             echo "::error::One or more required jobs did not succeed"

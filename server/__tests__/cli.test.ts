@@ -450,11 +450,15 @@ describe('dist/cli.js entry-point guard', () => {
       }
 
       const settingsPath = path.join(tmpHome, '.claude', 'settings.json');
-      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as Record<
-        string,
-        unknown
-      >;
-      expect(JSON.stringify(settings)).toContain(installedHook);
+      const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as {
+        hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
+      };
+      // Compare parsed commands: JSON text escapes Windows path separators.
+      const commands = Object.values(settings.hooks).flatMap((entries) =>
+        entries.flatMap((entry) => entry.hooks.map((hook) => hook.command)),
+      );
+      expect(commands).toHaveLength(CLAUDE_HOOK_EVENTS.length);
+      for (const command of commands) expect(command).toBe(`node "${installedHook}"`);
     } finally {
       await stopChild(child);
       fs.rmSync(tmpHome, { recursive: true, force: true });

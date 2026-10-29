@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   clearHooksAnswer,
@@ -20,20 +20,16 @@ import {
 
 describe('configPersistence: areas', () => {
   let tempHome: string;
-  let originalHome: string | undefined;
 
   beforeEach(() => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-config-test-'));
-    originalHome = process.env.HOME;
-    process.env.HOME = tempHome;
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
+    vi.stubEnv('HOME', tempHome);
+    vi.stubEnv('USERPROFILE', tempHome);
   });
 
   afterEach(() => {
-    if (originalHome === undefined) {
-      delete process.env.HOME;
-    } else {
-      process.env.HOME = originalHome;
-    }
+    vi.unstubAllEnvs();
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 

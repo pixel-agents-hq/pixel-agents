@@ -10,8 +10,14 @@ let tmpBase: string;
 let tmpHome: string;
 let workspaceDir: string;
 
+function quoteShellPath(value: string): string {
+  // JSON string quoting doubles Windows separators and prevents hook matching.
+  if (process.platform === 'win32') return `"${value}"`;
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 function makeNodeCommand(scriptPath: string): string {
-  return `${JSON.stringify(process.execPath)} ${JSON.stringify(scriptPath)}`;
+  return `${quoteShellPath(process.execPath)} ${quoteShellPath(scriptPath)}`;
 }
 
 function writeHookScript(scriptPath: string, outputPath: string): void {
@@ -54,6 +60,7 @@ function runMockClaude(
       env: {
         ...process.env,
         HOME: tmpHome,
+        USERPROFILE: tmpHome,
       },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
@@ -68,7 +75,7 @@ function runMockClaude(
 
 describe('mock-claude-runner hook execution', () => {
   beforeEach(() => {
-    tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-mock-runner-'));
+    tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-mock-runner space-'));
     tmpHome = path.join(tmpBase, 'home');
     workspaceDir = path.join(tmpBase, 'workspace');
 
