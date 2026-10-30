@@ -21,6 +21,7 @@ import {
   CLAUDE_SMALL_CONTEXT_WINDOW,
   CLAUDE_TERMINAL_NAME_PREFIX,
 } from './constants.js';
+import { isInheritedClaudeSessionEnv } from './sessionEnv.js';
 
 // ── formatToolStatus: moved from src/transcriptParser.ts ──
 
@@ -314,6 +315,7 @@ export const claudeProvider: HookProvider = {
   getAllSessionRoots,
   sessionFilePattern: '*.jsonl',
   buildLaunchCommand,
+  isInheritedSessionEnv: isInheritedClaudeSessionEnv,
 
   team: claudeTeamProvider,
 };
