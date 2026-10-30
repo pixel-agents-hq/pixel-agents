@@ -7,11 +7,14 @@ import { restoredAgentInit } from '../src/agentPersistence.js';
 import type { BackgroundSpawns } from '../src/backgroundSpawns.js';
 import {
   classifySpawn,
-  completedSpawnToolIds,
   completionNotice,
   launchSpawn,
+  noticeTime,
+  pausedSpawnFate,
+  readCompletionNotice,
   stillRunningSpawns,
 } from '../src/backgroundSpawns.js';
+import { PAUSED_SPAWN_END_MS } from '../src/constants.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import { claudeTeamProvider } from '../src/providers/hook/claude/claudeTeamProvider.js';
 import { setHookProvider } from '../src/transcriptParser.js';
@@ -96,6 +99,26 @@ describe('stillRunningSpawns: a restored lead drops spawns that finished before 
     expect([...stillRunningSpawns(spawns, file, claudeTeamProvider).keys()]).toEqual(['toolu_a']);
   });
 
+  it('a spawn whose last notice is interim comes back paused since that notice', () => {
+    const at = '2026-10-29T20:58:11.963Z';
+    write(
+      launch('toolu_a', 'task-a'),
+      launch('toolu_b', 'task-b'),
+      JSON.stringify({
+        ...JSON.parse(noticeRecord(interimNotice('task-a', 'toolu_a'))),
+        timestamp: at,
+      }),
+    );
+    const spawns: BackgroundSpawns = new Map([
+      ['toolu_a', { taskId: 'task-a' }],
+      ['toolu_b', { taskId: 'task-b', pausedAt: 1 }],
+    ]);
+    expect([...stillRunningSpawns(spawns, file, claudeTeamProvider)]).toEqual([
+      ['toolu_a', { taskId: 'task-a', pausedAt: Date.parse(at) }],
+      ['toolu_b', { taskId: 'task-b' }],
+    ]);
+  });
+
   it('keeps every spawn when the transcript cannot be read', () => {
     const spawns: BackgroundSpawns = new Map([['toolu_a', { taskId: 'task-a' }]]);
     expect(stillRunningSpawns(spawns, path.join(dir, 'missing.jsonl'))).toBe(spawns);
@@ -129,42 +152,86 @@ describe('stillRunningSpawns: a restored lead drops spawns that finished before 
   });
 });
 
-describe('completedSpawnToolIds: which live spawns a notice ends', () => {
+describe('readCompletionNotice: which live spawns a notice ends, and which it only pauses', () => {
   const spawns = (): BackgroundSpawns =>
     new Map([
       ['toolu_a', { taskId: 'task-a' }],
       ['toolu_b', { taskId: 'task-b' }],
     ]);
-  const ended = (content: string) => [
-    ...completedSpawnToolIds(spawns(), content, claudeTeamProvider),
-  ];
+  const read = (content: string) => {
+    const { ended, paused } = readCompletionNotice(spawns(), content, claudeTeamProvider);
+    return { ended: [...ended], paused: [...paused] };
+  };
 
-  it('an interim notice ends nothing, by tool id or by task id alone', () => {
-    expect(ended(interimNotice('task-a', 'toolu_a'))).toEqual([]);
-    expect(ended(interimNotice('task-a'))).toEqual([]);
+  it('an interim notice ends nothing and pauses its spawn, by tool id or by task id alone', () => {
+    expect(read(interimNotice('task-a', 'toolu_a'))).toEqual({ ended: [], paused: ['toolu_a'] });
+    expect(read(interimNotice('task-a'))).toEqual({ ended: [], paused: ['toolu_a'] });
   });
 
   it('a finished notice ends its spawn', () => {
-    expect(ended(finishedNotice('task-a', 'toolu_a'))).toEqual(['toolu_a']);
-    expect(ended(finishedNotice('task-a'))).toEqual(['toolu_a']);
+    expect(read(finishedNotice('task-a', 'toolu_a')).ended).toEqual(['toolu_a']);
+    expect(read(finishedNotice('task-a')).ended).toEqual(['toolu_a']);
   });
 
   it('a crash notice (status stopped, several task ids) ends them all', () => {
     const crash =
       '<task-notification>\n<task-id>task-a</task-id>\n<task-id>task-b</task-id>\n<status>stopped</status>\n</task-notification>';
-    expect(ended(crash)).toEqual(['toolu_a', 'toolu_b']);
+    expect(read(crash).ended).toEqual(['toolu_a', 'toolu_b']);
   });
 
   it('a notice without a note (older CLI versions) ends its spawn', () => {
     expect(
-      ended(
+      read(
         '<task-notification> <task-id>task-a</task-id> <tool-use-id>toolu_a</tool-use-id> <output>done</output>',
-      ),
+      ).ended,
     ).toEqual(['toolu_a']);
   });
 
   it('an interim notice spares only its own agent when notices arrive together', () => {
-    expect(ended(interimNotice('task-a') + '\n' + finishedNotice('task-b'))).toEqual(['toolu_b']);
+    expect(read(interimNotice('task-a') + '\n' + finishedNotice('task-b'))).toEqual({
+      ended: ['toolu_b'],
+      paused: ['toolu_a'],
+    });
+  });
+
+  it('a spawn paused and then finished in one batch is ended, not paused', () => {
+    expect(read(interimNotice('task-a') + '\n' + finishedNotice('task-a'))).toEqual({
+      ended: ['toolu_a'],
+      paused: [],
+    });
+  });
+});
+
+describe('pausedSpawnFate: a paused background agent that never comes back is let go', () => {
+  const pausedAt = Date.parse('2026-10-29T20:58:11.963Z');
+
+  it('stays paused while quiet for less than PAUSED_SPAWN_END_MS', () => {
+    expect(pausedSpawnFate(pausedAt, pausedAt - 100, pausedAt + PAUSED_SPAWN_END_MS - 1)).toBe(
+      'paused',
+    );
+  });
+
+  it('ends once quiet for PAUSED_SPAWN_END_MS (its stop-hook write just before the notice is quiet)', () => {
+    expect(pausedSpawnFate(pausedAt, pausedAt - 100, pausedAt + PAUSED_SPAWN_END_MS)).toBe('ended');
+    expect(pausedSpawnFate(pausedAt, pausedAt + 1000, pausedAt + 14 * 3_600_000)).toBe('ended');
+  });
+
+  it('ends a spawn whose transcript cannot be found', () => {
+    expect(pausedSpawnFate(pausedAt, undefined, pausedAt + PAUSED_SPAWN_END_MS)).toBe('ended');
+  });
+
+  it('a transcript written after the notice means it resumed, however long ago', () => {
+    expect(pausedSpawnFate(pausedAt, pausedAt + 60_000, pausedAt + 14 * 3_600_000)).toBe('resumed');
+  });
+});
+
+describe('noticeTime', () => {
+  it("is the record's timestamp, else now", () => {
+    expect(noticeTime({ timestamp: '2026-10-29T20:58:11.963Z' }, 5)).toBe(
+      Date.parse('2026-10-29T20:58:11.963Z'),
+    );
+    expect(noticeTime({}, 5)).toBe(5);
+    expect(noticeTime({ timestamp: 'nope' }, 5)).toBe(5);
   });
 });
 

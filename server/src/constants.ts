@@ -29,6 +29,19 @@ export const EXTERNAL_STALE_CHECK_INTERVAL_MS = 30_000;
  *  so the file's mtime becomes stale before the dismissal expires. */
 export const DISMISSED_COOLDOWN_MS = 180_000; // 3 minutes
 
+// ── Background spawns ───────────────────────────────────────
+/** A background agent that paused (an interim notice: it stopped to wait on
+ *  background work of its own) and has written nothing since is taken as
+ *  finished after this long. Claude Code can keep calling every stop interim
+ *  (an old Monitor it still counts as running) and then never notify again. */
+export const PAUSED_SPAWN_END_MS = 10 * 60_000;
+/** How often paused spawns are checked. */
+export const PAUSED_SPAWN_CHECK_INTERVAL_MS = 30_000;
+/** A paused agent's transcript gets its last records (the stop hook's) a
+ *  moment before the notice lands; a write later than this after the notice
+ *  means the agent resumed. */
+export const PAUSED_SPAWN_WRITE_SLACK_MS = 5_000;
+
 // ── Context Window Usage ────────────────────────────────────
 /** Window size assumed until a transcript proves otherwise. Transcripts never
  *  state the model's context limit, so this is the floor, not the truth. */
