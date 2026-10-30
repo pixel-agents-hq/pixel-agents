@@ -177,6 +177,7 @@ function normalizeHookEvent(
           toolName: agentType,
           input: raw,
           runInBackground: raw.run_in_background === true,
+          subagentId: typeof raw.agent_id === 'string' ? raw.agent_id : undefined,
         },
       };
     }
@@ -184,7 +185,12 @@ function normalizeHookEvent(
     case 'SubagentStop':
       return {
         sessionId,
-        event: { kind: 'subagentEnd', parentToolId: 'current', toolId: 'current' },
+        event: {
+          kind: 'subagentEnd',
+          parentToolId: 'current',
+          toolId: 'current',
+          subagentId: typeof raw.agent_id === 'string' ? raw.agent_id : undefined,
+        },
       };
 
     case 'PermissionRequest':
@@ -306,6 +312,7 @@ export const claudeProvider: HookProvider = {
   formatToolStatus,
   permissionExemptTools: new Set(['Task', 'Agent', 'AskUserQuestion']),
   subagentToolNames: new Set(['Task', 'Agent']),
+  forkingToolNames: new Set(['Skill']),
   readingTools: new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']),
   terminalNamePrefix: CLAUDE_TERMINAL_NAME_PREFIX,
   contextWindowForModel,

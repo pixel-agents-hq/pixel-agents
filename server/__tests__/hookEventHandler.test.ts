@@ -857,4 +857,93 @@ describe('HookEventHandler', () => {
       }
     });
   });
+
+  // ── Forked Skill sub-agents ─────────────────────────────────────────
+  // A Skill with `context: fork` runs as a sub-agent in its own transcript and
+  // writes no agent_progress to the parent's, so hooks are the only signal:
+  // PreToolUse(Skill) → SubagentStart → SubagentStop → PostToolUse(Skill).
+
+  function startSkill(): AgentState {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'Skill',
+      tool_input: { skill: 'code-review' },
+    });
+    return agent;
+  }
+
+  function subagentHook(hookEventName: 'SubagentStart' | 'SubagentStop', agentId: string): void {
+    handler.handleEvent('claude', {
+      hook_event_name: hookEventName,
+      session_id: 'sess-1',
+      agent_id: agentId,
+      agent_type: 'general-purpose',
+    });
+  }
+
+  it('forked Skill: SubagentStart shows a sub-agent under the Skill tool', () => {
+    const agent = startSkill();
+    const skillToolId = agent.currentHookToolId;
+
+    subagentHook('SubagentStart', 'fork-1');
+
+    const msg = mockWebview.messages.find((m) => m.type === 'subagentToolStart');
+    expect(msg).toBeTruthy();
+    expect(msg?.parentToolId).toBe(skillToolId);
+    expect(msg?.status).toBe('Subtask: general-purpose');
+  });
+
+  it('forked Skill: SubagentStop with the same agent_id clears the sub-agent', () => {
+    const agent = startSkill();
+    const skillToolId = agent.currentHookToolId;
+    subagentHook('SubagentStart', 'fork-1');
+
+    subagentHook('SubagentStop', 'fork-1');
+
+    const clear = mockWebview.messages.find((m) => m.type === 'subagentClear');
+    expect(clear?.parentToolId).toBe(skillToolId);
+    expect(agent.forkedSubagents?.size).toBe(0);
+    expect(agent.activeSubagentToolIds.has(skillToolId!)).toBe(false);
+  });
+
+  it('forked Skill: a SubagentStop for another agent_id keeps the sub-agent', () => {
+    startSkill();
+    subagentHook('SubagentStart', 'fork-1');
+
+    subagentHook('SubagentStop', 'nested-agent');
+
+    expect(mockWebview.messages.find((m) => m.type === 'subagentClear')).toBeUndefined();
+  });
+
+  it('forked Skill: Stop clears a sub-agent whose SubagentStop never arrived', () => {
+    const agent = startSkill();
+    const skillToolId = agent.currentHookToolId;
+    subagentHook('SubagentStart', 'fork-1');
+
+    handler.handleEvent('claude', { hook_event_name: 'Stop', session_id: 'sess-1' });
+
+    const clear = mockWebview.messages.find((m) => m.type === 'subagentClear');
+    expect(clear?.parentToolId).toBe(skillToolId);
+  });
+
+  it('SubagentStart while a non-forking tool is current shows no sub-agent', () => {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'Read',
+      tool_input: { file_path: '/test/a.ts' },
+    });
+
+    subagentHook('SubagentStart', 'fork-1');
+
+    expect(mockWebview.messages.find((m) => m.type === 'subagentToolStart')).toBeUndefined();
+    expect(agent.forkedSubagents).toBeUndefined();
+  });
 });

@@ -335,9 +335,13 @@ export class HookEventHandler {
         // identical for both (agentToolDone + clear currentHookToolId), so one branch suffices.
         return this.handlePostToolUse(agent, agentId);
       case 'subagentStart':
-        return this.provider.team ? this.handleSubagentStart(event, agent, agentId) : undefined;
+        return this.provider.team
+          ? this.handleSubagentStart(event, normEvent.subagentId, agent, agentId)
+          : undefined;
       case 'subagentEnd':
-        return this.provider.team ? this.handleSubagentStop(agent, agentId) : undefined;
+        return this.provider.team
+          ? this.handleSubagentStop(normEvent.subagentId, agent, agentId)
+          : undefined;
       case 'permissionRequest':
         // Handles BOTH the PermissionRequest hook AND the Notification(permission_prompt)
         // hook -- normalizeHookEvent collapses them into one event kind.
@@ -492,7 +496,12 @@ export class HookEventHandler {
    * For old-style Task/Agent subagents (inline, no run_in_background), creates
    * the child character immediately via hooks without waiting for JSONL polling.
    */
-  private handleSubagentStart(event: HookEvent, agent: AgentState, agentId: number): void {
+  private handleSubagentStart(
+    event: HookEvent,
+    subagentId: string | undefined,
+    agent: AgentState,
+    agentId: number,
+  ): void {
     const agentType = this.provider.team?.extractTeammateNameFromEvent(event) ?? 'unknown';
 
     // Decide path: teammate spawn vs basic within-turn subagent.
@@ -523,7 +532,11 @@ export class HookEventHandler {
         break;
       }
     }
-    if (!parentToolId) return; // JSONL will handle it via agent_progress tool_use
+    if (!parentToolId) {
+      // A forking tool's sub-agent has no JSONL path to fall back on.
+      this.startForkedSubagent(subagentId, agent, agentId, agentType);
+      return; // Task/Agent: JSONL will handle it via agent_progress tool_use
+    }
 
     // Create child sub-agent character immediately (same as old behavior).
     const subToolId = `hook-sub-${agentType}-${Date.now()}`;
@@ -561,7 +574,18 @@ export class HookEventHandler {
    *
    * For old-style Task subagents: removes the child character from the office.
    */
-  private handleSubagentStop(agent: AgentState, agentId: number): void {
+  private handleSubagentStop(
+    subagentId: string | undefined,
+    agent: AgentState,
+    agentId: number,
+  ): void {
+    // A forking tool's sub-agent is matched exactly by the CLI's id, so a sub-agent
+    // it launched in turn can't end it early.
+    if (subagentId && agent.forkedSubagents?.has(subagentId)) {
+      this.endForkedSubagent(subagentId, agent, agentId);
+      return;
+    }
+
     // Check if this agent has inline teammates (independent agents with leadAgentId).
     // Just mark them waiting -- SubagentStop fires per-task-iteration; teammates may
     // sit idle for minutes between lead requests before being re-invoked.
@@ -594,6 +618,70 @@ export class HookEventHandler {
       }
     }
     if (!parentToolId) return; // JSONL will handle it via agent_progress tool_result
+
+    agent.activeSubagentToolIds.delete(parentToolId);
+    agent.activeSubagentToolNames.delete(parentToolId);
+    this.agents.broadcast({
+      type: 'subagentClear',
+      id: agentId,
+      parentToolId,
+    });
+  }
+
+  /**
+   * Start the sub-agent of a forking tool (provider `forkingToolNames`; Claude: a
+   * Skill with `context: fork`). Its work runs in its own transcript and writes no
+   * agent_progress to the parent's, so the JSONL path never sees it. The parent is
+   * the hook tool id PreToolUse already showed on the agent; the webview creates
+   * the character lazily on `subagentToolStart`.
+   */
+  private startForkedSubagent(
+    subagentId: string | undefined,
+    agent: AgentState,
+    agentId: number,
+    agentType: string,
+  ): void {
+    const parentToolId = agent.currentHookToolId;
+    const parentToolName = agent.currentHookToolName;
+    if (!subagentId || !parentToolId || !parentToolName) return;
+    if (!this.provider.forkingToolNames?.has(parentToolName)) return;
+
+    (agent.forkedSubagents ??= new Map()).set(subagentId, parentToolId);
+
+    const subToolId = `hook-sub-${agentType}-${Date.now()}`;
+    let subTools = agent.activeSubagentToolIds.get(parentToolId);
+    if (!subTools) {
+      subTools = new Set();
+      agent.activeSubagentToolIds.set(parentToolId, subTools);
+    }
+    subTools.add(subToolId);
+
+    let subNames = agent.activeSubagentToolNames.get(parentToolId);
+    if (!subNames) {
+      subNames = new Map();
+      agent.activeSubagentToolNames.set(parentToolId, subNames);
+    }
+    subNames.set(subToolId, agentType);
+
+    if (debug)
+      console.log(
+        `[Pixel Agents] Hook: Agent ${agentId} - SubagentStart: forked ${parentToolName} sub-agent ${subagentId}`,
+      );
+    this.agents.broadcast({
+      type: 'subagentToolStart',
+      id: agentId,
+      parentToolId,
+      toolId: subToolId,
+      status: `Subtask: ${agentType}`,
+    });
+  }
+
+  /** Remove a forking tool's sub-agent character once no other sub-agent shares its parent. */
+  private endForkedSubagent(subagentId: string, agent: AgentState, agentId: number): void {
+    const parentToolId = agent.forkedSubagents?.get(subagentId);
+    if (!agent.forkedSubagents || parentToolId === undefined) return;
+    agent.forkedSubagents.delete(subagentId);
+    if ([...agent.forkedSubagents.values()].includes(parentToolId)) return;
 
     agent.activeSubagentToolIds.delete(parentToolId);
     agent.activeSubagentToolNames.delete(parentToolId);
@@ -740,6 +828,12 @@ export class HookEventHandler {
         // shadow watch too, or it lingers until sessionEnd.
         notifyBackgroundAgentCompleted(agentId, toolId);
       }
+    }
+    // A forking tool finishes inside its turn, so a sub-agent still listed here
+    // lost its SubagentStop. The webview keeps lazily created sub-agents across
+    // agentToolsClear, so only subagentClear removes them.
+    for (const subagentId of [...(agent.forkedSubagents?.keys() ?? [])]) {
+      this.endForkedSubagent(subagentId, agent, agentId);
     }
     this.agents.broadcast({ type: 'agentToolsClear', id: agentId });
     // Re-send background agent tools to restore them after the clear.

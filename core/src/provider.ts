@@ -38,8 +38,11 @@ export type AgentEvent =
       toolName: string;
       input?: unknown;
       runInBackground?: boolean;
+      /** The CLI's own id for the sub-agent, when it reports one. Pairs this
+       *  start with its `subagentEnd` when several sub-agents overlap. */
+      subagentId?: string;
     }
-  | { kind: 'subagentEnd'; parentToolId: string; toolId: string }
+  | { kind: 'subagentEnd'; parentToolId: string; toolId: string; subagentId?: string }
   | {
       kind: 'subagentTurnEnd';
       parentToolId: string;
@@ -100,6 +103,10 @@ export interface HookProvider {
   readonly permissionExemptTools: ReadonlySet<string>;
   /** Tools that spawn sub-agent characters */
   readonly subagentToolNames: ReadonlySet<string>;
+  /** Tools that only SOMETIMES run their work as a sub-agent (Claude: a Skill with
+   *  `context: fork`). One becomes a sub-agent parent only when a `subagentStart`
+   *  arrives while it is the current hook tool, so inline runs never spawn a character. */
+  readonly forkingToolNames?: ReadonlySet<string>;
   /** Tools that should show the "reading" character animation instead of "typing".
    *  The provider classifies tools as read-like or write-like; the webview renders
    *  the animation. Allows new providers to override without webview edits. */
