@@ -15,6 +15,7 @@ import {
 } from '../constants.js';
 import { useDevicePixelRatio } from '../hooks/useDevicePixelRatio.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
+import { usePageBackground } from '../hooks/usePageBackground.js';
 import { prefersReducedMotion } from '../hooks/usePresence.js';
 import { getCachedSprite } from '../office/sprites/spriteCache.js';
 import type { SpriteData } from '../office/types.js';
@@ -133,6 +134,9 @@ export function LoadingScene() {
     const walker = sprites(CAST_NAMES.walker);
     return left && right && walker ? { left, right, walker } : null;
   }, [renderer]);
+
+  // The iPhone's home-bar strip shows the page, not this screen: black it too.
+  usePageBackground(LOADING_SCREEN_BG);
 
   // The office's zoom rule: whole DEVICE pixels per sprite pixel.
   const zoom = isMobile ? LOADING_ZOOM : LOADING_ZOOM_DESKTOP;
