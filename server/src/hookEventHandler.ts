@@ -418,6 +418,10 @@ export class HookEventHandler {
     const status = this.provider.formatToolStatus(toolName, toolInput);
     const hookToolId = `hook-${Date.now()}`;
 
+    // One hook tool at a time per session: a PreToolUse with no PostToolUse in
+    // between supersedes the previous hook tool, so drop its replay record.
+    forgetHookTool(agent);
+
     // Track for PostToolUse/SubagentStart correlation (always, even if suppressed below).
     // currentHookIsTeammateSpawn is the authoritative teammate-vs-subagent discriminator.
     // It is NOT cleared in PostToolUse to survive the PostToolUse-before-SubagentStart race.
@@ -443,6 +447,11 @@ export class HookEventHandler {
     // can find and remove them. JSONL handles agentToolStart (with runInBackground)
     // for these tools.
     if (toolName !== 'Task' && toolName !== 'Agent') {
+      // Record it like a transcript tool so resendAgentActivity replays it to a
+      // client that connects while it runs (hooks-only agents have no transcript
+      // to fill these maps).
+      agent.activeToolStatuses.set(hookToolId, status);
+      agent.activeToolNames.set(hookToolId, toolName);
       this.agents.broadcast({
         type: 'agentToolStart',
         id: agentId,
@@ -473,6 +482,7 @@ export class HookEventHandler {
           toolId: agent.currentHookToolId,
         });
       }
+      forgetHookTool(agent);
       agent.currentHookToolId = undefined;
       agent.currentHookToolName = undefined;
     }
@@ -766,6 +776,7 @@ export class HookEventHandler {
     agent.isWaiting = true;
     agent.permissionSent = false;
     agent.hadToolsInTurn = false;
+    forgetHookTool(agent);
     agent.currentHookToolId = undefined;
     this.agents.broadcast({
       type: 'agentStatus',
@@ -779,4 +790,12 @@ export class HookEventHandler {
   dispose(): void {
     this.sessionRouter.dispose();
   }
+}
+
+/** Drop the current hook tool's replay record (set in handlePreToolUse). */
+function forgetHookTool(agent: AgentState): void {
+  const toolId = agent.currentHookToolId;
+  if (!toolId) return;
+  agent.activeToolStatuses.delete(toolId);
+  agent.activeToolNames.delete(toolId);
 }

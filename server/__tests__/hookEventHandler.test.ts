@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resendAgentActivity } from '../src/agentActivityResend.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { HookEventHandler } from '../src/hookEventHandler.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
@@ -536,6 +537,104 @@ describe('HookEventHandler', () => {
     expect(doneMsg).toBeTruthy();
     expect(doneMsg?.toolId).toBe('hook-456');
     expect(agent.currentHookToolId).toBeUndefined();
+  });
+
+  // ── Late joiners: hook tools are replayable ──────────────────
+
+  it('PreToolUse records the hook tool so a late joiner gets it replayed', () => {
+    const agent = createTestAgent({ id: 1, jsonlFile: '' });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'Edit',
+      tool_input: { file_path: '/src/train.py' },
+    });
+
+    const toolId = agent.currentHookToolId!;
+    expect(agent.activeToolStatuses.get(toolId)).toBe('Editing train.py');
+    expect(agent.activeToolNames.get(toolId)).toBe('Edit');
+
+    const replay: Array<Record<string, unknown>> = [];
+    resendAgentActivity((m) => replay.push(m), agents);
+    expect(replay).toEqual([
+      { type: 'agentToolStart', id: 1, toolId, status: 'Editing train.py', toolName: 'Edit' },
+    ]);
+  });
+
+  it('PostToolUse forgets the hook tool', () => {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'Read',
+      tool_input: { file_path: '/a.md' },
+    });
+    handler.handleEvent('claude', { hook_event_name: 'PostToolUse', session_id: 'sess-1' });
+
+    expect(agent.activeToolStatuses.size).toBe(0);
+    expect(agent.activeToolNames.size).toBe(0);
+  });
+
+  it('a second PreToolUse without PostToolUse replaces the recorded hook tool', () => {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'Read',
+      tool_input: { file_path: '/a.md' },
+    });
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'Bash',
+      tool_input: { command: 'npm test' },
+    });
+
+    expect([...agent.activeToolNames.values()]).toEqual(['Bash']);
+    expect([...agent.activeToolStatuses.values()]).toEqual(['Running: npm test']);
+  });
+
+  it('Stop forgets the hook tool and replays waiting instead', () => {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'Bash',
+      tool_input: { command: 'npm test' },
+    });
+    handler.handleEvent('claude', { hook_event_name: 'Stop', session_id: 'sess-1' });
+
+    expect(agent.activeToolStatuses.size).toBe(0);
+    const replay: Array<Record<string, unknown>> = [];
+    resendAgentActivity((m) => replay.push(m), agents);
+    expect(replay).toEqual([{ type: 'agentStatus', id: 1, status: 'waiting' }]);
+  });
+
+  it('PreToolUse(Agent) is not recorded (the transcript owns spawn tools)', () => {
+    const agent = createTestAgent({ id: 1 });
+    agents.set(1, agent);
+    handler.registerAgent('sess-1', 1);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'PreToolUse',
+      session_id: 'sess-1',
+      tool_name: 'Agent',
+      tool_input: { prompt: 'x' },
+    });
+
+    expect(agent.activeToolStatuses.size).toBe(0);
   });
 
   // ── Pending external session confirmation ────────────────────
