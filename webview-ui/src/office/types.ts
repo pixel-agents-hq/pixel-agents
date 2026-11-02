@@ -145,7 +145,14 @@ export interface AreaDefinition {
   label: string;
   /** Hex color (e.g. "#ff6b6b"). RGB only — alpha applied at render time. */
   color: string;
+  /** What the room is for, beyond seating its Directories' agents.
+   *  inbox: agents that need the user (a question, a permission prompt, idle
+   *  waiting for input) walk here and wait. meeting: when a lead has spawned
+   *  several sub-agents, finished ones gather here until the lead's turn ends. */
+  role?: AreaRole;
 }
+
+export type AreaRole = 'inbox' | 'meeting';
 
 export interface OfficeLayout {
   version: 1;
@@ -213,6 +220,9 @@ export interface Character {
   bubbleTimer: number;
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */
   seatTimer: number;
+  /** Sent to a role Area (inbox/meeting): stay put there instead of wandering
+   *  or heading back to the own seat, until released. */
+  holdInArea?: boolean;
   /** Whether this character represents a sub-agent (spawned by Task tool) */
   isSubagent: boolean;
   /** Parent agent ID if this is a sub-agent, null otherwise */
