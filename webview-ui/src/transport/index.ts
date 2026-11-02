@@ -2,6 +2,7 @@ import type { ServerMessage } from '../../../core/src/messages.js';
 import { isBrowserRuntime } from '../runtime.js';
 import { PostMessageTransport } from './postMessageTransport.js';
 import { serverToken } from './serverToken.js';
+import { socketUrl } from './socketUrl.js';
 import type { MessageTransport } from './types.js';
 import { WebSocketTransport } from './webSocketTransport.js';
 
@@ -18,10 +19,9 @@ function createTransport(): MessageTransport {
   // read the same token from serverToken.ts). WebSocketTransport captures the
   // url once, so the token survives reconnects even if the address bar is later
   // cleared.
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/ws${
-    serverToken ? `?token=${encodeURIComponent(serverToken)}` : ''
-  }`;
+  // Resolved against the page's base URL so a reverse proxy can mount the SPA
+  // at a sub-path (socketUrl.ts).
+  const wsUrl = socketUrl('ws', document.baseURI, serverToken);
   const ws = new WebSocketTransport(wsUrl);
   // Vite dev only: there is no server to connect to, so `browserMock` injects
   // ServerMessages as `window` 'message' events. Bridge them into the transport

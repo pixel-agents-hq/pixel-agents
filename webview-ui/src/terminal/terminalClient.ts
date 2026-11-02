@@ -13,6 +13,7 @@ import { TERMINAL_WS_PREFIX } from '../../../core/src/constants.js';
 import { parseServerFrame } from '../../../core/src/terminalFrames.js';
 import { reconnectDelayMs } from '../transport/reconnectBackoff.js';
 import { serverToken } from '../transport/serverToken.js';
+import { socketUrl } from '../transport/socketUrl.js';
 
 export interface TerminalConnectionHandlers {
   onOutput(data: string): void;
@@ -69,10 +70,11 @@ export class TerminalConnection {
 
     // The token rides the handshake query exactly as it does on /ws (the
     // server's request log redacts it), so both sockets pass the same gate.
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${window.location.host}${TERMINAL_WS_PREFIX}/${String(
-      this.agentId,
-    )}?token=${encodeURIComponent(serverToken)}`;
+    const url = socketUrl(
+      `${TERMINAL_WS_PREFIX}/${String(this.agentId)}`,
+      document.baseURI,
+      serverToken,
+    );
     const socket = new WebSocket(url);
     this.socket = socket;
 
