@@ -45,6 +45,7 @@ The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvi
 - **Persistent layouts** — your office design is saved and shared across VS Code windows
 - **Shared layout and assets** — import/export layouts and load external character, pet, and furniture packs
 - **Areas** — paint named areas onto the office, map workspace folders to them, and new agents sit inside the areas mapped to their folder
+- **Room roles** - give an Area a role in the layout editor: an **Inbox** is where agents that need you (a question, a permission prompt, idle waiting for input) walk to and wait; a **Meeting room** is where a lead's finished sub-agents gather until the lead is done
 - **Diverse characters** — 6 diverse characters. These are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack).
 
 <p align="center">

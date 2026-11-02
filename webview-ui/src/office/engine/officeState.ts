@@ -11,7 +11,6 @@ import {
   GREETER_TILE_MARGIN,
   INACTIVE_SEAT_TIMER_MIN_SEC,
   INACTIVE_SEAT_TIMER_RANGE_SEC,
-  INPUT_REQUEST_TOOL_NAMES,
   MAX_PET_ID_LENGTH,
   MEETING_MIN_SUBAGENTS,
   PET_HIT_HALF_WIDTH,
@@ -29,6 +28,7 @@ import {
 import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
 import { getPetCount, getPetName } from '../sprites/petSpriteData.js';
 import { getLoadedCharacterCount } from '../sprites/spriteData.js';
+import { isInputRequestToolName } from '../toolUtils.js';
 import type {
   AreaRole,
   Character,
@@ -509,10 +509,7 @@ export class OfficeState {
 
   /** Blocked on the user right now: a permission prompt or a question tool. */
   private needsUser(ch: Character): boolean {
-    return (
-      ch.bubbleType === 'permission' ||
-      (ch.currentTool !== null && INPUT_REQUEST_TOOL_NAMES.has(ch.currentTool))
-    );
+    return ch.bubbleType === 'permission' || isInputRequestToolName(ch.currentTool);
   }
 
   private liveSubagentsOf(parentAgentId: number): Character[] {

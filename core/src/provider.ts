@@ -104,6 +104,9 @@ export interface HookProvider {
    *  The provider classifies tools as read-like or write-like; the webview renders
    *  the animation. Allows new providers to override without webview edits. */
   readonly readingTools: ReadonlySet<string>;
+  /** Tools that block on the user mid-turn (a question, a plan to approve). The
+   *  webview walks their agent to an inbox Area while the tool is open. */
+  readonly inputRequestTools: ReadonlySet<string>;
   /** Terminal name prefix used when launching this CLI. Used by the extension to
    *  match VS Code terminals to agents for heuristic adoption. */
   readonly terminalNamePrefix?: string;

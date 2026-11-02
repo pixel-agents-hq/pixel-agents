@@ -459,6 +459,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     type: 'providerCapabilities',
     readingTools: [...claudeProvider.readingTools],
     subagentToolNames: [...claudeProvider.subagentToolNames],
+    inputRequestTools: [...claudeProvider.inputRequestTools],
   });
 
   // 1b. Terminal availability. Gates the whole terminal UI (the + Agent button

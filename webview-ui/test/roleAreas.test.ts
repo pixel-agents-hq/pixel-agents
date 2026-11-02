@@ -11,9 +11,18 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
 import { AREA_DEFAULT_COLORS, MEETING_MIN_SUBAGENTS } from '../src/constants.js';
+import { updateAreaRole } from '../src/office/editor/editorActions.js';
 import { OfficeState } from '../src/office/engine/officeState.js';
+import { setProviderCapabilities } from '../src/office/toolUtils.js';
 import type { Character, OfficeLayout } from '../src/office/types.js';
 import { CharacterState, TileType } from '../src/office/types.js';
+
+// The webview learns the provider's tool taxonomy from providerCapabilities.
+setProviderCapabilities({
+  readingTools: [],
+  subagentToolNames: ['Agent'],
+  inputRequestTools: ['AskUserQuestion'],
+});
 
 const COLS = 12;
 const ROWS = 6;
@@ -173,4 +182,16 @@ test('agents of another lead are not pulled into the meeting', () => {
   os.addSubagent(1, 'tool-b');
   os.markSubagentFinished(1, 'tool-a');
   assert.ok(!other.holdInArea);
+});
+
+test('the editor sets, changes and clears an Area role', () => {
+  const layout = roleLayout(false);
+  const inbox = updateAreaRole(layout, 'Inbox', 'inbox');
+  assert.equal(inbox.areas?.find((a) => a.label === 'Inbox')?.role, 'inbox');
+  assert.equal(updateAreaRole(inbox, 'Inbox', 'inbox'), inbox, 'unchanged role is a no-op');
+  assert.equal(updateAreaRole(inbox, 'Nope', 'meeting'), inbox, 'unknown area is a no-op');
+
+  const cleared = updateAreaRole(inbox, 'Inbox', null);
+  assert.ok(!('role' in cleared.areas!.find((a) => a.label === 'Inbox')!), 'seating drops the key');
+  assert.equal(layout.areas?.[1].role, undefined, 'the input layout is not mutated');
 });

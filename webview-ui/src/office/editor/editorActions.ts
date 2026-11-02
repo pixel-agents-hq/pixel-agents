@@ -4,6 +4,7 @@ import { getCatalogEntry, getRotatedType, getToggledType } from '../layout/furni
 import { getPlacementBlockedTiles } from '../layout/layoutSerializer.js';
 import type {
   AreaDefinition,
+  AreaRole,
   CarpetTile,
   OfficeLayout,
   PlacedFurniture,
@@ -711,6 +712,26 @@ export function updateAreaColor(layout: OfficeLayout, label: string, color: stri
   if (idx === -1) return layout;
   if (existing[idx].color === color) return layout;
   const areas = existing.map((a, i) => (i === idx ? { ...a, color } : a));
+  return { ...layout, areas };
+}
+
+/** Set or clear an Area's role. No-op if the area doesn't exist or the role is unchanged. */
+export function updateAreaRole(
+  layout: OfficeLayout,
+  label: string,
+  role: AreaRole | null,
+): OfficeLayout {
+  const existing = layout.areas ?? [];
+  const idx = existing.findIndex((a) => a.label === label);
+  if (idx === -1) return layout;
+  if ((existing[idx].role ?? null) === role) return layout;
+  const areas = existing.map((a, i) => {
+    if (i !== idx) return a;
+    const next: AreaDefinition = { ...a };
+    if (role) next.role = role;
+    else delete next.role;
+    return next;
+  });
   return { ...layout, areas };
 }
 

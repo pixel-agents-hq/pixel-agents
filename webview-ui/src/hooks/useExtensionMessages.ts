@@ -284,6 +284,7 @@ export function useExtensionMessages(
         setProviderCapabilities({
           readingTools: msg.readingTools,
           subagentToolNames: msg.subagentToolNames,
+          inputRequestTools: msg.inputRequestTools,
         });
         return;
       }

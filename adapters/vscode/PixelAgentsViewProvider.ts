@@ -633,6 +633,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           type: 'providerCapabilities',
           readingTools: [...claudeProvider.readingTools],
           subagentToolNames: [...claudeProvider.subagentToolNames],
+          inputRequestTools: [...claudeProvider.inputRequestTools],
         });
 
         // Settings + Directory→Area mappings MUST be dispatched BEFORE restoreAgents

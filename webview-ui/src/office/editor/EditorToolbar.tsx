@@ -29,7 +29,13 @@ import {
 } from '../sprites/carpetTiles.js';
 import { getPetName, getPetSprites } from '../sprites/petSpriteData.js';
 import { getCachedSprite } from '../sprites/spriteCache.js';
-import type { AreaDefinition, CarpetTile, SpriteData, TileType as TileTypeVal } from '../types.js';
+import type {
+  AreaDefinition,
+  AreaRole,
+  CarpetTile,
+  SpriteData,
+  TileType as TileTypeVal,
+} from '../types.js';
 import { EditTool } from '../types.js';
 import { getWallSetCount, getWallSetPreviewSprite } from '../wallTiles.js';
 
@@ -82,6 +88,7 @@ interface EditorToolbarProps {
   onRemoveArea: (label: string) => void;
   onRenameArea: (oldLabel: string, newLabel: string) => void;
   onAreaColorChange: (label: string, color: string) => void;
+  onAreaRoleChange: (label: string, role: AreaRole | null) => void;
   onAreaMappingChange: (directoryName: string, areaLabel: string, action: 'add' | 'remove') => void;
 }
 
@@ -128,6 +135,7 @@ export function EditorToolbar({
   onRemoveArea,
   onRenameArea,
   onAreaColorChange,
+  onAreaRoleChange,
   onAreaMappingChange,
 }: EditorToolbarProps) {
   const [activeCategory, setActiveCategory] = useState<FurniturePanelCategory>('desks');
@@ -455,6 +463,7 @@ export function EditorToolbar({
                   onRename={(newLabel) => onRenameArea(area.label, newLabel)}
                   onRemove={() => onRemoveArea(area.label)}
                   onColorChange={(c) => onAreaColorChange(area.label, c)}
+                  onRoleChange={(r) => onAreaRoleChange(area.label, r)}
                   directories={directories}
                   areaMappings={areaMappings}
                   onAreaMappingChange={onAreaMappingChange}
@@ -745,6 +754,13 @@ function AreaAddRow({
   );
 }
 
+/** Room roles offered on an Area card. Seating is the default (no role). */
+const AREA_ROLE_OPTIONS: ReadonlyArray<{ role: AreaRole | null; label: string }> = [
+  { role: null, label: 'Seating' },
+  { role: 'inbox', label: 'Inbox' },
+  { role: 'meeting', label: 'Meeting room' },
+];
+
 function AreaCard({
   area,
   isSelected,
@@ -752,6 +768,7 @@ function AreaCard({
   onRename,
   onRemove,
   onColorChange,
+  onRoleChange,
   directories,
   areaMappings,
   onAreaMappingChange,
@@ -762,6 +779,7 @@ function AreaCard({
   onRename: (newLabel: string) => void;
   onRemove: () => void;
   onColorChange: (color: string) => void;
+  onRoleChange: (role: AreaRole | null) => void;
   directories: { name: string; path: string }[];
   areaMappings: Record<string, string[]>;
   onAreaMappingChange: (directoryName: string, areaLabel: string, action: 'add' | 'remove') => void;
@@ -769,6 +787,7 @@ function AreaCard({
   const [renaming, setRenaming] = useState(false);
   const [renameDraft, setRenameDraft] = useState(area.label);
   const [addFolderOpen, setAddFolderOpen] = useState(false);
+  const [roleOpen, setRoleOpen] = useState(false);
 
   const mappedFolders = useMemo(
     () =>
@@ -849,6 +868,33 @@ function AreaCard({
         >
           x
         </Button>
+      </div>
+
+      <div className="relative">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={(e) => {
+            e?.stopPropagation();
+            setRoleOpen((v) => !v);
+          }}
+          title="Room role. Inbox: agents that need you walk here and wait. Meeting room: finished helpers gather here until their lead is done."
+        >
+          {AREA_ROLE_OPTIONS.find((o) => o.role === (area.role ?? null))?.label}
+        </Button>
+        <Dropdown isOpen={roleOpen}>
+          {AREA_ROLE_OPTIONS.map((o) => (
+            <DropdownItem
+              key={o.label}
+              onClick={() => {
+                onRoleChange(o.role);
+                setRoleOpen(false);
+              }}
+            >
+              {o.label}
+            </DropdownItem>
+          ))}
+        </Dropdown>
       </div>
 
       <div className="flex flex-col gap-2 max-h-80 overflow-y-auto pixel-scrollbar">
