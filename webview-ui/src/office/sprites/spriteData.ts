@@ -1,6 +1,7 @@
 import type { ColorValue } from '../../components/ui/types.js';
 import { PALETTE_COUNT } from '../../constants.js';
 import { adjustSprite } from '../colorize.js';
+import type { ToolProp } from '../toolUtils.js';
 import type { Direction, SpriteData } from '../types.js';
 import { Direction as Dir } from '../types.js';
 import bubblePermissionData from './bubble-permission.json';
@@ -26,6 +27,117 @@ export const BUBBLE_WAITING_SPRITE: SpriteData = resolveBubbleSprite(bubbleWaiti
 
 /** Heart bubble: pet petting feedback (11x13) */
 export const BUBBLE_HEART_SPRITE: SpriteData = resolveBubbleSprite(bubblePetData);
+
+// ── Tool Prop Sprites ───────────────────────────────────────────
+// Drawn above-right of a working character's head (renderer.ts). Each row is a
+// string, one key per pixel: '.' transparent, 'o' the shared dark outline.
+
+const PROP_OUTLINE = '#1c1a26';
+
+function propSprite(palette: Record<string, string>, rows: string[]): SpriteData {
+  const keys: Record<string, string> = { '.': '', o: PROP_OUTLINE, ...palette };
+  return rows.map((row) => [...row].map((k) => keys[k] ?? ''));
+}
+
+export const TOOL_PROP_SPRITES: Record<ToolProp, SpriteData> = {
+  magnifier: propSprite({ R: '#8a93a8', L: '#bfe3f2', W: '#ffffff', H: '#8a5a32' }, [
+    '.ooo.....',
+    'oRRRo....',
+    'oRLWRo...',
+    'oRLLRo...',
+    '.oRRRoo..',
+    '..ooooHo.',
+    '.....oHHo',
+    '......oHo',
+    '.......o.',
+  ]),
+  pencil: propSprite({ P: '#e88a9a', Y: '#f2c230', T: '#e8cfa0', D: '#3a3440' }, [
+    '......ooo',
+    '.....oPPo',
+    '....oYYo.',
+    '...oYYo..',
+    '..oYYo...',
+    '.oTTo....',
+    'oDTo.....',
+    'oDo......',
+    'oo.......',
+  ]),
+  wrench: propSprite({ M: '#a7afbd', W: '#e4e8ef' }, [
+    'oo...oo',
+    'oMo.oMo',
+    'oMMoMMo',
+    'oMMMMMo',
+    '.oMMMo.',
+    '.oMWMo.',
+    '.oMWMo.',
+    '.oMWMo.',
+    '.oMMMo.',
+    '..ooo..',
+  ]),
+  book: propSprite({ C: '#b04a3a', G: '#f2c230', F: '#f4efe2' }, [
+    '.oooooo.',
+    'oCCCCCCo',
+    'oCGGGGCo',
+    'oCCCCCCo',
+    'oCCCCCCo',
+    'oCCCCCCo',
+    'oFFFFFFo',
+    '.oooooo.',
+  ]),
+  folder: propSprite({ T: '#c99a4a', F: '#ebc77a' }, [
+    '.ooo.....',
+    'oTTToooo.',
+    'oTTTTTTTo',
+    'oFFFFFFFo',
+    'oFFFFFFFo',
+    'oFFFFFFFo',
+    'oFFFFFFFo',
+    '.ooooooo.',
+  ]),
+  marker: propSprite({ C: '#8a4fc0', W: '#eeeef4' }, [
+    '.ooo.',
+    'oCCCo',
+    'oCCCo',
+    'ooooo',
+    'oWWWo',
+    'oWWWo',
+    'oWWWo',
+    '.oCo.',
+    '..o..',
+  ]),
+  question: propSprite({ A: '#f0b030', k: '#3a2410' }, [
+    '..oooo..',
+    '.oAkkAo.',
+    'oAkAAkAo',
+    'oAAAAkAo',
+    'oAAAkAAo',
+    'oAAAAAAo',
+    '.oAAkAo.',
+    '..oooo..',
+  ]),
+  stamp: propSprite({ H: '#8a5a32', G: '#44bb66', g: '#2a8a46' }, [
+    '...ooo...',
+    '..oHHHo..',
+    '...oHo...',
+    '...oHo...',
+    '.ooooooo.',
+    'oGGGGGGGo',
+    'oGGGGGGGo',
+    'ogggggggo',
+    '.ooooooo.',
+  ]),
+  clipboard: propSprite({ B: '#9a6a3a', M: '#a7afbd', W: '#f4efe2', l: '#8a93a8' }, [
+    '..oooo..',
+    'ooMMMMoo',
+    'oBWWWWBo',
+    'oBWllWBo',
+    'oBWWWWBo',
+    'oBWllWBo',
+    'oBWWWWBo',
+    'oBBBBBBo',
+    'oooooooo',
+  ]),
+};
 
 // ════════════════════════════════════════════════════════════════
 // Loaded character sprites (from PNG assets)

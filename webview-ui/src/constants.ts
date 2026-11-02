@@ -54,6 +54,15 @@ export const BUTTON_LINE_WIDTH_ZOOM_FACTOR = 0.5;
 export const BUBBLE_FADE_DURATION_SEC = 0.5;
 export const BUBBLE_SITTING_OFFSET_PX = 10;
 export const BUBBLE_VERTICAL_OFFSET_PX = 24;
+/** Tool prop: its bottom edge sits this far above a seated character's anchor
+ *  (after the sitting offset) — the head top of the typing/reading frames. */
+export const TOOL_PROP_RISE_PX = 25;
+/** Same for a standing (idle/walking) character, whose frames carry the head higher. */
+export const TOOL_PROP_STANDING_RISE_PX = 28;
+/** Tool prop: its left edge sits this far right of the character's centre. */
+export const TOOL_PROP_OFFSET_X_PX = 5;
+/** Tool prop sorts just after its character. */
+export const TOOL_PROP_Z_SORT_OFFSET = 0.001;
 export const FALLBACK_FLOOR_COLOR = '#808080';
 
 // ── Rendering - Overlay Colors (canvas, not CSS) ─────────────

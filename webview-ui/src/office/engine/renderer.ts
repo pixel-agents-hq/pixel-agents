@@ -39,6 +39,10 @@ import {
   SELECTED_OUTLINE_ALPHA,
   SELECTION_DASH_PATTERN,
   SELECTION_HIGHLIGHT_COLOR,
+  TOOL_PROP_OFFSET_X_PX,
+  TOOL_PROP_RISE_PX,
+  TOOL_PROP_STANDING_RISE_PX,
+  TOOL_PROP_Z_SORT_OFFSET,
   VOID_TILE_DASH_PATTERN,
   VOID_TILE_OUTLINE_COLOR,
 } from '../../constants.js';
@@ -51,7 +55,12 @@ import {
 } from '../sprites/carpetTiles.js';
 import { getPetSprites } from '../sprites/petSpriteData.js';
 import { getCachedSprite, getOutlineSprite } from '../sprites/spriteCache.js';
-import { BUBBLE_HEART_SPRITE, getCharacterSprites } from '../sprites/spriteData.js';
+import {
+  BUBBLE_HEART_SPRITE,
+  getCharacterSprites,
+  TOOL_PROP_SPRITES,
+} from '../sprites/spriteData.js';
+import { toolPropFor } from '../toolUtils.js';
 import type {
   AreaDefinition,
   CarpetTile,
@@ -451,6 +460,26 @@ export function renderScene(
         c.restore();
       },
     });
+
+    // Tool prop: what the character is working with, above-right of its head.
+    // Static on purpose: the renderer has no reduced-motion hook to gate a bob on.
+    const prop = toolPropFor(ch);
+    if (prop) {
+      const propCached = getCachedSprite(TOOL_PROP_SPRITES[prop], zoom);
+      const propX = Math.round(offsetX + (ch.x + TOOL_PROP_OFFSET_X_PX) * zoom);
+      const rise =
+        ch.state === CharacterState.TYPE ? TOOL_PROP_RISE_PX : TOOL_PROP_STANDING_RISE_PX;
+      const propY = Math.round(offsetY + (ch.y + sittingOffset - rise) * zoom - propCached.height);
+      drawables.push({
+        zY: charZY + TOOL_PROP_Z_SORT_OFFSET,
+        draw: (c) => {
+          c.save();
+          c.globalAlpha = alpha;
+          c.drawImage(propCached, propX, propY);
+          c.restore();
+        },
+      });
+    }
   }
 
   // ── Pets ──────────────────────────────────────────────
