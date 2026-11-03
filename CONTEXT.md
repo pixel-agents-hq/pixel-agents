@@ -97,6 +97,10 @@ _Avoid_: agent list, tabs
 **New agent**:
 The `+` card that launches an agent. From it, a Directory is chosen.
 
+**Item**:
+One wearable part in the Characters view's wardrobe (a hairstyle, a top, a hat, an accessory). Built-in items ship with the app; custom items are ones the user saved from the pixel editor ("Save as new item"), worn by any character and drawn in the colours of the built-in item they started from. A piece sheet is one item's frames alone, uncoloured, as a 128×96 PNG (Export / Import PNG).
+_Avoid_: part (the code's word, fine there), asset, sprite
+
 ## First Run
 
 **Intro**:

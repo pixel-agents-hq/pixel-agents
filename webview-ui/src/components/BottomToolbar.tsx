@@ -11,6 +11,10 @@ interface BottomToolbarProps {
   onToggleEditMode: () => void;
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
+  /** The Characters view is open (the button shows active). */
+  isCharactersOpen: boolean;
+  /** Opens the Characters view. */
+  onOpenCharacters: () => void;
   directories: Directory[];
   /** Drawer's pinned `+ Directory` row — opens the Directory modal empty. */
   onAddDirectory: () => void;
@@ -36,6 +40,8 @@ export function BottomToolbar({
   onToggleEditMode,
   isSettingsOpen,
   onToggleSettings,
+  isCharactersOpen,
+  onOpenCharacters,
   directories,
   onAddDirectory,
   onEditDirectory,
@@ -165,6 +171,15 @@ export function BottomToolbar({
         icon="layout"
       >
         Layout
+      </Button>
+      <Button
+        variant={isCharactersOpen ? 'active' : 'default'}
+        onClick={onOpenCharacters}
+        title="Design the characters agents are drawn from"
+        className={`${ROW_HEIGHT} press-juice`}
+        icon="characters"
+      >
+        Characters
       </Button>
       <Button
         variant={isSettingsOpen ? 'active' : 'default'}

@@ -93,6 +93,6 @@ export interface AgentState {
   // -- Avatar customization --
   /** Preferred character palette (0-5). If undefined, auto-assigned for diversity. */
   palette?: number;
-  /** Hue shift in degrees (0-360). Rotates the base palette colors. */
-  hueShift?: number;
+  /** Which copy of its character the agent is (0 = the first, n = its nth repeat). */
+  repeat?: number;
 }

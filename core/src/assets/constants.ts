@@ -15,8 +15,11 @@ export const FLOOR_TILE_SIZE = 16;
 export const CHARACTER_DIRECTIONS = ['down', 'up', 'right'] as const;
 export const CHAR_FRAME_W = 16;
 export const CHAR_FRAME_H = 32;
-export const CHAR_FRAMES_PER_ROW = 7;
-export const CHAR_COUNT = 6;
+/** Frames per direction row: walk1-3, type1-2, read1-2, seated (assets/seatedFrame.ts). */
+export const CHAR_FRAMES_PER_ROW = 8;
+/** Frames on a character sheet (8 per direction row) and pixels per frame. */
+export const CHAR_SHEET_FRAMES = CHAR_FRAMES_PER_ROW * CHARACTER_DIRECTIONS.length;
+export const CHAR_FRAME_PIXELS = CHAR_FRAME_W * CHAR_FRAME_H;
 
 // ── Pet Sprite Dimensions (96×96 spritesheet) ──────────────
 export const PET_FRAME_W_SMALL = 16;

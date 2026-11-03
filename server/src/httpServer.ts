@@ -272,7 +272,7 @@ function registerWebSocketRoute(
         teamName: agent.teamName,
         hooksOnly: agent.hooksOnly || undefined,
         palette: agent.palette,
-        hueShift: agent.hueShift,
+        repeat: agent.repeat,
       });
     };
 
