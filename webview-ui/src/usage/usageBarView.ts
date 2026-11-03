@@ -67,9 +67,14 @@ export function formatDuration(ms: number): string {
   return `${mins}m`;
 }
 
-/** "updated just now" / "updated 12m ago", or the hint for no report at all. */
-export function freshnessLabel(updatedAtMs: number | undefined, nowMs: number): string {
-  if (updatedAtMs === undefined) return 'Updates once a Claude Code session replies';
+/** "updated just now" / "updated 12m ago", or the hint for no report at all
+ *  (`providerName`: whose sessions report it). */
+export function freshnessLabel(
+  updatedAtMs: number | undefined,
+  nowMs: number,
+  providerName: string,
+): string {
+  if (updatedAtMs === undefined) return `Updates once a ${providerName} session replies`;
   const age = nowMs - updatedAtMs;
   return age < 60_000 ? 'Updated just now' : `Updated ${formatDuration(age)} ago`;
 }
