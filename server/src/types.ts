@@ -1,5 +1,7 @@
 import type * as vscode from 'vscode';
 
+import type { BackgroundSpawns } from './backgroundSpawns.js';
+
 export interface AgentState {
   id: number;
   sessionId: string;
@@ -16,7 +18,9 @@ export interface AgentState {
   activeToolNames: Map<string, string>;
   activeSubagentToolIds: Map<string, Set<string>>; // parentToolId → active sub-tool IDs
   activeSubagentToolNames: Map<string, Map<string, string>>; // parentToolId → (subToolId → toolName)
-  backgroundAgentToolIds: Set<string>; // tool IDs for run_in_background Agent calls (stay alive until queue-operation)
+  /** Live background spawns (they stay alive past their tool_result, until
+   *  the completion queue-operation), see BackgroundSpawns. */
+  backgroundSpawns: BackgroundSpawns;
   isWaiting: boolean;
   permissionSent: boolean;
   hadToolsInTurn: boolean;
@@ -72,7 +76,7 @@ export interface AgentState {
   teamUsesTmux?: boolean;
   /** For a promoted anonymous background agent (teams OFF): the lead's Agent
    *  tool_use id that spawned it. Links this character to the lead's
-   *  backgroundAgentToolIds entry so the queue-operation completion removes it. */
+   *  backgroundSpawns entry so the queue-operation completion removes it. */
   spawnToolUseId?: string;
   /** Tool ids of spawn calls whose input carried a `name` — teammates-to-be.
    *  Every agentToolStart (re-)broadcast for these carries isTeammateSpawn so
@@ -84,39 +88,5 @@ export interface AgentState {
   /** Preferred character palette (0-5). If undefined, auto-assigned for diversity. */
   palette?: number;
   /** Hue shift in degrees (0-360). Rotates the base palette colors. */
-  hueShift?: number;
-}
-
-export interface PersistedAgent {
-  id: number;
-  sessionId?: string;
-  /** Terminal name — empty string for extension panel sessions */
-  terminalName: string;
-  /** Whether this agent was detected from an external source */
-  isExternal?: boolean;
-  jsonlFile: string;
-  projectDir: string;
-  /** Directory name — the agent's origin label (only set for multi-root workspaces) */
-  directoryName?: string;
-  /** Pre-Directory spelling of `directoryName`, written by releases up to
-   *  v1.4.x. Read as a fallback on restore so an upgrade doesn't strip the
-   *  label (and the Area-mapping key) off every agent from the previous
-   *  session; never written — the next persist rewrites it as directoryName. */
-  folderName?: string;
-
-  // -- Agent Teams --
-  teamName?: string;
-  agentName?: string;
-  isTeamLead?: boolean;
-  leadAgentId?: number;
-  teamUsesTmux?: boolean;
-  /** Live background-spawn tool ids on a lead. Persisted so the spawns'
-   *  transcripts are re-adopted after a reload; the spawned children
-   *  themselves are derived state and never persisted. */
-  backgroundAgentToolIds?: string[];
-  /** Preferred character palette (0-5). Persisted so colors stay stable
-   *  across server restarts; assignPaletteIfNeeded is a no-op on restore. */
-  palette?: number;
-  /** Hue shift in degrees (0-360). Persisted alongside palette. */
   hueShift?: number;
 }

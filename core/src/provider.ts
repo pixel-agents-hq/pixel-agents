@@ -39,7 +39,14 @@ export type AgentEvent =
       input?: unknown;
       runInBackground?: boolean;
     }
-  | { kind: 'subagentEnd'; parentToolId: string; toolId: string }
+  | {
+      kind: 'subagentEnd';
+      parentToolId: string;
+      toolId: string;
+      /** The stopped sub-agent's own transcript, when the CLI names it: tells
+       *  WHICH of a lead's in-process teammates finished. */
+      agentTranscriptPath?: string;
+    }
   | {
       kind: 'subagentTurnEnd';
       parentToolId: string;

@@ -1,5 +1,9 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 
+import { normalizeProjectPath } from '../../core/src/normalizeProjectPath.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 
 describe('claudeProvider', () => {
@@ -29,6 +33,26 @@ describe('claudeProvider', () => {
     it('has a linked TeamProvider', () => {
       expect(claudeProvider.team).toBeDefined();
       expect(claudeProvider.team?.providerId).toBe('claude');
+    });
+  });
+
+  describe('getSessionDirs', () => {
+    const sessionsOf = (p: string) =>
+      path.join(os.homedir(), '.claude', 'projects', normalizeProjectPath(p));
+
+    it('puts the symlink-resolved path first: the CLI files sessions under it', () => {
+      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-dirs-')));
+      const real = path.join(root, 'real');
+      const link = path.join(root, 'link');
+      fs.mkdirSync(real);
+      fs.symlinkSync(real, link);
+      expect(claudeProvider.getSessionDirs?.(link)).toEqual([sessionsOf(real), sessionsOf(link)]);
+      expect(claudeProvider.getSessionDirs?.(real)).toEqual([sessionsOf(real)]);
+    });
+
+    it('keeps a path that does not exist as given', () => {
+      const missing = path.join(os.tmpdir(), 'pxl-no-such-dir', 'x');
+      expect(claudeProvider.getSessionDirs?.(missing)).toEqual([sessionsOf(missing)]);
     });
   });
 
@@ -133,6 +157,19 @@ describe('claudeProvider', () => {
         session_id: 'sess-1',
       });
       expect(result?.event.kind).toBe('subagentEnd');
+    });
+
+    it('carries the stopped sub-agent transcript path on subagentEnd', () => {
+      const result = claudeProvider.normalizeHookEvent({
+        hook_event_name: 'SubagentStop',
+        session_id: 'sess-1',
+        agent_id: 'a123',
+        agent_transcript_path: '/p/sess-1/subagents/agent-a123.jsonl',
+      });
+      expect(result?.event).toMatchObject({
+        kind: 'subagentEnd',
+        agentTranscriptPath: '/p/sess-1/subagents/agent-a123.jsonl',
+      });
     });
 
     it('normalizes PermissionRequest to permissionRequest', () => {

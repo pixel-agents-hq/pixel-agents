@@ -18,7 +18,7 @@ function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
     activeToolNames: new Map(),
     activeSubagentToolIds: new Map(),
     activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
+    backgroundSpawns: new Map(),
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
@@ -101,7 +101,11 @@ describe('resendAgentActivity', () => {
           ['bg-named', 'Agent'],
           ['bg-promoted', 'Agent'],
         ]),
-        backgroundAgentToolIds: new Set(['bg-unnamed', 'bg-named', 'bg-promoted']),
+        backgroundSpawns: new Map([
+          ['bg-unnamed', {}],
+          ['bg-named', {}],
+          ['bg-promoted', {}],
+        ]),
         teammateSpawnToolIds: new Set(['bg-named']),
       }),
     );

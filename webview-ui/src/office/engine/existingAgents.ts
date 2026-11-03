@@ -40,13 +40,16 @@ export interface ExistingAgentsOffice {
     directoryName?: string,
   ) => void;
   setHeadless: (id: number, headless: boolean) => void;
+  /** Give an agent the office already shows the server's look and seat. */
+  syncAgent: (id: number, palette?: number, hueShift?: number, seatId?: string) => void;
 }
 
 /**
  * Reconcile an `existingAgents` payload into the office. When the layout is
  * already built, agents are added immediately (skipping the matrix spawn effect,
  * as restored agents do) unless they already exist; otherwise they are pushed
- * onto `pending` to be flushed by the next `layoutLoaded`. Returns true if any
+ * onto `pending` to be flushed by the next `layoutLoaded`. An agent the office
+ * already shows takes the snapshot's look and seat. Returns true if any
  * agent was added directly, so the caller can persist seat assignments.
  */
 export function reconcileExistingAgents(
@@ -74,10 +77,26 @@ export function reconcileExistingAgents(
         os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.directoryName);
         if (p.isHeadless) os.setHeadless(p.id, true);
         addedDirectly = true;
+      } else {
+        // Already shown (a reconnect): the snapshot is the truth. Keeping the
+        // office's own look and seat and saving them back reshuffled the
+        // office for every other viewer.
+        os.syncAgent(p.id, p.palette, p.hueShift, p.seatId);
       }
     } else {
       pending.push(p);
     }
   }
   return addedDirectly;
+}
+
+/**
+ * Agents the office shows that a resync snapshot no longer lists. The snapshot
+ * is the server's whole truth, so these were closed while the client was
+ * disconnected and their agentClosed never arrived. Sub-agents (negative ids)
+ * are not agents of the snapshot and never count.
+ */
+export function staleAgentIds(shown: Iterable<number>, incoming: number[]): number[] {
+  const live = new Set(incoming);
+  return [...shown].filter((id) => id > 0 && !live.has(id));
 }

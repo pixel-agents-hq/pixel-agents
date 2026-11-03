@@ -2,6 +2,7 @@ const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
+import { launchSpawn, readCompletionNotices } from './backgroundSpawns.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
 import { updateContextUsage } from './contextUsage.js';
 import { hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
@@ -72,6 +73,31 @@ export function notifyBackgroundAgentCompleted(leadAgentId: number, toolUseId: s
   backgroundAgentCompletedCallback?.(leadAgentId, toolUseId);
 }
 
+/** A lead's background spawn is over (its completion notice, or a pause that
+ *  never resumed): drop it from the lead, clear its sub-character, and let the
+ *  host remove its teammate character or stop its shadow watch. */
+export function endBackgroundSpawn(
+  agentId: number,
+  agent: AgentState,
+  agents: AgentStateStore,
+  toolId: string,
+): void {
+  console.log(`[Pixel Agents] Agent ${agentId} background agent done: ${toolId}`);
+  agent.backgroundSpawns.delete(toolId);
+  agent.activeSubagentToolIds.delete(toolId);
+  agent.activeSubagentToolNames.delete(toolId);
+  agents.broadcast({ type: 'subagentClear', id: agentId, parentToolId: toolId });
+  agent.activeToolIds.delete(toolId);
+  agent.activeToolStatuses.delete(toolId);
+  agent.activeToolNames.delete(toolId);
+  backgroundAgentCompletedCallback?.(agentId, toolId);
+  if (!agent.hookDelivered) {
+    setTimeout(() => {
+      agents.broadcast({ type: 'agentToolDone', id: agentId, toolId });
+    }, TOOL_DONE_DELAY_MS);
+  }
+}
+
 /** Called when a lead's spawn result names a DIFFERENT team than the one it is
  *  latched to. Every CLI run of a session mints a fresh implicit team, so a
  *  resumed lead that spawns again belongs to the new team; the host removes
@@ -103,6 +129,8 @@ export function processTranscriptLine(
   agent.linesProcessed++;
   try {
     const record = JSON.parse(line);
+    // Background agents' completion notices, as the provider reads them.
+    const spawnNotices = hookProvider?.team?.readSpawnNotices?.(record) ?? null;
 
     // -- Agent Teams: extract team metadata via the active provider --
     // The provider reads its CLI's own field names (Claude: record.teamName + record.agentName).
@@ -206,11 +234,11 @@ export function processTranscriptLine(
             const isSubagentSpawn = isSubagentTool(toolName);
             // A spawn call carrying a `name` is a Teammate-to-be: flag it so
             // the webview never creates a Subtask ghost that the teammate
-            // character replaces seconds later.
+            // character replaces seconds later. One explicitly run in the
+            // foreground is in-turn work whatever its name: a Sub-agent.
             const isTeammateSpawn =
               isSubagentSpawn &&
-              typeof block.input?.name === 'string' &&
-              block.input.name.length > 0;
+              (hookProvider?.team?.namesTeammate?.(toolName, block.input ?? {}) ?? false);
             if (isTeammateSpawn) {
               (agent.teammateSpawnToolIds ??= new Set()).add(block.id);
             }
@@ -321,16 +349,22 @@ export function processTranscriptLine(
                 });
               }
 
-              // Detect background agent launches — keep the tool alive until queue-operation
-              if (
-                !teammateSpawn &&
-                isSubagentTool(completedToolName) &&
-                isAsyncAgentResult(block)
-              ) {
+              // A background agent left running by this tool: an async
+              // spawn's launch, or a stopped agent revived by a message (it
+              // then runs under, and completes by, the message's tool id).
+              // Keep the tool alive until the completion queue-operation.
+              // A result naming an agent that is already live starts nothing.
+              const launch =
+                completedToolName && !teammateSpawn
+                  ? hookProvider?.team?.extractBackgroundAgentFromToolResult?.(
+                      completedToolName,
+                      block.content,
+                    )
+                  : null;
+              if (launch && launchSpawn(agent.backgroundSpawns, completedToolId, launch.taskId)) {
                 console.log(
-                  `[Pixel Agents] Agent ${agentId} background agent launched: ${completedToolId}`,
+                  `[Pixel Agents] Agent ${agentId} background agent launched: ${completedToolId}${launch.taskId ? ` (${launch.taskId})` : ''}`,
                 );
-                agent.backgroundAgentToolIds.add(completedToolId);
                 // Current harnesses OMIT run_in_background from the tool_use
                 // input, so the spawn's original agentToolStart went out
                 // unflagged. Re-broadcast it flagged now that the result
@@ -407,42 +441,18 @@ export function processTranscriptLine(
         clearAgentActivity(agent, agentId, agents, permissionTimers);
         agent.hadToolsInTurn = false;
       }
-    } else if (record.type === 'queue-operation' && record.operation === 'enqueue') {
-      // Background agent completed — parse tool-use-id from XML content
-      const content = record.content as string | undefined;
-      if (content) {
-        const toolIdMatch = content.match(/<tool-use-id>(.*?)<\/tool-use-id>/);
-        if (toolIdMatch) {
-          const completedToolId = toolIdMatch[1];
-          if (agent.backgroundAgentToolIds.has(completedToolId)) {
-            console.log(
-              `[Pixel Agents] Agent ${agentId} background agent done: ${completedToolId}`,
-            );
-            agent.backgroundAgentToolIds.delete(completedToolId);
-            agent.activeSubagentToolIds.delete(completedToolId);
-            agent.activeSubagentToolNames.delete(completedToolId);
-            agents.broadcast({
-              type: 'subagentClear',
-              id: agentId,
-              parentToolId: completedToolId,
-            });
-            agent.activeToolIds.delete(completedToolId);
-            agent.activeToolStatuses.delete(completedToolId);
-            agent.activeToolNames.delete(completedToolId);
-            // Remove the spawn's teammate character or stop its shadow watch.
-            backgroundAgentCompletedCallback?.(agentId, completedToolId);
-            if (!agent.hookDelivered) {
-              const toolId = completedToolId;
-              setTimeout(() => {
-                agents.broadcast({
-                  type: 'agentToolDone',
-                  id: agentId,
-                  toolId,
-                });
-              }, TOOL_DONE_DELAY_MS);
-            }
-          }
-        }
+    } else if (spawnNotices) {
+      // Background agents finished. A notice names them by spawn tool id, by
+      // agent (task) id, or both; a crash notice lists several task ids at
+      // once (they died with the process). An interim notice (the agent waits
+      // on its own background work) only pauses its spawn: the runtime ends it
+      // if it never writes again (pausedSpawnFate).
+      const { ended, paused } = readCompletionNotices(agent.backgroundSpawns, spawnNotices.notices);
+      for (const toolId of ended) endBackgroundSpawn(agentId, agent, agents, toolId);
+      const pausedAt = spawnNotices.at ?? Date.now();
+      for (const toolId of paused) {
+        const spawn = agent.backgroundSpawns.get(toolId);
+        if (spawn) spawn.pausedAt = pausedAt;
       }
     } else if (record.type === 'system' && record.subtype === 'turn_duration') {
       cancelWaitingTimer(agentId, waitingTimers);
@@ -451,11 +461,11 @@ export function processTranscriptLine(
       // Definitive turn-end: clean up any stale tool state, but preserve background agents.
       // When hooks are active, the Stop hook already handled the status change,
       // but we still perform state cleanup here as a safety net.
-      const hasForegroundTools = agent.activeToolIds.size > agent.backgroundAgentToolIds.size;
+      const hasForegroundTools = agent.activeToolIds.size > agent.backgroundSpawns.size;
       if (hasForegroundTools) {
         // Remove only non-background tool state
         for (const toolId of agent.activeToolIds) {
-          if (agent.backgroundAgentToolIds.has(toolId)) continue;
+          if (agent.backgroundSpawns.has(toolId)) continue;
           agent.activeToolIds.delete(toolId);
           agent.activeToolStatuses.delete(toolId);
           const toolName = agent.activeToolNames.get(toolId);
@@ -476,7 +486,7 @@ export function processTranscriptLine(
         // recognize the re-sent tool as a subagent spawn and never recreates the
         // Subtask sub-character. Skip tools whose agent was promoted to its own
         // character -- re-sending would spawn a ghost Subtask alongside it.
-        for (const toolId of agent.backgroundAgentToolIds) {
+        for (const toolId of agent.backgroundSpawns.keys()) {
           if (hasPromotedBackgroundAgent(agentId, toolId, agents)) continue;
           const status = agent.activeToolStatuses.get(toolId);
           if (status) {
@@ -491,7 +501,7 @@ export function processTranscriptLine(
             });
           }
         }
-      } else if (agent.activeToolIds.size > 0 && agent.backgroundAgentToolIds.size === 0) {
+      } else if (agent.activeToolIds.size > 0 && agent.backgroundSpawns.size === 0) {
         agent.activeToolIds.clear();
         agent.activeToolStatuses.clear();
         agent.activeToolNames.clear();
@@ -716,26 +726,4 @@ function linkTeammates(_agentId: number, agent: AgentState, agents: AgentStateSt
       a.leadAgentId = lead.id;
     }
   }
-}
-
-/** Check if a tool_result block indicates an async/background agent launch */
-function isAsyncAgentResult(block: Record<string, unknown>): boolean {
-  const content = block.content;
-  if (Array.isArray(content)) {
-    for (const item of content) {
-      if (
-        typeof item === 'object' &&
-        item !== null &&
-        typeof (item as Record<string, unknown>).text === 'string' &&
-        ((item as Record<string, unknown>).text as string).startsWith(
-          'Async agent launched successfully.',
-        )
-      ) {
-        return true;
-      }
-    }
-  } else if (typeof content === 'string') {
-    return content.startsWith('Async agent launched successfully.');
-  }
-  return false;
 }
