@@ -210,6 +210,21 @@ describe('PTY host', () => {
     expect(next.survivors()).toEqual([]);
   });
 
+  it('a terminal the server killed still reports its exit (what ends its agent and frees its Worktree)', async () => {
+    const client = await connect();
+    const session = client.create({ agentId: 1, command: 'claude', args: [], cwd: dir, env: {} });
+    await until(() => spawned.length === 1);
+    const exits: Array<{ exitCode: number; signal?: number }> = [];
+    session.onExit((e) => exits.push(e));
+
+    client.dispose(1);
+    // Gone for the server at once, but its exit still arrives.
+    expect(client.has(1)).toBe(false);
+    await until(() => exits.length === 1);
+    expect(exits).toEqual([{ exitCode: 0, signal: 1 }]);
+    expect(session.hasExited).toBe(true);
+  });
+
   it('ends every session when the host goes away', async () => {
     const client = await connect();
     const session = client.create({ agentId: 1, command: 'claude', args: [], cwd: dir, env: {} });
