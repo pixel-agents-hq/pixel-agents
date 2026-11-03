@@ -186,7 +186,11 @@ export interface HookProvider {
   readonly sessionFilePattern?: string;
   /** Parse one line of a transcript file into an AgentEvent. */
   parseTranscriptLine?(line: string): AgentEvent | null;
-  /** Build CLI launch command for +Agent button. */
+  /** Build CLI launch command for +Agent button. `resume`: continue the
+   *  existing session `sessionId` (its transcript) instead of starting one. Only
+   *  a provider with `conversationTitle` is asked to resume (the conversation
+   *  list is its), and it must honour `resume`: ignoring it would start a new
+   *  session under the old id. */
   buildLaunchCommand?(
     sessionId: string,
     cwd: string,
@@ -207,7 +211,8 @@ export interface HookProvider {
   isInheritedSessionEnv?(name: string): boolean;
   /** A session transcript's title as the CLI shows it (a user rename wins over
    *  the generated one), or undefined when it has none. Read by the sidebar's
-   *  recent conversations; undefined = this provider names no conversations. */
+   *  recent conversations; undefined = this provider names no conversations
+   *  (and is never asked to resume one). */
   conversationTitle?(transcriptPath: string): string | undefined;
 
   /** Optional account-usage reporting (the office's usage bars). */

@@ -7,7 +7,8 @@ import type { Directory } from '../../core/src/messages.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import { createAgentState } from '../src/agentState.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
-import { CONVERSATION_TITLE_SCAN_BYTES, CONVERSATIONS_LIMIT_MAX } from '../src/constants.js';
+import { CONVERSATIONS_LIMIT_MAX } from '../src/constants.js';
+import { CONVERSATION_TITLE_SCAN_BYTES } from '../src/providers/hook/claude/constants.js';
 import {
   conversationLimitsFrom,
   conversationLook,
@@ -377,6 +378,14 @@ describe('conversations', () => {
       store.set(7, agent(7, uuid(1), 'toolu_1'));
       expect(
         resumeRequest(store, provider, { sessionId: uuid(1), directoryPath: '/w' }),
+      ).toBeNull();
+    });
+
+    it('refuses for a provider that lists no conversations (it is never asked to resume)', () => {
+      transcript(uuid(1), line({ type: 'ai-title', aiTitle: 'Here' }), 1);
+      const untitled: HookProvider = { ...provider, conversationTitle: undefined };
+      expect(
+        resumeRequest(new AgentStateStore(), untitled, { sessionId: uuid(1), directoryPath: '/w' }),
       ).toBeNull();
     });
   });

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 
 import { isRecord } from '../../../../../core/src/isRecord.js';
-import { CONVERSATION_TITLE_MAX_CHARS, CONVERSATION_TITLE_SCAN_BYTES } from '../../../constants.js';
+import { CONVERSATION_TITLE_MAX_CHARS, CONVERSATION_TITLE_SCAN_BYTES } from './constants.js';
 
 /**
  * The title Claude Code shows for a session, read from its transcript.

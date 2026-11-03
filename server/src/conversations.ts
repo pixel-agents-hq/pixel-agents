@@ -22,6 +22,7 @@ import {
   NEW_CONVERSATION_TITLE,
   PIXEL_AGENTS_DIR,
 } from './constants.js';
+import { transcriptSuffix } from './directorySuggestions.js';
 import { writeJsonAtomic } from './jsonFileWatcher.js';
 
 /**
@@ -146,14 +147,16 @@ function sessionDirsFor(provider: HookProvider, directoryPath: string): string[]
   return provider.getSessionDirs?.(directoryPath) ?? [];
 }
 
-/** A session's transcript in the Directory at `directoryPath`, if it exists. */
+/** A session's transcript in the Directory at `directoryPath`, if it exists.
+ *  The provider's `sessionFilePattern` names transcripts: `*` is the session id. */
 export function findTranscript(
   provider: HookProvider,
   directoryPath: string,
   sessionId: string,
 ): string | undefined {
+  const suffix = transcriptSuffix(provider.sessionFilePattern);
   return sessionDirsFor(provider, directoryPath)
-    .map((dir) => path.join(dir, `${sessionId}.jsonl`))
+    .map((dir) => path.join(dir, `${sessionId}${suffix}`))
     .find((file) => fs.existsSync(file));
 }
 
@@ -192,15 +195,17 @@ export interface ResumeRequest {
 
 /**
  * A `resumeConversation` request, or null when there is nothing to resume:
- * the id isn't a UUID (it becomes a CLI argument), the Directory isn't a
- * string, an agent in the office already runs the session, or its transcript
- * doesn't exist.
+ * the provider lists no conversations (only one that names them is asked to
+ * resume one, see HookProvider.buildLaunchCommand), the id isn't a UUID (it
+ * becomes a CLI argument), the Directory isn't a string, an agent in the
+ * office already runs the session, or its transcript doesn't exist.
  */
 export function resumeRequest(
   store: AgentStateStore,
   provider: HookProvider,
   msg: { sessionId?: unknown; directoryPath?: unknown },
 ): ResumeRequest | null {
+  if (!provider.conversationTitle || !provider.buildLaunchCommand) return null;
   const { sessionId, directoryPath } = msg;
   if (typeof sessionId !== 'string' || !SESSION_ID_PATTERN.test(sessionId)) return null;
   if (typeof directoryPath !== 'string') return null;
@@ -237,8 +242,9 @@ function cachedTitle(provider: HookProvider, file: TranscriptFile): string | und
 
 /** Every transcript of a Directory, newest first. */
 function directoryTranscripts(directory: Directory, provider: HookProvider): TranscriptFile[] {
+  const suffix = transcriptSuffix(provider.sessionFilePattern);
   return sessionDirsFor(provider, directory.path)
-    .flatMap(transcriptsIn)
+    .flatMap((dir) => transcriptsIn(dir, suffix))
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
@@ -250,7 +256,7 @@ function conversationOf(
   live: ReadonlyMap<string, LiveSession>,
   looks: Looks,
 ): Conversation | null {
-  const sessionId = path.basename(file.path, '.jsonl');
+  const sessionId = path.basename(file.path, transcriptSuffix(provider.sessionFilePattern));
   const running = live.get(sessionId);
   const title = cachedTitle(provider, file) ?? (running && NEW_CONVERSATION_TITLE);
   if (!title) return null;
@@ -389,8 +395,8 @@ export function searchConversations(
   return { results, more: false };
 }
 
-/** A project dir's transcripts. */
-function transcriptsIn(projectDir: string): TranscriptFile[] {
+/** A project dir's transcripts: its files ending in `suffix`. */
+function transcriptsIn(projectDir: string, suffix: string): TranscriptFile[] {
   let names: string[];
   try {
     names = fs.readdirSync(projectDir);
@@ -399,7 +405,7 @@ function transcriptsIn(projectDir: string): TranscriptFile[] {
   }
   const files: TranscriptFile[] = [];
   for (const name of names) {
-    if (!name.endsWith('.jsonl')) continue;
+    if (!name.endsWith(suffix)) continue;
     const file = path.join(projectDir, name);
     try {
       const stat = fs.statSync(file);
