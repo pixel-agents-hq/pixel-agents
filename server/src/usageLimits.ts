@@ -133,6 +133,7 @@ export function usageBridgeStatusMessage(
   return {
     type: 'usageBridgeStatus',
     providerId: provider.id,
+    providerName: provider.displayName,
     installed: provider.usageBridge?.isInstalled() ?? false,
     disclosure: provider.usageBridge?.disclosure ?? '',
     ...(error ? { error } : {}),

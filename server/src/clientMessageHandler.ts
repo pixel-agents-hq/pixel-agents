@@ -109,6 +109,12 @@ const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
 const KEY_BYPASS_PERMISSIONS = 'pixel-agents.bypassPermissions';
 const KEY_SHOW_HOST_DIRECTORIES = 'pixel-agents.showHostDirectories';
 
+/** The provider whose conversations the sidebar lists and resumes: the first
+ *  that names them and can launch (HookProvider.conversationTitle). */
+const conversationProvider = hookProviders.find(
+  (provider) => provider.conversationTitle && provider.buildLaunchCommand,
+);
+
 /**
  * This host's own Directory contribution: the directory the server was started
  * from. Gated on ptyManager for the same reason directoriesLoaded is — no
@@ -195,12 +201,12 @@ export function handleClientMessage(
     }
 
     case 'requestConversations': {
-      if (!ctx.ptyManager) break;
+      if (!ctx.ptyManager || !conversationProvider) break;
       send({
         type: 'conversationsLoaded',
         directories: listConversations(
           listDirectories(shownHostDirectoriesFor(ctx)),
-          claudeProvider,
+          conversationProvider,
           liveSessions(store),
           conversationLimitsFrom(msg.limits),
         ),
@@ -209,7 +215,7 @@ export function handleClientMessage(
     }
 
     case 'searchConversations': {
-      if (!ctx.ptyManager) break;
+      if (!ctx.ptyManager || !conversationProvider) break;
       const query = conversationQueryFrom(msg);
       if (!query) break;
       send({
@@ -217,7 +223,7 @@ export function handleClientMessage(
         ...query,
         ...searchConversations(
           listDirectories(shownHostDirectoriesFor(ctx)),
-          claudeProvider,
+          conversationProvider,
           liveSessions(store),
           query,
         ),
@@ -226,11 +232,11 @@ export function handleClientMessage(
     }
 
     case 'resumeConversation': {
-      if (!runtime || !ctx.ptyManager) break;
-      const resume = resumeRequest(store, claudeProvider, msg);
+      if (!runtime || !ctx.ptyManager || !conversationProvider) break;
+      const resume = resumeRequest(store, conversationProvider, msg);
       if (!resume) break;
       launchStandaloneAgent(
-        { store, runtime, ptyManager: ctx.ptyManager, provider: claudeProvider },
+        { store, runtime, ptyManager: ctx.ptyManager, provider: conversationProvider },
         {
           directoryPath: resume.directoryPath,
           bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,

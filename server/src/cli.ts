@@ -34,7 +34,12 @@ import {
   WILDCARD_HOSTNAMES,
 } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
-import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import {
+  claudeProvider,
+  copyHookScript,
+  hookProviderById,
+  hookProviders,
+} from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 import {
   defaultPtyHostSocket,
@@ -435,7 +440,7 @@ async function main(): Promise<void> {
 
     // An installed usage bridge runs the script from ~/.pixel-agents/hooks/:
     // bring it up to this version's copy.
-    claudeProvider.usageBridge?.refreshScript(packageRoot);
+    for (const provider of hookProviders) provider.usageBridge?.refreshScript(packageRoot);
 
     // Sync runtime refs with persisted settings BEFORE first scan tick. The
     // runtime's single hooksEnabled ref follows the Claude provider until the

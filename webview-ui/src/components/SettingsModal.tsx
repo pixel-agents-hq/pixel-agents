@@ -223,7 +223,7 @@ export function SettingsModal({
           <>
             <Checkbox
               label="Usage Bars"
-              title="Your Claude Code plan's weekly and 5-hour usage, top-left"
+              title={`Your ${usageBridge.providerName} plan's weekly and 5-hour usage, top-left`}
               checked={usageBridge.installed}
               onChange={() => {
                 if (usagePending) return;

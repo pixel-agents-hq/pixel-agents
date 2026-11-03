@@ -574,8 +574,14 @@ function App() {
             />
           )}
 
-          {/* The Claude Code plan's usage, top-left (Settings → Usage Bars). */}
-          {usage.status?.installed && <UsageBars limits={usage.limits} mobile={isMobile} />}
+          {/* The provider's plan usage, top-left (Settings → Usage Bars). */}
+          {usage.status?.installed && (
+            <UsageBars
+              limits={usage.limits}
+              providerName={usage.status.providerName}
+              mobile={isMobile}
+            />
+          )}
 
           {/* Vignette overlay */}
           <div

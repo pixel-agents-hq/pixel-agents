@@ -42,6 +42,8 @@ const BAR_NAME: Record<BarId, string> = { weekly: 'Weekly', fiveHour: '5-hour' }
 interface UsageBarsProps {
   /** The last usageLimits for the provider; undefined until the server sends it. */
   limits: UsageLimits | undefined;
+  /** Whose plan it is, for people (usageBridgeStatus.providerName). */
+  providerName: string;
   /** Phone: below the safe area, beside the menu button. */
   mobile: boolean;
 }
@@ -87,7 +89,7 @@ function BarRow({ id, view, showReset }: { id: BarId; view: UsageBarView; showRe
 }
 
 /**
- * Top-left of the office: how much of the Claude Code plan is left. A heart,
+ * Top-left of the office: how much of the provider's plan is left (`providerName`, e.g. Claude Code). A heart,
  * then the weekly bar (green) over the 5-hour bar (blue), equal in size, each
  * draining through its own colours to red,
  * each with its share left inside. Hovering any of it makes the heart beat, at a
@@ -95,7 +97,7 @@ function BarRow({ id, view, showReset }: { id: BarId; view: UsageBarView; showRe
  * right of it. On a phone a tap does it instead (a tap elsewhere undoes it),
  * with the reset times below the bars, where the narrow screen has room.
  */
-export function UsageBars({ limits, mobile }: UsageBarsProps) {
+export function UsageBars({ limits, providerName, mobile }: UsageBarsProps) {
   const now = useNow(USAGE_BAR_TICK_MS);
   const [active, setActive] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -118,8 +120,8 @@ export function UsageBars({ limits, mobile }: UsageBarsProps) {
       ref={rootRef}
       className={`absolute z-10 flex items-center gap-8 cursor-default ${mobile ? 'mobile-safe-top' : 'top-8'}`}
       style={{ left: USAGE_BARS_LEFT_PX }}
-      title={freshnessLabel(limits?.updatedAt, now)}
-      aria-label={`Claude Code usage. Weekly: ${weekly.percent} left, ${weekly.reset}. 5-hour: ${fiveHour.percent} left, ${fiveHour.reset}.`}
+      title={freshnessLabel(limits?.updatedAt, now, providerName)}
+      aria-label={`${providerName} usage. Weekly: ${weekly.percent} left, ${weekly.reset}. 5-hour: ${fiveHour.percent} left, ${fiveHour.reset}.`}
       // A phone's tap also fires the emulated mouseenter, which would cancel
       // the click's toggle, so there only the tap counts.
       onMouseEnter={mobile ? undefined : () => setActive(true)}

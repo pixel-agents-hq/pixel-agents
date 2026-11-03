@@ -145,6 +145,7 @@ describe('recordUsageReport', () => {
       {
         type: 'usageBridgeStatus',
         providerId: 'claude',
+        providerName: 'Claude Code',
         installed: false,
         disclosure: claudeProvider.usageBridge!.disclosure,
       },
