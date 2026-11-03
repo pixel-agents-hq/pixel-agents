@@ -5,7 +5,10 @@ import type { TabStatus } from '../components/AgentCard.js';
 import { Button } from '../components/ui/Button.js';
 import { PixelIcon } from '../components/ui/PixelIcon.js';
 import { MOBILE_CONVERSATIONS_WIDTH } from '../constants.js';
-import { ConversationList } from '../conversations/ConversationList.js';
+import {
+  ConversationList,
+  type ConversationSearchScope,
+} from '../conversations/ConversationList.js';
 import type { SwipePanel } from './useEdgeSwipe.js';
 import { useEdgeSwipe } from './useEdgeSwipe.js';
 
@@ -25,6 +28,8 @@ interface MobileMenuProps {
   /** A running conversation pressed: go to its agent's terminal. */
   onOpenAgent: (agentId: number) => void;
   statusFor: (agentId: number) => TabStatus | null;
+  /** Open the conversation search (over the menu). */
+  onSearch?: (scope: ConversationSearchScope) => void;
 }
 
 /**
@@ -49,6 +54,7 @@ export function MobileMenu({
   onResume,
   onOpenAgent,
   statusFor,
+  onSearch,
 }: MobileMenuProps) {
   useEffect(() => {
     if (!open) return;
@@ -121,6 +127,7 @@ export function MobileMenu({
               onClose();
             }}
             statusFor={statusFor}
+            onSearch={onSearch}
           />
         ) : (
           <div className="flex-1" />

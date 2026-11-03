@@ -49,6 +49,7 @@ export type ServerMessage =
   | DirectoryRejected
   | DirectorySuggestions
   | ConversationsLoaded
+  | ConversationSearchResults
   | TerminalAvailability
   | TerminalSessionOpened
   | TerminalSessionClosed
@@ -86,6 +87,7 @@ export type ClientMessage =
   | RemoveDirectory
   | RequestDirectorySuggestions
   | RequestConversations
+  | SearchConversations
   | ResumeConversation
   | RequestDiagnostics;
 
@@ -473,6 +475,7 @@ export interface DirectoryConversations {
   name: string;
   path: string;
   conversations: Conversation[];
+  more?: boolean;
 }
 
 export interface Conversation {
@@ -482,6 +485,21 @@ export interface Conversation {
   palette?: number;
   repeat?: number;
   agentId?: number;
+}
+
+export interface ConversationSearchResults {
+  type: 'conversationSearchResults';
+  query: string;
+  directoryPath?: string;
+  limit: number;
+  results: FoundConversation[];
+  more: boolean;
+}
+
+export interface FoundConversation {
+  directoryPath: string;
+  directoryName: string;
+  conversation: Conversation;
 }
 
 export interface TerminalAvailability {
@@ -671,6 +689,19 @@ export interface RequestDirectorySuggestions {
 
 export interface RequestConversations {
   type: 'requestConversations';
+  limits?: ConversationLimit[];
+}
+
+export interface ConversationLimit {
+  directoryPath: string;
+  count: number;
+}
+
+export interface SearchConversations {
+  type: 'searchConversations';
+  query: string;
+  directoryPath?: string;
+  limit: number;
 }
 
 export interface ResumeConversation {

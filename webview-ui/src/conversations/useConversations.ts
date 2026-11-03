@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { DirectoryConversations } from '../../../core/src/messages.js';
 import {
@@ -8,10 +8,17 @@ import {
 import { transport } from '../transport/index.js';
 
 /** Messages after which the list may have changed: an agent arrived (its
- *  conversation leaves the list), left (it joins), a reconnect resynced, or
- *  an agent's turn started or ended (its transcript now exists, or its title
- *  was written — the desktop sidebar stays open, so nothing else would ask). */
-const REFRESH_ON = new Set(['agentCreated', 'agentClosed', 'existingAgents', 'agentStatus']);
+ *  conversation leaves the list), left (it joins), a reconnect resynced, an
+ *  agent's turn started or ended (its transcript now exists, or its title
+ *  was written — the desktop sidebar stays open, so nothing else would ask),
+ *  or a Directory was added, renamed or removed (one section per Directory). */
+const REFRESH_ON = new Set([
+  'agentCreated',
+  'agentClosed',
+  'existingAgents',
+  'agentStatus',
+  'directoriesLoaded',
+]);
 
 export interface ConversationList {
   directories: DirectoryConversations[];
@@ -19,18 +26,36 @@ export interface ConversationList {
   receivedAt: number;
 }
 
+/** Conversations to list per Directory, where not the default five. */
+export type ConversationLimits = Readonly<Record<string, number>>;
+
 /**
  * The sidebar's recent conversations, asked of the server while `open` (the
  * list reads transcripts from disk, so nothing is fetched while it's shut).
- * Null until the first answer.
+ * `limits`: how many a Directory lists ("Show more"); a change asks
+ * again at once. Null until the first answer.
  */
-export function useConversations(open: boolean): ConversationList | null {
+export function useConversations(
+  open: boolean,
+  limits: ConversationLimits = {},
+): ConversationList | null {
   const [list, setList] = useState<ConversationList | null>(null);
+  const limitsRef = useRef(limits);
+  limitsRef.current = limits;
+  const limitsKey = JSON.stringify(limits);
 
   useEffect(() => {
     if (!open) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const request = () => transport.send({ type: 'requestConversations' });
+    const request = () => {
+      const entries = Object.entries(limitsRef.current);
+      transport.send({
+        type: 'requestConversations',
+        ...(entries.length > 0
+          ? { limits: entries.map(([directoryPath, count]) => ({ directoryPath, count })) }
+          : {}),
+      });
+    };
     const unsubscribe = transport.onMessage((msg) => {
       if (msg.type === 'conversationsLoaded') {
         setList({ directories: msg.directories, receivedAt: Date.now() });
@@ -46,7 +71,7 @@ export function useConversations(open: boolean): ConversationList | null {
       clearInterval(every);
       unsubscribe();
     };
-  }, [open]);
+  }, [open, limitsKey]);
 
   return list;
 }

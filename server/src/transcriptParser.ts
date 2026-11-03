@@ -2,7 +2,12 @@ const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import { completedSpawnToolIds, completionNotice, launchSpawn } from './backgroundSpawns.js';
+import {
+  completionNotice,
+  launchSpawn,
+  noticeTime,
+  readCompletionNotice,
+} from './backgroundSpawns.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
 import { updateContextUsage } from './contextUsage.js';
 import { hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
@@ -71,6 +76,31 @@ export function setBackgroundAgentCompletedCallback(
  *  never had a watch — the host's lookups simply miss. */
 export function notifyBackgroundAgentCompleted(leadAgentId: number, toolUseId: string): void {
   backgroundAgentCompletedCallback?.(leadAgentId, toolUseId);
+}
+
+/** A lead's background spawn is over (its completion notice, or a pause that
+ *  never resumed): drop it from the lead, clear its sub-character, and let the
+ *  host remove its teammate character or stop its shadow watch. */
+export function endBackgroundSpawn(
+  agentId: number,
+  agent: AgentState,
+  agents: AgentStateStore,
+  toolId: string,
+): void {
+  console.log(`[Pixel Agents] Agent ${agentId} background agent done: ${toolId}`);
+  agent.backgroundSpawns.delete(toolId);
+  agent.activeSubagentToolIds.delete(toolId);
+  agent.activeSubagentToolNames.delete(toolId);
+  agents.broadcast({ type: 'subagentClear', id: agentId, parentToolId: toolId });
+  agent.activeToolIds.delete(toolId);
+  agent.activeToolStatuses.delete(toolId);
+  agent.activeToolNames.delete(toolId);
+  backgroundAgentCompletedCallback?.(agentId, toolId);
+  if (!agent.hookDelivered) {
+    setTimeout(() => {
+      agents.broadcast({ type: 'agentToolDone', id: agentId, toolId });
+    }, TOOL_DONE_DELAY_MS);
+  }
 }
 
 /** Called when a lead's spawn result names a DIFFERENT team than the one it is
@@ -420,38 +450,20 @@ export function processTranscriptLine(
       // Background agents finished. A notice names them by spawn tool id, by
       // agent (task) id, or both; a crash notice lists several task ids at
       // once with status "stopped" (they died with the process). An interim
-      // notice (the agent waits on its own background work) ends nothing.
+      // notice (the agent waits on its own background work) only pauses its
+      // spawn: the runtime ends it if it never writes again (pausedSpawnFate).
       const content = completionNotice(record);
       if (content) {
-        for (const completedToolId of completedSpawnToolIds(
+        const { ended, paused } = readCompletionNotice(
           agent.backgroundSpawns,
           content,
           hookProvider?.team,
-        )) {
-          console.log(`[Pixel Agents] Agent ${agentId} background agent done: ${completedToolId}`);
-          agent.backgroundSpawns.delete(completedToolId);
-          agent.activeSubagentToolIds.delete(completedToolId);
-          agent.activeSubagentToolNames.delete(completedToolId);
-          agents.broadcast({
-            type: 'subagentClear',
-            id: agentId,
-            parentToolId: completedToolId,
-          });
-          agent.activeToolIds.delete(completedToolId);
-          agent.activeToolStatuses.delete(completedToolId);
-          agent.activeToolNames.delete(completedToolId);
-          // Remove the spawn's teammate character or stop its shadow watch.
-          backgroundAgentCompletedCallback?.(agentId, completedToolId);
-          if (!agent.hookDelivered) {
-            const toolId = completedToolId;
-            setTimeout(() => {
-              agents.broadcast({
-                type: 'agentToolDone',
-                id: agentId,
-                toolId,
-              });
-            }, TOOL_DONE_DELAY_MS);
-          }
+        );
+        for (const toolId of ended) endBackgroundSpawn(agentId, agent, agents, toolId);
+        const pausedAt = noticeTime(record);
+        for (const toolId of paused) {
+          const spawn = agent.backgroundSpawns.get(toolId);
+          if (spawn) spawn.pausedAt = pausedAt;
         }
       }
     } else if (record.type === 'system' && record.subtype === 'turn_duration') {

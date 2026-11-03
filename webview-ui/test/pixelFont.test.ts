@@ -27,6 +27,7 @@ describe('splitLabel', () => {
       expect(splitLabel(t)).toEqual([{ glyphs: true, text: t }]);
     }
     expect(splitLabel('OCT 13')).toEqual([{ glyphs: true, text: 'OCT 13' }]);
+    expect(splitLabel('NOW')).toEqual([{ glyphs: true, text: 'NOW' }]);
     expect(splitLabel('now')).toEqual([{ glyphs: false, text: 'now' }]);
     // a bar's name stays in the UI font, like "Weekly"
     expect(splitLabel('5-hour')).toEqual([{ glyphs: false, text: '5-hour' }]);
@@ -55,8 +56,12 @@ describe('timeAgo', () => {
     expect(timeAgo(at, at + 30 * 86_400_000)).toBe('OCT 13');
   });
 
-  it('has a glyph for every letter of every month', () => {
-    for (const month of MONTHS) {
+  it('writes a moment ago as NOW, in the pixel font', () => {
+    expect(timeAgo(1000, 1000 + 30_000)).toBe('NOW');
+  });
+
+  it('has a glyph for every letter of every month and of NOW', () => {
+    for (const month of [...MONTHS, 'NOW']) {
       for (const ch of month) expect(GLYPHS[ch]).toBeDefined();
     }
   });

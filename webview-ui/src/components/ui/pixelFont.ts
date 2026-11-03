@@ -31,7 +31,7 @@ export const GLYPHS: Record<string, readonly string[]> = {
   D: ['##.', '#.#', '#.#', '#.#', '##.'],
   E: ['###', '#..', '##.', '#..', '###'],
   F: ['###', '#..', '##.', '#..', '#..'],
-  // The rest of the capitals the month names need ("OCT 13").
+  // The rest of the capitals the month names and "NOW" need ("OCT 13").
   G: ['###', '#..', '#.#', '#.#', '###'],
   J: ['..#', '..#', '..#', '#.#', '###'],
   L: ['#..', '#..', '#..', '#..', '###'],
@@ -44,6 +44,7 @@ export const GLYPHS: Record<string, readonly string[]> = {
   T: ['###', '.#.', '.#.', '.#.', '.#.'],
   U: ['#.#', '#.#', '#.#', '#.#', '###'],
   V: ['#.#', '#.#', '#.#', '#.#', '.#.'],
+  W: ['#...#', '#...#', '#.#.#', '##.##', '#...#'],
   Y: ['#.#', '#.#', '.#.', '.#.', '.#.'],
   // Letters, only ever drawn with a number: units ("3d", "11h", "9m", "3x")
   // and the version's v ("v1.5").
@@ -55,6 +56,9 @@ export const GLYPHS: Record<string, readonly string[]> = {
   // Between two numbers ("3d 11h"): one glyph-width blank.
   ' ': ['..', '..', '..', '..', '..'],
 };
+
+/** A moment ago, as the sidebar's times write it. */
+export const NOW = 'NOW';
 
 /** The month names a date is written with ("OCT 13"), in capitals. */
 export const MONTHS = [
@@ -73,10 +77,10 @@ export const MONTHS = [
 ] as const;
 
 /** A word drawn in glyphs: a number (signed, decimal) with its unit or %, a
- *  version, an upper-case hex colour, a month, the "--" of no data, or the
- *  "/" between two numbers. */
+ *  version, an upper-case hex colour, a month, NOW, the "--" of no data, or
+ *  the "/" between two numbers. */
 const NUMBER_WORD = new RegExp(
-  `^(?:[<-]?\\d+(?:\\.\\d+)?[dhmx%]?|v\\d+(?:\\.\\d+)*|#[0-9A-F]{3,8}|${MONTHS.join('|')}|--|/)$`,
+  `^(?:[<-]?\\d+(?:\\.\\d+)?[dhmx%]?|v\\d+(?:\\.\\d+)*|#[0-9A-F]{3,8}|${MONTHS.join('|')}|${NOW}|--|/)$`,
 );
 export const GLYPH_HEIGHT = 5;
 /** Empty columns between two glyphs. */

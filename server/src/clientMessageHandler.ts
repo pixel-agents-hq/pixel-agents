@@ -21,10 +21,13 @@ import {
 } from './configPersistence.js';
 import { MAX_CHARACTER_REPEAT, TERMINAL_REQUIRES_TOKEN_REASON } from './constants.js';
 import {
+  conversationLimitsFrom,
+  conversationQueryFrom,
   listConversations,
   liveSessions,
   recordConversationLooks,
   resumeRequest,
+  searchConversations,
 } from './conversations.js';
 import {
   handleDirectoryClientMessage,
@@ -199,6 +202,24 @@ export function handleClientMessage(
           listDirectories(shownHostDirectoriesFor(ctx)),
           claudeProvider,
           liveSessions(store),
+          conversationLimitsFrom(msg.limits),
+        ),
+      });
+      break;
+    }
+
+    case 'searchConversations': {
+      if (!ctx.ptyManager) break;
+      const query = conversationQueryFrom(msg);
+      if (!query) break;
+      send({
+        type: 'conversationSearchResults',
+        ...query,
+        ...searchConversations(
+          listDirectories(shownHostDirectoriesFor(ctx)),
+          claudeProvider,
+          liveSessions(store),
+          query,
         ),
       });
       break;

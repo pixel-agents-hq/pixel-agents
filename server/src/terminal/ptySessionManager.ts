@@ -25,6 +25,7 @@ import {
 } from '../constants.js';
 import type { IPty, PtyModule } from './ptyModule.js';
 import { resolvePtyModule } from './ptyModule.js';
+import { terminalEnv } from './terminalEnv.js';
 import type {
   CreateTerminalOptions,
   TerminalExit,
@@ -341,6 +342,6 @@ function spawnPty(
     cols,
     rows,
     cwd: options.cwd,
-    env: { ...options.env, TERM: TERMINAL_TERM_NAME },
+    env: terminalEnv(options.env),
   });
 }

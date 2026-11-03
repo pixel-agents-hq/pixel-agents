@@ -2,7 +2,7 @@ import type { TabStatus } from '../components/AgentCard.js';
 import { Button } from '../components/ui/Button.js';
 import { CONVERSATION_SIDEBAR_WIDTH_PX, SIDE_PANEL_CONTENT_SHIFT_PX } from '../constants.js';
 import { useSlidePanel } from '../hooks/useSlidePanel.js';
-import { ConversationList } from './ConversationList.js';
+import { ConversationList, type ConversationSearchScope } from './ConversationList.js';
 
 /**
  * Left-docked home of the recent conversations (ConversationList) on the
@@ -24,6 +24,8 @@ interface ConversationSidebarProps {
   statusFor: (agentId: number) => TabStatus | null;
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
+  /** Open the conversation search. */
+  onSearch?: (scope: ConversationSearchScope) => void;
 }
 
 export function ConversationSidebar({
@@ -33,6 +35,7 @@ export function ConversationSidebar({
   statusFor,
   isSettingsOpen,
   onToggleSettings,
+  onSearch,
 }: ConversationSidebarProps) {
   const { rendered, shown, panelTransition, contentTransition, onPanelTransitionEnd } =
     useSlidePanel(open, { initiallyOpen: open });
@@ -64,6 +67,7 @@ export function ConversationSidebar({
           onResume={onResume}
           onOpenAgent={onOpenAgent}
           statusFor={statusFor}
+          onSearch={onSearch}
         />
         <div className="p-8 border-t-2 border-border">
           <Button

@@ -128,6 +128,7 @@ components:
         - $ref: '#/components/schemas/DirectoryRejected'
         - $ref: '#/components/schemas/DirectorySuggestions'
         - $ref: '#/components/schemas/ConversationsLoaded'
+        - $ref: '#/components/schemas/ConversationSearchResults'
         # Terminal (standalone embedded terminal control plane)
         - $ref: '#/components/schemas/TerminalAvailability'
         - $ref: '#/components/schemas/TerminalSessionOpened'
@@ -169,6 +170,7 @@ components:
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/RequestDirectorySuggestions'
         - $ref: '#/components/schemas/RequestConversations'
+        - $ref: '#/components/schemas/SearchConversations'
         - $ref: '#/components/schemas/ResumeConversation'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
@@ -1041,9 +1043,10 @@ components:
     ConversationsLoaded:
       description: |
         The sidebar's recent conversations: for each Directory, the ones an
-        agent in the office is running (with `agentId`) and its newest past
-        ones (at most five), newest first. Sent point-to-point in reply to `requestConversations`
-        (never broadcast).
+        agent in the office is running (with `agentId`) and its past ones,
+        newest first: five in all, or as many as the request's `limits` asked
+        for that Directory. Sent point-to-point in reply to
+        `requestConversations` (never broadcast).
       type: object
       additionalProperties: false
       required: [type, directories]
@@ -1068,6 +1071,48 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Conversation'
+        more:
+          type: boolean
+          description: It has older past conversations than the ones listed (the sidebar offers to show more).
+
+    ConversationSearchResults:
+      description: >-
+        The answer to `searchConversations`, to its sender only: the
+        conversations whose title holds every word of `query` (any case; an
+        empty query matches all), newest first, at most `limit`. Echoes the
+        request, so a stale answer can be told apart.
+      type: object
+      additionalProperties: false
+      required: [type, query, limit, results, more]
+      properties:
+        type:
+          const: conversationSearchResults
+        query:
+          type: string
+        directoryPath:
+          type: string
+        limit:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/FoundConversation'
+        more:
+          type: boolean
+          description: More conversations match than `limit`.
+
+    FoundConversation:
+      description: A conversation a search found, with the Directory it is listed under.
+      type: object
+      additionalProperties: false
+      required: [directoryPath, directoryName, conversation]
+      properties:
+        directoryPath:
+          type: string
+        directoryName:
+          type: string
+        conversation:
+          $ref: '#/components/schemas/Conversation'
 
     Conversation:
       type: object
@@ -1596,13 +1641,48 @@ components:
     RequestConversations:
       description: >-
         Ask for the sidebar's recent conversations; the host replies
-        `conversationsLoaded` to this client only.
+        `conversationsLoaded` to this client only. `limits`: how many
+        conversations to list for a Directory (its "Show more"); the rest
+        get five.
       type: object
       additionalProperties: false
       required: [type]
       properties:
         type:
           const: requestConversations
+        limits:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationLimit'
+
+    ConversationLimit:
+      type: object
+      additionalProperties: false
+      required: [directoryPath, count]
+      properties:
+        directoryPath:
+          type: string
+        count:
+          type: integer
+
+    SearchConversations:
+      description: >-
+        Search every Directory's conversations by title (or one Directory's,
+        with `directoryPath`); the host replies `conversationSearchResults`
+        to this client only. An empty query lists them all, newest first.
+      type: object
+      additionalProperties: false
+      required: [type, query, limit]
+      properties:
+        type:
+          const: searchConversations
+        query:
+          type: string
+        directoryPath:
+          type: string
+        limit:
+          type: integer
+          description: At most this many results (more are asked for by asking again with a larger limit).
 
     ResumeConversation:
       description: >-

@@ -18,8 +18,10 @@ import { TerminalHideRibbon } from './components/TerminalHideRibbon.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
-import { ZoomControls } from './components/ZoomControls.js';
+import { MobileZoomLevel, ZoomControls } from './components/ZoomControls.js';
 import { OFFICE_CANVAS_TEST_ID } from './constants.js';
+import type { ConversationSearchScope } from './conversations/ConversationList.js';
+import { ConversationSearch } from './conversations/ConversationSearch.js';
 import { ConversationSidebar } from './conversations/ConversationSidebar.js';
 import { useConversationSidebar } from './conversations/useConversationSidebar.js';
 import { useDirectoryEditor } from './hooks/useDirectoryEditor.js';
@@ -418,6 +420,11 @@ function App() {
   // A running conversation pressed in the desktop sidebar: its agent, as its
   // card would show it (its terminal pane, or focus without one). The phone's
   // menu takes mobileShell.openAgent.
+  // The conversation search: open (and where it looks) or null.
+  const [conversationSearch, setConversationSearch] = useState<ConversationSearchScope | null>(
+    null,
+  );
+
   const openAgentFromSidebar = useCallback(
     (agentId: number) => {
       getOfficeState().selectAndFollow(agentId);
@@ -557,7 +564,9 @@ function App() {
         <>
           {/* Mobile: pinch replaces the zoom buttons, and the toolbar's
                 jobs move to the card bar (+) and the floating Settings button. */}
-          {!isMobile && (
+          {isMobile ? (
+            <MobileZoomLevel zoom={editor.zoom} />
+          ) : (
             <ZoomControls
               zoom={editor.zoom}
               onZoomChange={editor.handleZoomChange}
@@ -812,6 +821,7 @@ function App() {
               statusFor={terminalDrawer.statusFor}
               isSettingsOpen={isSettingsOpen}
               onToggleSettings={() => setIsSettingsOpen((v) => !v)}
+              onSearch={setConversationSearch}
             />
           )}
 
@@ -923,8 +933,29 @@ function App() {
           onResume={resumeAndFocus}
           onOpenAgent={mobileShell.openAgent}
           statusFor={terminalDrawer.statusFor}
+          onSearch={setConversationSearch}
         />
       )}
+
+      {/* Every conversation, searched (the sidebar's search field, "See all"). */}
+      <ConversationSearch
+        scope={conversationSearch}
+        onClose={() => setConversationSearch(null)}
+        onResume={(sessionId, directoryPath) => {
+          resumeAndFocus(sessionId, directoryPath);
+          if (isMobile) menu.close();
+        }}
+        onOpenAgent={(agentId) => {
+          if (isMobile) {
+            mobileShell.openAgent(agentId);
+            menu.close();
+          } else {
+            openAgentFromSidebar(agentId);
+          }
+        }}
+        statusFor={terminalDrawer.statusFor}
+        roomy={isMobile}
+      />
 
       {isCharactersOpen && !officeReadOnly && (
         <CharactersView phone={isMobile} onClose={closeCharacters} />

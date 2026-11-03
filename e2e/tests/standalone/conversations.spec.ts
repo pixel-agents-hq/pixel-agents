@@ -5,7 +5,14 @@ import { expect, test } from '../../fixtures/standalone';
 import { arrangeNextClaudeInvocation, claudeScenario } from '../../helpers/mock-claude';
 import { expectOverlayCount } from '../../helpers/office';
 import { buildTurnDurationRecord } from '../../helpers/team';
-import { getLaunchDrawer, setSettings } from '../../helpers/webview';
+import {
+  directoryPencil,
+  getDirectoryModal,
+  getLaunchDrawer,
+  openDirectoryModal,
+  openLaunchDrawer,
+  setSettings,
+} from '../../helpers/webview';
 
 /**
  * The conversation sidebar: an agent's conversation, once it leaves the
@@ -140,5 +147,109 @@ test.describe('Standalone / conversation sidebar', () => {
       )
       .toEqual({ palette: before.palette, repeat: before.repeat, seatId: before.seatId });
     await expect(running).toHaveCount(1);
+  });
+
+  test('a Directory lists five past conversations, shows five more on request, and the search finds any of them @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    // Eight past conversations, already on disk where Claude files the
+    // workspace's sessions (the CLI files them under the resolved path).
+    const projectDir = path.join(
+      standalone.tmpHome,
+      '.claude',
+      'projects',
+      fs.realpathSync(standalone.workspaceDir).replace(/[^a-zA-Z0-9-]/g, '-'),
+    );
+    fs.mkdirSync(projectDir, { recursive: true });
+    const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+    const base = Date.now() / 1000 - 3600;
+    for (let i = 1; i <= 8; i++) {
+      const file = path.join(projectDir, `${uuid(i)}.jsonl`);
+      fs.writeFileSync(file, JSON.stringify({ type: 'ai-title', aiTitle: `Chat ${i}` }) + '\n');
+      fs.utimesSync(file, base + i * 60, base + i * 60);
+    }
+    await page.reload();
+
+    const sidebar = page.getByTestId('conversation-sidebar');
+    const recent = sidebar.getByTestId('recent-conversations').getByTestId('conversation-row');
+    await expect(recent).toHaveCount(5);
+    await expect(recent.first()).toContainText('Chat 8');
+
+    const header = sidebar
+      .locator('button[aria-expanded]')
+      .filter({ hasText: path.basename(standalone.workspaceDir) });
+    // The header's own section (the header sits directly inside it).
+    const section = header.locator('xpath=..');
+    const rows = section.getByTestId('conversation-row');
+    await header.click();
+    await expect(rows).toHaveCount(5);
+    await section.getByTestId('conversations-show-more').click();
+    await expect(rows).toHaveCount(8);
+    await expect(rows.last()).toContainText('Chat 1');
+    // Nothing older: no more to show.
+    await expect(section.getByTestId('conversations-show-more')).toHaveCount(0);
+    // Shut and opened again, it is back to five.
+    await header.click();
+    await header.click();
+    await expect(rows).toHaveCount(5);
+
+    // "See all": every conversation, searched by title.
+    await sidebar.getByTestId('conversations-see-all').click();
+    const search = page.getByTestId('conversation-search');
+    const results = search.getByTestId('conversation-row');
+    await expect(results).toHaveCount(8);
+    await search.getByTestId('conversation-search-input').fill('chat 3');
+    await expect(results).toHaveCount(1);
+    await expect(results).toContainText('Chat 3');
+    await page.keyboard.press('Escape');
+    await expect(search).toBeHidden();
+
+    // A Directory's "See all" searches that Directory; its chip widens it.
+    await section.getByTestId('conversations-directory-search').click();
+    await expect(search.getByTestId('conversation-search-scope')).toContainText(
+      path.basename(standalone.workspaceDir),
+    );
+    await expect(results).toHaveCount(8);
+    await search.getByTestId('conversation-search-scope').click();
+    await expect(search.getByTestId('conversation-search-scope')).toHaveCount(0);
+
+    // Pressing a result resumes it.
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('resumed from search').holdOpenFor(60_000).build(),
+    );
+    await search.getByTestId('conversation-search-input').fill('chat 2');
+    await expect(results).toHaveCount(1);
+    await results.click();
+    await expect(search).toBeHidden();
+    await expect
+      .poll(() => invocations(standalone.mockLogFile))
+      .toContain(`args=--resume ${uuid(2)}`);
+  });
+
+  test('a Directory added or deleted gains or loses its section at once, no reload @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    const target = path.join(standalone.workspaceDir, 'sidebar-section');
+    fs.mkdirSync(target, { recursive: true });
+    const sidebar = page.getByTestId('conversation-sidebar');
+    await expect(sidebar).toBeVisible();
+    const section = sidebar.locator('button[aria-expanded]').filter({ hasText: 'Sidebar Section' });
+    // Well inside the list's 30 s poll: only the Directory change can explain it.
+    const promptly = { timeout: 10_000 };
+
+    const modal = await openDirectoryModal(page);
+    await modal.getByPlaceholder('Project name').fill('Sidebar Section');
+    await modal.getByPlaceholder('~/code/my-project').fill(target);
+    await modal.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(modal).toBeHidden();
+    await expect(section).toHaveCount(1, promptly);
+
+    const drawer = await openLaunchDrawer(page);
+    await (await directoryPencil(page, drawer, 'Sidebar Section')).click();
+    await getDirectoryModal(page).getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(section).toHaveCount(0, promptly);
   });
 });

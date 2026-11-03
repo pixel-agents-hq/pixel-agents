@@ -10,13 +10,15 @@ import { PixelText } from '../components/ui/PixelText.js';
 import {
   CONVERSATION_EXPANDED_KEY,
   CONVERSATION_UNFOLD_MS,
+  CONVERSATIONS_PER_DIRECTORY,
+  CONVERSATIONS_SHOW_MORE_STEP,
   MUGSHOT_CROP_SIDE_PX,
   RECENT_CONVERSATIONS_COUNT,
 } from '../constants.js';
 import { prefersReducedMotion } from '../hooks/usePresence.js';
 import { recentAcross } from './recent.js';
 import { timeAgo } from './timeAgo.js';
-import { useConversations } from './useConversations.js';
+import { type ConversationLimits, useConversations } from './useConversations.js';
 
 interface ConversationListProps {
   /** Whether it shows: the list is only fetched (and kept fresh) while it does. */
@@ -29,6 +31,14 @@ interface ConversationListProps {
   statusFor: (agentId: number) => TabStatus | null;
   /** Rows sized for a finger (the phone's panel). */
   roomy?: boolean;
+  /** Open the search over every conversation (or one Directory's). */
+  onSearch?: (scope: ConversationSearchScope) => void;
+}
+
+/** Where a search looks: every Directory, or the one named. */
+export interface ConversationSearchScope {
+  directoryPath?: string;
+  directoryName?: string;
 }
 
 /**
@@ -47,20 +57,30 @@ export function ConversationList({
   onOpenAgent,
   statusFor,
   roomy = false,
+  onSearch,
 }: ConversationListProps) {
   /** What pressing a row does: a running one opens its agent, a past one resumes. */
   const press = (conversation: Conversation, directory: DirectoryConversations) => () =>
     conversation.agentId !== undefined
       ? onOpenAgent(conversation.agentId)
       : onResume(conversation.sessionId, directory.path);
-  const list = useConversations(open);
+  // Conversations per Directory beyond the default five ("Show more"):
+  // forgotten when a section opens or shuts, and on reload.
+  const [limits, setLimits] = useState<ConversationLimits>({});
+  const list = useConversations(open, limits);
   // One open at a time: opening a Directory shuts the one that was open.
   const [openPath, setOpenPath] = useState(storedOpenPath);
   const toggle = (path: string) => {
     const next = openPath === path ? null : path;
     storeOpenPath(next);
     setOpenPath(next);
+    setLimits({});
   };
+  const showMore = (path: string) =>
+    setLimits((prev) => ({
+      ...prev,
+      [path]: (prev[path] ?? CONVERSATIONS_PER_DIRECTORY) + CONVERSATIONS_SHOW_MORE_STEP,
+    }));
 
   // flex-1 even while empty: whatever sits below the list stays at the bottom.
   if (list === null || list.directories.length === 0) {
@@ -74,8 +94,19 @@ export function ConversationList({
   const now = list.receivedAt;
   return (
     <div className="flex-1 min-h-0 quiet-scrollbar">
+      {onSearch && <SearchField onPress={() => onSearch({})} roomy={roomy} />}
       <section data-testid="recent-conversations" className="pb-6 border-b-2 border-border">
-        <SectionHeading>Recent</SectionHeading>
+        <SectionHeading
+          action={
+            onSearch && recent.length > 0 ? (
+              <TextButton testId="conversations-see-all" onPress={() => onSearch({})}>
+                See all
+              </TextButton>
+            ) : undefined
+          }
+        >
+          Recent
+        </SectionHeading>
         {recent.length === 0 ? (
           <p className="m-0 px-10 py-2 text-xs text-text-muted">No conversations</p>
         ) : (
@@ -103,18 +134,66 @@ export function ConversationList({
           press={press}
           statusFor={statusFor}
           roomy={roomy}
+          onShowMore={() => showMore(directory.path)}
+          onSearch={
+            onSearch &&
+            (() => onSearch({ directoryPath: directory.path, directoryName: directory.name }))
+          }
         />
       ))}
     </div>
   );
 }
 
-/** A group's label: small, muted, uppercase-spaced, above its rows. */
-function SectionHeading({ children }: { children: string }) {
+/** Looks like a search field; pressing it opens the search (ConversationSearch). */
+function SearchField({ onPress, roomy }: { onPress: () => void; roomy: boolean }) {
   return (
-    <h3 className="m-0 px-10 pt-10 pb-4 text-2xs font-normal tracking-wider uppercase text-text-muted">
+    <div className="px-8 pt-8">
+      <button
+        type="button"
+        data-testid="conversations-search"
+        onClick={onPress}
+        className={`w-full flex items-center gap-6 px-6 ${roomy ? 'py-6' : 'py-3'} bg-bg-dark border-2 border-border rounded-none cursor-text text-left text-sm text-text-muted hover:border-accent`}
+      >
+        <PixelIcon name="search" scale={1} />
+        Search conversations
+      </button>
+    </div>
+  );
+}
+
+/** A small text-only button (a heading's "See all", a section's "Show 5 more"). */
+function TextButton({
+  children,
+  onPress,
+  testId,
+}: {
+  children: string;
+  onPress: () => void;
+  testId?: string;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={onPress}
+      className="shrink-0 px-2 bg-transparent border-none rounded-none cursor-pointer text-2xs text-text-muted hover:text-text normal-case tracking-normal"
+    >
       {children}
-    </h3>
+    </button>
+  );
+}
+
+/** A group's label: small, muted, uppercase-spaced, above its rows; an
+ *  `action` (a "See all") at its other end. */
+function SectionHeading({ children, action }: { children: string; action?: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-8 pl-10 pr-8 pt-10 pb-4">
+      <h3 className="m-0 text-2xs font-normal tracking-wider uppercase text-text-muted">
+        {children}
+      </h3>
+      {action}
+    </div>
   );
 }
 
@@ -145,6 +224,10 @@ interface SectionProps {
   press: (conversation: Conversation, directory: DirectoryConversations) => () => void;
   statusFor: ConversationListProps['statusFor'];
   roomy: boolean;
+  /** Lists CONVERSATIONS_SHOW_MORE_STEP more of its conversations. */
+  onShowMore: () => void;
+  /** Opens the search on this Directory's conversations. */
+  onSearch?: () => void;
 }
 
 function DirectorySection({
@@ -155,6 +238,8 @@ function DirectorySection({
   press,
   statusFor,
   roomy,
+  onShowMore,
+  onSearch,
 }: SectionProps) {
   const { conversations } = directory;
   const empty = conversations.length === 0;
@@ -202,6 +287,22 @@ function DirectorySection({
                 roomy={roomy}
               />
             ))}
+            {(directory.more || onSearch) && (
+              <div className="flex items-center justify-between gap-8 pl-8 pr-6 pt-2 pb-2">
+                {directory.more ? (
+                  <TextButton testId="conversations-show-more" onPress={onShowMore}>
+                    {`Show ${CONVERSATIONS_SHOW_MORE_STEP} more`}
+                  </TextButton>
+                ) : (
+                  <span />
+                )}
+                {onSearch && (
+                  <TextButton testId="conversations-directory-search" onPress={onSearch}>
+                    See all
+                  </TextButton>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Unfold>
@@ -265,7 +366,7 @@ function mostUrgent(statuses: Array<TabStatus | null>): TabStatus | null {
   return URGENCY.find((s) => statuses.includes(s)) ?? null;
 }
 
-interface RowProps {
+export interface RowProps {
   conversation: Conversation;
   /** The Directory's name, shown under the title (the Recent section). */
   where?: string;
@@ -275,7 +376,7 @@ interface RowProps {
   roomy: boolean;
 }
 
-function ConversationRow({ conversation, where, onPress, statusFor, now, roomy }: RowProps) {
+export function ConversationRow({ conversation, where, onPress, statusFor, now, roomy }: RowProps) {
   const { title, updatedAt, palette, repeat, agentId } = conversation;
   const status = agentId !== undefined ? statusFor(agentId) : null;
   return (
