@@ -1535,7 +1535,7 @@ components:
 
     AgentSeatMeta:
       description: |
-        Seat metadata associated with an agent (palette index, clothes hue, seat ID).
+        Seat metadata associated with an agent (palette index, repeat, seat ID).
         Used in `existingAgents.agentMeta`. All fields optional because some agents
         may not have a seat assignment yet.
       type: object
