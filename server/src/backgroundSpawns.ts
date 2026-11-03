@@ -2,6 +2,7 @@ import * as fs from 'fs';
 
 import type { PersistedAgent } from '../../core/src/schemas.js';
 import type { TeamProvider } from '../../core/src/teamProvider.js';
+import { PAUSED_SPAWN_END_MS, PAUSED_SPAWN_WRITE_SLACK_MS } from './constants.js';
 
 /** What the notice readers need from the provider: whether a notice says its
  *  agent is still alive (TeamProvider.isInterimSpawnNotice). */
@@ -12,9 +13,11 @@ export type NoticeReader = Pick<TeamProvider, 'isInterimSpawnNotice'> | undefine
  * spawn call's, or the SendMessage call's for an agent revived after a crash.
  * The value carries the agent (task) id the CLI gave the spawn, when it said
  * one — completion notices and transcript names may use it instead of the
- * tool id. A spawn is live exactly while it is in the map.
+ * tool id. A spawn is live exactly while it is in the map. `pausedAt` (ms) is
+ * set while its last notice was an interim one (see readCompletionNotice);
+ * never persisted — a restore re-reads it from the notices.
  */
-export type BackgroundSpawns = Map<string, { taskId?: string }>;
+export type BackgroundSpawns = Map<string, { taskId?: string; pausedAt?: number }>;
 
 /** The tool id of the live spawn the CLI knows as `taskId`, if any. */
 export function spawnToolIdOfTask(spawns: BackgroundSpawns, taskId: string): string | undefined {
@@ -36,7 +39,7 @@ export function launchSpawn(spawns: BackgroundSpawns, toolId: string, taskId?: s
 }
 
 /** A completion notice's content: an enqueue queue-operation whose string
- *  content names the finished spawns (see completedSpawnToolIds). Anything
+ *  content names the finished spawns (see readCompletionNotice). Anything
  *  else is not a notice. */
 export function completionNotice(record: {
   type?: unknown;
@@ -85,30 +88,59 @@ export function restoreBackgroundSpawns(p: PersistedAgent): BackgroundSpawns {
   return spawns;
 }
 
+/** When a notice record was written (its `timestamp`), else `now`. */
+export function noticeTime(record: { timestamp?: unknown }, now = Date.now()): number {
+  const t = typeof record.timestamp === 'string' ? Date.parse(record.timestamp) : NaN;
+  return Number.isNaN(t) ? now : t;
+}
+
 /** The live spawns a completion notice (a queue-operation's content) names,
- *  by spawn tool id or by task (agent) id. Ids it names that aren't live are
- *  ignored, and so is a notice the provider calls interim: its agent stopped
- *  to wait on background work of its own and is still alive. The
- *  `<task-notification>` / `<tool-use-id>` / `<task-id>` tags are Claude
- *  Code's notice format (like the file-fallback parser around it). */
-export function completedSpawnToolIds(
+ *  by spawn tool id or by task (agent) id, split by what it says of them:
+ *  `ended`, or only `paused` — a notice the provider calls interim, whose
+ *  agent stopped to wait on background work of its own and may resume. Ids
+ *  it names that aren't live are ignored. The `<task-notification>` /
+ *  `<tool-use-id>` / `<task-id>` tags are Claude Code's notice format (like
+ *  the file-fallback parser around it). */
+export function readCompletionNotice(
   spawns: BackgroundSpawns,
   content: string,
   team?: NoticeReader,
-): Set<string> {
-  const done = new Set<string>();
+): { ended: Set<string>; paused: Set<string> } {
+  const ended = new Set<string>();
+  const paused = new Set<string>();
   // Each notification on its own: an interim one spares only its own agent.
   for (const notice of content.split('<task-notification>')) {
-    if (team?.isInterimSpawnNotice?.(notice)) continue;
+    const named = team?.isInterimSpawnNotice?.(notice) ? paused : ended;
     for (const m of notice.matchAll(/<tool-use-id>(.*?)<\/tool-use-id>/g)) {
-      if (spawns.has(m[1])) done.add(m[1]);
+      if (spawns.has(m[1])) named.add(m[1]);
     }
     for (const m of notice.matchAll(/<task-id>(.*?)<\/task-id>/g)) {
       const toolId = spawnToolIdOfTask(spawns, m[1]);
-      if (toolId) done.add(toolId);
+      if (toolId) named.add(toolId);
     }
   }
-  return done;
+  for (const toolId of ended) paused.delete(toolId);
+  return { ended, paused };
+}
+
+/**
+ * A paused spawn (see readCompletionNotice), judged by its own transcript's
+ * last write: `resumed` when it was written after the notice (it will notify
+ * again when it stops), `ended` when it has stayed quiet for
+ * PAUSED_SPAWN_END_MS — Claude Code may call every stop interim and never
+ * notify again — else still `paused`. No transcript counts as quiet.
+ */
+export function pausedSpawnFate(
+  pausedAt: number,
+  transcriptWrittenAt: number | undefined,
+  now: number,
+): 'resumed' | 'paused' | 'ended' {
+  if (
+    transcriptWrittenAt !== undefined &&
+    transcriptWrittenAt > pausedAt + PAUSED_SPAWN_WRITE_SLACK_MS
+  )
+    return 'resumed';
+  return now - pausedAt >= PAUSED_SPAWN_END_MS ? 'ended' : 'paused';
 }
 
 /**
@@ -118,7 +150,8 @@ export function completedSpawnToolIds(
  * restored agent reads its transcript from the end, past the notice, so the
  * spawn would never finish. A notice only counts after the spawn's launch: an
  * agent revived later reuses its task id, and an older notice is not its end.
- * An interim notice (see completedSpawnToolIds) ends nothing. An unreadable
+ * An interim notice (see readCompletionNotice) ends nothing: it leaves the
+ * spawn paused since the notice, for pausedSpawnFate to judge. An unreadable
  * transcript keeps every spawn.
  */
 export function stillRunningSpawns(
@@ -137,20 +170,24 @@ export function stillRunningSpawns(
   const launched = new Set<string>();
   for (const line of text.split('\n')) {
     if (line.includes('"queue-operation"')) {
-      let notice: string | null;
+      let record: Parameters<typeof completionNotice>[0] & { timestamp?: unknown };
       try {
-        notice = completionNotice(JSON.parse(line) as Parameters<typeof completionNotice>[0]);
+        record = JSON.parse(line) as typeof record;
       } catch {
         continue;
       }
+      const notice = completionNotice(record);
       if (notice === null) continue;
-      for (const toolId of completedSpawnToolIds(live, notice, team)) live.delete(toolId);
+      const { ended, paused } = readCompletionNotice(live, notice, team);
+      for (const toolId of ended) live.delete(toolId);
+      for (const toolId of paused)
+        live.set(toolId, { ...live.get(toolId), pausedAt: noticeTime(record) });
       continue;
     }
     for (const [toolId, spawn] of spawns) {
       if (!launched.has(toolId) && line.includes(`"tool_use_id":"${toolId}"`)) {
         launched.add(toolId);
-        live.set(toolId, spawn);
+        live.set(toolId, { taskId: spawn.taskId });
       }
     }
   }

@@ -18,7 +18,7 @@ import { Tooltip } from './components/Tooltip.js';
 import { Button } from './components/ui/Button.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
-import { ZoomControls } from './components/ZoomControls.js';
+import { MobileZoomLevel, ZoomControls } from './components/ZoomControls.js';
 import { OFFICE_CANVAS_TEST_ID } from './constants.js';
 import { useDirectoryEditor } from './hooks/useDirectoryEditor.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
@@ -541,7 +541,11 @@ function App() {
         <>
           {/* Mobile: pinch replaces the zoom buttons, and the toolbar's
                 jobs move to the card bar (+) and the floating Settings button. */}
-          {!isMobile && <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />}
+          {isMobile ? (
+            <MobileZoomLevel zoom={editor.zoom} />
+          ) : (
+            <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
+          )}
 
           {/* The Claude Code plan's usage, top-left (Settings → Usage Bars). */}
           {usage.status?.installed && <UsageBars limits={usage.limits} mobile={isMobile} />}

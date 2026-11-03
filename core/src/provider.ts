@@ -196,6 +196,15 @@ export interface HookProvider {
     args: string[];
     env?: Record<string, string>;
   };
+  /** True for an environment variable a running session of this CLI exports to
+   *  the processes under it as a marker of THAT session (its id, its socket, a
+   *  "you are a child session" flag). An agent the office launches is a session
+   *  of its own: when the office itself runs inside a session (a server started
+   *  from one), these must not reach it — Claude Code, seeing an inherited child
+   *  marker, turns transcript saving off, and the office reads transcripts.
+   *  Settings the user exported (models, API config) are not markers.
+   *  Undefined = this CLI marks nothing. */
+  isInheritedSessionEnv?(name: string): boolean;
 
   /** Optional account-usage reporting (the office's usage bars). */
   readonly usageBridge?: UsageBridge;
