@@ -35,12 +35,13 @@ export function repeatFor(palette: number, worn: Iterable<WornLook>): number {
 }
 
 /**
- * A character picked at random for a new agent, by design not the least-used
- * one: who walks in is a surprise. It never repeats one already in the office
- * while some character is free, and among the free ones it prefers those no
+ * A character picked at random for a new agent among those with the fewest
+ * copies in the office: who walks in is a surprise, but the copies stay even.
+ * It never repeats one already in the office while some character is free,
+ * and once the whole cast is in, no character gets a third copy until every
+ * one has a second (and so on). Among those, it prefers characters no
  * Directory claims as a default (`reserved`), so a Directory's characters stay
- * available for its own launches. Only when the whole cast is in the office
- * does it repeat one.
+ * available for its own launches.
  *
  * @param paletteCount - Total number of available palettes (e.g., 6)
  * @param worn - The looks of the agents already in the office
@@ -53,15 +54,18 @@ export function pickRandomPalette(
   random: () => number = Math.random,
   reserved: ReadonlySet<number> = new Set(),
 ): number {
-  const wornPalettes = new Set(worn.map((look) => look.palette));
-  const free: number[] = [];
-  for (let palette = 0; palette < paletteCount; palette++) {
-    if (!wornPalettes.has(palette)) free.push(palette);
+  const copies = new Array<number>(paletteCount).fill(0);
+  for (const look of worn) {
+    if (look.palette !== undefined && look.palette < paletteCount) copies[look.palette]++;
   }
-  const unclaimed = free.filter((palette) => !reserved.has(palette));
-  const pool = unclaimed.length > 0 ? unclaimed : free;
-  if (pool.length > 0) return pool[Math.floor(random() * pool.length)];
-  return Math.floor(random() * paletteCount);
+  const fewest = Math.min(...copies);
+  const candidates: number[] = [];
+  for (let palette = 0; palette < paletteCount; palette++) {
+    if (copies[palette] === fewest) candidates.push(palette);
+  }
+  const unclaimed = candidates.filter((palette) => !reserved.has(palette));
+  const pool = unclaimed.length > 0 ? unclaimed : candidates;
+  return pool[Math.floor(random() * pool.length)];
 }
 
 export interface LookRequest {

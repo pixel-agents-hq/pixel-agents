@@ -21,10 +21,14 @@ export function readLayoutFromFile(): Record<string, unknown> | null {
   }
 }
 
-/** Persist the layout (atomic; a layout watcher in this process doesn't report it back). */
-export function writeLayoutToFile(layout: Record<string, unknown>): void {
+/** Persist the layout (atomic; a layout watcher in this process doesn't report it back,
+ *  unless `reportToWatchers`, see writeJsonAtomic). */
+export function writeLayoutToFile(
+  layout: Record<string, unknown>,
+  opts?: { reportToWatchers?: boolean },
+): void {
   try {
-    writeJsonAtomic(getLayoutFilePath(), layout);
+    writeJsonAtomic(getLayoutFilePath(), layout, opts);
   } catch (err) {
     console.error('[Pixel Agents] Failed to write layout file:', err);
   }

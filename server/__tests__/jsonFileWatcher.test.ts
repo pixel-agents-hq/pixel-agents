@@ -45,6 +45,12 @@ describe('watchJsonFile', () => {
     expect(second).toEqual([]);
   });
 
+  it('a write that reports to watchers is seen like an external one', async () => {
+    await tick();
+    writeJsonAtomic(file, { n: 1 }, { reportToWatchers: true });
+    await vi.waitFor(() => expect(seen).toEqual([{ n: 1 }]), { timeout: 2000 });
+  });
+
   it('a failed write marks nothing, so the next external change is still reported', async () => {
     await tick();
     expect(() => writeJsonAtomic(path.join(file, 'not-a-dir.json'), { n: 1 })).toThrow();

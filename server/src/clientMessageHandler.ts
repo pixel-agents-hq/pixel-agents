@@ -211,7 +211,9 @@ export function handleClientMessage(
 
     case 'saveLayout':
       if (msg.layout) {
-        writeLayoutToFile(msg.layout as Record<string, unknown>);
+        // A /ws client's save: the VS Code panel learns of it through its layout
+        // watcher (the standalone server has none), so don't silence it.
+        writeLayoutToFile(msg.layout as Record<string, unknown>, { reportToWatchers: true });
       }
       break;
 

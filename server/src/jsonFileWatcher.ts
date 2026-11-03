@@ -12,15 +12,22 @@ const ownWriteMarks = new Map<string, Set<() => void>>();
 
 /**
  * Write `value` to `filePath` atomically (tmp + rename), creating its directory. Every live
- * watcher of the path takes the change as our own, not an external one. Throws when the
- * write fails, and then marks nothing (a mark with no write behind it would swallow the
- * next real external change).
+ * watcher of the path takes the change as our own, not an external one — unless
+ * `reportToWatchers` is set: a write made for a client other than the watcher's (a `/ws`
+ * client of the VS Code server) must still reach the watcher, the way another process's
+ * would. Throws when the write fails, and then marks nothing (a mark with no write behind it
+ * would swallow the next real external change).
  */
-export function writeJsonAtomic(filePath: string, value: unknown): void {
+export function writeJsonAtomic(
+  filePath: string,
+  value: unknown,
+  { reportToWatchers = false }: { reportToWatchers?: boolean } = {},
+): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmpPath = filePath + '.tmp';
   fs.writeFileSync(tmpPath, JSON.stringify(value, null, 2), 'utf-8');
   fs.renameSync(tmpPath, filePath);
+  if (reportToWatchers) return;
   for (const mark of ownWriteMarks.get(filePath) ?? []) mark();
 }
 
