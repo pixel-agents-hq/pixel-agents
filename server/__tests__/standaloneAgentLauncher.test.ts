@@ -11,6 +11,7 @@ import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import type { IPty, PtyModule, PtySpawnOptions } from '../src/terminal/ptyModule.js';
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from '../src/terminal/standaloneAgentLauncher.js';
+import { sessionMarkersUnset } from '../src/terminal/terminalEnv.js';
 
 /**
  * launchStandaloneAgent is the standalone counterpart of the VS Code adapter's
@@ -147,6 +148,50 @@ describe('launchStandaloneAgent', () => {
 
     // The UI learns a terminal exists so the drawer opens a tab.
     expect(broadcasts).toContainEqual({ type: 'terminalSessionOpened', agentId: 1 });
+  });
+
+  it("never hands a launched agent the office's own CLI session markers", () => {
+    // A server started from inside a Claude Code session inherits that
+    // session's markers; passed on, the agent's CLI believes it is a child
+    // session and saves no transcript (which the office reads).
+    const markers = {
+      CLAUDECODE: '1',
+      CLAUDE_PID: '123',
+      CLAUDE_EFFORT: 'high',
+      CLAUDE_CODE_ENTRYPOINT: 'cli',
+      CLAUDE_CODE_EXECPATH: '/x/claude',
+      CLAUDE_CODE_CHILD_SESSION: '1',
+      CLAUDE_CODE_SESSION_ID: 'abc',
+      CLAUDE_CODE_SESSION_ATTENDED: '1',
+      CLAUDE_CODE_MESSAGING_SOCKET: '/tmp/s',
+      CLAUDE_CODE_MESSAGING_TOKEN: 't',
+    };
+    const kept = {
+      ANTHROPIC_MODEL: 'opus',
+      CLAUDE_CODE_USE_BEDROCK: '1',
+      PIXEL_TEST_KEPT: 'yes',
+    };
+    for (const [key, value] of Object.entries({ ...markers, ...kept })) vi.stubEnv(key, value);
+    try {
+      const harness = workingPtyManager();
+      launch(harness);
+      const env = harness.spawnArgs[0].options.env as Record<string, string>;
+      for (const key of Object.keys(markers)) expect(env[key], key).toBeUndefined();
+      for (const [key, value] of Object.entries(kept)) expect(env[key], key).toBe(value);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('VS Code unsets the same markers in the terminals it creates', () => {
+    expect(
+      sessionMarkersUnset(claudeProvider, {
+        CLAUDECODE: '1',
+        CLAUDE_CODE_SESSION_ID: 'abc',
+        ANTHROPIC_API_KEY: 'k',
+        PATH: '/bin',
+      }),
+    ).toEqual({ CLAUDECODE: null, CLAUDE_CODE_SESSION_ID: null });
   });
 
   it('wears the character picked from the roster even when it is taken, the copy in red clothes', () => {
