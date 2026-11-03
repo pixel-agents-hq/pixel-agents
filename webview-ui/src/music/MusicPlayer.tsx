@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 
 import { Button } from '../components/ui/Button.js';
 import { PixelIcon } from '../components/ui/PixelIcon.js';
-import { PixelText } from '../components/ui/PixelText.js';
 import {
   MUSIC_PLAYER_BOTTOM_PX,
   MUSIC_PLAYER_WIDTH_PX,
@@ -179,7 +178,7 @@ export function MusicPlayer({ mobile }: { mobile: boolean }) {
         </Button>
         <div className="flex-1 min-w-0 flex flex-col gap-2 leading-none ml-2">
           <span className="text-xs text-text truncate" title={song.name}>
-            <PixelText text={song.name} />
+            {song.name}
           </span>
           <span className="text-2xs text-text-muted truncate">
             {MOODS[song.moodKey].label} · {keyLabel(song)}
