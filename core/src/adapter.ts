@@ -22,9 +22,10 @@ export interface StateAdapter {
   saveSeats(seats: Record<string, { palette?: number; repeat?: number; seatId?: string }>): void;
 
   /** The agent cards' order (agent ids, first card first), shared by every
-   *  client of this surface. [] = creation order. */
-  loadCardOrder(): number[];
-  saveCardOrder(order: number[]): void;
+   *  client of this surface. [] = creation order; an adapter without these
+   *  keeps creation order and drops reorders. */
+  loadCardOrder?(): number[];
+  saveCardOrder?(order: number[]): void;
 
   // ── User-level settings (shared file, namespaced per adapter) ─────
 

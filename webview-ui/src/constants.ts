@@ -802,9 +802,6 @@ export const USAGE_BAR_LOW_FRACTION = 0.2;
 export const USAGE_BAR_TICK_MS = 30_000;
 /** Distance from the office's left edge: past the 40px button column at left 8. */
 export const USAGE_BARS_LEFT_PX = 8 + 40 + 8;
-/** The provider whose plan the usage bars show (the one with a usage bridge today). */
-export const USAGE_PROVIDER_ID = 'claude';
-
 // ── Loading screen (a lamp-lit corner of the office while it loads) ──
 /** The loading screen's zoom, as the office counts it: DEVICE pixels per
  *  sprite pixel (the office at 5x on the phone, 3x on desktop). */
