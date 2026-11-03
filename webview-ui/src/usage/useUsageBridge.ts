@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import type { UsageBridgeStatus, UsageLimits } from '../../../core/src/messages.js';
-import { USAGE_PROVIDER_ID } from '../constants.js';
 import { transport } from '../transport/index.js';
-import { awaitingAnswer, subscribeUsage, usageEntry } from './usageStore.js';
+import { awaitingAnswer, subscribeUsage, usageEntry, usageProviderId } from './usageStore.js';
 
 export interface UsageBridge {
   /** Install state; undefined until the server says (and forever on a host
@@ -20,13 +19,16 @@ export interface UsageBridge {
 /**
  * A provider's usage bridge (usageStore). Each caller keeps its own request:
  * one component's click never marks another's as pending. `onAnswer` runs
- * once when the status answering this caller's request arrives.
+ * once when the status answering this caller's request arrives. The provider
+ * is the one the server reports a bridge for, unless `providerId` names one.
  */
 export function useUsageBridge(
   onAnswer?: (status: UsageBridgeStatus | undefined) => void,
-  providerId: string = USAGE_PROVIDER_ID,
+  providerId?: string,
 ): UsageBridge {
-  const entry = useSyncExternalStore(subscribeUsage, () => usageEntry(providerId));
+  const reported = useSyncExternalStore(subscribeUsage, usageProviderId);
+  const id = providerId ?? reported;
+  const entry = useSyncExternalStore(subscribeUsage, () => usageEntry(id ?? ''));
   const [sentAtSeq, setSentAtSeq] = useState<number | null>(null);
   const pending = awaitingAnswer(entry, sentAtSeq);
   const answered = sentAtSeq !== null && !pending;
@@ -42,9 +44,10 @@ export function useUsageBridge(
     limits: entry.limits,
     pending,
     setEnabled: (enabled) => {
+      if (id === undefined) return;
       // The status on screen when the request left: answered by a NEWER one.
       setSentAtSeq(entry.seq);
-      transport.send({ type: 'setUsageBridgeEnabled', providerId, enabled });
+      transport.send({ type: 'setUsageBridgeEnabled', providerId: id, enabled });
     },
   };
 }
