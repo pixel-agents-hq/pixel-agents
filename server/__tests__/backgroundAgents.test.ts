@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StateAdapter } from '../../core/src/adapter.js';
 import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
+import { PAUSED_SPAWN_END_MS } from '../src/constants.js';
 import {
   scanForBackgroundAgentFiles,
   setHookProvider as setFileWatcherHookProvider,
@@ -1062,5 +1063,79 @@ describe('background spawn persistence & derived team lifecycle', () => {
       runtime.dispose();
       fs.rmSync(tmpRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe('a paused background agent that never comes back (Claude Code 2.1.312)', () => {
+  // Every stop of the agent was called interim (an old Monitor still counted
+  // as its background work), so no finished notice ever lands: the runtime
+  // lets it go once its own transcript has stayed quiet long enough.
+  const TASK_ID = 'a4cb86c99458dbe55';
+  let tmpRoot: string;
+  let store: AgentStateStore;
+  let runtime: AgentRuntime;
+  let lead: AgentState;
+  let messages: Array<Record<string, unknown>>;
+  let transcript: string;
+  const timers = new Map<number, ReturnType<typeof setTimeout>>();
+  const pausedAt = Date.parse('2026-10-29T20:58:11.963Z');
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pixel-agents-paused-'));
+    store = new AgentStateStore();
+    runtime = new AgentRuntime(store, claudeProvider);
+    lead = createLeadAgent(tmpRoot);
+    store.set(1, lead);
+    messages = [];
+    store.on('broadcast', (m) => messages.push(m as Record<string, unknown>));
+    const dir = path.join(tmpRoot, LEAD_SESSION, 'subagents');
+    fs.mkdirSync(dir, { recursive: true });
+    transcript = path.join(dir, `agent-${TASK_ID}.jsonl`);
+    fs.writeFileSync(transcript, subToolUseLine() + '\n');
+    fs.writeFileSync(
+      path.join(dir, `agent-${TASK_ID}.meta.json`),
+      JSON.stringify({ agentType: 'general-purpose', toolUseId: SPAWN_TOOL_ID, finished: true }),
+    );
+    processTranscriptLine(1, agentSpawnRecord(), store, timers, timers);
+    processTranscriptLine(1, asyncLaunchResultRecord(), store, timers, timers);
+    processTranscriptLine(
+      1,
+      JSON.stringify({
+        ...JSON.parse(noticeRecord(interimNotice(TASK_ID))),
+        timestamp: new Date(pausedAt).toISOString(),
+      }),
+      store,
+      timers,
+      timers,
+    );
+  });
+
+  afterEach(() => {
+    runtime.dispose();
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  const writtenAt = (ms: number) => fs.utimesSync(transcript, ms / 1000, ms / 1000);
+
+  it('the interim notice pauses the spawn and clears nothing', () => {
+    expect(lead.backgroundSpawns.get(SPAWN_TOOL_ID)?.pausedAt).toBe(pausedAt);
+    expect(messages.some((m) => m.type === 'subagentClear')).toBe(false);
+  });
+
+  it('ends it, clearing its sub-character, once quiet for PAUSED_SPAWN_END_MS', () => {
+    writtenAt(pausedAt - 100);
+    runtime.endQuietPausedSpawns(pausedAt + PAUSED_SPAWN_END_MS - 1);
+    expect(lead.backgroundSpawns.has(SPAWN_TOOL_ID)).toBe(true);
+
+    runtime.endQuietPausedSpawns(pausedAt + PAUSED_SPAWN_END_MS);
+    expect(lead.backgroundSpawns.size).toBe(0);
+    expect(messages).toContainEqual({ type: 'subagentClear', id: 1, parentToolId: SPAWN_TOOL_ID });
+  });
+
+  it('forgets the pause of an agent that wrote again, and keeps it', () => {
+    writtenAt(pausedAt + 60_000);
+    runtime.endQuietPausedSpawns(pausedAt + 14 * 3_600_000);
+    expect(lead.backgroundSpawns.get(SPAWN_TOOL_ID)).toEqual({ taskId: TASK_ID });
+    expect(messages.some((m) => m.type === 'subagentClear')).toBe(false);
   });
 });
