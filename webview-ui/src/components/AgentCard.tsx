@@ -16,10 +16,10 @@ export type AgentActivity = 'idle' | 'working' | 'attention';
 export type TabStatus = AgentActivity | 'disconnected';
 
 const STATUS_DOT: Record<TabStatus, string> = {
-  idle: 'bg-status-success', // green — turn complete, nothing pending
-  working: 'bg-accent-bright', // blue — actively running
-  attention: 'bg-status-permission', // yellow — needs permission or input
-  disconnected: 'bg-status-error', // red — terminal socket dropped
+  idle: 'text-status-success', // green — turn complete, nothing pending
+  working: 'text-accent-bright', // blue — actively running
+  attention: 'text-status-permission', // yellow — needs permission or input
+  disconnected: 'text-status-error', // red — terminal socket dropped
 };
 
 const CARD_VARIANT: Record<CardVariant, string> = {
