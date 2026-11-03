@@ -18,7 +18,7 @@ export function parseCardOrder(raw: unknown): number[] | null {
 
 /** The message that tells a client the order. */
 export function cardOrderMessage(adapter: StateAdapter | undefined) {
-  return { type: 'cardOrderLoaded', order: adapter?.loadCardOrder() ?? [] } as const;
+  return { type: 'cardOrderLoaded', order: adapter?.loadCardOrder?.() ?? [] } as const;
 }
 
 /** Persist a client's reorder, keeping only agents that still exist. Returns
@@ -29,7 +29,7 @@ export function saveCardOrder(
   isAgent: (id: number) => boolean,
 ): ReturnType<typeof cardOrderMessage> | null {
   const order = parseCardOrder(raw);
-  if (!order || !adapter) return null;
+  if (!order || !adapter?.saveCardOrder) return null;
   adapter.saveCardOrder(order.filter(isAgent));
   return cardOrderMessage(adapter);
 }

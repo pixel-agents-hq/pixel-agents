@@ -1351,7 +1351,7 @@ describe('clientMessageHandler: card order', () => {
     );
 
     expect(broadcasts).toEqual([{ type: 'cardOrderLoaded', order: [3, 1, 2] }]);
-    expect(store.getAdapter()!.loadCardOrder()).toEqual([3, 1, 2]);
+    expect(store.getAdapter()!.loadCardOrder!()).toEqual([3, 1, 2]);
   });
 
   it('keeps only agents that exist, each once', () => {
@@ -1361,18 +1361,18 @@ describe('clientMessageHandler: card order', () => {
       tokened(),
     );
 
-    expect(store.getAdapter()!.loadCardOrder()).toEqual([3, 1]);
+    expect(store.getAdapter()!.loadCardOrder!()).toEqual([3, 1]);
   });
 
   it('ignores a payload that is not an order', () => {
     handleClientMessage({ type: 'saveCardOrder', order: 'nope' }, (m) => sent.push(m), tokened());
 
     expect(broadcasts).toEqual([]);
-    expect(store.getAdapter()!.loadCardOrder()).toEqual([]);
+    expect(store.getAdapter()!.loadCardOrder!()).toEqual([]);
   });
 
   it('sends the order on connect, before the agents', () => {
-    store.getAdapter()!.saveCardOrder([2, 1]);
+    store.getAdapter()!.saveCardOrder!([2, 1]);
 
     handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), tokened());
 
@@ -1382,7 +1382,7 @@ describe('clientMessageHandler: card order', () => {
   });
 
   it('answers a read-only reorder with the real order', () => {
-    store.getAdapter()!.saveCardOrder([2, 1]);
+    store.getAdapter()!.saveCardOrder!([2, 1]);
 
     handleClientMessage({ type: 'saveCardOrder', order: [1, 2] }, (m) => sent.push(m), {
       store,
@@ -1392,6 +1392,6 @@ describe('clientMessageHandler: card order', () => {
 
     expect(sent).toEqual([{ type: 'cardOrderLoaded', order: [2, 1] }]);
     expect(broadcasts).toEqual([]);
-    expect(store.getAdapter()!.loadCardOrder()).toEqual([2, 1]);
+    expect(store.getAdapter()!.loadCardOrder!()).toEqual([2, 1]);
   });
 });
