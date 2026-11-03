@@ -32,10 +32,11 @@ export function repeatFor(palette: number, worn: Iterable<WornLook>): number {
 }
 
 /**
- * A character picked at random for a new agent, by design not the least-used
- * one: who walks in is a surprise. It never repeats one already in the office
- * while some character is free. Only when the whole cast is in the office
- * does it repeat one.
+ * A character picked at random for a new agent among those with the fewest
+ * copies in the office: who walks in is a surprise, but the copies stay even.
+ * It never repeats one already in the office while some character is free,
+ * and once the whole cast is in, no character gets a third copy until every
+ * one has a second (and so on).
  *
  * @param paletteCount - Total number of available palettes (e.g., 6)
  * @param worn - The looks of the agents already in the office
@@ -46,13 +47,16 @@ export function pickRandomPalette(
   worn: readonly WornLook[],
   random: () => number = Math.random,
 ): number {
-  const wornPalettes = new Set(worn.map((look) => look.palette));
-  const free: number[] = [];
-  for (let palette = 0; palette < paletteCount; palette++) {
-    if (!wornPalettes.has(palette)) free.push(palette);
+  const copies = new Array<number>(paletteCount).fill(0);
+  for (const look of worn) {
+    if (look.palette !== undefined && look.palette < paletteCount) copies[look.palette]++;
   }
-  if (free.length > 0) return free[Math.floor(random() * free.length)];
-  return Math.floor(random() * paletteCount);
+  const fewest = Math.min(...copies);
+  const candidates: number[] = [];
+  for (let palette = 0; palette < paletteCount; palette++) {
+    if (copies[palette] === fewest) candidates.push(palette);
+  }
+  return candidates[Math.floor(random() * candidates.length)];
 }
 
 export interface LookRequest {
@@ -63,7 +67,7 @@ export interface LookRequest {
 }
 
 /**
- * A new agent's look: a random character no one wears (pickRandomPalette).
+ * A new agent's look: a random character among the least worn (pickRandomPalette).
  * An agent wearing a character already in the office is its next repeat.
  */
 export function chooseLook(request: LookRequest): Look {
