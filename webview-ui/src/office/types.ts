@@ -256,6 +256,9 @@ export interface Character {
   contextTokens: number;
   /** Window `contextTokens` is measured against. */
   maxContextTokens: number;
+  /** True once the server reported the context: from then on 0 is a real
+   *  reading (a cleared session, a full gauge), not "no turn yet". */
+  contextReported?: boolean;
 }
 
 export const PetState = { IDLE: 'idle', WALK: 'walk', FOLLOW: 'follow' } as const;

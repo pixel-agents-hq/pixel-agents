@@ -14,6 +14,7 @@ import {
   PET_HIT_HEIGHT,
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
+import { contextUsedShare } from '../contextGauge.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
 import {
   createDefaultLayout,
@@ -1171,9 +1172,10 @@ export class OfficeState {
 
   setAgentContext(id: number, contextTokens: number, maxContextTokens: number): void {
     const ch = this.characters.get(id);
-    if (!ch) return;
+    if (!ch || contextUsedShare(contextTokens, maxContextTokens) === null) return;
     ch.contextTokens = contextTokens;
     ch.maxContextTokens = maxContextTokens;
+    ch.contextReported = true;
   }
 
   update(dt: number): void {
