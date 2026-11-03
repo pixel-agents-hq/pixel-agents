@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { TERMINAL_MIRROR_SCROLLBACK_LINES } from '../src/constants.js';
+import {
+  TERMINAL_DEFAULT_LANG,
+  TERMINAL_MIRROR_SCROLLBACK_LINES,
+  TERMINAL_TERM_NAME,
+} from '../src/constants.js';
 import type { IPty, PtyModule, PtyModuleResolution } from '../src/terminal/ptyModule.js';
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
+import { terminalEnv } from '../src/terminal/terminalEnv.js';
 
 /**
  * Fake PTY. Tests never spawn a real process: they'd be slow, platform-specific,
@@ -132,6 +137,22 @@ describe('PtySessionManager lifecycle', () => {
     expect(spawnArgs[0].args).toEqual(['--session-id', 'x']);
     expect(spawnArgs[0].options.cwd).toBe('/tmp');
     expect((spawnArgs[0].options.env as Record<string, string>).TERM).toBeTruthy();
+  });
+
+  it('gives the terminal a UTF-8 locale when the environment names none', () => {
+    // A launchd service has no LANG: macOS pbcopy then reads UTF-8 as Mac Roman.
+    expect(terminalEnv({ PATH: '/bin' })).toEqual({
+      PATH: '/bin',
+      LANG: TERMINAL_DEFAULT_LANG,
+      TERM: TERMINAL_TERM_NAME,
+    });
+    // A locale the user set, UTF-8 or not, is theirs.
+    expect(terminalEnv({ LANG: 'C' }).LANG).toBe('C');
+    expect(terminalEnv({ LC_ALL: 'es_AR.UTF-8' }).LANG).toBeUndefined();
+    expect(terminalEnv({ LC_CTYPE: 'UTF-8', LANG: '' }).LANG).toBe('');
+    const { manager, spawnArgs } = harness();
+    create(manager, 7);
+    expect((spawnArgs[0].options.env as Record<string, string>).LANG).toBe(TERMINAL_DEFAULT_LANG);
   });
 
   it('tracks sessions by agent id', () => {

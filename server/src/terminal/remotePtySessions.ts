@@ -117,6 +117,10 @@ export class RemotePtySessions implements TerminalSessions {
   readonly enabled = true;
 
   private readonly sessions = new Map<number, RemoteSession>();
+  /** Killed by this server and waiting for the host to report their exit:
+   *  already gone for `has`/`get`, but the exit must still reach their
+   *  listeners (it is what ends the agent and frees its Worktree). */
+  private readonly ending = new Map<number, RemoteSession>();
   private readonly pending = new Map<number, (msg: HostMessage) => void>();
   private readonly surviving: RemoteSession[];
   /** What each session talks to the host through. */
@@ -246,8 +250,10 @@ export class RemotePtySessions implements TerminalSessions {
   }
 
   dispose(agentId: number): void {
-    if (!this.sessions.has(agentId)) return;
+    const session = this.sessions.get(agentId);
+    if (!session) return;
     this.sessions.delete(agentId);
+    this.ending.set(agentId, session);
     this.send({ t: 'kill', agentId });
   }
 
@@ -258,7 +264,8 @@ export class RemotePtySessions implements TerminalSessions {
   /** Disconnect, leaving every terminal running in the host. */
   async shutdown(): Promise<void> {
     this.closing = true;
-    for (const session of this.sessions.values()) session.detach();
+    for (const session of [...this.sessions.values(), ...this.ending.values()]) session.detach();
+    this.ending.clear();
     await new Promise<void>((resolve) => this.socket.end(resolve));
   }
 
@@ -303,9 +310,12 @@ export class RemotePtySessions implements TerminalSessions {
         this.sessions.get(msg.agentId)?.receiveData(msg.data, msg.seq);
         break;
       case 'exit': {
-        const session = this.sessions.get(msg.agentId);
+        // A killed one first: its exit can arrive after a new terminal took
+        // the same id.
+        const session = this.ending.get(msg.agentId) ?? this.sessions.get(msg.agentId);
         if (!session) break;
-        this.sessions.delete(msg.agentId);
+        if (this.ending.get(msg.agentId) === session) this.ending.delete(msg.agentId);
+        else this.sessions.delete(msg.agentId);
         session.receiveExit({ exitCode: msg.exitCode, signal: msg.signal });
         break;
       }
@@ -326,8 +336,9 @@ export class RemotePtySessions implements TerminalSessions {
     this.connected = false;
     if (this.closing) return;
     console.error('[Pixel Agents] PTY host connection lost: its terminals are gone.');
-    const sessions = [...this.sessions.values()];
+    const sessions = [...this.sessions.values(), ...this.ending.values()];
     this.sessions.clear();
+    this.ending.clear();
     for (const session of sessions) session.receiveExit({ exitCode: -1 });
   }
 }
