@@ -20,6 +20,7 @@ import {
 const status = (installed: boolean, error?: string) => ({
   type: 'usageBridgeStatus',
   providerId: 'claude',
+  providerName: 'Claude Code',
   installed,
   disclosure: 'd',
   ...(error ? { error } : {}),

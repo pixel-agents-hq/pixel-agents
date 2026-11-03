@@ -2,12 +2,7 @@ const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import {
-  completionNotice,
-  launchSpawn,
-  noticeTime,
-  readCompletionNotice,
-} from './backgroundSpawns.js';
+import { launchSpawn, readCompletionNotices } from './backgroundSpawns.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
 import { updateContextUsage } from './contextUsage.js';
 import { hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
@@ -134,6 +129,8 @@ export function processTranscriptLine(
   agent.linesProcessed++;
   try {
     const record = JSON.parse(line);
+    // Background agents' completion notices, as the provider reads them.
+    const spawnNotices = hookProvider?.team?.readSpawnNotices?.(record) ?? null;
 
     // -- Agent Teams: extract team metadata via the active provider --
     // The provider reads its CLI's own field names (Claude: record.teamName + record.agentName).
@@ -241,9 +238,7 @@ export function processTranscriptLine(
             // foreground is in-turn work whatever its name: a Sub-agent.
             const isTeammateSpawn =
               isSubagentSpawn &&
-              typeof block.input?.name === 'string' &&
-              block.input.name.length > 0 &&
-              block.input.run_in_background !== false;
+              (hookProvider?.team?.namesTeammate?.(toolName, block.input ?? {}) ?? false);
             if (isTeammateSpawn) {
               (agent.teammateSpawnToolIds ??= new Set()).add(block.id);
             }
@@ -446,25 +441,18 @@ export function processTranscriptLine(
         clearAgentActivity(agent, agentId, agents, permissionTimers);
         agent.hadToolsInTurn = false;
       }
-    } else if (record.type === 'queue-operation' && record.operation === 'enqueue') {
+    } else if (spawnNotices) {
       // Background agents finished. A notice names them by spawn tool id, by
       // agent (task) id, or both; a crash notice lists several task ids at
-      // once with status "stopped" (they died with the process). An interim
-      // notice (the agent waits on its own background work) only pauses its
-      // spawn: the runtime ends it if it never writes again (pausedSpawnFate).
-      const content = completionNotice(record);
-      if (content) {
-        const { ended, paused } = readCompletionNotice(
-          agent.backgroundSpawns,
-          content,
-          hookProvider?.team,
-        );
-        for (const toolId of ended) endBackgroundSpawn(agentId, agent, agents, toolId);
-        const pausedAt = noticeTime(record);
-        for (const toolId of paused) {
-          const spawn = agent.backgroundSpawns.get(toolId);
-          if (spawn) spawn.pausedAt = pausedAt;
-        }
+      // once (they died with the process). An interim notice (the agent waits
+      // on its own background work) only pauses its spawn: the runtime ends it
+      // if it never writes again (pausedSpawnFate).
+      const { ended, paused } = readCompletionNotices(agent.backgroundSpawns, spawnNotices.notices);
+      for (const toolId of ended) endBackgroundSpawn(agentId, agent, agents, toolId);
+      const pausedAt = spawnNotices.at ?? Date.now();
+      for (const toolId of paused) {
+        const spawn = agent.backgroundSpawns.get(toolId);
+        if (spawn) spawn.pausedAt = pausedAt;
       }
     } else if (record.type === 'system' && record.subtype === 'turn_duration') {
       cancelWaitingTimer(agentId, waitingTimers);
