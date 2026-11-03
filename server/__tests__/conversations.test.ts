@@ -8,7 +8,6 @@ import type { HookProvider } from '../../core/src/provider.js';
 import { createAgentState } from '../src/agentState.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { CONVERSATIONS_LIMIT_MAX } from '../src/constants.js';
-import { CONVERSATION_TITLE_SCAN_BYTES } from '../src/providers/hook/claude/constants.js';
 import {
   conversationLimitsFrom,
   conversationLook,
@@ -20,6 +19,7 @@ import {
   searchConversations,
 } from '../src/conversations.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import { CONVERSATION_TITLE_SCAN_BYTES } from '../src/providers/hook/claude/constants.js';
 import { conversationTitle } from '../src/providers/hook/claude/conversationTitle.js';
 
 /**
