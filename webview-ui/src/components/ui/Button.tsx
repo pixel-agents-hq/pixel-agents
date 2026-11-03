@@ -1,5 +1,7 @@
 import type { ButtonHTMLAttributes } from 'react';
 
+import { PixelIcon, type PixelIconName } from './PixelIcon.js';
+
 const base = 'border-2 rounded-none cursor-pointer';
 
 const sizes = {
@@ -25,13 +27,28 @@ type ButtonSize = keyof typeof sizes;
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** A pixel icon drawn left of the label, centred on it. */
+  icon?: PixelIconName;
 }
 
 export function Button({
   variant = 'default',
   size = 'lg',
   className = '',
+  icon,
+  children,
   ...props
 }: ButtonProps) {
-  return <button className={`${variants[variant]} ${sizes[size]} ${className}`} {...props} />;
+  return (
+    <button className={`${variants[variant]} ${sizes[size]} ${className}`} {...props}>
+      {icon ? (
+        <span className="inline-flex items-center gap-8 align-middle">
+          <PixelIcon name={icon} />
+          {children}
+        </span>
+      ) : (
+        children
+      )}
+    </button>
+  );
 }

@@ -7,6 +7,7 @@ import { Button } from './ui/Button.js';
 import { Checkbox } from './ui/Checkbox.js';
 import { MenuItem } from './ui/MenuItem.js';
 import { Modal } from './ui/Modal.js';
+import { PixelIcon } from './ui/PixelIcon.js';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -222,11 +223,7 @@ export function SettingsModal({
         label={
           <span className="flex items-center gap-4">
             Skip Permissions
-            {/* Nudged down: the pixel font's glyphs sit low in their line box,
-                so a centered icon reads as floating high. */}
-            <span className="material-symbols-sharp text-[12px] translate-y-2" aria-hidden="true">
-              warning
-            </span>
+            <PixelIcon name="warning" />
           </span>
         }
         checked={bypassPermissions}

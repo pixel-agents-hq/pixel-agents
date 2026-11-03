@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { toMajorMinor } from '../changelogData.ts';
 import { WHATS_NEW_AUTO_CLOSE_MS, WHATS_NEW_FADE_MS } from '../constants.ts';
 import { Button } from './ui/Button.js';
+import { PixelText } from './ui/PixelText.js';
 
 interface VersionIndicatorProps {
   currentVersion: string;
@@ -101,7 +102,7 @@ export function VersionIndicator({
         className="absolute bottom-8 right-28 z-20 text-lg cursor-pointer select-none pr-2 transition-opacity duration-200"
         style={{ opacity: labelHovered ? 0.8 : 0.4 }}
       >
-        v{currentMajorMinor}
+        <PixelText text={`v${currentMajorMinor}`} scale={3} />
       </div>
     </>
   );

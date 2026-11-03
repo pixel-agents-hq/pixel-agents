@@ -26,6 +26,7 @@ import {
   sendWallTilesToWebview,
 } from '../../server/src/assetLoader.js';
 import { loadAllCharacters, loadAllFurniture, loadAllPets } from '../../server/src/assetReload.js';
+import { cardOrderMessage, saveCardOrder } from '../../server/src/cardOrder.js';
 import {
   getHooksConsent,
   getHooksEnabled,
@@ -518,6 +519,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // Store seat assignments in a separate key (never touched by persistAgents)
         console.log(`[Pixel Agents] State: saveAgentSeats:`, JSON.stringify(message.seats));
         this.adapter.saveSeats(message.seats);
+      } else if (message.type === 'saveCardOrder') {
+        const loaded = saveCardOrder(this.adapter, message.order, (id) => this.store.has(id));
+        if (loaded) this.sendOrBuffer(loaded);
       } else if (message.type === 'saveLayout') {
         this.layoutWatcher?.markOwnWrite();
         writeLayoutToFile(message.layout as Record<string, unknown>);
@@ -728,6 +732,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           type: 'areaMappingsLoaded',
           mappings: config.vscode.areaMappings ?? {},
         });
+        // Before the agents, so their cards appear in order rather than reshuffle.
+        this.webview?.postMessage(cardOrderMessage(this.adapter));
 
         restoreAgents(
           this.adapter,

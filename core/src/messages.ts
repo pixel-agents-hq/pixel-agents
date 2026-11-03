@@ -39,6 +39,7 @@ export type ServerMessage =
   | HooksConsentRequest
   | ExternalAssetDirectoriesUpdated
   | AreaMappingsLoaded
+  | CardOrderLoaded
   | DirectoriesLoaded
   | DirectorySaved
   | DirectoryRejected
@@ -69,6 +70,7 @@ export type ClientMessage =
   | AddExternalAssetDirectory
   | RemoveExternalAssetDirectory
   | SaveAreaMappings
+  | SaveCardOrder
   | SetShowAreas
   | SetBypassPermissions
   | SetShowHostDirectories
@@ -325,6 +327,11 @@ export interface AreaMappingsLoaded {
   mappings: Record<string, string[]>;
 }
 
+export interface CardOrderLoaded {
+  type: 'cardOrderLoaded';
+  order: number[];
+}
+
 export interface DirectoriesLoaded {
   type: 'directoriesLoaded';
   directories: Directory[];
@@ -479,6 +486,11 @@ export interface RemoveExternalAssetDirectory {
 export interface SaveAreaMappings {
   type: 'saveAreaMappings';
   mappings: Record<string, string[]>;
+}
+
+export interface SaveCardOrder {
+  type: 'saveCardOrder';
+  order: number[];
 }
 
 export interface SetShowAreas {

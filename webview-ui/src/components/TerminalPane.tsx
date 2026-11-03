@@ -40,6 +40,8 @@ interface TerminalPaneProps {
 export interface TerminalInputHandle {
   /** Write raw bytes (key sequences) straight to the PTY. */
   send: (data: string) => void;
+  /** Columns in the terminal's line (the arrow trackpad's full sweep). */
+  cols: () => number;
 }
 
 /**
@@ -127,6 +129,7 @@ export function TerminalPane({
     });
     registerInputRef.current?.(agentId, {
       send: (data) => connection.write(data),
+      cols: () => term.cols,
     });
 
     // Touch: scroll + flick, tap to focus / open a URL, long-press selection

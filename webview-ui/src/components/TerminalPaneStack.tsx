@@ -52,6 +52,8 @@ export function TerminalPaneStack({
       send: (data) => {
         if (shownRef.current !== null) inputs.current.get(shownRef.current)?.send(data);
       },
+      cols: () =>
+        shownRef.current !== null ? (inputs.current.get(shownRef.current)?.cols() ?? 0) : 0,
     }),
     [],
   );

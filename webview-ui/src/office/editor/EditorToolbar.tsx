@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button.js';
 import { ColorPicker } from '../../components/ui/ColorPicker.js';
 import { Dropdown, DropdownItem } from '../../components/ui/Dropdown.js';
 import { ItemSelect } from '../../components/ui/ItemSelect.js';
+import { PixelText } from '../../components/ui/PixelText.js';
 import type { ColorValue } from '../../components/ui/types.js';
 import { VisualColorPicker } from '../../components/VisualColorPicker.js';
 import {
@@ -76,6 +77,8 @@ interface EditorToolbarProps {
   directories: { name: string; path: string }[];
   /** Whether the Areas tool is offered (layout has areas OR some Directory is mappable). */
   areasAvailable: boolean;
+  /** Extra classes on the panel (App's open / close animation). */
+  className?: string;
   areaMappings: Record<string, string[]>;
   onSelectArea: (label: string | null) => void;
   onAddArea: (label: string, color: string) => void;
@@ -129,6 +132,7 @@ export function EditorToolbar({
   onRenameArea,
   onAreaColorChange,
   onAreaMappingChange,
+  className = '',
 }: EditorToolbarProps) {
   const [activeCategory, setActiveCategory] = useState<FurniturePanelCategory>('desks');
   const [showColor, setShowColor] = useState(false);
@@ -239,7 +243,9 @@ export function EditorToolbar({
   };
 
   return (
-    <div className="absolute bottom-76 left-10 z-10 pixel-panel p-4 flex flex-col-reverse gap-4 max-w-[calc(100vw-20px)]">
+    <div
+      className={`absolute bottom-76 left-10 z-10 pixel-panel p-4 flex flex-col-reverse gap-4 max-w-[calc(100vw-20px)] ${className}`}
+    >
       {/* Tool row — at the bottom */}
       <div className="flex gap-4 flex-wrap">
         <Button
@@ -296,7 +302,7 @@ export function EditorToolbar({
 
       {/* Sub-panel: Floor tiles — stacked bottom-to-top via column-reverse */}
       {isFloorActive && (
-        <div className="flex flex-col-reverse gap-4">
+        <div className="fade-stagger flex flex-col-reverse gap-4">
           {/* Copy + Color toggle — just above tool row */}
           <div className="flex gap-4 items-center">
             <Button
@@ -348,7 +354,7 @@ export function EditorToolbar({
 
       {/* Sub-panel: Wall — stacked bottom-to-top via column-reverse */}
       {isWallActive && (
-        <div className="flex flex-col-reverse gap-4">
+        <div className="fade-stagger flex flex-col-reverse gap-4">
           {/* Color toggle — just above tool row */}
           <div className="flex gap-4 items-center">
             <Button
@@ -399,7 +405,7 @@ export function EditorToolbar({
 
       {/* Sub-panel: Pets — thumbnail grid above tool row */}
       {isPetsActive && petCount > 0 && (
-        <div className="flex flex-col-reverse gap-4">
+        <div className="fade-stagger flex flex-col-reverse gap-4">
           <div className="carousel" data-testid="pets-carousel">
             {Array.from({ length: petCount }, (_, i) => {
               const sprites = getPetSprites(i);
@@ -435,7 +441,7 @@ export function EditorToolbar({
 
       {/* Sub-panel: Areas — Add row + card list */}
       {isAreasActive && (
-        <div className="flex flex-col-reverse gap-4 pb-2">
+        <div className="fade-stagger flex flex-col-reverse gap-4 pb-2">
           <AreaAddRow areas={areas} onAddArea={onAddArea} />
           <div className="text-xs text-text-muted px-4 leading-none">
             Paint areas on the map, then assign workspace folders. Agents will sit in their folder's
@@ -467,7 +473,7 @@ export function EditorToolbar({
 
       {/* Sub-panel: Furniture — stacked bottom-to-top via column-reverse */}
       {isFurnitureActive && (
-        <div className="flex flex-col-reverse gap-4">
+        <div className="fade-stagger flex flex-col-reverse gap-4">
           {/* Category tabs + contextual Copy button — just above tool row */}
           <div className="flex gap-4 flex-wrap items-center">
             {getActiveCategories().map((cat) => (
@@ -580,7 +586,7 @@ export function EditorToolbar({
               {/* Compact Main/Accent pickers — collapsible, at the top.
                   Each is a swatch + hex that opens its picker popup on click. */}
               {showCarpetColor && (
-                <div className="flex gap-8 ml-2 mb-6 -mt-6">
+                <div className="fade-stagger flex gap-8 ml-2 mb-6 -mt-6">
                   <div className="flex flex-col gap-2">
                     <span className="text-xs uppercase tracking-[0.08em] text-text-muted">
                       Main
@@ -683,7 +689,7 @@ function TileColorBox({
 }) {
   const contrastFill = ((value.c + 100) / 200) * 100;
   return (
-    <div className="flex flex-col gap-4 py-8 px-10 bg-bg-dark border-2 border-border rounded-none">
+    <div className="fade-stagger flex flex-col gap-4 py-8 px-10 bg-bg-dark border-2 border-border rounded-none">
       <div className="flex items-center gap-8">
         <span className="text-sm text-text-muted w-64 shrink-0">Color</span>
         <VisualColorPicker value={value} onChange={onChange} />
@@ -699,7 +705,7 @@ function TileColorBox({
           className="pixel-range flex-1 min-w-0"
           style={{ '--range-fill': `${contrastFill}%` } as CSSProperties}
         />
-        <span className="text-sm text-text w-44 text-right shrink-0 tabular-nums">{value.c}</span>
+        <PixelText text={String(value.c)} className="text-sm text-text w-44 justify-end shrink-0" />
       </div>
     </div>
   );

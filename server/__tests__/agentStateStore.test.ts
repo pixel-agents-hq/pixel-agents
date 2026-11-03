@@ -11,6 +11,8 @@ function createMockAdapter(): StateAdapter {
     saveAgents: vi.fn(),
     loadSeats: vi.fn(() => ({})),
     saveSeats: vi.fn(),
+    loadCardOrder: vi.fn(() => []),
+    saveCardOrder: vi.fn(),
     getSetting: <T>(_k: string, d: T): T => d,
     setSetting: vi.fn<(key: string, value: unknown) => void>(),
   };
