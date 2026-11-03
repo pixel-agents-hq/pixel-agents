@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import type { TeamProvider } from '../../../../../core/src/teamProvider.js';
+import type { SpawnNotice, TeamProvider } from '../../../../../core/src/teamProvider.js';
 import { CLAUDE_SUBAGENT_TOOLS } from './constants.js';
 
 /**
@@ -102,6 +102,37 @@ const RESUMED_AGENT_ID = /"resumedAgentId"\s*:\s*"([A-Za-z0-9_-]+)"/;
  *  two apart. */
 const INTERIM_NOTICE_SUMMARY = /<summary>[^<]*is waiting on its own background work\s*<\/summary>/;
 const INTERIM_NOTICE_NOTE = /<note>[^<]*\bmay be interim\b[^<]*<\/note>/;
+
+/** Background agents' completion notices arrive as an `enqueue`
+ *  queue-operation on the lead's transcript, its string content one or more
+ *  `<task-notification>`s naming the agent by `<tool-use-id>` (the spawn's),
+ *  `<task-id>` (the agent's) or both. A crash notice lists several task ids. */
+function readSpawnNotices(
+  record: Record<string, unknown>,
+): { notices: SpawnNotice[]; at?: number } | null {
+  if (record.type !== 'queue-operation' || record.operation !== 'enqueue') return null;
+  if (typeof record.content !== 'string') return null;
+  const notices = record.content
+    .split('<task-notification>')
+    .map((notice) => ({
+      toolIds: [...notice.matchAll(/<tool-use-id>(.*?)<\/tool-use-id>/g)].map((m) => m[1]),
+      taskIds: [...notice.matchAll(/<task-id>(.*?)<\/task-id>/g)].map((m) => m[1]),
+      interim: INTERIM_NOTICE_SUMMARY.test(notice) || INTERIM_NOTICE_NOTE.test(notice),
+    }))
+    .filter((notice) => notice.toolIds.length > 0 || notice.taskIds.length > 0);
+  const at = typeof record.timestamp === 'string' ? Date.parse(record.timestamp) : NaN;
+  return Number.isNaN(at) ? { notices } : { notices, at };
+}
+
+/** The tool_use ids a record's tool_result blocks answer. */
+function toolResultIds(record: Record<string, unknown>): string[] {
+  const message = record.message as { content?: unknown } | undefined;
+  if (!Array.isArray(message?.content)) return [];
+  return message.content.flatMap((block: unknown) => {
+    const b = block as { type?: unknown; tool_use_id?: unknown } | null;
+    return b?.type === 'tool_result' && typeof b.tool_use_id === 'string' ? [b.tool_use_id] : [];
+  });
+}
 
 /** Claude names a sidecar-backed spawn's transcript after its agent id. */
 const AGENT_TRANSCRIPT_NAME = /^agent-([A-Za-z0-9_-]+)\.jsonl$/;
@@ -210,8 +241,16 @@ export const claudeTeamProvider: TeamProvider = {
     return null;
   },
 
-  isInterimSpawnNotice(notice) {
-    return INTERIM_NOTICE_SUMMARY.test(notice) || INTERIM_NOTICE_NOTE.test(notice);
+  readSpawnNotices,
+
+  toolResultIds,
+
+  namesTeammate(_toolName, input) {
+    // A named spawn is a Teammate-to-be, unless it explicitly runs in the
+    // foreground: then it is in-turn work whatever its name, a Sub-agent.
+    return (
+      typeof input.name === 'string' && input.name.length > 0 && input.run_in_background !== false
+    );
   },
 
   discoverTeammates(projectDir, leadSessionId, teamName) {

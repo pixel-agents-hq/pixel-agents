@@ -10,6 +10,17 @@
  * Providers without team support simply don't set `HookProvider.team`. No team-
  * gated code runs for them -- no stubs, no dead branches.
  */
+
+/** One background agent's completion notice: the agents it names, by spawn
+ *  tool id and by task (agent) id. `interim` = the agent only stopped to wait
+ *  on background work of its own and will notify again, so the notice must
+ *  not end its spawn. */
+export interface SpawnNotice {
+  toolIds: string[];
+  taskIds: string[];
+  interim: boolean;
+}
+
 export interface TeamProvider {
   /** CLI identifier (e.g. 'claude', 'codex'). Used for logging. */
   providerId: string;
@@ -90,12 +101,23 @@ export interface TeamProvider {
     resultContent: unknown,
   ): { taskId?: string } | null;
 
-  /** Whether a background agent's completion notice (one notice of a lead's
-   *  queue-operation, see server/src/backgroundSpawns.ts) says the agent is
-   *  still alive: it stopped to wait on background work of its own and will
-   *  notify again. Such a notice must not end the spawn. Claude: the summary
-   *  ends "is waiting on its own background work". */
-  isInterimSpawnNotice?(notice: string): boolean;
+  /** The background-agent completion notices a lead's transcript record
+   *  carries (see server/src/backgroundSpawns.ts), with when the record was
+   *  written (`at`, ms) when it says; null when it carries none. Claude: an
+   *  `enqueue` queue-operation whose content holds `<task-notification>`s. */
+  readSpawnNotices?(
+    record: Record<string, unknown>,
+  ): { notices: SpawnNotice[]; at?: number } | null;
+
+  /** The tool ids whose results a lead's transcript record carries. A restart
+   *  reads them to tell whether a saved spawn launched in this transcript, so
+   *  a notice from before its launch doesn't end it. */
+  toolResultIds?(record: Record<string, unknown>): string[];
+
+  /** Whether a spawn call names a Teammate-to-be: once launched it is seated
+   *  as a Teammate, so it must not be watched as a Sub-agent before then.
+   *  Claude: a non-empty `name`, unless the call runs in the foreground. */
+  namesTeammate?(toolName: string, input: Record<string, unknown>): boolean;
 
   /** Return team metadata for a session if it participates in a team.
    *  Provider decides where to look (sidecar file, JSONL header, DB, etc.).
