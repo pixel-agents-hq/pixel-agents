@@ -28,6 +28,7 @@ import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import type { AgentState } from '../types.js';
+import { inheritedEnv, terminalEnv } from './terminalEnv.js';
 import type { TerminalSession, TerminalSessions } from './terminalSessions.js';
 
 export interface LaunchStandaloneAgentDeps {
@@ -113,7 +114,9 @@ export function launchStandaloneAgent(
       command: launch.command,
       args: launch.args,
       cwd,
-      env: { ...processEnv(), ...launch.env },
+      // The locale too (terminalEnv), here as well as in the PTY: a PTY host
+      // started by an older server spawns with the env it is handed.
+      env: terminalEnv({ ...inheritedEnv(provider), ...launch.env }),
       cols: options.cols,
       rows: options.rows,
     });
@@ -295,16 +298,4 @@ function startJsonlPoll(deps: LaunchStandaloneAgentDeps, id: number, agent: Agen
   }, JSONL_POLL_INTERVAL_MS);
 
   runtime.jsonlPollTimers.set(id, timer);
-}
-
-/** This process's env as plain strings (process.env is `string | undefined`-valued,
- *  a PTY env all-strings): what an agent's terminal runs with, under its own
- *  variables. Built here, by the server, so a PTY host started long ago by an
- *  older server never lends its own. */
-function processEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) env[key] = value;
-  }
-  return env;
 }
