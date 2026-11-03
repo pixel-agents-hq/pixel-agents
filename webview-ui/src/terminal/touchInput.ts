@@ -3,6 +3,7 @@ import type { Terminal } from '@xterm/xterm';
 import { TERMINAL_LONG_PRESS_MS } from '../constants.js';
 import { writeClipboardText } from './clipboard.js';
 import { terminalCopyText } from './flowCopy.js';
+import { inputAreaRows } from './inputArea.js';
 import { selectionLength } from './selectionMath.js';
 import { createSelectionOverlay } from './selectionOverlay.js';
 import {
@@ -26,7 +27,8 @@ type TouchTarget = GlobalEventHandlers;
 
 /**
  * Wire touch input on a terminal pane: scrolling, flick, tap-to-focus /
- * tap-to-open-URL, long-press selection with handles and a copy pill (the
+ * tap-to-open-URL, long-press selection with handles and a copy pill, a
+ * Paste pill on a long press in the input area (the
  * gesture itself is the pure reducer in touchGesture.ts). This is the thin
  * DOM half — it owns the listeners, the long-press timer, the flick's
  * animation frames and the selection chrome, turns TouchEvents into reducer
@@ -42,6 +44,8 @@ export function attachTouchInput(
     openLink: (event: unknown, uri: string) => void;
     /** Row height to scroll by before the terminal has a cell grid. */
     fallbackRowHeightPx: number;
+    /** The Paste pill was tapped: paste the clipboard into the terminal. */
+    onPaste: () => void;
   },
 ): () => void {
   let state: TouchGestureState = TOUCH_GESTURE_IDLE;
@@ -54,9 +58,17 @@ export function attachTouchInput(
       const chars = term.buffer.active.getLine(row)?.getCell(col)?.getChars() ?? '';
       return chars === '' || chars === ' ';
     },
-    urlAt: ({ row, col }) => urlAtCell(term.buffer.active, row, col),
+    urlAt: ({ row, col }) => urlAtCell(term.buffer.active, row, col, term.cols),
     rowHeightPx: () => terminalRowHeightPx(term, host, opts.fallbackRowHeightPx),
     cols: () => term.cols,
+    inInputArea: ({ row }) => {
+      const buffer = term.buffer.active;
+      const { startRow, endRow } = inputAreaRows(
+        (r) => buffer.getLine(r)?.translateToString(true),
+        buffer.baseY + buffer.cursorY,
+      );
+      return row >= startRow && row <= endRow;
+    },
   };
 
   const overlay = createSelectionOverlay(host, {
@@ -78,6 +90,10 @@ export function attachTouchInput(
         // has already replaced it.
         else if (state === copying) dispatch({ kind: 'dismiss' });
       });
+    },
+    onPaste: () => {
+      overlay.hidePill();
+      opts.onPaste();
     },
   });
 
@@ -211,6 +227,9 @@ export function attachTouchInput(
         return;
       case 'hidePill':
         overlay.hidePill();
+        return;
+      case 'showPastePill':
+        overlay.showPastePill(fx.cell);
         return;
       case 'focus':
         term.focus();

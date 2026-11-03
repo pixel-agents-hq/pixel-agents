@@ -25,8 +25,8 @@ import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
-import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
+import type { TerminalSessions } from './terminal/terminalSessions.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -73,7 +73,7 @@ export interface ClientMessageContext {
   privileged?: boolean;
   /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
    *  mode, where the editor owns terminal lifecycle. */
-  ptyManager?: PtySessionManager;
+  ptyManager?: TerminalSessions;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──

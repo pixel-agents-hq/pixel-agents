@@ -109,6 +109,7 @@ async function main() {
     copyAssets();
     buildHooks();
     await buildCli();
+    await buildPtyHost();
     await buildUninstall();
   }
 }
@@ -157,6 +158,26 @@ async function buildCli() {
   if (!production) {
     console.log('[build] CLI bundled: dist/cli.mjs');
   }
+}
+
+/**
+ * Bundle the PTY host (`pixel-agents --pty-host`). Development only: it is
+ * deliberately left out of package.json's `files`, so the published office
+ * always keeps its terminals in process.
+ */
+async function buildPtyHost() {
+  await esbuild.build({
+    entryPoints: ['server/src/terminal/ptyHostMain.ts'],
+    bundle: true,
+    format: 'cjs',
+    minify: production,
+    sourcemap: !production,
+    platform: 'node',
+    outfile: 'dist/pty-host.js',
+    external: ['@lydell/node-pty', 'node-pty'],
+    define: versionDefine,
+    logLevel: 'silent',
+  });
 }
 
 main().catch((e) => {

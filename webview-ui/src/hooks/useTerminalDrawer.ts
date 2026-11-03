@@ -51,8 +51,9 @@ export interface TerminalDrawerController {
   /** Card status dot: 'disconnected' (red) for a terminal whose socket
    *  dropped, otherwise the agent's activity; null before its first activity. */
   statusFor: (agentId: number) => TabStatus | null;
-  /** Each TerminalPane reports its socket state here. */
-  onStatusChange: (agentId: number, status: TerminalConnectionStatus) => void;
+  /** Each TerminalPane reports its socket state here, and null once it
+   *  unmounts (no pane, nothing to flag). */
+  onStatusChange: (agentId: number, status: TerminalConnectionStatus | null) => void;
 }
 
 /**
@@ -190,8 +191,16 @@ export function useTerminalDrawer({
     [agentSeenActivity, agentTools, agentStatuses, agentAwaitingInput],
   );
 
-  const onStatusChange = useCallback((agentId: number, status: TerminalConnectionStatus) => {
-    setConnStatuses((prev) => (prev[agentId] === status ? prev : { ...prev, [agentId]: status }));
+  const onStatusChange = useCallback((agentId: number, status: TerminalConnectionStatus | null) => {
+    setConnStatuses((prev) => {
+      if (status === null) {
+        if (!(agentId in prev)) return prev;
+        const rest = { ...prev };
+        delete rest[agentId];
+        return rest;
+      }
+      return prev[agentId] === status ? prev : { ...prev, [agentId]: status };
+    });
   }, []);
 
   // Broken connection (red) wins over activity, for agents that have a pane.

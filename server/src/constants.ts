@@ -129,15 +129,38 @@ export const WILDCARD_HOSTNAMES = ['0.0.0.0', '::'] as const;
  *  browser's TERMINAL_SCROLLBACK_LINES so a reattach replays the same depth the
  *  client would have kept. Bounds the serialized replay snapshot. */
 export const TERMINAL_MIRROR_SCROLLBACK_LINES = 5_000;
+/** The DEC private modes that pick a mouse encoding, by xterm's encoding
+ *  name. The serialize addon restores mouse tracking but not its encoding,
+ *  so a replay appends this (the default X10 encoding needs none). */
+export const TERMINAL_MOUSE_ENCODING_MODES: Readonly<Record<string, string>> = {
+  SGR: '\x1b[?1006h',
+  SGR_PIXELS: '\x1b[?1016h',
+};
 /** Terminal size used until the browser reports its real geometry. */
 export const TERMINAL_DEFAULT_COLS = 80;
 export const TERMINAL_DEFAULT_ROWS = 24;
 /** TERM value exported into the PTY. */
 export const TERMINAL_TERM_NAME = 'xterm-256color';
+/** LANG exported into the PTY when the server's environment names no locale
+ *  (a launchd service has none): without one, macOS tools such as pbcopy
+ *  read UTF-8 as Mac Roman, and "í" reaches the clipboard as "√≠". */
+export const TERMINAL_DEFAULT_LANG = 'en_US.UTF-8';
 /** Grace period between SIGHUP and SIGKILL when disposing a PTY. */
 export const TERMINAL_KILL_GRACE_MS = 2_000;
 /** How long shutdown waits past the SIGKILL escalation for the exits to land. */
 export const TERMINAL_SHUTDOWN_SLACK_MS = 1_000;
+
+// ── PTY host (development only: `pixel-agents --pty-host`) ──
+/** The host exits after this long with no terminal and no server connected. */
+export const PTY_HOST_IDLE_EXIT_MS = 60_000;
+/** How long a server waits for a host it just started to accept connections. */
+export const PTY_HOST_START_TIMEOUT_MS = 5_000;
+/** Between connection attempts while waiting for a host to come up. */
+export const PTY_HOST_CONNECT_RETRY_MS = 100;
+/** A request the host never answers (a replay) gives up after this long. */
+export const PTY_HOST_REQUEST_TIMEOUT_MS = 5_000;
+/** The host's bundle, next to dist/cli.js. Not in the npm package: dev only. */
+export const PTY_HOST_SCRIPT = 'pty-host.js';
 /** unavailableReason() when the operator opted out with --no-terminal. Shown
  *  verbatim as the disabled + Agent button's tooltip in the browser. */
 export const TERMINAL_DISABLED_BY_FLAG_REASON = 'Terminal disabled with --no-terminal.';

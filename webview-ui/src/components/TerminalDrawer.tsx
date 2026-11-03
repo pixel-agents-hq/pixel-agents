@@ -26,7 +26,7 @@ interface TerminalDrawerProps {
   getAppearance: (agentId: number) => AgentAppearance;
   /** An agent's tab status dot (null until first activity). */
   statusFor: (agentId: number) => TabStatus | null;
-  onStatusChange: (agentId: number, status: TerminalConnectionStatus) => void;
+  onStatusChange: (agentId: number, status: TerminalConnectionStatus | null) => void;
 }
 
 /**
@@ -109,6 +109,7 @@ export function TerminalDrawer({
             shownAgentId={shownAgentId}
             onStatusChange={onStatusChange}
             paneClassName="inset-4"
+            keepHidden
           />
         </div>
       </div>
