@@ -144,6 +144,21 @@ describe('paletteAssigner', () => {
       expect(agent.repeat).toBe(0);
     });
 
+    it('gives no character a third copy until every one has a second', () => {
+      for (let p = 0; p < PALETTE_COUNT; p++) {
+        store.set(100 + p, createTestAgent({ id: 100 + p, palette: p, repeat: 0 }));
+      }
+      // Every character but the last already has its second copy.
+      for (let p = 0; p < PALETTE_COUNT - 1; p++) {
+        store.set(200 + p, createTestAgent({ id: 200 + p, palette: p, repeat: 1 }));
+      }
+      randomReturns(0);
+      const agent = createTestAgent({ id: 1 });
+      assignPaletteIfNeeded(agent, store);
+      expect(agent.palette).toBe(PALETTE_COUNT - 1);
+      expect(agent.repeat).toBe(1);
+    });
+
     it('wears an unworn pick exactly', () => {
       store.set(100, createTestAgent({ id: 100, palette: 0, repeat: 0 }));
       randomReturns(0.99);

@@ -515,9 +515,11 @@ async function main(): Promise<void> {
       // host: just disconnect; the agents keep running.
       await ptyManager.shutdown();
       characterProfilesWatcher.dispose();
-      // Stop, not dispose: the saved list keeps whoever is still running, for
-      // the next server to restore (external agents) or reattach (the PTY host's).
-      runtime.stop();
+      // With the PTY host, stop, not dispose: the saved list keeps whoever is
+      // still running, for the next server to reattach. In process, dispose:
+      // every terminal is gone, and the next server starts with no agents.
+      if (args.ptyHost) runtime.stop();
+      else runtime.dispose();
       server.stop();
       process.exit(0);
     }
