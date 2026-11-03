@@ -345,10 +345,10 @@ RemotePtySessions ── Unix socket ──────▶ startPtyHost()
   logging to `~/.pixel-agents/pty-host/host.log`. The host exits after a minute with no terminal
   and no server.
 - `reattachTerminalAgents` rebuilds each surviving terminal's agent from the saved agent list
-  before any browser connects, reading its transcript from the current end. Shutdown keeps that
-  list in both modes: it calls `runtime.stop()` (timers and watchers only), never
-  `runtime.dispose()`, which would save an emptied list. In process, each terminal's exit has
-  already closed its agent by then.
+  before any browser connects, reading its transcript from the current end. With the PTY host,
+  shutdown keeps that list: it calls `runtime.stop()` (timers and watchers only), never
+  `runtime.dispose()`, which would save an emptied list. In process it disposes, as before the
+  host: the terminals are gone, so the next server starts with no agents.
 - Each spawn carries the whole env (the launcher builds it, the host lends none of its own), and a host speaking another
   `PTY_HOST_PROTOCOL` is refused: stop it (this ends its agents) and start the server again.
 - Hook events fired while no server is up are lost; an agent's status catches up on its next one.
