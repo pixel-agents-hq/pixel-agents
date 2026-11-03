@@ -423,7 +423,7 @@ Per-agent runtime data: provider reference, session key, transcript-fallback fie
 
 `migrateVsCodeState` (VS Code adapter only) walks each known legacy key once with **verify-before-clear** semantics: write to file, read back, only then clear the legacy key. While anything remains unmigrated, activation shows a non-blocking warning.
 
-Layout and character-profile writes go through ONE `writeJsonAtomic` (tmp + rename) beside ONE generic watcher (`jsonFileWatcher.ts`: hybrid `fs.watch` + 2 s polling) used for both `layout.json` and `characters.json`; the write marks every live watcher of that path, after it succeeded (a failed write throws and marks nothing), so no watcher re-reads our own write and no caller has to remember to say so. An external `characters.json` change that validates updates the cached list and is broadcast as `characterProfilesLoaded` without a `saveId`; one that doesn't validate is ignored.
+Layout and character-profile writes go through ONE `writeJsonAtomic` (tmp + rename) beside ONE generic watcher (`jsonFileWatcher.ts`: hybrid `fs.watch` + 2 s polling) used for both `layout.json` and `characters.json`; the write marks every live watcher of that path, after it succeeded (a failed write throws and marks nothing), so no watcher re-reads our own write and no caller has to remember to say so — except a `/ws` client's `saveLayout`, written with `reportToWatchers` so the VS Code panel's layout watcher still hears of it. An external `characters.json` change that validates updates the cached list and is broadcast as `characterProfilesLoaded` without a `saveId`; one that doesn't validate is ignored.
 
 ## Agent Status Tracking
 
