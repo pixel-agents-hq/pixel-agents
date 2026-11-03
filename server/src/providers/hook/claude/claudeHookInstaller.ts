@@ -13,14 +13,6 @@ import {
 } from './claudeSettingsFile.js';
 import { CLAUDE_HOOK_EVENTS, CLAUDE_HOOK_SCRIPT_NAME } from './constants.js';
 
-// The settings-file messages were born here; callers that import them from the
-// installer keep working.
-export {
-  SETTINGS_CONCURRENT_WRITE_MESSAGE,
-  SETTINGS_UNPARSEABLE_MESSAGE,
-  settingsUnusableBackupMessage,
-} from './claudeSettingsFile.js';
-
 /** Surfaced when a `hooks.<Event>` field holds something other than an array.
  *  The value is malformed but it is the USER's — replacing it with `[]` (what
  *  we used to do) silently destroys hand-written config, which is the same

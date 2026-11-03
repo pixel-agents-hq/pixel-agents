@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
 
+import { officeRadio } from '../music/musicEngine.js';
+import { useOfficeRadio } from '../music/useOfficeRadio.js';
 import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
 import { isBrowserRuntime } from '../runtime.js';
 import { transport } from '../transport/index.js';
@@ -70,6 +72,8 @@ export function SettingsModal({
   onExportLayout,
   onImportLayout,
 }: SettingsModalProps) {
+  // The office radio's player is a per-browser setting the radio keeps itself.
+  const radio = useOfficeRadio();
   const [soundLocal, setSoundLocal] = useState(isSoundEnabled);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [assetDirDraft, setAssetDirDraft] = useState('');
@@ -198,6 +202,12 @@ export function SettingsModal({
             setSoundLocal(newVal);
             transport.send({ type: 'setSoundEnabled', enabled: newVal });
           }}
+        />
+        <Checkbox
+          label="Music Player"
+          title="The office radio's player, bottom of the office"
+          checked={!radio.hidden}
+          onChange={() => officeRadio.setHidden(!radio.hidden)}
         />
         <Checkbox
           label="Watch All Sessions"

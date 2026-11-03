@@ -130,7 +130,6 @@
     "@types/node": "26.x",
     "@types/pngjs": "^6.0.5",
     "@types/vscode": "^1.105.0",
-    "@types/ws": "^8.18.1",
     "@vscode/test-electron": "^3.1.0",
     "allure-commandline": "^2.38.1",
     "allure-playwright": "^3.7.1",

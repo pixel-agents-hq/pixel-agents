@@ -8,7 +8,11 @@ import { cardOrderOf } from '../components/cardBar.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import { clearAgentContextUsed, setAgentContextUsed } from '../office/contextGauge.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
-import { reconcileExistingAgents, staleAgentIds } from '../office/engine/existingAgents.js';
+import {
+  reconcileExistingAgents,
+  restoreAgent,
+  staleAgentIds,
+} from '../office/engine/existingAgents.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { setGhostHeadlessAgents as setRendererGhostHeadlessAgents } from '../office/engine/renderer.js';
 import { setFloorSprites } from '../office/floorTiles.js';
@@ -398,10 +402,7 @@ export function useExtensionMessages(
           onLayoutLoaded?.(os.getLayout());
         }
         // Add buffered agents now that layout (and seats) are correct
-        for (const p of pendingAgents) {
-          os.addAgent(p.id, p.palette, p.repeat, p.seatId, true, p.directoryName);
-          if (p.isHeadless) os.setHeadless(p.id, true);
-        }
+        for (const p of pendingAgents) restoreAgent(os, p);
         pendingAgents = [];
         layoutReadyRef.current = true;
         setLayoutReady(true);
