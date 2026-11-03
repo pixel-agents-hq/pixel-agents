@@ -18,6 +18,9 @@ export interface MobileShellController {
    *  `palette` when a character was picked first). App slides over once the
    *  new terminal appears (`drawer.lastLaunched`). */
   launch: (directory: Directory, palette?: number) => void;
+  /** A running conversation pressed in the menu: focus its agent and, when it
+   *  has a pane, slide to it. */
+  openAgent: (agentId: number) => void;
 }
 
 interface MobileShellInputs {
@@ -88,5 +91,22 @@ export function useMobileShell({
     [getOfficeState, terminalAgentIds, view, reveal],
   );
 
-  return { view, showTerminal, toggleView, selectCard, launch: launchAgent };
+  const openAgent = useCallback(
+    (agentId: number) => {
+      getOfficeState().selectAndFollow(agentId);
+      if (!terminalAgentIds.includes(agentId)) return;
+      reveal(agentId);
+      setView('terminal');
+    },
+    [getOfficeState, terminalAgentIds, reveal],
+  );
+
+  return {
+    view,
+    showTerminal,
+    toggleView,
+    selectCard,
+    launch: launchAgent,
+    openAgent,
+  };
 }

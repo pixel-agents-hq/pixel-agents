@@ -95,4 +95,7 @@ export interface AgentState {
   palette?: number;
   /** Which copy of its character the agent is (0 = the first, n = its nth repeat). */
   repeat?: number;
+  /** The seat it asks for when it appears (a resumed conversation's old seat);
+   *  the office seats it elsewhere when that one is taken. */
+  seatId?: string;
 }

@@ -218,9 +218,61 @@ test.describe('Standalone / mobile shell', () => {
     await swipe(page, 4, PHONE.width * 0.8, PHONE.height / 2);
     await expectView(page, 'office');
 
+    // In the office the left edge pulls the menu open. (A short pull settling
+    // back is the reducer's tests' job: this synthetic swipe is instant, so
+    // any length reads as a flick.)
+    const menu = page.getByTestId('mobile-menu');
+    await expect(menu).not.toBeInViewport();
+    await swipe(page, 4, PHONE.width * 0.8, PHONE.height / 2);
+    await expect(menu).toBeInViewport({ ratio: 1 });
+    await expectView(page, 'office');
+    // A leftward swipe across it, from the middle, pushes it back out.
+    await swipe(page, PHONE.width * 0.6, 10, PHONE.height / 2);
+    await expect(menu).not.toBeInViewport();
+    await expectView(page, 'office');
+
     // And from the right edge, leftwards: to the terminal again.
     await swipe(page, PHONE.width - 4, PHONE.width * 0.2, PHONE.height / 2);
     await expectView(page, 'terminal');
+  });
+
+  test('the menu lists a finished conversation over Settings; a tap resumes it and slides to its terminal @area:mobile', async ({
+    page,
+    standalone,
+  }) => {
+    // A short session: titled, then the process ends and its agent leaves.
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('mobile titled conversation')
+        .at(200)
+        .appendJsonl({ type: 'ai-title', aiTitle: 'Phone bug hunt' })
+        .holdOpenFor(2_000)
+        .build(),
+    );
+    await launchFromCard(page, standalone.workspaceDir);
+    const card = page.getByTitle('Agent 1', { exact: true });
+    await expect(card).toBeVisible({ timeout: 15_000 });
+    await expect(card).toHaveCount(0, { timeout: 15_000 });
+    const showOffice = page.getByTitle('Show office', { exact: true });
+    if (await showOffice.isVisible()) await showOffice.tap();
+    await expectView(page, 'office');
+
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('mobile resumed conversation').holdOpenFor(60_000).build(),
+    );
+    await page.getByRole('button', { name: 'Menu', exact: true }).tap();
+    const panel = page.getByTestId('mobile-menu');
+    // Settings sits at the menu's foot.
+    await expect(panel.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+    const row = panel.getByTestId('conversation-row').filter({ hasText: 'Phone bug hunt' });
+    await expect(row).toBeVisible();
+    await row.tap();
+
+    // The panel closes, the agent is back, and the shell slides to its terminal.
+    await expect(page.getByTitle('Agent 2', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expectView(page, 'terminal');
+    await expect(row).not.toBeInViewport();
   });
 
   test('tapping a URL in the terminal opens it; a sideways drag from it does not @area:mobile', async ({

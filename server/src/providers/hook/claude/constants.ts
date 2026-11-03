@@ -95,3 +95,8 @@ export const CLAUDE_SMALL_CONTEXT_MODEL_PATTERN = /haiku|claude-[123]|-4-[01]\b/
 
 /** Tools that spawn a sub-agent (the provider's subagentToolNames). */
 export const CLAUDE_SUBAGENT_TOOLS: ReadonlySet<string> = new Set(['Task', 'Agent']);
+
+/** Bytes read from each end of a transcript looking for its title. */
+export const CONVERSATION_TITLE_SCAN_BYTES = 256 * 1024;
+/** A title longer than this is cut, with an ellipsis. */
+export const CONVERSATION_TITLE_MAX_CHARS = 120;
