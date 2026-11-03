@@ -323,6 +323,7 @@ export interface HooksConsentRequest {
 export interface UsageBridgeStatus {
   type: 'usageBridgeStatus';
   providerId: string;
+  providerName: string;
   installed: boolean;
   disclosure: string;
   error?: string;

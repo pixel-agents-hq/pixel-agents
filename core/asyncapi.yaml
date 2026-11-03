@@ -751,13 +751,16 @@ components:
         outcome. Privileged connections only, like `usageLimits`.
       type: object
       additionalProperties: false
-      required: [type, providerId, installed, disclosure]
+      required: [type, providerId, providerName, installed, disclosure]
       properties:
         type:
           const: usageBridgeStatus
         providerId:
           type: string
           description: The provider this is about (HookProvider.id).
+        providerName:
+          type: string
+          description: Its name for people (HookProvider.displayName), whose plan the bars show.
         installed:
           type: boolean
         disclosure:

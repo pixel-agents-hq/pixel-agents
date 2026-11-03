@@ -277,7 +277,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
         // An installed usage bridge runs the script from ~/.pixel-agents/hooks/:
         // bring it up to this version's copy.
-        claudeProvider.usageBridge?.refreshScript(this.context.extensionPath);
+        for (const provider of hookProviders) {
+          provider.usageBridge?.refreshScript(this.context.extensionPath);
+        }
         console.log(`[Pixel Agents] Server: ready on port ${config.port}`);
       })
       .catch((e) => {
