@@ -91,6 +91,7 @@ describe('characterProfilesPersistence', () => {
         broadcast: (m) => answers.push(m),
         reply: (m) => answers.push(m),
         store: new AgentStateStore(),
+        sharedRefsChanged: () => {},
       },
     );
     expect(answers).toEqual([
@@ -121,6 +122,7 @@ describe('characterProfilesPersistence', () => {
         broadcast: (m) => answers.push({ ...m, to: 'all' }),
         reply: (m) => answers.push({ ...m, to: 'sender' }),
         store: new AgentStateStore(),
+        sharedRefsChanged: () => {},
       });
       return answers;
     };

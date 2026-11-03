@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { DISCORD_INVITE_URL } from '../changelogData.js';
+import { useCast } from '../characters/castStore.js';
+import { greeterPalette } from '../characters/profiles.js';
 import {
   CLAUDE_CODE_INSTALL_COMMAND,
   CLAUDE_CODE_URL,
@@ -140,11 +142,18 @@ export function IntroBubble({
   ];
   const stepIndex = steps.indexOf(step);
 
-  // The greeter lives exactly as long as this component.
+  // The greeter lives exactly as long as this component, wearing Suit.
   useEffect(() => {
     officeState.spawnGreeter();
     return () => officeState.despawnGreeter();
   }, [officeState]);
+  // Dressed after the spawn above (effects run in order), and again whenever
+  // the cast arrives or changes while the Intro is up.
+  const cast = useCast();
+  const palette = greeterPalette(cast.profiles);
+  useEffect(() => {
+    officeState.setGreeterPalette(palette);
+  }, [officeState, palette]);
 
   useEffect(() => {
     if (escapeSuppressed) return;

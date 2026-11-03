@@ -232,6 +232,10 @@ export const TOOL_OVERLAY_GAP_PX = -2;
 /** Reserved character id for the Intro's greeter. Far outside both real agent
  *  ids (positive) and sub-agent ids (small negatives from -1 down). */
 export const GREETER_ID = -1_000_000_000;
+/** The character the greeter wears, by its permanent profile id: the default
+ *  cast's Suit (the first in the cast if no character has that id). An id, not
+ *  a name, so renaming the character doesn't change who greets. */
+export const GREETER_CHARACTER_ID = 'char-0';
 /** Stacking order for the Intro's bubble. Deliberately BELOW the modal stack
  *  (ui/Modal defaults to 50, ChangelogModal 51, the migration notice z-100): the
  *  Intro is diegetic furniture over the office, not a modal, so a modal opened
@@ -396,9 +400,26 @@ export const MUGSHOT_CROP_LEFT_COL = -1;
 export const MUGSHOT_CROP_SIDE_PX = 20;
 /** Integer sprite-pixel zoom. 2 = each sprite pixel is 2 px. */
 export const MUGSHOT_RENDER_ZOOM = 2;
-/** On-screen size in CSS px. Equal to the backing canvas (crop × zoom) so there
- *  is no fractional scaling — the mug shot stays pixel-perfect. */
-export const MUGSHOT_DISPLAY_PX = MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM;
+/** A Directory's default characters, inline in the launch drawer: mug shots
+ *  side by side at 1x (one sprite pixel per CSS pixel). One more than this all
+ *  show; past that, this many and a "..." silhouette for the rest. */
+export const DIRECTORY_STRIP_MAX = 3;
+/** With every default shown (the "..." pressed), mug shots per line before
+ *  the strip wraps, so a long list makes the row taller, not the drawer wider. */
+export const DIRECTORY_STRIP_PER_LINE = 6;
+/** Empty columns right of the head in the 20px crop: the strip's right margin
+ *  takes them back, so the last head sits on the row's padding. */
+export const DIRECTORY_STRIP_TRAILING_EMPTY_PX = 4;
+/** Space between the launch drawer and the edit pencil hanging beside a row. */
+export const LAUNCH_DRAWER_PENCIL_GAP_PX = 4;
+/** The overflow silhouette: a blank character in a dark tone, with "..." over it. */
+export const DIRECTORY_SILHOUETTE_COLOR = '#3a3a54';
+export const DIRECTORY_SILHOUETTE_DOTS_COLOR = '#d0d0e4';
+/** The "..." on it, in sprite pixels: three 2px dots 1px apart (columns 5–12),
+ *  centred on the blank head (columns 2–15). */
+export const DIRECTORY_SILHOUETTE_DOT_PX = 2;
+export const DIRECTORY_SILHOUETTE_DOT_Y = 8;
+export const DIRECTORY_SILHOUETTE_DOT_XS = [5, 8, 11] as const;
 /** Terminal CONTENT is monospace on purpose: FS Pixel Sans is not a mono font,
  *  and a TUI mis-renders in a proportional face. The drawer chrome around it
  *  still uses the pixel font. */
@@ -545,17 +566,24 @@ export const XTERM_HELPER_TEXTAREA_CLASS = 'xterm-helper-textarea';
 // ── Agent card bars (AgentCardList) ──────────────────────────
 /** Holding a card motionless this long arms touch drag-to-reorder. */
 export const CARD_REORDER_LONG_PRESS_MS = 400;
-/** Holding a drawer's Directory row this long opens its edit modal — the touch
- *  stand-in for the pencil, which only exists where rows can be hovered. */
-export const DRAWER_EDIT_LONG_PRESS_MS = 500;
+/** Holding a drawer's Directory row (or a roster card) this long opens its
+ *  editor (useLongPress) — the touch stand-in for the pencil, which only exists
+ *  where rows can be hovered. */
+export const EDIT_LONG_PRESS_MS = 500;
 /** Finger slop for that hold: moving beyond this is a scroll, not a press. */
-export const DRAWER_EDIT_LONG_PRESS_MAX_MOVE_PX = 10;
+export const EDIT_LONG_PRESS_MAX_MOVE_PX = 10;
+
+/** CSS pixels per sprite pixel on the phone roster's character cards. */
+export const CHARACTER_PICKER_SPRITE_SCALE = 2;
 /** Gap a viewport-fitted Dropdown (the launch drawer) keeps from the top of
  *  the viewport when its content is taller than the room above its anchor. */
 export const DROPDOWN_VIEWPORT_MARGIN_PX = 8;
 /** How long a toolbar menu (or modal) takes to roll shut: keep it equal to
  *  the menu-pop-out / modal-pop-out durations in index.css. */
 export const MENU_POP_OUT_MS = 130;
+/** The desktop roster, opened by hovering its arrow, stays this long after the
+ *  pointer leaves (arrow and roster both), so it can cross the gap between. */
+export const ROSTER_HOVER_CLOSE_DELAY_MS = 250;
 /** Breathing room kept between a card and the scroller edge when the bar
  *  auto-scrolls the focused agent's card into view. */
 export const CARD_SCROLL_INTO_VIEW_MARGIN_PX = 8;
@@ -703,13 +731,15 @@ export const SIDE_PANEL_CLOSE_EASE = 'cubic-bezier(0.55, 0, 0.75, 0.2)';
 /** How far the contents travel as they slide in or out. */
 export const SIDE_PANEL_CONTENT_SHIFT_PX = 24;
 /** An agent card's height: its mug shot plus 1px padding and 2px border each
- *  side. The phone's + card (square) is sized from it, so the bar's first
- *  card lines up with the rest. */
+ *  side. The phone's + card (square) and the roster's arrow (a narrow tab)
+ *  are sized from it, so the bar's first card lines up with the rest. */
 export const AGENT_CARD_HEIGHT_PX = MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM + 2 * (1 + 2);
 /** An agent card's width: its mug shot, the 1px gap, the close/status column
  *  (one 8×8 PixelIcon wide), and 1px padding and 2px border each side. */
 export const AGENT_CARD_WIDTH_PX =
   MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM + 1 + 8 * PIXEL_ICON_SCALE + 2 * (1 + 2);
+/** The roster arrow: a narrow tab right of the + card (phone bar and desktop toolbar). */
+export const ROSTER_ARROW_WIDTH_PX = 28;
 
 // ── Usage bars (top-left: the account's Claude Code plan usage) ──
 /** Width of both bars: the weekly one on top, the 5-hour one under it. */

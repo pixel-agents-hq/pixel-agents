@@ -523,7 +523,7 @@ export class OfficeState {
   }
 
   // ── Greeter ───────────────────────────────────────────────────
-  // The Intro is diegetic: a char_0 character stands near the office's
+  // The Intro is diegetic: a character (Suit, by id: see greeterPalette) stands near the office's
   // bottom-left corner and "speaks" the tour through a DOM bubble
   // (IntroBubble). It is not an agent — see the `greeter` field.
 
@@ -555,6 +555,11 @@ export class OfficeState {
     ch.tileRow = spawn.row;
     startMatrixEffect(ch, 'spawn');
     this.greeter = ch;
+  }
+
+  /** Dress the greeter as a cast character (IntroBubble picks which). */
+  setGreeterPalette(palette: number): void {
+    if (this.greeter) this.greeter.palette = palette;
   }
 
   /** Start the greeter's despawn effect and release the greeter camera. The

@@ -7,6 +7,9 @@
  * clothes colour) is the webview's business; here a copy is only a number.
  */
 
+import { pickDirectoryCharacter } from './directoryCharacters.js';
+import type { DirectoryCharacterOrder } from './messages.js';
+
 /**
  * An agent's look. `repeat` counts the copies of one character in the
  * office: 0 is the character as drawn, 1 its first repeat, 2 the next…
@@ -36,16 +39,20 @@ export function repeatFor(palette: number, worn: Iterable<WornLook>): number {
  * copies in the office: who walks in is a surprise, but the copies stay even.
  * It never repeats one already in the office while some character is free,
  * and once the whole cast is in, no character gets a third copy until every
- * one has a second (and so on).
+ * one has a second (and so on). Among those, it prefers characters no
+ * Directory claims as a default (`reserved`), so a Directory's characters stay
+ * available for its own launches.
  *
  * @param paletteCount - Total number of available palettes (e.g., 6)
  * @param worn - The looks of the agents already in the office
  * @param random - Source of randomness in [0, 1) (tests pass a fixed one)
+ * @param reserved - Palettes to leave for whoever claims them (Directory defaults)
  */
 export function pickRandomPalette(
   paletteCount: number,
   worn: readonly WornLook[],
   random: () => number = Math.random,
+  reserved: ReadonlySet<number> = new Set(),
 ): number {
   const copies = new Array<number>(paletteCount).fill(0);
   for (const look of worn) {
@@ -56,22 +63,49 @@ export function pickRandomPalette(
   for (let palette = 0; palette < paletteCount; palette++) {
     if (copies[palette] === fewest) candidates.push(palette);
   }
-  return candidates[Math.floor(random() * candidates.length)];
+  const unclaimed = candidates.filter((palette) => !reserved.has(palette));
+  const pool = unclaimed.length > 0 ? unclaimed : candidates;
+  return pool[Math.floor(random() * pool.length)];
 }
 
 export interface LookRequest {
   paletteCount: number;
   /** The looks of the agents already in the office. */
   worn: readonly WornLook[];
+  /** A character picked from the roster: worn even when someone else wears it. */
+  picked?: number;
+  /** The launch Directory's default characters (pickDirectoryCharacter). */
+  directory?: { characters?: readonly number[]; characterOrder?: DirectoryCharacterOrder };
+  /** Characters a random pick leaves for their Directories (pickRandomPalette). */
+  reserved?: ReadonlySet<number>;
   random?: () => number;
 }
 
+/** A roster pick as it arrives (`launchAgent.palette`, any value), when it
+ *  names a character in the cast: an integer in [0, paletteCount). */
+export function rosterPick(raw: unknown, paletteCount: number): number | undefined {
+  if (typeof raw !== 'number' || !Number.isInteger(raw)) return undefined;
+  return raw >= 0 && raw < paletteCount ? raw : undefined;
+}
+
 /**
- * A new agent's look: a random character among the least worn (pickRandomPalette).
- * An agent wearing a character already in the office is its next repeat.
+ * A new agent's look, first match wins: the roster pick, else one of the
+ * launch Directory's defaults no one wears, else a random pick. Whichever it
+ * is, an agent wearing a character already in the office is its next repeat.
  */
 export function chooseLook(request: LookRequest): Look {
-  const { paletteCount, worn, random = Math.random } = request;
-  const palette = pickRandomPalette(paletteCount, worn, random);
+  const { paletteCount, worn, directory, random = Math.random } = request;
+  const wornPalettes = new Set<number>();
+  for (const look of worn) if (look.palette !== undefined) wornPalettes.add(look.palette);
+  const palette =
+    rosterPick(request.picked, paletteCount) ??
+    pickDirectoryCharacter(
+      directory?.characters ?? [],
+      directory?.characterOrder ?? 'priority',
+      paletteCount,
+      wornPalettes,
+      random,
+    ) ??
+    pickRandomPalette(paletteCount, worn, random, request.reserved);
   return { palette, repeat: repeatFor(palette, worn) };
 }

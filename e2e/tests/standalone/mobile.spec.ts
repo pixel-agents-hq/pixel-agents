@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { expect, test } from '../../fixtures/standalone';
 import { arrangeNextClaudeInvocation, claudeScenario } from '../../helpers/mock-claude';
@@ -135,6 +135,22 @@ async function longPress(page: Page, x: number, y: number, ms: number) {
   await fire('touchend', false);
 }
 
+/** A real one-finger press held for `ms` on the middle of `target`, through
+ *  CDP so the page also gets the pointer events a finger produces (the
+ *  TouchEvent-only `longPress` above has none). */
+async function heldTouch(page: Page, target: Locator, ms: number) {
+  // A trial tap waits for the target to stop moving (the roster slides in).
+  await target.tap({ trial: true });
+  const box = await target.boundingBox();
+  if (!box) throw new Error('nothing to press');
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  await page.waitForTimeout(ms);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
+
 /** Launch a mock-claude session from the + card and wait for its terminal. */
 async function launchTerminal(
   page: Page,
@@ -184,6 +200,9 @@ test.describe('Standalone / mobile shell', () => {
     await expect(page.locator('.xterm').first()).toContainText('mock claude session', {
       timeout: 15_000,
     });
+
+    // The roster's arrow is there on the terminal page too.
+    await expect(page.getByRole('button', { name: 'Roster', exact: true })).toBeVisible();
 
     // The toggle goes back to the office…
     await page.getByTitle('Show office', { exact: true }).tap();
@@ -526,5 +545,100 @@ test.describe('Standalone / mobile shell', () => {
     // far more than the linear pace (one column per 8 px) would send.
     expect(left).toBe(right);
     expect(right).toBeGreaterThan(Math.ceil(PHONE.width / 2 / 8) + 5);
+  });
+
+  test('the arrow on the + card toggles the roster: a tap launches as that character, a hold edits it @area:mobile', async ({
+    page,
+    standalone,
+  }) => {
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('mobile roster launch').holdOpenFor(60_000).build(),
+    );
+    const characters = page.getByRole('button', { name: 'Roster', exact: true });
+    const roster = page.getByTestId('character-picker');
+    const cards = roster.getByRole('button', { name: /^Launch as / });
+
+    // The arrow sits right of the + card, as tall as it: + square, the
+    // arrow a narrower tab.
+    const button = await characters.boundingBox();
+    const plus = await page.getByTitle('Launch agent', { exact: true }).boundingBox();
+    expect(button && plus && Math.abs(button.x - (plus.x + plus.width)) < 1).toBe(true);
+    expect(button && plus && Math.abs(button.y - plus.y) < 1).toBe(true);
+    expect(plus && Math.abs(plus.width - plus.height) < 1).toBe(true);
+    expect(button && plus && button.width < plus.width).toBe(true);
+
+    // It opens the roster only (not the Characters view): a strip across the
+    // whole screen right above the card bar, ending in + New. The arrow
+    // stays, turned, to close it.
+    await characters.tap();
+    await expect(roster).toHaveAttribute('aria-hidden', 'false');
+    await expect(characters).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.chv-root')).toHaveCount(0);
+    await expect(roster.getByRole('button').first()).toHaveText(/New/);
+    // A touch screen scrolls it with the finger: no scrollbar.
+    await expect(roster.locator('> div')).toHaveCSS('scrollbar-width', 'none');
+    // Polled: the strip slides up into place.
+    await expect
+      .poll(async () => {
+        const strip = await roster.boundingBox();
+        return (
+          strip && { width: Math.round(strip.width), bottom: Math.round(strip.y + strip.height) }
+        );
+      })
+      .toEqual({ width: PHONE.width, bottom: Math.round((button?.y ?? 0) - 8) });
+
+    // The arrow closes it again, and reopens it.
+    await characters.tap();
+    await expect(roster).toHaveAttribute('aria-hidden', 'true');
+    await expect(characters).toHaveAttribute('aria-expanded', 'false');
+    await characters.tap();
+    await expect(roster).toHaveAttribute('aria-hidden', 'false');
+
+    // A tap picks the character and hands over to the Directory list…
+    const picked = cards.nth(2);
+    const name = ((await picked.getAttribute('aria-label')) ?? '').replace('Launch as ', '');
+    await picked.tap();
+    await expect(roster).toHaveAttribute('aria-hidden', 'true');
+    await expect(characters).toBeVisible();
+    const drawer = page.getByTestId('launch-drawer');
+    await expect(drawer).toContainText(`Launch ${name} in`);
+
+    // …and the agent launched there wears exactly that character.
+    await drawer
+      .getByRole('button', { name: path.basename(standalone.workspaceDir), exact: true })
+      .tap();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (window.__pixelAgentsTestHooks?.getCharacters?.() ?? [])
+            .filter((ch) => ch.id > 0 && !ch.isGreeter)
+            .map(({ palette, repeat }) => ({ palette, repeat })),
+        ),
+      )
+      .toEqual([{ palette: 2, repeat: 0 }]);
+
+    // Holding a card opens the Characters view on that character instead.
+    await page.getByTitle('Show office', { exact: true }).tap();
+    await characters.tap();
+    // The last-used character now comes first, the rest in cast order: 2, 0, 1, …
+    await expect(cards.first()).toHaveAttribute('aria-label', `Launch as ${name}`);
+    // The server keeps that order, so a desktop office lists it the same way.
+    const desktopContext = await page.context().browser()!.newContext();
+    const desktop = await desktopContext.newPage();
+    await desktop.goto(page.url());
+    await desktop.getByRole('button', { name: 'Roster', exact: true }).click();
+    await expect(
+      desktop
+        .getByTestId('character-picker')
+        .getByRole('button', { name: /^Launch as / })
+        .first(),
+    ).toHaveAttribute('aria-label', `Launch as ${name}`);
+    await desktopContext.close();
+    await heldTouch(page, cards.nth(1), 900);
+    await expect(page.locator('.chv-root')).toBeVisible();
+    await expect(roster).toHaveAttribute('aria-hidden', 'true');
+    await expect(page.locator('.chv-mcard[aria-current="true"]')).toHaveCount(1);
+    await expect(page.locator('.chv-mcard').nth(0)).toHaveAttribute('aria-current', 'true');
   });
 });

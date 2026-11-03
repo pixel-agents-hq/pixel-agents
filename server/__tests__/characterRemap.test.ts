@@ -10,11 +10,13 @@ import {
   handleCharacterProfilesClientMessage,
   watchCharacterProfiles,
 } from '../src/characterProfilesPersistence.js';
+import { readConfig, writeConfig } from '../src/configPersistence.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
 
 /**
- * Everything that names a character by its index (agents, their saved seats) stays on the
- * same character when a save inserts or deletes characters before it.
+ * Everything that names a character by its index (agents, their saved seats, Directory
+ * defaults, the roster's recency) stays on the same character when a save inserts or
+ * deletes characters before it.
  */
 const ch = (id: string) => ({ id, name: id, body: 'flat', v: 35 });
 
@@ -82,7 +84,7 @@ describe('saving a list that moves characters', () => {
       }),
     );
   };
-  const save = (profiles: unknown[]) => {
+  const save = (profiles: unknown[], sharedRefsChanged = () => {}) => {
     const answers: Array<Record<string, unknown>> = [];
     handleCharacterProfilesClientMessage(
       { profiles, saveId: 'x' },
@@ -90,6 +92,7 @@ describe('saving a list that moves characters', () => {
         broadcast: (m) => answers.push(m),
         reply: (m) => answers.push(m),
         store,
+        sharedRefsChanged,
       },
     );
     return answers;
@@ -115,8 +118,13 @@ describe('saving a list that moves characters', () => {
     agent(2, 1);
     agent(3, 2);
     store.getAdapter()!.saveSeats({ '3': { palette: 2, repeat: 0, seatId: 'chair' } });
+    const cfg = readConfig();
+    cfg.directories = [{ name: 'Work', path: tempHome, characters: [2, 1] }];
+    cfg.recentCharacters = [2, 0, 1];
+    writeConfig(cfg);
 
-    const [answer] = save([ch('a'), ch('b2'), ch('b'), ch('c')]);
+    const shared = vi.fn();
+    const [answer] = save([ch('a'), ch('b2'), ch('b'), ch('c')], shared);
 
     expect(answer.agentLooks).toEqual([
       { id: 2, palette: 2, repeat: 0 },
@@ -126,12 +134,19 @@ describe('saving a list that moves characters', () => {
     expect(store.get(3)!.palette).toBe(3);
     expect(store.getAdapter()!.loadSeats()['3']).toMatchObject({ palette: 3, seatId: 'chair' });
     expect(store.loadPersistedAgents().find((p) => p.id === 3)?.palette).toBe(3);
+    expect(readConfig().directories[0].characters).toEqual([3, 2]);
+    expect(readConfig().recentCharacters).toEqual([3, 0, 2]);
+    expect(shared).toHaveBeenCalledOnce();
   });
 
-  it('a deleted character: its wearers get another', () => {
+  it('a deleted character: its wearers get another, its references go', () => {
     agent(1, 1);
     agent(2, 2);
     agent(5, 1, { leadAgentId: 1, teamName: 'team' });
+    const cfg = readConfig();
+    cfg.directories = [{ name: 'Work', path: tempHome, characters: [1, 2] }];
+    cfg.recentCharacters = [1, 2];
+    writeConfig(cfg);
 
     const [answer] = save([ch('a'), ch('c')]);
 
@@ -142,16 +157,23 @@ describe('saving a list that moves characters', () => {
     // a teammate follows its lead
     expect(store.get(5)!.palette).toBe(lead.palette);
     expect(answer.agentLooks).toHaveLength(3);
+    expect(readConfig().directories[0].characters).toEqual([1]);
+    expect(readConfig().recentCharacters).toEqual([1]);
   });
 
-  it('a save that moves nothing sends no looks', () => {
+  it('a save that moves nothing sends no looks and leaves the shared files alone', () => {
     agent(1, 2);
-    const [answer] = save([ch('a'), { ...ch('b'), hair: 'bob' }, ch('c')]);
+    const shared = vi.fn();
+    const [answer] = save([ch('a'), { ...ch('b'), hair: 'bob' }, ch('c')], shared);
     expect(answer).not.toHaveProperty('agentLooks');
+    expect(shared).not.toHaveBeenCalled();
   });
 
   it("another process's rewrite renumbers this process's agents only", async () => {
     agent(1, 2);
+    const cfg = readConfig();
+    cfg.recentCharacters = [2];
+    writeConfig(cfg);
     const broadcasts: Array<Record<string, unknown>> = [];
     const watcher = watchCharacterProfiles((m) => broadcasts.push(m), store);
     try {
@@ -162,6 +184,8 @@ describe('saving a list that moves characters', () => {
       );
       await vi.waitFor(() => expect(broadcasts).toHaveLength(1), { timeout: 5000 });
       expect(broadcasts[0].agentLooks).toEqual([{ id: 1, palette: 3, repeat: 0 }]);
+      // the process that saved renumbers the machine-wide files, not every watcher
+      expect(readConfig().recentCharacters).toEqual([2]);
     } finally {
       watcher.dispose();
     }

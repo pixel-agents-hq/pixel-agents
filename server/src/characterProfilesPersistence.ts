@@ -12,7 +12,7 @@ import {
   getWardrobeItems,
   wardrobeItemsFile,
 } from './characterProfilesStore.js';
-import { type PaletteRemap, remapAgentLooks } from './characterRemap.js';
+import { type PaletteRemap, remapAgentLooks, remapSharedCharacterRefs } from './characterRemap.js';
 import { type JsonFileWatcher, watchJsonFile, writeJsonAtomic } from './jsonFileWatcher.js';
 
 export { getCharacterProfiles, getWardrobeItems };
@@ -104,6 +104,8 @@ export interface CharacterProfilesMessageDeps {
   reply: (message: ProfilesMessage) => void;
   /** This process's agents, renumbered when a save moves characters. */
   store: AgentStateStore;
+  /** The Directories' defaults or the roster's recency were renumbered: re-send them. */
+  sharedRefsChanged: () => void;
 }
 
 /**
@@ -130,15 +132,17 @@ export function handleCharacterProfilesClientMessage(
   }
   const saveId = saveIdOf(msg);
   const looks = saved.remap ? remapAgentLooks(deps.store, saved.remap) : [];
+  const sharedChanged = saved.remap ? remapSharedCharacterRefs(saved.remap) : false;
   deps.broadcast(characterProfilesLoadedMessage(saveId, saved.profiles, saved.items, looks));
+  if (sharedChanged) deps.sharedRefsChanged();
 }
 
 /**
  * Follow characters.json and wardrobe-items.json for changes another process makes
  * (another window, the other surface, a hand edit): re-read, update the cache, and hand
  * the new list to `broadcast`. A file that no longer validates is ignored (the cached
- * one stays). When characters moved, this process's agents are renumbered. Dispose on
- * shutdown.
+ * one stays). When characters moved, this process's agents are renumbered (the process
+ * that saved already renumbered the machine-wide files). Dispose on shutdown.
  */
 export function watchCharacterProfiles(
   broadcast: (message: ProfilesMessage) => void,

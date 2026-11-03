@@ -56,6 +56,9 @@ export interface CastState {
   current: number;
   /** Null until the wardrobe art is decoded. */
   renderer: CharacterRenderer | null;
+  /** The characters launched most recently, most recent first (profile
+   *  indices): the server's, shared by every office (recentCharactersLoaded). */
+  recent: readonly number[];
   canUndo: boolean;
   canRedo: boolean;
 }
@@ -96,6 +99,7 @@ export class CastStore {
     dirty: false,
     current: 0,
     renderer: null,
+    recent: [],
     canUndo: false,
     canRedo: false,
   };
@@ -176,6 +180,11 @@ export class CastStore {
       draft: this.draft ? saved : null,
       current: Math.min(this.state.current, Math.max(0, profiles.length - 1)),
     });
+  }
+
+  /** A recentCharactersLoaded. */
+  receiveRecent(recent: readonly number[]): void {
+    this.set({ recent });
   }
 
   /**
