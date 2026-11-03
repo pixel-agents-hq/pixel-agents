@@ -49,6 +49,14 @@ export function usageEntry(providerId: string): UsageEntry {
   return entries.get(providerId) ?? EMPTY;
 }
 
+/** The provider whose usage the office shows: the first the server reported a
+ *  bridge status for (it reports them in registration order), or undefined
+ *  before any arrives. */
+export function usageProviderId(): string | undefined {
+  for (const [id, entry] of entries) if (entry.status) return id;
+  return undefined;
+}
+
 /** Whether a request sent at `sentAtSeq` (null = none) still awaits its answer. */
 export function awaitingAnswer(entry: UsageEntry, sentAtSeq: number | null): boolean {
   return sentAtSeq !== null && entry.seq === sentAtSeq;

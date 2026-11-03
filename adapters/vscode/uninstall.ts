@@ -13,7 +13,7 @@
  */
 import { resetHooksConfig } from '../../server/src/configPersistence.js';
 import { uninstallHooks } from '../../server/src/providers/hook/claude/claudeHookInstaller.js';
-import { uninstallStatusLineBridge } from '../../server/src/providers/hook/claude/statusLineInstaller.js';
+import { hookProviders } from '../../server/src/providers/index.js';
 
 const logError = (err: unknown): void => {
   console.error(`[Pixel Agents] ${err instanceof Error ? err.message : String(err)}`);
@@ -23,7 +23,7 @@ const logError = (err: unknown): void => {
 // (an unhandledRejection here would just be noise in VS Code's uninstall flow).
 uninstallHooks()
   .catch(logError)
-  .then(() => uninstallStatusLineBridge())
+  .then(() => Promise.all(hookProviders.map((p) => p.usageBridge?.uninstall())))
   .catch(logError)
   .finally(() => {
     resetHooksConfig();
