@@ -76,11 +76,13 @@ describe('formatDuration', () => {
 
 describe('freshnessLabel', () => {
   it('names the age of the numbers', () => {
-    expect(freshnessLabel(NOW - 10_000, NOW)).toBe('Updated just now');
-    expect(freshnessLabel(NOW - 12 * 60_000, NOW)).toBe('Updated 12m ago');
+    expect(freshnessLabel(NOW - 10_000, NOW, 'Claude Code')).toBe('Updated just now');
+    expect(freshnessLabel(NOW - 12 * 60_000, NOW, 'Claude Code')).toBe('Updated 12m ago');
   });
 
   it('explains where the numbers will come from before any arrive', () => {
-    expect(freshnessLabel(undefined, NOW)).toBe('Updates once a Claude Code session replies');
+    expect(freshnessLabel(undefined, NOW, 'Claude Code')).toBe(
+      'Updates once a Claude Code session replies',
+    );
   });
 });
