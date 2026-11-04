@@ -59,30 +59,42 @@ describe('music composer', () => {
     expect(JSON.stringify(b.steps)).toBe(JSON.stringify(a.steps));
   });
 
-  it('writes playable tunes of a few minutes in every mood', () => {
-    for (const mood of MOOD_KEYS) {
-      for (let seed = 1; seed <= 40; seed++) {
-        const song = makeSong(seed * 7919, mood, seed % 2 ? null : 54);
-        const minutes = (song.steps.length * song.stepDur) / 60;
-        expect(minutes).toBeGreaterThan(2);
-        expect(minutes).toBeLessThan(5);
-        expect(song.root).toBeGreaterThanOrEqual(50);
-        expect(song.root).toBeLessThanOrEqual(58);
-        let melodyNotes = 0;
-        song.steps.forEach((step, i) => {
-          for (const ch of ['pu1', 'pu2', 'wav'] as const) {
-            const ev = step[ch];
-            if (!ev) continue;
-            expect(Number.isFinite(ev.m)).toBe(true);
-            expect(ev.len).toBeGreaterThan(0);
-            // Monophonic: a note never runs into the next note on its channel.
-            for (let j = i + 1; j < i + ev.len; j++) expect(song.steps[j]?.[ch]).toBeUndefined();
+  // One test per mood, and every check of its forty tunes collected into one
+  // list asserted once: a framework assertion per step (about a million in
+  // all) outran the test timeout on its own.
+  it.each(MOOD_KEYS)('writes playable tunes of a few minutes in %s', (mood) => {
+    const violations: string[] = [];
+    const check = (ok: boolean, what: string) => {
+      if (!ok) violations.push(what);
+    };
+    for (let seed = 1; seed <= 40; seed++) {
+      const song = makeSong(seed * 7919, mood, seed % 2 ? null : 54);
+      const tune = `seed ${seed}`;
+      const minutes = (song.steps.length * song.stepDur) / 60;
+      check(minutes > 2, `${tune}: ${minutes} min, not over 2`);
+      check(minutes < 5, `${tune}: ${minutes} min, not under 5`);
+      check(song.root >= 50, `${tune}: root ${song.root} under 50`);
+      check(song.root <= 58, `${tune}: root ${song.root} over 58`);
+      let melodyNotes = 0;
+      song.steps.forEach((step, i) => {
+        for (const ch of ['pu1', 'pu2', 'wav'] as const) {
+          const ev = step[ch];
+          if (!ev) continue;
+          check(Number.isFinite(ev.m), `${tune} step ${i} ${ch}: note ${ev.m} not finite`);
+          check(ev.len > 0, `${tune} step ${i} ${ch}: length ${ev.len} not positive`);
+          // Monophonic: a note never runs into the next note on its channel.
+          for (let j = i + 1; j < i + ev.len; j++) {
+            check(
+              song.steps[j]?.[ch] === undefined,
+              `${tune} step ${i} ${ch}: runs into step ${j}`,
+            );
           }
-          if (step.pu1) melodyNotes++;
-        });
-        expect(melodyNotes).toBeGreaterThan(40);
-      }
+        }
+        if (step.pu1) melodyNotes++;
+      });
+      check(melodyNotes > 40, `${tune}: ${melodyNotes} melody notes, not over 40`);
     }
+    expect(violations).toEqual([]);
   });
 
   it('keeps a picked mood, and Auto picks one of the moods', () => {
