@@ -179,6 +179,7 @@ export function processTranscriptLine(
       if (hasToolUse) {
         cancelWaitingTimer(agentId, waitingTimers);
         agent.isWaiting = false;
+        agent.turnActive = true;
         agent.hadToolsInTurn = true;
         agents.broadcast({ type: 'agentStatus', id: agentId, status: 'active' });
         let hasNonExemptTool = false;
@@ -513,6 +514,7 @@ export function processTranscriptLine(
       }
 
       agent.isWaiting = true;
+      agent.turnActive = false;
       agent.permissionSent = false;
       agent.hadToolsInTurn = false;
       // Skip status post when hooks already handled it

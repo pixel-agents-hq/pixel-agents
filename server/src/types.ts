@@ -22,6 +22,10 @@ export interface AgentState {
    *  the completion queue-operation), see BackgroundSpawns. */
   backgroundSpawns: BackgroundSpawns;
   isWaiting: boolean;
+  /** The office was last told this agent is active (agentStatus 'active', not
+   *  yet 'waiting'), so a connecting client is told too: a turn between two
+   *  tools has no live tool to say so. Unset for an agent with no turn seen. */
+  turnActive?: boolean;
   permissionSent: boolean;
   hadToolsInTurn: boolean;
   /** Directory name — the agent's origin label (only set for multi-root workspaces) */
