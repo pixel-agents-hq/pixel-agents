@@ -20,7 +20,7 @@ interface RosterLaunchInputs {
  * The launch button's menus, shared by the phone's card bar and the desktop
  * toolbar: its Directory drawer and, behind the roster arrow, the roster. At
  * most one is open. A pick closes the roster and opens the drawer, whose
- * launch then wears that character (`palette`, kept through the drawer's
+ * launch then wears that character (`pick`, its profile id, kept through the drawer's
  * closing pop so its heading stays, and replaced or dropped when it next opens); the launch button always opens the plain drawer, dropping a pick.
  * Editing and `+ New` open the Characters view on that character.
  * A press outside the open menu closes it (the drawer's boundary is
@@ -34,7 +34,16 @@ export function useRosterLaunch({
   escapeClosesDrawer,
 }: RosterLaunchInputs) {
   const cast = useCast();
-  const [{ menu, palette }, dispatch] = useReducer(launchMenusReducer, LAUNCH_MENUS_CLOSED);
+  const [{ menu, pick }, dispatch] = useReducer(launchMenusReducer, LAUNCH_MENUS_CLOSED);
+  // The pick is a profile id; its index is read from the cast as it is now,
+  // so a save from another office that renumbers the cast keeps the character.
+  const palette = pick === null ? -1 : cast.profiles.findIndex((p) => p.id === pick);
+  const pickGone = pick !== null && palette < 0;
+
+  // The picked character was deleted: cancel the pick rather than launch another.
+  useEffect(() => {
+    if (pickGone) dispatch({ type: 'dropPick' });
+  }, [pickGone]);
   const rosterRef = useRef<HTMLDivElement>(null);
   /** The roster arrow: its own press toggles, so it is not "outside". */
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -87,7 +96,7 @@ export function useRosterLaunch({
     /** The pick the drawer is asking a Directory for (or, while it pops
      *  shut, was asking), if any (LaunchDrawer's `pick`). */
     pendingPick:
-      palette !== null
+      palette >= 0
         ? ({
             palette,
             heading: `Launch ${characterLabel(cast.profiles[palette], palette)} in`,
@@ -110,7 +119,8 @@ export function useRosterLaunch({
       }
       // The launch it leads to moves it to the front of every office's
       // roster (the server records it).
-      dispatch({ type: 'pick', palette: index });
+      const id = cast.profiles[index]?.id;
+      if (id !== undefined) dispatch({ type: 'pick', id });
     },
     edit,
     addNew: () => {
