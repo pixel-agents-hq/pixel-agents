@@ -80,6 +80,32 @@ describe('resendAgentActivity', () => {
     });
   });
 
+  it('carries a live permission wait, so a reconnect keeps the bubble', () => {
+    const store = new AgentStateStore();
+    store.set(
+      1,
+      createTestAgent({
+        id: 1,
+        permissionSent: true,
+        activeToolStatuses: new Map([['tool-1', 'Running']]),
+        activeToolNames: new Map([['tool-1', 'Bash']]),
+      }),
+    );
+    store.set(
+      2,
+      createTestAgent({
+        id: 2,
+        activeToolStatuses: new Map([['tool-2', 'Running']]),
+        activeToolNames: new Map([['tool-2', 'Bash']]),
+      }),
+    );
+    const sent: Array<Record<string, unknown>> = [];
+    resendAgentActivity((msg) => sent.push(msg), store);
+
+    expect(sent.find((m) => m.id === 1)?.permissionActive).toBe(true);
+    expect(sent.find((m) => m.id === 2)?.permissionActive).toBeUndefined();
+  });
+
   it('handles background tools with flags and promoted skip logic', () => {
     const store = new AgentStateStore();
     // Lead with three background tools: unnamed, named spawn, and promoted
