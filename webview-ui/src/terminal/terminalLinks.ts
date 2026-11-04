@@ -125,7 +125,7 @@ function logicalLine(
     // xterm's own wrap keeps the row's trailing spaces as text.
     if (next === 0) {
       const line = buffer.getLine(y)!;
-      for (let x = (r.cols.at(-1) ?? -1) + 1; x < line.length; x++) {
+      for (let x = (r.cols[r.text.length - 1] ?? -1) + 1; x < line.length; x++) {
         text += ' ';
         cells.push({ row: y, col: x });
       }

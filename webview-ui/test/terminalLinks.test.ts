@@ -54,9 +54,11 @@ describe('terminalLinkOpener', () => {
 });
 
 /** A fake xterm buffer: one string per row, each char one cell; `wide` marks a
- *  cell followed by a width-0 trailer, as xterm stores a CJK character. */
+ *  cell followed by a width-0 trailer, as xterm stores a CJK character. With
+ *  `width`, every row is padded with blank cells to it, as xterm's rows are. */
 function bufferOf(
   rows: Array<{ text: string; wrapped?: boolean; wide?: number[] }>,
+  width = 0,
 ): TerminalBufferLike {
   return {
     getLine: (y) => {
@@ -67,6 +69,7 @@ function bufferOf(
         if (row.wide?.includes(i)) cells.push({ chars: ch, width: 2 }, { chars: '', width: 0 });
         else cells.push({ chars: ch, width: 1 });
       });
+      while (cells.length < width) cells.push({ chars: '', width: 1 });
       return {
         isWrapped: row.wrapped ?? false,
         length: cells.length,
@@ -106,6 +109,18 @@ describe('urlAtCell', () => {
     ]);
     expect(tapAt(buffer, 0, 5)).toBe(url);
     expect(tapAt(buffer, 1, 2)).toBe(url);
+  });
+
+  it('keeps the space a soft-wrapped row ends on', () => {
+    // 15 columns: the space after the URL lands in the last column, and xterm
+    // wraps the next word onto a row of its own.
+    const width = 15;
+    const buffer = bufferOf([{ text: 'go https://a.b ' }, { text: 'c', wrapped: true }], width);
+    expect(urlAtCell(buffer, 0, 5, width)).toBe('https://a.b');
+    expect(urlAtCell(buffer, 1, 0, width)).toBeNull();
+    expect(urlsOnLine(buffer, 0, width)).toEqual([
+      { url: 'https://a.b', start: { row: 0, col: 3 }, end: { row: 0, col: 13 } },
+    ]);
   });
 
   it('keeps cell positions right after a wide character', () => {
