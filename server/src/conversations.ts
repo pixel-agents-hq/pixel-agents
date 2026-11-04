@@ -24,6 +24,7 @@ import {
 } from './constants.js';
 import { transcriptSuffix } from './directorySuggestions.js';
 import { writeJsonAtomic } from './jsonFileWatcher.js';
+import type { AgentState } from './types.js';
 
 /**
  * The sidebar's recent conversations: each Directory's newest transcripts,
@@ -102,6 +103,18 @@ export function conversationLook(sessionId: string): ConversationLook | undefine
  * agent id) wear and where they sit, under their session ids. Writes only
  * when something changed: the office saves its seats often.
  */
+/**
+ * Whether `agent` runs its own session, not one it shares with its Lead:
+ * background-spawn children and inline Teammates carry the Lead's session id,
+ * and must not take over the Lead's entry. A Teammate with a session of its
+ * own (an implicit-team or tmux one) runs it.
+ */
+function runsOwnSession(agent: AgentState, store: AgentStateStore): boolean {
+  if (agent.spawnToolUseId) return false;
+  if (agent.leadAgentId === undefined) return true;
+  return store.get(agent.leadAgentId)?.sessionId !== agent.sessionId;
+}
+
 export function recordConversationLooks(
   store: AgentStateStore,
   seats: Record<string, { seatId?: string }>,
@@ -111,7 +124,9 @@ export function recordConversationLooks(
   const now = Date.now();
   for (const [idStr, meta] of Object.entries(seats)) {
     const agent = store.get(Number(idStr));
-    if (!agent?.sessionId || agent.palette === undefined) continue;
+    if (!agent?.sessionId || agent.palette === undefined || !runsOwnSession(agent, store)) {
+      continue;
+    }
     const before = looks[agent.sessionId];
     const look: ConversationLook = {
       palette: agent.palette,
@@ -170,10 +185,10 @@ export interface LiveSession {
 
 /** Which agent in the office runs each session (keyed by session id). */
 export function liveSessions(store: AgentStateStore): Map<string, LiveSession> {
-  // Background-spawn children share their lead's session: the lead runs it.
+  // Children and inline Teammates share their lead's session: the lead runs it.
   return new Map(
     [...store]
-      .filter(([, agent]) => !agent.spawnToolUseId)
+      .filter(([, agent]) => runsOwnSession(agent, store))
       .map(([id, agent]) => [
         agent.sessionId,
         { agentId: id, palette: agent.palette, repeat: agent.repeat },
