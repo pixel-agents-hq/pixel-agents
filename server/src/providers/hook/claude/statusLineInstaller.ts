@@ -33,6 +33,15 @@ import {
 export const STATUSLINE_NOT_COMMAND_MESSAGE =
   'statusLine in ~/.claude/settings.json is not a command status line — fix or remove it';
 
+/**
+ * Surfaced on Windows when the user has a status line of their own. The
+ * bridge runs a wrapped command through Node's shell, which is cmd.exe there,
+ * not the Git Bash or PowerShell Claude Code runs it with: wrapping it could
+ * break it. A bare bridge (no status line of theirs) is still installed.
+ */
+export const STATUSLINE_WINDOWS_CUSTOM_MESSAGE =
+  "Usage Bars can't wrap your own status line on Windows yet — remove it from ~/.claude/settings.json to connect them";
+
 /** Surfaced when our command was edited by hand after it was written. */
 export const STATUSLINE_EDITED_MESSAGE =
   "The Pixel Agents status line in ~/.claude/settings.json was edited by hand, so the original can't be restored — fix or remove it";
@@ -75,6 +84,10 @@ export async function installStatusLineBridge(packageRoot: string): Promise<void
         const inner = wrappedStatusLineCommand(existing);
         if (inner === undefined) throw new Error(STATUSLINE_EDITED_MESSAGE);
         wrapped = inner ?? undefined;
+      }
+      // ponytail: refuse on Windows; running it in Claude Code's own shell is the full fix.
+      if (wrapped !== undefined && process.platform === 'win32') {
+        throw new Error(STATUSLINE_WINDOWS_CUSTOM_MESSAGE);
       }
       const command = makeStatusLineCommand(scriptPath, wrapped);
       if (command === existing) return false;
