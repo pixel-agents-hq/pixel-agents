@@ -3,6 +3,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { Button } from '../components/ui/Button.js';
 import { PixelIcon } from '../components/ui/PixelIcon.js';
 import {
+  MUSIC_PLAYER_ABOVE_TOOLBAR_BOTTOM_PX,
+  MUSIC_PLAYER_BESIDE_TOOLBAR_MIN_PX,
   MUSIC_PLAYER_BOTTOM_PX,
   MUSIC_PLAYER_WIDTH_PX,
   MUSIC_SHEET_EASE,
@@ -104,6 +106,26 @@ function usePlayerSheet(shown: boolean, settle: (open: boolean) => void, measure
   return { pos, handlers: { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel } };
 }
 
+/** Whether the office (the player's containing block) is narrower than
+ *  MUSIC_PLAYER_BESIDE_TOOLBAR_MIN_PX, kept up to date as it resizes. */
+function useAboveToolbar(
+  rootRef: React.RefObject<HTMLDivElement | null>,
+  active: boolean,
+): boolean {
+  const [narrow, setNarrow] = useState(false);
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const office = root?.offsetParent ?? root?.parentElement;
+    if (!active || !office) return;
+    const check = () => setNarrow(office.clientWidth < MUSIC_PLAYER_BESIDE_TOOLBAR_MIN_PX);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(office);
+    return () => observer.disconnect();
+  }, [rootRef, active]);
+  return active && narrow;
+}
+
 /** Where the player stands on both shells: above the office's foot, its width. */
 const FRAME = {
   bottom: MUSIC_PLAYER_BOTTOM_PX,
@@ -143,10 +165,16 @@ export function MusicPlayer({ mobile }: { mobile: boolean }) {
   const { pos } = sheet;
   const reveal = radio.hidden ? 0 : !mobile ? 1 : pos ? 1 - pos.offset / pos.travel : Number(shown);
   const dragging = pos !== null;
+  // Desktop: in an office too narrow for the player beside the bottom-left
+  // toolbar (a narrow VS Code panel, a wide terminal drawer), it stands above
+  // the toolbar's row, under its menus, so it never covers their buttons.
+  const aboveToolbar = useAboveToolbar(rootRef, !mobile && !radio.hidden);
+  const bottom = aboveToolbar ? MUSIC_PLAYER_ABOVE_TOOLBAR_BOTTOM_PX : MUSIC_PLAYER_BOTTOM_PX;
   useLayoutEffect(() => {
     const h = barRef.current?.offsetHeight ?? 0;
-    setRadioLift(Math.round(reveal * (h + MUSIC_VERSION_GAP_PX)), dragging);
-  }, [reveal, dragging]);
+    const raised = bottom - MUSIC_PLAYER_BOTTOM_PX;
+    setRadioLift(Math.round(reveal * (h + MUSIC_VERSION_GAP_PX + raised)), dragging);
+  }, [reveal, dragging, bottom]);
   useEffect(() => clearRadioLift, []);
 
   const { song } = radio;
@@ -209,8 +237,8 @@ export function MusicPlayer({ mobile }: { mobile: boolean }) {
     return (
       <div
         ref={rootRef}
-        className="absolute right-10 z-30 flex flex-col items-stretch gap-4"
-        style={FRAME}
+        className={`absolute right-10 flex flex-col items-stretch gap-4 ${aboveToolbar ? 'z-10' : 'z-30'}`}
+        style={{ ...FRAME, bottom }}
       >
         {body}
       </div>

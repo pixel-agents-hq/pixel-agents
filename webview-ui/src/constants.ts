@@ -850,6 +850,14 @@ export const MUSIC_VISUALIZER_HEIGHT_PX = 20;
 export const MUSIC_VOLUME_SLIDER_HEIGHT_PX = 88;
 /** Gap between the player and the office's foot. */
 export const MUSIC_PLAYER_BOTTOM_PX = 10;
+/** Desktop: an office narrower than this can't fit the player beside the
+ *  bottom-left toolbar (its row is up to ~330 px with Settings), so the player
+ *  stands above the toolbar's row instead of over its buttons. */
+export const MUSIC_PLAYER_BESIDE_TOOLBAR_MIN_PX = 760;
+/** Desktop, narrow office: the player's bottom, clear of the toolbar's row
+ *  (10 px off the foot + 52 px buttons + 4 px padding and 2 px border a side
+ *  = 74 px) with a 6 px gap. */
+export const MUSIC_PLAYER_ABOVE_TOOLBAR_BOTTOM_PX = 80;
 /** Phone: a release faster than this (px/ms) settles the player the way it was flicked. */
 export const MUSIC_FLICK_PX_PER_MS = 0.4;
 /** Phone: a release slower than this long ago (ms) counts as no flick. */
