@@ -155,7 +155,11 @@ export function watchCharacterProfiles(
       console.warn('[Pixel Agents] Ignoring malformed characters.json change');
       return;
     }
-    const remap = characterRemap(getCharacterProfiles(), profiles);
+    const before = getCharacterProfiles();
+    // no character in common: a different cast was adopted (the defaults standing in for
+    // an unreadable file, say), not an edit of this one, so there is nothing to follow
+    const ids = new Set(profiles.map((p) => p.id));
+    const remap = before.some((p) => ids.has(p.id)) ? characterRemap(before, profiles) : null;
     characterProfilesFile.set(profiles, filePath);
     const looks = remap ? remapAgentLooks(store, remap) : [];
     broadcast(characterProfilesLoadedMessage(undefined, profiles, undefined, looks));
