@@ -56,7 +56,8 @@ export interface TerminalUrl {
   end: CellPos;
 }
 
-/** One visual row as text, with the cell each character came from. */
+/** One visual row as text, with the cell each UTF-16 code unit came from (an emoji or a
+ *  combining accent is one cell holding two units, and the URL match indexes units). */
 interface RowText {
   text: string;
   cols: number[];
@@ -70,8 +71,9 @@ function rowCells(buffer: TerminalBufferLike, y: number): RowText {
     const cell = line.getCell(x);
     // A wide character's trailing cell has width 0 and no text of its own.
     if (!cell || cell.getWidth() === 0) continue;
-    text += cell.getChars() || ' ';
-    cols.push(x);
+    const chars = cell.getChars() || ' ';
+    text += chars;
+    for (let i = 0; i < chars.length; i++) cols.push(x);
   }
   return { text: text.trimEnd(), cols };
 }
@@ -125,7 +127,10 @@ function logicalLine(
     // xterm's own wrap keeps the row's trailing spaces as text.
     if (next === 0) {
       const line = buffer.getLine(y)!;
-      for (let x = (r.cols[r.text.length - 1] ?? -1) + 1; x < line.length; x++) {
+      // past the last kept cell's full width (a wide character's trailer is no space)
+      const last = r.cols[r.text.length - 1];
+      const from = last === undefined ? 0 : last + (line.getCell(last)?.getWidth() ?? 1);
+      for (let x = from; x < line.length; x++) {
         text += ' ';
         cells.push({ row: y, col: x });
       }
