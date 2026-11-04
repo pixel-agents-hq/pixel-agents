@@ -417,4 +417,46 @@ describe('conversations', () => {
     );
     expect([...liveSessions(store)]).toEqual([[uuid(1), { agentId: 3, palette: 2, repeat: 1 }]]);
   });
+
+  it("keeps a lead's session for the lead, not its inline teammate", () => {
+    const store = new AgentStateStore();
+    const base = { projectDir, jsonlFile: 'a', isExternal: false };
+    store.set(3, createAgentState({ ...base, id: 3, sessionId: uuid(1), palette: 2, repeat: 0 }));
+    // Inline teammate: the lead's session, created after it (no spawnToolUseId).
+    store.set(
+      5,
+      createAgentState({
+        ...base,
+        id: 5,
+        sessionId: uuid(1),
+        leadAgentId: 3,
+        palette: 2,
+        repeat: 0,
+      }),
+    );
+    // Teammate with a session of its own: it runs that one.
+    store.set(
+      6,
+      createAgentState({
+        ...base,
+        id: 6,
+        sessionId: uuid(2),
+        leadAgentId: 3,
+        palette: 4,
+        repeat: 0,
+      }),
+    );
+    expect([...liveSessions(store)]).toEqual([
+      [uuid(1), { agentId: 3, palette: 2, repeat: 0 }],
+      [uuid(2), { agentId: 6, palette: 4, repeat: 0 }],
+    ]);
+
+    recordConversationLooks(store, {
+      '3': { seatId: 'lead-chair' },
+      '5': { seatId: 'teammate-chair' },
+      '6': { seatId: 'own-chair' },
+    });
+    expect(conversationLook(uuid(1))).toMatchObject({ seatId: 'lead-chair' });
+    expect(conversationLook(uuid(2))).toMatchObject({ palette: 4, seatId: 'own-chair' });
+  });
 });
