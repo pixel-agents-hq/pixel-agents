@@ -13,16 +13,16 @@ const run = (...actions: LaunchMenusAction[]): LaunchMenusState =>
 
 describe('launchMenusReducer', () => {
   it('a pick opens the drawer for that character and shuts the roster', () => {
-    expect(run({ type: 'openRoster' }, { type: 'pick', palette: 3 })).toEqual({
+    expect(run({ type: 'openRoster' }, { type: 'pick', id: 'char-3' })).toEqual({
       menu: 'drawer',
-      palette: 3,
+      pick: 'char-3',
     });
   });
 
   it('the launch button drops a pick: the plain drawer, on every shell', () => {
-    expect(run({ type: 'pick', palette: 3 }, { type: 'openDrawer' })).toEqual({
+    expect(run({ type: 'pick', id: 'char-3' }, { type: 'openDrawer' })).toEqual({
       menu: 'drawer',
-      palette: null,
+      pick: null,
     });
   });
 
@@ -40,22 +40,32 @@ describe('launchMenusReducer', () => {
 
 describe('the pick through the drawer closing', () => {
   it('the closing drawer keeps the pick, so its heading stays through the pop', () => {
-    expect(run({ type: 'pick', palette: 3 }, { type: 'close', which: 'drawer' })).toEqual({
+    expect(run({ type: 'pick', id: 'char-3' }, { type: 'close', which: 'drawer' })).toEqual({
       menu: 'none',
-      palette: 3,
+      pick: 'char-3',
     });
-    expect(run({ type: 'pick', palette: 3 }, { type: 'openRoster' }).palette).toBe(3);
+    expect(run({ type: 'pick', id: 'char-3' }, { type: 'openRoster' }).pick).toBe('char-3');
+  });
+
+  it('a pick whose character left the cast is dropped, with the drawer asking for it', () => {
+    expect(run({ type: 'pick', id: 'char-3' }, { type: 'dropPick' })).toEqual({
+      menu: 'none',
+      pick: null,
+    });
+    expect(
+      run({ type: 'pick', id: 'char-3' }, { type: 'openRoster' }, { type: 'dropPick' }),
+    ).toEqual({ menu: 'roster', pick: null });
   });
 
   it('the next opening replaces the old pick or drops it', () => {
-    const closed = run({ type: 'pick', palette: 3 }, { type: 'close', which: 'drawer' });
+    const closed = run({ type: 'pick', id: 'char-3' }, { type: 'close', which: 'drawer' });
     expect(launchMenusReducer(closed, { type: 'openDrawer' })).toEqual({
       menu: 'drawer',
-      palette: null,
+      pick: null,
     });
-    expect(launchMenusReducer(closed, { type: 'pick', palette: 1 })).toEqual({
+    expect(launchMenusReducer(closed, { type: 'pick', id: 'char-1' })).toEqual({
       menu: 'drawer',
-      palette: 1,
+      pick: 'char-1',
     });
   });
 });
