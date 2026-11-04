@@ -43,6 +43,8 @@ export function resendAgentActivity(
         toolId,
         status,
         toolName,
+        // A live permission wait: without it the office clears the bubble.
+        permissionActive: agent.permissionSent || undefined,
       });
     }
 
@@ -61,6 +63,7 @@ export function resendAgentActivity(
         toolId,
         status,
         toolName,
+        permissionActive: agent.permissionSent || undefined,
         runInBackground: true,
         isTeammateSpawn: agent.teammateSpawnToolIds?.has(toolId) || undefined,
       });
