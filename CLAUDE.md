@@ -4,6 +4,8 @@ Pixel art office where AI agents (Claude Code terminals today, any tool tomorrow
 
 `CONTEXT.md` is the canonical glossary — read it for what terms like Agent, Sub-agent, Teammate, Lead, Adopt, or Headless agent mean here, and use its vocabulary in code, comments, and docs.
 
+啟用 AI 知識庫：筆記一律放在專案目錄下的 `.note/`（已列入 `.gitignore`，不提交）。
+
 ## Architecture
 
 Strict layering: `core/` depends on nothing; `server/` depends only on `core/`; `webview-ui/` depends only on `core/`; `adapters/vscode/` depends on `core/` and `server/`. The standalone CLI never imports `adapters/vscode/` and vice versa.
@@ -685,5 +687,15 @@ Supporting: `wall-tile-editor.html` (wall sprite editing), `jsonl-viewer.html` (
 
 - Extension ID: `pablodelucca.pixel-agents` (VS Code Marketplace + Open VSX)
 - npm package: `pixel-agents` (CLI bin: `pixel-agents`)
-- GitHub: `https://github.com/pixel-agents-hq/pixel-agents`
 - License: MIT
+
+## GitHub
+
+截至 2026-11-05 的查詢結果（用 `gh` 重新確認，不要當作固定事實）：
+
+- 開發 repo（`origin`，SSH）：`passontw/pixel-agents`，公開 fork，預設分支 `main`，目前只有 `main` 一個分支。擴充開發在這個 repo 進行。
+- 上游：`pixel-agents-hq/pixel-agents`，Issues 開啟，本帳號權限為 READ。本機沒有設定 `upstream` remote，同步上游前要先自行加入。
+- Issues：fork 的 Issues 於 2026-11-05 以 `gh repo edit passontw/pixel-agents --enable-issues` 開啟，開啟時沒有任何 issue 與 PR。`gh workflow list` 對 fork 回傳空清單，CI 是否會在 fork 上執行，以 `.github/workflows/` 為準，不要假設。
+- 登入身分：`gh` 以帳號 `passontw` 登入（keyring，scopes：`gist`、`read:org`、`repo`、`workflow`），對 fork 為 ADMIN。
+- 所屬組織：`passoncomtw`、`trip-service`。`passontw` 與 `passoncomtw` 底下的 repo 都可用 `gh repo list <owner>` 查詢，含私有 repo。
+- 上游 Issues 約 112 個 open（2026-11-03 查詢），要參考時用 `gh issue list -R pixel-agents-hq/pixel-agents`。

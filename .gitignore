@@ -41,6 +41,7 @@ agent-orchestrator.yaml
 
 # Local notes (not for commit)
 /notes/
+/.note/
 /docs/e2e-*.md
 !/docs/e2e-claude-mocking.md
 
