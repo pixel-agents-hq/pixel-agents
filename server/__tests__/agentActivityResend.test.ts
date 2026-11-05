@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { resendAgentActivity } from '../src/agentActivityResend.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
+import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import { processTranscriptLine, setHookProvider } from '../src/transcriptParser.js';
 import type { AgentState } from '../src/types.js';
 
 function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
@@ -78,6 +80,76 @@ describe('resendAgentActivity', () => {
       status: 'Running',
       toolName: 'Bash',
     });
+  });
+
+  it('tells a connecting office an agent is active between two tools, and never one at rest', () => {
+    setHookProvider(claudeProvider);
+    vi.useFakeTimers();
+    try {
+      const store = new AgentStateStore();
+      store.set(1, createTestAgent({ id: 1 }));
+      store.set(2, createTestAgent({ id: 2 }));
+      // What an office already open is told, and what a new one is replayed.
+      const live: Array<Record<string, unknown>> = [];
+      store.on('broadcast', (m) => live.push(m as Record<string, unknown>));
+      const statusOf = (msgs: Array<Record<string, unknown>>, id: number) =>
+        msgs.filter((m) => m.type === 'agentStatus' && m.id === id).at(-1)?.status;
+      const replay = () => {
+        const sent: Array<Record<string, unknown>> = [];
+        resendAgentActivity((msg) => sent.push(msg), store);
+        return sent;
+      };
+      const parse = (record: unknown) =>
+        processTranscriptLine(1, JSON.stringify(record), store, new Map(), new Map());
+
+      // Agent 1 ran a Read, and it finished: no live tool, the turn goes on.
+      parse({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: {} }] },
+      });
+      parse({
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'ok' }] },
+      });
+      expect(store.get(1)!.activeToolIds.size).toBe(0);
+      expect(statusOf(live, 1)).toBe('active');
+      expect(statusOf(replay(), 1)).toBe('active');
+      // Agent 2 never had a turn: it restores at rest.
+      expect(statusOf(replay(), 2)).toBeUndefined();
+
+      // The turn ends: both offices hear it is waiting, and nothing says active.
+      parse({ type: 'system', subtype: 'turn_duration', durationMs: 1 });
+      expect(statusOf(live, 1)).toBe('waiting');
+      expect(statusOf(replay(), 1)).toBe('waiting');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('carries a live permission wait, so a reconnect keeps the bubble', () => {
+    const store = new AgentStateStore();
+    store.set(
+      1,
+      createTestAgent({
+        id: 1,
+        permissionSent: true,
+        activeToolStatuses: new Map([['tool-1', 'Running']]),
+        activeToolNames: new Map([['tool-1', 'Bash']]),
+      }),
+    );
+    store.set(
+      2,
+      createTestAgent({
+        id: 2,
+        activeToolStatuses: new Map([['tool-2', 'Running']]),
+        activeToolNames: new Map([['tool-2', 'Bash']]),
+      }),
+    );
+    const sent: Array<Record<string, unknown>> = [];
+    resendAgentActivity((msg) => sent.push(msg), store);
+
+    expect(sent.find((m) => m.id === 1)?.permissionActive).toBe(true);
+    expect(sent.find((m) => m.id === 2)?.permissionActive).toBeUndefined();
   });
 
   it('handles background tools with flags and promoted skip logic', () => {

@@ -122,7 +122,12 @@ test.describe('Standalone / Characters items', () => {
       })
       .toEqual([expect.objectContaining({ label: 'My bob', base: 'bob', piece: 'hair' })]);
     const [item] = read<{ id: string }[]>('wardrobe-items.json')!;
-    expect(read<{ hair?: string }[]>('characters.json')?.[0]?.hair).toBe(item.id);
+    // The items file is written first, characters.json just after: poll it too.
+    await expect
+      .poll(() => read<{ hair?: string }[]>('characters.json')?.[0]?.hair, {
+        timeout: SAVE_TIMEOUT_MS,
+      })
+      .toBe(item.id);
 
     await page.reload();
     await editCharacter(page, 1);
