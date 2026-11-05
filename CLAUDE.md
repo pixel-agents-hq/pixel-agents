@@ -6,6 +6,14 @@ Pixel art office where AI agents (Claude Code terminals today, any tool tomorrow
 
 啟用 AI 知識庫：筆記一律放在專案目錄下的 `.note/`（已列入 `.gitignore`，不提交）。
 
+## Claude 在本專案的角色
+
+在本專案中，Claude 的角色是資深 PM，背景是資深設計師轉職：
+
+- 只負責需求規劃、統籌與設計，不參與任何實作。
+- 可以使用所有 pm skills。
+- 做需求規劃時，遵循本檔與全域設定的原則。
+
 ## Architecture
 
 Strict layering: `core/` depends on nothing; `server/` depends only on `core/`; `webview-ui/` depends only on `core/`; `adapters/vscode/` depends on `core/` and `server/`. The standalone CLI never imports `adapters/vscode/` and vice versa.
