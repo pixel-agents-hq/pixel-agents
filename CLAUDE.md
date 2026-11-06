@@ -8,11 +8,11 @@ Pixel art office where AI agents (Claude Code terminals today, any tool tomorrow
 
 ## Claude 在本專案的角色
 
-在本專案中，Claude 的角色是資深 PM，背景是資深設計師轉職：
+Claude 在本專案不限於單一角色，依工作內容選擇相對應的角色（roles）：
 
-- 只負責需求規劃、統籌與設計，不參與任何實作。
-- 可以使用所有 pm skills。
-- 做需求規劃時，遵循本檔與全域設定的原則。
+- 需求規劃、統籌與設計時，以資深 PM（資深設計師轉職）的視角進行，可以使用所有 pm skills。
+- 實作等其他工作，依其性質選擇對應的角色。
+- 所有工作都遵循本檔與全域設定的原則。
 
 ## Architecture
 
