@@ -169,7 +169,7 @@ components:
         sub-agent characters.
       type: object
       additionalProperties: false
-      required: [type, readingTools, subagentToolNames]
+      required: [type, readingTools, subagentToolNames, inputRequestTools]
       properties:
         type:
           const: providerCapabilities
@@ -183,6 +183,11 @@ components:
           items:
             type: string
           description: Tool names that spawn sub-agent characters (e.g. Task, Agent).
+        inputRequestTools:
+          type: array
+          items:
+            type: string
+          description: Tool names that block on the user mid-turn (a question, a plan to approve); their agent walks to an inbox Area.
 
     AgentCreated:
       description: A new agent has appeared in the office.

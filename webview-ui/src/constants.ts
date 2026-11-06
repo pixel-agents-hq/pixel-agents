@@ -149,6 +149,9 @@ export const AREA_LABEL_FALLBACK_COLOR = '#ffffff';
 export const AREA_LABEL_SHADOW_COLOR = '#000000';
 /** Drop-shadow alpha behind area labels. */
 export const AREA_LABEL_SHADOW_ALPHA = 0.6;
+/** Sub-agents a lead must have in one turn before its finished ones gather in
+ *  the meeting Area. A single helper has no one to meet with. */
+export const MEETING_MIN_SUBAGENTS = 2;
 
 // ── VisualColorPicker (HSV wheel + brightness for carpets) ───
 export const VISUAL_COLOR_PICKER_SV_SIZE_PX = 180;

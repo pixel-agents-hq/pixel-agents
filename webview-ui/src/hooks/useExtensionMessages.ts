@@ -284,6 +284,7 @@ export function useExtensionMessages(
         setProviderCapabilities({
           readingTools: msg.readingTools,
           subagentToolNames: msg.subagentToolNames,
+          inputRequestTools: msg.inputRequestTools,
         });
         return;
       }
@@ -508,6 +509,11 @@ export function useExtensionMessages(
             [id]: list.map((t) => (t.toolId === toolId ? { ...t, done: true } : t)),
           };
         });
+        // A foreground spawn's tool returning means its sub-agent handed its work
+        // back. A background spawn's tool returns at launch, so it is skipped.
+        if (!backgroundParentToolIdsRef.current[id]?.has(toolId)) {
+          os.markSubagentFinished(id, toolId);
+        }
       } else if (msg.type === 'agentToolsClear') {
         const id = msg.id as number;
         const bgSet = backgroundParentToolIdsRef.current[id];
@@ -538,9 +544,15 @@ export function useExtensionMessages(
         const hasInlineTeammates =
           clearCh?.teamName && clearCh?.isTeamLead && !clearCh?.teamUsesTmux;
         if (!hasInlineTeammates) {
+          // Sub-agents seated in a meeting stay until the lead's turn ENDS
+          // (endMeetingIfDone); this clear also fires when a turn starts.
           const doomed: string[] = [];
-          for (const meta of os.subagentMeta.values()) {
-            if (meta.parentAgentId === id && !bgSet?.has(meta.parentToolId)) {
+          for (const [subId, meta] of os.subagentMeta) {
+            if (
+              meta.parentAgentId === id &&
+              !bgSet?.has(meta.parentToolId) &&
+              !os.characters.get(subId)?.holdInArea
+            ) {
               doomed.push(meta.parentToolId);
             }
           }
@@ -681,8 +693,16 @@ export function useExtensionMessages(
           }
           return { ...prev, [id]: next };
         });
-        // Remove sub-agent character
-        os.removeSubagent(id, parentToolId);
+        // A finished background spawn whose team is meeting stays seated in the
+        // meeting room; no longer in the background set, it goes at the lead's
+        // next agentToolsClear like any foreground sub-agent.
+        const subId = os.getSubagentId(id, parentToolId);
+        if (subId !== null && os.markSubagentFinished(id, parentToolId)) {
+          os.setAgentTool(subId, null);
+          os.setAgentActive(subId, false);
+        } else {
+          os.removeSubagent(id, parentToolId);
+        }
         setSubagentCharacters((prev) =>
           prev.filter((s) => !(s.parentAgentId === id && s.parentToolId === parentToolId)),
         );

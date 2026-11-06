@@ -107,6 +107,7 @@ export function updateCharacter(
       }
       // If no longer active, stand up and start wandering (after seatTimer expires)
       if (!ch.isActive) {
+        if (ch.holdInArea) break;
         if (ch.seatTimer > 0) {
           ch.seatTimer -= dt;
           break;
@@ -126,6 +127,7 @@ export function updateCharacter(
       // No idle animation — static pose
       ch.frame = 0;
       if (ch.seatTimer < 0) ch.seatTimer = 0; // clear turn-end sentinel
+      if (ch.holdInArea) break;
       // If became active, pathfind to seat
       if (ch.isActive) {
         if (!ch.seatId) {
@@ -291,7 +293,7 @@ export function updateCharacter(
       }
 
       // If became active while wandering, repath to seat
-      if (ch.isActive && ch.seatId) {
+      if (ch.isActive && ch.seatId && !ch.holdInArea) {
         const seat = seats.get(ch.seatId);
         if (seat) {
           const lastStep = ch.path[ch.path.length - 1];

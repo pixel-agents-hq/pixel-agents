@@ -12,6 +12,7 @@ import {
   INACTIVE_SEAT_TIMER_MIN_SEC,
   INACTIVE_SEAT_TIMER_RANGE_SEC,
   MAX_PET_ID_LENGTH,
+  MEETING_MIN_SUBAGENTS,
   PET_HIT_HALF_WIDTH,
   PET_HIT_HEIGHT,
   WAITING_BUBBLE_DURATION_SEC,
@@ -27,7 +28,9 @@ import {
 import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
 import { getPetCount, getPetName } from '../sprites/petSpriteData.js';
 import { getLoadedCharacterCount } from '../sprites/spriteData.js';
+import { isInputRequestToolName } from '../toolUtils.js';
 import type {
+  AreaRole,
   Character,
   FurnitureInstance,
   OfficeLayout,
@@ -87,6 +90,8 @@ export class OfficeState {
   /** Reverse lookup: sub-agent character ID → parent info */
   subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }> = new Map();
   private nextSubagentId = -1;
+  /** Sub-agent character IDs whose spawning tool has returned (work handed back). */
+  private finishedSubagents = new Set<number>();
 
   /**
    * directoryName → list of Area labels that Directory belongs to.
@@ -422,6 +427,131 @@ export class OfficeState {
     return best;
   }
 
+  private roleAreaLabels(role: AreaRole): Set<string> {
+    return new Set((this.layout.areas ?? []).filter((a) => a.role === role).map((a) => a.label));
+  }
+
+  private tileArea(col: number, row: number): string | null {
+    return this.layout.areaTiles?.[row * this.layout.cols + col] ?? null;
+  }
+
+  /** A walkable tile in a role Area that no other character stands on or is
+   *  heading to, so a queue of waiting agents spreads out instead of stacking. */
+  private freeTileInRole(role: AreaRole, exceptId: number): { col: number; row: number } | null {
+    const labels = this.roleAreaLabels(role);
+    if (labels.size === 0) return null;
+    const taken = new Set<string>();
+    for (const other of this.characters.values()) {
+      if (other.id === exceptId) continue;
+      taken.add(`${other.tileCol},${other.tileRow}`);
+      const dest = other.path[other.path.length - 1];
+      if (dest) taken.add(`${dest.col},${dest.row}`);
+    }
+    const free = this.walkableTiles.filter((t) => {
+      const label = this.tileArea(t.col, t.row);
+      return label !== null && labels.has(label) && !taken.has(`${t.col},${t.row}`);
+    });
+    return free.length > 0 ? free[Math.floor(Math.random() * free.length)] : null;
+  }
+
+  private freeSeatInRole(role: AreaRole): string | null {
+    const labels = this.roleAreaLabels(role);
+    for (const [uid, seat] of this.seats) {
+      if (seat.assigned) continue;
+      const label = this.seatZone(uid);
+      if (label !== null && labels.has(label)) return uid;
+    }
+    return null;
+  }
+
+  /**
+   * Walk a character into a role Area and hold it there. Sub-agents take a
+   * free chair in the meeting room (so they sit round the table); everyone
+   * else stands on a free tile, keeping their own desk for when they return.
+   * Returns false when the layout has no such Area or it is full.
+   */
+  private sendToRoleArea(ch: Character, role: AreaRole): boolean {
+    if (ch.holdInArea) return true;
+    let target: { col: number; row: number } | null = null;
+    if (ch.isSubagent && !ch.seatId) {
+      const seatId = this.freeSeatInRole(role);
+      if (seatId) {
+        const seat = this.seats.get(seatId)!;
+        seat.assigned = true;
+        ch.seatId = seatId;
+        target = { col: seat.seatCol, row: seat.seatRow };
+      }
+    }
+    target ??= this.freeTileInRole(role, ch.id);
+    if (!target) return false;
+    ch.holdInArea = true;
+    const { col, row } = target;
+    const path = this.withOwnSeatUnblocked(ch, () =>
+      findPath(ch.tileCol, ch.tileRow, col, row, this.tileMap, this.blockedTiles),
+    );
+    ch.path = path;
+    ch.moveProgress = 0;
+    ch.frame = 0;
+    ch.frameTimer = 0;
+    if (path.length > 0) {
+      ch.state = CharacterState.WALK;
+    } else {
+      ch.state = CharacterState.IDLE;
+    }
+    return true;
+  }
+
+  private releaseFromArea(ch: Character): void {
+    if (!ch.holdInArea) return;
+    ch.holdInArea = false;
+    this.sendToSeat(ch.id);
+  }
+
+  /** Blocked on the user right now: a permission prompt or a question tool. */
+  private needsUser(ch: Character): boolean {
+    return ch.bubbleType === 'permission' || isInputRequestToolName(ch.currentTool);
+  }
+
+  private liveSubagentsOf(parentAgentId: number): Character[] {
+    const subs: Character[] = [];
+    for (const [id, meta] of this.subagentMeta) {
+      if (meta.parentAgentId !== parentAgentId) continue;
+      const ch = this.characters.get(id);
+      if (ch && ch.matrixEffect !== 'despawn') subs.push(ch);
+    }
+    return subs;
+  }
+
+  /**
+   * A sub-agent handed its work back. Once the lead has had enough helpers,
+   * every finished one walks to the meeting room and waits there until the
+   * lead's turn ends (when the sub-agents are cleared as usual). Returns
+   * whether this one is now held for the meeting, so a finished background
+   * spawn can be kept instead of despawned on the spot.
+   */
+  markSubagentFinished(parentAgentId: number, parentToolId: string): boolean {
+    const id = this.subagentIdMap.get(`${parentAgentId}:${parentToolId}`);
+    if (id === undefined) return false;
+    this.finishedSubagents.add(id);
+    const subs = this.liveSubagentsOf(parentAgentId);
+    if (subs.length < MEETING_MIN_SUBAGENTS) return false;
+    for (const sub of subs) {
+      if (this.finishedSubagents.has(sub.id)) this.sendToRoleArea(sub, 'meeting');
+    }
+    return this.characters.get(id)?.holdInArea === true;
+  }
+
+  /** The lead's turn ended: once every helper has handed back, the meeting
+   *  is over and the sub-agents seated there leave. */
+  private endMeetingIfDone(parentAgentId: number): void {
+    const subs = this.liveSubagentsOf(parentAgentId);
+    if (subs.some((s) => !this.finishedSubagents.has(s.id))) return;
+    for (const sub of subs) {
+      const meta = this.subagentMeta.get(sub.id);
+      if (sub.holdInArea && meta) this.removeSubagent(parentAgentId, meta.parentToolId);
+    }
+  }
+
   /**
    * Pick a diverse palette for a new agent based on currently active agents.
    * First 6 agents each get a unique skin (random order). Beyond 6, skins
@@ -754,6 +884,11 @@ export class OfficeState {
 
     this.subagentIdMap.set(key, id);
     this.subagentMeta.set(id, { parentAgentId, parentToolId });
+    // A helper spawned while its team is already meeting (typically the one
+    // asked to sum up what they learned) joins them at the table.
+    if (this.liveSubagentsOf(parentAgentId).some((s) => s.id !== id && s.holdInArea)) {
+      this.sendToRoleArea(ch, 'meeting');
+    }
     return id;
   }
 
@@ -782,6 +917,7 @@ export class OfficeState {
     // Clean up tracking maps immediately so keys don't collide
     this.subagentIdMap.delete(key);
     this.subagentMeta.delete(id);
+    this.finishedSubagents.delete(id);
     if (this.selectedAgentId === id) this.selectedAgentId = null;
     if (this.cameraFollowId === id) this.cameraFollowId = null;
   }
@@ -809,6 +945,7 @@ export class OfficeState {
           ch.bubbleType = null;
         }
         this.subagentMeta.delete(id);
+        this.finishedSubagents.delete(id);
         if (this.selectedAgentId === id) this.selectedAgentId = null;
         if (this.cameraFollowId === id) this.cameraFollowId = null;
         toRemove.push(key);
@@ -832,8 +969,14 @@ export class OfficeState {
         // Sentinel -1: signals turn just ended, skip next seat rest timer.
         // Prevents the WALK handler from setting a 2-4 min rest on arrival.
         ch.seatTimer = -1;
-        ch.path = [];
-        ch.moveProgress = 0;
+        // A held character is mid-walk to its role Area; let it arrive.
+        if (!ch.holdInArea) {
+          ch.path = [];
+          ch.moveProgress = 0;
+        }
+        if (!ch.isSubagent) this.endMeetingIfDone(id);
+      } else if (!ch.isSubagent && !this.needsUser(ch)) {
+        this.releaseFromArea(ch);
       }
       this.rebuildFurnitureInstances();
     }
@@ -911,6 +1054,12 @@ export class OfficeState {
     const ch = this.characters.get(id);
     if (ch) {
       ch.currentTool = tool;
+      if (ch.isSubagent) return;
+      if (this.needsUser(ch)) {
+        this.sendToRoleArea(ch, 'inbox');
+      } else {
+        this.releaseFromArea(ch);
+      }
     }
   }
 
@@ -919,6 +1068,7 @@ export class OfficeState {
     if (ch) {
       ch.bubbleType = 'permission';
       ch.bubbleTimer = 0;
+      if (!ch.isSubagent) this.sendToRoleArea(ch, 'inbox');
     }
   }
 
@@ -927,6 +1077,7 @@ export class OfficeState {
     if (ch && ch.bubbleType === 'permission') {
       ch.bubbleType = null;
       ch.bubbleTimer = 0;
+      if (!ch.isSubagent && !this.needsUser(ch)) this.releaseFromArea(ch);
     }
   }
 
@@ -936,6 +1087,7 @@ export class OfficeState {
       ch.bubbleType = 'waiting';
       ch.waitingAwaitingInput = awaitingInput;
       ch.bubbleTimer = WAITING_BUBBLE_DURATION_SEC;
+      if (awaitingInput && !ch.isSubagent) this.sendToRoleArea(ch, 'inbox');
     }
   }
 

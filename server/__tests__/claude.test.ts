@@ -23,6 +23,11 @@ describe('claudeProvider', () => {
       }
       expect(claudeProvider.readingTools.has('Edit')).toBe(false);
     });
+    it('has the question tools in inputRequestTools', () => {
+      expect(claudeProvider.inputRequestTools.has('AskUserQuestion')).toBe(true);
+      expect(claudeProvider.inputRequestTools.has('ExitPlanMode')).toBe(true);
+      expect(claudeProvider.inputRequestTools.has('Read')).toBe(false);
+    });
     it('has protocolVersion 1', () => {
       expect(claudeProvider.protocolVersion).toBe(1);
     });
