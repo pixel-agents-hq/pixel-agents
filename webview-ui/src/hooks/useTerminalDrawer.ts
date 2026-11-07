@@ -18,6 +18,10 @@ const DEFAULT_APPEARANCE: AgentAppearance = { palette: 0, hueShift: 0 };
 interface TerminalDrawerInputs {
   /** Agent ids with a live server-side PTY, in open order (control plane). */
   terminalAgentIds: number[];
+  /** The subset in the Workspace the office is showing (all of them when
+   *  there is no Workspace filter). Panes stay mounted for every terminal; only
+   *  tabs, the shown pane and the reveal-on-open follow this list. */
+  visibleTerminalAgentIds: number[];
   getOfficeState: () => OfficeState;
   agentTools: Record<number, ToolActivity[]>;
   agentStatuses: Record<number, string>;
@@ -76,6 +80,7 @@ export function clampDrawerWidth(preferredPx: number, viewportPx: number): numbe
  */
 export function useTerminalDrawer({
   terminalAgentIds,
+  visibleTerminalAgentIds,
   getOfficeState,
   agentTools,
   agentStatuses,
@@ -99,18 +104,27 @@ export function useTerminalDrawer({
   const [connStatuses, setConnStatuses] = useState<Record<number, TerminalConnectionStatus>>({});
 
   const shownAgentId =
-    activeAgentId !== null && terminalAgentIds.includes(activeAgentId)
+    activeAgentId !== null && visibleTerminalAgentIds.includes(activeAgentId)
       ? activeAgentId
-      : (terminalAgentIds[0] ?? null);
+      : (visibleTerminalAgentIds[0] ?? null);
 
   // Reveal a newly-opened terminal. Launching is async — the toolbar sends
   // launchAgent and the server answers with terminalSessionOpened once the PTY
   // is up — so "open the drawer on launch" is expressed as "open it when a
   // terminal we hadn't seen appears". This also restores the drawer after a
   // reload, when webviewReady re-announces the live sessions.
+  //
+  // Only a terminal in the shown Workspace is revealed: one that opens in
+  // another (an adopted session's PTY, a launch from a second office) must not
+  // pop the drawer over what the user is looking at, and switching Workspaces
+  // changes which terminals are visible without any of them being new.
   const knownIdsRef = useRef<number[]>([]);
+  const visibleIdsRef = useRef(visibleTerminalAgentIds);
+  visibleIdsRef.current = visibleTerminalAgentIds;
   useEffect(() => {
-    const added = terminalAgentIds.filter((id) => !knownIdsRef.current.includes(id));
+    const added = terminalAgentIds.filter(
+      (id) => !knownIdsRef.current.includes(id) && visibleIdsRef.current.includes(id),
+    );
     knownIdsRef.current = terminalAgentIds;
     if (added.length === 0) return;
     const newest = added[added.length - 1];

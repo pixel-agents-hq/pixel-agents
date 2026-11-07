@@ -81,6 +81,11 @@ export class OfficeState {
   }
   cameraFollowId: number | null = null;
   hoveredAgentId: number | null = null;
+  /** Which top-level agents the office currently shows (the active Workspace).
+   *  Null shows everyone. Hidden characters stay in `characters` — seats,
+   *  pathfinding and persistence are untouched; they are only skipped when
+   *  drawing and hit-testing. A sub-agent is judged by its parent. */
+  private visibilityFilter: ((agentId: number) => boolean) | null = null;
   hoveredTile: { col: number; row: number } | null = null;
   /** Maps "parentId:toolId" → sub-agent character ID (negative) */
   subagentIdMap: Map<string, number> = new Map();
@@ -579,6 +584,28 @@ export class OfficeState {
     if (!this.characters.has(id)) return;
     this.selectedAgentId = id;
     this.cameraFollowId = id;
+  }
+
+  /** Whether the office shows this character right now (see `visibilityFilter`). */
+  isCharacterVisible(id: number): boolean {
+    return this.visibilityFilter === null || this.visibilityFilter(this.terminalOwnerOf(id));
+  }
+
+  /** Install the visibility rule and drop any selection, camera follow or hover
+   *  that now points at a hidden character: the camera must not keep chasing,
+   *  and the card bars must not keep highlighting, someone the office no longer
+   *  shows. Called again whenever the rule's inputs change. */
+  setVisibilityFilter(filter: ((agentId: number) => boolean) | null): void {
+    this.visibilityFilter = filter;
+    if (this.selectedAgentId !== null && !this.isCharacterVisible(this.selectedAgentId)) {
+      this.selectedAgentId = null;
+    }
+    if (this.cameraFollowId !== null && !this.isCharacterVisible(this.cameraFollowId)) {
+      this.cameraFollowId = null;
+    }
+    if (this.hoveredAgentId !== null && !this.isCharacterVisible(this.hoveredAgentId)) {
+      this.hoveredAgentId = null;
+    }
   }
 
   /** The agent that owns `id`'s terminal: a sub-agent's parent, else itself. */
@@ -1204,6 +1231,16 @@ export class OfficeState {
     return chars;
   }
 
+  /** What the renderer draws: `getCharacters()` minus those the active
+   *  Workspace hides. The greeter is never an agent, so it is always shown. */
+  getVisibleCharacters(): Character[] {
+    const chars = Array.from(this.characters.values()).filter((ch) =>
+      this.isCharacterVisible(ch.id),
+    );
+    if (this.greeter) chars.push(this.greeter);
+    return chars;
+  }
+
   /** Get character at pixel position (for hit testing). Returns id or null.
    *  Agents only: clicks pass straight through the consent greeter, which is
    *  a prop, not something to select or follow. */
@@ -1212,6 +1249,7 @@ export class OfficeState {
     for (const ch of chars) {
       // Skip characters that are despawning
       if (ch.matrixEffect === 'despawn') continue;
+      if (!this.isCharacterVisible(ch.id)) continue;
       // Character sprite is 16x24, anchored bottom-center
       // Apply sitting offset to match visual position
       const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;

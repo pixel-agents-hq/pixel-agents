@@ -1,4 +1,5 @@
 import type { StateAdapter } from '../../core/src/adapter.js';
+import { DEFAULT_WORKSPACE_ID } from '../../core/src/constants.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import { resendAgentActivity } from './agentActivityResend.js';
 import { buildAgentDiagnostics } from './agentDiagnostics.js';
@@ -27,6 +28,7 @@ import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
+import { handleWorkspaceClientMessage, workspacesLoadedMessage } from './workspaces.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -359,6 +361,24 @@ export function handleClientMessage(
       });
       break;
 
+    case 'saveWorkspace':
+    case 'removeWorkspace':
+      // Same shape as the Directory messages: success rebroadcasts the list to
+      // every office, a rejection answers only the sender. Deleting a Workspace
+      // sends its agents back to the default first, one agentWorkspaceChanged each.
+      handleWorkspaceClientMessage(msg, {
+        broadcast: (message) => store.broadcast(message),
+        reply: send,
+        onWorkspaceRemoved: (workspaceId) => {
+          for (const [id, agent] of [...store]) {
+            if (agent.workspaceId === workspaceId) {
+              store.setAgentWorkspace(id, DEFAULT_WORKSPACE_ID);
+            }
+          }
+        },
+      });
+      break;
+
     default:
       // focusAgent is handled entirely client-side in standalone (it focuses the
       // drawer tab, which the server has no say in). exportLayout / importLayout
@@ -578,6 +598,10 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     });
   }
 
+  // 4d. Workspaces, after the Directories they group and before any agent
+  // names one (existingAgents), so the client can place every agent on arrival.
+  send(workspacesLoadedMessage());
+
   // Sync runtime refs with the persisted settings so scanners behave correctly
   // from the first tick after a server restart.
   if (runtime) {
@@ -592,6 +616,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const agentIds: number[] = [];
   const directoryNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
+  // Only agents outside the default: an absent entry means the default.
+  const workspaceIds: Record<number, string> = {};
   const persistedSeats = adapter?.loadSeats() ?? {};
   const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
   for (const [id, agent] of store) {
@@ -601,6 +627,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
+    }
+    if (agent.workspaceId) {
+      workspaceIds[id] = agent.workspaceId;
     }
     const persisted = persistedSeats[String(id)];
     agentMeta[id] = {
@@ -615,6 +644,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     agentMeta,
     directoryNames,
     externalAgents,
+    workspaceIds,
   });
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents
@@ -716,6 +746,10 @@ function refuseReadOnly(
       return;
     case 'saveAreaMappings':
       send({ type: 'areaMappingsLoaded', mappings: readConfig().standalone.areaMappings ?? {} });
+      return;
+    case 'saveWorkspace':
+    case 'removeWorkspace':
+      send(workspacesLoadedMessage());
       return;
   }
 }

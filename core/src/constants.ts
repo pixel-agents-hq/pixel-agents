@@ -13,6 +13,13 @@ export const SERVER_JSON_DIR = '.pixel-agents';
 export const SERVER_JSON_NAME = 'server.json';
 export const HOOK_SCRIPTS_DIR = '.pixel-agents/hooks';
 
+// ── Workspaces ───────────────────────────────────────────────
+
+/** Id of the default Workspace: always present, cannot be removed, and the home
+ *  of every Directory and agent not assigned elsewhere. Shared with the webview
+ *  so both sides name it the same way. */
+export const DEFAULT_WORKSPACE_ID = 'default';
+
 // ── Display ──────────────────────────────────────────────────
 
 export const BASH_COMMAND_DISPLAY_MAX_LENGTH = 30;

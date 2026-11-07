@@ -35,6 +35,7 @@ import { FileStateAdapter } from './fileStateAdapter.js';
 import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
+import { ensureWorkspacesFile } from './workspaces.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -229,6 +230,9 @@ async function main(): Promise<void> {
   const store = new AgentStateStore();
   const adapter = new FileStateAdapter({ namespace: 'standalone' });
   store.setAdapter(adapter);
+  // First start creates workspaces.json (default Workspace only); an existing
+  // file, valid or not, is never touched here.
+  ensureWorkspacesFile();
 
   // ── Create server ──
   const server = new PixelAgentsServer();

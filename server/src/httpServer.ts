@@ -232,6 +232,7 @@ function registerWebSocketRoute(
         hooksOnly: agent.hooksOnly || undefined,
         palette: agent.palette,
         hueShift: agent.hueShift,
+        workspaceId: agent.workspaceId,
       });
     };
 

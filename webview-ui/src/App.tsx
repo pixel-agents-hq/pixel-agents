@@ -16,8 +16,15 @@ import { Tooltip } from './components/Tooltip.js';
 import { Button } from './components/ui/Button.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
+import { WorkspaceModal } from './components/WorkspaceModal.js';
+import { WorkspaceSwitcher } from './components/WorkspaceSwitcher.js';
 import { ZoomControls } from './components/ZoomControls.js';
-import { OFFICE_CANVAS_TEST_ID } from './constants.js';
+import {
+  MOBILE_VIEW_TOGGLE_RESERVED_PX,
+  OFFICE_CANVAS_TEST_ID,
+  WORKSPACE_SWITCHER_DESKTOP_LEFT_PX,
+  WORKSPACE_SWITCHER_DESKTOP_RIGHT_PX,
+} from './constants.js';
 import { useDirectoryEditor } from './hooks/useDirectoryEditor.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
@@ -27,6 +34,7 @@ import { useIntroTour } from './hooks/useIntroTour.js';
 import { useIsMobile } from './hooks/useIsMobile.js';
 import { useKeyboardViewport } from './hooks/useKeyboardViewport.js';
 import { useTerminalDrawer } from './hooks/useTerminalDrawer.js';
+import { useWorkspaceEditor } from './hooks/useWorkspaceEditor.js';
 import { MobileShell } from './mobile/MobileShell.js';
 import { useMobileShell } from './mobile/useMobileShell.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
@@ -43,6 +51,16 @@ import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
+import type { AgentAttention } from './workspaces.js';
+import {
+  canCreateWorkspace,
+  canEditWorkspace,
+  computeWorkspaceBadges,
+  directoriesForWorkspace,
+  isAgentVisible,
+  shouldShowWorkspaceSwitcher,
+  visibleAgentIds,
+} from './workspaces.js';
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
@@ -118,6 +136,9 @@ function App() {
     setBypassPermissions,
     showHostDirectories,
     setShowHostDirectories,
+    workspaceView,
+    selectWorkspace,
+    workspaceRejection,
     officeReadOnly,
     terminalAvailable,
     terminalUnavailableReason,
@@ -151,11 +172,62 @@ function App() {
     () => getOfficeState().selectedAgentId,
   );
 
+  // Workspaces (standalone only; under VS Code the view never leaves its
+  // initial state and nothing below filters). One active Workspace feeds both
+  // shells: the office shows only its agents, the card bars and terminal tabs
+  // list only its agents, and the launch drawer offers only its Directories.
+  const visibleAgents = useMemo(
+    () => visibleAgentIds(workspaceView, agents),
+    [workspaceView, agents],
+  );
+  const visibleTerminalAgentIds = useMemo(
+    () => visibleAgentIds(workspaceView, terminalAgentIds),
+    [workspaceView, terminalAgentIds],
+  );
+  const visibleSubagentCharacters = useMemo(
+    () => subagentCharacters.filter((sub) => isAgentVisible(workspaceView, sub.parentAgentId)),
+    [workspaceView, subagentCharacters],
+  );
+  const launchDirectories = useMemo(
+    () =>
+      directoriesForWorkspace(
+        directories,
+        workspaceView.workspaces,
+        workspaceView.activeWorkspaceId,
+      ),
+    [directories, workspaceView],
+  );
+  // The office draws and hit-tests only the shown Workspace's characters. This
+  // also drops a selection or camera follow left pointing at a hidden agent.
+  useEffect(() => {
+    getOfficeState().setVisibilityFilter((agentId) => isAgentVisible(workspaceView, agentId));
+  }, [workspaceView]);
+  const agentAttention = useCallback(
+    (agentId: number): AgentAttention => {
+      if (agentTools[agentId]?.some((t) => t.permissionWait && !t.done)) return 'permission';
+      return agentStatuses[agentId] === 'waiting' ? 'waiting' : null;
+    },
+    [agentTools, agentStatuses],
+  );
+  const workspaceBadges = useMemo(
+    () => computeWorkspaceBadges(workspaceView, agents, agentAttention),
+    [workspaceView, agents, agentAttention],
+  );
+  const showWorkspaceSwitcher = shouldShowWorkspaceSwitcher({
+    isBrowserRuntime,
+    workspaces: workspaceView.workspaces,
+  });
+  const workspaceEditor = useWorkspaceEditor({
+    workspaces: workspaceView.workspaces,
+    workspaceRejection,
+  });
+
   // Standalone only: every input here stays false/empty under VS Code. Owns the
   // active tab on both shells; the desktop-only bits (isOpen, width, resize)
   // are simply unread on mobile, where the sliding track plays the drawer.
   const terminalDrawer = useTerminalDrawer({
     terminalAgentIds,
+    visibleTerminalAgentIds,
     getOfficeState,
     agentTools,
     agentStatuses,
@@ -498,6 +570,26 @@ function App() {
                 jobs move to the card bar (+) and the floating Settings button. */}
           {!isMobile && <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />}
 
+          {/* Desktop: the Workspace tabs run along the top band, right of the
+              zoom buttons. (The phone's sit in the top-left stack below.) */}
+          {showWorkspaceSwitcher && !isMobile && workspaceView.workspaces && (
+            <WorkspaceSwitcher
+              workspaces={workspaceView.workspaces}
+              activeWorkspaceId={workspaceView.activeWorkspaceId}
+              badges={workspaceBadges}
+              canCreate={canCreateWorkspace(officeReadOnly)}
+              canEdit={(id) => canEditWorkspace(officeReadOnly, id)}
+              onSelect={selectWorkspace}
+              onCreate={workspaceEditor.create}
+              onEdit={workspaceEditor.edit}
+              className="absolute top-8 z-20 pb-4 pr-4"
+              style={{
+                left: WORKSPACE_SWITCHER_DESKTOP_LEFT_PX,
+                right: WORKSPACE_SWITCHER_DESKTOP_RIGHT_PX,
+              }}
+            />
+          )}
+
           {/* Vignette overlay */}
           <div
             className="absolute inset-0 pointer-events-none"
@@ -570,10 +662,10 @@ function App() {
 
           <ToolOverlay
             officeState={officeState}
-            agents={agents}
+            agents={visibleAgents}
             agentTools={agentTools}
             subagentTools={subagentTools}
-            subagentCharacters={subagentCharacters}
+            subagentCharacters={visibleSubagentCharacters}
             containerRef={containerRef}
             zoom={editor.zoom}
             panRef={editor.panRef}
@@ -636,7 +728,7 @@ function App() {
           onToggleEditMode={editor.handleToggleEditMode}
           isSettingsOpen={isSettingsOpen}
           onToggleSettings={() => setIsSettingsOpen((v) => !v)}
-          directories={directories}
+          directories={launchDirectories}
           onAddDirectory={directoryEditor.add}
           onEditDirectory={directoryEditor.edit}
           terminalAvailable={terminalAvailable}
@@ -646,16 +738,38 @@ function App() {
 
       {/* Mobile: Settings floats top-left (the layout editor stays desktop-
             only — its tools are drag/hover-driven). */}
-      {isMobile && !isDebugMode && !officeReadOnly && (
-        <div className="absolute mobile-safe-top left-8 z-20">
-          <Button
-            size="sm"
-            variant={isSettingsOpen ? 'active' : 'default'}
-            className="border-border! shadow-pixel"
-            onClick={() => setIsSettingsOpen((v) => !v)}
-          >
-            Settings
-          </Button>
+      {/* Phone: the Workspace tabs share the top-left with Settings, tabs
+          above it. The row stops short of the right edge, which the pinned
+          `>_` / Office toggle keeps. */}
+      {isMobile && !isDebugMode && (
+        <div
+          className="absolute mobile-safe-top left-8 z-20 flex flex-col items-start gap-4 pointer-events-none"
+          style={{ right: MOBILE_VIEW_TOGGLE_RESERVED_PX }}
+        >
+          {showWorkspaceSwitcher && workspaceView.workspaces && (
+            <WorkspaceSwitcher
+              workspaces={workspaceView.workspaces}
+              activeWorkspaceId={workspaceView.activeWorkspaceId}
+              badges={workspaceBadges}
+              canCreate={canCreateWorkspace(officeReadOnly)}
+              canEdit={(id) => canEditWorkspace(officeReadOnly, id)}
+              onSelect={selectWorkspace}
+              onCreate={workspaceEditor.create}
+              onEdit={workspaceEditor.edit}
+              touchTargets
+              className="w-full pb-4 pr-4 pointer-events-auto"
+            />
+          )}
+          {!officeReadOnly && (
+            <Button
+              size="sm"
+              variant={isSettingsOpen ? 'active' : 'default'}
+              className="border-border! shadow-pixel pointer-events-auto"
+              onClick={() => setIsSettingsOpen((v) => !v)}
+            >
+              Settings
+            </Button>
+          )}
         </div>
       )}
 
@@ -708,12 +822,12 @@ function App() {
           office={officeRegion}
           shell={mobileShell}
           drawer={terminalDrawer}
-          agentIds={agents}
+          agentIds={visibleAgents}
           terminalAgentIds={terminalAgentIds}
           focusedAgentId={focusedAgentId}
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
-          directories={directories}
+          directories={launchDirectories}
           onAddDirectory={directoryEditor.add}
           onEditDirectory={directoryEditor.edit}
           onCloseAgent={handleCloseAgent}
@@ -735,6 +849,7 @@ function App() {
           {terminalAvailable ? (
             <TerminalDrawer
               agentIds={terminalAgentIds}
+              cardAgentIds={visibleTerminalAgentIds}
               shownAgentId={terminalDrawer.shownAgentId}
               onSelectAgent={terminalDrawer.select}
               onCloseAgent={handleCloseAgent}
@@ -749,7 +864,7 @@ function App() {
           ) : (
             !isDebugMode && (
               <AgentCardBar
-                agentIds={agents}
+                agentIds={visibleAgents}
                 focusedAgentId={focusedAgentId}
                 getAppearance={terminalDrawer.getAppearance}
                 statusFor={terminalDrawer.statusFor}
@@ -808,6 +923,20 @@ function App() {
         onSubmit={directoryEditor.submit}
         onDelete={directoryEditor.remove}
         onClose={directoryEditor.close}
+      />
+
+      {/* Same placement rule as the Directory modal: the root, never the
+          office region (the phone's sliding track would become its containing
+          block). */}
+      <WorkspaceModal
+        isOpen={workspaceEditor.modal.open}
+        editing={workspaceEditor.modal.editing}
+        workspaces={workspaceView.workspaces ?? []}
+        directories={directories}
+        error={workspaceEditor.error}
+        onSubmit={workspaceEditor.submit}
+        onDelete={workspaceEditor.remove}
+        onClose={workspaceEditor.close}
       />
 
       <ChangelogModal

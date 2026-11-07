@@ -48,6 +48,7 @@ import {
   setTeamSwitchCallback,
 } from './transcriptParser.js';
 import type { AgentState } from './types.js';
+import { settleWorkspaceFromCwd } from './workspaces.js';
 
 /** Callbacks that adapters register for platform-specific behavior. */
 export interface RuntimeLifecycleCallbacks {
@@ -188,7 +189,10 @@ export class AgentRuntime {
             // fall through to normal external adoption and self-identify from
             // their record tags.
             for (const a of this.store.values()) {
-              if (pathsMatch(a.jsonlFile, transcriptPath)) return;
+              if (pathsMatch(a.jsonlFile, transcriptPath)) {
+                settleWorkspaceFromCwd(this.store, a.id, cwd);
+                return;
+              }
             }
           }
         }
@@ -515,6 +519,7 @@ export class AgentRuntime {
         teamUsesTmux: p.teamUsesTmux,
         palette: p.palette,
         hueShift: p.hueShift,
+        workspaceId: p.workspaceId,
       });
 
       assignPaletteIfNeeded(agent, this.store);
@@ -547,6 +552,12 @@ export class AgentRuntime {
 
     if (maxId >= this.store.nextAgentId.current) {
       this.store.nextAgentId.current = maxId + 1;
+    }
+
+    // Teammates take their Lead's Workspace again, whatever they were persisted with.
+    for (const [id, agent] of [...this.store]) {
+      const lead = agent.leadAgentId === undefined ? undefined : this.store.get(agent.leadAgentId);
+      if (lead) this.store.setAgentWorkspace(id, lead.workspaceId);
     }
 
     this.store.persist();

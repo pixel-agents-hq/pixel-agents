@@ -43,6 +43,9 @@ export type ServerMessage =
   | DirectorySaved
   | DirectoryRejected
   | DirectorySuggestions
+  | WorkspacesLoaded
+  | WorkspaceRejected
+  | AgentWorkspaceChanged
   | TerminalAvailability
   | TerminalSessionOpened
   | TerminalSessionClosed
@@ -74,6 +77,8 @@ export type ClientMessage =
   | SetShowHostDirectories
   | SaveDirectory
   | RemoveDirectory
+  | SaveWorkspace
+  | RemoveWorkspace
   | RequestDirectorySuggestions
   | RequestDiagnostics;
 
@@ -90,6 +95,7 @@ export interface AgentCreated {
   isExternal?: boolean;
   palette?: number;
   hueShift?: number;
+  workspaceId?: string;
 }
 
 export interface AgentClosed {
@@ -108,6 +114,7 @@ export interface ExistingAgents {
   agentMeta: Record<string, AgentSeatMeta>;
   directoryNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
+  workspaceIds?: Record<string, string>;
 }
 
 export interface AgentSeatMeta {
@@ -354,6 +361,28 @@ export interface DirectorySuggestions {
   paths: string[];
 }
 
+export interface WorkspacesLoaded {
+  type: 'workspacesLoaded';
+  workspaces: Workspace[];
+}
+
+export interface Workspace {
+  id: string;
+  name: string;
+  directoryPaths: string[];
+}
+
+export interface WorkspaceRejected {
+  type: 'workspaceRejected';
+  reason: string;
+}
+
+export interface AgentWorkspaceChanged {
+  type: 'agentWorkspaceChanged';
+  id: number;
+  workspaceId: string;
+}
+
 export interface TerminalAvailability {
   type: 'terminalAvailability';
   available: boolean;
@@ -506,6 +535,18 @@ export interface SaveDirectory {
 export interface RemoveDirectory {
   type: 'removeDirectory';
   path: string;
+}
+
+export interface SaveWorkspace {
+  type: 'saveWorkspace';
+  id?: string;
+  name: string;
+  directoryPaths: string[];
+}
+
+export interface RemoveWorkspace {
+  type: 'removeWorkspace';
+  id: string;
 }
 
 export interface RequestDirectorySuggestions {

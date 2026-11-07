@@ -22,6 +22,14 @@ export interface AgentState {
   hadToolsInTurn: boolean;
   /** Directory name — the agent's origin label (only set for multi-root workspaces) */
   directoryName?: string;
+  /** Workspace the agent belongs to. Absent means the default Workspace (the
+   *  canonical form: the default's id is never stored here). */
+  workspaceId?: string;
+  /** True from the moment an external session is adopted without a readable cwd
+   *  until the first cwd arrives (transcript record or hook SessionStart) and
+   *  settles the Workspace once. Runtime-only: never persisted, so a restart
+   *  leaves the agent where it is. */
+  workspaceCwdPending?: boolean;
   /** Timestamp of last JSONL data received (ms since epoch) */
   lastDataAt: number;
   /** Total JSONL lines processed for this agent */
@@ -119,4 +127,6 @@ export interface PersistedAgent {
   palette?: number;
   /** Hue shift in degrees (0-360). Persisted alongside palette. */
   hueShift?: number;
+  /** Workspace the agent belongs to. Absent means the default Workspace. */
+  workspaceId?: string;
 }

@@ -121,6 +121,10 @@ components:
         - $ref: '#/components/schemas/DirectorySaved'
         - $ref: '#/components/schemas/DirectoryRejected'
         - $ref: '#/components/schemas/DirectorySuggestions'
+        # Workspaces
+        - $ref: '#/components/schemas/WorkspacesLoaded'
+        - $ref: '#/components/schemas/WorkspaceRejected'
+        - $ref: '#/components/schemas/AgentWorkspaceChanged'
         # Terminal (standalone embedded terminal control plane)
         - $ref: '#/components/schemas/TerminalAvailability'
         - $ref: '#/components/schemas/TerminalSessionOpened'
@@ -156,6 +160,8 @@ components:
         - $ref: '#/components/schemas/SetShowHostDirectories'
         - $ref: '#/components/schemas/SaveDirectory'
         - $ref: '#/components/schemas/RemoveDirectory'
+        - $ref: '#/components/schemas/SaveWorkspace'
+        - $ref: '#/components/schemas/RemoveWorkspace'
         - $ref: '#/components/schemas/RequestDirectorySuggestions'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
@@ -204,6 +210,12 @@ components:
         hueShift:
           type: integer
           description: Server-assigned hue shift in degrees (0-360).
+        workspaceId:
+          type: string
+          description: >-
+            Id of the Workspace the agent belongs to. Absent means the default
+            Workspace (agents that never carried one, including VS Code panel
+            agents).
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -256,6 +268,13 @@ components:
           description: Map of agent ID (string) to external flag.
           additionalProperties:
             type: boolean
+        workspaceIds:
+          type: object
+          description: >-
+            Map of agent ID (string) to Workspace id. An agent missing from the
+            map (or the whole map being absent) belongs to the default Workspace.
+          additionalProperties:
+            type: string
 
     AgentStatus:
       description: Active vs waiting state for an agent (drives character animation).
@@ -885,6 +904,58 @@ components:
           items:
             type: string
 
+    WorkspacesLoaded:
+      description: |
+        The Workspaces agents are grouped into, each listing the paths of the
+        Directories it contains. Sent during the handshake after
+        `directoriesLoaded` and before `existingAgents`, so the client can place
+        every agent on arrival.
+
+        Rebroadcast to every connected office after every Workspace mutation
+        (`saveWorkspace`, `removeWorkspace`). A client learns its own save or
+        delete succeeded from this.
+      type: object
+      additionalProperties: false
+      required: [type, workspaces]
+      properties:
+        type:
+          const: workspacesLoaded
+        workspaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+
+    WorkspaceRejected:
+      description: |
+        A `saveWorkspace` or `removeWorkspace` failed validation or could not be
+        written. Sent point-to-point to the requesting client (never broadcast)
+        and nothing changed on disk.
+      type: object
+      additionalProperties: false
+      required: [type, reason]
+      properties:
+        type:
+          const: workspaceRejected
+        reason:
+          type: string
+          description: Human-readable cause, shown inline to the user.
+
+    AgentWorkspaceChanged:
+      description: >-
+        An agent's Workspace membership changed (for example its working
+        directory was resolved, or its Workspace was removed). Broadcast to every
+        connected office.
+      type: object
+      additionalProperties: false
+      required: [type, id, workspaceId]
+      properties:
+        type:
+          const: agentWorkspaceChanged
+        id:
+          type: integer
+        workspaceId:
+          type: string
+
     AgentDiagnostics:
       description: Connection diagnostics for all agents (response to requestDiagnostics).
       type: object
@@ -1288,6 +1359,43 @@ components:
         path:
           type: string
 
+    SaveWorkspace:
+      description: |
+        Privileged. Add or edit a Workspace. `id` identifies the Workspace being
+        edited; absent means this is a new one and the host assigns the id. On
+        success the host rebroadcasts `workspacesLoaded`; on failure it replies
+        `workspaceRejected` and persists nothing.
+      type: object
+      additionalProperties: false
+      required: [type, name, directoryPaths]
+      properties:
+        type:
+          const: saveWorkspace
+        id:
+          type: string
+          description: Id of the Workspace being edited. Absent when adding.
+        name:
+          type: string
+          description: Display name of the Workspace.
+        directoryPaths:
+          type: array
+          description: Paths of the Directories the Workspace contains.
+          items:
+            type: string
+
+    RemoveWorkspace:
+      description: >-
+        Privileged. Delete a Workspace. Its Directories and agents return to the
+        default Workspace. The default Workspace cannot be removed.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: removeWorkspace
+        id:
+          type: string
+
     RequestDirectorySuggestions:
       description: >-
         Ask the host for tappable path suggestions for the Directory modal; it
@@ -1368,6 +1476,23 @@ components:
           type: string
         source:
           $ref: '#/components/schemas/DirectorySource'
+
+    Workspace:
+      description: |
+        A named group of Directories. Agents launched in or resolved to one of
+        its Directories belong to it.
+      type: object
+      additionalProperties: false
+      required: [id, name, directoryPaths]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        directoryPaths:
+          type: array
+          items:
+            type: string
 
     DirectorySource:
       description: |

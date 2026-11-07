@@ -13,6 +13,7 @@ import {
   startWaitingTimer,
 } from './timerManager.js';
 import type { AgentState } from './types.js';
+import { settleWorkspaceFromCwd } from './workspaces.js';
 
 /** Empty set used as safe fallback when no HookProvider is registered. */
 const EMPTY_EXEMPT_TOOLS: ReadonlySet<string> = new Set();
@@ -130,6 +131,13 @@ export function processTranscriptLine(
         isTeamLead: agent.isTeamLead,
         leadAgentId: agent.leadAgentId,
       });
+    }
+
+    // -- Workspace: the first cwd of an adopted session files it (once) --
+    // After the team block on purpose: a record that both links a Teammate and
+    // carries a cwd must follow the Lead, and linking has already set leadAgentId.
+    if (agent.workspaceCwdPending && typeof record.cwd === 'string') {
+      settleWorkspaceFromCwd(agents, agentId, record.cwd);
     }
 
     // -- Context window usage (drives every agent's context gauge) --
@@ -714,6 +722,8 @@ function linkTeammates(_agentId: number, agent: AgentState, agents: AgentStateSt
     } else {
       a.isTeamLead = false;
       a.leadAgentId = lead.id;
+      // A Teammate belongs to its Lead's Workspace; a no-op when already there.
+      agents.setAgentWorkspace(a.id, lead.workspaceId);
     }
   }
 }
