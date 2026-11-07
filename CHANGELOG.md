@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.9.0
+
+### Features
+
+- **Workspaces** — Standalone only. Group agents by Directory into workspaces and switch between them from a tab strip above the office; each workspace shows only its own agents. The list lives in `~/.pixel-agents/workspaces.json`, and an agent's workspace is stored with the agent. Tabs of other workspaces carry badges for agents that are waiting or need permission. Read-only clients can view but not edit workspaces.
+- **Workspace assignment** — A Directory belongs to at most one workspace; unassigned Directories belong to the default workspace. External sessions join the workspace whose Directory contains their cwd (longest prefix), settling once the cwd is known. Teammates always follow their lead.
+
+### Changes
+
+- `npm run dev` builds once, watches the CLI and webview, and restarts the standalone server after each CLI rebuild.
+- VS Code behaviour is unchanged: the panel renders no switcher, and agents without a workspace belong to the default one.
+
 ## v1.5.0
 
 ### Features
