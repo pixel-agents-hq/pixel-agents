@@ -7,7 +7,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { TERMINAL_OSC52_MAX_BASE64_CHARS } from '../src/constants.js';
-import { clipboardKeyAction, decodeOsc52, type KeyChord } from '../src/terminal/clipboardKeys.js';
+import {
+  clipboardKeyAction,
+  decodeOsc52,
+  isShiftEnter,
+  type KeyChord,
+} from '../src/terminal/clipboardKeys.js';
 
 const chord = (key: string, mods: Partial<KeyChord> = {}): KeyChord => ({
   key,
@@ -96,5 +101,15 @@ describe('decodeOsc52', () => {
     expect(decodeOsc52('c;not base64!')).toBeNull();
     expect(decodeOsc52(`c;${btoa('\xff\xfe')}`)).toBeNull(); // not UTF-8
     expect(decodeOsc52(`c;${'A'.repeat(TERMINAL_OSC52_MAX_BASE64_CHARS + 4)}`)).toBeNull();
+  });
+});
+
+describe('isShiftEnter', () => {
+  it('matches Shift+Enter only', () => {
+    expect(isShiftEnter(chord('Enter', { shiftKey: true }))).toBe(true);
+    expect(isShiftEnter(chord('Enter'))).toBe(false);
+    expect(isShiftEnter(chord('Enter', { shiftKey: true, ctrlKey: true }))).toBe(false);
+    expect(isShiftEnter(chord('Enter', { shiftKey: true, altKey: true }))).toBe(false);
+    expect(isShiftEnter(chord('a', { shiftKey: true }))).toBe(false);
   });
 });

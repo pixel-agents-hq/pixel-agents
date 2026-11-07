@@ -390,6 +390,10 @@ export const TERMINAL_URL_PATTERN =
  *  decoded: a runaway program shouldn't be able to stall the page. */
 export const TERMINAL_OSC52_MAX_BASE64_CHARS = 4_000_000;
 
+/** What Shift+Enter sends: ESC + CR, the Alt+Enter sequence Claude Code reads
+ *  as "insert a newline" (a bare CR submits the prompt). */
+export const TERMINAL_SHIFT_ENTER_SEQUENCE = '\x1b\r';
+
 /** xterm theme, matched to the office palette (index.css :root). */
 export const TERMINAL_THEME = {
   background: '#181828',

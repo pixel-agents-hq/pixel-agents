@@ -127,6 +127,7 @@ export function TerminalPane({
     // Keyboard copy (verbatim; Alt+C = copy as text) and paste, OSC 52 writes.
     const detachClipboard = attachClipboardInput(term, {
       isActive: () => isActiveRef.current,
+      sendInput: (data) => connection.write(data),
     });
     registerInputRef.current?.(agentId, {
       send: (data) => connection.write(data),

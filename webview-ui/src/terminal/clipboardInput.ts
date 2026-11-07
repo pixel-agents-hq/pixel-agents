@@ -1,7 +1,8 @@
 import type { Terminal } from '@xterm/xterm';
 
+import { TERMINAL_SHIFT_ENTER_SEQUENCE } from '../constants.js';
 import { writeClipboardText } from './clipboard.js';
-import { clipboardKeyAction, decodeOsc52 } from './clipboardKeys.js';
+import { clipboardKeyAction, decodeOsc52, isShiftEnter } from './clipboardKeys.js';
 import { terminalCopyText } from './flowCopy.js';
 
 const OSC_CLIPBOARD = 52;
@@ -16,7 +17,8 @@ const OSC_CLIPBOARD = 52;
  * - Alt+C (Option+C on a Mac) with a selection is "Copy as text": the
  *   selection with Claude Code's soft wraps re-flowed (terminalCopyText);
  * - Ctrl+V / Ctrl+Shift+V paste on Windows and Linux;
- * - OSC 52 writes from the running program reach this browser's clipboard.
+ * - OSC 52 writes from the running program reach this browser's clipboard;
+ * - Shift+Enter sends a newline sequence instead of submitting the prompt.
  *
  * Returns a dispose function that removes everything it added.
  */
@@ -25,11 +27,22 @@ export function attachClipboardInput(
   opts: {
     /** Only the pane on screen may write the clipboard from OSC 52. */
     isActive: () => boolean;
+    /** Sends raw input to the PTY (the Shift+Enter newline). */
+    sendInput: (data: string) => void;
   },
 ): () => void {
   const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 
   term.attachCustomKeyEventHandler((ev) => {
+    if (isShiftEnter(ev)) {
+      // Every phase is swallowed so xterm's own CR never follows ours; only
+      // the keydown sends.
+      if (ev.type === 'keydown') {
+        ev.preventDefault();
+        opts.sendInput(TERMINAL_SHIFT_ENTER_SEQUENCE);
+      }
+      return false;
+    }
     const action = clipboardKeyAction(ev, isMac, term.hasSelection());
     if (action === 'terminal') return true;
     if (ev.type === 'keydown' && (action === 'copy' || action === 'copyText')) {
