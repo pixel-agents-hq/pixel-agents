@@ -62,6 +62,10 @@ _Avoid_: spawn (that's the character-level visual event), create
 A named filesystem location agents can be launched into. Directories come from two sources: defined by the user in the office, or contributed by the host — VS Code contributes its workspace folders, standalone contributes the directory the server was started from. Host-contributed directories cannot be edited in the office.
 _Avoid_: folder, workspace folder (that's the VS Code-contributed source, not the concept), project
 
+**Workspace**:
+A named group of Directories in the standalone office. The office shows one workspace at a time, and only its agents. A Directory belongs to at most one workspace; one that no workspace claims belongs to the default workspace, which always exists and cannot be removed. An agent belongs to the workspace of the Directory it was launched in, or — for an adopted session — the Directory its working directory falls under. A teammate always belongs to its lead's workspace. Standalone only: the VS Code adapter has no workspaces, and every agent it shows counts as being in the default one.
+_Avoid_: project, folder group, VS Code workspace (that's the editor's own notion, unrelated; see Directory), room, office (the office is the whole canvas, not one workspace)
+
 **Adopt**:
 Begin tracking a session that was started outside the office. An adopted agent is a full citizen.
 _Avoid_: import, attach

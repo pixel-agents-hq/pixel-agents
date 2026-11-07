@@ -177,6 +177,15 @@ Press **F5** in VS Code to launch the Extension Development Host. To run the sta
 node dist/cli.js
 ```
 
+To develop the standalone office with rebuild-on-change, run one command:
+
+```bash
+npm run dev                  # server on port 3100
+npm run dev -- --port 4000   # extra arguments go to the CLI
+```
+
+It builds once, then watches the CLI (esbuild) and the webview (`vite build --watch`) and restarts the server after each CLI rebuild. Reload the page to see webview changes. Stopping any one of them, or pressing Ctrl+C, stops all of them.
+
 Common checks:
 
 ```bash

@@ -2,7 +2,9 @@ import { EventEmitter } from 'node:events';
 import { appendFileSync } from 'node:fs';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import { DEFAULT_WORKSPACE_ID } from '../../core/src/constants.js';
 import type { AgentState, PersistedAgent } from './types.js';
+import { normalizeWorkspaceId } from './workspaces.js';
 
 /**
  * CI / e2e diagnostics: when PIXEL_AGENTS_DEBUG_LOG points to a writable
@@ -112,11 +114,45 @@ export class AgentStateStore {
 
   set(id: number, agent: AgentState): this {
     const isNew = !this.agents.has(id);
+    if (isNew && agent.workspaceId !== undefined) {
+      // The one place every creation path (adoption, restore, launch,
+      // teammates) passes through: an agent can never be filed under a
+      // Workspace that does not exist, and the default is always "absent".
+      agent.workspaceId = normalizeWorkspaceId(agent.workspaceId);
+    }
     this.agents.set(id, agent);
     if (isNew) {
       this.emitter.emit('agentAdded', id, agent);
     }
     return this;
+  }
+
+  /**
+   * Move an agent to another Workspace (undefined or the default's id = the
+   * default). Announces and persists only a real change, so callers can apply
+   * a rule repeatedly without flooding the offices. Teammates always belong to
+   * their Lead's Workspace, so a move cascades to every agent led by this one.
+   */
+  setAgentWorkspace(id: number, workspaceId: string | undefined): void {
+    const next = workspaceId === DEFAULT_WORKSPACE_ID ? undefined : workspaceId;
+    if (this.moveToWorkspace(id, next)) {
+      this.persist();
+    }
+  }
+
+  private moveToWorkspace(id: number, next: string | undefined): boolean {
+    const agent = this.agents.get(id);
+    if (!agent || agent.workspaceId === next) return false;
+    agent.workspaceId = next;
+    this.broadcast({
+      type: 'agentWorkspaceChanged',
+      id,
+      workspaceId: next ?? DEFAULT_WORKSPACE_ID,
+    });
+    for (const follower of [...this.agents.values()]) {
+      if (follower.leadAgentId === id) this.moveToWorkspace(follower.id, next);
+    }
+    return true;
   }
 
   delete(id: number): boolean {
@@ -173,6 +209,7 @@ export class AgentStateStore {
           agent.backgroundAgentToolIds.size > 0 ? [...agent.backgroundAgentToolIds] : undefined,
         palette: agent.palette,
         hueShift: agent.hueShift,
+        workspaceId: agent.workspaceId,
       });
     }
     this.adapter.saveAgents(persisted);

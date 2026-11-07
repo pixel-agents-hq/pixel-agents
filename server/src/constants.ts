@@ -157,6 +157,26 @@ export const DIRECTORY_WRITE_FAILED_REASON =
  *  embedded (VS Code) server still mints a fresh token per process. */
 export const STANDALONE_TOKEN_FILE_NAME = 'standalone-token';
 
+// ── Workspaces ──────────────────────────────────────────────
+/** Machine-wide Workspace list, beside config.json (which readConfig rewrites
+ *  without unknown keys and both hosts share). */
+export const WORKSPACES_FILE_NAME = 'workspaces.json';
+export const WORKSPACES_DIR_MODE = 0o700;
+export const WORKSPACES_FILE_MODE = 0o600;
+export const DEFAULT_WORKSPACE_NAME = 'Default';
+export const WORKSPACE_NAME_MAX_LENGTH = 60;
+export const WORKSPACE_DIRECTORY_PATHS_MAX = 200;
+export const WORKSPACE_DIRECTORY_PATH_MAX_LENGTH = 4096;
+export const WORKSPACE_ID_MAX_LENGTH = 100;
+/** How much of a transcript's head is read to find the session's first `cwd`
+ *  when an external session is adopted by the file scan. */
+export const WORKSPACE_CWD_HEAD_BYTES = 65_536;
+/** workspaceRejected reasons. */
+export const WORKSPACE_WRITE_FAILED_REASON =
+  "Couldn't save the change: writing ~/.pixel-agents/workspaces.json failed (see the host's log).";
+export const WORKSPACES_FILE_UNREADABLE_REASON =
+  "Couldn't change Workspaces: ~/.pixel-agents/workspaces.json is unreadable or malformed. Fix or delete it, then try again.";
+
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';

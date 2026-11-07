@@ -390,6 +390,10 @@ export const TERMINAL_URL_PATTERN =
  *  decoded: a runaway program shouldn't be able to stall the page. */
 export const TERMINAL_OSC52_MAX_BASE64_CHARS = 4_000_000;
 
+/** What Shift+Enter sends: ESC + CR, the Alt+Enter sequence Claude Code reads
+ *  as "insert a newline" (a bare CR submits the prompt). */
+export const TERMINAL_SHIFT_ENTER_SEQUENCE = '\x1b\r';
+
 /** xterm theme, matched to the office palette (index.css :root). */
 export const TERMINAL_THEME = {
   background: '#181828',
@@ -560,3 +564,20 @@ export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
  *  (with an editable focused) = the software keyboard is up. Well above an
  *  address bar collapsing (~56 px), well below any on-screen keyboard. */
 export const KEYBOARD_MIN_HEIGHT_PX = 150;
+
+// ── Workspace switcher ───────────────────────────────────────
+
+/** Smallest touch target (both axes) the mobile switcher's tabs, + and pencil
+ *  may have: the platform guideline for a finger-sized control. */
+export const MOBILE_TOUCH_TARGET_MIN_PX = 44;
+/** Left edge of the desktop switcher: the zoom buttons' column (8px inset +
+ *  40px button) plus an 8px gap, so the tabs sit to its right. */
+export const WORKSPACE_SWITCHER_DESKTOP_LEFT_PX = 56;
+/** Right edge of the desktop switcher: clear of the agent-card bar that
+ *  overlays the office's right edge, so a long tab row scrolls instead of
+ *  running under the cards. */
+export const WORKSPACE_SWITCHER_DESKTOP_RIGHT_PX = TERMINAL_SIDEBAR_WIDTH_PX + 8;
+/** Right-hand room the mobile switcher leaves free for the pinned `>_` / Office
+ *  view toggle (its 8px inset plus the wider of its two labels), so the tab row
+ *  scrolls under nothing. */
+export const MOBILE_VIEW_TOGGLE_RESERVED_PX = 112;

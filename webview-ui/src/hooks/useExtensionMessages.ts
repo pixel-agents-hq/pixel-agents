@@ -21,6 +21,17 @@ import type { OfficeLayout, ToolActivity } from '../office/types.js';
 import { setWallSprites } from '../office/wallTiles.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
 import { transport } from '../transport/index.js';
+import type { Workspace, WorkspaceViewState } from '../workspaces.js';
+import {
+  applyAgentClosed,
+  applyAgentCreated,
+  applyAgentWorkspaceChanged,
+  applyExistingAgents,
+  applyWorkspacesLoaded,
+  INITIAL_WORKSPACE_VIEW,
+  selectWorkspace,
+  shouldAutoSelectNewAgent,
+} from '../workspaces.js';
 
 /**
  * A Headless agent is one the office adopted from outside (`claude -p`, a session
@@ -87,6 +98,13 @@ export interface DirectorySaved {
   seq: number;
 }
 
+/** A refused saveWorkspace/removeWorkspace, shown inline in the Workspace
+ *  modal. `seq` rises with every rejection so a repeat still reads as new. */
+export interface WorkspaceRejection {
+  reason: string;
+  seq: number;
+}
+
 interface ExtensionMessageState {
   agents: number[];
   selectedAgent: number | null;
@@ -148,6 +166,13 @@ interface ExtensionMessageState {
   /** Whether the host lists its own Directories (workspace folders / start directory). */
   showHostDirectories: boolean;
   setShowHostDirectories: (v: boolean) => void;
+  /** The Workspace list, per-agent membership and the active tab (standalone
+   *  only; stays at its initial value under VS Code, where nothing is filtered). */
+  workspaceView: WorkspaceViewState;
+  /** Switch the office to another Workspace. */
+  selectWorkspace: (workspaceId: string) => void;
+  /** Last refused saveWorkspace/removeWorkspace. */
+  workspaceRejection: WorkspaceRejection | null;
   /** A read-only office (standalone without the server token): every change it
    *  sends is refused, so the UI hides the controls that would send one. */
   officeReadOnly: boolean;
@@ -218,6 +243,22 @@ export function useExtensionMessages(
   const [showAreas, setShowAreas] = useState(false);
   const [bypassPermissions, setBypassPermissions] = useState(false);
   const [showHostDirectories, setShowHostDirectories] = useState(false);
+  // Workspaces are mirrored in a ref because the message handler below is
+  // registered once: it must read the view as of the previous message (an
+  // agentCreated right after a workspacesLoaded), not as of the last render.
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceViewState>(INITIAL_WORKSPACE_VIEW);
+  const workspaceViewRef = useRef<WorkspaceViewState>(INITIAL_WORKSPACE_VIEW);
+  const [workspaceRejection, setWorkspaceRejection] = useState<WorkspaceRejection | null>(null);
+  const updateWorkspaceView = useCallback((next: WorkspaceViewState) => {
+    if (next === workspaceViewRef.current) return;
+    workspaceViewRef.current = next;
+    setWorkspaceView(next);
+  }, []);
+  const handleSelectWorkspace = useCallback(
+    (workspaceId: string) =>
+      updateWorkspaceView(selectWorkspace(workspaceViewRef.current, workspaceId)),
+    [updateWorkspaceView],
+  );
   // Never sent under VS Code, so it stays false there.
   const [officeReadOnly, setOfficeReadOnly] = useState(false);
   // Terminal control plane (standalone only; the server never sends these in
@@ -350,8 +391,17 @@ export function useExtensionMessages(
         const teammateParentId = msg.parentAgentId as number | undefined;
         const teamName = msg.teamName as string | undefined;
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]));
-        // Don't auto-select teammates (keep focus on lead)
-        if (!isTeammate) {
+        const nextWorkspaceView = applyAgentCreated(workspaceViewRef.current, {
+          id,
+          workspaceId: msg.workspaceId as string | undefined,
+          leadAgentId: isTeammate ? teammateParentId : undefined,
+        });
+        updateWorkspaceView(nextWorkspaceView);
+        // Don't auto-select teammates (keep focus on lead), nor an agent that
+        // appeared in a Workspace the office is not showing (an adopted
+        // external session): selecting it would hand the selection to someone
+        // the user cannot see.
+        if (!isTeammate && shouldAutoSelectNewAgent(nextWorkspaceView, id)) {
           setSelectedAgent(id);
         }
         if (isTeammate && teammateParentId !== undefined) {
@@ -391,6 +441,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentClosed') {
         const id = msg.id as number;
         setAgents((prev) => prev.filter((a) => a !== id));
+        updateWorkspaceView(applyAgentClosed(workspaceViewRef.current, id));
         setSelectedAgent((prev) => (prev === id ? null : prev));
         // Drop the drawer tab too. terminalSessionClosed normally does this, but
         // an agent can be removed without its PTY ever reporting an exit (e.g.
@@ -433,6 +484,12 @@ export function useExtensionMessages(
         ) {
           saveAgentSeats(os);
         }
+        updateWorkspaceView(
+          applyExistingAgents(
+            workspaceViewRef.current,
+            msg.workspaceIds as Record<string, string> | undefined,
+          ),
+        );
         setAgents((prev) => {
           const ids = new Set(prev);
           const merged = [...prev];
@@ -730,6 +787,23 @@ export function useExtensionMessages(
       } else if (msg.type === 'directoriesLoaded') {
         const directories = msg.directories as Directory[];
         setDirectories(directories);
+      } else if (msg.type === 'workspacesLoaded') {
+        updateWorkspaceView(
+          applyWorkspacesLoaded(workspaceViewRef.current, msg.workspaces as Workspace[]),
+        );
+      } else if (msg.type === 'workspaceRejected') {
+        setWorkspaceRejection((prev) => ({
+          reason: msg.reason as string,
+          seq: (prev?.seq ?? 0) + 1,
+        }));
+      } else if (msg.type === 'agentWorkspaceChanged') {
+        updateWorkspaceView(
+          applyAgentWorkspaceChanged(
+            workspaceViewRef.current,
+            msg.id as number,
+            msg.workspaceId as string,
+          ),
+        );
       } else if (msg.type === 'directorySuggestions') {
         setDirectorySuggestions((msg.paths ?? []) as string[]);
       } else if (msg.type === 'directorySaved') {
@@ -917,6 +991,9 @@ export function useExtensionMessages(
     setBypassPermissions,
     showHostDirectories,
     setShowHostDirectories,
+    workspaceView,
+    selectWorkspace: handleSelectWorkspace,
+    workspaceRejection,
     officeReadOnly,
     terminalAvailable,
     terminalUnavailableReason,

@@ -8,8 +8,10 @@ import { TerminalPaneStack } from './TerminalPaneStack.js';
 import { Button } from './ui/Button.js';
 
 interface TerminalDrawerProps {
-  /** Agent ids with a live PTY, in open order. */
+  /** Agent ids with a live PTY, in open order. Every pane stays mounted. */
   agentIds: number[];
+  /** The ones to offer as tabs: those in the shown Workspace. */
+  cardAgentIds: number[];
   /** The pane showing (useTerminalDrawer's resolution); its card is the active tab. */
   shownAgentId: number | null;
   onSelectAgent: (agentId: number) => void;
@@ -44,6 +46,7 @@ interface TerminalDrawerProps {
  */
 export function TerminalDrawer({
   agentIds,
+  cardAgentIds,
   shownAgentId,
   onSelectAgent,
   onCloseAgent,
@@ -62,7 +65,7 @@ export function TerminalDrawer({
       {/* The cards are the panel's tabs — clicking one selects that agent's
           pane (App also reopens the panel if it's closed). */}
       <AgentCardBar
-        agentIds={agentIds}
+        agentIds={cardAgentIds}
         activeAgentId={shownAgentId}
         getAppearance={getAppearance}
         statusFor={statusFor}
@@ -76,7 +79,7 @@ export function TerminalDrawer({
           reconnect on every toggle. TerminalPane skips fit() at zero size, and
           the ResizeObserver re-fits on reopen. */}
       <div
-        className={`relative h-full flex-col bg-bg border-l-2 border-border ${isOpen ? 'flex' : 'hidden'}`}
+        className={`relative h-full flex-col bg-bg border-l-2 border-border ${isOpen && cardAgentIds.length > 0 ? 'flex' : 'hidden'}`}
         style={{ width: widthPx }}
       >
         {/* Drag handle over the left edge. App owns the gesture so it can

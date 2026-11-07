@@ -156,10 +156,13 @@ function mtimeOf(filePath: string): number {
 }
 
 /** Read the head of one transcript and return the first `cwd` it records. */
-function readWorkingDirectory(transcriptPath: string): string | undefined {
+export function readWorkingDirectory(
+  transcriptPath: string,
+  headBytes: number = DIRECTORY_SUGGESTION_HEAD_BYTES,
+): string | undefined {
   let head: { text: string; truncated: boolean };
   try {
-    head = readHead(transcriptPath, DIRECTORY_SUGGESTION_HEAD_BYTES);
+    head = readHead(transcriptPath, headBytes);
   } catch {
     return undefined;
   }

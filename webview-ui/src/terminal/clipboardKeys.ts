@@ -80,3 +80,9 @@ export function decodeOsc52(data: string): string | null {
     return null;
   }
 }
+
+/** Shift+Enter alone: xterm sends the same CR as plain Enter for it, which
+ *  submits the prompt, so the pane sends a newline sequence instead. */
+export function isShiftEnter(ev: KeyChord): boolean {
+  return ev.key === 'Enter' && ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey;
+}

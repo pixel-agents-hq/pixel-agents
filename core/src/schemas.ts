@@ -37,6 +37,8 @@ export interface PersistedAgent {
   palette?: number;
   /** Hue shift in degrees (0-360). Persisted alongside palette. */
   hueShift?: number;
+  /** Workspace the agent belongs to. Absent means the default Workspace. */
+  workspaceId?: string;
 }
 
 /** Agent seat assignment with visual identity

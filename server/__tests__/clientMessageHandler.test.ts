@@ -1253,6 +1253,8 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
       { type: 'setBypassPermissions', enabled: true },
       { type: 'saveDirectory', name: 'Project', path: directory },
       { type: 'removeDirectory', path: directory },
+      { type: 'saveWorkspace', name: 'Work', directoryPaths: [directory] },
+      { type: 'removeWorkspace', id: 'some-id' },
       { type: 'requestDirectorySuggestions' },
       { type: 'requestDiagnostics' },
     ]) {
@@ -1266,6 +1268,7 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
       'areaMappingsLoaded',
       'externalAssetDirectoriesUpdated',
       'settingsLoaded',
+      'workspacesLoaded',
     ]);
   });
 

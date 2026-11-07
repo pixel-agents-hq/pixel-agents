@@ -27,6 +27,26 @@ export const DISCORD_INVITE_URL = 'https://discord.gg/Yk7jXebv9H';
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '0.9',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Workspaces: group agents by Directory and switch between them in the standalone office',
+          'Switcher badges show how many agents in other workspaces are waiting or need permission',
+          'External sessions join the workspace whose Directory contains their cwd; teammates follow their lead',
+        ],
+      },
+      {
+        title: 'Changes',
+        items: [
+          'npm run dev builds once, watches the CLI and webview, and restarts the standalone server on rebuild',
+        ],
+      },
+    ],
+    contributors: [],
+  },
+  {
     version: '1.5',
     sections: [
       {

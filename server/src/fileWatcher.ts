@@ -41,8 +41,10 @@ import {
   GLOBAL_SCAN_ACTIVE_MAX_AGE_MS,
   GLOBAL_SCAN_ACTIVE_MIN_SIZE,
   PROJECT_SCAN_INTERVAL_MS,
+  WORKSPACE_CWD_HEAD_BYTES,
 } from './constants.js';
 import { seedContextUsage } from './contextUsage.js';
+import { readWorkingDirectory } from './directorySuggestions.js';
 import type { DismissalTracker } from './dismissalTracker.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { pathsMatch } from './pathKey.js';
@@ -50,6 +52,7 @@ import type { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer, clearAgentActivity } from './timerManager.js';
 import { getHookProvider, processTranscriptLine } from './transcriptParser.js';
 import type { AgentState } from './types.js';
+import { settleWorkspaceFromCwd, workspaceIdForCwd } from './workspaces.js';
 
 /** Dismissal tracker instance. Set once at startup via setDismissalTracker().
  *  Replaces the former module-global dismissedJsonlFiles, clearDismissedFiles,
@@ -719,6 +722,8 @@ export function scanForTeammateFiles(
       leadAgentId: parentAgentId,
       teamName: parentAgent?.teamName,
       teamUsesTmux: parentAgent?.teamUsesTmux,
+      // A Teammate lives in its Lead's Workspace from the first announcement.
+      workspaceId: parentAgent?.workspaceId,
     });
 
     if (parentAgent?.palette !== undefined) {
@@ -858,6 +863,7 @@ export function scanForBackgroundAgentFiles(
       agentName: entry.name,
       leadAgentId: leadId,
       spawnToolUseId: entry.toolUseId,
+      workspaceId: lead.workspaceId,
     });
 
     if (lead.palette !== undefined) {
@@ -1029,7 +1035,12 @@ export function adoptExternalSessionFromHook(
     // File-based provider (Claude, Codex): adopt with JSONL file watching
     // Guard: don't adopt if file is already tracked by an agent
     for (const agent of agents.values()) {
-      if (pathsMatch(agent.jsonlFile, transcriptPath)) return;
+      if (pathsMatch(agent.jsonlFile, transcriptPath)) {
+        // Already adopted (usually by the file scan, before this confirmation
+        // arrived): the SessionStart cwd is the only new information here.
+        settleWorkspaceFromCwd(agents, agent.id, cwd);
+        return;
+      }
     }
     // Don't check knownJsonlFiles here -- hooks confirmed this is a real session,
     // and seeded files at startup are in knownJsonlFiles but may become active later.
@@ -1053,6 +1064,7 @@ export function adoptExternalSessionFromHook(
       permissionTimers,
       persistAgents,
       directoryName,
+      cwd,
     );
 
     const adoptedAgent = [...agents.values()].find((a) => pathsMatch(a.jsonlFile, transcriptPath));
@@ -1106,8 +1118,14 @@ function adoptExternalSession(
 
   persistAgents: () => void,
   directoryName?: string,
+  /** The session's cwd when the caller already has it (hook path). Otherwise
+   *  the first cwd in the transcript head is used. */
+  knownCwd?: string,
 ): void {
   const id = nextAgentIdRef.current++;
+  // File the agent by its cwd NOW when one is readable; otherwise leave it in
+  // the default and let the first cwd to arrive settle it (settleWorkspaceFromCwd).
+  const cwd = knownCwd || readWorkingDirectory(jsonlFile, WORKSPACE_CWD_HEAD_BYTES);
   // Decide whether to replay the existing file content or skip to its end.
   //
   // The external scanner runs every EXTERNAL_SCAN_INTERVAL_MS. A freshly-created
@@ -1146,6 +1164,8 @@ function adoptExternalSession(
     fileOffset,
     lastDataAt: Date.now(),
     directoryName,
+    workspaceId: workspaceIdForCwd(cwd),
+    workspaceCwdPending: cwd === undefined ? true : undefined,
   });
 
   assignPaletteIfNeeded(agent, agents);

@@ -25,6 +25,7 @@ import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import type { AgentState } from '../types.js';
+import { workspaceIdForDirectory } from '../workspaces.js';
 import type { PtySessionManager } from './ptySessionManager.js';
 
 export interface LaunchStandaloneAgentDeps {
@@ -119,6 +120,9 @@ export function launchStandaloneAgent(
     // for a cwd that is no Directory at all.
     directoryName: directoryNameForLaunch(cwd, [hostDirectory()]) ?? directoryNameFor(cwd),
     providerId: provider.id,
+    // From the Directory the launch names, never from the server cwd: a launch
+    // with no directoryPath (or one no Workspace owns) belongs to the default.
+    workspaceId: workspaceIdForDirectory(options.directoryPath),
   });
 
   // Server-side, like every other creation path: the palette rides the

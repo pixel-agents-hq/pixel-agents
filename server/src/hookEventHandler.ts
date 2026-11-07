@@ -8,6 +8,7 @@ import { getInlineTeammates, hasInlineTeammates, hasPromotedBackgroundAgent } fr
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
 import { notifyBackgroundAgentCompleted } from './transcriptParser.js';
 import type { AgentState } from './types.js';
+import { settleWorkspaceFromCwd } from './workspaces.js';
 
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
@@ -182,6 +183,7 @@ export class HookEventHandler {
         const agent = this.agents.get(existingAgentId);
         if (agent) {
           agent.hookDelivered = true;
+          settleWorkspaceFromCwd(this.agents, existingAgentId, cwd);
         }
         if (debug)
           console.log(
@@ -194,6 +196,7 @@ export class HookEventHandler {
         if (agent.sessionId === event.session_id) {
           this.registerAgent(agent.sessionId, id);
           agent.hookDelivered = true;
+          settleWorkspaceFromCwd(this.agents, id, cwd);
           if (debug)
             console.log(
               `[Pixel Agents] Hook: Agent ${id} - SessionStart(source=${source}) auto-discovered`,
