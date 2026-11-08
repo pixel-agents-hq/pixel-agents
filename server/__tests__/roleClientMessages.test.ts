@@ -476,6 +476,59 @@ describe('Role client messages', () => {
     expect(agent.projectDir).toBe(claudeProvider.getSessionDirs!(repo)[0]);
   });
 
+  it('gives two Roles in one Directory each its own rules, over the same cwd', async () => {
+    writeRole('frontend.md', '# Frontend rules\n');
+    writeRole('backend.md', '# Backend rules\n');
+    const frontendSha = await trust('frontend.md');
+    const backendSha = await trust('backend.md');
+
+    expect(await launchWithRole({ directoryPath: repo, roleId: 'frontend.md' })).toBeNull();
+    expect(await launchWithRole({ directoryPath: repo, roleId: 'backend.md' })).toBeNull();
+
+    const [frontend, backend] = spawned;
+    // Same working directory: the folder's CLAUDE.md (the shared layer) reaches both.
+    expect(frontend.cwd).toBe(repo);
+    expect(backend.cwd).toBe(repo);
+    // Different snapshots: the Role layer reaches only its own agent.
+    expect(frontend.args[3]).not.toBe(backend.args[3]);
+    expect(frontend.snapshot!.toString()).toBe('# Frontend rules\n');
+    expect(backend.snapshot!.toString()).toBe('# Backend rules\n');
+    expect(sha256(frontend.snapshot!)).toBe(frontendSha);
+    expect(sha256(backend.snapshot!)).toBe(backendSha);
+    expect(created.map((c) => c.roleName)).toEqual(['frontend', 'backend']);
+
+    // One agent's exit takes only its own snapshot.
+    frontend.pty.exit();
+    expect(fs.existsSync(frontend.args[3])).toBe(false);
+    expect(fs.existsSync(backend.args[3])).toBe(true);
+  });
+
+  it('applies a same-named Role per Directory: each agent gets that Directory content', async () => {
+    const other = path.join(tempHome, 'other');
+    fs.mkdirSync(other);
+    register(other, 'Other');
+    writeRole('frontend.md', '# Repo frontend\n');
+    writeRole('frontend.md', '# Other frontend\n', other);
+    await trust('frontend.md', repo);
+    await trust('frontend.md', other);
+
+    expect(await launchWithRole({ directoryPath: repo, roleId: 'frontend.md' })).toBeNull();
+    expect(await launchWithRole({ directoryPath: other, roleId: 'frontend.md' })).toBeNull();
+
+    const [inRepo, inOther] = spawned;
+    expect(inRepo.cwd).toBe(repo);
+    expect(inOther.cwd).toBe(other);
+    expect(inRepo.snapshot!.toString()).toBe('# Repo frontend\n');
+    expect(inOther.snapshot!.toString()).toBe('# Other frontend\n');
+    // Same name, two different Roles: trust in one Directory does not carry over.
+    const third = path.join(tempHome, 'third');
+    fs.mkdirSync(third);
+    register(third, 'Third');
+    writeRole('frontend.md', '# Repo frontend\n', third);
+    const reply = await launchWithRole({ directoryPath: third, roleId: 'frontend.md' });
+    expect(reply).toMatchObject({ type: 'roleRejected', code: 'untrusted' });
+  });
+
   it('removes the snapshot when the PTY spawn fails', async () => {
     writeRole('frontend.md', '# fe\n');
     await trust('frontend.md');
