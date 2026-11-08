@@ -35,6 +35,7 @@ import type { AgentStateStore } from './agentStateStore.js';
 import {
   CLEAR_IDLE_THRESHOLD_MS,
   EXTERNAL_ACTIVE_THRESHOLD_MS,
+  EXTERNAL_IDLE_REMOVE_MS,
   EXTERNAL_SCAN_INTERVAL_MS,
   EXTERNAL_STALE_CHECK_INTERVAL_MS,
   FILE_WATCHER_POLL_INTERVAL_MS,
@@ -1500,30 +1501,39 @@ function scanGlobalProjectDirs(
 }
 
 /**
- * Periodically removes stale external agents whose JSONL files
- * haven't been modified recently.
+ * Periodically removes external agents that are gone or long idle:
+ * - the JSONL file was deleted, or
+ * - it has not been written for `EXTERNAL_IDLE_REMOVE_MS`. A session that ended
+ *   without a SessionEnd hook (killed terminal, crash) would otherwise stay on
+ *   screen forever. Removal also frees the file for re-adoption, so a session
+ *   that resumes (e.g., `claude --resume`) comes back through the normal scan.
+ * Runs with hooks on or off: the hook path only helps when SessionEnd is sent.
  */
 export function startStaleExternalAgentCheck(
   agents: AgentStateStore,
   knownJsonlFiles: Set<string>,
-  hooksEnabledRef?: { current: boolean },
 ): ReturnType<typeof setInterval> {
   return setInterval(() => {
-    // When hooks are active, SessionEnd handles agent cleanup.
-    if (hooksEnabledRef?.current) return;
     const toRemove: number[] = [];
+    const now = Date.now();
 
     for (const [id, agent] of agents) {
       if (!agent.isExternal) continue;
+      // Derived children (teammates, background spawns) live and die with their lead.
+      if (agent.leadAgentId !== undefined) continue;
 
-      // Only despawn if the JSONL file has been deleted from disk.
-      // Inactive external agents stay alive so they can resume when
-      // the session continues (e.g., claude --resume).
       try {
-        fs.statSync(agent.jsonlFile);
-        // File still exists — keep the agent alive regardless of mtime
+        const { mtimeMs } = fs.statSync(agent.jsonlFile);
+        if (now - mtimeMs > EXTERNAL_IDLE_REMOVE_MS) toRemove.push(id);
       } catch {
         // File deleted — remove agent
+        toRemove.push(id);
+      }
+    }
+
+    // The removal callback does not cascade, so a removed lead takes its children along.
+    for (const [id, agent] of agents) {
+      if (agent.leadAgentId !== undefined && toRemove.includes(agent.leadAgentId)) {
         toRemove.push(id);
       }
     }
