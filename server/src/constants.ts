@@ -22,8 +22,8 @@ export const CLEAR_IDLE_THRESHOLD_MS = 2000;
 export const EXTERNAL_SCAN_INTERVAL_MS = 3000;
 /** Only adopt JSONL files modified within this window */
 export const EXTERNAL_ACTIVE_THRESHOLD_MS = 120_000; // 2 minutes
-/** Remove external agents after this much inactivity */
-// export const EXTERNAL_STALE_TIMEOUT_MS = 300_000; // 5 minutes - deprecated
+/** Remove an external agent whose JSONL has not been written for this long (no SessionEnd needed) */
+export const EXTERNAL_IDLE_REMOVE_MS = 6 * 60 * 60 * 1000; // 6 hours
 export const EXTERNAL_STALE_CHECK_INTERVAL_MS = 30_000;
 /** Cooldown after user closes an agent via X. Must be > EXTERNAL_ACTIVE_THRESHOLD_MS
  *  so the file's mtime becomes stale before the dismissal expires. */
