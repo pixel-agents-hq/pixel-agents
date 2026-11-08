@@ -255,6 +255,89 @@ export const ROLE_LAUNCH_FAILED_REASON = "The agent couldn't be started (see the
 export const ROLE_LIST_FAILED_REASON = "The Directory's Roles couldn't be read.";
 export const ROLE_REQUEST_FAILED_REASON = "The Role request failed (see the host's log).";
 
+// ── Knowledge Base storage ──────────────────────────────────
+/** ~/.pixel-agents/kb/: one private directory per Workspace (POSIX only). */
+export const KB_STORAGE_DIR_NAME = 'kb';
+export const KB_SETTINGS_FILE_NAME = 'settings.json';
+export const KB_INDEX_FILE_NAME = 'index.json';
+export const KB_BLOBS_DIR_NAME = 'blobs';
+export const KB_PROPOSALS_DIR_NAME = 'proposals';
+export const KB_AUDIT_FILE_NAME = 'audit.jsonl';
+export const KB_BLOB_SUFFIX = '.md';
+export const KB_PROPOSAL_SUFFIX = '.json';
+/** Every KB id (non-default Workspace, entry, proposal, blob): a lowercase UUID v4. */
+export const KB_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+export const KB_SHA256_PATTERN = /^[0-9a-f]{64}$/;
+/** Rotated audit files: audit.<firstSeq>-<lastSeq>.jsonl. */
+export const KB_AUDIT_ROTATED_PATTERN = /^audit\.([0-9]{1,15})-([0-9]{1,15})\.jsonl$/;
+/** Writer lock generations: kb/.lock.<n>, a positive decimal of at most 12 digits. */
+export const KB_LOCK_NAME_PATTERN = /^\.lock\.([1-9][0-9]{0,11})$/;
+export const KB_LOCK_NAME_PREFIX = '.lock.';
+/** A lock symlink's target: kbwriter:<pid>:<instance>:<startedAt>. */
+export const KB_LOCK_TARGET_PATTERN =
+  /^kbwriter:([1-9][0-9]{0,9}):([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}):([0-9]{1,15})$/;
+export const KB_LOCK_TARGET_PREFIX = 'kbwriter';
+/** Lock acquisition re-reads the directory at most this many times on EEXIST. */
+export const KB_LOCK_MAX_ATTEMPTS = 3;
+export const KB_FILE_FORMAT_VERSION = 1;
+export const KB_ENTRY_CONTENT_MAX_BYTES = 64 * 1024;
+export const KB_TOTAL_CONTENT_MAX_BYTES = 5 * 1024 * 1024;
+export const KB_ENTRIES_MAX = 500;
+export const KB_PENDING_PROPOSALS_MAX = 100;
+export const KB_PENDING_PER_PROPOSER_MAX = 20;
+export const KB_TERMINAL_PROPOSALS_MAX = 1000;
+export const KB_PENDING_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+/** A create larger than this (UTF-8 bytes) is high impact, like every replace and delete. */
+export const KB_HIGH_IMPACT_CREATE_BYTES = 16384;
+export const KB_TITLE_MAX_CODE_POINTS = 120;
+export const KB_INDEX_FILE_MAX_BYTES = 1024 * 1024;
+export const KB_SETTINGS_FILE_MAX_BYTES = 4 * 1024;
+export const KB_PROPOSAL_FILE_MAX_BYTES = 160 * 1024;
+export const KB_AUDIT_LINE_MAX_BYTES = 4 * 1024;
+export const KB_AUDIT_ROTATE_BYTES = 4 * 1024 * 1024;
+export const KB_AUDIT_TOTAL_MAX_BYTES = 32 * 1024 * 1024;
+/** The audit chain tail is found in this much of the file's end (+1 byte). */
+export const KB_AUDIT_TAIL_WINDOW_BYTES = 16 * 1024;
+export const KB_APPLIED_RING_MAX = 200;
+/** Proposer fields: instance and sessionId are non-empty strings up to this long. */
+export const KB_PROPOSER_STRING_MAX_LENGTH = 128;
+/** Orphan blobs and staging files younger than this are never swept. */
+export const KB_SWEEP_MIN_AGE_MS = 60 * 60 * 1000;
+/** voidWorkspaceProposals reasons (recorded as audit reason codes). */
+export const KB_VOID_REASONS: readonly string[] = ['workspace_removed', 'agent_removed'];
+/** KB failure reasons: never a title, a content, or a resolved path. */
+export const KB_INVALID_ID_REASON = 'That Knowledge Base id is not valid.';
+export const KB_INVALID_INPUT_REASON = 'The request has a missing or malformed field.';
+export const KB_INVALID_TITLE_REASON =
+  'The title must be 1-120 characters of visible text on one line, without control, invisible or bidirectional characters.';
+export const KB_INVALID_CONTENT_REASON =
+  'The content contains characters that are not allowed (invalid UTF-8, a byte-order mark, control, tag or bidirectional-override characters).';
+export const KB_NOT_FOUND_REASON = 'No such Knowledge Base entry or proposal.';
+export const KB_TITLE_CONFLICT_REASON = 'Another Knowledge Base entry already has that title.';
+export const KB_STALE_REASON = 'The entry changed after the proposal was made.';
+export const KB_STATE_REASON = 'The proposal is not in a state that allows this decision.';
+export const KB_DIGEST_MISMATCH_REASON = 'The proposal is not the one that was reviewed.';
+export const KB_TOO_LARGE_REASON = 'The content or a Knowledge Base file is larger than allowed.';
+export const KB_QUOTA_PENDING_REASON = 'Too many proposals are waiting for a decision.';
+export const KB_QUOTA_PROPOSER_REASON = 'This agent has too many proposals waiting for a decision.';
+export const KB_QUOTA_ENTRIES_REASON =
+  'The Knowledge Base already holds the maximum number of entries.';
+export const KB_QUOTA_TOTAL_REASON = 'The Knowledge Base would exceed its total size.';
+export const KB_QUOTA_AUDIT_REASON =
+  'The Knowledge Base audit log is full; changes are refused until it is archived by hand.';
+export const KB_LOCKED_REASON =
+  'Another Pixel Agents server is writing this Knowledge Base (or its writer lock needs manual attention).';
+export const KB_TAMPERED_REASON =
+  'A Knowledge Base file does not match its recorded integrity data, so it was not used.';
+export const KB_CORRUPT_INDEX_REASON =
+  'The Knowledge Base index is unreadable or malformed, so it was left untouched.';
+export const KB_CORRUPT_SETTINGS_REASON =
+  'The Knowledge Base settings file is unreadable or malformed, so it was left untouched.';
+export const KB_UNSAFE_STORAGE_REASON =
+  '~/.pixel-agents/kb must be real directories owned by you with mode 0700 (and is not available on Windows).';
+export const KB_IO_REASON = "The Knowledge Base could not be read or written (see the host's log).";
+
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';
