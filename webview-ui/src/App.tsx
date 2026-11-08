@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import { AgentRoleNamesProvider } from './agentRoles.js';
+import type { AgentCuratorsValue } from './agentCurators.js';
 import { toMajorMinor } from './changelogData.js';
 import { AgentCardBar } from './components/AgentCardBar.js';
+import { AgentCardProviders } from './components/AgentCardProviders.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
@@ -63,6 +64,7 @@ import {
   isAgentVisible,
   shouldShowWorkspaceSwitcher,
   visibleAgentIds,
+  workspaceOfAgent,
 } from './workspaces.js';
 
 // Game state lives outside React — updated imperatively by message handlers
@@ -144,6 +146,8 @@ function App() {
     workspaceRejection,
     officeReadOnly,
     agentRoleNames,
+    curators,
+    requestCurator,
     terminalAvailable,
     terminalUnavailableReason,
     terminalAgentIds,
@@ -216,6 +220,17 @@ function App() {
   const workspaceBadges = useMemo(
     () => computeWorkspaceBadges(workspaceView, agents, agentAttention),
     [workspaceView, agents, agentAttention],
+  );
+  // Every agent card reads the curator state from here (shown only when the
+  // host reports curators available and the office is not read-only).
+  const agentCurators = useMemo<AgentCuratorsValue>(
+    () => ({
+      state: curators,
+      readOnly: officeReadOnly,
+      workspaceOf: (agentId) => workspaceOfAgent(workspaceView, agentId),
+      request: requestCurator,
+    }),
+    [curators, officeReadOnly, workspaceView, requestCurator],
   );
   const showWorkspaceSwitcher = shouldShowWorkspaceSwitcher({
     isBrowserRuntime,
@@ -822,7 +837,7 @@ function App() {
   // the terminal panel. Mobile: a column — the sliding office/terminal track
   // on top, the agent-card bar pinned along the bottom.
   return (
-    <AgentRoleNamesProvider value={agentRoleNames}>
+    <AgentCardProviders roleNames={agentRoleNames} curators={agentCurators}>
       <div
         className={`w-full h-full relative overflow-hidden flex ${isMobile ? 'flex-col' : ''}`}
         style={
@@ -1022,7 +1037,7 @@ function App() {
           <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />
         )}
       </div>
-    </AgentRoleNamesProvider>
+    </AgentCardProviders>
   );
 }
 

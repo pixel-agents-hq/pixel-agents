@@ -125,6 +125,10 @@ components:
         - $ref: '#/components/schemas/WorkspacesLoaded'
         - $ref: '#/components/schemas/WorkspaceRejected'
         - $ref: '#/components/schemas/AgentWorkspaceChanged'
+        # Workspace curators (standalone only, in memory)
+        - $ref: '#/components/schemas/CuratorsLoaded'
+        - $ref: '#/components/schemas/WorkspaceCuratorChanged'
+        - $ref: '#/components/schemas/CuratorRejected'
         # Roles (point-to-point replies to the requesting client only)
         - $ref: '#/components/schemas/RolesAvailable'
         - $ref: '#/components/schemas/RolePreview'
@@ -167,6 +171,8 @@ components:
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/SaveWorkspace'
         - $ref: '#/components/schemas/RemoveWorkspace'
+        - $ref: '#/components/schemas/SetWorkspaceCurator'
+        - $ref: '#/components/schemas/UnsetWorkspaceCurator'
         - $ref: '#/components/schemas/RequestRoles'
         - $ref: '#/components/schemas/RequestRolePreview'
         - $ref: '#/components/schemas/ConfirmRole'
@@ -975,6 +981,65 @@ components:
         workspaceId:
           type: string
 
+    # ── Workspace curators ─────────────────────────────────────────
+    # At most one agent per Workspace, appointed by the operator, held in the
+    # host's memory only (a restart starts with none). Only an agent holding a
+    # capability for that Workspace is eligible. Messages carry ids only. The
+    # default Workspace is always named `default`.
+
+    CuratorsLoaded:
+      description: >-
+        Sent to this client only during the handshake, after
+        `workspacesLoaded`. `available` is true only on a standalone host with
+        a runtime, a terminal manager and a capability registry; the client
+        shows curator controls only when it is true and the office is not
+        read-only. `curators` is empty when unavailable.
+      type: object
+      additionalProperties: false
+      required: [type, available, curators]
+      properties:
+        type:
+          const: curatorsLoaded
+        available:
+          type: boolean
+        curators:
+          type: array
+          items:
+            $ref: '#/components/schemas/CuratorEntry'
+
+    WorkspaceCuratorChanged:
+      description: >-
+        A Workspace's curator changed. Broadcast to every connected office.
+        `agentId` is null when the Workspace no longer has one (dismissed, the
+        agent lost its capability, or the Workspace was removed).
+      type: object
+      additionalProperties: false
+      required: [type, workspaceId, agentId]
+      properties:
+        type:
+          const: workspaceCuratorChanged
+        workspaceId:
+          type: string
+        agentId:
+          type: [integer, 'null']
+
+    CuratorRejected:
+      description: >-
+        A `setWorkspaceCurator` or `unsetWorkspaceCurator` was refused. Sent
+        point-to-point to the requesting client (never broadcast); nothing
+        changed. `reason` is a fixed string for the code.
+      type: object
+      additionalProperties: false
+      required: [type, code, reason]
+      properties:
+        type:
+          const: curatorRejected
+        code:
+          $ref: '#/components/schemas/CuratorRejectionCode'
+        reason:
+          type: string
+          description: Human-readable cause, shown inline to the user.
+
     # ── Roles ──────────────────────────────────────────────────────
     # A Role is a file `<Directory>/.claude/roles/<roleId>` appended to an
     # agent's system prompt at launch. There is no registry: the Roles of a
@@ -1534,6 +1599,40 @@ components:
         id:
           type: string
 
+    SetWorkspaceCurator:
+      description: >-
+        Privileged, standalone only. Appoint `agentId` as the curator of
+        `workspaceId`. The agent must hold a live capability issued for that
+        Workspace and the Workspace must have no curator yet. On success the
+        host broadcasts `workspaceCuratorChanged`; otherwise it replies
+        `curatorRejected`. A read-only client's request is dropped without a
+        reply.
+      type: object
+      additionalProperties: false
+      required: [type, workspaceId, agentId]
+      properties:
+        type:
+          const: setWorkspaceCurator
+        workspaceId:
+          type: string
+        agentId:
+          type: integer
+
+    UnsetWorkspaceCurator:
+      description: >-
+        Privileged, standalone only. Dismiss the curator of `workspaceId`. On
+        success the host broadcasts `workspaceCuratorChanged` with `agentId`
+        null; a Workspace without a curator is refused with `curatorRejected`
+        code `invalid`.
+      type: object
+      additionalProperties: false
+      required: [type, workspaceId]
+      properties:
+        type:
+          const: unsetWorkspaceCurator
+        workspaceId:
+          type: string
+
     RequestRoles:
       description: >-
         Privileged, standalone only. List the Roles in a registered Directory's
@@ -1728,6 +1827,30 @@ components:
         - `io`: the host could not read or write its own Role storage.
       type: string
       enum: [untrusted, invalid, unavailable, io]
+
+    CuratorEntry:
+      description: One Workspace's curator.
+      type: object
+      additionalProperties: false
+      required: [workspaceId, agentId]
+      properties:
+        workspaceId:
+          type: string
+        agentId:
+          type: integer
+
+    CuratorRejectionCode:
+      description: |
+        Why a curator request was refused:
+        - `invalid`: a field failed validation, the Workspace does not exist,
+          or (dismissing) the Workspace has no curator.
+        - `exists`: the Workspace already has a curator.
+        - `not_eligible`: the agent holds no live capability for that
+          Workspace.
+        - `unavailable`: curators are not supported on this host or in this
+          mode (VS Code panel, embedded server).
+      type: string
+      enum: [invalid, exists, not_eligible, unavailable]
 
     DirectorySource:
       description: |

@@ -71,6 +71,14 @@ Rules the operator chooses for one agent at launch, appended to that agent's sys
 Mind the one-letter neighbour: `.claude/rules/` (with a U) is Claude Code's own folder, and every `.md` under it is loaded automatically into EVERY agent in that folder. A Role file placed there instead of in `.claude/roles/` stops being a Role and silently applies to all of them.
 _Avoid_: persona, profile, agent type (that's Claude Agent Teams' term), rules file (that's `.claude/rules/`)
 
+**Capability**:
+The in-memory identity credential Pixel Agents issues to an agent it launches in its own terminal, delivered in that terminal's environment only, saying "this is agent N of Workspace W". It guards against misuse, not against a hostile user: it is not a security boundary, since anything running as the same OS user can read it, and every process the agent starts inherits it. It is revoked when the agent's terminal ends, the agent is removed, or the agent changes Workspace — for good, so moving back does not revive it; removing a Workspace therefore permanently revokes its agents' capabilities, while editing a Workspace's Directories moves no running agent and revokes nothing. Never persisted, so a restart revokes them all. Standalone only, and issued only where knowledge-base features are enabled — no release issues one yet.
+_Avoid_: token alone (the server token is a different secret), API key, session
+
+**Curator**:
+The one agent the operator appoints to look after a Workspace. Chosen by the operator from the office, never decided by a Role, at most one per Workspace, and held in memory only — a restart starts with none. Only an agent holding a Capability for that Workspace can be appointed, and it stops being the curator the moment that Capability is revoked. Standalone only; while no Capability is issued, every appointment is refused as not eligible.
+_Avoid_: owner, admin, lead (that's the team relationship)
+
 **Adopt**:
 Begin tracking a session that was started outside the office. An adopted agent is a full citizen.
 _Avoid_: import, attach

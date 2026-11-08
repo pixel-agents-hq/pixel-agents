@@ -6,6 +6,7 @@ import * as path from 'path';
 
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
+import type { CapabilityRegistry } from './capabilities.js';
 import type {
   AssetCache,
   ReloadAssetsSideEffect,
@@ -17,6 +18,7 @@ import {
   SERVER_REGISTRY_PROTOCOL_VERSION,
   SERVERS_DIR,
 } from './constants.js';
+import type { CuratorTable } from './curators.js';
 import { createHttpServer } from './httpServer.js';
 import type { ServerConfig, StandaloneAccess } from './serverConfig.js';
 import { isServerConfig, isServerTarget, sameStandaloneAccess } from './serverConfig.js';
@@ -73,6 +75,9 @@ export class PixelAgentsServer {
     onSetHooksEnabled?: SetHooksEnabledSideEffect;
     onReloadAssets?: ReloadAssetsSideEffect;
     ptyManager?: PtySessionManager;
+    /** Per-agent capabilities and Workspace curators (standalone, in memory). */
+    capabilities?: CapabilityRegistry;
+    curators?: CuratorTable;
     /** Extra privileged Host names (standalone; see wsAuth.privilegedHostnames). */
     allowedHosts?: readonly string[];
     /** Replace the persisted standalone token, revoking every URL that carried
@@ -143,6 +148,8 @@ export class PixelAgentsServer {
       onSetHooksEnabled: options?.onSetHooksEnabled,
       onReloadAssets: options?.onReloadAssets,
       ptyManager: options?.ptyManager,
+      capabilities: options?.capabilities,
+      curators: options?.curators,
       allowedHosts: standalone?.allowedHosts,
     });
 

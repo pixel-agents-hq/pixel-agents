@@ -18,6 +18,7 @@ import {
   loadAllFurniture,
   loadAllPets,
 } from './assetReload.js';
+import { CapabilityRegistry } from './capabilities.js';
 import type { AssetCache, ReloadAssetsSideEffect } from './clientMessageHandler.js';
 import {
   getHooksConsent,
@@ -31,6 +32,7 @@ import {
   TERMINAL_DISABLED_BY_FLAG_REASON,
   WILDCARD_HOSTNAMES,
 } from './constants.js';
+import { CuratorTable } from './curators.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
 import { removeStaleRoleSnapshots } from './roleStorage.js';
@@ -250,6 +252,16 @@ async function main(): Promise<void> {
     ? new PtySessionManager()
     : PtySessionManager.disabled(TERMINAL_DISABLED_BY_FLAG_REASON);
 
+  // Per-agent capabilities and Workspace curators: memory only, gone on
+  // restart. Created before anything else subscribes to the store, so the
+  // registry hears every removal first. No launch here passes isKbEnabled, so
+  // nothing is issued yet (S2): the curator controls answer not_eligible.
+  const capabilities = new CapabilityRegistry({ store, ptyManager });
+  const curators = new CuratorTable({
+    capabilities,
+    broadcast: (message) => store.broadcast(message),
+  });
+
   try {
     // Create runtime first (before server.start, so we can pass it in)
     const runtime = new AgentRuntime(store, claudeProvider);
@@ -347,6 +359,8 @@ async function main(): Promise<void> {
       onSetHooksEnabled,
       onReloadAssets,
       ptyManager,
+      capabilities,
+      curators,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,
     });
