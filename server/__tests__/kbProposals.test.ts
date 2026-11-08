@@ -113,6 +113,42 @@ describe('quotas, expiry and pruning (acceptance 9)', () => {
     await submitCreate(store, 'Other agent', 'x', proposer(2));
   });
 
+  it('a failed first scan of proposals/ leaves no partial cache: the next call scans again and the quota holds', async () => {
+    const processes = new Processes(temp.paths);
+    const first = processes.spawn();
+    for (let i = 0; i < 20; i++) await submitCreate(first.store, `Mine ${i}`, 'x', proposer(1));
+    processes.kill(first.pid);
+
+    // A restarted server: its first scan of proposals/ fails once.
+    const second = processes.spawn().store;
+    const realReaddir = fs.promises.readdir;
+    let failed = false;
+    const spy = vi.spyOn(fs.promises, 'readdir').mockImplementation(((
+      dir: Parameters<typeof realReaddir>[0],
+      ...rest: unknown[]
+    ) => {
+      if (!failed && String(dir).endsWith('proposals')) {
+        failed = true;
+        return Promise.reject(Object.assign(new Error('EIO'), { code: 'EIO' }));
+      }
+      return (realReaddir as (...args: unknown[]) => Promise<unknown>)(dir, ...rest);
+    }) as unknown as typeof fs.promises.readdir);
+    try {
+      const input = {
+        kind: 'create' as const,
+        title: 'Mine 20',
+        content: 'x',
+        proposer: proposer(1),
+      };
+      expect(await second.submitProposal(WS, input)).toMatchObject({ ok: false, code: 'io' });
+      // The failed scan must not have left an empty cache behind.
+      expect(await second.submitProposal(WS, input)).toMatchObject({ ok: false, code: 'quota' });
+      expect(pendingCache(second).size).toBe(20);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('caps the workspace at 100 pending', async () => {
     const store = singleStore(temp.paths);
     for (let agent = 1; agent <= 5; agent++) {

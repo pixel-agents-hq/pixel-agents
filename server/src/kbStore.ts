@@ -569,19 +569,28 @@ export class KbStore {
   private async loadCache(ctx: WorkspaceContext, index: KbIndex): Promise<KbProposalCache> {
     if (ctx.cache) return ctx.cache;
     const cache = new KbProposalCache();
+    // Installed first because reconciling writes proposal files that track
+    // themselves into ctx.cache; removed again if the scan does not finish, so
+    // an incomplete cache (which would under-count the quotas and hide pending
+    // proposals from reconciliation) is never kept: the next call scans again.
     ctx.cache = cache;
-    for (const name of await readDirectoryNames(this.paths.proposalsDir(ctx.ws))) {
-      const match = PROPOSAL_FILE_PATTERN.exec(name);
-      if (!match) continue;
-      let proposal: KbProposal;
-      try {
-        proposal = await this.readProposalFile(ctx.ws, match[1]);
-      } catch (err) {
-        if (!(err instanceof KbOpError)) throw err;
-        continue;
+    try {
+      for (const name of await readDirectoryNames(this.paths.proposalsDir(ctx.ws))) {
+        const match = PROPOSAL_FILE_PATTERN.exec(name);
+        if (!match) continue;
+        let proposal: KbProposal;
+        try {
+          proposal = await this.readProposalFile(ctx.ws, match[1]);
+        } catch (err) {
+          if (!(err instanceof KbOpError)) throw err;
+          continue;
+        }
+        cache.track(proposal);
+        await this.reconcileProposal(ctx, proposal, index);
       }
-      cache.track(proposal);
-      await this.reconcileProposal(ctx, proposal, index);
+    } catch (err) {
+      ctx.cache = null;
+      throw err;
     }
     return cache;
   }
