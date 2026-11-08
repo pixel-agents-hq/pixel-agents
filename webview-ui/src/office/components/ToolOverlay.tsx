@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 
+import { useAgentRoleNames } from '../../agentRoles.js';
 import { Button } from '../../components/ui/Button.js';
 import {
   BUBBLE_FADE_DURATION_SEC,
@@ -123,6 +124,7 @@ export function ToolOverlay({
   alwaysShowOverlay,
 }: ToolOverlayProps) {
   const [, setTick] = useState(0);
+  const roleNames = useAgentRoleNames();
   useEffect(() => {
     let rafId = 0;
     const tick = () => {
@@ -275,7 +277,8 @@ export function ToolOverlay({
 
         // Team info
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
-        const hasExtraLines = !!(ch.directoryName || teamRoleLabel);
+        const roleName = isSub ? undefined : roleNames[id];
+        const hasExtraLines = !!(ch.directoryName || teamRoleLabel || roleName);
 
         // Context gauge. Every agent gets one — lead, teammate, adopted,
         // headless — as soon as it has taken a turn. Sub-agents never do: they
@@ -327,6 +330,14 @@ export function ToolOverlay({
                   >
                     {activityText}
                   </span>
+                  {roleName && (
+                    <span
+                      data-testid="agent-overlay-role"
+                      className="text-2xs leading-none overflow-hidden text-ellipsis block text-text-muted"
+                    >
+                      Role: {roleName}
+                    </span>
+                  )}
                   {ch.directoryName && (
                     <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
                       {ch.directoryName}

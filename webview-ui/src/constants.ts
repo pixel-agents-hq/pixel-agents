@@ -581,3 +581,8 @@ export const WORKSPACE_SWITCHER_DESKTOP_RIGHT_PX = TERMINAL_SIDEBAR_WIDTH_PX + 8
  *  view toggle (its 8px inset plus the wider of its two labels), so the tab row
  *  scrolls under nothing. */
 export const MOBILE_VIEW_TOGGLE_RESERVED_PX = 112;
+
+// ── Role launch ──────────────────────────────────────────────
+
+/** Tallest the Role preview text may grow before it scrolls inside the modal. */
+export const ROLE_PREVIEW_MAX_HEIGHT_PX = 320;

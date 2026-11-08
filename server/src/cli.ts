@@ -33,6 +33,7 @@ import {
 } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
+import { removeStaleRoleSnapshots } from './roleStorage.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { ensureWorkspacesFile } from './workspaces.js';
@@ -233,6 +234,9 @@ async function main(): Promise<void> {
   // First start creates workspaces.json (default Workspace only); an existing
   // file, valid or not, is never touched here.
   ensureWorkspacesFile();
+  // A server that died without cleaning up (crash, SIGKILL) leaves the Role
+  // snapshots its agents launched with; only dead pids' directories go.
+  await removeStaleRoleSnapshots();
 
   // ── Create server ──
   const server = new PixelAgentsServer();

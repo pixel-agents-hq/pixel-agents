@@ -85,3 +85,7 @@ export const CLAUDE_SMALL_CONTEXT_WINDOW = 200_000;
  *  guessing small for a large model pins every gauge in the red, while the
  *  reverse is a quiet under-read that the runtime's widening still corrects. */
 export const CLAUDE_SMALL_CONTEXT_MODEL_PATTERN = /haiku|claude-[123]|-4-[01]\b/i;
+
+/** Appends a file to the system prompt. Not in `claude --help`, but verified on
+ *  2.1.285: works with CLAUDE.md and --session-id; an unknown flag exits. */
+export const CLAUDE_APPEND_SYSTEM_PROMPT_FILE_FLAG = '--append-system-prompt-file';

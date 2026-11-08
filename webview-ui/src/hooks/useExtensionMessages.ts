@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { HooksConsentRequest } from '../../../core/src/messages.js';
+import type { AgentRoleNames } from '../agentRoles.js';
+import { mergeAgentRoleNames, withAgentRoleName } from '../agentRoles.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
 import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
@@ -176,6 +178,8 @@ interface ExtensionMessageState {
   /** A read-only office (standalone without the server token): every change it
    *  sends is refused, so the UI hides the controls that would send one. */
   officeReadOnly: boolean;
+  /** Role display name per agent id (agents launched with a Role only). */
+  agentRoleNames: AgentRoleNames;
   // Terminal (standalone only; always false/empty under VS Code, which owns its
   // own terminals and never sends these messages)
   terminalAvailable: boolean;
@@ -261,6 +265,7 @@ export function useExtensionMessages(
   );
   // Never sent under VS Code, so it stays false there.
   const [officeReadOnly, setOfficeReadOnly] = useState(false);
+  const [agentRoleNames, setAgentRoleNames] = useState<AgentRoleNames>({});
   // Terminal control plane (standalone only; the server never sends these in
   // VS Code mode, so terminalAvailable stays false and no terminal UI renders).
   const [terminalAvailable, setTerminalAvailable] = useState(false);
@@ -391,6 +396,9 @@ export function useExtensionMessages(
         const teammateParentId = msg.parentAgentId as number | undefined;
         const teamName = msg.teamName as string | undefined;
         setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        setAgentRoleNames((prev) =>
+          withAgentRoleName(prev, id, msg.roleName as string | undefined),
+        );
         const nextWorkspaceView = applyAgentCreated(workspaceViewRef.current, {
           id,
           workspaceId: msg.workspaceId as string | undefined,
@@ -448,6 +456,7 @@ export function useExtensionMessages(
         // stale cleanup), and a tab for a gone agent would attach to nothing.
         setTerminalAgentIds((prev) => prev.filter((a) => a !== id));
         setAgentTools((prev) => omitKey(prev, id));
+        setAgentRoleNames((prev) => omitKey(prev, id));
         setAgentStatuses((prev) => omitKey(prev, id));
         setAgentAwaitingInput((prev) => omitKey(prev, id));
         setAgentSeenActivity((prev) => omitKey(prev, id));
@@ -484,6 +493,9 @@ export function useExtensionMessages(
         ) {
           saveAgentSeats(os);
         }
+        setAgentRoleNames((prev) =>
+          mergeAgentRoleNames(prev, msg.roleNames as Record<string, string> | undefined),
+        );
         updateWorkspaceView(
           applyExistingAgents(
             workspaceViewRef.current,
@@ -995,6 +1007,7 @@ export function useExtensionMessages(
     selectWorkspace: handleSelectWorkspace,
     workspaceRejection,
     officeReadOnly,
+    agentRoleNames,
     terminalAvailable,
     terminalUnavailableReason,
     terminalAgentIds,

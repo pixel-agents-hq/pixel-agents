@@ -81,6 +81,7 @@ import {
   LAYOUT_REVISION_KEY,
 } from './constants.js';
 import { workspaceDirectories } from './hostDirectories.js';
+import { vscodeRoleLaunchRefusal } from './roleLaunchGuard.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
 
 /** Cap on the pending-broadcast queue. If we exceed this, something has gone
@@ -461,6 +462,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message.type === 'launchAgent') {
+        const roleRefusal = vscodeRoleLaunchRefusal(message);
+        if (roleRefusal) {
+          this.webview?.postMessage(roleRefusal);
+          return;
+        }
         const prevAgentIds = new Set(this.store.keys());
         await launchNewTerminal(
           this.store.nextAgentId,

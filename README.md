@@ -174,8 +174,11 @@ npm run build
 Press **F5** in VS Code to launch the Extension Development Host. To run the standalone bundle built from source:
 
 ```bash
-node dist/cli.js
+npm start                    # same as node dist/cli.js
+npm start -- --port 3100     # extra arguments go to the CLI
 ```
+
+`npm start` serves the built `dist/` as-is, without hot reload, and does not build first: run `npm run build` again after changing code.
 
 To develop the standalone office with rebuild-on-change, run one command:
 

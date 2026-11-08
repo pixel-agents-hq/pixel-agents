@@ -16,6 +16,7 @@ import {
 import { claudeTeamProvider } from './claudeTeamProvider.js';
 import { CONSENT_DISCLOSURE, CONSENT_INSTALL_HEADLINE } from './consentCopy.js';
 import {
+  CLAUDE_APPEND_SYSTEM_PROMPT_FILE_FLAG,
   CLAUDE_LARGE_CONTEXT_WINDOW,
   CLAUDE_SMALL_CONTEXT_MODEL_PATTERN,
   CLAUDE_SMALL_CONTEXT_WINDOW,
@@ -102,10 +103,16 @@ function getSessionDirs(workspacePath: string): string[] {
 function buildLaunchCommand(
   sessionId: string,
   cwd: string,
-  opts?: { bypassPermissions?: boolean },
+  opts?: { bypassPermissions?: boolean; appendSystemPromptFile?: string },
 ): { command: string; args: string[]; env?: Record<string, string> } {
   const args = ['--session-id', sessionId];
   if (opts?.bypassPermissions) args.push('--dangerously-skip-permissions');
+  // A Role's snapshot path, as one argv element: the standalone PTY spawns
+  // claude directly, never through a shell. An unknown flag makes claude exit
+  // (verified on 2.1.285) -- a Role is never silently dropped.
+  if (opts?.appendSystemPromptFile !== undefined) {
+    args.push(CLAUDE_APPEND_SYSTEM_PROMPT_FILE_FLAG, opts.appendSystemPromptFile);
+  }
   return { command: 'claude', args, env: { PWD: cwd } };
 }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
+import { AgentRoleNamesProvider } from './agentRoles.js';
 import { toMajorMinor } from './changelogData.js';
 import { AgentCardBar } from './components/AgentCardBar.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
@@ -10,6 +11,7 @@ import { DirectoryModal } from './components/DirectoryModal.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
+import { RoleLaunchModal } from './components/RoleLaunchModal.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TerminalDrawer } from './components/TerminalDrawer.js';
 import { Tooltip } from './components/Tooltip.js';
@@ -28,14 +30,15 @@ import {
 import { useDirectoryEditor } from './hooks/useDirectoryEditor.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
-import type { Directory } from './hooks/useExtensionMessages.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useIntroTour } from './hooks/useIntroTour.js';
 import { useIsMobile } from './hooks/useIsMobile.js';
 import { useKeyboardViewport } from './hooks/useKeyboardViewport.js';
+import { useRoleLaunch } from './hooks/useRoleLaunch.js';
 import { useTerminalDrawer } from './hooks/useTerminalDrawer.js';
 import { useWorkspaceEditor } from './hooks/useWorkspaceEditor.js';
 import { MobileShell } from './mobile/MobileShell.js';
+import type { MobileShellController } from './mobile/useMobileShell.js';
 import { useMobileShell } from './mobile/useMobileShell.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
@@ -140,6 +143,7 @@ function App() {
     selectWorkspace,
     workspaceRejection,
     officeReadOnly,
+    agentRoleNames,
     terminalAvailable,
     terminalUnavailableReason,
     terminalAgentIds,
@@ -235,16 +239,22 @@ function App() {
     agentSeenActivity,
   });
 
-  const launchIntoDirectory = useCallback((directory: Directory) => {
-    transport.send({ type: 'launchAgent', directoryPath: directory.path });
-  }, []);
+  // A launch is two steps in the standalone browser (Directory, then an optional
+  // Role); everywhere else it is the single launchAgent it always was.
+  const mobileShellRef = useRef<MobileShellController | null>(null);
+  const roleLaunch = useRoleLaunch({
+    officeReadOnly,
+    bypassPermissions,
+    onCancel: () => mobileShellRef.current?.cancelPendingLaunch(),
+  });
   const mobileShell = useMobileShell({
     getOfficeState,
     terminalAgentIds,
     drawer: terminalDrawer,
     focusedAgentId,
-    launchAgent: launchIntoDirectory,
+    launchAgent: roleLaunch.begin,
   });
+  mobileShellRef.current = mobileShell;
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -731,6 +741,7 @@ function App() {
           directories={launchDirectories}
           onAddDirectory={directoryEditor.add}
           onEditDirectory={directoryEditor.edit}
+          onLaunchDirectory={roleLaunch.begin}
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
         />
@@ -807,37 +818,38 @@ function App() {
     </div>
   );
 
+  // Desktop: split view — the office region flexes to fill the space left of
+  // the terminal panel. Mobile: a column — the sliding office/terminal track
+  // on top, the agent-card bar pinned along the bottom.
   return (
-    // Desktop: split view — the office region flexes to fill the space left of
-    // the terminal panel. Mobile: a column — the sliding office/terminal track
-    // on top, the agent-card bar pinned along the bottom.
-    <div
-      className={`w-full h-full relative overflow-hidden flex ${isMobile ? 'flex-col' : ''}`}
-      style={
-        isMobile && keyboard.clampHeight !== null ? { height: keyboard.clampHeight } : undefined
-      }
-    >
-      {isMobile ? (
-        <MobileShell
-          office={officeRegion}
-          shell={mobileShell}
-          drawer={terminalDrawer}
-          agentIds={visibleAgents}
-          terminalAgentIds={terminalAgentIds}
-          focusedAgentId={focusedAgentId}
-          terminalAvailable={terminalAvailable}
-          terminalUnavailableReason={terminalUnavailableReason}
-          directories={launchDirectories}
-          onAddDirectory={directoryEditor.add}
-          onEditDirectory={directoryEditor.edit}
-          onCloseAgent={handleCloseAgent}
-          keyboardOpen={keyboard.keyboardOpen}
-        />
-      ) : (
-        <>
-          {officeRegion}
+    <AgentRoleNamesProvider value={agentRoleNames}>
+      <div
+        className={`w-full h-full relative overflow-hidden flex ${isMobile ? 'flex-col' : ''}`}
+        style={
+          isMobile && keyboard.clampHeight !== null ? { height: keyboard.clampHeight } : undefined
+        }
+      >
+        {isMobile ? (
+          <MobileShell
+            office={officeRegion}
+            shell={mobileShell}
+            drawer={terminalDrawer}
+            agentIds={visibleAgents}
+            terminalAgentIds={terminalAgentIds}
+            focusedAgentId={focusedAgentId}
+            terminalAvailable={terminalAvailable}
+            terminalUnavailableReason={terminalUnavailableReason}
+            directories={launchDirectories}
+            onAddDirectory={directoryEditor.add}
+            onEditDirectory={directoryEditor.edit}
+            onCloseAgent={handleCloseAgent}
+            keyboardOpen={keyboard.keyboardOpen}
+          />
+        ) : (
+          <>
+            {officeRegion}
 
-          {/* Standalone with a terminal: terminalAvailable is only ever true when
+            {/* Standalone with a terminal: terminalAvailable is only ever true when
               the server reports a working PTY to a tokened session, which VS
               Code's surface never does. In flow as a flex sibling so the office
               region reflows beside it instead of being overlaid.
@@ -846,161 +858,171 @@ function App() {
               bar stands alone with every agent in the office, external sessions
               included — the at-a-glance "who needs attention" strip, with a
               click raising the agent's editor terminal where there is one. */}
-          {terminalAvailable ? (
-            <TerminalDrawer
-              agentIds={terminalAgentIds}
-              cardAgentIds={visibleTerminalAgentIds}
-              shownAgentId={terminalDrawer.shownAgentId}
-              onSelectAgent={terminalDrawer.select}
-              onCloseAgent={handleCloseAgent}
-              isOpen={terminalDrawer.isOpen}
-              onClosePanel={terminalDrawer.close}
-              widthPx={terminalDrawer.widthPx}
-              onResizeStart={terminalDrawer.onResizeStart}
-              getAppearance={terminalDrawer.getAppearance}
-              statusFor={terminalDrawer.statusFor}
-              onStatusChange={terminalDrawer.onStatusChange}
-            />
-          ) : (
-            !isDebugMode && (
-              <AgentCardBar
-                agentIds={visibleAgents}
-                focusedAgentId={focusedAgentId}
+            {terminalAvailable ? (
+              <TerminalDrawer
+                agentIds={terminalAgentIds}
+                cardAgentIds={visibleTerminalAgentIds}
+                shownAgentId={terminalDrawer.shownAgentId}
+                onSelectAgent={terminalDrawer.select}
+                onCloseAgent={handleCloseAgent}
+                isOpen={terminalDrawer.isOpen}
+                onClosePanel={terminalDrawer.close}
+                widthPx={terminalDrawer.widthPx}
+                onResizeStart={terminalDrawer.onResizeStart}
                 getAppearance={terminalDrawer.getAppearance}
                 statusFor={terminalDrawer.statusFor}
-                onSelect={handleCardSelect}
-                onClose={handleCloseAgent}
+                onStatusChange={terminalDrawer.onStatusChange}
               />
-            )
-          )}
-        </>
-      )}
+            ) : (
+              !isDebugMode && (
+                <AgentCardBar
+                  agentIds={visibleAgents}
+                  focusedAgentId={focusedAgentId}
+                  getAppearance={terminalDrawer.getAppearance}
+                  statusFor={terminalDrawer.statusFor}
+                  onSelect={handleCardSelect}
+                  onClose={handleCloseAgent}
+                />
+              )
+            )}
+          </>
+        )}
 
-      {/* Hooks info modal. Top level, beside the other modals: inside the
+        {/* Hooks info modal. Top level, beside the other modals: inside the
           office region it would sit in the mobile shell's transformed track,
           and a transformed ancestor is the containing block of position:
           fixed — the modal would size to the 200%-wide track. */}
-      <Modal
-        isOpen={isHooksInfoOpen}
-        onClose={() => setIsHooksInfoOpen(false)}
-        title="Instant Detection is ON"
-        zIndex={52}
-      >
-        <div className="text-base text-text px-10" style={{ lineHeight: 1.4 }}>
-          <p className="mb-8">Your Pixel Agents office now reacts in real-time:</p>
-          <ul className="mb-8 pl-18 list-disc m-0">
-            <li className="text-sm mb-2">Permission prompts appear instantly</li>
-            <li className="text-sm mb-2">Turn completions detected the moment they happen</li>
-            <li className="text-sm mb-2">Sound notifications play immediately</li>
-          </ul>
-          <p className="mb-12 text-text-muted">
-            This works through Claude Code Hooks, small event listeners that notify Pixel Agents
-            whenever something happens in your Claude sessions.
-          </p>
-          <div className="text-center">
-            <button
-              onClick={() => setIsHooksInfoOpen(false)}
-              className="py-4 px-20 text-lg bg-accent text-white border-2 border-accent rounded-none cursor-pointer shadow-pixel"
-            >
-              Got it
-            </button>
+        <Modal
+          isOpen={isHooksInfoOpen}
+          onClose={() => setIsHooksInfoOpen(false)}
+          title="Instant Detection is ON"
+          zIndex={52}
+        >
+          <div className="text-base text-text px-10" style={{ lineHeight: 1.4 }}>
+            <p className="mb-8">Your Pixel Agents office now reacts in real-time:</p>
+            <ul className="mb-8 pl-18 list-disc m-0">
+              <li className="text-sm mb-2">Permission prompts appear instantly</li>
+              <li className="text-sm mb-2">Turn completions detected the moment they happen</li>
+              <li className="text-sm mb-2">Sound notifications play immediately</li>
+            </ul>
+            <p className="mb-12 text-text-muted">
+              This works through Claude Code Hooks, small event listeners that notify Pixel Agents
+              whenever something happens in your Claude sessions.
+            </p>
+            <div className="text-center">
+              <button
+                onClick={() => setIsHooksInfoOpen(false)}
+                className="py-4 px-20 text-lg bg-accent text-white border-2 border-accent rounded-none cursor-pointer shadow-pixel"
+              >
+                Got it
+              </button>
+            </div>
+            <p className="mt-8 text-xs text-text-muted text-center">
+              To disable, go to Settings {'>'} Instant Detection
+            </p>
           </div>
-          <p className="mt-8 text-xs text-text-muted text-center">
-            To disable, go to Settings {'>'} Instant Detection
-          </p>
-        </div>
-      </Modal>
-      {/* Rendered at the composition root, not inside a launch surface: the
+        </Modal>
+        {/* Rendered at the composition root, not inside a launch surface: the
           drawer that opens it lives in BottomToolbar on desktop and
           MobileAgentBar on mobile, and both close as soon as it appears. */}
-      <DirectoryModal
-        isOpen={directoryEditor.modal.open}
-        editing={directoryEditor.modal.editing}
-        error={directoryEditor.error}
-        suggestions={directorySuggestions}
-        areas={areaLabels}
-        assignedAreas={directoryEditor.assignedAreas}
-        onSubmit={directoryEditor.submit}
-        onDelete={directoryEditor.remove}
-        onClose={directoryEditor.close}
-      />
+        <RoleLaunchModal
+          state={roleLaunch.state}
+          bypassPermissions={bypassPermissions}
+          onPickRole={roleLaunch.pickRole}
+          onPickNoRole={roleLaunch.pickNoRole}
+          onConfirm={roleLaunch.confirm}
+          onBack={roleLaunch.back}
+          onCancel={roleLaunch.cancel}
+        />
+        <DirectoryModal
+          isOpen={directoryEditor.modal.open}
+          editing={directoryEditor.modal.editing}
+          error={directoryEditor.error}
+          suggestions={directorySuggestions}
+          areas={areaLabels}
+          assignedAreas={directoryEditor.assignedAreas}
+          onSubmit={directoryEditor.submit}
+          onDelete={directoryEditor.remove}
+          onClose={directoryEditor.close}
+        />
 
-      {/* Same placement rule as the Directory modal: the root, never the
+        {/* Same placement rule as the Directory modal: the root, never the
           office region (the phone's sliding track would become its containing
           block). */}
-      <WorkspaceModal
-        isOpen={workspaceEditor.modal.open}
-        editing={workspaceEditor.modal.editing}
-        workspaces={workspaceView.workspaces ?? []}
-        directories={directories}
-        error={workspaceEditor.error}
-        onSubmit={workspaceEditor.submit}
-        onDelete={workspaceEditor.remove}
-        onClose={workspaceEditor.close}
-      />
+        <WorkspaceModal
+          isOpen={workspaceEditor.modal.open}
+          editing={workspaceEditor.modal.editing}
+          workspaces={workspaceView.workspaces ?? []}
+          directories={directories}
+          error={workspaceEditor.error}
+          onSubmit={workspaceEditor.submit}
+          onDelete={workspaceEditor.remove}
+          onClose={workspaceEditor.close}
+        />
 
-      <ChangelogModal
-        isOpen={isChangelogOpen}
-        onClose={() => setIsChangelogOpen(false)}
-        currentVersion={extensionVersion}
-      />
+        <ChangelogModal
+          isOpen={isChangelogOpen}
+          onClose={() => setIsChangelogOpen(false)}
+          currentVersion={extensionVersion}
+        />
 
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        isDebugMode={isDebugMode}
-        onToggleDebugMode={handleToggleDebugMode}
-        alwaysShowOverlay={alwaysShowOverlay}
-        onToggleAlwaysShowOverlay={handleToggleAlwaysShowOverlay}
-        ghostHeadlessAgents={ghostHeadlessAgents}
-        onToggleGhostHeadlessAgents={handleToggleGhostHeadlessAgents}
-        externalAssetDirectories={externalAssetDirectories}
-        watchAllSessions={watchAllSessions}
-        onToggleWatchAllSessions={() => {
-          const newVal = !watchAllSessions;
-          setWatchAllSessions(newVal);
-          transport.send({ type: 'setWatchAllSessions', enabled: newVal });
-        }}
-        hooksInstalled={claudeHooksInstalled}
-        onToggleHooksEnabled={() => {
-          // Toggle the DISPLAYED state (actual install), not the preference: when the two disagree — preference on,
-          // nothing installed while consent is pending — toggling the preference would turn hooks OFF for a user
-          // asking for ON. No optimistic local update either; both backends answer with the truthful hooksStatus this
-          // checkbox renders, so it lands correct instead of flickering when an install fails. The providerId is
-          // ECHOED from that row (never originated here), so nothing sends until the row has arrived.
-          const [rowProviderId] =
-            Object.entries(hooksInstalled).find(([id]) => id === 'claude') ?? [];
-          if (rowProviderId !== undefined) {
-            transport.send({
-              type: 'setHooksEnabled',
-              providerId: rowProviderId,
-              enabled: !claudeHooksInstalled,
-            });
-          }
-        }}
-        showAreas={showAreas}
-        onToggleShowAreas={onToggleShowAreas}
-        showAreasAvailable={areasAvailable}
-        bypassPermissions={bypassPermissions}
-        onToggleBypassPermissions={() => {
-          const newVal = !bypassPermissions;
-          setBypassPermissions(newVal);
-          transport.send({ type: 'setBypassPermissions', enabled: newVal });
-        }}
-        showHostDirectories={showHostDirectories}
-        onToggleShowHostDirectories={() => {
-          const newVal = !showHostDirectories;
-          setShowHostDirectories(newVal);
-          transport.send({ type: 'setShowHostDirectories', enabled: newVal });
-        }}
-        onExportLayout={handleExportLayout}
-        onImportLayout={handleImportLayout}
-      />
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          isDebugMode={isDebugMode}
+          onToggleDebugMode={handleToggleDebugMode}
+          alwaysShowOverlay={alwaysShowOverlay}
+          onToggleAlwaysShowOverlay={handleToggleAlwaysShowOverlay}
+          ghostHeadlessAgents={ghostHeadlessAgents}
+          onToggleGhostHeadlessAgents={handleToggleGhostHeadlessAgents}
+          externalAssetDirectories={externalAssetDirectories}
+          watchAllSessions={watchAllSessions}
+          onToggleWatchAllSessions={() => {
+            const newVal = !watchAllSessions;
+            setWatchAllSessions(newVal);
+            transport.send({ type: 'setWatchAllSessions', enabled: newVal });
+          }}
+          hooksInstalled={claudeHooksInstalled}
+          onToggleHooksEnabled={() => {
+            // Toggle the DISPLAYED state (actual install), not the preference: when the two disagree — preference on,
+            // nothing installed while consent is pending — toggling the preference would turn hooks OFF for a user
+            // asking for ON. No optimistic local update either; both backends answer with the truthful hooksStatus this
+            // checkbox renders, so it lands correct instead of flickering when an install fails. The providerId is
+            // ECHOED from that row (never originated here), so nothing sends until the row has arrived.
+            const [rowProviderId] =
+              Object.entries(hooksInstalled).find(([id]) => id === 'claude') ?? [];
+            if (rowProviderId !== undefined) {
+              transport.send({
+                type: 'setHooksEnabled',
+                providerId: rowProviderId,
+                enabled: !claudeHooksInstalled,
+              });
+            }
+          }}
+          showAreas={showAreas}
+          onToggleShowAreas={onToggleShowAreas}
+          showAreasAvailable={areasAvailable}
+          bypassPermissions={bypassPermissions}
+          onToggleBypassPermissions={() => {
+            const newVal = !bypassPermissions;
+            setBypassPermissions(newVal);
+            transport.send({ type: 'setBypassPermissions', enabled: newVal });
+          }}
+          showHostDirectories={showHostDirectories}
+          onToggleShowHostDirectories={() => {
+            const newVal = !showHostDirectories;
+            setShowHostDirectories(newVal);
+            transport.send({ type: 'setShowHostDirectories', enabled: newVal });
+          }}
+          onExportLayout={handleExportLayout}
+          onImportLayout={handleImportLayout}
+        />
 
-      {showMigrationNotice && (
-        <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />
-      )}
-    </div>
+        {showMigrationNotice && (
+          <MigrationNotice onDismiss={() => setMigrationNoticeDismissed(true)} />
+        )}
+      </div>
+    </AgentRoleNamesProvider>
   );
 }
 

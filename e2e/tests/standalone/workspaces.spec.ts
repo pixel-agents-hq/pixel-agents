@@ -15,7 +15,7 @@ import {
   expectOverlayVisibleWithTexts,
   getAgentOverlays,
 } from '../../helpers/office';
-import { addDirectory, openLaunchDrawer, setSettings } from '../../helpers/webview';
+import { addDirectory, chooseNoRole, openLaunchDrawer, setSettings } from '../../helpers/webview';
 import {
   createWorkspace,
   getAgentCards,
@@ -172,6 +172,7 @@ test.describe('Standalone / workspaces with agents', () => {
     await selectWorkspaceTab(page, WORKSPACE_NAME);
     const drawer = await openLaunchDrawer(page);
     await drawer.getByRole('button', { name: DIRECTORY_NAME, exact: true }).click();
+    await chooseNoRole(page);
     await expectOverlayVisibleWithTexts(page, ['Running: npm test', DIRECTORY_NAME]);
     await expectOverlayCount(page, 1);
     await expect(getAgentCards(page)).toHaveCount(1);
@@ -225,6 +226,7 @@ test.describe('Standalone / workspaces with agents', () => {
     await selectWorkspaceTab(page, WORKSPACE_NAME);
     const drawer = await openLaunchDrawer(page);
     await drawer.getByRole('button', { name: DIRECTORY_NAME, exact: true }).click();
+    await chooseNoRole(page);
     await expectOverlayCount(page, 1);
 
     // Acceptance 6: the agent is out of sight, so what it waits on is on its tab.

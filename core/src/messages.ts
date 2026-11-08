@@ -46,6 +46,10 @@ export type ServerMessage =
   | WorkspacesLoaded
   | WorkspaceRejected
   | AgentWorkspaceChanged
+  | RolesAvailable
+  | RolePreview
+  | RoleConfirmed
+  | RoleRejected
   | TerminalAvailability
   | TerminalSessionOpened
   | TerminalSessionClosed
@@ -79,6 +83,9 @@ export type ClientMessage =
   | RemoveDirectory
   | SaveWorkspace
   | RemoveWorkspace
+  | RequestRoles
+  | RequestRolePreview
+  | ConfirmRole
   | RequestDirectorySuggestions
   | RequestDiagnostics;
 
@@ -96,6 +103,7 @@ export interface AgentCreated {
   palette?: number;
   hueShift?: number;
   workspaceId?: string;
+  roleName?: string;
 }
 
 export interface AgentClosed {
@@ -115,6 +123,7 @@ export interface ExistingAgents {
   directoryNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
   workspaceIds?: Record<string, string>;
+  roleNames?: Record<string, string>;
 }
 
 export interface AgentSeatMeta {
@@ -383,6 +392,43 @@ export interface AgentWorkspaceChanged {
   workspaceId: string;
 }
 
+export interface RolesAvailable {
+  type: 'rolesAvailable';
+  directoryPath: string;
+  roles: RoleEntry[];
+}
+
+export interface RoleEntry {
+  roleId: string;
+  name: string;
+}
+
+export interface RolePreview {
+  type: 'rolePreview';
+  directoryPath: string;
+  roleId: string;
+  content: string;
+  sha256: string;
+  size: number;
+  mtime: string;
+  trusted: boolean;
+}
+
+export interface RoleConfirmed {
+  type: 'roleConfirmed';
+  directoryPath: string;
+  roleId: string;
+  sha256: string;
+}
+
+export interface RoleRejected {
+  type: 'roleRejected';
+  code: RoleRejectionCode;
+  reason: string;
+}
+
+export type RoleRejectionCode = 'untrusted' | 'invalid' | 'unavailable' | 'io';
+
 export interface TerminalAvailability {
   type: 'terminalAvailability';
   available: boolean;
@@ -412,6 +458,7 @@ export interface WebviewReady {
 export interface LaunchAgent {
   type: 'launchAgent';
   directoryPath?: string;
+  roleId?: string;
 }
 
 export interface FocusAgent {
@@ -547,6 +594,24 @@ export interface SaveWorkspace {
 export interface RemoveWorkspace {
   type: 'removeWorkspace';
   id: string;
+}
+
+export interface RequestRoles {
+  type: 'requestRoles';
+  directoryPath: string;
+}
+
+export interface RequestRolePreview {
+  type: 'requestRolePreview';
+  directoryPath: string;
+  roleId: string;
+}
+
+export interface ConfirmRole {
+  type: 'confirmRole';
+  directoryPath: string;
+  roleId: string;
+  sha256: string;
 }
 
 export interface RequestDirectorySuggestions {

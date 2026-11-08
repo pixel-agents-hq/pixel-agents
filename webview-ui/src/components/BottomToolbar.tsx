@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import { isBrowserRuntime } from '../runtime.js';
-import { transport } from '../transport/index.js';
 import { LaunchDrawer } from './LaunchDrawer.js';
 import { Button } from './ui/Button.js';
 
@@ -14,6 +13,9 @@ interface BottomToolbarProps {
   directories: Directory[];
   /** Drawer's pinned `+ Directory` row — opens the Directory modal empty. */
   onAddDirectory: () => void;
+  /** A Directory picked from the drawer: the surface decides what a launch is
+   *  (App runs the Role step). */
+  onLaunchDirectory: (directory: Directory) => void;
   /** Pencil on a user-defined row — opens the modal pre-filled. */
   onEditDirectory: (directory: Directory) => void;
   /** Standalone: server has a working PTY, so agents can be launched here. */
@@ -30,6 +32,7 @@ export function BottomToolbar({
   directories,
   onAddDirectory,
   onEditDirectory,
+  onLaunchDirectory,
   terminalAvailable,
   terminalUnavailableReason,
 }: BottomToolbarProps) {
@@ -57,7 +60,7 @@ export function BottomToolbar({
 
   const handleDirectorySelect = (directory: Directory) => {
     setIsDrawerOpen(false);
-    transport.send({ type: 'launchAgent', directoryPath: directory.path });
+    onLaunchDirectory(directory);
   };
 
   // Standalone can launch agents whenever the server has a working PTY. When it

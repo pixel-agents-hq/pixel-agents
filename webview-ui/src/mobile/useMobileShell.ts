@@ -17,6 +17,9 @@ export interface MobileShellController {
   /** A Directory picked from the + card's drawer: launch into it, then
    *  slide over once the new terminal appears. */
   launch: (directory: Directory) => void;
+  /** The Role step was dismissed: no launch is coming, so don't slide over
+   *  for whatever terminal opens next. */
+  cancelPendingLaunch: () => void;
 }
 
 interface MobileShellInputs {
@@ -60,6 +63,10 @@ export function useMobileShell({
     },
     [launchAgent],
   );
+
+  const cancelPendingLaunch = useCallback(() => {
+    pendingLaunchRef.current = false;
+  }, []);
 
   const showTerminal = useCallback(() => setView('terminal'), []);
 
@@ -105,5 +112,5 @@ export function useMobileShell({
     [getOfficeState, terminalAgentIds, view, reveal],
   );
 
-  return { view, showTerminal, toggleView, selectCard, launch };
+  return { view, showTerminal, toggleView, selectCard, launch, cancelPendingLaunch };
 }
