@@ -11,7 +11,7 @@ import { CAPABILITY_ENV_NAME, TERMINAL_TERM_NAME } from '../src/constants.js';
 import { CuratorTable } from '../src/curators.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
-import { KbHarness } from './kbHarness.js';
+import { KbHarness } from './curatorHarness.js';
 
 /**
  * Per-agent capabilities (S2): issued by the standalone launcher only when the

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_WORKSPACE_ID } from '../../core/src/constants.js';
 import { createAgentState } from '../src/agentState.js';
 import { WORKSPACE_ID_MAX_LENGTH } from '../src/constants.js';
-import { KbHarness } from './kbHarness.js';
+import { KbHarness } from './curatorHarness.js';
 
 /**
  * Workspace curators over the wire (S2): appointing, dismissing and every
