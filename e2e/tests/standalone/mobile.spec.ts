@@ -20,10 +20,12 @@ import { arrangeNextClaudeInvocation, claudeScenario } from '../../helpers/mock-
 const PHONE = { width: 390, height: 844 };
 
 /** The + card opens the launch drawer; the launch itself is a tap on the
- *  host-contributed Directory (the workspace the server started in). */
+ *  host-contributed Directory (the workspace the server started in), then
+ *  "No role" on the Role step. */
 async function launchFromCard(page: Page, workspaceDir: string) {
   await page.getByTitle('Launch agent', { exact: true }).tap();
   await page.getByRole('button', { name: path.basename(workspaceDir), exact: true }).tap();
+  await page.getByTestId('role-none').tap();
 }
 
 /** The page currently showing, read off the view toggle's title. */

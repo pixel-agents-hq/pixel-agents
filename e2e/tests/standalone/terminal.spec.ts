@@ -6,7 +6,7 @@ import {
   waitForClaudeHookSetup,
 } from '../../helpers/mock-claude';
 import { expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
-import { clickAddAgent, setSettings } from '../../helpers/webview';
+import { chooseNoRole, clickAddAgent, setSettings } from '../../helpers/webview';
 
 /**
  * The standalone embedded terminal: browser "+ Agent" → server-side PTY running
@@ -45,6 +45,7 @@ test.describe('Standalone / terminal', () => {
     // Launch from the browser: the press opens the Directory drawer, and the
     // click on its single row (the server's start directory) sends launchAgent.
     await clickAddAgent(page);
+    await chooseNoRole(page);
 
     // Control plane: terminalSessionOpened -> an agent card (the drawer tab).
     const agentCard = page.getByTitle('Agent 1');
@@ -91,6 +92,7 @@ test.describe('Standalone / terminal', () => {
         claudeScenario(`standalone pty tab ${n}`).holdOpenFor(60_000).build(),
       );
       await clickAddAgent(page);
+      await chooseNoRole(page);
       await expect(page.getByTitle(`Agent ${n}`)).toBeVisible({ timeout: 15_000 });
     }
 
@@ -139,6 +141,7 @@ test.describe('Standalone / terminal', () => {
       claudeScenario('terminal copy').holdOpenFor(60_000).build(),
     );
     await clickAddAgent(page);
+    await chooseNoRole(page);
     const terminal = page.locator('.xterm').first();
     await expect(terminal).toContainText('mock claude session', { timeout: 15_000 });
     await terminal.click();

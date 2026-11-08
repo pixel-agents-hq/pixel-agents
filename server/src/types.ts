@@ -30,6 +30,10 @@ export interface AgentState {
    *  settles the Workspace once. Runtime-only: never persisted, so a restart
    *  leaves the agent where it is. */
   workspaceCwdPending?: boolean;
+  /** Display name of the Role this agent was launched with (standalone only).
+   *  Runtime-only and display-only: never persisted, so no restore or restart
+   *  path can relaunch with a Role. The Role's content and hash never live here. */
+  roleName?: string;
   /** Timestamp of last JSONL data received (ms since epoch) */
   lastDataAt: number;
   /** Total JSONL lines processed for this agent */

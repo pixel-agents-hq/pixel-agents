@@ -1,3 +1,4 @@
+import { agentCardTitle, useAgentRoleName } from '../agentRoles.js';
 import type { CardVariant } from './cardBar.js';
 import { CharacterMugShot } from './CharacterMugShot.js';
 import { Button } from './ui/Button.js';
@@ -52,37 +53,48 @@ export function AgentCard({
   onSelect,
   onClose,
 }: AgentCardProps) {
+  const roleName = useAgentRoleName(agentId);
   return (
     <div
-      className={`pointer-events-auto flex items-stretch gap-1 p-1 cursor-pointer border-2 shrink-0 ${CARD_VARIANT[variant]}`}
+      className={`pointer-events-auto flex flex-col items-stretch p-1 cursor-pointer border-2 shrink-0 ${CARD_VARIANT[variant]}`}
       onClick={() => onSelect(agentId)}
-      title={`Agent ${agentId}`}
+      title={agentCardTitle(agentId, roleName)}
     >
-      <CharacterMugShot palette={appearance.palette} hueShift={appearance.hueShift} />
-      {/* Close on top, status dot at the bottom, both centred over the
+      <div className="flex items-stretch gap-1">
+        <CharacterMugShot palette={appearance.palette} hueShift={appearance.hueShift} />
+        {/* Close on top, status dot at the bottom, both centred over the
           same column beside the mug shot. */}
-      <div className="flex flex-col items-center justify-between shrink-0">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={(e) => {
-            // Don't also select the tab we're about to remove.
-            e.stopPropagation();
-            onClose(agentId);
-          }}
-          title="Close agent"
-          className={`leading-none ${showClose ? '' : 'invisible'}`}
-        >
-          ×
-        </Button>
-        {/* 1px left: optically centres the solid square under the pixel-font ×
+        <div className="flex flex-col items-center justify-between shrink-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              // Don't also select the tab we're about to remove.
+              e.stopPropagation();
+              onClose(agentId);
+            }}
+            title="Close agent"
+            className={`leading-none ${showClose ? '' : 'invisible'}`}
+          >
+            ×
+          </Button>
+          {/* 1px left: optically centres the solid square under the pixel-font ×
             glyph, which sits a hair left in its cell. mb (not pb) lifts it off
             the card's bottom edge: the span is a fixed-size empty box, so
             padding is invisible — only margin moves it. */}
-        <span
-          className={`size-6 shrink-0 relative -left-1 mb-2 ${status ? STATUS_DOT[status] : ''}`}
-        />
+          <span
+            className={`size-6 shrink-0 relative -left-1 mb-2 ${status ? STATUS_DOT[status] : ''}`}
+          />
+        </div>
       </div>
+      {roleName && (
+        <span
+          data-testid="agent-card-role"
+          className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-2xs leading-none text-text-muted"
+        >
+          {roleName}
+        </span>
+      )}
     </div>
   );
 }

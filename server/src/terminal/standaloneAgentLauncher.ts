@@ -24,6 +24,7 @@ import { directoryNameForLaunch } from '../directories.js';
 import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
+import { removeRoleSnapshot } from '../roleStorage.js';
 import type { AgentState } from '../types.js';
 import { workspaceIdForDirectory } from '../workspaces.js';
 import type { PtySessionManager } from './ptySessionManager.js';
@@ -44,6 +45,13 @@ export interface LaunchStandaloneAgentOptions {
   bypassPermissions?: boolean;
   cols?: number;
   rows?: number;
+  /**
+   * The Role this agent launches with, already validated, trusted and copied by
+   * the caller (roleClientMessages.ts). Absent: the launch is exactly the
+   * pre-Role one. The snapshot is owned from here on: removed on every failure
+   * path below and when the agent's process exits.
+   */
+  role?: { name: string; snapshotPath: string };
 }
 
 /**
@@ -55,26 +63,47 @@ export function launchStandaloneAgent(
   options: LaunchStandaloneAgentOptions = {},
 ): number | null {
   const { store, runtime, ptyManager, provider } = deps;
+  const { role } = options;
+  const releaseRoleSnapshot = (): void => {
+    if (role) removeRoleSnapshot(role.snapshotPath);
+  };
 
   if (!ptyManager.isAvailable()) {
     console.error(`[Pixel Agents] Terminal: cannot launch -- ${ptyManager.unavailableReason()}`);
+    releaseRoleSnapshot();
     return null;
   }
 
   const cwd = options.directoryPath ?? process.cwd();
   const sessionId = crypto.randomUUID();
 
-  const launch = provider.buildLaunchCommand?.(sessionId, cwd, {
-    bypassPermissions: options.bypassPermissions,
-  });
+  // Without a Role the options object is exactly the pre-Role one, so the
+  // command is byte-for-byte what it always was.
+  const launch = provider.buildLaunchCommand?.(
+    sessionId,
+    cwd,
+    role
+      ? { bypassPermissions: options.bypassPermissions, appendSystemPromptFile: role.snapshotPath }
+      : { bypassPermissions: options.bypassPermissions },
+  );
   if (!launch) {
     console.error('[Pixel Agents] Terminal: provider.buildLaunchCommand is not implemented');
+    releaseRoleSnapshot();
     return null;
   }
 
-  const dirs = provider.getSessionDirs?.(cwd) ?? [];
+  let dirs: string[];
+  try {
+    dirs = provider.getSessionDirs?.(cwd) ?? [];
+  } catch (err) {
+    // Rethrown unchanged (a launch without a Role behaves as it always did);
+    // only the snapshot is released first.
+    releaseRoleSnapshot();
+    throw err;
+  }
   if (dirs.length === 0) {
     console.error('[Pixel Agents] Terminal: provider returned no session dirs');
+    releaseRoleSnapshot();
     return null;
   }
   const projectDir = dirs[0];
@@ -96,6 +125,7 @@ export function launchStandaloneAgent(
     // Roll the id back so a failed spawn doesn't burn an agent id.
     store.nextAgentId.current--;
     console.error(`[Pixel Agents] Terminal: spawn failed: ${String(err)}`);
+    releaseRoleSnapshot();
     return null;
   }
 
@@ -123,6 +153,9 @@ export function launchStandaloneAgent(
     // From the Directory the launch names, never from the server cwd: a launch
     // with no directoryPath (or one no Workspace owns) belongs to the default.
     workspaceId: workspaceIdForDirectory(options.directoryPath),
+    // Display only, runtime only: never persisted, so no restore or restart
+    // path can bring a Role back.
+    roleName: role?.name,
   });
 
   // Server-side, like every other creation path: the palette rides the
@@ -148,6 +181,9 @@ export function launchStandaloneAgent(
   // "terminal closed -> clean up orphan" pass in fileWatcher.
   session.onExit((exit) => {
     console.log(`[Pixel Agents] Terminal: Agent ${id} - exited (code ${exit.exitCode})`);
+    // claude re-reads the file after a compaction, so the snapshot lives
+    // exactly as long as the process does.
+    releaseRoleSnapshot();
     store.broadcast({ type: 'terminalSessionClosed', agentId: id, exitCode: exit.exitCode });
     if (store.has(id)) {
       runtime.unregisterAgent(agent.sessionId);

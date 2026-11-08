@@ -14,6 +14,7 @@ import { expectOverlayCount, expectOverlayVisibleWithTexts } from '../../helpers
 import { appendJsonlRecord, createClaudeTranscript } from '../../helpers/team';
 import {
   addDirectory,
+  chooseNoRole,
   getDirectoryModal,
   getDirectorySuggestions,
   getLaunchDrawer,
@@ -77,6 +78,7 @@ test.describe('Standalone / launch drawer', () => {
     await expect(row.locator('button')).toHaveCount(0);
 
     await row.click();
+    await chooseNoRole(page);
 
     // The launch really happened in that Directory: its name is the character's
     // origin label, under the activity the mock produced. Exactly one agent —
@@ -124,6 +126,7 @@ test.describe('Standalone / user-defined Directories', () => {
     await expect(drawer.getByRole('button', { name: 'Edit Side Project' })).toBeVisible();
 
     await row.click();
+    await chooseNoRole(page);
 
     // The agent really runs in that Directory: the character's origin label is
     // the NAME the Directory was given — "Side Project", not the path's
@@ -174,6 +177,7 @@ test.describe('Standalone / user-defined Directories', () => {
     )
       .getByRole('button', { name: 'Doomed Project', exact: true })
       .click();
+    await chooseNoRole(page);
     await expectOverlayVisibleWithTexts(page, ['Running: npm test', 'Doomed Project']);
 
     // Delete through the pencil's modal.

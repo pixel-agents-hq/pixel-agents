@@ -233,6 +233,7 @@ function registerWebSocketRoute(
         palette: agent.palette,
         hueShift: agent.hueShift,
         workspaceId: agent.workspaceId,
+        roleName: agent.roleName,
       });
     };
 

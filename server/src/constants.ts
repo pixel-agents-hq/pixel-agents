@@ -177,6 +177,84 @@ export const WORKSPACE_WRITE_FAILED_REASON =
 export const WORKSPACES_FILE_UNREADABLE_REASON =
   "Couldn't change Workspaces: ~/.pixel-agents/workspaces.json is unreadable or malformed. Fix or delete it, then try again.";
 
+// ── Roles ───────────────────────────────────────────────────
+/** Where a Directory keeps its Roles: one `.md` file per Role. One letter away
+ *  from `.claude/rules/`, which Claude Code loads into EVERY agent of the folder. */
+export const ROLE_CLAUDE_DIR_NAME = '.claude';
+export const ROLE_FILES_DIR_NAME = 'roles';
+/** A Role id is its file name: ASCII, no separators, ending in `.md`. */
+export const ROLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.md$/;
+export const ROLE_ID_SUFFIX = '.md';
+/** Windows device names, refused as a Role id's first dot-separated segment. */
+export const ROLE_WINDOWS_RESERVED_NAMES: readonly string[] = [
+  'CON',
+  'PRN',
+  'AUX',
+  'NUL',
+  'COM1',
+  'COM2',
+  'COM3',
+  'COM4',
+  'COM5',
+  'COM6',
+  'COM7',
+  'COM8',
+  'COM9',
+  'LPT1',
+  'LPT2',
+  'LPT3',
+  'LPT4',
+  'LPT5',
+  'LPT6',
+  'LPT7',
+  'LPT8',
+  'LPT9',
+];
+/** Directory entries looked at per enumeration, and Roles listed at most. */
+export const ROLE_SCAN_MAX_ENTRIES = 200;
+export const ROLE_LIST_MAX_ENTRIES = 50;
+/** Largest Role file accepted (bytes); reads stop at this + 1. */
+export const ROLE_FILE_MAX_BYTES = 64 * 1024;
+export const ROLE_DIRECTORY_PATH_MAX_LENGTH = 4096;
+export const ROLE_SHA256_PATTERN = /^[0-9a-f]{64}$/;
+/** ~/.pixel-agents/roles/: trust records and launch snapshots, private to the operator. */
+export const ROLES_STORAGE_DIR_NAME = 'roles';
+export const ROLES_TRUST_FILE_NAME = 'trust.json';
+export const ROLES_SNAPSHOTS_DIR_NAME = 'snapshots';
+export const ROLES_STORAGE_DIR_MODE = 0o700;
+export const ROLES_STORAGE_FILE_MODE = 0o600;
+export const ROLES_TRUST_FILE_VERSION = 1;
+/** trust.json larger than this is treated as malformed (never parsed). */
+export const ROLES_TRUST_FILE_MAX_BYTES = 1024 * 1024;
+/** roleRejected reasons: never the Role's content, never a resolved path. */
+export const ROLE_UNAVAILABLE_REASON =
+  'Roles are only available in the standalone office with the terminal enabled, and not on Windows.';
+export const ROLE_VSCODE_UNAVAILABLE_REASON =
+  'Roles are not available in the VS Code panel. Launch without a Role, or use the standalone office.';
+export const ROLE_INVALID_DIRECTORY_REASON =
+  'That Directory is not one of the registered Directories.';
+export const ROLE_MISSING_DIRECTORY_REASON = 'Launching with a Role needs a Directory.';
+export const ROLE_INVALID_ID_REASON = 'That is not a valid Role name.';
+export const ROLE_NOT_LISTED_REASON = 'That Role is not in the Directory any more.';
+export const ROLE_UNREADABLE_REASON = "That Role file couldn't be read as a plain file.";
+export const ROLE_TOO_LARGE_REASON = `That Role file is larger than ${ROLE_FILE_MAX_BYTES / 1024} KiB.`;
+export const ROLE_BAD_CONTENT_REASON =
+  'That Role file contains characters that are not allowed (invalid UTF-8, a byte-order mark, control, tag or bidirectional-override characters).';
+export const ROLE_INVALID_HASH_REASON = 'The confirmation did not carry a valid content hash.';
+export const ROLE_CHANGED_REASON =
+  'The Role file changed after it was reviewed. Review it again before confirming.';
+export const ROLE_UNTRUSTED_REASON =
+  'This Role content has not been confirmed (or it changed since). Review and confirm it again.';
+export const ROLE_STORAGE_UNSAFE_REASON =
+  '~/.pixel-agents/roles must be a real directory owned by you with mode 0700. Fix or remove it, then try again.';
+export const ROLE_TRUST_UNREADABLE_REASON =
+  '~/.pixel-agents/roles/trust.json is unreadable or malformed, so it was left untouched. Fix or delete it, then try again.';
+export const ROLE_WRITE_FAILED_REASON =
+  "Couldn't write the Role's trust record or launch copy (see the host's log).";
+export const ROLE_LAUNCH_FAILED_REASON = "The agent couldn't be started (see the host's log).";
+export const ROLE_LIST_FAILED_REASON = "The Directory's Roles couldn't be read.";
+export const ROLE_REQUEST_FAILED_REASON = "The Role request failed (see the host's log).";
+
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';

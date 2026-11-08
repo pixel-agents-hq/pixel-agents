@@ -440,6 +440,17 @@ export async function clickAddAgent(surface: WebviewSurface): Promise<void> {
   await drawer.locator('[data-testid="directory-row"]').first().locator('button').first().click();
 }
 
+/**
+ * Standalone launches are two steps: after a Directory row, the Role modal asks
+ * for an optional Role. "No role" is the launch of old (launchAgent without a
+ * roleId). VS Code has no such step, so `clickAddAgent` does not include it.
+ */
+export async function chooseNoRole(surface: WebviewSurface): Promise<void> {
+  const none = surface.locator('[data-testid="role-none"]');
+  await expect(none).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
+  await none.click();
+}
+
 /** The launch button's drawer, once opened. */
 export function getLaunchDrawer(surface: WebviewSurface): Locator {
   return surface.locator('[data-testid="launch-drawer"]');

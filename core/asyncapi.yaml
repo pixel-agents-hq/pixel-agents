@@ -125,6 +125,11 @@ components:
         - $ref: '#/components/schemas/WorkspacesLoaded'
         - $ref: '#/components/schemas/WorkspaceRejected'
         - $ref: '#/components/schemas/AgentWorkspaceChanged'
+        # Roles (point-to-point replies to the requesting client only)
+        - $ref: '#/components/schemas/RolesAvailable'
+        - $ref: '#/components/schemas/RolePreview'
+        - $ref: '#/components/schemas/RoleConfirmed'
+        - $ref: '#/components/schemas/RoleRejected'
         # Terminal (standalone embedded terminal control plane)
         - $ref: '#/components/schemas/TerminalAvailability'
         - $ref: '#/components/schemas/TerminalSessionOpened'
@@ -162,6 +167,9 @@ components:
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/SaveWorkspace'
         - $ref: '#/components/schemas/RemoveWorkspace'
+        - $ref: '#/components/schemas/RequestRoles'
+        - $ref: '#/components/schemas/RequestRolePreview'
+        - $ref: '#/components/schemas/ConfirmRole'
         - $ref: '#/components/schemas/RequestDirectorySuggestions'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
@@ -216,6 +224,8 @@ components:
             Id of the Workspace the agent belongs to. Absent means the default
             Workspace (agents that never carried one, including VS Code panel
             agents).
+        roleName:
+          $ref: '#/components/schemas/RoleName'
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -275,6 +285,15 @@ components:
             map (or the whole map being absent) belongs to the default Workspace.
           additionalProperties:
             type: string
+        roleNames:
+          type: object
+          description: >-
+            Map of agent ID (string) to the display name of the Role the agent
+            was launched with. Only the name: never the Role's content or hash.
+            An agent missing from the map (or the whole map being absent) was
+            launched without a Role.
+          additionalProperties:
+            $ref: '#/components/schemas/RoleName'
 
     AgentStatus:
       description: Active vs waiting state for an agent (drives character animation).
@@ -956,6 +975,113 @@ components:
         workspaceId:
           type: string
 
+    # ── Roles ──────────────────────────────────────────────────────
+    # A Role is a file `<Directory>/.claude/roles/<roleId>` appended to an
+    # agent's system prompt at launch. There is no registry: the Roles of a
+    # Directory are the files actually there, enumerated on request. Every
+    # Role reply is point-to-point to the requesting (privileged) client and
+    # never broadcast; a read-only client's Role messages are dropped without
+    # a reply.
+
+    RolesAvailable:
+      description: |
+        Reply to `requestRoles`: the Roles found in the Directory right now.
+        Enumeration never reads file contents; only plain files whose names
+        pass the Role id allowlist are listed (no symlinks, FIFOs, devices or
+        oversized files), and names that differ only in letter case are both
+        left out. Empty when the Directory has no `.claude/roles/`, or when
+        `.claude` or `.claude/roles` is a symlink.
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath, roles]
+      properties:
+        type:
+          const: rolesAvailable
+        directoryPath:
+          type: string
+          description: Path of the registered Directory that was enumerated.
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleEntry'
+
+    RolePreview:
+      description: |
+        Reply to `requestRolePreview`: the Role file as the host read it, for
+        the operator to review before trusting it. Plain text only -- a client
+        must never render it as HTML or markdown. Characters that are
+        invisible on screen (format characters such as zero-width and
+        direction marks, non-ASCII spaces, private-use and unassigned code
+        points) are already replaced by visible `<U+XXXX>` markers; files
+        holding control, tag or bidirectional-override characters, a BOM, or
+        invalid UTF-8 are refused with `roleRejected` instead.
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath, roleId, content, sha256, size, mtime, trusted]
+      properties:
+        type:
+          const: rolePreview
+        directoryPath:
+          type: string
+          description: Path of the registered Directory the Role belongs to.
+        roleId:
+          $ref: '#/components/schemas/RoleId'
+        content:
+          type: string
+          description: >-
+            The file's text with invisible characters escaped as `<U+XXXX>`
+            markers (display text, not the raw bytes).
+        sha256:
+          $ref: '#/components/schemas/RoleSha256'
+        size:
+          type: integer
+          description: File size in bytes.
+        mtime:
+          type: string
+          format: date-time
+          description: Last modification time (ISO 8601, UTC).
+        trusted:
+          type: boolean
+          description: >-
+            True when this exact content (same Directory, Role id and sha256)
+            was already confirmed by the operator.
+
+    RoleConfirmed:
+      description: >-
+        Reply to a successful `confirmRole`: the host re-read the file, its
+        sha256 matched the one the operator reviewed, and that content is now
+        trusted. A client sends a `launchAgent` carrying the Role only after
+        receiving this.
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath, roleId, sha256]
+      properties:
+        type:
+          const: roleConfirmed
+        directoryPath:
+          type: string
+        roleId:
+          $ref: '#/components/schemas/RoleId'
+        sha256:
+          $ref: '#/components/schemas/RoleSha256'
+
+    RoleRejected:
+      description: >-
+        A Role request (or a `launchAgent` carrying a Role) was refused.
+        Nothing was launched and no agent id was used. `reason` never contains
+        the Role's content or any resolved filesystem path.
+      type: object
+      additionalProperties: false
+      required: [type, code, reason]
+      properties:
+        type:
+          const: roleRejected
+        code:
+          $ref: '#/components/schemas/RoleRejectionCode'
+        reason:
+          type: string
+          description: Human-readable cause, shown inline to the user.
+
     AgentDiagnostics:
       description: Connection diagnostics for all agents (response to requestDiagnostics).
       type: object
@@ -1050,7 +1176,17 @@ components:
           const: webviewReady
 
     LaunchAgent:
-      description: Launch a new Claude agent in a new terminal.
+      description: |
+        Launch a new Claude agent in a new terminal.
+
+        `roleId` (optional, standalone only) appends that Role to the agent's
+        system prompt. It requires `directoryPath` naming a registered
+        Directory, the Role being listed there right now, and its current
+        content having been confirmed (`roleConfirmed`); otherwise the host
+        replies `roleRejected`, launches nothing and uses no agent id -- it
+        never falls back to a launch without the Role. The VS Code panel always
+        refuses it with `roleRejected` code `unavailable`. Without `roleId` the
+        launch is exactly as before.
       type: object
       additionalProperties: false
       required: [type]
@@ -1060,6 +1196,8 @@ components:
         directoryPath:
           type: string
           description: Path of the Directory to launch into.
+        roleId:
+          $ref: '#/components/schemas/RoleId'
 
     FocusAgent:
       description: Focus an agent's terminal.
@@ -1396,6 +1534,56 @@ components:
         id:
           type: string
 
+    RequestRoles:
+      description: >-
+        Privileged, standalone only. List the Roles in a registered Directory's
+        `.claude/roles/`. Replied to this client only with `rolesAvailable`, or
+        `roleRejected`.
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath]
+      properties:
+        type:
+          const: requestRoles
+        directoryPath:
+          type: string
+          description: Path of a registered Directory.
+
+    RequestRolePreview:
+      description: >-
+        Privileged, standalone only. Read one listed Role for review. Replied
+        to this client only with `rolePreview`, or `roleRejected`.
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath, roleId]
+      properties:
+        type:
+          const: requestRolePreview
+        directoryPath:
+          type: string
+        roleId:
+          $ref: '#/components/schemas/RoleId'
+
+    ConfirmRole:
+      description: >-
+        Privileged, standalone only. Trust the Role content the operator just
+        reviewed. `sha256` is the hash from that `rolePreview`; the host
+        re-reads the file and records the trust only when the hash still
+        matches, replying `roleConfirmed` -- otherwise `roleRejected` (code
+        `untrusted` when the file changed since the preview).
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath, roleId, sha256]
+      properties:
+        type:
+          const: confirmRole
+        directoryPath:
+          type: string
+        roleId:
+          $ref: '#/components/schemas/RoleId'
+        sha256:
+          $ref: '#/components/schemas/RoleSha256'
+
     RequestDirectorySuggestions:
       description: >-
         Ask the host for tappable path suggestions for the Directory modal; it
@@ -1493,6 +1681,53 @@ components:
           type: array
           items:
             type: string
+
+    RoleId:
+      description: >-
+        A Role's id: its file name in `<Directory>/.claude/roles/`, ASCII only,
+        ending in `.md` (for example `frontend.md`). Never a path. Windows
+        reserved device names are refused host-side as well.
+      type: string
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.md$'
+      maxLength: 67
+
+    RoleName:
+      description: >-
+        A Role's display name: its id without the `.md` suffix. Shown on agent
+        cards to every office, read-only ones included (the same exposure as a
+        Directory name); never the Role's content or hash.
+      type: string
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+      maxLength: 64
+
+    RoleSha256:
+      description: Lowercase hex SHA-256 of the Role file's raw bytes.
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+
+    RoleEntry:
+      description: One Role listed by `rolesAvailable`.
+      type: object
+      additionalProperties: false
+      required: [roleId, name]
+      properties:
+        roleId:
+          $ref: '#/components/schemas/RoleId'
+        name:
+          $ref: '#/components/schemas/RoleName'
+
+    RoleRejectionCode:
+      description: |
+        Why a Role request was refused:
+        - `untrusted`: this content is not (or no longer) confirmed; preview and
+          confirm it again.
+        - `invalid`: a field failed validation, the Directory is not registered,
+          or the Role is not listed there / its content is not acceptable.
+        - `unavailable`: Roles are not supported on this host or in this mode
+          (VS Code panel, no terminal, Windows).
+        - `io`: the host could not read or write its own Role storage.
+      type: string
+      enum: [untrusted, invalid, unavailable, io]
 
     DirectorySource:
       description: |

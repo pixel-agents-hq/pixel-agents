@@ -26,6 +26,7 @@ import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
+import { handleRoleClientMessage, type RoleMessageDeps } from './roleClientMessages.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 import { handleWorkspaceClientMessage, workspacesLoadedMessage } from './workspaces.js';
@@ -113,6 +114,50 @@ function shownHostDirectoriesFor(ctx: ClientMessageContext): HostDirectoryEntry[
 }
 
 /**
+ * Roles need a standalone host that can actually launch (a ptyManager whose
+ * terminal works, and a runtime) and are off on Windows until verified there.
+ * VS Code embedded mode has no ptyManager, so it is always refused.
+ */
+function rolesAvailableFor(ctx: ClientMessageContext): boolean {
+  return (
+    ctx.ptyManager !== undefined &&
+    ctx.runtime !== undefined &&
+    process.platform !== 'win32' &&
+    ctx.ptyManager.isAvailable()
+  );
+}
+
+/** The Role handlers' view of this connection. Replies go to the sender only. */
+function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
+  return {
+    reply: send,
+    // The full registered union, as a launch names agents: membership must not
+    // depend on whether the host Directory is currently shown.
+    hostDirectories: () => hostDirectoriesFor(ctx),
+    available: rolesAvailableFor(ctx),
+    launch: ({ directoryPath, roleName, snapshotPath }) => {
+      if (!ctx.runtime || !ctx.ptyManager) return null;
+      return launchStandaloneAgent(
+        {
+          store: ctx.store,
+          runtime: ctx.runtime,
+          ptyManager: ctx.ptyManager,
+          provider: claudeProvider,
+        },
+        {
+          directoryPath,
+          // The same persisted posture as every launch; a Role never skips its
+          // confirmation because of it.
+          bypassPermissions:
+            ctx.store.getAdapter()?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+          role: { name: roleName, snapshotPath },
+        },
+      );
+    },
+  };
+}
+
+/**
  * Handle incoming ClientMessage from a WebSocket client.
  *
  * In standalone mode, the server is the authority for all state: assets,
@@ -141,6 +186,13 @@ export function handleClientMessage(
       break;
 
     case 'launchAgent': {
+      // A launch carrying a roleId (any value) takes the Role path, which
+      // validates everything before a launch and answers roleRejected
+      // otherwise -- including in embedded mode. Without one: unchanged.
+      if (msg.roleId !== undefined) {
+        void handleRoleClientMessage(msg, roleDepsFor(ctx, send));
+        break;
+      }
       // Standalone can launch: the agent runs in a server-side PTY streamed to
       // the browser drawer (a shell running as the operator -- privileged, like
       // every message past the read-only gate above).
@@ -377,6 +429,14 @@ export function handleClientMessage(
           }
         },
       });
+      break;
+
+    case 'requestRoles':
+    case 'requestRolePreview':
+    case 'confirmRole':
+      // Point-to-point only: a preview carries the Role's content and must
+      // never go through store.broadcast.
+      void handleRoleClientMessage(msg, roleDepsFor(ctx, send));
       break;
 
     default:
@@ -618,6 +678,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const externalAgents: Record<number, boolean> = {};
   // Only agents outside the default: an absent entry means the default.
   const workspaceIds: Record<number, string> = {};
+  // Only agents launched with a Role, and only its display name.
+  const roleNames: Record<number, string> = {};
   const persistedSeats = adapter?.loadSeats() ?? {};
   const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
   for (const [id, agent] of store) {
@@ -630,6 +692,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     }
     if (agent.workspaceId) {
       workspaceIds[id] = agent.workspaceId;
+    }
+    if (agent.roleName) {
+      roleNames[id] = agent.roleName;
     }
     const persisted = persistedSeats[String(id)];
     agentMeta[id] = {
@@ -645,6 +710,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     directoryNames,
     externalAgents,
     workspaceIds,
+    roleNames,
   });
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents

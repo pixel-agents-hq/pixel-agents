@@ -129,11 +129,13 @@ export interface HookProvider {
   readonly sessionFilePattern?: string;
   /** Parse one line of a transcript file into an AgentEvent. */
   parseTranscriptLine?(line: string): AgentEvent | null;
-  /** Build CLI launch command for +Agent button. */
+  /** Build CLI launch command for +Agent button. `appendSystemPromptFile` is a
+   *  host-private copy of a Role to append to the system prompt (standalone
+   *  only); absent, the command must be exactly the one built without it. */
   buildLaunchCommand?(
     sessionId: string,
     cwd: string,
-    opts?: { bypassPermissions?: boolean },
+    opts?: { bypassPermissions?: boolean; appendSystemPromptFile?: string },
   ): {
     command: string;
     args: string[];
