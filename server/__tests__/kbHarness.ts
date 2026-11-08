@@ -1,176 +1,292 @@
+/**
+ * Shared fixtures for the Knowledge Base storage tests: a temporary HOME, store
+ * construction with simulated processes (distinct pids and instances, an
+ * injectable liveness answer), and direct on-disk seeding for limits that would
+ * take thousands of real operations to reach.
+ */
+
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { vi } from 'vitest';
 
-import type { HookProvider } from '../../core/src/provider.js';
-import { AgentRuntime } from '../src/agentRuntime.js';
-import { AgentStateStore } from '../src/agentStateStore.js';
-import { CapabilityRegistry } from '../src/capabilities.js';
-import { type ClientMessageContext, handleClientMessage } from '../src/clientMessageHandler.js';
-import { CAPABILITY_ENV_NAME } from '../src/constants.js';
-import { CuratorTable } from '../src/curators.js';
-import { FileStateAdapter } from '../src/fileStateAdapter.js';
-import { claudeProvider } from '../src/providers/hook/claude/claude.js';
-import type { IPty, PtyModule, PtySpawnOptions } from '../src/terminal/ptyModule.js';
-import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
-import { launchStandaloneAgent } from '../src/terminal/standaloneAgentLauncher.js';
-import { saveWorkspace } from '../src/workspaces.js';
+import { buildAuditLine, KB_AUDIT_GENESIS_PREV, type KbAuditInput } from '../src/kbAudit.js';
+import { KbPaths } from '../src/kbFiles.js';
+import { normalizeTitle } from '../src/kbIds.js';
+import { type KbLockFs, lockGeneration } from '../src/kbLock.js';
+import { type KbProposal, type KbProposer, proposalDigest } from '../src/kbProposals.js';
+import { type KbIndex, type KbIndexEntry, KbStore, type KbStoreHooks } from '../src/kbStore.js';
+import { sha256Hex } from '../src/textSafety.js';
 
-/**
- * Shared harness for the capability and curator suites: a real store, runtime,
- * registry and curator table under a temp $HOME, and a fake PTY module that
- * records every spawn. An "eligible" agent is only ever made the production
- * way: launchStandaloneAgent with isKbEnabled injected.
- */
+export const WS = 'default';
+export const OTHER_WS = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+export const INSTANCE_A = '11111111-1111-4111-8111-111111111111';
+export const INSTANCE_B = '22222222-2222-4222-8222-222222222222';
 
-export class FakePty implements IPty {
-  readonly pid = 4242;
-  killSignals: Array<string | undefined> = [];
-  private exitListener: ((e: { exitCode: number; signal?: number }) => void) | null = null;
-
-  onData(): void {}
-  onExit(listener: (e: { exitCode: number; signal?: number }) => void): void {
-    this.exitListener = listener;
-  }
-  write(): void {}
-  resize(): void {}
-  kill(signal?: string): void {
-    this.killSignals.push(signal);
-  }
-
-  /** Test driver: simulate the process exiting on its own. */
-  exit(exitCode = 0): void {
-    this.exitListener?.({ exitCode });
-  }
+export interface TempHome {
+  home: string;
+  kbRoot: string;
+  paths: KbPaths;
+  restore(): void;
 }
 
-export interface Spawned {
-  file: string;
-  args: string[];
-  options: PtySpawnOptions;
-  pty: FakePty;
+/** Point HOME at a fresh temporary directory (never the real ~/.pixel-agents). */
+export function useTempHome(): TempHome {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-kb-'));
+  const original = process.env.HOME;
+  process.env.HOME = home;
+  const kbRoot = path.join(home, '.pixel-agents', 'kb');
+  return {
+    home,
+    kbRoot,
+    paths: new KbPaths(kbRoot),
+    restore() {
+      vi.restoreAllMocks();
+      if (original === undefined) delete process.env.HOME;
+      else process.env.HOME = original;
+      fs.rmSync(home, { recursive: true, force: true });
+    },
+  };
 }
 
-export interface LaunchInput {
-  directoryPath?: string;
-  /** true/false, or a per-Workspace predicate. Undefined = not injected. */
-  kb?: boolean | ((workspaceId: string) => boolean);
-  /** Pass no registry at all (the launch must then issue nothing). */
-  withoutRegistry?: boolean;
-  provider?: Partial<HookProvider>;
+export function proposer(agentId = 1, instance = INSTANCE_A, serial = 0): KbProposer {
+  return { instance, agentId, sessionId: `session-${agentId}`, serial };
 }
 
-export interface Launched {
-  id: number | null;
-  spawn: Spawned | undefined;
-  token: string | undefined;
-}
+/** Fake pids, unique across every Processes set in the test run. */
+let nextFakePid = 900_001;
 
-export class KbHarness {
-  readonly tempHome: string;
-  readonly projectDir: string;
-  readonly store: AgentStateStore;
-  readonly runtime: AgentRuntime;
-  readonly manager: PtySessionManager;
-  readonly capabilities: CapabilityRegistry;
-  readonly curators: CuratorTable;
-  readonly spawned: Spawned[] = [];
-  readonly broadcasts: Array<Record<string, unknown>> = [];
-  spawnShouldThrow = false;
-  private readonly originalHome: string | undefined;
+/** Simulated server processes sharing one KB root: each store has its own pid
+ *  and lock instance, and `alive` decides which of them still run (a pid this
+ *  set never spawned counts as dead). */
+export class Processes {
+  readonly alive = new Set<number>();
 
-  constructor() {
-    this.tempHome = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-kb-')));
-    this.originalHome = process.env.HOME;
-    process.env.HOME = this.tempHome;
-    this.projectDir = path.join(this.tempHome, 'project-sessions');
-    fs.mkdirSync(this.projectDir, { recursive: true });
+  constructor(private readonly paths: KbPaths) {}
 
-    this.store = new AgentStateStore();
-    this.store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
-    const module: PtyModule = {
-      spawn: (file, args, options) => {
-        if (this.spawnShouldThrow) throw new Error('posix_spawnp failed');
-        const pty = new FakePty();
-        this.spawned.push({ file, args: [...args], options, pty });
-        return pty;
+  isAlive = (pid: number): boolean => this.alive.has(pid);
+
+  spawn(
+    options: { fs?: KbLockFs; now?: () => number; hooks?: KbStoreHooks; instance?: string } = {},
+  ): { pid: number; store: KbStore } {
+    const pid = nextFakePid++;
+    this.alive.add(pid);
+    const store = new KbStore({
+      paths: this.paths,
+      now: options.now,
+      hooks: options.hooks,
+      lock: {
+        pid,
+        instance: options.instance,
+        isProcessAlive: this.isAlive,
+        fs: options.fs,
       },
-    };
-    this.manager = new PtySessionManager(() => ({ module, moduleId: 'fake-pty', reason: null }));
-    // Same order as cli.ts: the registry subscribes before anything else.
-    this.capabilities = new CapabilityRegistry({ store: this.store, ptyManager: this.manager });
-    this.curators = new CuratorTable({
-      capabilities: this.capabilities,
-      broadcast: (message) => this.store.broadcast(message),
     });
-    this.runtime = new AgentRuntime(this.store, claudeProvider);
-    this.store.on('broadcast', (message) => this.broadcasts.push(message));
+    return { pid, store };
   }
 
-  /** A Directory under $HOME owned by a new Workspace; returns both. */
-  workspace(name: string): { id: string; dir: string } {
-    const dir = path.join(this.tempHome, name);
-    fs.mkdirSync(dir, { recursive: true });
-    const result = saveWorkspace({ name, directoryPaths: [dir] });
-    if (!result.ok || !result.id) throw new Error(`workspace ${name} not saved`);
-    return { id: result.id, dir };
+  kill(pid: number): void {
+    this.alive.delete(pid);
   }
+}
 
-  launch(input: LaunchInput = {}): Launched {
-    const before = this.spawned.length;
-    const kb = input.kb;
-    const id = launchStandaloneAgent(
-      {
-        store: this.store,
-        runtime: this.runtime,
-        ptyManager: this.manager,
-        provider: {
-          ...claudeProvider,
-          getSessionDirs: () => [this.projectDir],
-          ...input.provider,
-        },
-        capabilities: input.withoutRegistry ? undefined : this.capabilities,
-        isKbEnabled: kb === undefined ? undefined : typeof kb === 'function' ? kb : () => kb,
-      },
-      { directoryPath: input.directoryPath },
-    );
-    const spawn = this.spawned.length > before ? this.spawned[this.spawned.length - 1] : undefined;
-    return { id, spawn, token: spawn?.options.env?.[CAPABILITY_ENV_NAME] };
-  }
+/** A store whose lock pid is fake and always alive (one process per test). */
+export function singleStore(
+  paths: KbPaths,
+  options: { now?: () => number; hooks?: KbStoreHooks } = {},
+): KbStore {
+  return new Processes(paths).spawn(options).store;
+}
 
-  ctx(overrides: Partial<ClientMessageContext> = {}): ClientMessageContext {
-    return {
-      store: this.store,
-      cache: null,
-      privileged: true,
-      runtime: this.runtime,
-      ptyManager: this.manager,
-      capabilities: this.capabilities,
-      curators: this.curators,
-      isKbEnabled: () => true,
-      ...overrides,
-    };
-  }
+/** The real lock fs calls, with an optional hook before each and a guard that
+ *  records any unlink of the generation that is the highest at that moment. */
+export function observedLockFs(
+  root: string,
+  options: {
+    beforeSymlink?: (linkPath: string) => Promise<void>;
+    beforeReaddir?: () => Promise<void>;
+    violations?: string[];
+  } = {},
+): KbLockFs {
+  return {
+    readdir: async (dir) => {
+      await options.beforeReaddir?.();
+      return fs.promises.readdir(dir);
+    },
+    symlink: async (target, linkPath) => {
+      await options.beforeSymlink?.(linkPath);
+      await fs.promises.symlink(target, linkPath);
+    },
+    readlink: (linkPath) => fs.promises.readlink(linkPath),
+    unlink: async (linkPath) => {
+      const generations = fs
+        .readdirSync(root)
+        .map((name) => lockGeneration(name))
+        .filter((g): g is number => g !== null);
+      const highest = Math.max(...generations);
+      if (lockGeneration(path.basename(linkPath)) === highest) {
+        options.violations?.push(path.basename(linkPath));
+      }
+      await fs.promises.unlink(linkPath);
+    },
+  };
+}
 
-  /** Dispatch one client message; returns what was replied to the sender. */
-  send(
-    msg: Record<string, unknown>,
-    context: ClientMessageContext = this.ctx(),
-  ): Array<Record<string, unknown>> {
-    const replies: Array<Record<string, unknown>> = [];
-    handleClientMessage(msg, (m) => replies.push(m), context);
-    return replies;
-  }
+/** A promise with its resolver, for pausing an fs call at a chosen point. */
+export function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
-  curatorBroadcasts(): Array<Record<string, unknown>> {
-    return this.broadcasts.filter((m) => m.type === 'workspaceCuratorChanged');
-  }
+export function readJson(filePath: string): unknown {
+  return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+}
 
-  dispose(): void {
-    this.runtime.dispose();
-    this.store.dispose();
-    if (this.originalHome === undefined) delete process.env.HOME;
-    else process.env.HOME = this.originalHome;
-    fs.rmSync(this.tempHome, { recursive: true, force: true });
+export function readIndexFile(paths: KbPaths, ws = WS): KbIndex {
+  return readJson(paths.indexFile(ws)) as KbIndex;
+}
+
+export function auditLines(paths: KbPaths, ws = WS): Record<string, unknown>[] {
+  const file = paths.auditFile(ws);
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, 'utf-8')
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+export function mode(p: string): number {
+  return fs.lstatSync(p).mode & 0o777;
+}
+
+/** Create the workspace directories (0700) the way the store would. */
+export function makeWorkspaceDirs(paths: KbPaths, ws = WS): void {
+  for (const dir of [
+    path.dirname(paths.root),
+    paths.root,
+    paths.workspaceDir(ws),
+    paths.blobsDir(ws),
+    paths.proposalsDir(ws),
+  ]) {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.chmodSync(dir, 0o700);
   }
+}
+
+/** Write `count` entries of `size` bytes straight to disk (index + blobs). */
+export function seedEntries(
+  paths: KbPaths,
+  count: number,
+  size: number,
+  ws = WS,
+  kbVersion = count,
+): KbIndexEntry[] {
+  makeWorkspaceDirs(paths, ws);
+  const at = new Date().toISOString();
+  const entries: KbIndexEntry[] = [];
+  for (let i = 0; i < count; i++) {
+    const content = Buffer.alloc(size, 0x61 + (i % 26));
+    const blob = crypto.randomUUID();
+    fs.writeFileSync(paths.blobFile(ws, blob), content, { mode: 0o600 });
+    const title = normalizeTitle(`Seeded ${i}`)!;
+    entries.push({
+      id: crypto.randomUUID(),
+      title: title.title,
+      titleKey: title.titleKey,
+      blob,
+      sha256: sha256Hex(content),
+      size,
+      version: 1,
+      sourceProposalId: crypto.randomUUID(),
+      createdAt: at,
+      updatedAt: at,
+    });
+  }
+  const index: KbIndex = { version: 1, kbVersion, entries, applied: [] };
+  fs.writeFileSync(paths.indexFile(ws), `${JSON.stringify(index)}\n`, { mode: 0o600 });
+  return entries;
+}
+
+/** A well-formed terminal (rejected) proposal file written straight to disk. */
+export function seedTerminalProposal(paths: KbPaths, decidedAt: string, ws = WS): KbProposal {
+  const title = `Seeded proposal ${crypto.randomUUID()}`;
+  const fields = { kind: 'create' as const, title, contentSha256: sha256Hex(Buffer.from('x')) };
+  const proposal: KbProposal = {
+    version: 1,
+    id: crypto.randomUUID(),
+    workspaceId: ws,
+    ...fields,
+    proposer: proposer(99),
+    state: 'rejected',
+    createdAt: decidedAt,
+    decidedAt,
+    decidedBy: 'agent',
+    digest: proposalDigest(fields),
+  };
+  fs.writeFileSync(paths.proposalFile(ws, proposal.id), JSON.stringify(proposal), {
+    mode: 0o600,
+  });
+  return proposal;
+}
+
+/** `count` valid chained audit lines, as one string (for rotation tests). */
+export function chainedAuditText(count: number, padReason: string): string {
+  let prev = KB_AUDIT_GENESIS_PREV;
+  const lines: string[] = [];
+  const input: KbAuditInput = {
+    event: 'settings_changed',
+    actor: { kind: 'operator' },
+    detail: { reason: padReason },
+  };
+  for (let seq = 1; seq <= count; seq++) {
+    const { line, hash } = buildAuditLine(input, seq, new Date(0).toISOString(), prev);
+    lines.push(line);
+    prev = hash;
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+/** Submit a create and return the proposal metadata (throws on failure). */
+export async function submitCreate(
+  store: KbStore,
+  title: string,
+  content: string,
+  by: KbProposer = proposer(),
+  ws = WS,
+): Promise<{ id: string; digest: string }> {
+  const result = await store.submitProposal(ws, { kind: 'create', title, content, proposer: by });
+  if (!result.ok) throw new Error(`submit failed: ${result.code}`);
+  return { id: result.proposal.id, digest: result.proposal.digest };
+}
+
+export function approve(
+  store: KbStore,
+  p: { id: string; digest: string },
+  ws = WS,
+  actor: KbProposer = proposer(500),
+) {
+  return store.decideProposal(ws, p.id, { action: 'approve', digest: p.digest, actor });
+}
+
+export function reject(
+  store: KbStore,
+  p: { id: string; digest: string },
+  ws = WS,
+  actor: KbProposer = proposer(500),
+) {
+  return store.decideProposal(ws, p.id, { action: 'reject', digest: p.digest, actor });
+}
+
+export function operator(
+  store: KbStore,
+  p: { id: string; digest: string },
+  action: 'confirm' | 'reject',
+  ws = WS,
+) {
+  return store.operatorDecide(ws, p.id, { action, digest: p.digest });
 }

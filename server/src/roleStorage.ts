@@ -40,6 +40,12 @@ import {
   ROLES_TRUST_FILE_NAME,
   ROLES_TRUST_FILE_VERSION,
 } from './constants.js';
+import {
+  checkPrivateDirectory,
+  ensurePrivateDirectory,
+  errnoCode,
+  StorageUnsafeError,
+} from './privateStorage.js';
 import { writeFileSecure } from './secureFileWrite.js';
 
 /** One trusted Role content: where (the Directory's realpath), which file, which bytes. */
@@ -49,8 +55,11 @@ export interface TrustEntry {
   sha256: string;
 }
 
-/** Thrown when a storage directory exists but is not private to the operator. */
-export class RoleStorageUnsafeError extends Error {}
+/** Thrown when a storage directory exists but is not private to the operator.
+ *  The very same class object as StorageUnsafeError, so instanceof checks against
+ *  either name agree. */
+export const RoleStorageUnsafeError = StorageUnsafeError;
+export type RoleStorageUnsafeError = StorageUnsafeError;
 
 /** Thrown when trust.json exists but cannot be trusted (unreadable or malformed). */
 export class RoleTrustUnreadableError extends Error {}
@@ -65,62 +74,6 @@ function trustFilePath(): string {
 
 function snapshotsRoot(): string {
   return path.join(rolesStorageDir(), ROLES_SNAPSHOTS_DIR_NAME);
-}
-
-function errnoCode(err: unknown): string {
-  return (err as NodeJS.ErrnoException)?.code ?? 'unknown';
-}
-
-// ── Private directories ─────────────────────────────────────
-
-/** The operator's uid, or null where the platform has none (Windows): no uid
- *  means ownership cannot be proved, so every storage check fails there. */
-function currentUid(): number | null {
-  return typeof process.getuid === 'function' ? process.getuid() : null;
-}
-
-/** lstat-based: a real directory (never a symlink), owned by us, mode exactly 0700. */
-function isPrivateDirectory(stats: fs.Stats): boolean {
-  const uid = currentUid();
-  return (
-    uid !== null &&
-    stats.isDirectory() &&
-    !stats.isSymbolicLink() &&
-    stats.uid === uid &&
-    (stats.mode & 0o777) === ROLES_STORAGE_DIR_MODE
-  );
-}
-
-/** 'absent' when nothing is at `dirPath`; throws RoleStorageUnsafeError when
- *  something is there but is not a private directory. */
-async function checkPrivateDirectory(dirPath: string): Promise<'ok' | 'absent'> {
-  let stats: fs.Stats;
-  try {
-    stats = await fs.promises.lstat(dirPath);
-  } catch (err) {
-    if (errnoCode(err) === 'ENOENT') return 'absent';
-    throw new RoleStorageUnsafeError(`lstat failed (${errnoCode(err)})`);
-  }
-  if (!isPrivateDirectory(stats)) {
-    throw new RoleStorageUnsafeError('not a private directory');
-  }
-  return 'ok';
-}
-
-/** Create `dirPath` (one level) when absent, then verify it. Only a directory
- *  created by this call is chmod-ed; an existing one must already be right. */
-async function ensurePrivateDirectory(dirPath: string): Promise<void> {
-  if ((await checkPrivateDirectory(dirPath)) === 'absent') {
-    try {
-      await fs.promises.mkdir(dirPath, { mode: ROLES_STORAGE_DIR_MODE });
-      await fs.promises.chmod(dirPath, ROLES_STORAGE_DIR_MODE);
-    } catch (err) {
-      // Lost a race with another creator: fall through to the check, which
-      // decides whether what is there now is acceptable.
-      if (errnoCode(err) !== 'EEXIST') throw err;
-    }
-    await checkPrivateDirectory(dirPath);
-  }
 }
 
 /** Verify ~/.pixel-agents/roles/ without creating it: fine when absent, throws

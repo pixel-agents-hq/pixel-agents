@@ -19,7 +19,6 @@
  * The content never reaches a log line from here.
  */
 
-import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -35,6 +34,7 @@ import {
   ROLE_WINDOWS_RESERVED_NAMES,
 } from './constants.js';
 import { type HostDirectoryEntry, listDirectories, normalizeDirectoryPath } from './directories.js';
+import { decodeSafeText, escapeInvisibleCharacters, sha256Hex } from './textSafety.js';
 
 /** A registered Directory a Role request named, as registered. */
 export interface RegisteredDirectory {
@@ -221,50 +221,9 @@ export async function listRoles(rolesDirectory: RolesDirectory): Promise<ListedR
 
 // ── Content ─────────────────────────────────────────────────
 
-/** Code points a Role may never contain: they can hide or reorder what the
- *  reviewer sees, or are not text at all. */
-function isForbiddenCodePoint(cp: number): boolean {
-  if (cp === 0x09 || cp === 0x0a || cp === 0x0d) return false;
-  if (cp < 0x20) return true; // C0 controls, NUL included
-  if (cp >= 0x7f && cp <= 0x9f) return true; // DEL and C1 controls
-  if (cp >= 0xe0000 && cp <= 0xe007f) return true; // tag characters
-  if (cp >= 0x202a && cp <= 0x202e) return true; // bidi embeddings / overrides
-  if (cp >= 0x2066 && cp <= 0x2069) return true; // bidi isolates
-  if (cp === 0xfeff) return true; // BOM / zero-width no-break space, anywhere
-  return false;
-}
-
-/** The text of a Role file, or null when it is not acceptable: invalid UTF-8
- *  (fatal decode; a BOM is kept so it is caught here too) or any forbidden
- *  code point. */
-export function decodeRoleContent(bytes: Buffer): string | null {
-  let text: string;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-  } catch {
-    return null;
-  }
-  for (const char of text) {
-    if (isForbiddenCodePoint(char.codePointAt(0) as number)) return null;
-  }
-  return text;
-}
-
-/** Characters allowed in a Role but invisible (or blank) on screen. */
-const INVISIBLE_CHARACTER =
-  /[\p{Cf}\p{Zl}\p{Zp}\p{Co}\p{Cn}\u{FE00}-\u{FE0F}\u{E0100}-\u{E01EF}ᅟᅠㅤﾠ]|(?! )\p{Zs}/gu;
-
-/** Preview text: every invisible character replaced by a visible `<U+XXXX>`. */
-export function escapeInvisibleCharacters(text: string): string {
-  return text.replace(INVISIBLE_CHARACTER, (char) => {
-    const hex = (char.codePointAt(0) as number).toString(16).toUpperCase().padStart(4, '0');
-    return `<U+${hex}>`;
-  });
-}
-
-export function sha256Hex(bytes: Buffer): string {
-  return crypto.createHash('sha256').update(bytes).digest('hex');
-}
+/** Kept under its Role-specific name; the rule is the shared decodeSafeText. */
+export const decodeRoleContent = decodeSafeText;
+export { escapeInvisibleCharacters, sha256Hex };
 
 function sameInode(a: fs.Stats, b: { dev: number; ino: number }): boolean {
   return a.dev === b.dev && a.ino === b.ino;
