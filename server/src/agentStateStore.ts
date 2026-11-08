@@ -36,6 +36,11 @@ export interface StoreEvents {
   agentAdded: (id: number, agent: AgentState) => void;
   agentRemoved: (id: number) => void;
   agentUpdated: (id: number, agent: AgentState, field: string) => void;
+  /** An agent's Workspace changed (undefined = the default). Emitted for every
+   *  agent a move touches, followers included. */
+  agentWorkspaceChanged: (id: number, workspaceId: string | undefined) => void;
+  /** clear() dropped every agent at once (no per-agent agentRemoved). */
+  agentsCleared: (ids: number[]) => void;
   broadcast: (message: Record<string, unknown>) => void;
 }
 
@@ -144,6 +149,7 @@ export class AgentStateStore {
     const agent = this.agents.get(id);
     if (!agent || agent.workspaceId === next) return false;
     agent.workspaceId = next;
+    this.emitter.emit('agentWorkspaceChanged', id, next);
     this.broadcast({
       type: 'agentWorkspaceChanged',
       id,
@@ -164,7 +170,11 @@ export class AgentStateStore {
   }
 
   clear(): void {
+    const ids = [...this.agents.keys()];
     this.agents.clear();
+    if (ids.length > 0) {
+      this.emitter.emit('agentsCleared', ids);
+    }
   }
 
   // ── Broadcast (replaces direct webview.postMessage in server/) ─

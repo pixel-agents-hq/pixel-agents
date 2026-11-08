@@ -80,6 +80,7 @@ import {
   GLOBAL_KEY_WATCH_ALL_SESSIONS,
   LAYOUT_REVISION_KEY,
 } from './constants.js';
+import { vscodeCuratorRefusal } from './curatorGuard.js';
 import { workspaceDirectories } from './hostDirectories.js';
 import { vscodeRoleLaunchRefusal } from './roleLaunchGuard.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
@@ -461,6 +462,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.html = getWebviewContent(webviewView.webview, this.extensionUri);
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
+      const curatorRefusal = vscodeCuratorRefusal(message);
+      if (curatorRefusal) {
+        this.webview?.postMessage(curatorRefusal);
+        return;
+      }
       if (message.type === 'launchAgent') {
         const roleRefusal = vscodeRoleLaunchRefusal(message);
         if (roleRefusal) {

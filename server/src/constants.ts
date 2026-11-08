@@ -255,6 +255,26 @@ export const ROLE_LAUNCH_FAILED_REASON = "The agent couldn't be started (see the
 export const ROLE_LIST_FAILED_REASON = "The Directory's Roles couldn't be read.";
 export const ROLE_REQUEST_FAILED_REASON = "The Role request failed (see the host's log).";
 
+// ── Agent capabilities (per-agent identity tokens) ──────────
+/** Env var a capability-holding PTY agent receives its token in. Never
+ *  inherited from the server's own environment (ptySessionManager strips it). */
+export const CAPABILITY_ENV_NAME = 'PIXEL_AGENTS_CAPABILITY';
+export const CAPABILITY_TOKEN_PREFIX = 'pxa_kb_';
+/** Random bytes per token, encoded as base64url after the prefix. */
+export const CAPABILITY_TOKEN_BYTES = 32;
+/** Exact token shape: the prefix plus 43 base64url characters (32 bytes). */
+export const CAPABILITY_TOKEN_PATTERN = /^pxa_kb_[A-Za-z0-9_-]{43}$/;
+/** Authorization header scheme a capability may be presented under. */
+export const CAPABILITY_BEARER_PREFIX = 'Bearer ';
+
+// ── Workspace curators ──────────────────────────────────────
+/** curatorRejected reasons: fixed strings, never an agent's or a file's content. */
+export const CURATOR_INVALID_REASON = 'That curator request is not valid.';
+export const CURATOR_EXISTS_REASON = 'That Workspace already has a curator.';
+export const CURATOR_NOT_ELIGIBLE_REASON =
+  'That agent cannot be the curator of this Workspace (it holds no capability there).';
+export const CURATOR_UNAVAILABLE_REASON = 'Curators are only available in the standalone office.';
+
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';

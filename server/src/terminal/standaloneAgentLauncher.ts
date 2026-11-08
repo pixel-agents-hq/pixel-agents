@@ -19,7 +19,9 @@ import type { HookProvider } from '../../../core/src/provider.js';
 import type { AgentRuntime } from '../agentRuntime.js';
 import { createAgentState } from '../agentState.js';
 import type { AgentStateStore } from '../agentStateStore.js';
-import { JSONL_POLL_INTERVAL_MS } from '../constants.js';
+import type { CapabilityRegistry } from '../capabilities.js';
+import { withoutCapabilityEnv, workspaceKey } from '../capabilities.js';
+import { CAPABILITY_ENV_NAME, JSONL_POLL_INTERVAL_MS } from '../constants.js';
 import { directoryNameForLaunch } from '../directories.js';
 import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
@@ -34,6 +36,15 @@ export interface LaunchStandaloneAgentDeps {
   runtime: AgentRuntime;
   ptyManager: PtySessionManager;
   provider: HookProvider;
+  /**
+   * Whether agents launched into this (normalized) Workspace get a capability.
+   * Injected only; absent means never. It is deliberately not read from the
+   * environment or a global setting, so no configuration can turn issuing on
+   * behind the caller's back (S2 ships with no caller passing it).
+   */
+  isKbEnabled?: (workspaceId: string) => boolean;
+  /** Where capabilities are issued and verified. Absent: none is issued. */
+  capabilities?: CapabilityRegistry;
 }
 
 export interface LaunchStandaloneAgentOptions {
@@ -108,7 +119,23 @@ export function launchStandaloneAgent(
   }
   const projectDir = dirs[0];
 
+  // Computed once and shared by the capability and the agent, so the two can
+  // never disagree about where the agent was launched. From the Directory the
+  // launch names, never from the server cwd: a launch with no directoryPath
+  // (or one no Workspace owns) belongs to the default.
+  const workspaceId = workspaceIdForDirectory(options.directoryPath);
+  // Only a caller that injected both the registry and isKbEnabled can get a
+  // capability; the default is a launch exactly as before.
+  const capabilities =
+    deps.isKbEnabled?.(workspaceKey(workspaceId)) === true ? deps.capabilities : undefined;
+
   const id = store.nextAgentId.current++;
+
+  const grant = capabilities?.issue({ agentId: id, sessionId, workspaceId });
+  // Layered last, so nothing the provider returns can replace it.
+  const env = grant
+    ? { ...withoutCapabilityEnv(launch.env ?? {}), [CAPABILITY_ENV_NAME]: grant.token }
+    : launch.env;
 
   let session;
   try {
@@ -117,17 +144,85 @@ export function launchStandaloneAgent(
       command: launch.command,
       args: launch.args,
       cwd,
-      env: launch.env,
+      env,
       cols: options.cols,
       rows: options.rows,
     });
   } catch (err) {
     // Roll the id back so a failed spawn doesn't burn an agent id.
     store.nextAgentId.current--;
+    grant?.revoke();
     console.error(`[Pixel Agents] Terminal: spawn failed: ${String(err)}`);
     releaseRoleSnapshot();
     return null;
   }
+
+  // Revocation rides the process from the very first moment it exists, before
+  // anything below can throw: a capability never outlives its PTY.
+  if (grant) session.onExit(() => grant.revoke());
+
+  let agent: AgentState;
+  try {
+    agent = registerLaunchedAgent(deps, { id, sessionId, cwd, projectDir, workspaceId, role });
+  } catch (err) {
+    // A throwing store listener (or broadcast subscriber) must not leave a
+    // live PTY, a valid capability or a half-registered agent behind.
+    ptyManager.dispose(id);
+    grant?.revoke();
+    releaseRoleSnapshot();
+    try {
+      if (store.has(id)) {
+        runtime.unregisterAgent(sessionId);
+        runtime.removeAgent(id);
+      }
+    } catch {
+      // Best effort: the same listener may throw again.
+    }
+    console.error(`[Pixel Agents] Terminal: Agent ${id} - registration failed: ${String(err)}`);
+    return null;
+  }
+
+  console.log(
+    `[Pixel Agents] Terminal: Agent ${id} - spawned ${launch.command} (pid ${session.pid}) in ${cwd}`,
+  );
+
+  // The terminal closing is this surface's equivalent of VS Code's
+  // "terminal closed -> clean up orphan" pass in fileWatcher.
+  session.onExit((exit) => {
+    console.log(`[Pixel Agents] Terminal: Agent ${id} - exited (code ${exit.exitCode})`);
+    // claude re-reads the file after a compaction, so the snapshot lives
+    // exactly as long as the process does.
+    releaseRoleSnapshot();
+    store.broadcast({ type: 'terminalSessionClosed', agentId: id, exitCode: exit.exitCode });
+    if (store.has(id)) {
+      runtime.unregisterAgent(agent.sessionId);
+      runtime.closeAgent(id);
+    }
+  });
+
+  startJsonlPoll(deps, id, agent);
+
+  return id;
+}
+
+/**
+ * Everything between a successful spawn and the exit handler: the agent's
+ * state, its registration, and the terminal announcement. Split out so the
+ * launcher can undo a failure anywhere in it as one unit.
+ */
+function registerLaunchedAgent(
+  deps: LaunchStandaloneAgentDeps,
+  launched: {
+    id: number;
+    sessionId: string;
+    cwd: string;
+    projectDir: string;
+    workspaceId: string | undefined;
+    role: LaunchStandaloneAgentOptions['role'];
+  },
+): AgentState {
+  const { store, runtime, provider } = deps;
+  const { id, sessionId, cwd, projectDir, workspaceId, role } = launched;
 
   // Pre-register the expected JSONL so the project scanner doesn't mistake it
   // for a /clear file, exactly as the VS Code path does.
@@ -150,9 +245,7 @@ export function launchStandaloneAgent(
     // for a cwd that is no Directory at all.
     directoryName: directoryNameForLaunch(cwd, [hostDirectory()]) ?? directoryNameFor(cwd),
     providerId: provider.id,
-    // From the Directory the launch names, never from the server cwd: a launch
-    // with no directoryPath (or one no Workspace owns) belongs to the default.
-    workspaceId: workspaceIdForDirectory(options.directoryPath),
+    workspaceId,
     // Display only, runtime only: never persisted, so no restore or restart
     // path can bring a Role back.
     roleName: role?.name,
@@ -168,32 +261,11 @@ export function launchStandaloneAgent(
   runtime.registerAgent(sessionId, id);
   store.persist();
 
-  console.log(
-    `[Pixel Agents] Terminal: Agent ${id} - spawned ${launch.command} (pid ${session.pid}) in ${cwd}`,
-  );
-
   // Tell the UI a terminal exists for this agent, so the drawer opens a tab.
   // A separate message (rather than a field on agentCreated) keeps the protocol
   // change additive for the sibling branches.
   store.broadcast({ type: 'terminalSessionOpened', agentId: id });
-
-  // The terminal closing is this surface's equivalent of VS Code's
-  // "terminal closed -> clean up orphan" pass in fileWatcher.
-  session.onExit((exit) => {
-    console.log(`[Pixel Agents] Terminal: Agent ${id} - exited (code ${exit.exitCode})`);
-    // claude re-reads the file after a compaction, so the snapshot lives
-    // exactly as long as the process does.
-    releaseRoleSnapshot();
-    store.broadcast({ type: 'terminalSessionClosed', agentId: id, exitCode: exit.exitCode });
-    if (store.has(id)) {
-      runtime.unregisterAgent(agent.sessionId);
-      runtime.closeAgent(id);
-    }
-  });
-
-  startJsonlPoll(deps, id, agent);
-
-  return id;
+  return agent;
 }
 
 /**

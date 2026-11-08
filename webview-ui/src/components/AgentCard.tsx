@@ -1,4 +1,6 @@
+import { useAgentCurators } from '../agentCurators.js';
 import { agentCardTitle, useAgentRoleName } from '../agentRoles.js';
+import { curatorCardAction, curatorRejectionFor, isCuratorOf } from '../curators.js';
 import type { CardVariant } from './cardBar.js';
 import { CharacterMugShot } from './CharacterMugShot.js';
 import { Button } from './ui/Button.js';
@@ -95,6 +97,61 @@ export function AgentCard({
           {roleName}
         </span>
       )}
+      <AgentCardCurator agentId={agentId} />
     </div>
+  );
+}
+
+/** The curator badge and its one control, plain text only. Renders nothing
+ *  where the host has no curators or the office is read-only. */
+function AgentCardCurator({ agentId }: { agentId: number }) {
+  const { state, readOnly, workspaceOf, request } = useAgentCurators();
+  const workspaceId = workspaceOf(agentId);
+  const curator = isCuratorOf(state, agentId, workspaceId);
+  const action = curatorCardAction(state, readOnly, agentId, workspaceId);
+  const rejection = action.kind === 'none' ? null : curatorRejectionFor(state, agentId);
+  if (!curator && action.kind === 'none') return null;
+  return (
+    <>
+      {curator && (
+        <span
+          data-testid="agent-card-curator"
+          className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-2xs leading-none text-accent-bright"
+        >
+          Curator
+        </span>
+      )}
+      {action.kind !== 'none' && (
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid={
+            action.kind === 'appoint' ? 'agent-card-curator-set' : 'agent-card-curator-unset'
+          }
+          title={
+            action.kind === 'appoint'
+              ? 'Make this agent the curator of its Workspace'
+              : 'Stop this agent being the curator of its Workspace'
+          }
+          className="text-2xs leading-none px-0!"
+          onClick={(e) => {
+            // The card itself selects the agent; this button must not.
+            e.stopPropagation();
+            request(agentId, action.message);
+          }}
+        >
+          {action.kind === 'appoint' ? 'Make curator' : 'Step down'}
+        </Button>
+      )}
+      {rejection && (
+        <span
+          data-testid="agent-card-curator-rejected"
+          title={rejection}
+          className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-2xs leading-none text-text-muted"
+        >
+          {rejection}
+        </span>
+      )}
+    </>
   );
 }
