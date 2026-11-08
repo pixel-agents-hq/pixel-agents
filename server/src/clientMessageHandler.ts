@@ -6,6 +6,7 @@ import { buildAgentDiagnostics } from './agentDiagnostics.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './assetLoader.js';
+import type { CapabilityRegistry } from './capabilities.js';
 import {
   getHooksConsent,
   getHooksEnabled,
@@ -14,6 +15,12 @@ import {
   writeConfig,
 } from './configPersistence.js';
 import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT, TERMINAL_REQUIRES_TOKEN_REASON } from './constants.js';
+import {
+  curatorsAvailable,
+  curatorsLoadedMessage,
+  handleCuratorClientMessage,
+} from './curatorClientMessages.js';
+import type { CuratorTable } from './curators.js';
 import {
   handleDirectoryClientMessage,
   type HostDirectoryEntry,
@@ -77,6 +84,16 @@ export interface ClientMessageContext {
   /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
    *  mode, where the editor owns terminal lifecycle. */
   ptyManager?: PtySessionManager;
+  /** Per-agent capabilities (standalone only, in memory). Handed to every
+   *  launch; nothing is issued unless a launch is given isKbEnabled. */
+  capabilities?: CapabilityRegistry;
+  /** Workspace curators (standalone only, in memory). */
+  curators?: CuratorTable;
+  /** Whether a launch into a Workspace is issued a capability (the Workspace's
+   *  KB is on). Handed to every launch. Absent while nothing can enable a KB:
+   *  no agent could ever be a curator, so the office offers no curator
+   *  controls (curatorsLoaded.available stays false). */
+  isKbEnabled?: (workspaceId: string) => boolean;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -143,6 +160,8 @@ function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
           runtime: ctx.runtime,
           ptyManager: ctx.ptyManager,
           provider: claudeProvider,
+          capabilities: ctx.capabilities,
+          isKbEnabled: ctx.isKbEnabled,
         },
         {
           directoryPath,
@@ -202,7 +221,14 @@ export function handleClientMessage(
       // drawer row and carries its Directory's path; no directoryPath falls
       // back to the server cwd (launchStandaloneAgent's own default).
       launchStandaloneAgent(
-        { store, runtime, ptyManager: ctx.ptyManager, provider: claudeProvider },
+        {
+          store,
+          runtime,
+          ptyManager: ctx.ptyManager,
+          provider: claudeProvider,
+          capabilities: ctx.capabilities,
+          isKbEnabled: ctx.isKbEnabled,
+        },
         {
           directoryPath: msg.directoryPath as string | undefined,
           bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
@@ -427,7 +453,21 @@ export function handleClientMessage(
               store.setAgentWorkspace(id, DEFAULT_WORKSPACE_ID);
             }
           }
+          // Moving its agents already revoked their capabilities (and with them
+          // the curator); the record goes too, whoever holds it.
+          ctx.curators?.clearWorkspace(workspaceId);
         },
+      });
+      break;
+
+    case 'setWorkspaceCurator':
+    case 'unsetWorkspaceCurator':
+      // Success broadcasts workspaceCuratorChanged to every office; a refusal
+      // answers only the sender.
+      handleCuratorClientMessage(msg, {
+        available: curatorsAvailable(ctx),
+        curators: ctx.curators,
+        reply: send,
       });
       break;
 
@@ -661,6 +701,12 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // 4d. Workspaces, after the Directories they group and before any agent
   // names one (existingAgents), so the client can place every agent on arrival.
   send(workspacesLoadedMessage());
+
+  // 4e. Curators, to this client only. `available` is the host's answer, not
+  // this connection's: a read-only office hides the controls itself.
+  send(
+    curatorsLoadedMessage(curatorsAvailable(ctx) && ctx.isKbEnabled !== undefined, ctx.curators),
+  );
 
   // Sync runtime refs with the persisted settings so scanners behave correctly
   // from the first tick after a server restart.

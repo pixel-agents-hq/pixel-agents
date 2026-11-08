@@ -533,6 +533,8 @@ Run: `npm run test:webview`.
 - Run them **once, at the end of an implementation** — never as an intermediate check.
 - **Never from a subagent**: delegated work verifies with typecheck, lint, unit tests, and the standalone specs (`e2e/tests/standalone/**`, headless browser, no windows).
 
+**會消耗模型用量的實測，要先告知使用者。** 凡是讓真實 `claude`（或其他 LLM）實際產生回應的驗證，例如 S3 的端對端驗證、需要模型呼叫 MCP 工具的實測（用量記入使用者的訂閱額度或 API 帳單），執行前先告訴使用者大約會呼叫幾次、使用哪個模型；實測用最小的模型與最短的提示，並限制回合數。測試用的假 `claude`（`e2e/fixtures/mock-claude`）不消耗用量，不受此限。
+
 **Mock claude**: Tests never invoke real `claude`. A bash script (`e2e/fixtures/mock-claude`) is copied into an isolated `bin/` and prepended to `PATH`. The scenario runner (`mock-claude-runner.cjs`) honors `claudeScenario(...).at(ms).appendJsonl(record).emitHook(event).holdOpenFor(ms).build()` to drive timed JSONL writes and hook events.
 
 **Authoring rules (normative)**: before writing a new spec, read `e2e/README.md` → "Mocking model & rules". It is the single source of truth for the process-boundary principle, the append-only transcript rule, the assert-on-visible-outcomes discipline, and the one standalone-server exception. New tests must follow that model.

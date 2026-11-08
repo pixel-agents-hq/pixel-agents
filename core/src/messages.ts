@@ -46,6 +46,9 @@ export type ServerMessage =
   | WorkspacesLoaded
   | WorkspaceRejected
   | AgentWorkspaceChanged
+  | CuratorsLoaded
+  | WorkspaceCuratorChanged
+  | CuratorRejected
   | RolesAvailable
   | RolePreview
   | RoleConfirmed
@@ -83,6 +86,8 @@ export type ClientMessage =
   | RemoveDirectory
   | SaveWorkspace
   | RemoveWorkspace
+  | SetWorkspaceCurator
+  | UnsetWorkspaceCurator
   | RequestRoles
   | RequestRolePreview
   | ConfirmRole
@@ -392,6 +397,31 @@ export interface AgentWorkspaceChanged {
   workspaceId: string;
 }
 
+export interface CuratorsLoaded {
+  type: 'curatorsLoaded';
+  available: boolean;
+  curators: CuratorEntry[];
+}
+
+export interface CuratorEntry {
+  workspaceId: string;
+  agentId: number;
+}
+
+export interface WorkspaceCuratorChanged {
+  type: 'workspaceCuratorChanged';
+  workspaceId: string;
+  agentId: number | null;
+}
+
+export interface CuratorRejected {
+  type: 'curatorRejected';
+  code: CuratorRejectionCode;
+  reason: string;
+}
+
+export type CuratorRejectionCode = 'invalid' | 'exists' | 'not_eligible' | 'unavailable';
+
 export interface RolesAvailable {
   type: 'rolesAvailable';
   directoryPath: string;
@@ -594,6 +624,17 @@ export interface SaveWorkspace {
 export interface RemoveWorkspace {
   type: 'removeWorkspace';
   id: string;
+}
+
+export interface SetWorkspaceCurator {
+  type: 'setWorkspaceCurator';
+  workspaceId: string;
+  agentId: number;
+}
+
+export interface UnsetWorkspaceCurator {
+  type: 'unsetWorkspaceCurator';
+  workspaceId: string;
 }
 
 export interface RequestRoles {

@@ -457,15 +457,11 @@ export class AgentRuntime {
     );
   }
 
-  /** Start stale external agent check (removes agents whose JSONL files are deleted). */
+  /** Start stale external agent check (removes agents whose JSONL files are deleted or long idle). */
   startStaleCheck(): void {
     if (this.staleCheckTimer) return;
 
-    this.staleCheckTimer = startStaleExternalAgentCheck(
-      this.store,
-      this.knownJsonlFiles,
-      this.hooksEnabled,
-    );
+    this.staleCheckTimer = startStaleExternalAgentCheck(this.store, this.knownJsonlFiles);
   }
 
   // ── Restore persisted external agents (standalone) ──
