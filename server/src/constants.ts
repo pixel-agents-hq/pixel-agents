@@ -357,6 +357,83 @@ export const CURATOR_NOT_ELIGIBLE_REASON =
   'That agent cannot be the curator of this Workspace (it holds no capability there).';
 export const CURATOR_UNAVAILABLE_REASON = 'Curators are only available in the standalone office.';
 
+// ── Write guard（阻擋式裁決通道，standalone 限定） ─────────
+/** hook 向伺服器詢問裁決的端點。與 HOOK_API_PREFIX 分開，既有的事件轉發路由不變。 */
+export const WRITE_GUARD_API_PATH = '/api/guard/verdict';
+/** 裁決請求的 body 上限。請求只含路徑、command 等欄位（F9），不含檔案內容；
+ *  超過上限時 hook 不送出，視同伺服器未回答（只有受保護路徑才 fail-closed）。 */
+export const WRITE_GUARD_MAX_REQUEST_BYTES = MAX_HOOK_BODY_SIZE;
+/** hook 讀取裁決回應的上限；伺服器只回很短的 JSON，超過視同沒有回答。 */
+export const WRITE_GUARD_MAX_RESPONSE_BYTES = 4_096;
+/**
+ * hook 端裁決的總截止時間（毫秒）。必須明顯短於安裝器寫入的 hook 逾時
+ * （claudeHookInstaller.ts makeHookEntry 的 `timeout: 5`，單位秒），
+ * 讓 hook 在被 Claude Code 砍掉之前就能自己做出 fail-closed 決定（F2、F13）。
+ */
+export const WRITE_GUARD_HOOK_DEADLINE_MS = 1_200;
+/** 受保護根目錄清單與已知 session 清單（每台 standalone 伺服器一份）所在的
+ *  子目錄（位於 SERVER_JSON_DIR 之下），檔名與 registry 相同：`<pid>-<port>.json`。 */
+export const WRITE_GUARD_LISTS_DIR = 'guard';
+/** 清單檔格式版本。hook 只採認同版本的清單，其他一律視為沒有清單。 */
+export const WRITE_GUARD_LIST_VERSION = 1;
+/** 已知 session 清單的後備重算間隔。session id 的變更大多透過事件立即反映；
+ *  這個間隔只補上不經 AgentRuntime.registerAgent 的變更路徑（例如 heuristic 的
+ *  /clear 重新指派）。只在內容改變時才寫檔。 */
+export const WRITE_GUARD_LIST_REFRESH_INTERVAL_MS = 1_000;
+/** 裁決端點只接受從 loopback 對端來的請求（縱深防禦，沿用 S3b /mcp 的作法）。 */
+export const WRITE_GUARD_LOOPBACK_PEERS: readonly string[] = [
+  '127.0.0.1',
+  '::1',
+  '::ffff:127.0.0.1',
+];
+/** 標示「轉送過的請求」的標頭；裁決端點一律拒絕。 */
+export const WRITE_GUARD_FORWARDING_HEADERS: readonly string[] = ['forwarded', 'via'];
+export const WRITE_GUARD_FORWARDING_HEADER_PREFIX = 'x-forwarded-';
+/** 裁決端點的錯誤回應 body：固定字串。 */
+export const WRITE_GUARD_FORBIDDEN_BODY = 'forbidden';
+export const WRITE_GUARD_UNAUTHORIZED_BODY = 'unauthorized';
+export const WRITE_GUARD_BAD_REQUEST_BODY = 'bad request';
+
+/** 伺服器回 deny 時的規則識別碼（hook 依此套用固定範本，不轉送伺服器的任何文字）。 */
+export const WRITE_GUARD_RULE_PROTECTED_PATH = 'protected-path';
+/** hook 端 fail-closed：已知 standalone session 對受保護路徑寫入，伺服器卻沒有回答。 */
+export const WRITE_GUARD_RULE_UNREACHABLE = 'guard-unreachable';
+
+/**
+ * 拒絕訊息的固定範本（F16）：原因、理由、建議三段。只會插入該 Agent 自己送出的
+ * 路徑，絕不插入 curator 身分、其他 Agent 的路徑或任何可命名的字串。
+ * 未知的規則識別碼一律套用 WRITE_GUARD_DENY_GENERIC。
+ */
+export interface WriteGuardDenyTemplate {
+  reason: string;
+  rationale: string;
+  suggestion: string;
+}
+export const WRITE_GUARD_DENY_TEMPLATES: Readonly<Record<string, WriteGuardDenyTemplate>> = {
+  [WRITE_GUARD_RULE_PROTECTED_PATH]: {
+    reason: 'This write targets a path Pixel Agents protects for this agent.',
+    rationale:
+      'Protected paths (such as a Knowledge Base) may only be written by the agent assigned to them.',
+    suggestion:
+      'Do not write this path directly. Propose the change instead, so the assigned writer can review and apply it.',
+  },
+  [WRITE_GUARD_RULE_UNREACHABLE]: {
+    reason:
+      'This write targets a protected path, and the Pixel Agents server did not answer in time.',
+    rationale:
+      'Without an answer the write cannot be checked, so writes to protected paths are refused rather than allowed.',
+    suggestion:
+      'Retry once the Pixel Agents server is running, or ask the user to make the change.',
+  },
+};
+export const WRITE_GUARD_DENY_GENERIC: WriteGuardDenyTemplate = {
+  reason: 'Pixel Agents refused this tool call.',
+  rationale: 'A Pixel Agents rule for this agent does not allow it.',
+  suggestion: 'Ask the user how to proceed.',
+};
+/** 拒絕訊息中路徑的長度上限（字元）；超過時截斷，避免把超長輸入回灌給模型。 */
+export const WRITE_GUARD_DENY_PATH_MAX_LENGTH = 512;
+
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';

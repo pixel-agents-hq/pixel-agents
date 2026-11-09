@@ -16,6 +16,11 @@ import { handleClientMessage } from './clientMessageHandler.js';
 import {
   HOOK_API_PREFIX,
   MAX_HOOK_BODY_SIZE,
+  WRITE_GUARD_API_PATH,
+  WRITE_GUARD_BAD_REQUEST_BODY,
+  WRITE_GUARD_FORBIDDEN_BODY,
+  WRITE_GUARD_MAX_REQUEST_BYTES,
+  WRITE_GUARD_UNAUTHORIZED_BODY,
   WS_CLOSE_FORBIDDEN_ORIGIN,
   WS_CLOSE_UNAUTHORIZED,
 } from './constants.js';
@@ -23,6 +28,9 @@ import type { CuratorTable } from './curators.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { registerTerminalRoutes } from './terminal/terminalRoutes.js';
 import type { AgentState } from './types.js';
+import { guardRequestAuthorized, guardRequestForbidden } from './writeGuard/endpointFilter.js';
+import type { GuardVerdict } from './writeGuard/protocol.js';
+import type { WriteGuard } from './writeGuard/writeGuard.js';
 import {
   bearerTokenValid,
   isAllowedWebSocketOrigin,
@@ -65,6 +73,9 @@ export interface HttpServerOptions {
    *  privileged standalone handshake may arrive under -- e.g. a reverse proxy's
    *  public name. See wsAuth.privilegedHostnames. */
   allowedHosts?: readonly string[];
+  /** 阻擋式裁決（standalone 限定）。內嵌模式即使傳入也一律忽略：
+   *  端點對任何 session 回 unknown-session。 */
+  writeGuard?: WriteGuard;
 }
 
 /** Result of createHttpServer(). */
@@ -91,6 +102,10 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     bodyLimit: MAX_HOOK_BODY_SIZE,
   });
 
+  // 裁決端點的檢查是根層級的 onRequest，且在 CORS 之前加入，所以它先於
+  // @fastify/cors 執行（沿用 S3b /mcp 的作法）。
+  registerWriteGuardFilter(app, options.token);
+
   await app.register(fastifyCors, { origin: true });
   await app.register(fastifyWebsocket);
 
@@ -113,6 +128,7 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
 
   registerHealthRoute(app);
   registerHookRoute(app, options);
+  registerWriteGuardRoute(app, options);
   registerWebSocketRoute(app, options, allowedHostnames);
   registerTerminalRoutes(app, {
     token: options.token,
@@ -168,6 +184,50 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
       }
 
       reply.send('ok');
+    },
+  );
+}
+
+// ── Write Guard ────────────────────────────────────────────────
+
+const UNKNOWN_SESSION: GuardVerdict = { verdict: 'unknown-session' };
+
+/**
+ * 裁決端點的根層級 onRequest 檢查。以路由比對的結果（routeOptions.url）判斷，
+ * 不用 request.url，所以 `/api/guard/%76erdict` 之類的寫法也會經過這裡。
+ * 只看標頭：被拒絕的請求不會讀 body。先 403（網路層縱深防禦），再 401（Bearer）。
+ */
+function registerWriteGuardFilter(app: FastifyInstance, token: string): void {
+  app.addHook('onRequest', async (request, reply) => {
+    if (request.routeOptions.url !== WRITE_GUARD_API_PATH) return;
+    if (
+      guardRequestForbidden({
+        rawHeaders: request.raw.rawHeaders,
+        remoteAddress: request.socket.remoteAddress,
+      })
+    ) {
+      return reply.code(403).send(WRITE_GUARD_FORBIDDEN_BODY);
+    }
+    if (!guardRequestAuthorized(request.raw.rawHeaders, token)) {
+      return reply.code(401).send(WRITE_GUARD_UNAUTHORIZED_BODY);
+    }
+  });
+}
+
+/**
+ * POST 裁決端點。內嵌（VS Code）伺服器對任何 session 一律回 unknown-session
+ * （分流：規則只對 standalone 生效）。standalone 的裁決只做記憶體查詢（F13）。
+ */
+function registerWriteGuardRoute(app: FastifyInstance, options: HttpServerOptions): void {
+  const guard = options.embedded ? undefined : options.writeGuard;
+  app.post(
+    WRITE_GUARD_API_PATH,
+    { bodyLimit: WRITE_GUARD_MAX_REQUEST_BYTES },
+    async (request, reply) => {
+      if (!guard) return reply.send(UNKNOWN_SESSION);
+      const verdict = guard.verdict(request.body);
+      if (!verdict) return reply.code(400).send(WRITE_GUARD_BAD_REQUEST_BODY);
+      return reply.send(verdict);
     },
   );
 }

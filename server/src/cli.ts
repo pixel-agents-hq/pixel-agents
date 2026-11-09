@@ -39,6 +39,7 @@ import { removeStaleRoleSnapshots } from './roleStorage.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { ensureWorkspacesFile } from './workspaces.js';
+import { WriteGuard } from './writeGuard/writeGuard.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -274,6 +275,11 @@ async function main(): Promise<void> {
     // Create runtime first (before server.start, so we can pass it in)
     const runtime = new AgentRuntime(store, claudeProvider);
 
+    // 阻擋式裁決：只認本行程以 PTY 啟動的 Agent，清單由 server.start 發佈。
+    // P1 沒有受保護根目錄的正式來源（P2 起由工作空間設定產生），所以目前
+    // 沒有任何寫入會被拒；清單只列出已知 session。
+    const writeGuard = new WriteGuard({ store, ptyManager, sessions: runtime });
+
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
       runtime.handleHookEvent(providerId, event);
@@ -371,6 +377,7 @@ async function main(): Promise<void> {
       curators,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,
+      writeGuard,
     });
     currentConfig = { port: config.port, token: config.token };
     if (args.rotateToken) {
