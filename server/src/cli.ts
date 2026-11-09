@@ -34,11 +34,18 @@ import {
 } from './constants.js';
 import { CuratorTable } from './curators.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
+import {
+  areHooksInstalled as claudeInstallerAreHooksInstalled,
+  isHookScriptPresent,
+  isPreToolUseHookInstalled,
+} from './providers/hook/claude/claudeHookInstaller.js';
 import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
 import { removeStaleRoleSnapshots } from './roleStorage.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { ensureWorkspacesFile } from './workspaces.js';
+import { GuardStatusReporter } from './writeGuard/guardStatusReporter.js';
+import { WriteGuard } from './writeGuard/writeGuard.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -263,16 +270,42 @@ async function main(): Promise<void> {
   // Per-agent capabilities and Workspace curators: memory only, gone on
   // restart. Created before anything else subscribes to the store, so the
   // registry hears every removal first. No launch here passes isKbEnabled, so
-  // nothing is issued yet (S2): the curator controls answer not_eligible.
+  // no capability is issued (S2). Curators (P2) need none: any agent this host
+  // launched into a Workspace is eligible, and the table clears itself from the
+  // store's removal / Workspace-change / clear events.
   const capabilities = new CapabilityRegistry({ store, ptyManager });
   const curators = new CuratorTable({
-    capabilities,
+    store,
+    ptyManager,
     broadcast: (message) => store.broadcast(message),
   });
 
   try {
     // Create runtime first (before server.start, so we can pass it in)
     const runtime = new AgentRuntime(store, claudeProvider);
+
+    // 阻擋式裁決：只認本行程以 PTY 啟動的 Agent，清單由 server.start 發佈。
+    // 受保護區的正式來源（P2）：工作空間根目錄（~/.pixel-agents/workspaces.json）
+    // 與已知 Agent 啟動時記錄的 Directory realpath、roleId；curator 由 CuratorTable 提供。
+    // 沒有任何工作空間設定根目錄時，KB 規則與 F17 都不啟用，行為與現況相同。
+    const writeGuard = new WriteGuard({ store, ptyManager, sessions: runtime, curators });
+
+    // agentGuardStatus（P4）：必須在 writeGuard 之後建立，事件順序才會先更新規則快照。
+    // 鏈檢查（settings.json 與腳本檔）只在固定間隔與 hooks 狀態變更時讀檔。
+    const guardStatus = new GuardStatusReporter({
+      store,
+      ptyManager,
+      guard: writeGuard,
+      curators,
+      sessions: runtime,
+      broadcast: (message) => store.broadcast(message),
+      probeChain: () => ({
+        hooksInstalled: claudeInstallerAreHooksInstalled(),
+        preToolUsePresent: isPreToolUseHookInstalled(),
+        scriptPresent: isHookScriptPresent(),
+      }),
+    });
+    guardStatus.start();
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
@@ -371,6 +404,8 @@ async function main(): Promise<void> {
       curators,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,
+      writeGuard,
+      guardStatus,
     });
     currentConfig = { port: config.port, token: config.token };
     if (args.rotateToken) {
@@ -458,6 +493,7 @@ async function main(): Promise<void> {
       // leave a child that ignores SIGHUP orphaned on a dead server.
       await ptyManager.disposeAll();
       runtime.dispose();
+      guardStatus.dispose();
       server.stop();
       process.exit(0);
     }

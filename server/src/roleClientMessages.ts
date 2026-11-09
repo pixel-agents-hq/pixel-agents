@@ -16,6 +16,7 @@
 
 import type { RoleRejectionCode } from '../../core/src/messages.js';
 import {
+  PERMISSION_ROLES_INVALID_REASON,
   ROLE_BAD_CONTENT_REASON,
   ROLE_CHANGED_REASON,
   ROLE_INVALID_DIRECTORY_REASON,
@@ -57,6 +58,8 @@ import {
   RoleTrustUnreadableError,
   writeRoleSnapshot,
 } from './roleStorage.js';
+import type { PermissionRoles } from './writeGuard/permissionRoles.js';
+import { parsePermissionRoles } from './writeGuard/permissionRoles.js';
 
 type Reply = (message: Record<string, unknown>) => void;
 
@@ -65,7 +68,11 @@ export interface RoleLaunchRequest {
   /** The registered Directory's path (never the client's string). */
   directoryPath: string;
   roleName: string;
+  /** The listed Role's file name (its personal KB identity key). */
+  roleId: string;
   snapshotPath: string;
+  /** P3 permission-role override, validated here (absent: the Workspace default). */
+  permissionRoles?: PermissionRoles;
 }
 
 export interface RoleMessageDeps {
@@ -282,6 +289,14 @@ async function handleLaunchWithRole(msg: Record<string, unknown>, deps: RoleMess
   refuseUnless(isValidRoleId(msg.roleId), 'invalid', ROLE_INVALID_ID_REASON);
   // A Role launch never falls back to the server's cwd.
   refuseUnless(msg.directoryPath !== undefined, 'invalid', ROLE_MISSING_DIRECTORY_REASON);
+  // P3: an invalid permission-role override launches nothing (never a launch without it).
+  const permissionRoles =
+    msg.permissionRoles === undefined ? undefined : parsePermissionRoles(msg.permissionRoles);
+  refuseUnless(
+    msg.permissionRoles === undefined || permissionRoles !== undefined,
+    'invalid',
+    PERMISSION_ROLES_INVALID_REASON,
+  );
   await storageCheckedOrRefuse();
   const read = await readListedRoleOrRefuse(msg.directoryPath, msg.roleId, deps);
   const trusted = await trustedOrRefuse({
@@ -307,7 +322,9 @@ async function handleLaunchWithRole(msg: Record<string, unknown>, deps: RoleMess
     id = deps.launch({
       directoryPath: read.directory.path,
       roleName: read.roleName,
+      roleId: read.roleId,
       snapshotPath,
+      ...(permissionRoles !== undefined ? { permissionRoles } : {}),
     });
   } catch (err) {
     removeRoleSnapshot(snapshotPath);

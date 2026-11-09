@@ -586,6 +586,36 @@ export function areHooksInstalled(): boolean {
 }
 
 /**
+ * Whether the PreToolUse event holds one of our hook commands. Read-only, same
+ * identity rule and same unparseable-file answer (false) as areHooksInstalled,
+ * which cannot see a deleted PreToolUse entry while any other event of ours
+ * remains. Reads the file: callers cache it, never on the verdict path (F13).
+ */
+export function isPreToolUseHookInstalled(): boolean {
+  let settings: ClaudeSettings;
+  try {
+    settings = readClaudeSettings();
+  } catch {
+    return false;
+  }
+  const hooks = settings.hooks;
+  if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)) return false;
+  const entries = (hooks as Record<string, unknown>)['PreToolUse'];
+  return Array.isArray(entries) && entries.some(entryHasOurHook);
+}
+
+/** Whether the hook script file exists and is readable (copyHookScript may have
+ *  failed, or the file was removed). Read-only filesystem probe, cached by callers. */
+export function isHookScriptPresent(): boolean {
+  try {
+    fs.accessSync(getHookScriptPath(), fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Install Pixel Agents hook entries into ~/.claude/settings.json for
  * Notification, Stop, and PermissionRequest events. Idempotent: removes
  * any existing Pixel Agents entries before adding fresh ones.

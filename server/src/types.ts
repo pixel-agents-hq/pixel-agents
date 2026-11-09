@@ -1,5 +1,7 @@
 import type * as vscode from 'vscode';
 
+import type { PermissionRoles } from './writeGuard/permissionRoles.js';
+
 export interface AgentState {
   id: number;
   sessionId: string;
@@ -34,6 +36,21 @@ export interface AgentState {
    *  Runtime-only and display-only: never persisted, so no restore or restart
    *  path can relaunch with a Role. The Role's content and hash never live here. */
   roleName?: string;
+  /** S1b Role file name (roleId, e.g. `writer.md`) this agent was launched with
+   *  (standalone PTY agents only). Recorded at launch, never the display name;
+   *  it is the agent's personal KB identity key (writeGuard/kbIdentity.ts).
+   *  Runtime-only: PTY agents are never restored, so it is never persisted. */
+  roleId?: string;
+  /** realpath of the Directory a standalone PTY agent was launched into,
+   *  recorded at launch. KB rule ownership is decided by this, never by a hook
+   *  payload's cwd (which follows `cd`). Runtime-only, never persisted. */
+  directoryRealPath?: string;
+  /** Effective permission roles (P3, R/E/D as a set) snapshotted when a
+   *  standalone PTY agent launched: the launch override, else the Workspace
+   *  default, else null (no roles: everything allowed, as before P3). Changing
+   *  the Workspace default later never touches it. Runtime-only, never persisted
+   *  (PTY agents are never restored); undefined on every other agent = null. */
+  permissionRoles?: PermissionRoles;
   /** Timestamp of last JSONL data received (ms since epoch) */
   lastDataAt: number;
   /** Total JSONL lines processed for this agent */

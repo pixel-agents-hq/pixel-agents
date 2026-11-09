@@ -26,9 +26,12 @@ import { directoryNameForLaunch } from '../directories.js';
 import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
+import { isValidRoleId } from '../roles.js';
 import { removeRoleSnapshot } from '../roleStorage.js';
 import type { AgentState } from '../types.js';
-import { workspaceIdForDirectory } from '../workspaces.js';
+import { workspaceIdForDirectory, workspacePermissionRoles } from '../workspaces.js';
+import type { PermissionRoles } from '../writeGuard/permissionRoles.js';
+import { effectivePermissionRoles } from '../writeGuard/permissionRoles.js';
 import type { PtySessionManager } from './ptySessionManager.js';
 
 export interface LaunchStandaloneAgentDeps {
@@ -60,9 +63,18 @@ export interface LaunchStandaloneAgentOptions {
    * The Role this agent launches with, already validated, trusted and copied by
    * the caller (roleClientMessages.ts). Absent: the launch is exactly the
    * pre-Role one. The snapshot is owned from here on: removed on every failure
-   * path below and when the agent's process exits.
+   * path below and when the agent's process exits. `roleId` is the Role's file
+   * name, recorded on the agent as its personal KB identity key; a launch whose
+   * roleId fails the Role allowlist is refused before anything starts.
    */
-  role?: { name: string; snapshotPath: string };
+  role?: { name: string; roleId: string; snapshotPath: string };
+  /**
+   * P3 permission-role override, already validated by the caller: an array is
+   * the agent's R/E/D roles, null means no roles (everything allowed). Absent:
+   * the Workspace default, else null. The result is snapshotted onto the agent
+   * here and never re-read, so a later Workspace change leaves it alone.
+   */
+  permissionRoles?: PermissionRoles;
 }
 
 /**
@@ -78,6 +90,13 @@ export function launchStandaloneAgent(
   const releaseRoleSnapshot = (): void => {
     if (role) removeRoleSnapshot(role.snapshotPath);
   };
+
+  // The identity key must be a listed Role file name: never a path, never `..`.
+  if (role && !isValidRoleId(role.roleId)) {
+    console.error('[Pixel Agents] Terminal: cannot launch -- invalid Role id');
+    releaseRoleSnapshot();
+    return null;
+  }
 
   if (!ptyManager.isAvailable()) {
     console.error(`[Pixel Agents] Terminal: cannot launch -- ${ptyManager.unavailableReason()}`);
@@ -124,6 +143,15 @@ export function launchStandaloneAgent(
   // launch names, never from the server cwd: a launch with no directoryPath
   // (or one no Workspace owns) belongs to the default.
   const workspaceId = workspaceIdForDirectory(options.directoryPath);
+  // KB rule ownership (writeGuard/kbState.ts): recorded once here, never taken
+  // from a hook payload's cwd. Undefined only when the Directory cannot be
+  // resolved, in which case the PTY spawn below fails as well.
+  const directoryRealPath = realpathOrUndefined(cwd);
+  // Permission roles (P3): snapshotted once here, like the Directory above.
+  const permissionRoles = effectivePermissionRoles(
+    options.permissionRoles,
+    workspacePermissionRoles(workspaceId),
+  );
   // Only a caller that injected both the registry and isKbEnabled can get a
   // capability; the default is a launch exactly as before.
   const capabilities =
@@ -163,7 +191,16 @@ export function launchStandaloneAgent(
 
   let agent: AgentState;
   try {
-    agent = registerLaunchedAgent(deps, { id, sessionId, cwd, projectDir, workspaceId, role });
+    agent = registerLaunchedAgent(deps, {
+      id,
+      sessionId,
+      cwd,
+      projectDir,
+      workspaceId,
+      role,
+      directoryRealPath,
+      permissionRoles,
+    });
   } catch (err) {
     // A throwing store listener (or broadcast subscriber) must not leave a
     // live PTY, a valid capability or a half-registered agent behind.
@@ -219,10 +256,13 @@ function registerLaunchedAgent(
     projectDir: string;
     workspaceId: string | undefined;
     role: LaunchStandaloneAgentOptions['role'];
+    directoryRealPath: string | undefined;
+    permissionRoles: PermissionRoles;
   },
 ): AgentState {
   const { store, runtime, provider } = deps;
-  const { id, sessionId, cwd, projectDir, workspaceId, role } = launched;
+  const { id, sessionId, cwd, projectDir, workspaceId, role, directoryRealPath, permissionRoles } =
+    launched;
 
   // Pre-register the expected JSONL so the project scanner doesn't mistake it
   // for a /clear file, exactly as the VS Code path does.
@@ -249,6 +289,12 @@ function registerLaunchedAgent(
     // Display only, runtime only: never persisted, so no restore or restart
     // path can bring a Role back.
     roleName: role?.name,
+    // Runtime only, like roleName: the KB identity key and the Directory the
+    // rules attribute this agent to.
+    roleId: role?.roleId,
+    directoryRealPath,
+    // Runtime only: the R/E/D snapshot the write guard reads (never persisted).
+    permissionRoles,
   });
 
   // Server-side, like every other creation path: the palette rides the
@@ -266,6 +312,14 @@ function registerLaunchedAgent(
   // change additive for the sibling branches.
   store.broadcast({ type: 'terminalSessionOpened', agentId: id });
   return agent;
+}
+
+function realpathOrUndefined(directory: string): string | undefined {
+  try {
+    return fs.realpathSync(directory);
+  } catch {
+    return undefined;
+  }
 }
 
 /**

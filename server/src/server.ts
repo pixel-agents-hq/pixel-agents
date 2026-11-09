@@ -24,6 +24,9 @@ import type { ServerConfig, StandaloneAccess } from './serverConfig.js';
 import { isServerConfig, isServerTarget, sameStandaloneAccess } from './serverConfig.js';
 import { loadOrCreateStandaloneToken } from './serverToken.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
+import { pruneDeadGuardLists } from './writeGuard/guardList.js';
+import type { GuardStatusReporter } from './writeGuard/guardStatusReporter.js';
+import type { WriteGuard } from './writeGuard/writeGuard.js';
 import { normalizeHostname } from './wsAuth.js';
 
 export type { ServerConfig } from './serverConfig.js';
@@ -54,6 +57,8 @@ export class PixelAgentsServer {
   private config: ServerConfig | null = null;
   private ownsServer = false;
   private callback: HookEventCallback | null = null;
+  /** 正在發佈清單的裁決器（只有自己啟動的 standalone 伺服器才有）。 */
+  private writeGuard: WriteGuard | null = null;
 
   /** Register a callback for incoming hook events from any provider. */
   onHookEvent(callback: HookEventCallback): void {
@@ -84,6 +89,10 @@ export class PixelAgentsServer {
      *  the old one. Refused while another standalone server is running: it
      *  would keep honouring the old token until it restarts. */
     rotateToken?: boolean;
+    /** 阻擋式裁決與清單發佈（standalone 限定；內嵌模式忽略，不寫清單）。 */
+    writeGuard?: WriteGuard;
+    /** agentGuardStatus 回報（standalone 限定；內嵌模式忽略）。 */
+    guardStatus?: GuardStatusReporter;
   }): Promise<ServerConfig> {
     const embedded = options?.embedded ?? true;
     const wantsSpa = !embedded;
@@ -151,6 +160,8 @@ export class PixelAgentsServer {
       capabilities: options?.capabilities,
       curators: options?.curators,
       allowedHosts: standalone?.allowedHosts,
+      writeGuard: embedded ? undefined : options?.writeGuard,
+      guardStatus: embedded ? undefined : options?.guardStatus,
     });
 
     this.app = app;
@@ -173,6 +184,13 @@ export class PixelAgentsServer {
     // entry (new hook scripts fan out to every entry here).
     this.writeServerJson(this.config);
     this.writeRegistryEntry(this.config);
+    // 清單與 registry 項目同名；先清掉當機伺服器的殘檔，再發佈自己的。
+    // 內嵌伺服器從不寫清單（分流：規則只對 standalone 生效）。
+    if (!embedded && options?.writeGuard) {
+      pruneDeadGuardLists(os.homedir(), isProcessRunning);
+      options.writeGuard.publish({ pid: this.config.pid, port });
+      this.writeGuard = options.writeGuard;
+    }
     console.log(`[Pixel Agents] Server: listening on 127.0.0.1:${port}`);
 
     return this.config;
@@ -188,6 +206,8 @@ export class PixelAgentsServer {
       this.deleteServerJson();
       this.deleteRegistryEntry();
     }
+    this.writeGuard?.unpublish();
+    this.writeGuard = null;
     this.config = null;
     this.ownsServer = false;
   }

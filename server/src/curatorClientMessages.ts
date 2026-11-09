@@ -12,7 +12,6 @@
 import { DEFAULT_WORKSPACE_ID } from '../../core/src/constants.js';
 import type { CuratorRejectionCode as WireCuratorRejectionCode } from '../../core/src/messages.js';
 import type { AgentRuntime } from './agentRuntime.js';
-import type { CapabilityRegistry } from './capabilities.js';
 import { workspaceKeyExists } from './capabilities.js';
 import {
   CURATOR_EXISTS_REASON,
@@ -36,22 +35,23 @@ export function curatorRejectedMessage(code: WireCuratorRejectionCode): Record<s
   return { type: 'curatorRejected', code, reason: REASONS[code] };
 }
 
-/** What decides availability: a standalone host (ptyManager) with a runtime,
- *  a capability registry and a curator table. VS Code embedded /ws has none. */
+/**
+ * What decides availability: a standalone host (ptyManager) with a runtime and
+ * a curator table. VS Code embedded /ws has none.
+ *
+ * P2 decoupled curators from KB enablement: eligibility is "a known standalone
+ * agent of that Workspace" (curators.ts), so neither a capability registry nor
+ * isKbEnabled gates availability any more, and curatorsLoaded.available is this
+ * answer alone. The curatorsLoaded message itself is unchanged (same fields).
+ */
 export interface CuratorHost {
   runtime?: AgentRuntime;
   ptyManager?: PtySessionManager;
-  capabilities?: CapabilityRegistry;
   curators?: CuratorTable;
 }
 
 export function curatorsAvailable(host: CuratorHost): boolean {
-  return (
-    host.ptyManager !== undefined &&
-    host.runtime !== undefined &&
-    host.capabilities !== undefined &&
-    host.curators !== undefined
-  );
+  return host.ptyManager !== undefined && host.runtime !== undefined && host.curators !== undefined;
 }
 
 /** The handshake reply: every current curator, ids only. */

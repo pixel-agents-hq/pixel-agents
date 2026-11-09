@@ -129,6 +129,8 @@ components:
         - $ref: '#/components/schemas/CuratorsLoaded'
         - $ref: '#/components/schemas/WorkspaceCuratorChanged'
         - $ref: '#/components/schemas/CuratorRejected'
+        # Write-guard status (standalone only; one per agent)
+        - $ref: '#/components/schemas/AgentGuardStatus'
         # Roles (point-to-point replies to the requesting client only)
         - $ref: '#/components/schemas/RolesAvailable'
         - $ref: '#/components/schemas/RolePreview'
@@ -171,6 +173,8 @@ components:
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/SaveWorkspace'
         - $ref: '#/components/schemas/RemoveWorkspace'
+        - $ref: '#/components/schemas/SetWorkspaceRoot'
+        - $ref: '#/components/schemas/SetWorkspacePermissionRoles'
         - $ref: '#/components/schemas/SetWorkspaceCurator'
         - $ref: '#/components/schemas/UnsetWorkspaceCurator'
         - $ref: '#/components/schemas/RequestRoles'
@@ -937,8 +941,9 @@ components:
         every agent on arrival.
 
         Rebroadcast to every connected office after every Workspace mutation
-        (`saveWorkspace`, `removeWorkspace`). A client learns its own save or
-        delete succeeded from this.
+        (`saveWorkspace`, `removeWorkspace`, `setWorkspaceRoot`,
+        `setWorkspacePermissionRoles`). A client learns its own save or delete
+        succeeded from this.
       type: object
       additionalProperties: false
       required: [type, workspaces]
@@ -952,8 +957,9 @@ components:
 
     WorkspaceRejected:
       description: |
-        A `saveWorkspace` or `removeWorkspace` failed validation or could not be
-        written. Sent point-to-point to the requesting client (never broadcast)
+        A `saveWorkspace`, `removeWorkspace`, `setWorkspaceRoot` or
+        `setWorkspacePermissionRoles` failed
+        validation or could not be written. Sent point-to-point to the requesting client (never broadcast)
         and nothing changed on disk.
       type: object
       additionalProperties: false
@@ -983,15 +989,15 @@ components:
 
     # ── Workspace curators ─────────────────────────────────────────
     # At most one agent per Workspace, appointed by the operator, held in the
-    # host's memory only (a restart starts with none). Only an agent holding a
-    # capability for that Workspace is eligible. Messages carry ids only. The
+    # host's memory only (a restart starts with none). Only an agent this host
+    # launched in a terminal into that Workspace is eligible. Messages carry ids only. The
     # default Workspace is always named `default`.
 
     CuratorsLoaded:
       description: >-
         Sent to this client only during the handshake, after
         `workspacesLoaded`. `available` is true only on a standalone host with
-        a runtime, a terminal manager and a capability registry; the client
+        a runtime, a terminal manager and a curator table; the client
         shows curator controls only when it is true and the office is not
         read-only. `curators` is empty when unavailable.
       type: object
@@ -1011,7 +1017,8 @@ components:
       description: >-
         A Workspace's curator changed. Broadcast to every connected office.
         `agentId` is null when the Workspace no longer has one (dismissed, the
-        agent lost its capability, or the Workspace was removed).
+        agent was removed or moved to another Workspace, all agents were
+        cleared, or the Workspace was removed).
       type: object
       additionalProperties: false
       required: [type, workspaceId, agentId]
@@ -1252,6 +1259,14 @@ components:
         never falls back to a launch without the Role. The VS Code panel always
         refuses it with `roleRejected` code `unavailable`. Without `roleId` the
         launch is exactly as before.
+
+        `permissionRoles` (optional, standalone only) overrides the Workspace's
+        default permission roles for this agent: an array is the agent's
+        roles, `null` means no roles (everything allowed). Absent: the
+        Workspace default, else no roles. The effective roles are snapshotted
+        at launch; changing the Workspace default later does not affect a
+        running agent. An invalid value launches nothing (with a `roleId`, the
+        host replies `roleRejected` code `invalid`).
       type: object
       additionalProperties: false
       required: [type]
@@ -1263,6 +1278,11 @@ components:
           description: Path of the Directory to launch into.
         roleId:
           $ref: '#/components/schemas/RoleId'
+        permissionRoles:
+          type: [array, 'null']
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PermissionRole'
 
     FocusAgent:
       description: Focus an agent's terminal.
@@ -1602,8 +1622,9 @@ components:
     SetWorkspaceCurator:
       description: >-
         Privileged, standalone only. Appoint `agentId` as the curator of
-        `workspaceId`. The agent must hold a live capability issued for that
-        Workspace and the Workspace must have no curator yet. On success the
+        `workspaceId`. The agent must be one this host launched in a terminal
+        (and still holds) in that Workspace, and the Workspace must have no
+        curator yet. On success the
         host broadcasts `workspaceCuratorChanged`; otherwise it replies
         `curatorRejected`. A read-only client's request is dropped without a
         reply.
@@ -1617,6 +1638,107 @@ components:
           type: string
         agentId:
           type: integer
+
+    SetWorkspaceRoot:
+      description: >-
+        Privileged, standalone only. Set (a string) or clear (null) the root
+        directory of `workspaceId`. While a Workspace has a root, its
+        Knowledge Base `<root>/.note/` may be written only by its curator, and
+        the personal Knowledge Base and configuration write rules apply to
+        its agents. The root must be an absolute path to an existing directory;
+        the host stores its realpath. Refused when `<root>/.note/` would equal,
+        contain or be contained in a Directory's `<Directory>/.note/`. On
+        success the host rebroadcasts `workspacesLoaded`; on failure it replies
+        `workspaceRejected`. A read-only client gets `workspacesLoaded` back.
+      type: object
+      additionalProperties: false
+      required: [type, workspaceId, rootPath]
+      properties:
+        type:
+          const: setWorkspaceRoot
+        workspaceId:
+          type: string
+        rootPath:
+          type: [string, 'null']
+
+    SetWorkspacePermissionRoles:
+      description: >-
+        Privileged, standalone only. Set (an array) or clear (null) the default
+        permission roles of `workspaceId`. R allows reading, E editing, D
+        deleting; they are independent switches, and an empty array turns all
+        three off. Without a default (null) agents launched in the Workspace
+        have no roles, which allows everything. Only agents launched after the
+        change use the new default. On success the host rebroadcasts
+        `workspacesLoaded`; on failure it replies `workspaceRejected`. A
+        read-only client gets `workspacesLoaded` back.
+      type: object
+      additionalProperties: false
+      required: [type, workspaceId, roles]
+      properties:
+        type:
+          const: setWorkspacePermissionRoles
+        workspaceId:
+          type: string
+        roles:
+          type: [array, 'null']
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PermissionRole'
+
+    PermissionRole:
+      description: >-
+        A permission role: R (read), E (edit) or D (delete).
+      type: string
+      enum: [R, E, D]
+
+    AgentGuardStatus:
+      description: >-
+        Standalone only (an embedded VS Code host never sends it), one per
+        agent, broadcast to every connected office including read-only ones.
+        Reports whether the write-guard rules really apply to the agent: the
+        evidence is that the hook chain delivered a verdict request for the
+        agent's current session, not the settings. `active` is false while any
+        chain reason is listed (`not_standalone_agent`, `hooks_not_installed`,
+        `pretooluse_hook_missing`, `hook_script_missing`,
+        `awaiting_first_verdict`). `no_workspace_root` and `no_curator` are
+        listed for display and do not change `active`. `permissionRoles` is
+        the roles snapshotted when the agent launched (null: no roles, which
+        allows everything). Sent when an agent is added, after
+        `existingAgents` in the handshake, and whenever the content changes;
+        an identical status is never resent. Carries no paths or tokens.
+      type: object
+      additionalProperties: false
+      required: [type, id, active, reasons, permissionRoles]
+      properties:
+        type:
+          const: agentGuardStatus
+        id:
+          type: integer
+        active:
+          type: boolean
+        reasons:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/GuardInactiveReason'
+        permissionRoles:
+          type: [array, 'null']
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PermissionRole'
+
+    GuardInactiveReason:
+      description: >-
+        Why the write-guard rules are weakened or off for an agent.
+      type: string
+      enum:
+        - not_standalone_agent
+        - hooks_not_installed
+        - pretooluse_hook_missing
+        - hook_script_missing
+        - awaiting_first_verdict
+        - no_workspace_root
+        - no_curator
 
     UnsetWorkspaceCurator:
       description: >-
@@ -1780,6 +1902,20 @@ components:
           type: array
           items:
             type: string
+        rootPath:
+          type: string
+          description: >-
+            Realpath of the Workspace root directory. Absent: no root, and the
+            Knowledge Base write rules are off for this Workspace.
+        permissionRoles:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PermissionRole'
+          description: >-
+            Default permission roles for agents launched in this Workspace
+            (snapshotted at launch). Absent: no default, so agents have no
+            roles unless the launch names some. Empty: all roles off.
 
     RoleId:
       description: >-
@@ -1845,8 +1981,8 @@ components:
         - `invalid`: a field failed validation, the Workspace does not exist,
           or (dismissing) the Workspace has no curator.
         - `exists`: the Workspace already has a curator.
-        - `not_eligible`: the agent holds no live capability for that
-          Workspace.
+        - `not_eligible`: the agent is not one this host launched in a
+          terminal into that Workspace (or its terminal is gone).
         - `unavailable`: curators are not supported on this host or in this
           mode (VS Code panel, embedded server).
       type: string
