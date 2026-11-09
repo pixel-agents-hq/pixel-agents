@@ -1,7 +1,8 @@
 /**
  * The terminal pane's touch gesture, as a pure reducer: scroll (with an
  * iOS-style flick after release), tap (focus, or open the URL under the
- * finger), long-press text selection, and dragging the selection's handles.
+ * finger), long-press text selection (or, in the input area, a Paste pill),
+ * and dragging the selection's handles.
  *
  * Why synthesize any of this: xterm handles touch drags natively only while
  * the app has NOT enabled mouse tracking — Claude Code has, so on a phone its
@@ -69,6 +70,9 @@ export type TouchGestureState =
    *  word, or the single pressed cell when it was blank — then `range` stays
    *  null until the finger moves). */
   | { phase: 'selecting'; touchId: number; anchor: CellRange; range: CellRange | null }
+  /** Long-pressed in the input area: the Paste pill is up, and the finger
+   *  is still down (its moves are ignored until it lifts). */
+  | { phase: 'pasteOffered'; touchId: number }
   /** A selection is up with its handles (and usually the copy pill). */
   | { phase: 'selected'; range: CellRange }
   /** One handle is being dragged by `touchId`. */
@@ -112,6 +116,8 @@ export type TouchGestureEffect =
   | { kind: 'hideHandles' }
   | { kind: 'showPill'; range: CellRange }
   | { kind: 'hidePill' }
+  /** Show the Paste pill over `cell` (it shares the copy pill's slot). */
+  | { kind: 'showPastePill'; cell: CellPos }
   | { kind: 'focus' }
   | { kind: 'openUrl'; url: string };
 
@@ -125,6 +131,9 @@ export interface GestureProbe {
   /** Pixel height of one terminal row: one row of drag = one wheel tick. */
   rowHeightPx(): number;
   cols(): number;
+  /** Whether `cell` is in the TUI's input area (the prompt box around the
+   *  cursor), where a long press offers Paste instead of selecting. */
+  inInputArea(cell: CellPos): boolean;
 }
 
 export interface TouchGestureResult {
@@ -136,9 +145,15 @@ const STOP: TouchGestureEffect = { kind: 'stopPropagation' };
 const PREVENT: TouchGestureEffect = { kind: 'preventDefault' };
 
 /** Phases that follow one finger by id. */
-type TrackingState = Extract<TouchGestureState, { phase: 'pending' | 'scrolling' | 'selecting' }>;
+type TrackingState = Extract<
+  TouchGestureState,
+  { phase: 'pending' | 'scrolling' | 'selecting' | 'pasteOffered' }
+>;
 const isTracking = (s: TouchGestureState): s is TrackingState =>
-  s.phase === 'pending' || s.phase === 'scrolling' || s.phase === 'selecting';
+  s.phase === 'pending' ||
+  s.phase === 'scrolling' ||
+  s.phase === 'selecting' ||
+  s.phase === 'pasteOffered';
 
 /**
  * One row-height of drag = one DOM_DELTA_LINE wheel tick: exactly one desktop
@@ -285,6 +300,9 @@ function onMove(
   const at = { x: t.clientX, y: t.clientY };
 
   switch (state.phase) {
+    case 'pasteOffered':
+      // The pill is up; a wobbling finger changes nothing.
+      return { state, effects };
     case 'selecting': {
       const range = extendFromAnchor(state.anchor, probe.cellAt(at.x, at.y));
       effects.push({ kind: 'select', range });
@@ -342,6 +360,9 @@ function onEnd(
   effects.push({ kind: 'unbindRescue' }, { kind: 'cancelLongPress' });
 
   switch (state.phase) {
+    case 'pasteOffered':
+      // Lifting leaves the pill up; the next touch (or its click) clears it.
+      return { state: TOUCH_GESTURE_IDLE, effects };
     case 'selecting':
       // A press on a blank cell that never moved selected nothing.
       if (!state.range) return { state: TOUCH_GESTURE_IDLE, effects };
@@ -416,6 +437,10 @@ function onCancel(
  * ends and the copy pill. Long-press means held STILL: a slow drag that
  * stayed under the vertical scroll slop (e.g. mostly horizontal) is not a
  * selection — it stays pending, and can only become a scroll.
+ *
+ * In the input area a long press offers Paste instead (iOS's text-field
+ * menu): text there is what the user is typing, so pasting is the useful
+ * answer, and copying is still a press away anywhere else.
  */
 function onLongPress(state: TouchGestureState, probe: GestureProbe): TouchGestureResult {
   if (state.phase !== 'pending') return { state, effects: [] };
@@ -423,6 +448,12 @@ function onLongPress(state: TouchGestureState, probe: GestureProbe): TouchGestur
     return { state, effects: [] };
   }
   const cell = probe.cellAt(state.last.x, state.last.y);
+  if (probe.inInputArea(cell)) {
+    return {
+      state: { phase: 'pasteOffered', touchId: state.touchId },
+      effects: [{ kind: 'showPastePill', cell }],
+    };
+  }
   const word = wordRangeAt(cell, probe.cols(), (c) => probe.isBlank(c));
   const touchId = state.touchId;
   if (word) {

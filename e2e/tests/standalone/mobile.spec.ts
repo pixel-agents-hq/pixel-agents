@@ -292,7 +292,10 @@ test.describe('Standalone / mobile shell', () => {
     const terminal = await launchTerminal(page, standalone, 'mobile clipboard');
     await terminal.tap();
     const word = 'pixelcopyword';
+    // Enter moves the cursor (the input area, where a hold offers Paste)
+    // to the next row, leaving the word on a row of plain output.
     await page.keyboard.type(word);
+    await page.keyboard.press('Enter');
     await expect(page.locator('.xterm-rows', { hasText: word })).toBeVisible({ timeout: 10_000 });
     // The word's exact on-screen box, from a DOM Range over its characters.
     const at = await page.evaluate((word) => {
@@ -305,7 +308,7 @@ test.describe('Standalone / mobile shell', () => {
         range.setStart(n, i);
         range.setEnd(n, i + word.length);
         const r = range.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, h: r.height };
       }
       throw new Error('word not on screen');
     }, word);
@@ -330,13 +333,13 @@ test.describe('Standalone / mobile shell', () => {
       word,
     );
 
-    // Paste: with no clipboard to read, the key asks for the text instead.
-    await terminal.tap(); // the pill took focus; the input gets it back
-    await page.setViewportSize({ width: PHONE.width, height: 500 }); // keyboard up
-    const pasteKey = page.getByRole('button', { name: 'paste', exact: true });
-    await expect(pasteKey).toBeVisible();
+    // Paste: a hold on the input area (the cursor's row, under the word)
+    // offers it; with no clipboard to read, it asks for the text instead.
+    await longPress(page, at.x, at.y + at.h, 900);
+    await expect(pill.getByRole('button')).toHaveText(['Paste']);
     page.once('dialog', (d) => void d.accept('pastedviaprompt'));
-    await pasteKey.tap();
+    await pill.getByRole('button', { name: 'Paste', exact: true }).tap();
+    await expect(pill).toHaveCount(0);
     await expect(terminal).toContainText('pastedviaprompt', { timeout: 10_000 });
     expect(errors).toEqual([]);
   });

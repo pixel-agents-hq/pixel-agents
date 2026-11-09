@@ -10,23 +10,31 @@ import {
   TERMINAL_SEQ_ARROW_UP,
 } from '../constants.js';
 import { findTouch, withinTapSlop } from '../touch/touchPrimitives.js';
+import type { TrackpadArrow, TrackpadState } from '../touch/trackpad.js';
+import { TRACKPAD_IDLE, trackpadMove } from '../touch/trackpad.js';
 
 interface MobileKeyBarProps {
   /** Writes the key's byte sequence to the active terminal's PTY. */
   onKey: (sequence: string) => void;
-  /** Pastes the clipboard (plain http: prompted text) into the active terminal. */
-  onPaste: () => void;
 }
+
+const ARROW_SEQUENCES: Record<TrackpadArrow, string> = {
+  up: TERMINAL_SEQ_ARROW_UP,
+  down: TERMINAL_SEQ_ARROW_DOWN,
+  left: TERMINAL_SEQ_ARROW_LEFT,
+  right: TERMINAL_SEQ_ARROW_RIGHT,
+};
 
 /**
  * Accessory key row shown above the software keyboard in terminal view. The
  * iOS form-assistant bar (prev/next arrows + Done) is WebKit chrome that web
  * content cannot alter or remove, so this row sits directly above it and
- * supplies the keys a Claude Code TUI actually needs — slash menu, shift+tab
- * mode cycle, esc interrupt, an arrow trackpad, line break — none of which
- * exist on the iOS keyboard.
+ * supplies the keys a Claude Code TUI actually needs — slash menu, tab
+ * completion, shift+tab mode cycle, esc interrupt, an arrow trackpad, line
+ * break — none of which exist on the iOS keyboard. Paste is a long press on
+ * the terminal's input area (touchGesture.ts), not a key.
  */
-export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
+export function MobileKeyBar({ onKey }: MobileKeyBarProps) {
   // The bar scrolls horizontally when the keys outgrow a narrow screen, so a
   // touch only counts as a key press if it didn't travel — otherwise the
   // release of a scroll-drag would fire whatever key it happened to end on.
@@ -40,10 +48,11 @@ export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
     const t = s ? findTouch(e.changedTouches, s.id) : null;
     return s !== null && t !== null && withinTapSlop(t.clientX - s.x, t.clientY - s.y);
   };
-  // The trackpad key echoes the iOS space-bar gesture in four directions:
-  // press, hold, and slide anywhere — every MOBILE_TRACKPAD_STEP_PX of
-  // travel emits the matching arrow, each axis independent, retracing when
-  // the finger backs up. One drag walks a /resume menu or the input-line
+  // The trackpad key echoes the iOS space-bar gesture: press, hold, and
+  // slide — every MOBILE_TRACKPAD_STEP_PX of travel emits the matching
+  // arrow, retracing when the finger backs up, along whichever axis the
+  // finger first moved on (touch/trackpad.ts): a sideways slide that drifts
+  // up never jumps a line. One drag walks a /resume menu or the input-line
   // cursor. A plain tap deliberately does nothing (the step threshold
   // doubles as drift tolerance). No preventDefault on touchstart/move —
   // React registers those passively, so it would be a no-op; touch-none/
@@ -55,38 +64,27 @@ export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
     id: number;
     startX: number;
     startY: number;
-    sentX: number;
-    sentY: number;
+    pad: TrackpadState;
   } | null>(null);
   const onPadTouchStart = (e: ReactTouchEvent) => {
     // A second finger landing on the pad doesn't restart a live slide.
     if (padRef.current && findTouch(e.touches, padRef.current.id)) return;
     const t = e.changedTouches[0];
     if (!t) return;
-    padRef.current = { id: t.identifier, startX: t.clientX, startY: t.clientY, sentX: 0, sentY: 0 };
+    padRef.current = { id: t.identifier, startX: t.clientX, startY: t.clientY, pad: TRACKPAD_IDLE };
   };
   const onPadTouchMove = (e: ReactTouchEvent) => {
     const s = padRef.current;
     const t = s ? findTouch(e.touches, s.id) : null;
     if (!s || !t) return;
-    const stepsX = Math.trunc((t.clientX - s.startX) / MOBILE_TRACKPAD_STEP_PX);
-    const stepsY = Math.trunc((t.clientY - s.startY) / MOBILE_TRACKPAD_STEP_PX);
-    while (s.sentY < stepsY) {
-      onKey(TERMINAL_SEQ_ARROW_DOWN);
-      s.sentY++;
-    }
-    while (s.sentY > stepsY) {
-      onKey(TERMINAL_SEQ_ARROW_UP);
-      s.sentY--;
-    }
-    while (s.sentX < stepsX) {
-      onKey(TERMINAL_SEQ_ARROW_RIGHT);
-      s.sentX++;
-    }
-    while (s.sentX > stepsX) {
-      onKey(TERMINAL_SEQ_ARROW_LEFT);
-      s.sentX--;
-    }
+    const { state, keys } = trackpadMove(
+      s.pad,
+      t.clientX - s.startX,
+      t.clientY - s.startY,
+      MOBILE_TRACKPAD_STEP_PX,
+    );
+    s.pad = state;
+    for (const key of keys) onKey(ARROW_SEQUENCES[key]);
   };
   const onPadTouchEnd = (e: ReactTouchEvent) => {
     const s = padRef.current;
@@ -138,21 +136,6 @@ export function MobileKeyBar({ onKey, onPaste }: MobileKeyBarProps) {
           {label}
         </button>
       ))}
-      <button
-        onTouchStart={onKeyTouchStart}
-        // Same two-path pattern as the keys. Reading the clipboard inside the
-        // touchend handler keeps the user activation iOS requires; Safari may
-        // still surface its paste-permission callout the first time.
-        onTouchEnd={(e) => {
-          e.preventDefault();
-          if (endedAsTap(e)) onPaste();
-        }}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => onPaste()}
-        className={keyClass}
-      >
-        paste
-      </button>
     </div>
   );
 }
