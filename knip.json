@@ -1,10 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "tags": ["-internal"],
+  "tags": [
+    "-internal"
+  ],
   "ignoreDependencies": [
     "tailwindcss",
-    "pngjs",
-    "@types/pngjs",
     "fastify",
     "@fastify/cors",
     "@fastify/static",
@@ -37,6 +37,8 @@
       "entry": [
         "src/server.ts",
         "src/cli.ts",
+        "src/terminal/ptyHostMain.ts",
+        "src/providers/hook/claude/hooks/claude-statusline.ts",
         "__tests__/**/*.ts"
       ],
       "project": [
@@ -46,7 +48,8 @@
     },
     "webview-ui": {
       "entry": [
-        "test/**/*.ts"
+        "test/**/*.ts",
+        "src/loadingPreview.tsx"
       ],
       "project": [
         "src/**/*.{ts,tsx}"

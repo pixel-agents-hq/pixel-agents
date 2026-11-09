@@ -42,15 +42,18 @@ function fakeOffice(existing: number[] = []): ExistingAgentsOffice & {
   calls: AddAgentCall[];
   headless: number[];
   synced: Array<{ id: number } & ExistingAgentMeta>;
+  rested: number[];
 } {
   const ids = new Set(existing);
   const calls: AddAgentCall[] = [];
   const headless: number[] = [];
   const synced: Array<{ id: number } & ExistingAgentMeta> = [];
+  const rested: number[] = [];
   return {
     calls,
     headless,
     synced,
+    rested,
     characters: { has: (id: number) => ids.has(id) },
     addAgent: (id, palette, repeat, seatId, skipSpawnEffect, directoryName) => {
       ids.add(id);
@@ -61,6 +64,9 @@ function fakeOffice(existing: number[] = []): ExistingAgentsOffice & {
     },
     syncAgent: (id, palette, repeat, seatId) => {
       synced.push({ id, palette, repeat, seatId });
+    },
+    restAgent: (id) => {
+      rested.push(id);
     },
   };
 }
@@ -90,6 +96,8 @@ test('layout ready: adds restored agents immediately with their seat metadata', 
       directoryName: 'alpha',
     },
   ]);
+  // the snapshot doesn't say who is working: the replay does, so it starts at rest
+  assert.deepEqual(os.rested, [5]);
 });
 
 // ── layout not ready → buffer (preserved original behavior) ─────

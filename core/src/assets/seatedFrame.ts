@@ -21,9 +21,16 @@ import {
 
 /** The seated idle frame's column in a sheet row. */
 export const SEATED_FRAME = 7;
+/** Each animation's frames, as columns of a sheet row: the walk cycle (walk2 between
+ *  the steps), typing, reading, and the seated frame. */
+export const SHEET_FRAMES = {
+  walk: [0, 1, 2, 1],
+  type: [3, 4],
+  read: [5, 6],
+  seated: SEATED_FRAME,
+} as const;
 /** The typing frames' columns (type1, type2). */
-const TYPE1 = 3;
-const TYPE2 = 4;
+const [TYPE1, TYPE2] = SHEET_FRAMES.type;
 /** Frames per row of a sheet made before the seated frame (112 pixels wide). */
 export const LEGACY_FRAMES_PER_ROW = 7;
 /** A legacy sheet's width. */

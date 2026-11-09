@@ -167,7 +167,15 @@ export interface OfficeLayout {
   areaTiles?: Array<string | null>;
 }
 
-export interface Character {
+/** A blink clock (office/engine/blink.ts drives it). */
+export interface Blinker {
+  /** Seconds until the eyes next shut. */
+  blinkIn: number;
+  /** Seconds the eyes stay shut (0 = open). */
+  blinkShut: number;
+}
+
+export interface Character extends Blinker {
   id: number;
   state: CharacterState;
   dir: Direction;
