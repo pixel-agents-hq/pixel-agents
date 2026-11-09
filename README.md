@@ -45,7 +45,11 @@ The architecture is fully agent-agnostic and editor-agnostic: a typed `HookProvi
 - **Persistent layouts** — your office design is saved and shared across VS Code windows
 - **Shared layout and assets** — import/export layouts and load external character, pet, and furniture packs
 - **Areas** — paint named areas onto the office, map workspace folders to them, and new agents sit inside the areas mapped to their folder
-- **Diverse characters** — 6 diverse characters. These are based on the amazing work of [JIK-A-4, Metro City](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack).
+- **Your own cast** — design the characters your agents wear: a wardrobe of bodies, hair, clothes and accessories, colour pickers, a pixel editor, and custom items. Pick who a new agent is from the roster, or give each Directory its default characters. The wardrobe art is based on the amazing work of [JIK-A-4, Metro City](https://jik-a-4.itch.io/metrocity-free-topdown-character-pack).
+- **In the browser and on your phone** — the standalone office launches agents into an embedded terminal, and on a phone it becomes a home-screen app with the office and the terminal a swipe apart
+- **Recent conversations** — past Claude Code sessions listed per Directory, resumed with one click as the character they had
+- **Usage and context bars** — health bars for your Claude Code plan limits, and one on every agent for the context it has left
+- **Office radio** — procedural 8-bit background music with moods and shareable song codes
 
 <p align="center">
   <img src="webview-ui/public/characters.png" alt="Pixel Agents characters" width="320" height="72" style="image-rendering: pixelated;">
@@ -136,6 +140,12 @@ Click **Layout** to edit the office:
 
 Layouts can grow to 64×64 tiles by clicking the ghost border outside the current grid.
 
+### Characters
+
+Open the roster from the arrow beside **+** and press a character's pencil (or **+ New**) to open the **Characters** view. Dress a character from the wardrobe tabs, recolour any piece, and touch up pixels in the editor; a piece you redraw can be saved as a custom item for the rest of the cast. Nothing changes in the office until you press **Save**. Characters export as a PNG or a config file, and the whole roster as a zip.
+
+Picking a character in the roster and then a Directory launches an agent as that character. In a Directory's settings you can also list its default characters, so its agents are recognisable at a glance.
+
 ### Office assets
 
 Bundled furniture, floors, walls, carpets, characters, and pets live under `webview-ui/public/assets/`. Furniture manifests describe sprites, rotation groups, state groups, and animation frames.
@@ -151,7 +161,7 @@ Pixel Agents uses two Claude Code detection paths:
 
 The Claude provider normalizes both sources into a shared `AgentEvent` model. `AgentRuntime` updates the central state store, and the active transport sends typed messages to the React webview. The office renders through Canvas 2D with pathfinding and character state machines.
 
-Pixel Agents does not modify Claude Code. Its hook configuration and persistent data live under `~/.claude/` and `~/.pixel-agents/` respectively.
+Pixel Agents does not modify Claude Code. Its hook configuration and persistent data live under `~/.claude/` and `~/.pixel-agents/` respectively. The usage bars are opt-in (**Settings → Usage Bars**): Claude Code reports plan limits only to its status line, so turning them on wraps your `statusLine` command in `~/.claude/settings.json` (yours keeps running unchanged), and turning them off restores it.
 
 ### Architecture
 
