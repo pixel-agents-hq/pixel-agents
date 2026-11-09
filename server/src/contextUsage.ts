@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 
-import type { HookProvider } from '../../core/src/provider.js';
+import type { HookProvider, ReportedContext } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import {
   CONTEXT_SEED_TAIL_BYTES,
@@ -16,7 +16,10 @@ import type { AgentState } from './types.js';
  * agent's context is whatever the last request carried, so it drops when the
  * session compacts or clears. Cached prompt tokens dominate that figure
  * (`input_tokens` alone is usually single digits once caching kicks in), so
- * all three prompt counters are summed plus what the model just wrote.
+ * all three prompt counters are summed. Output tokens are left out, as Claude
+ * Code's own `context_window.used_percentage` leaves them out: the gauge reads
+ * what the status line reads. When the CLI reports a session's context itself
+ * (the usage bridge, `applyReportedContext`), that wins, window included.
  */
 interface UsageBlock {
   input_tokens?: number;
@@ -45,8 +48,7 @@ export function extractContextTokens(record: unknown): number {
   const sum =
     (usage.input_tokens ?? 0) +
     (usage.cache_creation_input_tokens ?? 0) +
-    (usage.cache_read_input_tokens ?? 0) +
-    (usage.output_tokens ?? 0);
+    (usage.cache_read_input_tokens ?? 0);
   return Number.isFinite(sum) && sum > 0 ? sum : 0;
 }
 
@@ -78,17 +80,69 @@ function applyContextTokens(
   declaredWindow: number | undefined,
 ): void {
   if (fromMainChain) agent.sawMainChainUsage = true;
-  agent.contextTokens = tokens;
   // A named model wins over the running estimate -- switching models mid-session
   // genuinely changes the window, and the provider knows it while we're only
   // guessing from what we've seen.
-  agent.maxContextTokens = widenContextWindow(tokens, declaredWindow ?? agent.maxContextTokens);
+  const window = widenContextWindow(
+    tokens,
+    agent.reportedContextWindow ?? declaredWindow ?? agent.maxContextTokens,
+  );
+  setContext(agents, agentId, agent, tokens, window);
+}
+
+/** Set an agent's gauge and tell the office. */
+function setContext(
+  agents: AgentStateStore,
+  agentId: number,
+  agent: AgentState,
+  tokens: number,
+  maxTokens: number,
+): void {
+  agent.contextTokens = tokens;
+  agent.maxContextTokens = maxTokens;
+  agent.contextReported = true;
   agents.broadcast({
     type: 'agentContextUsage',
     id: agentId,
-    contextTokens: agent.contextTokens,
-    maxContextTokens: agent.maxContextTokens,
+    contextTokens: tokens,
+    maxContextTokens: maxTokens,
   });
+}
+
+/**
+ * A session's context as the CLI itself measured it (the status line's
+ * `context_window`, through the usage bridge): the agent running that session
+ * takes the CLI's window and share as they are, and keeps the window for its
+ * own transcript estimates after. Returns whether an agent took it.
+ */
+export function applyReportedContext(agents: AgentStateStore, report: ReportedContext): boolean {
+  for (const [agentId, agent] of agents.entries()) {
+    if (agent.sessionId !== report.sessionId) continue;
+    const tokens = Math.round((report.usedPercentage / 100) * report.windowTokens);
+    agent.reportedContextWindow = report.windowTokens;
+    if (
+      agent.contextReported &&
+      agent.contextTokens === tokens &&
+      agent.maxContextTokens === report.windowTokens
+    ) {
+      return true;
+    }
+    setContext(agents, agentId, agent, tokens, report.windowTokens);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * The session is new — cleared (/clear) or just launched: its context is
+ * empty, a real 0 the office shows as a full gauge. The window stays (the same
+ * model runs on), and the transcript's own records decide the next reading.
+ */
+export function clearContextUsage(agentId: number, agents: AgentStateStore): void {
+  const agent = agents.get(agentId);
+  if (!agent) return;
+  agent.sawMainChainUsage = false;
+  setContext(agents, agentId, agent, 0, agent.maxContextTokens);
 }
 
 /**

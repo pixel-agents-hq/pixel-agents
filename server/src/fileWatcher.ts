@@ -43,7 +43,7 @@ import {
   GLOBAL_SCAN_ACTIVE_MIN_SIZE,
   PROJECT_SCAN_INTERVAL_MS,
 } from './constants.js';
-import { seedContextUsage } from './contextUsage.js';
+import { clearContextUsage, seedContextUsage } from './contextUsage.js';
 import type { DismissalTracker } from './dismissalTracker.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { pathsMatch } from './pathKey.js';
@@ -1580,6 +1580,10 @@ export function reassignAgentToFile(
   // transcript, read from the end (initialReadOffset says why).
   agent.fileOffset = initialReadOffset(newFilePath);
   agent.lineBuffer = '';
+  // Read whole, the new file is a fresh session (/clear): its context starts
+  // empty, a real 0 until its first turn says otherwise. A resumed session
+  // keeps its gauge, its context came back with it.
+  if (agent.fileOffset === 0) clearContextUsage(agentId, agents);
   persistAgents();
 
   // Start watching new file

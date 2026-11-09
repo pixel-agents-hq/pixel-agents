@@ -28,6 +28,7 @@ import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
+import { applyUsageBridgeChoice, usageSnapshotMessages } from './usageLimits.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -72,6 +73,9 @@ export interface ClientMessageContext {
    * it gets the safe answer.
    */
   privileged?: boolean;
+  /** The package root holding dist/hooks/, from which the Usage Bars toggle
+   *  installs the status line bridge. Absent = this host cannot install it. */
+  packageRoot?: string;
   /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
    *  mode, where the editor owns terminal lifecycle. */
   ptyManager?: TerminalSessions;
@@ -260,6 +264,18 @@ export function handleClientMessage(
       const provider = hookProviderById(msg.providerId);
       if (!provider) break;
       void applyHooksPreference(ctx, send, provider, enabled);
+      break;
+    }
+
+    case 'setUsageBridgeEnabled': {
+      // Usage Bars: install (the confirmed disclosure is the consent) or
+      // restore the user's status line. Every office hears the outcome.
+      const provider = hookProviderById(msg.providerId);
+      if (!provider?.usageBridge || typeof msg.enabled !== 'boolean') break;
+      void applyUsageBridgeChoice(provider, ctx.packageRoot, msg.enabled).then((status) => {
+        if (status.error) send({ ...status });
+        else store.broadcast({ ...status });
+      });
       break;
     }
 
@@ -566,6 +582,11 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
         );
         if (request) send({ ...request }); // spread: WsSend takes an index-signature shape
       });
+  }
+
+  // 4a-ter. Usage bars: the operator's account usage, privileged clients only.
+  if (ctx.privileged) {
+    for (const message of usageSnapshotMessages()) send({ ...message });
   }
 
   // 4b. Directory→Area mappings (must arrive before existingAgents so the

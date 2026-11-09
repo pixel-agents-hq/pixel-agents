@@ -9,6 +9,13 @@
 /** Output filename after esbuild compiles claude-hook.ts to CJS (source is .ts, output is .js) */
 export const CLAUDE_HOOK_SCRIPT_NAME = 'claude-hook.js';
 
+/** Output filename of the status line bridge script (claude-statusline.ts):
+ *  runs the user's own status line and reports Claude Code's rate limits. */
+export const CLAUDE_STATUSLINE_SCRIPT_NAME = 'claude-statusline.js';
+
+/** Flag before the base64url-encoded command the bridge wraps. */
+export const STATUSLINE_WRAP_FLAG = '--wrap';
+
 /** The script name we shipped before the rename to claude-hook.js. Still
  *  recognized as ours so a very old install can be migrated or removed. */
 export const LEGACY_HOOK_SCRIPT_NAME = 'pixel-agents-hook.js';

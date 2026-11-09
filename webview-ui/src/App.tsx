@@ -17,7 +17,7 @@ import { Tooltip } from './components/Tooltip.js';
 import { Button } from './components/ui/Button.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
-import { ZoomControls } from './components/ZoomControls.js';
+import { MobileZoomLevel, ZoomControls } from './components/ZoomControls.js';
 import { OFFICE_CANVAS_TEST_ID } from './constants.js';
 import { useDirectoryEditor } from './hooks/useDirectoryEditor.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
@@ -45,6 +45,8 @@ import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
+import { UsageBars } from './usage/UsageBars.js';
+import { useUsageBridge } from './usage/useUsageBridge.js';
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
@@ -126,6 +128,7 @@ function App() {
     cardAgents,
     saveCardOrder,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
+  const usage = useUsageBridge();
 
   // Show migration notice once layout reset is detected
   const [migrationNoticeDismissed, setMigrationNoticeDismissed] = useState(false);
@@ -530,7 +533,20 @@ function App() {
         <>
           {/* Mobile: pinch replaces the zoom buttons, and the toolbar's
                 jobs move to the card bar (+) and the floating Settings button. */}
-          {!isMobile && <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />}
+          {isMobile ? (
+            <MobileZoomLevel zoom={editor.zoom} />
+          ) : (
+            <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />
+          )}
+
+          {/* The provider's plan usage, top-left (Settings → Usage Bars). */}
+          {usage.status?.installed && (
+            <UsageBars
+              limits={usage.limits}
+              providerName={usage.status.providerName}
+              mobile={isMobile}
+            />
+          )}
 
           {/* Vignette overlay */}
           <div

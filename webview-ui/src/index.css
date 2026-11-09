@@ -34,6 +34,8 @@
   /* Status */
   --color-status-permission: #cca700;
   --color-status-active: #3794ff;
+  /* The 5-hour usage bar at half or less (blue → this purple → red). */
+  --color-usage-five-hour-warn: #9a4ce8;
   --color-status-success: #89d185;
   --color-status-error: var(--color-danger);
 
@@ -551,6 +553,27 @@
   }
 }
 
+/* The usage bars' heartbeat: a lub-dub, drawn by showing the bigger heart
+   frame twice per period over the resting one (whole pixels, never a scale).
+   The period is set inline, proportional to the weekly plan left. */
+@keyframes usage-heart-beat {
+  0% {
+    visibility: visible;
+  }
+  12% {
+    visibility: hidden;
+  }
+  24% {
+    visibility: visible;
+  }
+  34% {
+    visibility: hidden;
+  }
+  100% {
+    visibility: hidden;
+  }
+}
+
 /* PixelInputText: the field's own text hides behind the pixel-font copy
    until the field is focused for editing. */
 .pixel-veil:not(:focus-within) input {
@@ -558,4 +581,19 @@
 }
 .pixel-veil:focus-within .pixel-veil-text {
   display: none;
+}
+
+/* PixelText over the office (its `shadow`): one hard dark shadow under the
+   words and the same under the pixel-font glyphs. */
+.pixel-text-shadow {
+  text-shadow: 1px 1px 0 var(--color-bg-dark);
+}
+.pixel-text-shadow svg {
+  filter: drop-shadow(1px 1px 0 var(--color-bg-dark));
+}
+
+.usage-heart-beat {
+  animation-name: usage-heart-beat;
+  animation-timing-function: step-end;
+  animation-iteration-count: infinite;
 }
