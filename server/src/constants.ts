@@ -518,7 +518,7 @@ export const WRITE_GUARD_DENY_TEMPLATES: Readonly<Record<string, WriteGuardDenyT
     rationale:
       'Protected paths (such as a Knowledge Base) may only be written by the agent assigned to them.',
     suggestion:
-      'Do not write this path directly. Propose the change instead, so the assigned writer can review and apply it.',
+      'Do not write this path directly. Tell the user what should be recorded, so the assigned writer can make the change.',
   },
   [WRITE_GUARD_RULE_UNREACHABLE]: {
     reason:
@@ -532,13 +532,14 @@ export const WRITE_GUARD_DENY_TEMPLATES: Readonly<Record<string, WriteGuardDenyT
     reason: "This write targets the Workspace Knowledge Base (the Workspace root's .note/ folder).",
     rationale: "Only the Workspace's KB Writer may write the Workspace Knowledge Base.",
     suggestion:
-      'Do not write this path directly. Propose the change to the KB Writer, who reviews and applies it.',
+      'Do not write this path directly. The Knowledge Base is maintained only by the KB Writer; tell the user what should be recorded so they can hand it to the KB Writer.',
   },
   [WRITE_GUARD_RULE_KB_WORKSPACE_NO_WRITER]: {
     reason: "This write targets the Workspace Knowledge Base (the Workspace root's .note/ folder).",
     rationale:
       'Only the Workspace KB Writer may write it, and this Workspace has no KB Writer assigned yet.',
-    suggestion: 'Ask the user to assign a KB Writer for this Workspace, then propose the change.',
+    suggestion:
+      'Ask the user to assign a KB Writer for this Workspace, and tell the user what should be recorded.',
   },
   [WRITE_GUARD_RULE_KB_PERSONAL]: {
     reason:
