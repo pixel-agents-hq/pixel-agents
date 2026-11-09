@@ -41,6 +41,7 @@ import {
   listWorkspaces,
   workspacesLoadedMessage,
 } from './workspaces.js';
+import type { GuardStatusReporter } from './writeGuard/guardStatusReporter.js';
 import { parsePermissionRoles } from './writeGuard/permissionRoles.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
@@ -94,6 +95,8 @@ export interface ClientMessageContext {
   capabilities?: CapabilityRegistry;
   /** Workspace curators (standalone only, in memory). */
   curators?: CuratorTable;
+  /** agentGuardStatus 回報（standalone only）：握手補送、hooks 狀態變更時重查鏈。 */
+  guardStatus?: GuardStatusReporter;
   /** Whether a launch into a Workspace is issued a capability (the Workspace's
    *  KB is on). Handed to every launch. Absent while nothing can enable a KB:
    *  no agent could ever be a curator, so the office offers no curator
@@ -550,6 +553,7 @@ async function applyHooksPreference(
     }
     // Always report the ACTUAL install state — the toggle expresses intent,
     // not outcome (the installer refuses to touch an unparseable file).
+    ctx.guardStatus?.refreshChain();
     send({ type: 'hooksStatus', providerId: provider.id, installed });
   } catch (err) {
     console.error('[Pixel Agents] Applying the hooks preference failed:', err);
@@ -589,6 +593,7 @@ function standaloneConsentEffects(
     },
     reportHooksStatus: async () => {
       try {
+        ctx.guardStatus?.refreshChain();
         send({
           type: 'hooksStatus',
           providerId: provider.id,
@@ -793,6 +798,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     workspaceIds,
     roleNames,
   });
+
+  // 6b. Write-guard status for every existing agent, AFTER existingAgents.
+  ctx.guardStatus?.sendAll(send);
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents
   // into characters once seats are rebuilt.

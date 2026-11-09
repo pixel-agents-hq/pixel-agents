@@ -129,6 +129,8 @@ components:
         - $ref: '#/components/schemas/CuratorsLoaded'
         - $ref: '#/components/schemas/WorkspaceCuratorChanged'
         - $ref: '#/components/schemas/CuratorRejected'
+        # Write-guard status (standalone only; one per agent)
+        - $ref: '#/components/schemas/AgentGuardStatus'
         # Roles (point-to-point replies to the requesting client only)
         - $ref: '#/components/schemas/RolesAvailable'
         - $ref: '#/components/schemas/RolePreview'
@@ -1688,6 +1690,55 @@ components:
         A permission role: R (read), E (edit) or D (delete).
       type: string
       enum: [R, E, D]
+
+    AgentGuardStatus:
+      description: >-
+        Standalone only (an embedded VS Code host never sends it), one per
+        agent, broadcast to every connected office including read-only ones.
+        Reports whether the write-guard rules really apply to the agent: the
+        evidence is that the hook chain delivered a verdict request for the
+        agent's current session, not the settings. `active` is false while any
+        chain reason is listed (`not_standalone_agent`, `hooks_not_installed`,
+        `pretooluse_hook_missing`, `hook_script_missing`,
+        `awaiting_first_verdict`). `no_workspace_root` and `no_curator` are
+        listed for display and do not change `active`. `permissionRoles` is
+        the roles snapshotted when the agent launched (null: no roles, which
+        allows everything). Sent when an agent is added, after
+        `existingAgents` in the handshake, and whenever the content changes;
+        an identical status is never resent. Carries no paths or tokens.
+      type: object
+      additionalProperties: false
+      required: [type, id, active, reasons, permissionRoles]
+      properties:
+        type:
+          const: agentGuardStatus
+        id:
+          type: integer
+        active:
+          type: boolean
+        reasons:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/GuardInactiveReason'
+        permissionRoles:
+          type: [array, 'null']
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PermissionRole'
+
+    GuardInactiveReason:
+      description: >-
+        Why the write-guard rules are weakened or off for an agent.
+      type: string
+      enum:
+        - not_standalone_agent
+        - hooks_not_installed
+        - pretooluse_hook_missing
+        - hook_script_missing
+        - awaiting_first_verdict
+        - no_workspace_root
+        - no_curator
 
     UnsetWorkspaceCurator:
       description: >-

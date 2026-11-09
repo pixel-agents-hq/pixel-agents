@@ -29,6 +29,7 @@ import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { registerTerminalRoutes } from './terminal/terminalRoutes.js';
 import type { AgentState } from './types.js';
 import { guardRequestAuthorized, guardRequestForbidden } from './writeGuard/endpointFilter.js';
+import type { GuardStatusReporter } from './writeGuard/guardStatusReporter.js';
 import type { GuardVerdict } from './writeGuard/protocol.js';
 import type { WriteGuard } from './writeGuard/writeGuard.js';
 import {
@@ -76,6 +77,8 @@ export interface HttpServerOptions {
   /** 阻擋式裁決（standalone 限定）。內嵌模式即使傳入也一律忽略：
    *  端點對任何 session 回 unknown-session。 */
   writeGuard?: WriteGuard;
+  /** agentGuardStatus 回報（standalone 限定）。 */
+  guardStatus?: GuardStatusReporter;
 }
 
 /** Result of createHttpServer(). */
@@ -331,6 +334,7 @@ function registerWebSocketRoute(
           ptyManager: options.ptyManager,
           capabilities: options.capabilities,
           curators: options.curators,
+          guardStatus: options.embedded ? undefined : options.guardStatus,
         });
       } catch {
         // Malformed JSON, ignore

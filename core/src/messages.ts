@@ -49,6 +49,7 @@ export type ServerMessage =
   | CuratorsLoaded
   | WorkspaceCuratorChanged
   | CuratorRejected
+  | AgentGuardStatus
   | RolesAvailable
   | RolePreview
   | RoleConfirmed
@@ -427,6 +428,23 @@ export interface CuratorRejected {
 }
 
 export type CuratorRejectionCode = 'invalid' | 'exists' | 'not_eligible' | 'unavailable';
+
+export interface AgentGuardStatus {
+  type: 'agentGuardStatus';
+  id: number;
+  active: boolean;
+  reasons: GuardInactiveReason[];
+  permissionRoles: PermissionRole[] | null;
+}
+
+export type GuardInactiveReason =
+  | 'not_standalone_agent'
+  | 'hooks_not_installed'
+  | 'pretooluse_hook_missing'
+  | 'hook_script_missing'
+  | 'awaiting_first_verdict'
+  | 'no_workspace_root'
+  | 'no_curator';
 
 export interface RolesAvailable {
   type: 'rolesAvailable';

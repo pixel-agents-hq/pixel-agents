@@ -380,6 +380,9 @@ export const WRITE_GUARD_LIST_VERSION = 1;
  *  這個間隔只補上不經 AgentRuntime.registerAgent 的變更路徑（例如 heuristic 的
  *  /clear 重新指派）。只在內容改變時才寫檔。 */
 export const WRITE_GUARD_LIST_REFRESH_INTERVAL_MS = 1_000;
+/** agentGuardStatus 的 hook 鏈檢查間隔（讀 settings.json 與腳本檔）。檢查結果快取，
+ *  裁決路徑從不碰檔案系統（F13）；hooks 狀態變更時另外立即重查。 */
+export const GUARD_STATUS_CHAIN_CHECK_INTERVAL_MS = 5_000;
 /** 裁決端點只接受從 loopback 對端來的請求（縱深防禦，沿用 S3b /mcp 的作法）。 */
 export const WRITE_GUARD_LOOPBACK_PEERS: readonly string[] = [
   '127.0.0.1',

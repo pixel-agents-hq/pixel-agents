@@ -81,6 +81,10 @@ export class WriteGuard {
   private publishedHome: string | null = null;
   private lastWritten: string | null = null;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
+  /** P4：已收過裁決請求的 session id（只放記憶體、不持久化）。session id 換掉（/clear）
+   *  後新的 id 不在其中，即視為未見。 */
+  private readonly seenSessions = new Set<string>();
+  private readonly firstVerdictListeners = new Set<(sessionId: string) => void>();
 
   constructor(deps: WriteGuardDeps) {
     this.store = deps.store;
@@ -126,6 +130,7 @@ export class WriteGuard {
     } catch (err) {
       console.error(`[Pixel Agents] Write guard: failed to recompute KB rules: ${String(err)}`);
     }
+    this.pruneSeenSessions();
     this.refresh();
   }
 
@@ -188,6 +193,7 @@ export class WriteGuard {
     if (!request) return null;
     const agentId = this.knownAgentFor(request.session_id);
     if (agentId === undefined) return { verdict: 'unknown-session' };
+    this.recordVerdictRequest(request.session_id);
     const curators = this.curators;
     return this.rule(request, {
       agentId,
@@ -196,6 +202,31 @@ export class WriteGuard {
       curatorOf: (key) => curators?.curatorOf(key) ?? null,
       normalizer: this.normalizer,
     });
+  }
+
+  /** 伺服器是否已收過此 session 的裁決請求（hook 鏈確實在運作的證據）。 */
+  hasSeenVerdict(sessionId: string): boolean {
+    return this.seenSessions.has(sessionId);
+  }
+
+  /** 第一次收到某 session 的裁決請求時通知（同步呼叫，監聽者不得碰檔案系統）。 */
+  onFirstVerdict(listener: (sessionId: string) => void): () => void {
+    this.firstVerdictListeners.add(listener);
+    return () => this.firstVerdictListeners.delete(listener);
+  }
+
+  private recordVerdictRequest(sessionId: string): void {
+    if (this.seenSessions.has(sessionId)) return;
+    this.seenSessions.add(sessionId);
+    for (const listener of [...this.firstVerdictListeners]) listener(sessionId);
+  }
+
+  /** 只保留仍是已知 Agent 目前 session 的記錄（換掉的 session id 與已移除的 Agent 丟棄）。 */
+  private pruneSeenSessions(): void {
+    const known = new Set(this.knownSessions());
+    for (const sessionId of [...this.seenSessions]) {
+      if (!known.has(sessionId)) this.seenSessions.delete(sessionId);
+    }
   }
 
   /** 開始發佈清單（伺服器 listen 之後呼叫，pid 與 port 才確定）。 */

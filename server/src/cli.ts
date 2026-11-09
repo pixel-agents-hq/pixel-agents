@@ -34,11 +34,17 @@ import {
 } from './constants.js';
 import { CuratorTable } from './curators.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
+import {
+  areHooksInstalled as claudeInstallerAreHooksInstalled,
+  isHookScriptPresent,
+  isPreToolUseHookInstalled,
+} from './providers/hook/claude/claudeHookInstaller.js';
 import { claudeProvider, copyHookScript, hookProviderById } from './providers/index.js';
 import { removeStaleRoleSnapshots } from './roleStorage.js';
 import { PixelAgentsServer } from './server.js';
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { ensureWorkspacesFile } from './workspaces.js';
+import { GuardStatusReporter } from './writeGuard/guardStatusReporter.js';
 import { WriteGuard } from './writeGuard/writeGuard.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
 
@@ -284,6 +290,23 @@ async function main(): Promise<void> {
     // 沒有任何工作空間設定根目錄時，KB 規則與 F17 都不啟用，行為與現況相同。
     const writeGuard = new WriteGuard({ store, ptyManager, sessions: runtime, curators });
 
+    // agentGuardStatus（P4）：必須在 writeGuard 之後建立，事件順序才會先更新規則快照。
+    // 鏈檢查（settings.json 與腳本檔）只在固定間隔與 hooks 狀態變更時讀檔。
+    const guardStatus = new GuardStatusReporter({
+      store,
+      ptyManager,
+      guard: writeGuard,
+      curators,
+      sessions: runtime,
+      broadcast: (message) => store.broadcast(message),
+      probeChain: () => ({
+        hooksInstalled: claudeInstallerAreHooksInstalled(),
+        preToolUsePresent: isPreToolUseHookInstalled(),
+        scriptPresent: isHookScriptPresent(),
+      }),
+    });
+    guardStatus.start();
+
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
       runtime.handleHookEvent(providerId, event);
@@ -382,6 +405,7 @@ async function main(): Promise<void> {
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,
       writeGuard,
+      guardStatus,
     });
     currentConfig = { port: config.port, token: config.token };
     if (args.rotateToken) {
@@ -469,6 +493,7 @@ async function main(): Promise<void> {
       // leave a child that ignores SIGHUP orphaned on a dead server.
       await ptyManager.disposeAll();
       runtime.dispose();
+      guardStatus.dispose();
       server.stop();
       process.exit(0);
     }

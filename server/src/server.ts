@@ -25,6 +25,7 @@ import { isServerConfig, isServerTarget, sameStandaloneAccess } from './serverCo
 import { loadOrCreateStandaloneToken } from './serverToken.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { pruneDeadGuardLists } from './writeGuard/guardList.js';
+import type { GuardStatusReporter } from './writeGuard/guardStatusReporter.js';
 import type { WriteGuard } from './writeGuard/writeGuard.js';
 import { normalizeHostname } from './wsAuth.js';
 
@@ -90,6 +91,8 @@ export class PixelAgentsServer {
     rotateToken?: boolean;
     /** 阻擋式裁決與清單發佈（standalone 限定；內嵌模式忽略，不寫清單）。 */
     writeGuard?: WriteGuard;
+    /** agentGuardStatus 回報（standalone 限定；內嵌模式忽略）。 */
+    guardStatus?: GuardStatusReporter;
   }): Promise<ServerConfig> {
     const embedded = options?.embedded ?? true;
     const wantsSpa = !embedded;
@@ -158,6 +161,7 @@ export class PixelAgentsServer {
       curators: options?.curators,
       allowedHosts: standalone?.allowedHosts,
       writeGuard: embedded ? undefined : options?.writeGuard,
+      guardStatus: embedded ? undefined : options?.guardStatus,
     });
 
     this.app = app;
