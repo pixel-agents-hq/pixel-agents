@@ -16,6 +16,7 @@ const {
   uninstallStatusLineBridge,
   STATUSLINE_EDITED_MESSAGE,
   STATUSLINE_NOT_COMMAND_MESSAGE,
+  STATUSLINE_WINDOWS_CUSTOM_MESSAGE,
 } = await import('../src/providers/hook/claude/statusLineInstaller.js');
 const { installHooks } = await import('../src/providers/hook/claude/claudeHookInstaller.js');
 const { wrappedStatusLineCommand, isBareOurStatusLine } =
@@ -125,6 +126,33 @@ describe('status line bridge installer', () => {
       STATUSLINE_NOT_COMMAND_MESSAGE,
     );
     expect(fs.readFileSync(settingsPath(), 'utf-8')).toBe(raw);
+  });
+
+  describe('on Windows', () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    beforeEach(() => {
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    });
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', platform);
+    });
+
+    it("never wraps the user's own status line (Node would run it in cmd.exe)", async () => {
+      const raw = writeSettings({ statusLine: { type: 'command', command: USER_COMMAND } });
+
+      await expect(installStatusLineBridge(packageRoot)).rejects.toThrow(
+        STATUSLINE_WINDOWS_CUSTOM_MESSAGE,
+      );
+      expect(fs.readFileSync(settingsPath(), 'utf-8')).toBe(raw);
+      expect(isStatusLineBridgeInstalled()).toBe(false);
+    });
+
+    it('still adds a bare bridge when there is no status line', async () => {
+      writeSettings({ model: 'opus' });
+
+      await installStatusLineBridge(packageRoot);
+      expect(isBareOurStatusLine(statusLine())).toBe(true);
+    });
   });
 
   it('refuses an unparseable settings file without writing', async () => {

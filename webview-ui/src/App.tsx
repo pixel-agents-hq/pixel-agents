@@ -19,7 +19,7 @@ import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { MobileZoomLevel, ZoomControls } from './components/ZoomControls.js';
-import { OFFICE_CANVAS_TEST_ID } from './constants.js';
+import { CONVERSATION_SIDEBAR_WIDTH_PX, OFFICE_CANVAS_TEST_ID } from './constants.js';
 import type { ConversationSearchScope } from './conversations/ConversationList.js';
 import { ConversationSearch } from './conversations/ConversationSearch.js';
 import { ConversationSidebar } from './conversations/ConversationSidebar.js';
@@ -186,6 +186,7 @@ function App() {
     agentTools,
     agentStatuses,
     agentSeenActivity,
+    besidePx: hasSidebar && sidebar.open ? CONVERSATION_SIDEBAR_WIDTH_PX : 0,
   });
 
   const { launch: launchIntoDirectory, resume: resumeAndFocus } = useLaunchActions(

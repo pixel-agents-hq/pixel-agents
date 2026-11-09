@@ -2,15 +2,11 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AgentActivity, AgentAppearance, TabStatus } from '../components/AgentCard.js';
-import {
-  TERMINAL_DRAWER_DEFAULT_WIDTH_PX,
-  TERMINAL_DRAWER_MAX_WIDTH_RATIO,
-  TERMINAL_DRAWER_MIN_WIDTH_PX,
-  TERMINAL_SIDEBAR_WIDTH_PX,
-} from '../constants.js';
+import { TERMINAL_DRAWER_DEFAULT_WIDTH_PX } from '../constants.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import type { ToolActivity } from '../office/types.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
+import { clampDrawerWidth } from './drawerWidth.js';
 import { answersLaunch } from './launchLatch.js';
 
 /** A character not (yet) in the office — the mug shot falls back to palette 0. */
@@ -23,6 +19,9 @@ interface TerminalDrawerInputs {
   agentTools: Record<number, ToolActivity[]>;
   agentStatuses: Record<number, string>;
   agentSeenActivity: Record<number, boolean>;
+  /** Desktop: the width taken beside the office and the drawer (the
+   *  conversation sidebar while open), so the drawer leaves the office room. */
+  besidePx?: number;
 }
 
 export interface TerminalDrawerController {
@@ -65,19 +64,6 @@ export interface TerminalDrawerController {
 }
 
 /**
- * The drawer width that fits a viewport: the office keeps at least the card
- * bar's width (the cards overlay its right edge, and they are the only way to
- * switch agents), so on a narrow screen the minimum gives way to that.
- */
-export function clampDrawerWidth(preferredPx: number, viewportPx: number): number {
-  const maxPx = Math.min(
-    viewportPx * TERMINAL_DRAWER_MAX_WIDTH_RATIO,
-    viewportPx - TERMINAL_SIDEBAR_WIDTH_PX,
-  );
-  return Math.max(0, Math.min(maxPx, Math.max(TERMINAL_DRAWER_MIN_WIDTH_PX, preferredPx)));
-}
-
-/**
  * All state and derivations behind the standalone terminal panes, on both
  * shells: which tab is active (and which pane that resolves to), whether the
  * desktop panel is open, its width and drag-resize gesture, each pane's socket
@@ -89,6 +75,7 @@ export function useTerminalDrawer({
   agentTools,
   agentStatuses,
   agentSeenActivity,
+  besidePx = 0,
 }: TerminalDrawerInputs): TerminalDrawerController {
   const [activeAgentId, setActiveAgentId] = useState<number | null>(null);
   const [lastOpened, setLastOpened] = useState<{ agentId: number; seq: number } | null>(null);
@@ -109,7 +96,7 @@ export function useTerminalDrawer({
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
-  const widthPx = clampDrawerWidth(preferredWidthPx, viewportPx);
+  const widthPx = clampDrawerWidth(preferredWidthPx, viewportPx, besidePx);
   const [connStatuses, setConnStatuses] = useState<Record<number, TerminalConnectionStatus>>({});
 
   const shownAgentId =
@@ -168,7 +155,7 @@ export function useTerminalDrawer({
       const onMove = (ev: MouseEvent) => {
         // Dragging left (smaller clientX) widens the panel.
         const next = startWidth + (startX - ev.clientX);
-        setPreferredWidthPx(clampDrawerWidth(next, window.innerWidth));
+        setPreferredWidthPx(clampDrawerWidth(next, window.innerWidth, besidePx));
       };
       const onUp = () => {
         window.removeEventListener('mousemove', onMove);
@@ -180,7 +167,7 @@ export function useTerminalDrawer({
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
     },
-    [widthPx],
+    [widthPx, besidePx],
   );
 
   // A terminal tab shows the agent's character (front-facing mug shot), so it

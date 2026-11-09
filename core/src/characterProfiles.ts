@@ -185,7 +185,9 @@ export function parseCharacterProfiles(value: unknown): CharacterProfile[] | nul
  * Where each character of `before` sits in `after`, matched by id, as a function from an
  * old palette index to the new one: undefined for a character `after` doesn't have.
  * Palettes past the profiles (external char_N.png sprites) keep their place after them.
- * Null when every index stays what it was, or when the lists share no character.
+ * Null when every index stays what it was. A list that shares no character with `before`
+ * still maps (every old character deleted); a caller that adopts such a list instead of
+ * following it decides that itself.
  */
 export function characterRemap(
   before: readonly CharacterProfile[],
@@ -194,9 +196,6 @@ export function characterRemap(
   const at = new Map(after.map((p, i) => [p.id, i]));
   const moved = before.map((p) => at.get(p.id));
   if (before.length === after.length && moved.every((to, i) => to === i)) return null;
-  // no character in common: a different cast replaced this one (the defaults standing in
-  // for an unreadable file, say), not an edit of it, so there is nothing to follow
-  if (moved.every((to) => to === undefined)) return null;
   return (palette) =>
     palette < before.length ? moved[palette] : palette - before.length + after.length;
 }

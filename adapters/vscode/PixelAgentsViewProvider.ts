@@ -145,7 +145,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   ) {
     this.adapter = adapter;
     this.store.setAdapter(this.adapter);
-    this.characterProfilesWatcher = watchCharacterProfiles((m) => this.sendOrBuffer(m), this.store);
+    // Through the store: the panel hears it there, and so do the embedded
+    // server's /ws clients.
+    this.characterProfilesWatcher = watchCharacterProfiles(
+      (m) => this.store.broadcast(m),
+      this.store,
+    );
     // Workspace folders are this host's Directory contribution, so a folder
     // added to or removed from the workspace changes the union the drawer
     // shows. Registered once here (not per resolveWebviewView) and buffered
@@ -543,10 +548,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         const loaded = saveCardOrder(this.adapter, message.order, (id) => this.store.has(id));
         if (loaded) this.sendOrBuffer(loaded);
       } else if (message.type === 'saveCharacterProfiles') {
-        // One office here: the broadcast and the refused-save reply are the same channel.
+        // The broadcast goes through the store, so the embedded server's /ws
+        // clients get it too (the panel hears it there); a refused save's
+        // reply is for the panel alone.
         const send = (m: Record<string, unknown>) => this.sendOrBuffer(m);
         handleCharacterProfilesClientMessage(message, {
-          broadcast: send,
+          broadcast: (m) => this.store.broadcast(m),
           reply: send,
           store: this.store,
           sharedRefsChanged: () => {
