@@ -30,10 +30,10 @@ const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 import type { HookProvider } from '../../core/src/provider.js';
 import type { TeamProvider } from '../../core/src/teamProvider.js';
 import type { ITerminalAdapter } from '../../core/src/terminalAdapter.js';
+import { createAgentState } from './agentState.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import {
   CLEAR_IDLE_THRESHOLD_MS,
-  DEFAULT_MAX_CONTEXT_TOKENS,
   EXTERNAL_ACTIVE_THRESHOLD_MS,
   EXTERNAL_SCAN_INTERVAL_MS,
   EXTERNAL_STALE_CHECK_INTERVAL_MS,
@@ -505,7 +505,7 @@ function adoptTerminalForFile(
   } catch {
     /* start from beginning if stat fails */
   }
-  const agent: AgentState = {
+  const agent = createAgentState({
     id,
     sessionId,
     terminalRef: terminal,
@@ -513,23 +513,7 @@ function adoptTerminalForFile(
     projectDir,
     jsonlFile,
     fileOffset,
-    lineBuffer: '',
-    activeToolIds: new Set(),
-    activeToolStatuses: new Map(),
-    activeToolNames: new Map(),
-    activeSubagentToolIds: new Map(),
-    activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
-    isWaiting: false,
-    permissionSent: false,
-    hadToolsInTurn: false,
-    lastDataAt: 0,
-    linesProcessed: 0,
-    seenUnknownRecordTypes: new Set(),
-    hookDelivered: false,
-    contextTokens: 0,
-    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
-  };
+  });
 
   assignPaletteIfNeeded(agent, agents);
   agents.set(id, agent);
@@ -608,17 +592,20 @@ export function setHookProvider(provider: HookProvider): void {
 }
 
 /**
- * Resolves an external agent's `cwd`/`projectDir` to its `WorkspaceFolder.name` —
- * the label the Areas UI keys on. Registered by the VS Code adapter; unset in
- * standalone, which falls back to basename.
+ * Resolves an external agent's `cwd`/`projectDir` to its Directory name —
+ * the label the Areas UI keys on. Registered by the VS Code adapter (which maps
+ * it to a workspace folder name); unset in standalone, which falls back to basename.
  */
-export type FolderNameResolver = (ctx: { cwd?: string; projectDir?: string }) => string | undefined;
+export type DirectoryNameResolver = (ctx: {
+  cwd?: string;
+  projectDir?: string;
+}) => string | undefined;
 
-let folderNameResolver: FolderNameResolver | null = null;
+let directoryNameResolver: DirectoryNameResolver | null = null;
 
-/** Register the host's cwd/projectDir → WorkspaceFolder.name resolver (VS Code only). */
-export function setFolderNameResolver(resolver: FolderNameResolver): void {
-  folderNameResolver = resolver;
+/** Register the host's cwd/projectDir → Directory name resolver (VS Code only). */
+export function setDirectoryNameResolver(resolver: DirectoryNameResolver): void {
+  directoryNameResolver = resolver;
 }
 
 /**
@@ -716,39 +703,23 @@ export function scanForTeammateFiles(
     const id = nextAgentIdRef.current++;
     // Read from start -- teammate JSONL is usually small and we want full tool history
     // New-style teammates carry their own session id; inline teammates share the lead's.
-    const agent: AgentState = {
+    const agent = createAgentState({
       id,
       sessionId: ownSessionId ?? sessionId,
-      terminalRef: undefined,
       isExternal: true,
       projectDir,
       jsonlFile: file,
-      fileOffset: 0,
-      lineBuffer: '',
-      activeToolIds: new Set(),
-      activeToolStatuses: new Map(),
-      activeToolNames: new Map(),
-      activeSubagentToolIds: new Map(),
-      activeSubagentToolNames: new Map(),
-      backgroundAgentToolIds: new Set(),
-      isWaiting: false,
-      permissionSent: false,
-      hadToolsInTurn: false,
       // Keep hookDelivered false: teammates need JSONL-based tool tracking
       // (agentToolStart messages). Permission events are routed from the lead's
       // hooks via handlePermissionRequest forwarding.
       hookDelivered: false,
       lastDataAt: Date.now(),
-      linesProcessed: 0,
-      seenUnknownRecordTypes: new Set(),
-      contextTokens: 0,
-      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       // Agent Teams fields
       agentName: teammateName,
       leadAgentId: parentAgentId,
       teamName: parentAgent?.teamName,
       teamUsesTmux: parentAgent?.teamUsesTmux,
-    };
+    });
 
     if (parentAgent?.palette !== undefined) {
       agent.palette = parentAgent.palette;
@@ -874,37 +845,20 @@ export function scanForBackgroundAgentFiles(
 
     // Named spawn = Teammate.
     const id = nextAgentIdRef.current++;
-    const agent: AgentState = {
+    const agent = createAgentState({
       id,
       // In-process: shares the lead's session (like an inline teammate). Never
       // registered with the session router -- it would overwrite the lead.
       sessionId: lead.sessionId,
-      terminalRef: undefined,
       isExternal: true,
       projectDir: lead.projectDir,
       jsonlFile: entry.jsonlPath,
-      fileOffset: 0,
-      lineBuffer: '',
-      activeToolIds: new Set(),
-      activeToolStatuses: new Map(),
-      activeToolNames: new Map(),
-      activeSubagentToolIds: new Map(),
-      activeSubagentToolNames: new Map(),
-      backgroundAgentToolIds: new Set(),
-      isWaiting: false,
-      permissionSent: false,
-      hadToolsInTurn: false,
-      hookDelivered: false,
       lastDataAt: Date.now(),
-      linesProcessed: 0,
-      seenUnknownRecordTypes: new Set(),
-      contextTokens: 0,
-      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       // Teammate-like linkage, but NO teamName: config polling must not touch these.
       agentName: entry.name,
       leadAgentId: leadId,
       spawnToolUseId: entry.toolUseId,
-    };
+    });
 
     if (lead.palette !== undefined) {
       agent.palette = lead.palette;
@@ -1084,9 +1038,9 @@ export function adoptExternalSessionFromHook(
 
     knownJsonlFiles.add(transcriptPath);
     const projectDir = path.dirname(transcriptPath);
-    const folderName =
-      folderNameResolver?.({ cwd, projectDir }) ??
-      folderNameFromProjectDir(path.basename(projectDir));
+    const directoryName =
+      directoryNameResolver?.({ cwd, projectDir }) ??
+      directoryNameFromProjectDir(path.basename(projectDir));
 
     adoptExternalSession(
       transcriptPath,
@@ -1098,13 +1052,13 @@ export function adoptExternalSessionFromHook(
       waitingTimers,
       permissionTimers,
       persistAgents,
-      folderName,
+      directoryName,
     );
 
     const adoptedAgent = [...agents.values()].find((a) => pathsMatch(a.jsonlFile, transcriptPath));
     if (adoptedAgent && debug) {
       console.log(
-        `[Pixel Agents] Hook: Agent ${adoptedAgent.id} - detected external session ${path.basename(transcriptPath)}${adoptedAgent.folderName ? ` (${adoptedAgent.folderName})` : ''}`,
+        `[Pixel Agents] Hook: Agent ${adoptedAgent.id} - detected external session ${path.basename(transcriptPath)}${adoptedAgent.directoryName ? ` (${adoptedAgent.directoryName})` : ''}`,
       );
     }
     if (adoptedAgent) {
@@ -1115,40 +1069,25 @@ export function adoptExternalSessionFromHook(
   } else {
     // Hooks-only provider (OpenCode, Copilot): no transcript file, all state from hooks
     const id = nextAgentIdRef.current++;
-    const folderName = folderNameResolver?.({ cwd }) ?? (cwd ? path.basename(cwd) : undefined);
-    const agent: AgentState = {
+    const directoryName =
+      directoryNameResolver?.({ cwd }) ?? (cwd ? path.basename(cwd) : undefined);
+    const agent = createAgentState({
       id,
       sessionId,
-      terminalRef: undefined,
       isExternal: true,
       projectDir: cwd,
       jsonlFile: '',
-      fileOffset: 0,
-      lineBuffer: '',
-      activeToolIds: new Set(),
-      activeToolStatuses: new Map(),
-      activeToolNames: new Map(),
-      activeSubagentToolIds: new Map(),
-      activeSubagentToolNames: new Map(),
-      backgroundAgentToolIds: new Set(),
-      isWaiting: false,
-      permissionSent: false,
-      hadToolsInTurn: false,
       hookDelivered: true,
       hooksOnly: true,
       lastDataAt: Date.now(),
-      linesProcessed: 0,
-      seenUnknownRecordTypes: new Set(),
-      folderName,
-      contextTokens: 0,
-      maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
-    };
+      directoryName,
+    });
     assignPaletteIfNeeded(agent, agents);
     agents.set(id, agent);
     persistAgents();
     if (debug) {
       console.log(
-        `[Pixel Agents] Hook: Agent ${id} - detected hooks-only external session${folderName ? ` (${folderName})` : ''}`,
+        `[Pixel Agents] Hook: Agent ${id} - detected hooks-only external session${directoryName ? ` (${directoryName})` : ''}`,
       );
     }
     onAgentCreated?.(agent);
@@ -1166,7 +1105,7 @@ function adoptExternalSession(
   permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
 
   persistAgents: () => void,
-  folderName?: string,
+  directoryName?: string,
 ): void {
   const id = nextAgentIdRef.current++;
   // Decide whether to replay the existing file content or skip to its end.
@@ -1198,32 +1137,16 @@ function adoptExternalSession(
   } catch {
     /* start from beginning if stat fails */
   }
-  const agent: AgentState = {
+  const agent = createAgentState({
     id,
     sessionId: path.basename(jsonlFile, '.jsonl'),
-    terminalRef: undefined,
     isExternal: true,
     projectDir,
     jsonlFile,
     fileOffset,
-    lineBuffer: '',
-    activeToolIds: new Set(),
-    activeToolStatuses: new Map(),
-    activeToolNames: new Map(),
-    activeSubagentToolIds: new Map(),
-    activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
-    isWaiting: false,
-    permissionSent: false,
-    hadToolsInTurn: false,
-    hookDelivered: false,
     lastDataAt: Date.now(),
-    linesProcessed: 0,
-    seenUnknownRecordTypes: new Set(),
-    folderName,
-    contextTokens: 0,
-    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
-  };
+    directoryName,
+  });
 
   assignPaletteIfNeeded(agent, agents);
   agents.set(id, agent);
@@ -1465,8 +1388,8 @@ export function scanExternalDir(
   }
 }
 
-/** Derive a readable folder name from the Claude project dir hash. */
-function folderNameFromProjectDir(dirName: string): string {
+/** Derive a readable Directory name from the Claude project dir hash. */
+function directoryNameFromProjectDir(dirName: string): string {
   const parts = dirName.replace(/^-+/, '').split('-');
   return parts[parts.length - 1] || dirName;
 }
@@ -1533,12 +1456,12 @@ function scanGlobalProjectDirs(
         continue;
       }
 
-      const folderName =
-        folderNameResolver?.({ projectDir: dirPath }) ??
-        folderNameFromProjectDir(path.basename(dirPath));
+      const directoryName =
+        directoryNameResolver?.({ projectDir: dirPath }) ??
+        directoryNameFromProjectDir(path.basename(dirPath));
       knownJsonlFiles.add(file);
       console.log(
-        `[Pixel Agents] Watcher: detected global session ${path.basename(file)} (${folderName})`,
+        `[Pixel Agents] Watcher: detected global session ${path.basename(file)} (${directoryName})`,
       );
       adoptExternalSession(
         file,
@@ -1550,7 +1473,7 @@ function scanGlobalProjectDirs(
         waitingTimers,
         permissionTimers,
         persistAgents,
-        folderName,
+        directoryName,
       );
     }
   }

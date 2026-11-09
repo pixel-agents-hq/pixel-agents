@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.5.0
+
+### Features
+
+- **Embedded terminal in the browser** ([#347](https://github.com/pixel-agents-hq/pixel-agents/pull/347)) — `npx pixel-agents` is now a full surface: **+ Agent** launches Claude Code in a server-side terminal that streams into a drawer beside the office, so you can launch, watch, type into and close agents without VS Code. Terminals outlive the page, so a reload reattaches to the running session with its current screen. Pass `--no-terminal` to keep the office watch-only.
+- **Mobile web app** ([#404](https://github.com/pixel-agents-hq/pixel-agents/pull/404)) — On a phone the standalone office becomes a home-screen web app: office and terminal as two pages you swipe between, a bar of agent cards, touch gestures on the office, touch scrolling and long-press selection in the terminal, and an accessory key bar above the keyboard (esc, shift+tab, paste, a trackpad key).
+- **Agent cards in VS Code** ([#404](https://github.com/pixel-agents-hq/pixel-agents/pull/404)) — Every agent gets a mug shot and status dot along the office's right edge; clicking one raises its terminal and selects the character.
+- **Directories** ([#405](https://github.com/pixel-agents-hq/pixel-agents/pull/405)) — **+ Agent** opens a drawer of Directories to launch into, on both hosts: your workspace folders (or the directory the CLI started in) plus your own, each with a name, a path and optionally the Areas its agents should sit in. Paths are suggested from your past Claude Code sessions. The host's own Directories are listed only when **Show Workspace Folders** (VS Code) or **Show Start Directory** (standalone) is on in Settings; both are off by default.
+- **Layout editor upgrades** ([#426](https://github.com/pixel-agents-hq/pixel-agents/pull/426)) — Alt+drag drops a copy; desks carry the items standing on them when moved, rotated or copied; Erase removes furniture it passes over; each floor, wall or erase stroke is one undo step; the colour sliders gain an eyedropper, and selecting a placed item opens its colours directly.
+
+### Changes
+
+- **Skip permissions is a setting** ([#405](https://github.com/pixel-agents-hq/pixel-agents/pull/405)) — Launching with `--dangerously-skip-permissions` is no longer chosen per launch: a **Settings** toggle (off by default) applies it to every launch, including auto-spawned agents.
+- **Standalone access token** ([#347](https://github.com/pixel-agents-hq/pixel-agents/pull/347)) — The standalone URL carries a `?token=` that is now kept across restarts in `~/.pixel-agents/standalone-token`, so bookmarks and home-screen apps keep working. Launching, terminals and hook installs need it; a browser without it can only watch. Treat the URL as a secret. `--rotate-token` replaces it, and `--allowed-host` admits a reverse proxy's hostname (such as Tailscale Serve).
+- Agents restored from v1.4.x keep their labels and Area assignments.
+
+### Maintenance
+
+- `@vscode/test-electron` 3.1 so the VS Code e2e tests launch the renamed macOS binary ([#428](https://github.com/pixel-agents-hq/pixel-agents/pull/428)).
+
+### Contributors
+
+Thank you to the contributors who made this release possible:
+
+- [@pablodelucca](https://github.com/pablodelucca) — Embedded terminal, mobile web app, agent cards, Directories, and layout editor upgrades
+
 ## v1.4.1
 
 ### Features

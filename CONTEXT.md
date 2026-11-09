@@ -16,6 +16,10 @@ _Avoid_: host (that's the machine it runs on), surface, flavor, platform, editio
 The adapter that serves the office to a browser from a local server, independent of any editor.
 _Avoid_: CLI (that's the entry command, not the adapter), browser mode
 
+**Read-only office**:
+A standalone office opened without the server's token, or under a host name the operator didn't allow. It shows everything live, but changes nothing: no launching, no layout edits, no settings.
+_Avoid_: guest mode, watch-only, untokened (that's how it happens, not what it is)
+
 ## Agents & Teams
 
 **Agent**:
@@ -53,6 +57,10 @@ _Avoid_: inline teammate, tmux teammate, session teammate (former run-style dist
 **Launch**:
 Start a new agent from the office.
 _Avoid_: spawn (that's the character-level visual event), create
+
+**Directory**:
+A named filesystem location agents can be launched into. Directories come from two sources: defined by the user in the office, or contributed by the host — VS Code contributes its workspace folders, standalone contributes the directory the server was started from. Host-contributed directories cannot be edited in the office.
+_Avoid_: folder, workspace folder (that's the VS Code-contributed source, not the concept), project
 
 **Adopt**:
 Begin tracking a session that was started outside the office. An adopted agent is a full citizen.
@@ -146,11 +154,11 @@ A blocking tile that visually connects to adjacent walls.
 A decorative layer painted over floor tiles.
 
 **Area**:
-A named region of tiles. Areas exist so workspace folders can be mapped to them.
+A named region of tiles. Areas exist so directories can be mapped to them.
 _Avoid_: zone, region
 
 **Area mapping**:
-The assignment of a workspace folder to one or more areas. Many folders may share an area. Agents launched from a folder prefer seats inside any of its areas.
+The assignment of a directory to one or more areas. Many directories may share an area. Agents launched into a directory prefer seats inside any of its areas.
 
 **Furniture**:
 A placeable item in the layout — desks, chairs, storage, electronics, decor.

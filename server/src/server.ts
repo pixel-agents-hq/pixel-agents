@@ -18,8 +18,11 @@ import {
   SERVERS_DIR,
 } from './constants.js';
 import { createHttpServer } from './httpServer.js';
-import type { ServerConfig } from './serverConfig.js';
-import { isServerConfig, isServerTarget } from './serverConfig.js';
+import type { ServerConfig, StandaloneAccess } from './serverConfig.js';
+import { isServerConfig, isServerTarget, sameStandaloneAccess } from './serverConfig.js';
+import { loadOrCreateStandaloneToken } from './serverToken.js';
+import type { PtySessionManager } from './terminal/ptySessionManager.js';
+import { normalizeHostname } from './wsAuth.js';
 
 export type { ServerConfig } from './serverConfig.js';
 
@@ -69,18 +72,46 @@ export class PixelAgentsServer {
     assetCache?: AssetCache;
     onSetHooksEnabled?: SetHooksEnabledSideEffect;
     onReloadAssets?: ReloadAssetsSideEffect;
+    ptyManager?: PtySessionManager;
+    /** Extra privileged Host names (standalone; see wsAuth.privilegedHostnames). */
+    allowedHosts?: readonly string[];
+    /** Replace the persisted standalone token, revoking every URL that carried
+     *  the old one. Refused while another standalone server is running: it
+     *  would keep honouring the old token until it restarts. */
+    rotateToken?: boolean;
   }): Promise<ServerConfig> {
     const embedded = options?.embedded ?? true;
     const wantsSpa = !embedded;
+    const host = options?.host ?? '127.0.0.1';
+    const standalone: StandaloneAccess | undefined = embedded
+      ? undefined
+      : {
+          terminal: options?.ptyManager?.enabled ?? false,
+          host,
+          allowedHosts: normalizedAllowedHosts(options?.allowedHosts ?? []),
+        };
 
     // Capability-based reuse: an embedded (VS Code) caller only reuses another
     // embedded server (today's multi-window sharing); a standalone caller only
     // reuses another standalone -- never across the boundary, which is what
     // used to leave a standalone attached to VS Code's SPA-less embedded
-    // server (blank page). Prune dead entries first so a crashed server's
-    // stale file never blocks discovery of a live one.
+    // server (blank page). A standalone caller additionally requires the SAME
+    // access (terminal on/off, bind host, allowed hosts): reusing a server with
+    // a shell for a `--no-terminal` launch would make the opt-out a lie. Prune
+    // dead entries first so a crashed server's stale file never blocks
+    // discovery of a live one.
     const registry = this.readAndPruneRegistry();
-    const candidate = registry.find((e) => e.servesSpa === wantsSpa);
+    if (options?.rotateToken && !embedded) {
+      const running = registry.find((e) => e.servesSpa);
+      if (running) {
+        throw new Error(
+          `A standalone server is already running (PID ${running.pid}, port ${running.port}) and would keep accepting the old token. Stop it, then run --rotate-token again.`,
+        );
+      }
+    }
+    const candidate = registry.find(
+      (e) => e.servesSpa === wantsSpa && sameStandaloneAccess(e.standalone, standalone),
+    );
     if (candidate) {
       this.config = candidate;
       this.ownsServer = false;
@@ -91,12 +122,17 @@ export class PixelAgentsServer {
     }
 
     // Start our own server
-    const token = crypto.randomUUID();
+    // Standalone keeps one token across restarts so the tokened URL the CLI
+    // prints stays valid; embedded hands its token to the webview in-process and
+    // gains nothing from persistence.
+    const token = embedded
+      ? crypto.randomUUID()
+      : loadOrCreateStandaloneToken({ rotate: options?.rotateToken ?? false });
     const store = options?.store;
 
     const { app, port } = await createHttpServer({
       embedded,
-      host: options?.host,
+      host,
       port: options?.port,
       token,
       store: store!,
@@ -106,6 +142,8 @@ export class PixelAgentsServer {
       onHookEvent: (providerId, event) => this.callback?.(providerId, event),
       onSetHooksEnabled: options?.onSetHooksEnabled,
       onReloadAssets: options?.onReloadAssets,
+      ptyManager: options?.ptyManager,
+      allowedHosts: standalone?.allowedHosts,
     });
 
     this.app = app;
@@ -116,6 +154,7 @@ export class PixelAgentsServer {
       startedAt: Date.now(),
       servesSpa: wantsSpa,
       protocol: SERVER_REGISTRY_PROTOCOL_VERSION,
+      ...(standalone ? { standalone } : {}),
       // Diagnostic-only: forward the debug-log path to the hook script via
       // server.json (env vars don't reach the spawned hook reliably).
       ...(process.env['PIXEL_AGENTS_DEBUG_LOG']
@@ -277,6 +316,14 @@ export class PixelAgentsServer {
       // File may already be gone
     }
   }
+}
+
+/** Allowed hosts as compared and recorded: normalized, de-duplicated, sorted,
+ *  so `--allowed-host A --allowed-host b` and `--allowed-host B --allowed-host a`
+ *  describe the same server. */
+function normalizedAllowedHosts(hosts: readonly string[]): string[] {
+  const names = hosts.map((h) => normalizeHostname(h)).filter((h): h is string => h !== null);
+  return [...new Set(names)].sort();
 }
 
 /** Check if a process is alive by sending signal 0 (no-op, just checks existence). */

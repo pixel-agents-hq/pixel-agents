@@ -1,4 +1,9 @@
 @import 'tailwindcss';
+/* Material Symbols Sharp, weight 700 (the single-weight package keeps the
+   FILL/GRAD/opsz axes variable). Imported into the base layer: the package's
+   own rules are unlayered and would otherwise outrank every Tailwind utility
+   (its font-size: 24px silently beat text-[...] sizing). */
+@import '@material-symbols/font-700/sharp.css' layer(base);
 
 @font-face {
   font-family: 'FS Pixel Sans';
@@ -93,6 +98,15 @@
   body,
   #root {
     @apply m-0 w-full h-full overflow-hidden font-pixel text-base text-text;
+    /* Mobile Safari: 100% tracks the shifting URL-bar viewport; dvh follows
+       the *dynamic* viewport so the card bar hugs the real bottom edge. */
+    height: 100dvh;
+    /* No rubber-banding — the app owns all scrolling (canvas pan, xterm,
+       card bar). */
+    overscroll-behavior: none;
+    /* Whatever peeks out during keyboard show/hide or overscroll must be
+       office-dark, never browser-white. */
+    background: var(--color-bg-dark);
   }
 
   * {
@@ -160,9 +174,138 @@
     background: var(--color-accent-bright);
   }
 
+  /* Terminal content must be monospace: Claude Code is a full-screen TUI, and a
+     proportional face breaks its column alignment. The base layer's
+     `* { font-pixel }` applies FS Pixel Sans to every element -- including the
+     span xterm renders each cell into -- which overrides what xterm sets on its
+     own container. Re-assert the mono stack here (components layer beats base,
+     and `.xterm *` outranks `*`).
+
+     --font-terminal is set inline by TerminalPane from TERMINAL_FONT_FAMILY, so
+     the font CSS paints with is the same one xterm measured its cell grid with;
+     hard-coding a second stack here would misalign the grid the moment the two
+     drifted. Only the terminal CONTENT is mono -- the drawer chrome around it
+     stays on the pixel font. */
+  .xterm,
+  .xterm * {
+    font-family: var(--font-terminal);
+    /* iOS: no long-press callout/loupe anywhere in the terminal — a touch
+       claimed for text interaction is cancelled mid-scroll. Touch handling
+       is fully synthesized in TerminalPane. */
+    -webkit-touch-callout: none;
+  }
+
+  /* xterm's viewport owns the terminal's native scrollbar. Same pixel
+     treatment as .pixel-scrollbar below, but with a transparent track: when
+     nothing overflows (a full-screen TUI like Claude Code) no strip paints at
+     all, and with scrollback only the slim square thumb shows. */
+  .xterm .xterm-viewport::-webkit-scrollbar {
+    width: 6px;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+    background: var(--color-bg-thumb);
+    border-radius: 0;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+    background: var(--color-accent);
+  }
+  /* Firefox fallback */
+  .xterm .xterm-viewport {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-bg-thumb) transparent;
+  }
+
+  /* Touch text selection chrome over a terminal pane. selectionOverlay.ts
+     creates and positions these, and sets --cell-h, --sel-handle-w and
+     --sel-knob on each handle from constants.ts, so the geometry it computes
+     and the shapes drawn here can't drift. */
+  /* The pill is a row of buttons: Copy (verbatim) and Copy as text. */
+  .terminal-copy-pill {
+    position: absolute;
+    z-index: 10;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .terminal-copy-pill button {
+    padding: 8px 14px;
+    font-size: 17px;
+    background: var(--color-btn-bg);
+    color: var(--color-text);
+    border: 2px solid var(--color-border);
+    border-radius: 0;
+    box-shadow: var(--shadow-pixel);
+  }
+  /* The wrapper is the touch strip centered on the selection edge (the only
+     thing that hit-tests); the bar (::before, one cell tall) and the square
+     knob (::after) are drawn inside it — knob above the start bar, below the
+     end bar. */
+  .terminal-sel-handle {
+    position: absolute;
+    z-index: 10;
+    width: var(--sel-handle-w);
+    height: calc(var(--cell-h) + var(--sel-knob));
+  }
+  .terminal-sel-handle::before,
+  .terminal-sel-handle::after {
+    content: '';
+    position: absolute;
+    background: var(--color-accent-bright);
+    pointer-events: none;
+  }
+  .terminal-sel-handle::before {
+    left: calc((var(--sel-handle-w) - 2px) / 2);
+    width: 2px;
+    height: var(--cell-h);
+  }
+  .terminal-sel-handle::after {
+    left: calc((var(--sel-handle-w) - var(--sel-knob)) / 2);
+    width: var(--sel-knob);
+    height: var(--sel-knob);
+  }
+  .terminal-sel-handle[data-handle='start']::before {
+    top: var(--sel-knob);
+  }
+  .terminal-sel-handle[data-handle='start']::after {
+    top: 0;
+  }
+  .terminal-sel-handle[data-handle='end']::before {
+    top: 0;
+  }
+  .terminal-sel-handle[data-handle='end']::after {
+    top: var(--cell-h);
+  }
+
   /* Pulsing dot animation (DebugView, ToolOverlay) */
   .pixel-pulse {
     animation: pixel-pulse 1.5s ease-in-out infinite;
+  }
+
+  /* Top-anchored floating chrome (Settings, view toggle, connection pill):
+     in a Home-Screen PWA with viewport-fit=cover the page starts under the
+     iOS status bar, so the usual 8px top offset lands beneath the clock.
+     env() is 0 in browser tabs and on desktop, where this equals top-8. */
+  .mobile-safe-top {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+  }
+
+  /* Same, for the mobile terminal pane wrappers (4px base, matches inset-4). */
+  .mobile-safe-pane-top {
+    top: calc(env(safe-area-inset-top, 0px) + 4px);
+  }
+
+  /* Scroll containers whose overflow is obvious from clipped content (the
+     mobile card bar) — a scrollbar strip would just eat row height. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 
   /* Pixel-style thin scrollbar utility — used by the Area card folder list
@@ -185,6 +328,18 @@
   .pixel-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: var(--color-border) var(--color-bg-dark);
+  }
+
+  /* Material Symbols defaults for this project: Sharp style (imported in
+     main.tsx at weight 700), FILL 1, GRAD 0, opsz 24. The package CSS pins
+     font-size to 24px; 1em instead, so an icon tracks the text beside it. */
+  .material-symbols-sharp {
+    font-variation-settings:
+      'FILL' 1,
+      'GRAD' 0,
+      'opsz' 24;
+    font-size: 1em;
+    line-height: 1;
   }
 }
 

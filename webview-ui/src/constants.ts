@@ -93,6 +93,10 @@ export const PAN_MARGIN_FRACTION = 0.25;
 // ── Editor ───────────────────────────────────────────────────
 export const UNDO_STACK_MAX_SIZE = 50;
 export const LAYOUT_SAVE_DEBOUNCE_MS = 500;
+/** data-testid of the office canvas — e2e drives real editor gestures on it. */
+export const OFFICE_CANVAS_TEST_ID = 'office-canvas';
+/** Ghost-border hover tile when the border isn't shown — off any reachable tile. */
+export const GHOST_BORDER_NO_HOVER_TILE = -999;
 
 // ── Layout Import/Export (browser-native, standalone) ────────
 /** Suggested filename when exporting the office layout from the standalone browser. */
@@ -117,7 +121,7 @@ export const CARPET_DEFAULT_ACCENT_COLOR: ColorValue = {
 /** Keyboard key that switches from CARPET_PAINT to CARPET_PICK while editing. */
 export const KEY_CARPET_PICK = 'p';
 
-// ── Areas (named, colored workspace-folder zones) ────────────
+// ── Areas (named, colored Directory zones) ───────────────────
 /** Color palette assigned to new Areas in rotation (cycles when more areas exist). */
 export const AREA_DEFAULT_COLORS: readonly string[] = [
   '#ff6b6b',
@@ -215,6 +219,11 @@ export const GREETER_ID = -1_000_000_000;
  *  Intro is diegetic furniture over the office, not a modal, so a modal opened
  *  on top of it must cover it rather than slide underneath. */
 export const INTRO_BUBBLE_Z_INDEX = 45;
+/** ToolOverlay stacking: status label panels (selected one on top), then the
+ *  characters' speech bubbles above every label — all below the Intro bubble. */
+export const OVERLAY_LABEL_Z_INDEX = 41;
+export const OVERLAY_LABEL_SELECTED_Z_INDEX = 42;
+export const OVERLAY_BUBBLE_Z_INDEX = 43;
 /** The greeter stands this many tiles in from the office's bottom-left corner
  *  (target tile (margin, rows-1-margin); nearest walkable tile if blocked). */
 export const GREETER_TILE_MARGIN = 3;
@@ -312,3 +321,242 @@ export const PET_THUMB_SCALE_MARGIN = 0.85;
 export const EMPTY_SPRITE_THUMBNAIL_BG = '#333';
 /** Maximum string length for a PlacedPet.id (defends against pathologically-long layout entries). */
 export const MAX_PET_ID_LENGTH = 128;
+
+// ── WebSocket reconnect (standalone only) ────────────────────
+/** Reconnect backoff ladder shared by the /ws transport and every terminal
+ *  socket (transport/reconnectBackoff.ts). The last rung repeats. */
+export const WS_RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000, 4_000] as const;
+
+// ── Terminal drawer (standalone only) ────────────────────────
+
+// This file is the one place inline colors are allowed (see eslint.config.js),
+// which is why xterm's theme lives here rather than next to the component.
+
+// The panel docks on the right as a full-height column, in flow beside the
+// office region (which flexes to fill the rest) — not overlaid on top of it.
+/** Open width the panel starts at, in px; the user can drag to resize. */
+export const TERMINAL_DRAWER_DEFAULT_WIDTH_PX = 520;
+/** Clamp for the drag: never narrower than this. */
+export const TERMINAL_DRAWER_MIN_WIDTH_PX = 320;
+/** Clamp for the drag: never wider than this fraction of the window. */
+export const TERMINAL_DRAWER_MAX_WIDTH_RATIO = 0.8;
+/** Width of the always-visible agent-card bar overlaying the office's right
+ *  edge — fits the toggle handle and the stacked agent cards (40px mug shot +
+ *  16px close/status column + card chrome ≈ 63px, plus a little air each
+ *  side). */
+export const TERMINAL_SIDEBAR_WIDTH_PX = 72;
+/** Grab width of the drag handle on the panel's left edge. */
+export const TERMINAL_DRAWER_RESIZE_HANDLE_PX = 6;
+
+// Mug shot: a square crop of the agent's front-facing sprite, focused on the
+// face, shown in each terminal tab in place of an "Agent N" label. Sprites are
+// 16 wide × 32 tall; the head runs to about row 18 (eyes ~row 14). The square is
+// wider than the 16px sprite, so the head sits centred with a little air.
+// Tweak these three to reframe: SIDE = zoom out/in, TOP = raise/lower the crop,
+// LEFT = shift left/right (negative centres a square wider than the sprite).
+export const MUGSHOT_CROP_TOP_ROW = 0;
+export const MUGSHOT_CROP_LEFT_COL = -1;
+export const MUGSHOT_CROP_SIDE_PX = 20;
+/** Integer sprite-pixel zoom. 2 = each sprite pixel is 2 px. */
+export const MUGSHOT_RENDER_ZOOM = 2;
+/** On-screen size in CSS px. Equal to the backing canvas (crop × zoom) so there
+ *  is no fractional scaling — the mug shot stays pixel-perfect. */
+export const MUGSHOT_DISPLAY_PX = MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM;
+/** Terminal CONTENT is monospace on purpose: FS Pixel Sans is not a mono font,
+ *  and a TUI mis-renders in a proportional face. The drawer chrome around it
+ *  still uses the pixel font. */
+export const TERMINAL_FONT_FAMILY =
+  'ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace';
+export const TERMINAL_FONT_SIZE_PX = 13;
+/** Lines xterm retains client-side (independent of the server's replay ring). */
+export const TERMINAL_SCROLLBACK_LINES = 5_000;
+/** Debounce for propagating a resize to the PTY (fit on every frame thrashes it). */
+export const TERMINAL_RESIZE_DEBOUNCE_MS = 100;
+/** URL schemes a click in the terminal pane may open (see terminalLinks.ts). */
+export const TERMINAL_LINK_PROTOCOLS: readonly string[] = ['http:', 'https:'];
+/** window.open features for terminal links: no opener handle, no Referer. */
+export const TERMINAL_LINK_WINDOW_FEATURES = 'noopener,noreferrer';
+/** THE plain-URL pattern of the terminal pane: TerminalPane hands it to
+ *  @xterm/addon-web-links (`urlRegex`) for mouse clicks and urlAtCell matches
+ *  it for touch taps, so a URL that is clickable is exactly one that is
+ *  tappable. Equivalent to the addon's built-in strictUrlRegex. Deliberately
+ *  NOT global: the addon rebuilds it as `new RegExp(source, flags + 'g')`, so
+ *  a `g` here would throw on the duplicate flag; matchAll callers make their
+ *  own global copy. */
+export const TERMINAL_URL_PATTERN =
+  /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/;
+/** Largest OSC 52 clipboard write the terminal honours (clipboardKeys.ts),
+ *  in base64 characters (~3 MB of text). Bigger ones are dropped rather than
+ *  decoded: a runaway program shouldn't be able to stall the page. */
+export const TERMINAL_OSC52_MAX_BASE64_CHARS = 4_000_000;
+
+/** xterm theme, matched to the office palette (index.css :root). */
+export const TERMINAL_THEME = {
+  background: '#181828',
+  foreground: 'rgba(255, 255, 255, 0.9)',
+  cursor: '#6030ff',
+  cursorAccent: '#181828',
+  selectionBackground: 'rgba(96, 48, 255, 0.4)',
+  black: '#1e1e2e',
+  red: '#d14249',
+  green: '#89d185',
+  yellow: '#cca700',
+  blue: '#3794ff',
+  magenta: '#746fff',
+  cyan: '#4ad9d9',
+  white: 'rgba(255, 255, 255, 0.9)',
+  brightBlack: '#4a4a6a',
+  brightRed: '#ff6b72',
+  brightGreen: '#a8e5a4',
+  brightYellow: '#ffd700',
+  brightBlue: '#66aaff',
+  brightMagenta: '#a29bff',
+  brightCyan: '#7fe8e8',
+  brightWhite: '#ffffff',
+} as const;
+
+// ── Mobile shell ─────────────────────────────────────────────
+// Below this the app swaps the desktop drawer layout for the mobile shell:
+// office and terminal as full-screen pages in a sliding track, with the agent
+// cards in a bottom scroller. Phones match the first clause in either
+// orientation; the second catches touch tablets (iPad portrait/landscape)
+// where the drag-to-resize drawer is unusable anyway.
+export const MOBILE_MEDIA_QUERY = '(max-width: 768px), ((pointer: coarse) and (max-width: 1024px))';
+/** Slide duration between the office and terminal pages. */
+export const MOBILE_VIEW_TRANSITION_MS = 300;
+/** Width of the screen-edge strips that arm the view-switch swipe: right
+ *  edge in office view (swipe left → terminal), left edge in terminal view
+ *  (swipe right → office). */
+export const MOBILE_EDGE_SWIPE_ZONE_PX = 24;
+/** Horizontal movement that claims an armed edge touch as a view swipe; it
+ *  must also dominate the vertical axis, or the touch is handed back. */
+export const MOBILE_EDGE_SWIPE_SLOP_PX = 8;
+/** Fraction of the page width past which a released swipe commits. */
+export const MOBILE_EDGE_SWIPE_COMMIT_RATIO = 0.35;
+/** Release velocity (px/ms) that commits a swipe regardless of distance. */
+export const MOBILE_EDGE_SWIPE_COMMIT_VELOCITY = 0.3;
+/** Weight of the newest sample in the swipe's smoothed release velocity
+ *  (the rest carries over from the previous estimate). */
+export const MOBILE_EDGE_SWIPE_VELOCITY_WEIGHT = 0.8;
+/** Slightly smaller than the desktop 13px: a 390px phone fits ~46 columns at
+ *  13px but ~50 at 12px, and Claude Code's TUI degrades below ~45 columns. */
+export const MOBILE_TERMINAL_FONT_SIZE_PX = 12;
+
+// ── Touch input (every surface) ──────────────────────────────
+/** Tap slop shared by every touch surface (withinTapSlop): a finger that
+ *  travels less than this from where it landed is still a tap; beyond it the
+ *  gesture becomes that surface's drag (pan, scroll, reorder). */
+export const TOUCH_TAP_MAX_MOVE_PX = 10;
+/** A press longer than this is not a tap even if the finger never moved. */
+export const TOUCH_TAP_MAX_DURATION_MS = 350;
+
+// ── Terminal touch (touchGesture.ts, selectionOverlay.ts, flowCopy.ts) ──
+/** Hold a finger within the tap slop for this long on the terminal to start
+ *  text selection instead of scrolling: the word under the finger is
+ *  selected, and dragging then extends the selection cell by cell. */
+export const TERMINAL_LONG_PRESS_MS = 500;
+/** Vertical gap between the selection's top row and the floating copy pill
+ *  hovering above it (clears the start handle's knob). */
+export const TERMINAL_COPY_PILL_GAP_PX = 56;
+/** The copy pill's center stays at least this far from the pane's left and
+ *  right edges — or half its measured width, when that is more — so it is
+ *  never clipped. */
+export const TERMINAL_COPY_PILL_EDGE_INSET_X_PX = 44;
+/** The copy pill's top stays at least this far above the pane's bottom edge
+ *  (its own height plus a margin). */
+export const TERMINAL_COPY_PILL_BOTTOM_CLEARANCE_PX = 48;
+/** The copy pill's top never goes above this; a pill that would (selection
+ *  near the top of the pane) drops below the selection instead. */
+export const TERMINAL_COPY_PILL_MIN_TOP_PX = 4;
+/** Gap below the selection's last row when the pill drops beneath it (clears
+ *  the end handle's knob). */
+export const TERMINAL_COPY_PILL_BELOW_OFFSET_PX = 16;
+/** Width of a selection handle's touch strip, centered on the selection edge.
+ *  Feeds the `.terminal-sel-handle` CSS through --sel-handle-w. */
+export const TERMINAL_SEL_HANDLE_WIDTH_PX = 24;
+/** Side of a selection handle's square knob (above the start bar, below the
+ *  end bar). Feeds the `.terminal-sel-handle` CSS through --sel-knob. */
+export const TERMINAL_SEL_HANDLE_KNOB_PX = 12;
+/** Copy-flowing (flowCopy.ts) judges "the next word would not have fit on
+ *  the row above" against `cols` minus this: Claude Code wraps prose a few
+ *  columns short of the terminal width (its own gutters). Too small and real
+ *  soft wraps stay broken; too large and short deliberate lines get joined. */
+export const TERMINAL_COPY_WRAP_SLACK_COLS = 4;
+/** Flick decay after a terminal touch-scroll release, applied per millisecond
+ *  of frame time (0.998 ≈ iOS UIScrollView's normal deceleration rate). */
+export const TERMINAL_FLICK_DECAY_PER_MS = 0.998;
+/** Release velocity (px/ms) below which no flick starts and at which a
+ *  running flick stops. */
+export const TERMINAL_FLICK_MIN_VELOCITY_PX_PER_MS = 0.05;
+/** Exponential smoothing of the touch-scroll velocity: weight of the newest
+ *  move's sample (the running value keeps the rest). The release velocity
+ *  comes from the last move event, which is noisy on its own. */
+export const TERMINAL_FLICK_VELOCITY_SMOOTHING = 0.8;
+/** xterm's cell-grid element: hit-testing, row height and the selection
+ *  chrome all measure THIS rect (not the host, which keeps up to a row of
+ *  slack below the grid after fit). */
+export const XTERM_SCREEN_SELECTOR = '.xterm-screen';
+/** Class of xterm's hidden input textarea — focused while typing into a
+ *  terminal (see isTypingInTerminal). */
+export const XTERM_HELPER_TEXTAREA_CLASS = 'xterm-helper-textarea';
+
+// ── Mobile card bar (MobileAgentBar) ─────────────────────────
+/** Holding a card motionless this long arms drag-to-reorder in the mobile bar. */
+export const CARD_REORDER_LONG_PRESS_MS = 400;
+/** Holding a drawer's Directory row this long opens its edit modal — the touch
+ *  stand-in for the pencil, which only exists where rows can be hovered. */
+export const DRAWER_EDIT_LONG_PRESS_MS = 500;
+/** Finger slop for that hold: moving beyond this is a scroll, not a press. */
+export const DRAWER_EDIT_LONG_PRESS_MAX_MOVE_PX = 10;
+/** Gap a viewport-fitted Dropdown (the launch drawer) keeps from the top of
+ *  the viewport when its content is taller than the room above its anchor. */
+export const DROPDOWN_VIEWPORT_MARGIN_PX = 8;
+/** localStorage key for the mobile bar's custom card order (per device — a
+ *  presentation preference, deliberately not synced through the server). */
+export const MOBILE_CARD_ORDER_STORAGE_KEY = 'pixel-agents.mobileCardOrder';
+/** Breathing room kept between a card and the scroller edge when the bar
+ *  auto-scrolls the focused agent's card into view. */
+export const CARD_SCROLL_INTO_VIEW_MARGIN_PX = 8;
+
+// ── Mobile key bar (MobileKeyBar) ────────────────────────────
+/** Arrow-key byte sequences the trackpad key writes to the PTY. */
+export const TERMINAL_SEQ_ARROW_UP = '\x1b[A';
+export const TERMINAL_SEQ_ARROW_DOWN = '\x1b[B';
+export const TERMINAL_SEQ_ARROW_RIGHT = '\x1b[C';
+export const TERMINAL_SEQ_ARROW_LEFT = '\x1b[D';
+/** Accessory keys shown above the iOS keyboard in terminal view — the keys a
+ *  Claude Code TUI needs that the software keyboard lacks. `sequence` is the
+ *  raw bytes written to the PTY: shift+tab is CSI Z (back-tab). */
+export const MOBILE_KEY_BAR_KEYS: ReadonlyArray<{
+  label: string;
+  /** Byte sequence a tap writes to the PTY. Absent on the trackpad key — a
+   *  plain tap there deliberately does nothing. */
+  sequence?: string;
+  /** Press-hold-slide emits arrow keys with the finger in all four
+   *  directions, echoing the iOS space-bar trackpad (whose real caret
+   *  gesture can't reach xterm — its textarea must stay empty for input
+   *  diffing). Drives Claude Code's TUI menus (/resume, /model) and the
+   *  input-line cursor; the iOS keyboard has no arrows of its own. */
+  trackpad?: boolean;
+}> = [
+  { label: '/', sequence: '/' },
+  { label: 'shift+tab', sequence: '\x1b[Z' },
+  { label: 'esc', sequence: '\x1b' },
+  { label: '✜', trackpad: true },
+  // Line break without submitting: Claude Code's backslash+Enter escape —
+  // its universal form (shift+enter needs a /terminal-setup rebind that
+  // can't exist on a phone keyboard).
+  { label: '↵', sequence: '\\\r' },
+];
+/** Finger travel per emitted arrow while sliding on the trackpad key. */
+export const MOBILE_TRACKPAD_STEP_PX = 16;
+/** The paste key's prompt where script can't read the clipboard (plain-http
+ *  origins): the user pastes into the native field instead. */
+export const MOBILE_PASTE_PROMPT = 'Paste into the terminal:';
+/** visualViewport.height within this many px of innerHeight = nothing to
+ *  clamp (the two disagree by sub-pixel rounding on some devices). */
+export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
+/** The visual viewport this far below the tallest seen at the current width
+ *  (with an editable focused) = the software keyboard is up. Well above an
+ *  address bar collapsing (~56 px), well below any on-screen keyboard. */
+export const KEYBOARD_MIN_HEIGHT_PX = 150;

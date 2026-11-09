@@ -20,8 +20,8 @@ import { getSettingChecked, setSettings } from '../../../helpers/webview';
  */
 
 const NO_CONSENT_CONFIG = {
-  vscode: { alwaysShowLabels: true },
-  standalone: { alwaysShowLabels: true },
+  vscode: { alwaysShowLabels: true, showHostDirectories: true },
+  standalone: { alwaysShowLabels: true, showHostDirectories: true },
   // hooksConsent deliberately absent -> parses to unanswered -> dialog shows.
 };
 
@@ -544,7 +544,10 @@ test.describe('Hooks consent gate / pre-consent install', () => {
  */
 test.describe('Hooks consent gate / toggle-off failure', () => {
   test.use({
-    seedConfig: { vscode: { alwaysShowLabels: true }, hooksConsent: { claude: 'granted' } },
+    seedConfig: {
+      vscode: { alwaysShowLabels: true, showHostDirectories: true },
+      hooksConsent: { claude: 'granted' },
+    },
   });
 
   test.skip(process.platform === 'win32', 'chmod-based write failure is not meaningful on Windows');

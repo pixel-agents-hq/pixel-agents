@@ -1240,7 +1240,7 @@ test.describe('Hooks ON / lifecycle', () => {
       },
     ];
 
-    // Scenario-driven with 3s per tool phase (Pablo's review call, same rationale
+    // Scenario-driven with 3s per tool phase (maintainer review call, same rationale
     // as the spawn-paths external test): each PostToolUse clears the prior tool,
     // the paired PreToolUse 150ms later swaps in the next one, and the 3s phase
     // keeps every label on screen long enough for the run video AND gives the

@@ -57,7 +57,7 @@ export type AgentEvent =
        *  (if the provider uses one). Undefined for providers without transcripts. */
       transcriptPath?: string;
       /** Working directory the session was started in. Used to match pending
-       *  external sessions against known workspace folders. */
+       *  external sessions against known Directories. */
       cwd?: string;
     }
   | { kind: 'sessionEnd'; reason?: string };

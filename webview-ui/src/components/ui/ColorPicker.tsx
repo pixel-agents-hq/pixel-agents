@@ -44,6 +44,13 @@ interface ColorPickerProps {
   showColorizeToggle?: boolean;
   /** When provided, renders a Reset button below the sliders that calls this handler. */
   onReset?: () => void;
+  /**
+   * When provided, renders a Copy button left of Reset — an eyedropper that
+   * takes another object's colour into these sliders.
+   */
+  onCopy?: () => void;
+  /** Highlights Copy while the eyedropper is armed and waiting for a click. */
+  copyActive?: boolean;
 }
 
 export function ColorPicker({
@@ -52,6 +59,8 @@ export function ColorPicker({
   colorize,
   showColorizeToggle,
   onReset,
+  onCopy,
+  copyActive,
 }: ColorPickerProps) {
   const handleChange = (key: keyof ColorValue, v: number) => {
     onChange({ ...value, [key]: v });
@@ -92,7 +101,7 @@ export function ColorPicker({
 
       {/* Colorize row: a toggle, then (when on) the carpet-style swatch + hex
           control that opens a visual picker on click. */}
-      {(showColorizeToggle || onReset) && (
+      {(showColorizeToggle || onReset || onCopy) && (
         <div className="flex items-center gap-8 -mt-4">
           {showColorizeToggle && (
             <button
@@ -118,6 +127,17 @@ export function ColorPicker({
             </>
           ) : (
             <span className="flex-1" />
+          )}
+          {onCopy && (
+            <Button
+              variant={copyActive ? 'active' : 'default'}
+              size="sm"
+              onClick={onCopy}
+              title="Copy color from another item — click one in the office"
+              className="mt-6 mr-4"
+            >
+              Copy
+            </Button>
           )}
           {onReset && (
             <Button

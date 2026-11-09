@@ -65,25 +65,336 @@ export function removeFurniture(layout: OfficeLayout, uid: string): OfficeLayout
   return { ...layout, furniture: filtered };
 }
 
-/** Move furniture to new position. Returns new layout (immutable). */
+/** Whether a placed item's footprint (background rows included) covers (col, row). */
+function coversTile(item: PlacedFurniture, col: number, row: number): boolean {
+  const entry = getCatalogEntry(item.type);
+  if (!entry) return false;
+  return (
+    col >= item.col &&
+    col < item.col + entry.footprintW &&
+    row >= item.row &&
+    row < item.row + entry.footprintH
+  );
+}
+
+/**
+ * The placed item a click on (col, row) means, or undefined. Where items stack,
+ * a surface item (laptop, monitor, mug…) wins over the desk under it — it's the
+ * one drawn on top — so selecting, dragging, copying and eyedropping all agree
+ * on what the cursor is pointing at.
+ */
+export function furnitureAt(
+  layout: OfficeLayout,
+  col: number,
+  row: number,
+): PlacedFurniture | undefined {
+  let hit: PlacedFurniture | undefined;
+  for (const f of layout.furniture) {
+    if (!coversTile(f, col, row)) continue;
+    if (!hit || getCatalogEntry(f.type)?.canPlaceOnSurfaces) hit = f;
+  }
+  return hit;
+}
+
+/**
+ * Remove every furniture item whose footprint covers (col, row) — all of them,
+ * not just the one {@link furnitureAt} would pick, so an erase stroke clears a
+ * desk together with whatever stands on the tile it crosses. Returns new layout
+ * (immutable). No-op if no furniture covers the tile; unknown types are kept
+ * rather than silently dropped.
+ */
+export function removeFurnitureAt(layout: OfficeLayout, col: number, row: number): OfficeLayout {
+  const filtered = layout.furniture.filter((f) => !coversTile(f, col, row));
+  if (filtered.length === layout.furniture.length) return layout;
+  return { ...layout, furniture: filtered };
+}
+
+/**
+ * One tile of an erase stroke: clear it to VOID and delete any furniture it
+ * passes through. Returns new layout (immutable); unchanged when the tile is
+ * out of bounds or already bare VOID.
+ */
+export function eraseTile(layout: OfficeLayout, col: number, row: number): OfficeLayout {
+  if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return layout;
+  const idx = row * layout.cols + col;
+  const cleared =
+    layout.tiles[idx] === TileType.VOID ? layout : paintTile(layout, col, row, TileType.VOID);
+  return removeFurnitureAt(cleared, col, row);
+}
+
+/** Footprint tiles of a placed item, as `"col,row"` keys (background rows included). */
+function footprintTiles(item: PlacedFurniture): Set<string> {
+  const entry = getCatalogEntry(item.type);
+  const tiles = new Set<string>();
+  if (!entry) return tiles;
+  for (let dr = 0; dr < entry.footprintH; dr++) {
+    for (let dc = 0; dc < entry.footprintW; dc++) {
+      tiles.add(`${item.col + dc},${item.row + dr}`);
+    }
+  }
+  return tiles;
+}
+
+/**
+ * Which desk a surface item (laptop, monitor, mug…) is sitting on, or null when
+ * it overlaps no desk. An item straddling two desks belongs to the one it covers
+ * most; ties go to the desk that comes first in `layout.furniture`, so ownership
+ * is stable across calls.
+ */
+function hostDeskUid(layout: OfficeLayout, item: PlacedFurniture): string | null {
+  const entry = getCatalogEntry(item.type);
+  if (!entry?.canPlaceOnSurfaces) return null;
+  const tiles = footprintTiles(item);
+  if (tiles.size === 0) return null;
+
+  let bestUid: string | null = null;
+  let bestOverlap = 0;
+  for (const desk of layout.furniture) {
+    if (desk.uid === item.uid) continue;
+    const deskEntry = getCatalogEntry(desk.type);
+    if (!deskEntry?.isDesk) continue;
+    let overlap = 0;
+    for (const key of footprintTiles(desk)) {
+      if (tiles.has(key)) overlap++;
+    }
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      bestUid = desk.uid;
+    }
+  }
+  return bestUid;
+}
+
+/**
+ * The surface items riding on the given desk — the stuff that moves and rotates
+ * with it. Empty for anything that isn't a desk, and never recursive: a rider
+ * carries nothing of its own.
+ */
+export function getSurfaceRiders(layout: OfficeLayout, deskUid: string): PlacedFurniture[] {
+  const desk = layout.furniture.find((f) => f.uid === deskUid);
+  if (!desk || !getCatalogEntry(desk.type)?.isDesk) return [];
+  return layout.furniture.filter((f) => f.uid !== deskUid && hostDeskUid(layout, f) === deskUid);
+}
+
+/** A desk and its riders at their target positions, plus whether they all fit. */
+export interface FurnitureMovePlan {
+  /** The dragged item first, then every surface rider — all at target positions. */
+  items: PlacedFurniture[];
+  /** True when every item in the group fits where the plan puts it. */
+  valid: boolean;
+}
+
+/**
+ * Plan a drag: the dragged item plus everything on its surface, all shifted by
+ * the same delta. Used for the drag ghost as well as the drop, so the preview
+ * and the committed edit can never disagree. Null if `uid` is gone.
+ *
+ * `duplicate` only changes what counts as blocking. A move frees the tiles the
+ * group vacates, so it may land on them; a copy leaves the originals standing,
+ * so those same tiles block it. `items` keeps the source uids either way —
+ * duplicateFurniture mints fresh ones when it commits.
+ */
+export function planFurnitureMove(
+  layout: OfficeLayout,
+  uid: string,
+  newCol: number,
+  newRow: number,
+  opts: { duplicate?: boolean } = {},
+): FurnitureMovePlan | null {
+  const item = layout.furniture.find((f) => f.uid === uid);
+  if (!item) return null;
+  const dCol = newCol - item.col;
+  const dRow = newRow - item.row;
+  const items = [item, ...getSurfaceRiders(layout, uid)].map((f) => ({
+    ...f,
+    col: f.col + dCol,
+    row: f.row + dRow,
+  }));
+  return { items, valid: groupFits(layout, items, { leavesOriginals: opts.duplicate }) };
+}
+
+/**
+ * Whether a desk group fits at the positions proposed for it: every member
+ * passes canPlaceFurniture. The group's own originals never block a move or a
+ * rotation (it vacates those tiles); with `leavesOriginals` — a copy — they do.
+ * The one rule behind drag, drop, copy and rotate, so none of them can commit
+ * a group the others would refuse.
+ */
+function groupFits(
+  layout: OfficeLayout,
+  items: PlacedFurniture[],
+  opts: { leavesOriginals?: boolean } = {},
+): boolean {
+  const exclude = opts.leavesOriginals ? undefined : new Set(items.map((f) => f.uid));
+  return items.every((f) => canPlaceFurniture(layout, f.type, f.col, f.row, exclude));
+}
+
+/**
+ * A furniture uid that isn't already taken. `taken` is updated in place, so a
+ * batch of copies minted in the same millisecond can't collide with each other.
+ */
+export function freshFurnitureUid(taken: Set<string>): string {
+  let uid: string;
+  do {
+    uid = `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  } while (taken.has(uid));
+  taken.add(uid);
+  return uid;
+}
+
+/**
+ * Copy an item and everything on its surface to a new spot, leaving the
+ * originals where they are. Returns the new layout (immutable) plus the copy's
+ * uid so the caller can select it, or null when the group doesn't fit.
+ */
+export function duplicateFurniture(
+  layout: OfficeLayout,
+  uid: string,
+  newCol: number,
+  newRow: number,
+): { layout: OfficeLayout; uid: string } | null {
+  const plan = planFurnitureMove(layout, uid, newCol, newRow, { duplicate: true });
+  if (!plan || !plan.valid) return null;
+  const taken = new Set(layout.furniture.map((f) => f.uid));
+  const copies = plan.items.map((f) => ({
+    ...f,
+    uid: freshFurnitureUid(taken),
+    ...(f.color ? { color: { ...f.color } } : {}),
+  }));
+  return {
+    layout: { ...layout, furniture: [...layout.furniture, ...copies] },
+    uid: copies[0].uid,
+  };
+}
+
+/**
+ * Commit a drag-drop gesture: move the item (and its riders) to (newCol, newRow),
+ * or — with `duplicate` — stamp a copy of the group there. Null when the group
+ * doesn't fit, so nothing changes. `selectedUid` is what the drop leaves
+ * selected: the copy, so R / T / the colour sliders act on what was just
+ * dropped; nothing after a move.
+ */
+export function dropFurniture(
+  layout: OfficeLayout,
+  uid: string,
+  newCol: number,
+  newRow: number,
+  opts: { duplicate: boolean },
+): { layout: OfficeLayout; selectedUid: string | null } | null {
+  if (opts.duplicate) {
+    const copy = duplicateFurniture(layout, uid, newCol, newRow);
+    return copy && { layout: copy.layout, selectedUid: copy.uid };
+  }
+  const moved = moveFurniture(layout, uid, newCol, newRow);
+  return moved === layout ? null : { layout: moved, selectedUid: null };
+}
+
+/** Set (or, with null, remove) a placed item's colour. Returns new layout (immutable). */
+export function setFurnitureColor(
+  layout: OfficeLayout,
+  uid: string,
+  color: ColorValue | null,
+): OfficeLayout {
+  if (!layout.furniture.some((f) => f.uid === uid)) return layout;
+  return {
+    ...layout,
+    furniture: layout.furniture.map((f) =>
+      f.uid === uid ? { ...f, color: color ? { ...color } : undefined } : f,
+    ),
+  };
+}
+
+/**
+ * Place a new catalog item under the cursor at (col, row) — wall items hang so
+ * their bottom row sits on the hovered tile — with a fresh uid and, if given,
+ * its own copy of `color`. Returns new layout (immutable); unchanged when the
+ * item doesn't fit there.
+ */
+export function placeNewFurniture(
+  layout: OfficeLayout,
+  type: string,
+  col: number,
+  row: number,
+  color: ColorValue | null,
+): OfficeLayout {
+  const uid = freshFurnitureUid(new Set(layout.furniture.map((f) => f.uid)));
+  const item: PlacedFurniture = { uid, type, col, row: getWallPlacementRow(type, row) };
+  if (color) item.color = { ...color };
+  return placeFurniture(layout, item);
+}
+
+/** Replace each listed item in the layout by uid. Returns new layout (immutable). */
+function withFurniture(layout: OfficeLayout, updates: PlacedFurniture[]): OfficeLayout {
+  const byUid = new Map(updates.map((f) => [f.uid, f]));
+  return { ...layout, furniture: layout.furniture.map((f) => byUid.get(f.uid) ?? f) };
+}
+
+/**
+ * Move furniture to a new position, carrying anything on its surface along.
+ * Returns new layout (immutable). No-op unless the whole group fits.
+ */
 export function moveFurniture(
   layout: OfficeLayout,
   uid: string,
   newCol: number,
   newRow: number,
 ): OfficeLayout {
-  const item = layout.furniture.find((f) => f.uid === uid);
-  if (!item) return layout;
-  if (!canPlaceFurniture(layout, item.type, newCol, newRow, uid)) return layout;
+  const plan = planFurnitureMove(layout, uid, newCol, newRow);
+  if (!plan || !plan.valid) return layout;
+  return withFurniture(layout, plan.items);
+}
+
+function clamp(value: number, a: number, b: number): number {
+  return Math.min(Math.max(value, Math.min(a, b)), Math.max(a, b));
+}
+
+/**
+ * Turn a rider a quarter turn along with the desk under it: its own sprite steps
+ * one orientation in the same direction, and its spot on the desk swings round
+ * with the desk top.
+ *
+ * The desk's own footprint is authored per orientation, not derived (a 3x2 front
+ * desk becomes a 1x4 side desk), so positions can't be rotated as a rigid grid.
+ * Instead the rider's centre is taken as a fraction of the desk's footprint,
+ * turned a quarter in that normalized space, and read back against the desk's
+ * NEW footprint — then clamped so the rider stays on the desk it rides.
+ *
+ * The catalog's 'cw' step is front → right → back → left, which turns a
+ * south-facing item east: counter-clockwise on screen, where y grows downward.
+ * Hence (u,v) → (v, 1-u): the desk's back edge travels north → west, taking the
+ * monitors standing along it with it.
+ */
+function rotateRiderWithDesk(
+  rider: PlacedFurniture,
+  desk: PlacedFurniture,
+  deskFrom: { footprintW: number; footprintH: number },
+  deskTo: { footprintW: number; footprintH: number },
+  direction: 'cw' | 'ccw',
+): PlacedFurniture {
+  const from = getCatalogEntry(rider.type);
+  if (!from) return rider;
+  const type = getRotatedType(rider.type, direction) ?? rider.type;
+  const to = getCatalogEntry(type) ?? from;
+
+  const u = (rider.col - desk.col + from.footprintW / 2) / deskFrom.footprintW;
+  const v = (rider.row - desk.row + from.footprintH / 2) / deskFrom.footprintH;
+  const [ru, rv] = direction === 'cw' ? [v, 1 - u] : [1 - v, u];
+
+  const localCol = Math.round(ru * deskTo.footprintW - to.footprintW / 2);
+  const localRow = Math.round(rv * deskTo.footprintH - to.footprintH / 2);
   return {
-    ...layout,
-    furniture: layout.furniture.map((f) =>
-      f.uid === uid ? { ...f, col: newCol, row: newRow } : f,
-    ),
+    ...rider,
+    type,
+    col: desk.col + clamp(localCol, 0, deskTo.footprintW - to.footprintW),
+    row: desk.row + clamp(localRow, 0, deskTo.footprintH - to.footprintH),
   };
 }
 
-/** Rotate furniture to the next orientation. Returns new layout (immutable). */
+/**
+ * Rotate furniture to the next orientation, turning anything on its surface with
+ * it. Returns new layout (immutable). No-op unless the whole group fits in its
+ * new orientation — the desk and every rider, on the grid and clear of others.
+ */
 export function rotateFurniture(
   layout: OfficeLayout,
   uid: string,
@@ -93,10 +404,18 @@ export function rotateFurniture(
   if (!item) return layout;
   const newType = getRotatedType(item.type, direction);
   if (!newType) return layout;
-  return {
-    ...layout,
-    furniture: layout.furniture.map((f) => (f.uid === uid ? { ...f, type: newType } : f)),
-  };
+
+  const rotated: PlacedFurniture = { ...item, type: newType };
+  const from = getCatalogEntry(item.type);
+  const to = getCatalogEntry(newType);
+  const riders =
+    from && to
+      ? getSurfaceRiders(layout, uid).map((r) => rotateRiderWithDesk(r, item, from, to, direction))
+      : [];
+
+  const group = [rotated, ...riders];
+  if (!groupFits(layout, group)) return layout;
+  return withFurniture(layout, group);
 }
 
 /** Toggle furniture state (on/off). Returns new layout (immutable). */
@@ -118,13 +437,17 @@ export function getWallPlacementRow(type: string, row: number): number {
   return row - (entry.footprintH - 1);
 }
 
-/** Check if furniture can be placed at (col, row) without overlapping. */
+/**
+ * Check if furniture can be placed at (col, row) without overlapping.
+ * `excluded` are the uids that don't count as obstacles — the item being moved,
+ * or a desk together with its riders, which never block their own move.
+ */
 export function canPlaceFurniture(
   layout: OfficeLayout,
   type: string, // FurnitureType enum or asset ID
   col: number,
   row: number,
-  excludeUid?: string,
+  excluded?: ReadonlySet<string>,
 ): boolean {
   const entry = getCatalogEntry(type);
   if (!entry) return false;
@@ -171,14 +494,14 @@ export function canPlaceFurniture(
   }
 
   // Build occupied set excluding the item being moved, skipping background tile rows
-  const occupied = getPlacementBlockedTiles(layout.furniture, excludeUid);
+  const occupied = getPlacementBlockedTiles(layout.furniture, excluded);
 
   // If this item can be placed on surfaces, build set of desk tiles to exclude from collision
   let deskTiles: Set<string> | null = null;
   if (entry.canPlaceOnSurfaces) {
     deskTiles = new Set<string>();
     for (const item of layout.furniture) {
-      if (item.uid === excludeUid) continue;
+      if (excluded?.has(item.uid)) continue;
       const itemEntry = getCatalogEntry(item.type);
       if (!itemEntry || !itemEntry.isDesk) continue;
       for (let dr = 0; dr < itemEntry.footprintH; dr++) {
@@ -201,6 +524,55 @@ export function canPlaceFurniture(
   }
 
   return true;
+}
+
+/** Whether (col, row) is on the grid and neither VOID nor wall — where carpets and areas go. */
+export function isFloorTile(layout: OfficeLayout, col: number, row: number): boolean {
+  if (col < 0 || col >= layout.cols || row < 0 || row >= layout.rows) return false;
+  const tileVal = layout.tiles[row * layout.cols + col];
+  return tileVal !== TileType.VOID && tileVal !== TileType.WALL;
+}
+
+/**
+ * One tile of a wall-tool stroke. The stroke's first tile decides its
+ * direction (`adding`): adding paints a wall in `wallColor`; removing turns a
+ * wall back into floor of the given pattern and colour and leaves non-walls
+ * alone. Returns new layout (immutable).
+ */
+export function wallStrokeTile(
+  layout: OfficeLayout,
+  col: number,
+  row: number,
+  adding: boolean,
+  wallColor: ColorValue,
+  floor: { type: TileTypeVal; color: ColorValue },
+): OfficeLayout {
+  if (adding) return paintTile(layout, col, row, TileType.WALL, wallColor);
+  if (layout.tiles[row * layout.cols + col] !== TileType.WALL) return layout;
+  return paintTile(layout, col, row, floor.type, floor.color);
+}
+
+/** Recolour every wall tile. Returns new layout (immutable); unchanged when there are no walls. */
+export function recolorWalls(layout: OfficeLayout, color: ColorValue): OfficeLayout {
+  if (!layout.tiles.includes(TileType.WALL)) return layout;
+  const existing = layout.tileColors || new Array(layout.tiles.length).fill(null);
+  const tileColors = existing.map((c, i) => (layout.tiles[i] === TileType.WALL ? { ...color } : c));
+  return { ...layout, tileColors };
+}
+
+/** Whether a wall stroke starting on (col, row) adds walls (it removes them when it starts on one). */
+export function wallStrokeAdds(layout: OfficeLayout, col: number, row: number): boolean {
+  return layout.tiles[row * layout.cols + col] !== TileType.WALL;
+}
+
+/** Whether an area stroke starting on (col, row) erases: it does when that tile already carries `label`. */
+export function areaStrokeErases(
+  layout: OfficeLayout,
+  col: number,
+  row: number,
+  label: string,
+): boolean {
+  return (layout.areaTiles?.[row * layout.cols + col] ?? null) === label;
 }
 
 /**

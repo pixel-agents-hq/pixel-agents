@@ -1,7 +1,6 @@
 import fastifyCors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
-import * as crypto from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 
@@ -19,7 +18,16 @@ import {
   WS_CLOSE_FORBIDDEN_ORIGIN,
   WS_CLOSE_UNAUTHORIZED,
 } from './constants.js';
+import type { PtySessionManager } from './terminal/ptySessionManager.js';
+import { registerTerminalRoutes } from './terminal/terminalRoutes.js';
 import type { AgentState } from './types.js';
+import {
+  bearerTokenValid,
+  isAllowedWebSocketOrigin,
+  privilegedHostnames,
+  redactTokenQuery,
+  standaloneHandshakeVerdict,
+} from './wsAuth.js';
 
 /** Options for creating the HTTP + WebSocket server. */
 export interface HttpServerOptions {
@@ -45,6 +53,13 @@ export interface HttpServerOptions {
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
   /** Invoked when an external asset directory is added/removed. Standalone reloads + re-broadcasts assets here. */
   onReloadAssets?: ReloadAssetsSideEffect;
+  /** PTY terminals for standalone-launched agents. Absent = terminal feature off
+   *  (VS Code embedded mode, where the editor owns terminals). */
+  ptyManager?: PtySessionManager;
+  /** Extra Host names (beyond loopback and a specific bind address) a
+   *  privileged standalone handshake may arrive under -- e.g. a reverse proxy's
+   *  public name. See wsAuth.privilegedHostnames. */
+  allowedHosts?: readonly string[];
 }
 
 /** Result of createHttpServer(). */
@@ -63,7 +78,11 @@ const startTime = Date.now();
  */
 export async function createHttpServer(options: HttpServerOptions): Promise<HttpServerHandle> {
   const app = Fastify({
-    logger: !options.embedded,
+    // Standalone logs every request. The privilege token rides `/ws?token=`
+    // and `/terminal/:id?token=` handshakes, so the url is redacted before it
+    // is written -- otherwise every (re)connect would put the secret in stdout
+    // and any log file (see wsAuth.redactTokenQuery).
+    logger: options.embedded ? false : { serializers: { req: serializeRequestForLog } },
     bodyLimit: MAX_HOOK_BODY_SIZE,
   });
 
@@ -84,13 +103,21 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
 
   // ── Routes ──────────────────────────────────────────────────
 
+  const host = options.host ?? '127.0.0.1';
+  const allowedHostnames = privilegedHostnames(host, options.allowedHosts ?? []);
+
   registerHealthRoute(app);
   registerHookRoute(app, options);
-  registerWebSocketRoute(app, options);
+  registerWebSocketRoute(app, options, allowedHostnames);
+  registerTerminalRoutes(app, {
+    token: options.token,
+    allowedHostnames,
+    ptyManager: options.ptyManager,
+  });
 
   // ── Listen ──────────────────────────────────────────────────
 
-  await app.listen({ host: options.host ?? '127.0.0.1', port: options.port ?? 0 });
+  await app.listen({ host, port: options.port ?? 0 });
   const address = app.server.address();
   const port = typeof address === 'object' ? (address?.port ?? 0) : 0;
 
@@ -142,7 +169,11 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
 
 // ── WebSocket ──────────────────────────────────────────────────
 
-function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions): void {
+function registerWebSocketRoute(
+  app: FastifyInstance,
+  options: HttpServerOptions,
+  allowedHostnames: ReadonlySet<string>,
+): void {
   app.get('/ws', { websocket: true }, (socket, request) => {
     // CONNECTION gate. Embedded (VS Code) requires the Bearer token. Standalone
     // requires a same-origin handshake instead (isAllowedWebSocketOrigin), so a
@@ -150,7 +181,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
     // may be DONE over an accepted connection is a separate question, decided
     // below.
     if (options.embedded) {
-      if (!timingSafeStringEqual(request.headers.authorization ?? '', `Bearer ${options.token}`)) {
+      if (!bearerTokenValid(request.headers.authorization, options.token)) {
         socket.close(WS_CLOSE_UNAUTHORIZED, 'unauthorized');
         return;
       }
@@ -162,9 +193,28 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
     // Both modes prove privilege with the SAME out-of-band secret, differently
     // carried: embedded sends the Bearer token it was handed in-process;
     // standalone sends the `?token=` the CLI printed in the local URL and the
-    // SPA forwarded on this handshake. Nothing about a network POSITION is
-    // consulted, because every position is reproducible by a forwarder.
-    const privileged = options.embedded || standaloneTokenValid(request.url, options.token);
+    // SPA forwarded on this handshake, and it must arrive under an allowed Host
+    // -- the same verdict the terminal socket applies. A network POSITION
+    // never grants privilege, because every position is reproducible by a
+    // forwarder; the Host allowlist can only take it away.
+    let privileged = options.embedded;
+    if (!options.embedded) {
+      const verdict = standaloneHandshakeVerdict(
+        request.url,
+        request.headers.host,
+        options.token,
+        allowedHostnames,
+      );
+      privileged = verdict === 'privileged';
+      if (verdict === 'untrusted-host') {
+        // The operator has the right URL but reached us under a name they never
+        // listed (typically a reverse proxy). Say how to fix it, or the session
+        // silently stays watch-only.
+        console.warn(
+          `[Pixel Agents] Tokened connection via Host "${request.headers.host ?? ''}" is read-only: restart with --allowed-host <that name> to allow changes from it.`,
+        );
+      }
+    }
 
     const { store } = options;
 
@@ -173,7 +223,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
       safeSend(socket, {
         type: 'agentCreated',
         id,
-        folderName: agent.folderName,
+        directoryName: agent.directoryName,
         isExternal: agent.isExternal || undefined,
         isTeammate: agent.leadAgentId !== undefined || undefined,
         teammateName: agent.agentName,
@@ -211,6 +261,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
           onSetHooksEnabled: options.onSetHooksEnabled,
           onReloadAssets: options.onReloadAssets,
           privileged,
+          ptyManager: options.ptyManager,
         });
       } catch {
         // Malformed JSON, ignore
@@ -225,97 +276,27 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
   });
 }
 
-/**
- * Standalone `/ws` CONNECTION gate: is this handshake same-origin?
- *
- * WebSocket connects are NOT subject to CORS, so without this any web page the
- * user happens to visit could open a socket to 127.0.0.1 and start talking.
- * Comparing Origin's host against the request's own Host header makes the check
- * same-origin by construction — it tracks whatever --host/--port the server was
- * bound to with zero configuration, and treats `localhost` and `127.0.0.1`
- * correctly (a browser derives both headers from the URL that loaded the SPA).
- *
- * A missing Origin still connects: non-browser local clients send none, and the
- * standalone server's read surface is deliberately open to whatever address it
- * was told to bind (`--host 0.0.0.0` exposes the SPA to the LAN by design).
- *
- * This gate is NOT sufficient for privileged actions and never was. Both header
- * values are attacker-supplied, so a DNS-rebound page (`evil.com` → 127.0.0.1)
- * sends `Origin: http://evil.com:PORT` AND `Host: evil.com:PORT` and passes
- * equality. See standaloneTokenValid for what actually guards consent.
- */
-export function isAllowedWebSocketOrigin(
-  origin: string | undefined,
-  host: string | undefined,
-): boolean {
-  if (origin === undefined || origin === '') return true;
-  try {
-    return new URL(origin).host === host;
-  } catch {
-    // An unparseable Origin is not a same-origin browser request.
-    return false;
-  }
-}
-
-/**
- * Whether this socket may send PRIVILEGED messages — the ones that reach
- * outside `~/.pixel-agents/`. Today that is `setHooksEnabled`, which grants
- * durable, machine-wide consent to modify `~/.claude/settings.json` and
- * installs (or removes) a 12-event hook set.
- *
- * The handshake must carry the server token in its `?token=` query. That token
- * is minted at startup (server.ts), printed by the CLI inside the LOCAL url it
- * emits to the operator's terminal, and forwarded by the SPA loaded from that
- * url (webview-ui/src/transport/index.ts). It is the Jupyter model.
- *
- * Why a secret rather than a network position: EVERY position is reproducible.
- * The predecessor of this function required a loopback peer address AND a
- * loopback `Host`, on the theory that only a real local browser satisfies both.
- * A dumb TCP forwarder bound to the LAN, piping bytes verbatim to 127.0.0.1,
- * presents the server exactly what the SPA presents — `remoteAddress` is
- * 127.0.0.1 because the forwarder terminated the hop there, and `Host` is
- * whatever the remote client typed. Reproduced against the real `dist/cli.js`:
- * a client on another machine acquired consent and a 12-event install. Peer
- * address and Host/Origin are all carried BY the channel a proxy speaks, so the
- * gate must ride something the channel never carries — an out-of-band secret
- * the operator's own URL delivers and the forwarded attacker never sees.
- *
- * A tokenless client is not locked out of Pixel Agents — it connects and
- * watches the office exactly as before (the connection gate,
- * isAllowedWebSocketOrigin, is separate and unchanged). It simply cannot
- * approve a change to a file in someone's home directory.
- */
-function standaloneTokenValid(url: string | undefined, expected: string): boolean {
-  // Defensive: an empty configured token would otherwise privilege every
-  // handshake that omits the query (both sides compare equal as '').
-  if (!expected) return false;
-  let provided: string;
-  try {
-    // Parsed against a dummy base because `request.url` is path-relative. Read
-    // from the raw url rather than a framework-parsed query so the gate does
-    // not depend on @fastify/websocket populating one on the upgrade request.
-    provided = new URL(url ?? '', 'http://localhost').searchParams.get('token') ?? '';
-  } catch {
-    return false;
-  }
-  return timingSafeStringEqual(provided, expected);
-}
-
 // ── Auth Helper ────────────────────────────────────────────────
-
-/** Constant-time string compare, length-guarded (timingSafeEqual throws on a
- *  length mismatch). One implementation for all three token comparisons. */
-function timingSafeStringEqual(actual: string, expected: string): boolean {
-  const actualBuf = Buffer.from(actual);
-  const expectedBuf = Buffer.from(expected);
-  return actualBuf.length === expectedBuf.length && crypto.timingSafeEqual(actualBuf, expectedBuf);
-}
 
 function bearerAuth(expectedToken: string) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!timingSafeStringEqual(request.headers.authorization ?? '', `Bearer ${expectedToken}`)) {
+    if (!bearerTokenValid(request.headers.authorization, expectedToken)) {
       reply.code(401).send('unauthorized');
     }
+  };
+}
+
+// ── Logging ────────────────────────────────────────────────────
+
+/** Fastify's default request serializer, minus the token query. Exported so a
+ *  test can pin that the secret never reaches the log line. */
+export function serializeRequestForLog(request: FastifyRequest): Record<string, unknown> {
+  return {
+    method: request.method,
+    url: redactTokenQuery(request.url),
+    hostname: request.hostname,
+    remoteAddress: request.ip,
+    remotePort: request.socket.remotePort,
   };
 }
 

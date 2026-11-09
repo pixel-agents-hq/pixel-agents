@@ -63,9 +63,28 @@ interface FurnitureAsset {
   frame?: number;
 }
 
-export interface WorkspaceFolder {
+export interface Directory {
   name: string;
   path: string;
+  /** Where the entry came from. Host-contributed entries (VS Code's workspace
+   *  folders, standalone's start directory) are read-only in the office. */
+  source: 'user' | 'host';
+}
+
+/** A refused saveDirectory, shown inline in the Directory modal. `seq` rises
+ *  with every rejection so a repeat of the same one still reads as new. */
+export interface DirectoryRejection {
+  path: string;
+  reason: string;
+  seq: number;
+}
+
+/** An accepted saveDirectory, acked to this office alone: the entry as the host
+ *  stored it (its name may not be anything this office typed). `seq` rises with
+ *  every ack, like DirectoryRejection's. */
+export interface DirectorySaved {
+  directory: Directory;
+  seq: number;
 }
 
 interface ExtensionMessageState {
@@ -73,14 +92,27 @@ interface ExtensionMessageState {
   selectedAgent: number | null;
   agentTools: Record<number, ToolActivity[]>;
   agentStatuses: Record<number, string>;
+  /** Agents whose last turn ended awaiting user input (vs a plain done). */
+  agentAwaitingInput: Record<number, boolean>;
+  /** Latch: true once an agent has had any activity (first tool or status). */
+  agentSeenActivity: Record<number, boolean>;
   subagentTools: Record<number, Record<string, ToolActivity[]>>;
   subagentCharacters: SubagentCharacter[];
   layoutReady: boolean;
   layoutWasReset: boolean;
   loadedAssets?: { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> };
-  workspaceFolders: WorkspaceFolder[];
-  /** Distinct folderNames seen across agents this session — source for the Areas folder dropdown. */
-  agentFolderNames: string[];
+  directories: Directory[];
+  /** Last refused saveDirectory/removeDirectory. The Directory modal shows it
+   *  inline. */
+  directoryRejection: DirectoryRejection | null;
+  /** Last accepted saveDirectory from this office: what closes the modal and
+   *  keys its Area mapping. */
+  directorySaved: DirectorySaved | null;
+  /** Paths the host recovered from past sessions, offered as taps in the
+   *  Directory modal. Refreshed every time the modal asks. */
+  directorySuggestions: string[];
+  /** Distinct directoryNames seen across agents this session — source for the Areas Directory dropdown. */
+  agentDirectoryNames: string[];
   externalAssetDirectories: string[];
   lastSeenVersion: string;
   extensionVersion: string;
@@ -110,6 +142,30 @@ interface ExtensionMessageState {
   setAreaMappings: (m: Record<string, string[]>) => void;
   showAreas: boolean;
   setShowAreas: (v: boolean) => void;
+  /** Persisted permission posture for this host; the host applies it at launch. */
+  bypassPermissions: boolean;
+  setBypassPermissions: (v: boolean) => void;
+  /** Whether the host lists its own Directories (workspace folders / start directory). */
+  showHostDirectories: boolean;
+  setShowHostDirectories: (v: boolean) => void;
+  /** A read-only office (standalone without the server token): every change it
+   *  sends is refused, so the UI hides the controls that would send one. */
+  officeReadOnly: boolean;
+  // Terminal (standalone only; always false/empty under VS Code, which owns its
+  // own terminals and never sends these messages)
+  terminalAvailable: boolean;
+  terminalUnavailableReason: string | null;
+  /** Agent ids with a live server-side PTY, in the order they opened. */
+  terminalAgentIds: number[];
+}
+
+/** Drop one key from a keyed-by-agent record without touching identity when
+ *  the key is absent (so React skips the re-render). */
+function omitKey<T>(record: Record<number, T>, id: number): Record<number, T> {
+  if (!(id in record)) return record;
+  const next = { ...record };
+  delete next[id];
+  return next;
 }
 
 function saveAgentSeats(os: OfficeState): void {
@@ -125,6 +181,10 @@ export function useExtensionMessages(
   const [selectedAgent, setSelectedAgent] = useState<number | null>(null);
   const [agentTools, setAgentTools] = useState<Record<number, ToolActivity[]>>({});
   const [agentStatuses, setAgentStatuses] = useState<Record<number, string>>({});
+  const [agentAwaitingInput, setAgentAwaitingInput] = useState<Record<number, boolean>>({});
+  const [agentSeenActivity, setAgentSeenActivity] = useState<Record<number, boolean>>({});
+  const markSeenActivity = (id: number) =>
+    setAgentSeenActivity((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
   const [subagentTools, setSubagentTools] = useState<
     Record<number, Record<string, ToolActivity[]>>
   >({});
@@ -134,8 +194,11 @@ export function useExtensionMessages(
   const [loadedAssets, setLoadedAssets] = useState<
     { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> } | undefined
   >();
-  const [workspaceFolders, setWorkspaceFolders] = useState<WorkspaceFolder[]>([]);
-  const [agentFolderNames, setAgentFolderNames] = useState<string[]>([]);
+  const [directories, setDirectories] = useState<Directory[]>([]);
+  const [directoryRejection, setDirectoryRejection] = useState<DirectoryRejection | null>(null);
+  const [directorySaved, setDirectorySaved] = useState<DirectorySaved | null>(null);
+  const [directorySuggestions, setDirectorySuggestions] = useState<string[]>([]);
+  const [agentDirectoryNames, setAgentDirectoryNames] = useState<string[]>([]);
   const [externalAssetDirectories, setExternalAssetDirectories] = useState<string[]>([]);
   const [lastSeenVersion, setLastSeenVersion] = useState('');
   const [extensionVersion, setExtensionVersion] = useState('');
@@ -153,6 +216,16 @@ export function useExtensionMessages(
   const consentRequest = consentQueue[0] ?? null;
   const [areaMappings, setAreaMappings] = useState<Record<string, string[]>>({});
   const [showAreas, setShowAreas] = useState(false);
+  const [bypassPermissions, setBypassPermissions] = useState(false);
+  const [showHostDirectories, setShowHostDirectories] = useState(false);
+  // Never sent under VS Code, so it stays false there.
+  const [officeReadOnly, setOfficeReadOnly] = useState(false);
+  // Terminal control plane (standalone only; the server never sends these in
+  // VS Code mode, so terminalAvailable stays false and no terminal UI renders).
+  const [terminalAvailable, setTerminalAvailable] = useState(false);
+  const [terminalUnavailableReason, setTerminalUnavailableReason] = useState<string | null>(null);
+  /** Agent ids with a live PTY, in the order their terminals opened. */
+  const [terminalAgentIds, setTerminalAgentIds] = useState<number[]>([]);
 
   // The renderer keeps its own module-level copy (read every rAF frame), so both
   // sources of truth move together — the persisted value on settingsLoaded and
@@ -175,12 +248,12 @@ export function useExtensionMessages(
     // Buffer agents from existingAgents until layout is loaded
     let pendingAgents: PendingAgent[] = [];
 
-    // Accumulate distinct folderNames seen across agents (never removed during the
-    // session): the source for the Areas folder-mapping dropdown, so a folder stays
+    // Accumulate distinct directoryNames seen across agents (never removed during the
+    // session): the source for the Areas Directory-mapping dropdown, so a Directory stays
     // editable even after its agents close.
-    const noteFolderName = (name?: string) => {
+    const noteDirectoryName = (name?: string) => {
       if (!name) return;
-      setAgentFolderNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+      setAgentDirectoryNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -215,6 +288,31 @@ export function useExtensionMessages(
         return;
       }
 
+      if (msg.type === 'officeAccess') {
+        setOfficeReadOnly(msg.readOnly === true);
+        return;
+      }
+
+      if (msg.type === 'terminalAvailability') {
+        setTerminalAvailable(msg.available as boolean);
+        setTerminalUnavailableReason((msg.reason as string | undefined) ?? null);
+        return;
+      }
+
+      if (msg.type === 'terminalSessionOpened') {
+        // Deduped: webviewReady re-announces every live session so a reloaded
+        // client rebuilds its tabs, and that can race a live agentCreated.
+        const agentId = msg.agentId as number;
+        setTerminalAgentIds((prev) => (prev.includes(agentId) ? prev : [...prev, agentId]));
+        return;
+      }
+
+      if (msg.type === 'terminalSessionClosed') {
+        const agentId = msg.agentId as number;
+        setTerminalAgentIds((prev) => prev.filter((id) => id !== agentId));
+        return;
+      }
+
       if (msg.type === 'layoutLoaded') {
         // Skip external layout updates while editor has unsaved changes
         if (layoutReadyRef.current && isEditDirty?.()) {
@@ -232,7 +330,7 @@ export function useExtensionMessages(
         }
         // Add buffered agents now that layout (and seats) are correct
         for (const p of pendingAgents) {
-          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
+          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.directoryName);
           if (p.isHeadless) os.setHeadless(p.id, true);
         }
         pendingAgents = [];
@@ -246,7 +344,7 @@ export function useExtensionMessages(
         }
       } else if (msg.type === 'agentCreated') {
         const id = msg.id as number;
-        const folderName = msg.folderName as string | undefined;
+        const directoryName = msg.directoryName as string | undefined;
         const isTeammate = msg.isTeammate as boolean | undefined;
         const teammateName = msg.teammateName as string | undefined;
         const teammateParentId = msg.parentAgentId as number | undefined;
@@ -257,7 +355,7 @@ export function useExtensionMessages(
           setSelectedAgent(id);
         }
         if (isTeammate && teammateParentId !== undefined) {
-          // Teammate: inherit parent's palette and workspace folderName (teammate runs
+          // Teammate: inherit parent's palette and workspace directoryName (teammate runs
           // in the same workspace as the lead). Name shown via agentName (teamRoleLabel).
           // Seat them at the free seat closest to the lead so the team clusters.
           const parentCh = os.characters.get(teammateParentId);
@@ -269,10 +367,10 @@ export function useExtensionMessages(
             hueShift,
             undefined,
             undefined,
-            parentCh?.folderName,
+            parentCh?.directoryName,
             teammateParentId,
           );
-          noteFolderName(parentCh?.folderName);
+          noteDirectoryName(parentCh?.directoryName);
           // Set team metadata on the character
           const ch = os.characters.get(id);
           if (ch) {
@@ -283,8 +381,8 @@ export function useExtensionMessages(
         } else {
           const palette = msg.palette as number | undefined;
           const hueShift = msg.hueShift as number | undefined;
-          os.addAgent(id, palette, hueShift, undefined, undefined, folderName);
-          noteFolderName(folderName);
+          os.addAgent(id, palette, hueShift, undefined, undefined, directoryName);
+          noteDirectoryName(directoryName);
           if (isHeadlessAgent(msg.isExternal as boolean | undefined)) {
             os.setHeadless(id, true);
           }
@@ -294,24 +392,15 @@ export function useExtensionMessages(
         const id = msg.id as number;
         setAgents((prev) => prev.filter((a) => a !== id));
         setSelectedAgent((prev) => (prev === id ? null : prev));
-        setAgentTools((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setAgentStatuses((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setSubagentTools((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
+        // Drop the drawer tab too. terminalSessionClosed normally does this, but
+        // an agent can be removed without its PTY ever reporting an exit (e.g.
+        // stale cleanup), and a tab for a gone agent would attach to nothing.
+        setTerminalAgentIds((prev) => prev.filter((a) => a !== id));
+        setAgentTools((prev) => omitKey(prev, id));
+        setAgentStatuses((prev) => omitKey(prev, id));
+        setAgentAwaitingInput((prev) => omitKey(prev, id));
+        setAgentSeenActivity((prev) => omitKey(prev, id));
+        setSubagentTools((prev) => omitKey(prev, id));
         // Remove all sub-agent characters belonging to this agent
         delete backgroundParentToolIdsRef.current[id];
         os.removeAllSubagents(id);
@@ -320,11 +409,11 @@ export function useExtensionMessages(
       } else if (msg.type === 'existingAgents') {
         const incoming = msg.agents as number[];
         const meta = (msg.agentMeta || {}) as Record<number, ExistingAgentMeta>;
-        const folderNames = (msg.folderNames || {}) as Record<number, string>;
+        const directoryNames = (msg.directoryNames || {}) as Record<number, string>;
         const externalAgents = (msg.externalAgents || {}) as Record<number, boolean>;
         const headlessAgents: Record<number, boolean> = {};
         for (const id of incoming) {
-          noteFolderName(folderNames[id]);
+          noteDirectoryName(directoryNames[id]);
           if (isHeadlessAgent(externalAgents[id])) headlessAgents[id] = true;
         }
         // Order-independent restore: add agents now if the layout (and its seats)
@@ -336,7 +425,7 @@ export function useExtensionMessages(
             os,
             incoming,
             meta,
-            folderNames,
+            directoryNames,
             layoutReadyRef.current,
             pendingAgents,
             headlessAgents,
@@ -359,6 +448,7 @@ export function useExtensionMessages(
         const toolId = msg.toolId as string;
         const status = msg.status as string;
         const permissionActive = msg.permissionActive as boolean | undefined;
+        markSeenActivity(id);
         setAgentTools((prev) => {
           const list = prev[id] || [];
           if (list.some((t) => t.toolId === toolId)) return prev;
@@ -421,12 +511,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentToolsClear') {
         const id = msg.id as number;
         const bgSet = backgroundParentToolIdsRef.current[id];
-        setAgentTools((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
+        setAgentTools((prev) => omitKey(prev, id));
         // Keep sub-tool rows of live background spawns: their sub-characters
         // survive the parent's turn end and stay animated by their own activity.
         setSubagentTools((prev) => {
@@ -474,14 +559,15 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentStatus') {
         const id = msg.id as number;
         const status = msg.status as string;
+        markSeenActivity(id);
         setAgentStatuses((prev) => {
-          if (status === 'active') {
-            if (!(id in prev)) return prev;
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          }
+          if (status === 'active') return omitKey(prev, id);
           return { ...prev, [id]: status };
+        });
+        setAgentAwaitingInput((prev) => {
+          const awaiting = status === 'waiting' && msg.awaitingInput === true;
+          if ((prev[id] ?? false) === awaiting) return prev;
+          return { ...prev, [id]: awaiting };
         });
         os.setAgentActive(id, status === 'active');
         if (status === 'waiting') {
@@ -641,9 +727,20 @@ export function useExtensionMessages(
         const mappings = (msg.mappings ?? {}) as Record<string, string[]>;
         setAreaMappings(mappings);
         os.setAreaMappings(mappings);
-      } else if (msg.type === 'workspaceFolders') {
-        const folders = msg.folders as WorkspaceFolder[];
-        setWorkspaceFolders(folders);
+      } else if (msg.type === 'directoriesLoaded') {
+        const directories = msg.directories as Directory[];
+        setDirectories(directories);
+      } else if (msg.type === 'directorySuggestions') {
+        setDirectorySuggestions((msg.paths ?? []) as string[]);
+      } else if (msg.type === 'directorySaved') {
+        const directory = msg.directory as Directory;
+        setDirectorySaved((prev) => ({ directory, seq: (prev?.seq ?? 0) + 1 }));
+      } else if (msg.type === 'directoryRejected') {
+        setDirectoryRejection((prev) => ({
+          path: msg.path as string,
+          reason: msg.reason as string,
+          seq: (prev?.seq ?? 0) + 1,
+        }));
       } else if (msg.type === 'settingsLoaded') {
         const soundOn = msg.soundEnabled as boolean;
         setSoundEnabled(soundOn);
@@ -665,6 +762,12 @@ export function useExtensionMessages(
         if (typeof msg.showAreas === 'boolean') {
           setShowAreas(msg.showAreas as boolean);
         }
+        if (typeof msg.bypassPermissions === 'boolean') {
+          setBypassPermissions(msg.bypassPermissions as boolean);
+        }
+        if (typeof msg.showHostDirectories === 'boolean') {
+          setShowHostDirectories(msg.showHostDirectories as boolean);
+        }
         if (Array.isArray(msg.externalAssetDirectories)) {
           setExternalAssetDirectories(msg.externalAssetDirectories as string[]);
         }
@@ -673,6 +776,12 @@ export function useExtensionMessages(
         }
         if (typeof msg.extensionVersion === 'string') {
           setExtensionVersion(msg.extensionVersion as string);
+        }
+      } else if (msg.type === 'bypassPermissionsUpdated') {
+        // Another office (or this one) changed the host's posture: every launch
+        // uses it, so the Settings toggle must show it.
+        if (typeof msg.enabled === 'boolean') {
+          setBypassPermissions(msg.enabled);
         }
       } else if (msg.type === 'hooksStatus') {
         if (typeof msg.installed === 'boolean' && typeof msg.providerId === 'string') {
@@ -763,13 +872,18 @@ export function useExtensionMessages(
     selectedAgent,
     agentTools,
     agentStatuses,
+    agentAwaitingInput,
+    agentSeenActivity,
     subagentTools,
     subagentCharacters,
     layoutReady,
     layoutWasReset,
     loadedAssets,
-    workspaceFolders,
-    agentFolderNames,
+    directories,
+    directoryRejection,
+    directorySaved,
+    directorySuggestions,
+    agentDirectoryNames,
     externalAssetDirectories,
     lastSeenVersion,
     extensionVersion,
@@ -799,5 +913,13 @@ export function useExtensionMessages(
     setAreaMappings,
     showAreas,
     setShowAreas,
+    bypassPermissions,
+    setBypassPermissions,
+    showHostDirectories,
+    setShowHostDirectories,
+    officeReadOnly,
+    terminalAvailable,
+    terminalUnavailableReason,
+    terminalAgentIds,
   };
 }

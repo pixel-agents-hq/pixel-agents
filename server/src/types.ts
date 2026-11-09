@@ -20,8 +20,8 @@ export interface AgentState {
   isWaiting: boolean;
   permissionSent: boolean;
   hadToolsInTurn: boolean;
-  /** Workspace folder name (only set for multi-root workspaces) */
-  folderName?: string;
+  /** Directory name — the agent's origin label (only set for multi-root workspaces) */
+  directoryName?: string;
   /** Timestamp of last JSONL data received (ms since epoch) */
   lastDataAt: number;
   /** Total JSONL lines processed for this agent */
@@ -96,7 +96,12 @@ export interface PersistedAgent {
   isExternal?: boolean;
   jsonlFile: string;
   projectDir: string;
-  /** Workspace folder name (only set for multi-root workspaces) */
+  /** Directory name — the agent's origin label (only set for multi-root workspaces) */
+  directoryName?: string;
+  /** Pre-Directory spelling of `directoryName`, written by releases up to
+   *  v1.4.x. Read as a fallback on restore so an upgrade doesn't strip the
+   *  label (and the Area-mapping key) off every agent from the previous
+   *  session; never written — the next persist rewrites it as directoryName. */
   folderName?: string;
 
   // -- Agent Teams --

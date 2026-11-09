@@ -9,11 +9,30 @@ import {
 import type { OfficeLayout, TileType as TileTypeVal } from '../types.js';
 import { EditTool, TileType } from '../types.js';
 
+/**
+ * A catalog item queued for placement. `color` is what the Copy tool lifted off
+ * a placed item: a colour, or null for an item that had none — an absence is
+ * copied too, so it must not fall through to the palette. Absent (undefined)
+ * when nothing was copied: a plain catalog pick, which takes the palette colour.
+ */
+export interface FurniturePlacement {
+  type: string;
+  color?: ColorValue | null;
+}
+
 export class EditorState {
   isEditMode = false;
   activeTool: EditTool = EditTool.SELECT;
   selectedTileType: TileTypeVal = TileType.FLOOR_1;
-  selectedFurnitureType = ''; // asset ID, set when catalog loads
+  /**
+   * The catalog item being placed, or null when none is picked. `color` is
+   * set only when the Copy tool lifted the item off a placed one: that copy
+   * goes down in the colour it was taken in (uncoloured included), and nothing
+   * else does. Type and
+   * colour travel together, so picking another catalog item (or clearing the
+   * pick) replaces both in one assignment.
+   */
+  placing: FurniturePlacement | null = null;
 
   // Floor color settings (applied to new tiles when painting)
   floorColor: ColorValue = { ...DEFAULT_FLOOR_COLOR };
@@ -27,8 +46,14 @@ export class EditorState {
   // Tracks toggle direction during wall drag (true=adding walls, false=removing, null=undecided)
   wallDragAdding: boolean | null = null;
 
-  // Picked furniture color (copied by pick tool, applied on placement)
+  /**
+   * Palette-wide colour for new furniture: set from the Furniture tab's Color
+   * sliders, tints every catalog thumbnail, and applies to whatever is placed.
+   */
   pickedFurnitureColor: ColorValue | null = null;
+
+  /** Tool the colour eyedropper returns to once it has taken a colour (or is cancelled). */
+  colorPickReturnTool: EditTool = EditTool.SELECT;
 
   // Ghost preview position
   ghostCol = -1;
@@ -40,6 +65,17 @@ export class EditorState {
 
   // Mouse drag state (tile paint)
   isDragging = false;
+
+  /**
+   * The run of edits the newest undo entry covers, so a continuous gesture
+   * collapses to one undo: `'stroke'` for a floor / wall / erase / carpet
+   * click-drag, `'wallColor'` for the wall colour sliders, `` `color:${uid}` ``
+   * for a placed item's colour sliders. An edit pushes undo only when its key
+   * differs from this one (see {@link beginEdit}); null means the next edit
+   * always starts a fresh entry. Cleared by endStroke (mouse up / leave, tool
+   * change, Esc), by selection changes, and by undo / redo.
+   */
+  undoSession: string | null = null;
 
   // Undo / Redo stacks
   undoStack: OfficeLayout[] = [];
@@ -55,6 +91,13 @@ export class EditorState {
   dragOffsetCol = 0;
   dragOffsetRow = 0;
   isDragMoving = false;
+  /**
+   * Alt held during the current drag → drop a copy of the item (and everything
+   * on its surface) instead of moving it. Tracked live off every mouse event of
+   * the drag, so pressing or releasing Alt mid-drag flips the ghost, and the
+   * drop always commits whatever the ghost last showed.
+   */
+  dragDuplicate = false;
 
   // ── Carpet editor state ──────────────────────────────────────────
   /** Currently selected carpet variant for paint. */
@@ -65,14 +108,32 @@ export class EditorState {
   carpetAccentColor: ColorValue = { ...CARPET_DEFAULT_ACCENT_COLOR };
   /** Stroke direction: true=erase, false=paint, null=stroke not yet started. */
   carpetDragErasing: boolean | null = null;
-  /** Layout snapshot at the start of the current carpet stroke (one undo entry per stroke). */
-  carpetStrokeInitialLayout: OfficeLayout | null = null;
 
   // ── Area editor state ────────────────────────────────────────────
   /** Which Area label is the AREA_PAINT tool currently painting. */
   selectedAreaLabel: string | null = null;
   /** First tile of an area drag sets direction: true=erase same label, false=paint. */
   areaDragErasing: boolean | null = null;
+
+  /**
+   * Enter the undo session an edit belongs to. Returns true when the edit opens
+   * a new undo entry — the caller pushes undo then — and false when it extends
+   * the session the newest entry already covers. `null` is a discrete edit:
+   * always its own entry, and it ends whatever session was running.
+   */
+  beginEdit(session: string | null): boolean {
+    const fresh = session === null || session !== this.undoSession;
+    this.undoSession = session;
+    return fresh;
+  }
+
+  /** Close the current stroke (or slider run) so the next edit starts a fresh undo entry. */
+  endStroke(): void {
+    this.undoSession = null;
+    this.carpetDragErasing = null;
+    this.areaDragErasing = null;
+    this.wallDragAdding = null;
+  }
 
   pushUndo(layout: OfficeLayout): void {
     this.undoStack.push(layout);
@@ -101,8 +162,84 @@ export class EditorState {
     this.redoStack = [];
   }
 
+  /**
+   * Set (or clear) the selected placed item. A new selection ends any colour
+   * slider run, so re-selecting an item and dragging its sliders again is a
+   * fresh undo entry.
+   */
+  setSelection(uid: string | null): void {
+    this.selectedFurnitureUid = uid;
+    this.undoSession = null;
+  }
+
   clearSelection(): void {
-    this.selectedFurnitureUid = null;
+    this.setSelection(null);
+  }
+
+  /**
+   * Select a placed item the way a click on it does, collapsing whatever tool
+   * tab is open: picking something out of the office means "work on this one",
+   * so the Furniture / Floor / Walls panel gets out of the way and the toolbar
+   * is left showing the item's own controls. The picked catalog type survives —
+   * reopening the Furniture tab resumes placing what was being placed.
+   */
+  selectPlacedFurniture(uid: string): void {
+    this.setSelection(uid);
+    this.activeTool = EditTool.SELECT;
+    this.clearGhost();
+  }
+
+  /** Asset ID of the catalog item being placed, or '' when none is picked. */
+  get placingType(): string {
+    return this.placing?.type ?? '';
+  }
+
+  /**
+   * Furniture Copy: queue a copy of a placed item — its type, and its colour
+   * for this copy only (writing the palette-wide colour would restyle every
+   * catalog preview). An uncoloured item is copied as explicitly uncoloured.
+   */
+  pickUpCopy(item: { type: string; color?: ColorValue }): void {
+    this.placing = { type: item.type, color: item.color ? { ...item.color } : null };
+  }
+
+  /**
+   * Colour the next placed item gets, and the colour its ghost previews: what
+   * the Copy tool lifted off an existing item — a colour or its absence — wins
+   * over the palette-wide one, for as long as that copy is what's being placed.
+   */
+  placementColor(): ColorValue | null {
+    const placing = this.placing;
+    if (placing && placing.color !== undefined) return placing.color;
+    return this.pickedFurnitureColor;
+  }
+
+  /**
+   * Set the palette-wide colour. Reaching for the sliders is a deliberate
+   * choice of colour, so it also governs the item being placed — it outranks
+   * whatever the Copy tool lifted off a placed item.
+   */
+  setPaletteColor(color: ColorValue | null): void {
+    this.pickedFurnitureColor = color;
+    if (this.placing && this.placing.color !== undefined)
+      this.placing = { type: this.placing.type };
+  }
+
+  /**
+   * Arm the colour-only eyedropper, remembering the tool to come back to — it
+   * can be armed from the palette sliders (Furniture tab) or from a selected
+   * item's sliders, and each has to return to its own tool.
+   */
+  beginColorPick(): void {
+    if (this.activeTool === EditTool.COLOR_PICK) return;
+    this.colorPickReturnTool = this.activeTool;
+    this.activeTool = EditTool.COLOR_PICK;
+    this.clearGhost();
+  }
+
+  /** Leave the colour eyedropper, armed or spent, for the tool it came from. */
+  endColorPick(): void {
+    this.activeTool = this.colorPickReturnTool;
   }
 
   clearGhost(): void {
@@ -117,6 +254,7 @@ export class EditorState {
     startRow: number,
     offsetCol: number,
     offsetRow: number,
+    duplicate = false,
   ): void {
     this.dragUid = uid;
     this.dragStartCol = startCol;
@@ -124,11 +262,13 @@ export class EditorState {
     this.dragOffsetCol = offsetCol;
     this.dragOffsetRow = offsetRow;
     this.isDragMoving = false;
+    this.dragDuplicate = duplicate;
   }
 
   clearDrag(): void {
     this.dragUid = null;
     this.isDragMoving = false;
+    this.dragDuplicate = false;
   }
 
   reset(): void {
@@ -144,11 +284,12 @@ export class EditorState {
     this.isDirty = false;
     this.dragUid = null;
     this.isDragMoving = false;
+    this.dragDuplicate = false;
     this.carpetVariant = 0;
     this.carpetColor = { ...CARPET_DEFAULT_COLOR };
     this.carpetAccentColor = { ...CARPET_DEFAULT_ACCENT_COLOR };
     this.carpetDragErasing = null;
-    this.carpetStrokeInitialLayout = null;
+    this.undoSession = null;
     this.selectedAreaLabel = null;
     this.areaDragErasing = null;
   }

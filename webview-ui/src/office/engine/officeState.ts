@@ -62,7 +62,23 @@ export class OfficeState {
   pets: Pet[] = [];
   /** Accumulated time for furniture animation frame cycling */
   furnitureAnimTimer = 0;
-  selectedAgentId: number | null = null;
+  private _selectedAgentId: number | null = null;
+  private readonly selectionListeners = new Set<(id: number | null) => void>();
+  get selectedAgentId(): number | null {
+    return this._selectedAgentId;
+  }
+  set selectedAgentId(id: number | null) {
+    if (this._selectedAgentId === id) return;
+    this._selectedAgentId = id;
+    for (const listener of this.selectionListeners) listener(id);
+  }
+  /** Observe selectedAgentId changes. React (the card bars) subscribes so
+   *  imperative canvas selection can drive card highlights — everything else
+   *  about selection stays out of React state. Returns the unsubscribe. */
+  subscribeSelection(listener: (id: number | null) => void): () => void {
+    this.selectionListeners.add(listener);
+    return () => this.selectionListeners.delete(listener);
+  }
   cameraFollowId: number | null = null;
   hoveredAgentId: number | null = null;
   hoveredTile: { col: number; row: number } | null = null;
@@ -73,9 +89,9 @@ export class OfficeState {
   private nextSubagentId = -1;
 
   /**
-   * folderName → list of Area labels that workspace folder belongs to.
+   * directoryName → list of Area labels that Directory belongs to.
    * Populated by useExtensionMessages on `areaMappingsLoaded`. Consulted by
-   * `findFreeSeat()` to bias new agents toward seats inside their folder's Area.
+   * `findFreeSeat()` to bias new agents toward seats inside their Directory's Area.
    */
   areaMappings: Record<string, string[]> = {};
 
@@ -179,7 +195,7 @@ export class OfficeState {
     // Second pass: assign remaining characters to free seats
     for (const ch of this.characters.values()) {
       if (ch.seatId) continue;
-      const seatId = this.findFreeSeat(ch.folderName);
+      const seatId = this.findFreeSeat(ch.directoryName);
       if (seatId) {
         this.seats.get(seatId)!.assigned = true;
         ch.seatId = seatId;
@@ -346,7 +362,7 @@ export class OfficeState {
   /**
    * 3-stage seat picker for top-level agents.
    *
-   *   Stage 1: If `folderName` is given and `areaMappings[folderName]` lists
+   *   Stage 1: If `directoryName` is given and `areaMappings[directoryName]` lists
    *            Area labels, prefer free seats whose tile is labeled with one
    *            of those areas.
    *   Stage 2: Prefer free seats whose tile has NO area label (unzoned).
@@ -357,7 +373,7 @@ export class OfficeState {
    * preserves pre-Areas single-stage behavior (skips Stage 1; Stage 2 picks
    * unzoned seats from a layout without `areaTiles`, which is every seat).
    */
-  private findFreeSeat(folderName?: string): string | null {
+  private findFreeSeat(directoryName?: string): string | null {
     const electronicsTiles = this.buildElectronicsTileSet();
     const freeSeats: string[] = [];
     for (const [uid, seat] of this.seats) {
@@ -365,9 +381,9 @@ export class OfficeState {
     }
     if (freeSeats.length === 0) return null;
 
-    const areaLabels = folderName ? this.areaMappings[folderName] : undefined;
+    const areaLabels = directoryName ? this.areaMappings[directoryName] : undefined;
 
-    // Stage 1 — in-area seats for the folder's mapped Area labels.
+    // Stage 1 — in-area seats for the Directory's mapped Area labels.
     if (areaLabels && areaLabels.length > 0) {
       const wanted = new Set(areaLabels);
       const inArea = freeSeats.filter((uid) => {
@@ -428,7 +444,7 @@ export class OfficeState {
     preferredHueShift?: number,
     preferredSeatId?: string,
     skipSpawnEffect?: boolean,
-    folderName?: string,
+    directoryName?: string,
     nearAgentId?: number,
   ): void {
     if (this.characters.has(id)) return;
@@ -461,7 +477,7 @@ export class OfficeState {
       seatId = closestFreeSeat(this.seats, anchorAt.col, anchorAt.row);
     }
     if (!seatId) {
-      seatId = this.findFreeSeat(folderName);
+      seatId = this.findFreeSeat(directoryName);
     }
 
     let ch: Character;
@@ -485,8 +501,8 @@ export class OfficeState {
       ch.tileRow = spawn.row;
     }
 
-    if (folderName) {
-      ch.folderName = folderName;
+    if (directoryName) {
+      ch.directoryName = directoryName;
     }
     if (!skipSpawnEffect) {
       startMatrixEffect(ch, 'spawn');
@@ -548,6 +564,26 @@ export class OfficeState {
   cancelGreeterCamera(): void {
     this.greeterCameraTarget = null;
     this.greeterCameraCancelled = true;
+  }
+
+  /** Every manual pan (mouse, wheel, touch) takes the camera back from both
+   *  automatic drivers: character follow and the greeter's ask. */
+  breakCameraFollow(): void {
+    this.cameraFollowId = null;
+    this.cancelGreeterCamera();
+  }
+
+  /** Select an agent's character and have the camera follow it — what a card
+   *  tap does to the office. No-op for an agent with no character. */
+  selectAndFollow(id: number): void {
+    if (!this.characters.has(id)) return;
+    this.selectedAgentId = id;
+    this.cameraFollowId = id;
+  }
+
+  /** The agent that owns `id`'s terminal: a sub-agent's parent, else itself. */
+  terminalOwnerOf(id: number): number {
+    return this.subagentMeta.get(id)?.parentAgentId ?? id;
   }
 
   removeAgent(id: number): void {

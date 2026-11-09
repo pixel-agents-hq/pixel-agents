@@ -273,9 +273,12 @@ describe('/ws privileged-message gate', () => {
     }
   });
 
-  async function startStandalone(): Promise<{ port: number; token: string }> {
+  async function startStandalone(
+    allowedHosts: string[] = [],
+  ): Promise<{ port: number; token: string }> {
     const config = await server.start({
       embedded: false,
+      allowedHosts,
       store: new AgentStateStore(),
       // The real cli.ts side effect, minus the actual install: an enable
       // toggle over this socket IS the consent grant (server/src/cli.ts).
@@ -397,6 +400,44 @@ describe('/ws privileged-message gate', () => {
     const result = await connectTo(
       `ws://localhost:${port.toString()}/ws?token=${encodeURIComponent(token)}`,
       { Origin: `http://localhost:${port.toString()}` },
+    );
+    sockets.push(result.socket);
+
+    await sendToggle(result.socket, true);
+    expect(sideEffects).toEqual([true]);
+    expect(readHooksConsent()).toBe(true);
+  });
+
+  // ── The Host allowlist (wsAuth.privilegedHostnames) ──
+
+  // Defence in depth on top of the token, applied exactly as on the terminal
+  // socket: a VALID token arriving under a Host the operator never listed is
+  // watch-only. This is the rebinding shape with the token somehow in hand.
+  it('refuses setHooksEnabled from a tokened connection under an unlisted Host', async () => {
+    const { port, token } = await startStandalone();
+    const forged = `evil.example:${port.toString()}`;
+
+    const result = await connectTo(
+      `ws://127.0.0.1:${port.toString()}/ws?token=${encodeURIComponent(token)}`,
+      { Origin: `http://${forged}`, Host: forged },
+    );
+    sockets.push(result.socket);
+    expect(result.accepted).toBe(true);
+
+    await sendToggle(result.socket, true);
+    expect(sideEffects).toEqual([]);
+    expect(readHooksConsent()).toBe(false);
+  });
+
+  // The reverse-proxy case --allowed-host exists for: Tailscale Serve forwards
+  // to the loopback bind with its public name as Host and Origin.
+  it('allows setHooksEnabled through a reverse proxy named with --allowed-host', async () => {
+    const proxy = 'my-mac.tailnet.ts.net';
+    const { port, token } = await startStandalone([proxy]);
+
+    const result = await connectTo(
+      `ws://127.0.0.1:${port.toString()}/ws?token=${encodeURIComponent(token)}`,
+      { Origin: `https://${proxy}`, Host: proxy },
     );
     sockets.push(result.socket);
 

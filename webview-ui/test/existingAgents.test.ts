@@ -33,7 +33,7 @@ interface AddAgentCall {
   hueShift?: number;
   seatId?: string;
   skipSpawnEffect?: boolean;
-  folderName?: string;
+  directoryName?: string;
 }
 
 /** A fake office that records addAgent calls, mirroring how officeCanvasCursor
@@ -48,9 +48,9 @@ function fakeOffice(
     calls,
     headless,
     characters: { has: (id: number) => ids.has(id) },
-    addAgent: (id, palette, hueShift, seatId, skipSpawnEffect, folderName) => {
+    addAgent: (id, palette, hueShift, seatId, skipSpawnEffect, directoryName) => {
       ids.add(id);
-      calls.push({ id, palette, hueShift, seatId, skipSpawnEffect, folderName });
+      calls.push({ id, palette, hueShift, seatId, skipSpawnEffect, directoryName });
     },
     setHeadless: (id, isHeadless) => {
       if (isHeadless) headless.push(id);
@@ -66,9 +66,9 @@ test('layout ready: adds restored agents immediately with their seat metadata', 
   const meta: Record<number, ExistingAgentMeta> = {
     5: { palette: 2, hueShift: 90, seatId: 'seat-a' },
   };
-  const folderNames: Record<number, string> = { 5: 'alpha' };
+  const directoryNames: Record<number, string> = { 5: 'alpha' };
 
-  const addedDirectly = reconcileExistingAgents(os, [5], meta, folderNames, true, pending);
+  const addedDirectly = reconcileExistingAgents(os, [5], meta, directoryNames, true, pending);
 
   assert.equal(addedDirectly, true);
   assert.equal(pending.length, 0, 'nothing should be buffered once the layout is ready');
@@ -80,7 +80,7 @@ test('layout ready: adds restored agents immediately with their seat metadata', 
       hueShift: 90,
       seatId: 'seat-a',
       skipSpawnEffect: true,
-      folderName: 'alpha',
+      directoryName: 'alpha',
     },
   ]);
 });
@@ -93,14 +93,21 @@ test('layout not ready: buffers restored agents for the later layoutLoaded flush
   const meta: Record<number, ExistingAgentMeta> = {
     5: { palette: 2, hueShift: 90, seatId: 'seat-a' },
   };
-  const folderNames: Record<number, string> = { 5: 'alpha' };
+  const directoryNames: Record<number, string> = { 5: 'alpha' };
 
-  const addedDirectly = reconcileExistingAgents(os, [5], meta, folderNames, false, pending);
+  const addedDirectly = reconcileExistingAgents(os, [5], meta, directoryNames, false, pending);
 
   assert.equal(addedDirectly, false);
   assert.equal(os.calls.length, 0, 'no agent should be added before the layout is ready');
   assert.deepEqual(pending, [
-    { id: 5, palette: 2, hueShift: 90, seatId: 'seat-a', folderName: 'alpha', isHeadless: false },
+    {
+      id: 5,
+      palette: 2,
+      hueShift: 90,
+      seatId: 'seat-a',
+      directoryName: 'alpha',
+      isHeadless: false,
+    },
   ]);
 });
 
@@ -173,7 +180,7 @@ test('layout ready: agent with no metadata is still added with undefined fields'
       hueShift: undefined,
       seatId: undefined,
       skipSpawnEffect: true,
-      folderName: undefined,
+      directoryName: undefined,
     },
   ]);
 });

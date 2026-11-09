@@ -13,8 +13,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import type { HookProvider } from '../../core/src/provider.js';
+import { createAgentState } from './agentState.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import { DEFAULT_MAX_CONTEXT_TOKENS } from './constants.js';
 import { DismissalTracker } from './dismissalTracker.js';
 import {
   adoptExternalSessionFromHook,
@@ -376,6 +376,21 @@ export class AgentRuntime {
     this.store.persist();
   }
 
+  /**
+   * Close an agent the user (or its process) ended: its Teammates and watched
+   * Sub-agents go with it, and its transcript is dismissed so no scanner
+   * re-adopts it. Children first — once the Lead is gone, nothing can find
+   * them (a later sessionEnd resolves no agent).
+   */
+  closeAgent(id: number): void {
+    const agent = this.store.get(id);
+    if (!agent) return;
+    this.removeTeammates(id);
+    this.subagentWatch.removeByLead(id);
+    this.dismissalTracker.dismiss(agent.jsonlFile);
+    this.removeAgent(id);
+  }
+
   /** Remove all teammates of a lead agent. */
   removeTeammates(leadId: number): void {
     const teammates: number[] = [];
@@ -483,33 +498,16 @@ export class AgentRuntime {
         continue;
       }
 
-      const agent: AgentState = {
+      const agent = createAgentState({
         id: p.id,
         sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
-        terminalRef: undefined,
         isExternal: true,
         projectDir: p.projectDir,
         jsonlFile: p.jsonlFile,
-        fileOffset: 0,
-        lineBuffer: '',
-        activeToolIds: new Set(),
-        activeToolStatuses: new Map(),
-        activeToolNames: new Map(),
-        activeSubagentToolIds: new Map(),
-        activeSubagentToolNames: new Map(),
         // Live spawn ids survive the restart so the 1s scan can re-adopt the
         // spawns' transcripts and the completion queue-op still matches.
         backgroundAgentToolIds: new Set(p.backgroundAgentToolIds ?? []),
-        isWaiting: false,
-        permissionSent: false,
-        hadToolsInTurn: false,
-        lastDataAt: 0,
-        linesProcessed: 0,
-        seenUnknownRecordTypes: new Set(),
-        folderName: p.folderName,
-        hookDelivered: false,
-        contextTokens: 0,
-        maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
+        directoryName: p.directoryName ?? p.folderName,
         teamName: p.teamName,
         agentName: p.agentName,
         isTeamLead: p.isTeamLead,
@@ -517,7 +515,7 @@ export class AgentRuntime {
         teamUsesTmux: p.teamUsesTmux,
         palette: p.palette,
         hueShift: p.hueShift,
-      };
+      });
 
       assignPaletteIfNeeded(agent, this.store);
       this.store.set(p.id, agent);

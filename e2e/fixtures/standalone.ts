@@ -5,7 +5,11 @@ import type { TestInfo } from '@playwright/test';
 import { expect, test as base } from '@playwright/test';
 
 import { applyAllureLabels } from '../helpers/allure-labels';
-import { launchStandalone, type StandaloneSession } from '../helpers/standalone';
+import {
+  launchStandalone,
+  type LaunchStandaloneOptions,
+  type StandaloneSession,
+} from '../helpers/standalone';
 
 export interface StandaloneContext extends StandaloneSession {}
 
@@ -50,8 +54,14 @@ export const test = base.extend<{
    *  consent specs opt out via `test.use({ seedHooksConsent: false })` so the
    *  first-run dialog shows — they are the only ones that want it. */
   seedHooksConsent: boolean;
+  /** Per-test host options (e.g. extra CLI flags, mock claude on PATH). Override
+   *  with test.use({ standaloneOptions: {...} }) in a describe block. */
+  standaloneOptions: LaunchStandaloneOptions;
 }>({
   seedHooksConsent: [true, { option: true }],
+  // Per-test host options (e.g. extra CLI flags, mock claude on PATH). Override
+  // with test.use({ standaloneOptions: {...} }) in a describe block.
+  standaloneOptions: [{}, { option: true }],
   // Auto-fixture: tag every test with Allure epic + feature derived from its
   // @area: annotation and enclosing describe path. Runs before standalone.
   _allureLabels: [
@@ -61,8 +71,8 @@ export const test = base.extend<{
     },
     { auto: true },
   ],
-  standalone: async ({ page, seedHooksConsent }, use, testInfo) => {
-    const standalone = await launchStandalone(page, { seedHooksConsent });
+  standalone: async ({ page, seedHooksConsent, standaloneOptions }, use, testInfo) => {
+    const standalone = await launchStandalone(page, { seedHooksConsent, ...standaloneOptions });
 
     try {
       await use(standalone);
@@ -73,6 +83,13 @@ export const test = base.extend<{
         'server-json',
         path.join(standalone.tmpHome, '.pixel-agents', 'server.json'),
         'application/json',
+      );
+      // Only ever written when the host launched a mock claude (mockClaude: true).
+      await attachTextFileIfExists(
+        testInfo,
+        'mock-claude-invocations',
+        standalone.mockLogFile,
+        'text/plain',
       );
 
       try {

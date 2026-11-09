@@ -10,6 +10,10 @@ import { type HookServerConfig, waitForHookServer } from './hooks';
 
 const REPO_ROOT = path.join(__dirname, '../..');
 const STANDALONE_CLI = path.resolve(REPO_ROOT, 'dist', 'cli.js');
+const MOCK_CLAUDE_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude');
+const MOCK_CLAUDE_CMD_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude.cmd');
+const MOCK_CLAUDE_RUNNER_PATH = path.join(REPO_ROOT, 'e2e/fixtures/mock-claude-runner.cjs');
+const TAIL_FOLLOW_PATH = path.join(REPO_ROOT, 'e2e/fixtures/tail-follow.cjs');
 
 export interface RecordedServerMessage {
   type: string;
@@ -21,6 +25,9 @@ export interface StandaloneSession {
   workspaceDir: string;
   hostUrl: string;
   hookServerConfig: HookServerConfig;
+  /** Invocation log the mock claude appends to (under tmpHome/.claude-mock).
+   *  Only ever written when the session was launched with mockClaude: true. */
+  mockLogFile: string;
   getHostLogs: () => string;
   cleanup: () => Promise<void>;
   drainMessages: () => Promise<RecordedServerMessage[]>;
@@ -46,6 +53,23 @@ export interface LaunchStandaloneOptions {
    *  they are the only ones that want the dialog. Never overwrites a
    *  config.json that already exists (a shared HOME was seeded by its owner). */
   seedHooksConsent?: boolean;
+  /** Extra CLI flags appended to the host spawn (e.g. ['--no-terminal']). */
+  cliArgs?: string[];
+  /** Install the mock `claude` into an isolated bin dir and prepend it to the
+   *  host's PATH, so agents launched from the browser spawn the scenario
+   *  runner in the host's PTY instead of a real Claude CLI. */
+  mockClaude?: boolean;
+  /** Browser viewport (default 1280×800, the desktop shell). A phone-sized
+   *  viewport renders the mobile shell instead. */
+  viewport?: { width: number; height: number };
+  /** Pre-seed `~/.pixel-agents/layout.json` before the host starts (see
+   *  helpers/layout-seed.ts — it must carry a high layoutRevision). */
+  seedLayout?: unknown;
+  /** Extra top-level fields for the seeded `~/.pixel-agents/config.json`
+   *  (e.g. `directories`), merged over the baseline (consent, and the start
+   *  directory shown in the drawer). Ignored when the file already exists (a
+   *  shared HOME was seeded by its owner). */
+  seedConfig?: Record<string, unknown>;
 }
 
 function delay(ms: number): Promise<void> {
@@ -92,6 +116,28 @@ async function waitForHttpOk(url: string): Promise<void> {
 }
 
 /**
+ * Copy the mock `claude` into a bin dir inside the isolated HOME. The wrapper
+ * resolves its sibling scripts (mock-claude-runner.cjs, tail-follow.cjs)
+ * relative to its own dir, so both must live alongside it — same layout as the
+ * VS Code fixture's bin dir (helpers/launch.ts). Returns the bin dir to
+ * prepend to the host's PATH.
+ */
+function installMockClaudeBin(homeDir: string): string {
+  const binDir = path.join(homeDir, 'mock-bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  const binaryPath = path.join(binDir, process.platform === 'win32' ? 'claude.cmd' : 'claude');
+  if (process.platform === 'win32') {
+    fs.copyFileSync(MOCK_CLAUDE_CMD_PATH, binaryPath);
+  } else {
+    fs.copyFileSync(MOCK_CLAUDE_PATH, binaryPath);
+    fs.chmodSync(binaryPath, 0o755);
+  }
+  fs.copyFileSync(MOCK_CLAUDE_RUNNER_PATH, path.join(binDir, 'mock-claude-runner.cjs'));
+  fs.copyFileSync(TAIL_FOLLOW_PATH, path.join(binDir, 'tail-follow.cjs'));
+  return binDir;
+}
+
+/**
  * Spawn our standalone CLI (dist/cli.js). The CLI serves both the SPA and the
  * /ws WebSocket on the same port; tests connect Playwright's chromium to that
  * single origin. Workspace dir is communicated via process.cwd() since our CLI
@@ -101,22 +147,39 @@ function spawnStandaloneHost(args: {
   homeDir: string;
   hostPort: number;
   workspaceDir: string;
+  cliArgs?: string[];
+  mockClaude?: boolean;
 }): ChildProcessWithoutNullStreams {
   if (!fs.existsSync(STANDALONE_CLI)) {
     throw new Error(
       `Standalone CLI not built at ${STANDALONE_CLI}. Run 'npm run compile' before standalone e2e tests.`,
     );
   }
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    HOME: args.homeDir,
+    USERPROFILE: args.homeDir,
+  };
+  if (args.mockClaude) {
+    // The host's PTYs inherit its env, so a browser-launched `claude` resolves
+    // to the mock. PIXEL_AGENTS_NODE_BIN keeps the wrapper on this exact node.
+    const binDir = installMockClaudeBin(args.homeDir);
+    env.PATH = `${binDir}${path.delimiter}${process.env.PATH ?? ''}`;
+    env.PIXEL_AGENTS_NODE_BIN = process.execPath;
+  }
   return spawn(
     process.execPath,
-    [STANDALONE_CLI, '--port', args.hostPort.toString(), '--host', '127.0.0.1'],
+    [
+      STANDALONE_CLI,
+      '--port',
+      args.hostPort.toString(),
+      '--host',
+      '127.0.0.1',
+      ...(args.cliArgs ?? []),
+    ],
     {
       cwd: args.workspaceDir,
-      env: {
-        ...process.env,
-        HOME: args.homeDir,
-        USERPROFILE: args.homeDir,
-      },
+      env,
       stdio: 'pipe',
     },
   );
@@ -238,9 +301,22 @@ export async function launchStandalone(
   // office in every spec. Only when the file does not exist yet — a shared
   // HOME (multi-server) was already seeded by the surface that owns it.
   const configPath = path.join(tmpHome, '.pixel-agents', 'config.json');
-  if ((options.seedHooksConsent ?? true) && !fs.existsSync(configPath)) {
+  if (!fs.existsSync(configPath)) {
+    // The start directory is shown: the product hides host Directories by
+    // default, and the launch specs click its drawer row. A spec about the
+    // default overrides `standalone` through seedConfig.
+    const seeded = {
+      standalone: { showHostDirectories: true },
+      ...((options.seedHooksConsent ?? true) ? { hooksConsent: { claude: 'granted' } } : {}),
+      ...options.seedConfig,
+    };
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    fs.writeFileSync(configPath, JSON.stringify({ hooksConsent: { claude: 'granted' } }, null, 2));
+    fs.writeFileSync(configPath, JSON.stringify(seeded, null, 2));
+  }
+  if (options.seedLayout !== undefined) {
+    const layoutPath = path.join(tmpHome, '.pixel-agents', 'layout.json');
+    fs.mkdirSync(path.dirname(layoutPath), { recursive: true });
+    fs.writeFileSync(layoutPath, JSON.stringify(options.seedLayout, null, 2));
   }
   const hostPort = await getFreePort();
   const hostUrl = `http://127.0.0.1:${hostPort}`;
@@ -248,7 +324,13 @@ export async function launchStandalone(
   let hostStdout = '';
   let hostStderr = '';
   function spawnAndAttach(): ChildProcessWithoutNullStreams {
-    const proc = spawnStandaloneHost({ homeDir: tmpHome, hostPort, workspaceDir });
+    const proc = spawnStandaloneHost({
+      homeDir: tmpHome,
+      hostPort,
+      workspaceDir,
+      cliArgs: options.cliArgs,
+      mockClaude: options.mockClaude,
+    });
     proc.stdout.on('data', (chunk) => {
       hostStdout += chunk.toString();
     });
@@ -260,7 +342,7 @@ export async function launchStandalone(
   let hostProcess = spawnAndAttach();
 
   try {
-    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.setViewportSize(options.viewport ?? { width: 1280, height: 800 });
     // Mark this as the e2e harness before navigation so the standalone webview
     // installs its test-only observability hooks (window.__pixelAgentsTestHooks).
     await page.addInitScript(() => {
@@ -280,6 +362,7 @@ export async function launchStandalone(
       workspaceDir,
       hostUrl,
       hookServerConfig,
+      mockLogFile: path.join(tmpHome, '.claude-mock', 'invocations.log'),
       getHostLogs: () =>
         [hostStdout.trim(), hostStderr.trim()].filter((value) => value.length > 0).join('\n'),
       drainMessages: () => drainRecordedMessages(page),
@@ -300,6 +383,18 @@ export async function launchStandalone(
     await stopProcess(hostProcess);
     if (ownsHome) fs.rmSync(tmpHome, { recursive: true, force: true });
     if (ownsWorkspace) fs.rmSync(workspaceDir, { recursive: true, force: true });
-    throw error;
+    // Setup failures never reach the fixture's log-attaching teardown, so fold
+    // the host's output into the error itself — otherwise a host that dies at
+    // boot on CI leaves nothing to diagnose but a connection-refused message.
+    const hostLogs = [hostStdout.trim(), hostStderr.trim()]
+      .filter((value) => value.length > 0)
+      .join('\n');
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `launchStandalone failed: ${message}\n--- standalone host output ---\n${
+        hostLogs.length > 0 ? hostLogs : '(none)'
+      }`,
+      { cause: error },
+    );
   }
 }

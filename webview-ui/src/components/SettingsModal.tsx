@@ -32,6 +32,12 @@ interface SettingsModalProps {
   onToggleShowAreas: () => void;
   /** Hide the Show Areas checkbox entirely when areas are unavailable. */
   showAreasAvailable: boolean;
+  /** Permission posture applied by the host to every launch from this office. */
+  bypassPermissions: boolean;
+  onToggleBypassPermissions: () => void;
+  /** Whether the launch drawer lists the host's own Directories. */
+  showHostDirectories: boolean;
+  onToggleShowHostDirectories: () => void;
   /** Browser-native layout export (standalone only; VS Code uses the host save dialog). */
   onExportLayout: () => void;
   /** Browser-native layout import from a chosen file (standalone only). */
@@ -55,6 +61,10 @@ export function SettingsModal({
   showAreas,
   onToggleShowAreas,
   showAreasAvailable,
+  bypassPermissions,
+  onToggleBypassPermissions,
+  showHostDirectories,
+  onToggleShowHostDirectories,
   onExportLayout,
   onImportLayout,
 }: SettingsModalProps) {
@@ -206,6 +216,30 @@ export function SettingsModal({
       {showAreasAvailable && (
         <Checkbox label="Show Areas" checked={showAreas} onChange={onToggleShowAreas} />
       )}
+      {/* Permission posture, set once instead of per launch: while on, the host
+          adds the CLI's skip-permissions flag to every agent it launches. */}
+      <Checkbox
+        label={
+          <span className="flex items-center gap-4">
+            Skip Permissions
+            {/* Nudged down: the pixel font's glyphs sit low in their line box,
+                so a centered icon reads as floating high. */}
+            <span className="material-symbols-sharp text-[12px] translate-y-2" aria-hidden="true">
+              warning
+            </span>
+          </span>
+        }
+        checked={bypassPermissions}
+        onChange={onToggleBypassPermissions}
+      />
+      {/* The host's own Directories in the launch drawer, named for what each
+          host contributes: VS Code its workspace folders, standalone the
+          directory the server was started from. */}
+      <Checkbox
+        label={isBrowserRuntime ? 'Show Start Directory' : 'Show Workspace Folders'}
+        checked={showHostDirectories}
+        onChange={onToggleShowHostDirectories}
+      />
       <Checkbox label="Debug View" checked={isDebugMode} onChange={onToggleDebugMode} />
     </Modal>
   );

@@ -144,29 +144,29 @@ export async function spawnInternalAgentAndWaitForInvocation(
 }
 
 /**
- * Spawn an agent bound to a specific workspace FOLDER in a multi-root window.
- * The plain "+ Agent" click opens a folder picker (BottomToolbar.tsx); we click
- * the named folder entry, which sends `launchAgent { folderPath }` so the agent
- * gets `folderName = <folder basename>` (adapters/vscode/agentManager.ts). Then
+ * Spawn an agent bound to a specific DIRECTORY in a multi-root window.
+ * The plain "+ Agent" click opens the Directory picker (BottomToolbar.tsx); we click
+ * the named Directory entry, which sends `launchAgent { directoryPath }` so the agent
+ * gets `directoryName = <folder basename>` (adapters/vscode/agentManager.ts). Then
  * we wait for the spawn exactly like spawnInternalAgentAndWait. The seated
  * character surfaces via the getAgentSeats / getSeats test hooks (filter by
- * folderName), so callers correlate without an agent id here.
+ * directoryName), so callers correlate without an agent id here.
  */
-export async function addAgentForFolder(
+export async function addAgentForDirectory(
   frame: Frame,
-  folderName: string,
+  directoryName: string,
   tmpHome: string,
   mockLogFile: string,
 ): Promise<InternalAgentSpawn> {
   const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
-  narrate.step(`clicking "+ Agent" and picking the "${folderName}" folder`);
+  narrate.step(`clicking "+ Agent" and picking the "${directoryName}" folder`);
   await frame.locator('button', { hasText: '+ Agent' }).click();
   // The folder-picker entries are <button> DropdownItems; scope to the button
   // role so we don't collide with the same folder name shown as a <span> in an
   // Area card's mapped-folders list (when the folder is already area-mapped).
-  const folderItem = frame.getByRole('button', { name: folderName, exact: true });
-  await expect(folderItem).toBeVisible({ timeout: INTERNAL_AGENT_TIMEOUT_MS });
-  await folderItem.click();
+  const directoryItem = frame.getByRole('button', { name: directoryName, exact: true });
+  await expect(directoryItem).toBeVisible({ timeout: INTERNAL_AGENT_TIMEOUT_MS });
+  await directoryItem.click();
 
   await expect
     .poll(() => countInvocations(readInvocationLog(mockLogFile)), {
@@ -195,7 +195,7 @@ export async function addAgentForFolder(
     throw new Error(`No JSONL file found for session ${sessionId}`);
   }
 
-  narrate.check(`agent for "${folderName}" launched — JSONL session created`);
+  narrate.check(`agent for "${directoryName}" launched — JSONL session created`);
   return { sessionId, projectDir: path.dirname(jsonlFile), jsonlFile, invocationLog };
 }
 

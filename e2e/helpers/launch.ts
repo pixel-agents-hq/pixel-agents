@@ -37,7 +37,7 @@ export interface LaunchOptions {
    * Folder basenames to open as a multi-root workspace. When length > 1, a
    * `.code-workspace` listing these (as subdirs of the workspace) is opened
    * instead of a single folder, so `vscode.workspace.workspaceFolders.length > 1`
-   * and agents launched per-folder get a `folderName`. Length <= 1 is ignored
+   * and agents launched per-folder get a `directoryName`. Length <= 1 is ignored
    * (single-folder default is unchanged).
    */
   workspaceFolders?: string[];
@@ -87,7 +87,9 @@ export async function launchVSCode(
   // config.json is ALWAYS seeded: every test wants alwaysShowLabels on (overlay
   // text is only assertable when labels render without hover), so the e2e
   // baseline enables it in both namespaces instead of each test clicking
-  // through the Settings modal. Missing keys are filled with product defaults
+  // through the Settings modal. The host Directories are shown for the same
+  // reason: the product hides them by default, and the launch helpers click a
+  // workspace folder's drawer row. Missing keys are filled with product defaults
   // by server/src/configPersistence.ts. Tests override via opts.seedConfig
   // (buildSeedConfig in layout-seed.ts carries the same baseline).
   const paDir = path.join(tmpHome, '.pixel-agents');
@@ -97,8 +99,8 @@ export async function launchVSCode(
   // overlaying the office UI no test expects to be covered. The consent specs
   // opt out via opts.seedConfig — they are the only ones that want the dialog.
   const seedConfig = opts.seedConfig ?? {
-    vscode: { alwaysShowLabels: true },
-    standalone: { alwaysShowLabels: true },
+    vscode: { alwaysShowLabels: true, showHostDirectories: true },
+    standalone: { alwaysShowLabels: true, showHostDirectories: true },
     hooksConsent: { claude: 'granted' },
   };
   fs.writeFileSync(path.join(paDir, 'config.json'), JSON.stringify(seedConfig, null, 2));
