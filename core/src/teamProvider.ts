@@ -10,6 +10,17 @@
  * Providers without team support simply don't set `HookProvider.team`. No team-
  * gated code runs for them -- no stubs, no dead branches.
  */
+
+/** One background agent's completion notice: the agents it names, by spawn
+ *  tool id and by task (agent) id. `interim` = the agent only stopped to wait
+ *  on background work of its own and will notify again, so the notice must
+ *  not end its spawn. */
+export interface SpawnNotice {
+  toolIds: string[];
+  taskIds: string[];
+  interim: boolean;
+}
+
 export interface TeamProvider {
   /** CLI identifier (e.g. 'claude', 'codex'). Used for logging. */
   providerId: string;
@@ -47,9 +58,10 @@ export interface TeamProvider {
    *  events directly; entries without one share the lead's session.
    *
    *  Sidecar-backed entries additionally expose `toolUseId` (the lead's spawn
-   *  tool_use id), `description`, and `name` when the CLI records them. The host
-   *  uses toolUseId to match background spawns (teams OFF) to the lead's live
-   *  spawn tools, and `name` as the classifier: a named spawn is a Teammate, an
+   *  tool_use id), `taskId` (the CLI's own id for the spawned agent),
+   *  `description`, and `name` when the CLI records them. The host uses
+   *  toolUseId — or, for an agent revived under a later tool call, taskId — to
+   *  match background spawns (teams OFF) to the lead's live spawn tools, and `name` as the classifier: a named spawn is a Teammate, an
    *  unnamed one is a Sub-agent (see CONTEXT.md — name is the sole distinction). */
   discoverTeammates(
     projectDir: string,
@@ -60,6 +72,7 @@ export interface TeamProvider {
     teammateName: string;
     sessionId?: string;
     toolUseId?: string;
+    taskId?: string;
     description?: string;
     name?: string;
   }>;
@@ -75,6 +88,36 @@ export interface TeamProvider {
     toolName: string,
     resultContent: unknown,
   ): { teamName: string; teammateName: string } | null;
+
+  /** Detect a background agent left running by a completed tool on the LEAD's
+   *  transcript: an async spawn's launch (Claude: "Async agent launched
+   *  successfully. agentId: <id>"), or a stopped agent revived by a message
+   *  (Claude: a SendMessage result with `resumedAgentId`). The tool stays live
+   *  until the agent's completion notice. `taskId` is the CLI's id for the
+   *  agent when the result names it — completion notices and transcript names
+   *  may use it instead of the tool id. Returns null for any other result. */
+  extractBackgroundAgentFromToolResult?(
+    toolName: string,
+    resultContent: unknown,
+  ): { taskId?: string } | null;
+
+  /** The background-agent completion notices a lead's transcript record
+   *  carries (see server/src/backgroundSpawns.ts), with when the record was
+   *  written (`at`, ms) when it says; null when it carries none. Claude: an
+   *  `enqueue` queue-operation whose content holds `<task-notification>`s. */
+  readSpawnNotices?(
+    record: Record<string, unknown>,
+  ): { notices: SpawnNotice[]; at?: number } | null;
+
+  /** The tool ids whose results a lead's transcript record carries. A restart
+   *  reads them to tell whether a saved spawn launched in this transcript, so
+   *  a notice from before its launch doesn't end it. */
+  toolResultIds?(record: Record<string, unknown>): string[];
+
+  /** Whether a spawn call names a Teammate-to-be: once launched it is seated
+   *  as a Teammate, so it must not be watched as a Sub-agent before then.
+   *  Claude: a non-empty `name`, unless the call runs in the foreground. */
+  namesTeammate?(toolName: string, input: Record<string, unknown>): boolean;
 
   /** Return team metadata for a session if it participates in a team.
    *  Provider decides where to look (sidecar file, JSONL header, DB, etc.).

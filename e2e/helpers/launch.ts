@@ -182,17 +182,19 @@ export async function launchVSCode(
 
   // macOS: create a temporary keychain so the OS doesn't show "Keychain Not Found" dialog.
   // The isolated HOME has no keychain, and VS Code/Electron's safeStorage triggers a system prompt.
+  // Every `security` call runs with HOME=tmpHome: create-keychain adds the new
+  // keychain to the search list of whichever HOME it runs under, so run with
+  // the real HOME it lands in the developer's own list, and any run that dies
+  // before cleanup leaves a dead entry there for good.
   if (process.platform === 'darwin') {
     const keychainDir = path.join(tmpHome, 'Library', 'Keychains');
     fs.mkdirSync(keychainDir, { recursive: true });
     const keychainPath = path.join(keychainDir, 'login.keychain-db');
+    const isolated = { stdio: 'ignore' as const, env: { ...process.env, HOME: tmpHome } };
     try {
       const { execSync } = require('child_process');
-      execSync(`security create-keychain -p "" "${keychainPath}"`, { stdio: 'ignore' });
-      execSync(`security default-keychain -s "${keychainPath}"`, {
-        stdio: 'ignore',
-        env: { ...process.env, HOME: tmpHome },
-      });
+      execSync(`security create-keychain -p "" "${keychainPath}"`, isolated);
+      execSync(`security default-keychain -s "${keychainPath}"`, isolated);
     } catch (error) {
       // Keychain creation is non-fatal (the safeStorage dialog may or may not block tests),
       // but we want a breadcrumb when CI starts failing in mysterious ways.
@@ -395,7 +397,10 @@ export async function launchVSCode(
       try {
         const keychainPath = path.join(tmpHome, 'Library', 'Keychains', 'login.keychain-db');
         const { execSync } = require('child_process');
-        execSync(`security delete-keychain "${keychainPath}"`, { stdio: 'ignore' });
+        execSync(`security delete-keychain "${keychainPath}"`, {
+          stdio: 'ignore',
+          env: { ...process.env, HOME: tmpHome },
+        });
       } catch {
         // keychain may not exist or already be removed
       }

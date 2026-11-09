@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { HooksConsentRequest } from '../../../core/src/messages.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
-import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
+import { reconcileExistingAgents, staleAgentIds } from '../office/engine/existingAgents.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { setGhostHeadlessAgents as setRendererGhostHeadlessAgents } from '../office/engine/renderer.js';
 import { setFloorSprites } from '../office/floorTiles.js';
@@ -21,6 +21,7 @@ import type { OfficeLayout, ToolActivity } from '../office/types.js';
 import { setWallSprites } from '../office/wallTiles.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
 import { transport } from '../transport/index.js';
+import { onReconnect } from '../transport/onReconnect.js';
 
 /**
  * A Headless agent is one the office adopted from outside (`claude -p`, a session
@@ -256,6 +257,48 @@ export function useExtensionMessages(
       setAgentDirectoryNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
     };
 
+    const closeAgent = (os: OfficeState, id: number) => {
+      setAgents((prev) => prev.filter((a) => a !== id));
+      setSelectedAgent((prev) => (prev === id ? null : prev));
+      // Drop the drawer tab too. terminalSessionClosed normally does this, but
+      // an agent can be removed without its PTY ever reporting an exit (e.g.
+      // stale cleanup), and a tab for a gone agent would attach to nothing.
+      setTerminalAgentIds((prev) => prev.filter((a) => a !== id));
+      setAgentTools((prev) => omitKey(prev, id));
+      setAgentStatuses((prev) => omitKey(prev, id));
+      setAgentAwaitingInput((prev) => omitKey(prev, id));
+      setAgentSeenActivity((prev) => omitKey(prev, id));
+      setSubagentTools((prev) => omitKey(prev, id));
+      // Remove all sub-agent characters belonging to this agent
+      delete backgroundParentToolIdsRef.current[id];
+      os.removeAllSubagents(id);
+      setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id));
+      os.removeAgent(id);
+    };
+
+    // A dropped socket (a phone's screen going off, a server restart) loses
+    // every broadcast sent meanwhile, and none is ever replayed: a missed
+    // subagentClear left its sub-agent in the office until a reload. So each
+    // reconnect asks for the snapshot again (webviewReady) and takes it as the
+    // whole truth: agents it doesn't list are closed, and activity — tools,
+    // statuses, sub-agents — is dropped for the replay that follows the
+    // snapshot to rebuild. Live sub-agents return on the spot they left.
+    let resyncPending = false;
+    const resyncFromSnapshot = (os: OfficeState, incoming: number[]) => {
+      for (const id of staleAgentIds(os.characters.keys(), incoming)) closeAgent(os, id);
+      os.detachSubagentsForResync();
+      setSubagentCharacters([]);
+      setSubagentTools({});
+      setAgentTools({});
+      setAgentStatuses({});
+      setAgentAwaitingInput({});
+      backgroundParentToolIdsRef.current = {};
+      for (const id of incoming) {
+        os.setAgentTool(id, null);
+        os.setAgentActive(id, false);
+      }
+    };
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = (msg: any) => {
       const os = getOfficeState();
@@ -358,9 +401,12 @@ export function useExtensionMessages(
           // Teammate: inherit parent's palette and workspace directoryName (teammate runs
           // in the same workspace as the lead). Name shown via agentName (teamRoleLabel).
           // Seat them at the free seat closest to the lead so the team clusters.
+          // The server's look wins (it copied the lead's when the teammate was
+          // created); the lead's character here is only a fallback.
           const parentCh = os.characters.get(teammateParentId);
-          const palette = parentCh ? parentCh.palette : undefined;
-          const hueShift = parentCh ? parentCh.hueShift : undefined;
+          const palette = (msg.palette as number | undefined) ?? parentCh?.palette;
+          const hueShift =
+            msg.palette !== undefined ? (msg.hueShift as number | undefined) : parentCh?.hueShift;
           os.addAgent(
             id,
             palette,
@@ -389,25 +435,13 @@ export function useExtensionMessages(
         }
         saveAgentSeats(os);
       } else if (msg.type === 'agentClosed') {
-        const id = msg.id as number;
-        setAgents((prev) => prev.filter((a) => a !== id));
-        setSelectedAgent((prev) => (prev === id ? null : prev));
-        // Drop the drawer tab too. terminalSessionClosed normally does this, but
-        // an agent can be removed without its PTY ever reporting an exit (e.g.
-        // stale cleanup), and a tab for a gone agent would attach to nothing.
-        setTerminalAgentIds((prev) => prev.filter((a) => a !== id));
-        setAgentTools((prev) => omitKey(prev, id));
-        setAgentStatuses((prev) => omitKey(prev, id));
-        setAgentAwaitingInput((prev) => omitKey(prev, id));
-        setAgentSeenActivity((prev) => omitKey(prev, id));
-        setSubagentTools((prev) => omitKey(prev, id));
-        // Remove all sub-agent characters belonging to this agent
-        delete backgroundParentToolIdsRef.current[id];
-        os.removeAllSubagents(id);
-        setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id));
-        os.removeAgent(id);
+        closeAgent(os, msg.id as number);
       } else if (msg.type === 'existingAgents') {
         const incoming = msg.agents as number[];
+        if (resyncPending) {
+          resyncPending = false;
+          resyncFromSnapshot(os, incoming);
+        }
         const meta = (msg.agentMeta || {}) as Record<number, ExistingAgentMeta>;
         const directoryNames = (msg.directoryNames || {}) as Record<number, string>;
         const externalAgents = (msg.externalAgents || {}) as Record<number, boolean>;
@@ -848,7 +882,16 @@ export function useExtensionMessages(
     };
     const unsubscribe = transport.onMessage(handler);
     transport.send({ type: 'webviewReady' });
-    return unsubscribe;
+    // The first connect flushes the webviewReady queued above; every later one
+    // is a reconnect and resyncs (see resyncFromSnapshot).
+    const unsubscribeReconnect = onReconnect(transport, () => {
+      resyncPending = true;
+      transport.send({ type: 'webviewReady' });
+    });
+    return () => {
+      unsubscribe();
+      unsubscribeReconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getOfficeState]);
 

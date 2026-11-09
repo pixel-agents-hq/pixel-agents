@@ -3,6 +3,7 @@ import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { claudeTeamProvider } from '../src/providers/hook/claude/claudeTeamProvider.js';
+import { finishedNotice, interimNotice } from './fixtures/taskNotifications.js';
 
 describe('claudeTeamProvider', () => {
   describe('identity', () => {
@@ -132,6 +133,7 @@ describe('claudeTeamProvider', () => {
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('ghost-writer');
       expect(result[0].toolUseId).toBe('toolu_1');
+      expect(result[0].taskId).toBe('a'); // from the transcript's name, agent-<id>.jsonl
       expect(result[0].description).toBe('Write a haiku');
     });
 
@@ -191,6 +193,114 @@ describe('claudeTeamProvider', () => {
         ]),
       ).toBeNull();
       expect(claudeTeamProvider.extractTeammateSpawnFromToolResult!('Agent', undefined)).toBeNull();
+    });
+  });
+
+  describe('readSpawnNotices', () => {
+    const read = (record: Record<string, unknown>) => claudeTeamProvider.readSpawnNotices!(record);
+    const enqueue = (content: unknown, extra: Record<string, unknown> = {}) => ({
+      type: 'queue-operation',
+      operation: 'enqueue',
+      content,
+      ...extra,
+    });
+
+    it('reads each notice of an enqueue queue-operation, by tool id and task id', () => {
+      expect(read(enqueue(finishedNotice('a942476d03fdc3ca7', 'toolu_01JxVt')))?.notices).toEqual([
+        { toolIds: ['toolu_01JxVt'], taskIds: ['a942476d03fdc3ca7'], interim: false },
+      ]);
+      const crash =
+        '<task-notification><task-id>a1</task-id><task-id>a2</task-id><status>stopped</status></task-notification>';
+      expect(read(enqueue(crash))?.notices[0]).toEqual({
+        toolIds: [],
+        taskIds: ['a1', 'a2'],
+        interim: false,
+      });
+    });
+
+    it('marks a notice saying the agent waits on its own background work interim', () => {
+      const both = interimNotice('a38d0d28707132000') + '\n' + finishedNotice('b1');
+      expect(read(enqueue(both))?.notices.map((n) => [n.taskIds, n.interim])).toEqual([
+        [['a38d0d28707132000'], true],
+        [['b1'], false],
+      ]);
+      expect(
+        read(enqueue('<task-notification> <task-id>a1</task-id> <output>done</output>'))?.notices[0]
+          .interim,
+      ).toBe(false);
+    });
+
+    it("carries the record's timestamp as `at`, when it has a valid one", () => {
+      expect(read(enqueue('x', { timestamp: '2026-10-29T20:58:11.963Z' }))?.at).toBe(
+        Date.parse('2026-10-29T20:58:11.963Z'),
+      );
+      expect(read(enqueue('x'))?.at).toBeUndefined();
+      expect(read(enqueue('x', { timestamp: 'nope' }))?.at).toBeUndefined();
+    });
+
+    it('is null for anything but an enqueue queue-operation with string content', () => {
+      expect(read({ type: 'queue-operation', operation: 'dequeue', content: 'x' })).toBeNull();
+      expect(read({ type: 'user', operation: 'enqueue', content: 'x' })).toBeNull();
+      expect(read(enqueue([]))).toBeNull();
+      expect(read({ type: 'queue-operation', operation: 'enqueue' })).toBeNull();
+    });
+  });
+
+  describe('toolResultIds', () => {
+    it("names the tool_use ids a record's tool_result blocks answer", () => {
+      expect(
+        claudeTeamProvider.toolResultIds!({
+          type: 'user',
+          message: {
+            content: [
+              { type: 'tool_result', tool_use_id: 'toolu_a', content: 'ok' },
+              { type: 'text', text: 'hi' },
+              { type: 'tool_result', tool_use_id: 'toolu_b', content: [] },
+            ],
+          },
+        }),
+      ).toEqual(['toolu_a', 'toolu_b']);
+      expect(
+        claudeTeamProvider.toolResultIds!({ type: 'user', message: { content: 'hi' } }),
+      ).toEqual([]);
+    });
+  });
+
+  describe('namesTeammate', () => {
+    const names = claudeTeamProvider.namesTeammate!;
+    it('a named spawn call is a Teammate-to-be unless it runs in the foreground', () => {
+      expect(names('Agent', { name: 'impl', run_in_background: true })).toBe(true);
+      expect(names('Agent', { name: 'impl' })).toBe(true);
+      expect(names('Agent', { name: 'impl', run_in_background: false })).toBe(false);
+      expect(names('Agent', { name: '' })).toBe(false);
+      expect(names('Agent', {})).toBe(false);
+    });
+  });
+
+  describe('extractBackgroundAgentFromToolResult', () => {
+    const extract = claudeTeamProvider.extractBackgroundAgentFromToolResult!;
+
+    it('an async Agent launch names its agent id', () => {
+      expect(
+        extract('Agent', [
+          { type: 'text', text: 'Async agent launched successfully.\nagentId: a4cb86c99458dbe55' },
+        ]),
+      ).toEqual({ taskId: 'a4cb86c99458dbe55' });
+    });
+
+    it('a SendMessage that revived a stopped agent names it', () => {
+      expect(
+        extract(
+          'SendMessage',
+          '{"success":true,"message":"Resuming agent impl-07","resumedAgentId":"ad19f2"}',
+        ),
+      ).toEqual({ taskId: 'ad19f2' });
+    });
+
+    it('anything else starts no background agent', () => {
+      expect(extract('Agent', 'Spawned successfully.')).toBeNull();
+      expect(extract('SendMessage', '{"success":true,"message":"Message sent"}')).toBeNull();
+      expect(extract('Read', 'Async agent launched successfully.')).toBeNull();
     });
   });
 

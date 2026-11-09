@@ -85,3 +85,6 @@ export const CLAUDE_SMALL_CONTEXT_WINDOW = 200_000;
  *  guessing small for a large model pins every gauge in the red, while the
  *  reverse is a quiet under-read that the runtime's widening still corrects. */
 export const CLAUDE_SMALL_CONTEXT_MODEL_PATTERN = /haiku|claude-[123]|-4-[01]\b/i;
+
+/** Tools that spawn a sub-agent (the provider's subagentToolNames). */
+export const CLAUDE_SUBAGENT_TOOLS: ReadonlySet<string> = new Set(['Task', 'Agent']);

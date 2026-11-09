@@ -193,18 +193,20 @@ export function handleClientMessage(
           string,
           { palette?: number; hueShift?: number; seatId?: string }
         >;
-        // Sync palette/hueShift back to AgentState so existingAgents stays
-        // consistent across reconnects. Validate ranges to keep a remote
-        // client (or a hand-edited payload) from corrupting the stored
-        // values with out-of-range inputs that would render as a glitch.
-        // Palette ceiling is dynamic: external asset directories can add
-        // char_N.png beyond the bundled 6, so read the count from the asset
-        // cache instead of hardcoding PALETTE_COUNT.
+        // The server owns an agent's look: it picks one when the agent is
+        // created (diverse pick, roster pick, a teammate inherits its lead's).
+        // A seat save only fills in a look the agent doesn't have yet — a
+        // reconnecting browser saves back the looks it had before, and those
+        // must not overwrite the server's. Validate ranges to keep a remote
+        // client (or a hand-edited payload) from storing out-of-range values
+        // that would render as a glitch. Palette ceiling is dynamic: external
+        // asset directories can add char_N.png beyond the bundled 6, so read
+        // the count from the asset cache instead of hardcoding PALETTE_COUNT.
         const paletteCount = cache?.characters?.characters.length ?? PALETTE_COUNT;
         for (const [idStr, meta] of Object.entries(seats)) {
           const id = Number(idStr);
           const agent = store.get(id);
-          if (agent) {
+          if (agent && agent.palette === undefined) {
             if (
               meta.palette !== undefined &&
               Number.isInteger(meta.palette) &&

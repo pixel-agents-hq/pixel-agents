@@ -5,6 +5,9 @@ import { defineConfig } from 'vitest/config';
 
 process.env['ALLURE_LABEL_epic'] ??= 'webview';
 
+// Allure results are large; only write them on CI or with ALLURE=1.
+const allureEnabled = Boolean(process.env['CI'] || process.env['ALLURE']);
+
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
@@ -19,12 +22,14 @@ export default defineConfig({
     setupFiles: ['allure-vitest/setup'],
     reporters: [
       'default',
-      [
-        'allure-vitest/reporter',
-        {
-          resultsDir: path.resolve(rootDir, '../allure-results/webview'),
-        },
-      ],
+      ...(allureEnabled
+        ? [
+            [
+              'allure-vitest/reporter',
+              { resultsDir: path.resolve(rootDir, '../allure-results/webview') },
+            ] as [string, Record<string, unknown>],
+          ]
+        : []),
     ],
   },
 });
