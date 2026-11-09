@@ -4,6 +4,7 @@ import fastifyWebsocket from '@fastify/websocket';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 
+import { agentCreatedMessage } from './agentMessages.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type {
@@ -261,19 +262,7 @@ function registerWebSocketRoute(
 
     // Pipe store events to WebSocket client
     const onAgentAdded = (id: number, agent: AgentState) => {
-      safeSend(socket, {
-        type: 'agentCreated',
-        id,
-        directoryName: agent.directoryName,
-        isExternal: agent.isExternal || undefined,
-        isTeammate: agent.leadAgentId !== undefined || undefined,
-        teammateName: agent.agentName,
-        parentAgentId: agent.leadAgentId,
-        teamName: agent.teamName,
-        hooksOnly: agent.hooksOnly || undefined,
-        palette: agent.palette,
-        repeat: agent.repeat,
-      });
+      safeSend(socket, agentCreatedMessage(id, agent));
     };
 
     const onAgentRemoved = (id: number) => {

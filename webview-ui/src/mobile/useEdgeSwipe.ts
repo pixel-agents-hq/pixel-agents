@@ -3,7 +3,13 @@ import { useEffect, useRef } from 'react';
 
 import { MOBILE_VIEW_TRANSITION_MS } from '../constants.js';
 import { findTouch } from '../touch/touchPrimitives.js';
-import type { EdgeSwipeEffect, EdgeSwipeEvent, EdgeSwipeState, SwipeTarget } from './edgeSwipe.js';
+import type {
+  EdgeSwipeEffect,
+  EdgeSwipeEvent,
+  EdgeSwipeState,
+  SwipeEdge,
+  SwipeEdges,
+} from './edgeSwipe.js';
 import { initialEdgeSwipeState, reduceEdgeSwipe } from './edgeSwipe.js';
 
 /** The track's resting transform for the page currently showing. */
@@ -13,30 +19,53 @@ export function trackTransform(view: 'office' | 'terminal'): string {
 
 export const TRACK_TRANSITION = `transform ${String(MOBILE_VIEW_TRANSITION_MS)}ms ease-out`;
 
+/** What an edge swipe pulls in: the shell's track, or the menu. */
+export interface SwipePanel {
+  /** How far it travels (px): a full swipe pulls it all the way in. */
+  travel(): number;
+  /** Follow the finger, pulled `px` in (0 to its travel), without animating. */
+  drag(px: number): void;
+  /** Released far or fast enough: animate the rest of the way in. */
+  commit(): void;
+  /** Released short: animate back out. */
+  settle(): void;
+}
+
+export type SwipePanels = Partial<Record<SwipeEdge, SwipePanel>>;
+
+export interface EdgeSwipeOptions {
+  /** A swipe may start anywhere on the element, not only at an edge (an open
+   *  panel swiped shut); taps on it still click. */
+  anywhere?: boolean;
+  /** Elements a swipe never starts on. */
+  optOut?: string;
+}
+
+/** By default buttons (the view toggle, the copy pill) and the selection
+ *  handles keep their touches. */
+const DEFAULT_OPT_OUT = 'button, [data-handle]';
+
 /**
- * Wires the edge-swipe state machine (edgeSwipe.ts) to the mobile shell.
- * `target` is the page a swipe would go to (null = no swipe, e.g. no
- * terminal to go to); a commit calls `onCommit`, the same handler as the
- * view toggle button.
+ * Wires the edge-swipe state machine (edgeSwipe.ts) to the mobile shell: a
+ * swipe from an edge in `panels` pulls that panel in with the finger.
  *
  * Capture listeners on the shell run before the terminal's and canvas's own
- * capture handlers. The toggle button, copy pill, and selection handles
- * opt out (`button, [data-handle]`).
+ * capture handlers.
  */
 export function useEdgeSwipe(
-  shellRef: RefObject<HTMLDivElement | null>,
-  trackRef: RefObject<HTMLDivElement | null>,
-  target: SwipeTarget | null,
-  onCommit: () => void,
+  shellRef: RefObject<HTMLElement | null>,
+  panels: SwipePanels,
+  { anywhere = false, optOut = DEFAULT_OPT_OUT }: EdgeSwipeOptions = {},
 ): void {
-  const onCommitRef = useRef(onCommit);
-  onCommitRef.current = onCommit;
+  const panelsRef = useRef(panels);
+  panelsRef.current = panels;
+  const hasLeft = panels.left !== undefined;
+  const hasRight = panels.right !== undefined;
 
   useEffect(() => {
     const shell = shellRef.current;
-    const track = trackRef.current;
-    if (!shell || !track || target === null) return;
-    const restingTransform = trackTransform(target === 'terminal' ? 'office' : 'terminal');
+    if (!shell || (!hasLeft && !hasRight)) return;
+    const panel = (edge: SwipeEdge) => panelsRef.current[edge];
 
     let state: EdgeSwipeState = initialEdgeSwipeState;
     let armedTarget: HTMLElement | null = null;
@@ -71,7 +100,7 @@ export function useEdgeSwipe(
     };
 
     const run = (e: TouchEvent, event: EdgeSwipeEvent) => {
-      const step = reduceEdgeSwipe(state, event, target);
+      const step = reduceEdgeSwipe(state, event);
       state = step.state;
       for (const effect of step.effects) apply(e, effect);
     };
@@ -79,14 +108,13 @@ export function useEdgeSwipe(
     const apply = (e: TouchEvent, effect: EdgeSwipeEffect) => {
       switch (effect.type) {
         case 'arm':
-          if (e.cancelable) e.preventDefault();
+          if (effect.blockNative && e.cancelable) e.preventDefault();
           if (e.target instanceof HTMLElement) bindRescue(e.target);
           break;
         case 'release':
           unbindRescue();
           break;
         case 'claim': {
-          track.style.transition = 'none';
           // Tell whatever was underneath (the terminal's scroll/long-press,
           // the canvas pan) that its touch is over — a real bubbling
           // touchcancel cleans their state through the same paths a system
@@ -119,17 +147,13 @@ export function useEdgeSwipe(
           if (e.type === 'touchmove' && e.cancelable) e.preventDefault();
           break;
         case 'drag':
-          track.style.transform = `translateX(${String(effect.translatePx)}px)`;
+          panel(effect.edge)?.drag(effect.px);
           break;
         case 'commit':
-          // Restore the transition, then let the view flip patch the
-          // transform — the browser animates from the dragged position.
-          track.style.transition = TRACK_TRANSITION;
-          onCommitRef.current();
+          panel(effect.edge)?.commit();
           break;
         case 'settle':
-          track.style.transition = TRACK_TRANSITION;
-          track.style.transform = restingTransform;
+          panel(effect.edge)?.settle();
           break;
       }
     };
@@ -138,13 +162,20 @@ export function useEdgeSwipe(
       const touch = e.changedTouches[0];
       if (!touch) return;
       const rect = shell.getBoundingClientRect();
+      const edges: SwipeEdges = {};
+      for (const edge of ['left', 'right'] as const) {
+        const travel = panel(edge)?.travel();
+        if (travel) edges[edge] = travel;
+      }
       run(e, {
         type: 'start',
         touch,
         touches: Array.from(e.touches),
         t: e.timeStamp,
-        shell: { left: rect.left, right: rect.right, width: rect.width },
-        optOut: e.target instanceof Element && e.target.closest('button, [data-handle]') !== null,
+        shell: { left: rect.left, right: rect.right },
+        edges,
+        anywhere,
+        optOut: optOut !== '' && e.target instanceof Element && e.target.closest(optOut) !== null,
       });
     };
     const onMove = (e: TouchEvent) =>
@@ -166,5 +197,51 @@ export function useEdgeSwipe(
       shell.removeEventListener('touchend', onEnd, { capture: true });
       shell.removeEventListener('touchcancel', onCancel, { capture: true });
     };
-  }, [shellRef, trackRef, target]);
+  }, [shellRef, hasLeft, hasRight, anywhere, optOut]);
+}
+
+/**
+ * The shell's sliding track as a swipe panel: pulled from the page `from`
+ * towards the other one; a commit calls `onCommit` (the view toggle), whose
+ * re-render patches the transform, and the browser animates from the dragged
+ * position.
+ */
+export function trackPanel(
+  trackRef: RefObject<HTMLDivElement | null>,
+  shellRef: RefObject<HTMLDivElement | null>,
+  from: 'office' | 'terminal',
+  onCommit: () => void,
+): SwipePanel {
+  const width = () => shellRef.current?.clientWidth ?? 0;
+  return {
+    travel: width,
+    drag(px) {
+      const track = trackRef.current;
+      if (!track) return;
+      track.style.transition = 'none';
+      const x = from === 'office' ? -px : px - width();
+      track.style.transform = `translateX(${String(x)}px)`;
+    },
+    commit() {
+      if (trackRef.current) trackRef.current.style.transition = TRACK_TRANSITION;
+      onCommit();
+    },
+    settle() {
+      const track = trackRef.current;
+      if (!track) return;
+      track.style.transition = TRACK_TRANSITION;
+      track.style.transform = trackTransform(from);
+    },
+  };
+}
+
+/** A panel that lives behind a ref (one mounted elsewhere, like the menu);
+ *  offered only while the ref is set. */
+export function refPanel(ref: RefObject<SwipePanel | null>): SwipePanel {
+  return {
+    travel: () => ref.current?.travel() ?? 0,
+    drag: (px) => ref.current?.drag(px),
+    commit: () => ref.current?.commit(),
+    settle: () => ref.current?.settle(),
+  };
 }

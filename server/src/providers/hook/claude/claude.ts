@@ -23,6 +23,7 @@ import {
   CLAUDE_SUBAGENT_TOOLS,
   CLAUDE_TERMINAL_NAME_PREFIX,
 } from './constants.js';
+import { conversationTitle } from './conversationTitle.js';
 import { isInheritedClaudeSessionEnv } from './sessionEnv.js';
 
 // ── formatToolStatus: moved from src/transcriptParser.ts ──
@@ -124,9 +125,10 @@ function sessionDirOf(workspacePath: string): string {
 function buildLaunchCommand(
   sessionId: string,
   cwd: string,
-  opts?: { bypassPermissions?: boolean },
+  opts?: { bypassPermissions?: boolean; resume?: boolean },
 ): { command: string; args: string[]; env?: Record<string, string> } {
-  const args = ['--session-id', sessionId];
+  // A resumed session keeps its id and appends to its old transcript.
+  const args = [opts?.resume ? '--resume' : '--session-id', sessionId];
   if (opts?.bypassPermissions) args.push('--dangerously-skip-permissions');
   return { command: 'claude', args, env: { PWD: cwd } };
 }
@@ -344,6 +346,7 @@ export const claudeProvider: HookProvider = {
   sessionFilePattern: '*.jsonl',
   buildLaunchCommand,
   isInheritedSessionEnv: isInheritedClaudeSessionEnv,
+  conversationTitle,
 
   team: claudeTeamProvider,
   usageBridge: claudeUsageBridge,

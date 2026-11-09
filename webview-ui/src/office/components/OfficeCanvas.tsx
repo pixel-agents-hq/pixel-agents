@@ -134,12 +134,7 @@ export function OfficeCanvas({
 
     resizeCanvas();
 
-    const observer = new ResizeObserver(() => resizeCanvas());
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
-    }
-
-    const stop = startGameLoop(canvas, {
+    const loop = startGameLoop(canvas, {
       update: (dt) => {
         officeState.update(dt);
       },
@@ -222,8 +217,19 @@ export function OfficeCanvas({
       },
     });
 
+    // Resizing clears the canvas after this frame's render ran, so draw again
+    // at once: a container that grows or shrinks every frame (the sidebar
+    // sliding) would otherwise flash blank.
+    const observer = new ResizeObserver(() => {
+      resizeCanvas();
+      loop.redraw();
+    });
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
     return () => {
-      stop();
+      loop.stop();
       observer.disconnect();
     };
   }, [

@@ -14,6 +14,8 @@ import { PixelText } from './ui/PixelText.js';
 interface ZoomControlsProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
+  /** The conversation sidebar's toggle, above the zoom buttons (only where there is a sidebar). */
+  sidebar?: { open: boolean; onToggle: () => void };
 }
 
 /**
@@ -85,9 +87,11 @@ export function MobileZoomLevel({ zoom }: { zoom: number }) {
   );
 }
 
-export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
+export function ZoomControls({ zoom, onZoomChange, sidebar }: ZoomControlsProps) {
   const flash = useZoomFlash(zoom);
   const [hovered, setHovered] = useState(false);
+  // Bumped per toggle: remounts the icon so its pop plays (never on first paint).
+  const [toggles, setToggles] = useState(0);
 
   const minDisabled = zoom <= ZOOM_MIN;
   const maxDisabled = zoom >= ZOOM_MAX;
@@ -97,6 +101,23 @@ export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
     <>
       {/* Vertically stacked round buttons — top-left */}
       <div className="absolute top-8 left-8 z-10 flex flex-col gap-4">
+        {sidebar && (
+          <Button
+            size="icon_lg"
+            variant={sidebar.open ? 'active' : 'default'}
+            onClick={() => {
+              setToggles((n) => n + 1);
+              sidebar.onToggle();
+            }}
+            aria-pressed={sidebar.open}
+            className="border-border! shadow-pixel mb-4"
+            title={sidebar.open ? 'Hide conversations' : 'Show conversations'}
+          >
+            <span key={toggles} className={`flex ${toggles > 0 ? 'pixel-pop' : ''}`}>
+              <PixelIcon name={sidebar.open ? 'sidebar' : 'sidebarShut'} />
+            </span>
+          </Button>
+        )}
         {/* + and -, with the level right of them, centred between the two:
             shown while either is hovered and for a moment after a change. */}
         <div

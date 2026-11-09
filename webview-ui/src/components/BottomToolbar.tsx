@@ -14,6 +14,8 @@ interface BottomToolbarProps {
   onToggleEditMode: () => void;
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
+  /** False when the conversation sidebar holds Settings instead. */
+  showSettings: boolean;
   /** The Characters view is open (the button shows active). */
   isCharactersOpen: boolean;
   /** Opens the Characters view: editing a roster card, or its `+ New`. */
@@ -44,6 +46,7 @@ export function BottomToolbar({
   onToggleEditMode,
   isSettingsOpen,
   onToggleSettings,
+  showSettings,
   isCharactersOpen,
   onOpenCharacters,
   directories,
@@ -223,15 +226,17 @@ export function BottomToolbar({
         >
           Layout
         </Button>
-        <Button
-          variant={isSettingsOpen ? 'active' : 'default'}
-          onClick={onToggleSettings}
-          title="Settings"
-          className={`${ROW_HEIGHT} press-juice`}
-          icon="settings"
-        >
-          Settings
-        </Button>
+        {showSettings && (
+          <Button
+            variant={isSettingsOpen ? 'active' : 'default'}
+            onClick={onToggleSettings}
+            title="Settings"
+            className={`${ROW_HEIGHT} press-juice`}
+            icon="settings"
+          >
+            Settings
+          </Button>
+        )}
       </div>
     </div>
   );

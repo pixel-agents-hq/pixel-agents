@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { useCallback, useRef } from 'react';
 
 import { MobileAgentBar } from '../components/MobileAgentBar.js';
@@ -9,7 +9,14 @@ import { Button } from '../components/ui/Button.js';
 import { PixelIcon } from '../components/ui/PixelIcon.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import type { TerminalDrawerController } from '../hooks/useTerminalDrawer.js';
-import { TRACK_TRANSITION, trackTransform, useEdgeSwipe } from './useEdgeSwipe.js';
+import type { SwipePanel } from './useEdgeSwipe.js';
+import {
+  refPanel,
+  TRACK_TRANSITION,
+  trackPanel,
+  trackTransform,
+  useEdgeSwipe,
+} from './useEdgeSwipe.js';
 import type { MobileShellController } from './useMobileShell.js';
 
 interface MobileShellProps {
@@ -35,6 +42,9 @@ interface MobileShellProps {
   onOpenCharacters?: () => void;
   /** The software keyboard is up (useKeyboardViewport). */
   keyboardOpen: boolean;
+  /** The menu (MobileMenu, mounted by App), pulled in from the office's left
+   *  edge; absent where there is no menu. */
+  menuSwipe?: RefObject<SwipePanel | null>;
 }
 
 /**
@@ -60,14 +70,22 @@ export function MobileShell({
   onReorder,
   onOpenCharacters,
   keyboardOpen,
+  menuSwipe,
 }: MobileShellProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  // In the office the right edge pulls the terminal and the left edge the
+  // menu; in the terminal the left edge pulls the office back.
   useEdgeSwipe(
     shellRef,
-    trackRef,
-    shell.view === 'terminal' ? 'office' : terminalAvailable ? 'terminal' : null,
-    shell.toggleView,
+    shell.view === 'terminal'
+      ? { left: trackPanel(trackRef, shellRef, 'terminal', shell.toggleView) }
+      : {
+          left: menuSwipe && refPanel(menuSwipe),
+          right: terminalAvailable
+            ? trackPanel(trackRef, shellRef, 'office', shell.toggleView)
+            : undefined,
+        },
   );
 
   const inputRef = useRef<TerminalInputHandle>(null);

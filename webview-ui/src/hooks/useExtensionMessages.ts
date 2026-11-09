@@ -454,7 +454,9 @@ export function useExtensionMessages(
         } else {
           const palette = msg.palette as number | undefined;
           const repeat = msg.repeat as number | undefined;
-          os.addAgent(id, palette, repeat, undefined, undefined, directoryName);
+          // A resumed conversation asks for the seat its agent sat in.
+          const seatId = msg.seatId as string | undefined;
+          os.addAgent(id, palette, repeat, seatId, undefined, directoryName);
           noteDirectoryName(directoryName);
           if (isHeadlessAgent(msg.isExternal as boolean | undefined)) {
             os.setHeadless(id, true);

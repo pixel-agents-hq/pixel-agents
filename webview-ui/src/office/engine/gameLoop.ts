@@ -6,7 +6,15 @@ export interface GameLoopCallbacks {
   render: (ctx: CanvasRenderingContext2D) => void;
 }
 
-export function startGameLoop(canvas: HTMLCanvasElement, callbacks: GameLoopCallbacks): () => void {
+/** @internal */
+export interface GameLoop {
+  stop: () => void;
+  /** Draw the current state now, without advancing it: resizing a canvas
+   *  clears it, and the next frame would otherwise paint it blank. */
+  redraw: () => void;
+}
+
+export function startGameLoop(canvas: HTMLCanvasElement, callbacks: GameLoopCallbacks): GameLoop {
   const ctx = canvas.getContext('2d')!;
   ctx.imageSmoothingEnabled = false;
 
@@ -29,8 +37,15 @@ export function startGameLoop(canvas: HTMLCanvasElement, callbacks: GameLoopCall
 
   rafId = requestAnimationFrame(frame);
 
-  return () => {
-    stopped = true;
-    cancelAnimationFrame(rafId);
+  return {
+    stop: () => {
+      stopped = true;
+      cancelAnimationFrame(rafId);
+    },
+    redraw: () => {
+      if (stopped) return;
+      ctx.imageSmoothingEnabled = false;
+      callbacks.render(ctx);
+    },
   };
 }

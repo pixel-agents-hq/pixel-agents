@@ -21,6 +21,15 @@ import {
 } from './configPersistence.js';
 import { MAX_CHARACTER_REPEAT, TERMINAL_REQUIRES_TOKEN_REASON } from './constants.js';
 import {
+  conversationLimitsFrom,
+  conversationQueryFrom,
+  listConversations,
+  liveSessions,
+  recordConversationLooks,
+  resumeRequest,
+  searchConversations,
+} from './conversations.js';
+import {
   handleDirectoryClientMessage,
   type HostDirectoryEntry,
   listDirectories,
@@ -99,6 +108,12 @@ const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
 const KEY_BYPASS_PERMISSIONS = 'pixel-agents.bypassPermissions';
 const KEY_SHOW_HOST_DIRECTORIES = 'pixel-agents.showHostDirectories';
+
+/** The provider whose conversations the sidebar lists and resumes: the first
+ *  that names them and can launch (HookProvider.conversationTitle). */
+const conversationProvider = hookProviders.find(
+  (provider) => provider.conversationTitle && provider.buildLaunchCommand,
+);
 
 /**
  * This host's own Directory contribution: the directory the server was started
@@ -182,6 +197,57 @@ export function handleClientMessage(
       if (launched === null) break;
       const recent = recordCharacterUse(picked);
       if (recent) store.broadcast(recent);
+      break;
+    }
+
+    case 'requestConversations': {
+      if (!ctx.ptyManager || !conversationProvider) break;
+      send({
+        type: 'conversationsLoaded',
+        directories: listConversations(
+          listDirectories(shownHostDirectoriesFor(ctx)),
+          conversationProvider,
+          liveSessions(store),
+          conversationLimitsFrom(msg.limits),
+        ),
+      });
+      break;
+    }
+
+    case 'searchConversations': {
+      if (!ctx.ptyManager || !conversationProvider) break;
+      const query = conversationQueryFrom(msg);
+      if (!query) break;
+      send({
+        type: 'conversationSearchResults',
+        ...query,
+        ...searchConversations(
+          listDirectories(shownHostDirectoriesFor(ctx)),
+          conversationProvider,
+          liveSessions(store),
+          query,
+        ),
+      });
+      break;
+    }
+
+    case 'resumeConversation': {
+      if (!runtime || !ctx.ptyManager || !conversationProvider) break;
+      const resume = resumeRequest(store, conversationProvider, msg);
+      if (!resume) break;
+      launchStandaloneAgent(
+        { store, runtime, ptyManager: ctx.ptyManager, provider: conversationProvider },
+        {
+          directoryPath: resume.directoryPath,
+          bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+          palette: resume.look?.palette,
+          resume: {
+            sessionId: resume.sessionId,
+            transcript: resume.transcript,
+            seatId: resume.look?.seatId,
+          },
+        },
+      );
       break;
     }
 
@@ -269,6 +335,8 @@ export function handleClientMessage(
           }
         }
         adapter?.saveSeats(seats);
+        // Kept per session, so a resumed conversation comes back as it was.
+        recordConversationLooks(store, seats);
       }
       break;
 

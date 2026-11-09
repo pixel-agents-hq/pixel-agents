@@ -7,6 +7,7 @@ import {
   MONTHS,
   splitLabel,
 } from '../src/components/ui/pixelFont.js';
+import { timeAgo } from '../src/conversations/timeAgo.js';
 
 describe('splitLabel', () => {
   it('draws number words in glyphs and leaves the other words as text', () => {
@@ -26,6 +27,7 @@ describe('splitLabel', () => {
       expect(splitLabel(t)).toEqual([{ glyphs: true, text: t }]);
     }
     expect(splitLabel('OCT 13')).toEqual([{ glyphs: true, text: 'OCT 13' }]);
+    expect(splitLabel('NOW')).toEqual([{ glyphs: true, text: 'NOW' }]);
     expect(splitLabel('now')).toEqual([{ glyphs: false, text: 'now' }]);
     // a bar's name stays in the UI font, like "Weekly"
     expect(splitLabel('5-hour')).toEqual([{ glyphs: false, text: '5-hour' }]);
@@ -48,9 +50,18 @@ describe('glyphRects', () => {
   });
 });
 
-describe('MONTHS', () => {
-  it('has a glyph for every letter of every month', () => {
-    for (const month of MONTHS) {
+describe('timeAgo', () => {
+  it('writes an older date with the pixel font month names', () => {
+    const at = new Date(2026, 9, 13, 12).getTime();
+    expect(timeAgo(at, at + 30 * 86_400_000)).toBe('OCT 13');
+  });
+
+  it('writes a moment ago as NOW, in the pixel font', () => {
+    expect(timeAgo(1000, 1000 + 30_000)).toBe('NOW');
+  });
+
+  it('has a glyph for every letter of every month and of NOW', () => {
+    for (const month of [...MONTHS, 'NOW']) {
       for (const ch of month) expect(GLYPHS[ch]).toBeDefined();
     }
   });

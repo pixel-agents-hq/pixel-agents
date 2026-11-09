@@ -1,6 +1,7 @@
 import type { AgentLook } from '../../core/src/messages.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { readConfig, withDirectoryCharacters, writeConfig } from './configPersistence.js';
+import { remapConversationLooks } from './conversations.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import type { AgentState } from './types.js';
 
@@ -80,10 +81,11 @@ function remapList(list: readonly number[], remap: PaletteRemap): number[] {
 
 /**
  * Renumber the machine-wide references: the Directories' default characters and the
- * roster's recency (config.json).
+ * roster's recency (config.json), and the looks remembered for past conversations.
  * Returns whether config.json changed (its Directories and recency need re-sending).
  */
 export function remapSharedCharacterRefs(remap: PaletteRemap): boolean {
+  remapConversationLooks(remap);
   const cfg = readConfig();
   // readConfig hands back canonical entries, so an entry changes exactly when
   // its list does (withDirectoryCharacters then drops an emptied list's order).

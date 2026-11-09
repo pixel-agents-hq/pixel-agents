@@ -89,7 +89,7 @@ export function collectDirectorySuggestions(
 
 /** `'*.jsonl'` → `'.jsonl'`. Anything else (or nothing) matches every file, so
  *  a provider that doesn't declare a pattern still gets scanned. */
-function transcriptSuffix(pattern: string | undefined): string {
+export function transcriptSuffix(pattern: string | undefined): string {
   if (pattern === undefined) return '';
   return pattern.startsWith('*') ? pattern.slice(1) : pattern;
 }
