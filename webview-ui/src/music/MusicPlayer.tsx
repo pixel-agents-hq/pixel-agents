@@ -3,8 +3,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { Button } from '../components/ui/Button.js';
 import { PixelIcon } from '../components/ui/PixelIcon.js';
 import {
-  MUSIC_PLAYER_ABOVE_TOOLBAR_BOTTOM_PX,
-  MUSIC_PLAYER_BESIDE_TOOLBAR_MIN_PX,
   MUSIC_PLAYER_BOTTOM_PX,
   MUSIC_PLAYER_WIDTH_PX,
   MUSIC_SHEET_EASE,
@@ -17,6 +15,7 @@ import { useDismiss } from '../hooks/useDismiss.js';
 import { findTouch } from '../touch/touchPrimitives.js';
 import { MOODS } from './moods.js';
 import { officeRadio } from './musicEngine.js';
+import { FULL_PLAYER, playerFit } from './playerFit.js';
 import { moveSheetDrag, releaseSheetDrag, type SheetDrag, startSheetDrag } from './playerSheet.js';
 import { clearRadioLift, setRadioLift } from './radioLift.js';
 import { RadioSettingsPanel } from './RadioSettingsPanel.js';
@@ -106,24 +105,24 @@ function usePlayerSheet(shown: boolean, settle: (open: boolean) => void, measure
   return { pos, handlers: { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel } };
 }
 
-/** Whether the office (the player's containing block) is narrower than
- *  MUSIC_PLAYER_BESIDE_TOOLBAR_MIN_PX, kept up to date as it resizes. */
-function useAboveToolbar(
+/** The width of the office (the player's containing block), kept up to date
+ *  as it resizes; null until measured, or while `active` is off. */
+function useOfficeWidth(
   rootRef: React.RefObject<HTMLDivElement | null>,
   active: boolean,
-): boolean {
-  const [narrow, setNarrow] = useState(false);
+): number | null {
+  const [width, setWidth] = useState<number | null>(null);
   useLayoutEffect(() => {
     const root = rootRef.current;
     const office = root?.offsetParent ?? root?.parentElement;
     if (!active || !office) return;
-    const check = () => setNarrow(office.clientWidth < MUSIC_PLAYER_BESIDE_TOOLBAR_MIN_PX);
+    const check = () => setWidth(office.clientWidth);
     check();
     const observer = new ResizeObserver(check);
     observer.observe(office);
     return () => observer.disconnect();
   }, [rootRef, active]);
-  return active && narrow;
+  return active ? width : null;
 }
 
 /** Where the player stands on both shells: above the office's foot, its width. */
@@ -165,16 +164,15 @@ export function MusicPlayer({ mobile }: { mobile: boolean }) {
   const { pos } = sheet;
   const reveal = radio.hidden ? 0 : !mobile ? 1 : pos ? 1 - pos.offset / pos.travel : Number(shown);
   const dragging = pos !== null;
-  // Desktop: in an office too narrow for the player beside the bottom-left
-  // toolbar (a narrow VS Code panel, a wide terminal drawer), it stands above
-  // the toolbar's row, under its menus, so it never covers their buttons.
-  const aboveToolbar = useAboveToolbar(rootRef, !mobile && !radio.hidden);
-  const bottom = aboveToolbar ? MUSIC_PLAYER_ABOVE_TOOLBAR_BOTTOM_PX : MUSIC_PLAYER_BOTTOM_PX;
+  // Desktop: in an office too narrow for the whole player beside the
+  // bottom-left toolbar (a narrow VS Code panel, a wide terminal drawer), it
+  // gives up the visualizer, then the tune's name (playerFit).
+  const officeWidth = useOfficeWidth(rootRef, !mobile && !radio.hidden);
+  const fit = officeWidth === null ? FULL_PLAYER : playerFit(officeWidth);
   useLayoutEffect(() => {
     const h = barRef.current?.offsetHeight ?? 0;
-    const raised = bottom - MUSIC_PLAYER_BOTTOM_PX;
-    setRadioLift(Math.round(reveal * (h + MUSIC_VERSION_GAP_PX + raised)), dragging);
-  }, [reveal, dragging, bottom]);
+    setRadioLift(Math.round(reveal * (h + MUSIC_VERSION_GAP_PX)), dragging);
+  }, [reveal, dragging]);
   useEffect(() => clearRadioLift, []);
 
   const { song } = radio;
@@ -182,9 +180,17 @@ export function MusicPlayer({ mobile }: { mobile: boolean }) {
 
   const body = (
     <>
-      {open && <RadioSettingsPanel mood={radio.mood} code={songCode(song)} />}
+      {open && (
+        <div className="self-stretch pointer-events-auto">
+          <RadioSettingsPanel mood={radio.mood} code={songCode(song)} />
+        </div>
+      )}
 
-      <div ref={barRef} className="pixel-panel relative flex items-center gap-6 px-6 py-4">
+      <div
+        ref={barRef}
+        className="pixel-panel relative flex items-center gap-6 px-6 py-4 pointer-events-auto"
+        style={mobile ? undefined : { width: fit.width }}
+      >
         <Button
           size="icon_lg"
           variant={radio.playing ? 'active' : 'default'}
@@ -204,15 +210,17 @@ export function MusicPlayer({ mobile }: { mobile: boolean }) {
         >
           <PixelIcon name="skip" />
         </Button>
-        <div className="flex-1 min-w-0 flex flex-col gap-2 leading-none ml-2">
-          <span className="text-xs text-text truncate" title={song.name}>
-            {song.name}
-          </span>
-          <span className="text-2xs text-text-muted truncate">
-            {MOODS[song.moodKey].label} · {keyLabel(song)}
-          </span>
-        </div>
-        <Visualizer playing={radio.playing} />
+        {fit.title && (
+          <div className="flex-1 min-w-0 flex flex-col gap-2 leading-none ml-2">
+            <span className="text-xs text-text truncate" title={song.name}>
+              {song.name}
+            </span>
+            <span className="text-2xs text-text-muted truncate">
+              {MOODS[song.moodKey].label} · {keyLabel(song)}
+            </span>
+          </div>
+        )}
+        {fit.visualizer && <Visualizer playing={radio.playing} />}
         <VolumeControl volume={radio.volume} />
         <Button
           size="icon_lg"
@@ -237,8 +245,11 @@ export function MusicPlayer({ mobile }: { mobile: boolean }) {
     return (
       <div
         ref={rootRef}
-        className={`absolute right-10 flex flex-col items-stretch gap-4 ${aboveToolbar ? 'z-10' : 'z-30'}`}
-        style={{ ...FRAME, bottom }}
+        // The box keeps the full width for the settings panel; only the panel
+        // and the bar take clicks, so the room a narrower bar leaves is the
+        // toolbar's. Cramped (see PlayerFit), the toolbar draws over the bar.
+        className={`absolute right-10 flex flex-col items-end gap-4 pointer-events-none ${fit.cramped ? 'z-10' : 'z-30'}`}
+        style={FRAME}
       >
         {body}
       </div>

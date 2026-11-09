@@ -206,7 +206,8 @@ test.describe('Standalone / UI', () => {
     void standalone;
     // Still the desktop shell (wider than the phone breakpoint), but with the
     // conversation sidebar open the office is too narrow for the radio beside
-    // the toolbar: it used to cover the toolbar's buttons.
+    // the toolbar: it used to cover the toolbar's buttons. It gives up its
+    // visualizer and the tune's name instead, where it stands.
     await page.setViewportSize({ width: NARROW_DESKTOP_WIDTH_PX, height: 700 });
     const buttons = [
       page.getByRole('button', { name: 'New agent' }),
@@ -228,5 +229,5 @@ test.describe('Standalone / UI', () => {
   });
 });
 
-// Above the phone breakpoint (768 px), below the radio's room beside the toolbar.
+// Above the phone breakpoint (768 px), below the whole radio's room beside the toolbar.
 const NARROW_DESKTOP_WIDTH_PX = 780;

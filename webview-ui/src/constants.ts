@@ -850,14 +850,20 @@ export const MUSIC_VISUALIZER_HEIGHT_PX = 20;
 export const MUSIC_VOLUME_SLIDER_HEIGHT_PX = 88;
 /** Gap between the player and the office's foot. */
 export const MUSIC_PLAYER_BOTTOM_PX = 10;
-/** Desktop: an office narrower than this can't fit the player beside the
- *  bottom-left toolbar (its row is up to ~330 px with Settings), so the player
- *  stands above the toolbar's row instead of over its buttons. */
-export const MUSIC_PLAYER_BESIDE_TOOLBAR_MIN_PX = 760;
-/** Desktop, narrow office: the player's bottom, clear of the toolbar's row
- *  (10 px off the foot + 52 px buttons + 4 px padding and 2 px border a side
- *  = 74 px) with a 6 px gap. */
-export const MUSIC_PLAYER_ABOVE_TOOLBAR_BOTTOM_PX = 80;
+/** Desktop: the office width kept for the bottom-left toolbar when sizing the
+ *  player beside it: the toolbar's right edge at its widest (342 px, with
+ *  Settings), a 10 px gap and the player's 10 px right margin. */
+export const MUSIC_PLAYER_TOOLBAR_ROOM_PX = 362;
+/** The player without its visualizer (82 px and a 6 px gap less). */
+export const MUSIC_PLAYER_NO_VISUALIZER_WIDTH_PX = 276;
+/** The narrowest player that still shows the tune's name and mood; with less
+ *  room they go too. */
+export const MUSIC_PLAYER_TITLE_MIN_WIDTH_PX = 226;
+/** The player down to its buttons: play, skip, volume, settings. */
+export const MUSIC_PLAYER_BARE_WIDTH_PX = 154;
+/** Desktop: the narrowest office that fits the toolbar and the bare player
+ *  side by side. The terminal drawer is never dragged wider than leaves it. */
+export const OFFICE_MIN_WIDTH_PX = MUSIC_PLAYER_TOOLBAR_ROOM_PX + MUSIC_PLAYER_BARE_WIDTH_PX;
 /** Phone: a release faster than this (px/ms) settles the player the way it was flicked. */
 export const MUSIC_FLICK_PX_PER_MS = 0.4;
 /** Phone: a release slower than this long ago (ms) counts as no flick. */
