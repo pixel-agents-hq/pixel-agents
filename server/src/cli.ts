@@ -51,6 +51,9 @@ export interface CliArgs {
   /** False when --no-terminal was passed: the office only watches agents; the
    *  browser can neither launch them nor attach to their terminals. */
   terminal: boolean;
+  /** False when --no-static was passed: the server answers the API, /ws and the
+   *  terminal sockets only, and does not serve the bundled web UI. */
+  serveWebUi: boolean;
   /** --allowed-host names (repeatable): extra Host names, beyond loopback and a
    *  specific --host, that a tokened browser session is privileged under --
    *  typically a reverse proxy's public name. See wsAuth.privilegedHostnames. */
@@ -68,6 +71,7 @@ export function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
     host: '127.0.0.1',
     terminal: true,
+    serveWebUi: true,
     allowedHosts: [],
     rotateToken: false,
   };
@@ -106,6 +110,8 @@ export function parseArgs(argv: string[]): CliArgs {
       args.rotateToken = true;
     } else if (argv[i] === '--no-terminal') {
       args.terminal = false;
+    } else if (argv[i] === '--no-static') {
+      args.serveWebUi = false;
     } else if (argv[i] === '--help') {
       console.log(`Usage: pixel-agents [options]
 
@@ -119,6 +125,8 @@ Options:
                         old one (bookmarks, other devices) stops working
   --no-terminal         Disable the embedded terminal (watch agents only; no
                         launching or attaching from the browser)
+  --no-static           Do not serve the bundled web UI (API and WebSocket
+                        only, for running the backend by itself)
   --help                Show this help message`);
       process.exit(0);
     }
@@ -354,7 +362,7 @@ async function main(): Promise<void> {
       embedded: false,
       host: args.host,
       port: args.port,
-      staticDir,
+      staticDir: args.serveWebUi ? staticDir : undefined,
       assetCache,
       onSetHooksEnabled,
       onReloadAssets,
