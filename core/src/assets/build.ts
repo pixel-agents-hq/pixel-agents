@@ -134,7 +134,6 @@ export function buildAssetIndex(assetsDir: string) {
   return {
     floors: listSorted('floors', /^floor_\d+\.png$/i),
     walls: listSorted('walls', /^wall_\d+\.png$/i),
-    characters: listSorted('characters', /^char_\d+\.png$/i),
     defaultLayout,
   };
 }

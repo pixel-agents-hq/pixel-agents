@@ -1,0 +1,372 @@
+/* The Characters view on phones (.chv-phone), imported after characters.css (shared and desktop rules). */
+
+/* ── Phones: a page with the preview pinned on top, the wardrobe, and the roster in a dock ── */
+.chv-phone {
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--color-bg);
+  padding-inline: 16px;
+  padding-bottom: calc(var(--dock-h, 92px) + 72px + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 14px;
+}
+.chv-phone .chv-stage {
+  display: contents;
+}
+.chv-phone .chv-pin {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  gap: 0;
+  margin-inline: -16px;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 16px 0;
+  background: var(--color-bg);
+}
+.chv-phone .chv-stage-top {
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding-bottom: 8px;
+}
+.chv-phone .chv-seg button {
+  font-size: 14px;
+  text-transform: uppercase;
+  padding: 5px 6px 4px;
+  line-height: 1;
+}
+.chv-phone .chv-floor {
+  padding: 10px 8px 8px;
+  gap: 12px;
+  box-shadow: var(--shadow-ledge-down);
+  margin-bottom: 4px;
+}
+.chv-phone .chv-turn {
+  gap: 6px;
+}
+.chv-phone .chv-sheetbox {
+  display: none;
+}
+/* the tabs and the item options run edge to edge as carousels; the colour panels sit in a box below */
+.chv-phone .chv-wardrobe {
+  grid-template-columns: minmax(0, 1fr);
+  background: none;
+  border: 0;
+  box-shadow: none;
+  gap: 10px;
+  min-width: 0;
+}
+.chv-phone .chv-tabs {
+  margin-inline: -16px;
+  padding: 0 0 4px 16px;
+  background: none;
+  border: 0;
+  scroll-padding-inline: 16px;
+}
+.chv-phone .chv-tabs::after {
+  content: '';
+  flex: 0 0 10px;
+}
+.chv-phone .chv-slot {
+  padding: 0;
+  gap: 10px;
+}
+.chv-phone .chv-grid {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-inline: -16px;
+  padding: 0 0 4px 16px;
+  scroll-padding-inline: 16px;
+}
+.chv-phone .chv-grid::-webkit-scrollbar {
+  display: none;
+}
+.chv-phone .chv-grid::after {
+  content: '';
+  flex: 0 0 8px;
+}
+.chv-phone .chv-grid .chv-opt {
+  flex: 0 0 88px;
+}
+.chv-phone .chv-slot-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-pixel);
+}
+.chv-phone .chv-status {
+  left: 16px;
+  right: 16px;
+  max-width: none;
+  bottom: calc(var(--dock-h, 92px) + 10px + env(safe-area-inset-bottom, 0px));
+}
+.chv-dock {
+  display: flex;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  gap: 8px;
+  align-items: stretch;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--color-bg-dark);
+  border-top: 2px solid var(--color-border);
+  box-shadow: var(--shadow-ledge-up);
+}
+.chv-dock-rail {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.chv-dock-rail::-webkit-scrollbar {
+  display: none;
+}
+.chv-mcard {
+  flex: none;
+  display: grid;
+  justify-items: center;
+  align-content: end;
+  gap: 2px;
+  padding: 4px 4px 3px;
+  min-width: 46px;
+  background: var(--color-bg-thumb);
+  border: 2px solid transparent;
+}
+.chv-mcard span {
+  font-size: 12px;
+  color: var(--color-text-muted-solid);
+  max-width: 7ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chv-mcard[aria-current='true'] {
+  border-color: var(--color-accent-bright);
+  background: var(--color-active-bg);
+}
+.chv-mcard[aria-current='true'] span {
+  color: var(--color-text-solid);
+}
+.chv-dock-actions {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, 48px);
+  gap: 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--color-border);
+}
+.chv-dbtn {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 6px;
+  padding: 6px 2px;
+  background: var(--color-btn-bg);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-pixel);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.chv-dbtn:active {
+  transform: translate(1px, 1px);
+  box-shadow: var(--shadow-pixel-pressed);
+}
+.chv-dbtn-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent-bright);
+}
+.chv-dbtn[aria-expanded='true'] {
+  background: var(--color-active-bg);
+  border-color: var(--color-accent-bright);
+}
+.chv-more {
+  display: grid;
+  gap: 10px;
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  z-index: 4;
+  padding: 12px;
+  bottom: calc(var(--dock-h, 92px) + 8px + env(safe-area-inset-bottom, 0px));
+}
+.chv-more-name {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  font-size: 14px;
+  text-transform: uppercase;
+  color: var(--color-text-muted-solid);
+}
+.chv-more-name input {
+  background: var(--color-bg-dark);
+  border: 2px solid var(--color-border);
+  padding: 6px 8px;
+  font-size: 16px;
+  min-width: 0;
+  text-transform: none;
+}
+.chv-more-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.chv-more-grid .chv-btn {
+  padding: 8px 6px;
+}
+.chv-more-grid .chv-btn-primary {
+  grid-column: 1 / -1;
+}
+
+/* Edit: only the export sheet, in the rest of the page below the pin (its box sizes the sheet) */
+.chv-mode-sheet .chv-wardrobe {
+  display: none;
+}
+.chv-phone.chv-mode-sheet,
+.chv-phone.chv-mode-tile {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.chv-phone.chv-mode-sheet .chv-sheetbox {
+  display: flex;
+  flex-direction: column;
+  padding-top: 14px;
+}
+.chv-mode-sheet .chv-sheet {
+  grid-template-columns: 18px repeat(7, var(--cell-w, 48px));
+}
+.chv-mode-sheet .chv-sheet-row {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  justify-content: center;
+  font-size: 12px;
+}
+.chv-mode-sheet .chv-sheet-col {
+  font-size: 12px;
+}
+.chv-mode-sheet .chv-sheet-wrap {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.chv-mode-sheet .chv-sheetbox h2 {
+  text-align: center;
+  margin-bottom: 14px;
+}
+/* ...and a tapped frame: only the tile editor, sized to one screen */
+.chv-mode-tile .chv-dock {
+  display: none;
+}
+/* room below the editor for the floating Save, so its last buttons scroll out from under it */
+.chv-phone.chv-mode-tile {
+  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+}
+.chv-phone .chv-editor {
+  padding: 0;
+  gap: 8px;
+}
+.chv-phone .chv-ed-head {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.chv-phone .chv-ed-head h2 {
+  font-size: 14px;
+}
+.chv-phone .chv-ed-frame {
+  font-size: 14px;
+}
+.chv-phone .chv-ed-head .chv-btn {
+  flex: none;
+  padding: 6px 10px;
+  font-size: 14px;
+  text-transform: uppercase;
+}
+.chv-phone .chv-chips {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-inline: -16px;
+  padding: 0 16px 4px;
+}
+.chv-phone .chv-chips::-webkit-scrollbar {
+  display: none;
+}
+.chv-phone .chv-chip {
+  flex: none;
+  font-size: 14px;
+  padding: 3px 8px;
+}
+.chv-phone .chv-ed-body {
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+/* the tool column keeps this much beside the canvas */
+.chv-phone .chv-ed-tools {
+  flex: 1 1 0;
+  min-width: 150px;
+  gap: 8px;
+}
+.chv-phone .chv-ed-tools .chv-note {
+  display: none;
+}
+.chv-phone .chv-ed-tools .chv-toolrow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.chv-phone .chv-tool {
+  justify-content: center;
+  padding: 5px 4px;
+  font-size: 14px;
+}
+.chv-phone .chv-tool kbd {
+  display: none;
+}
+.chv-phone .chv-ed-current {
+  gap: 6px;
+  font-size: 13px;
+}
+.chv-phone .chv-ed-current > span:nth-child(2) {
+  display: none;
+}
+.chv-phone .chv-ed-palette .chv-sw {
+  width: 20px;
+  height: 20px;
+}
+.chv-phone .chv-ed-opts {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.chv-phone .chv-ed-opts .chv-check-box {
+  width: 13px;
+  height: 13px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chv-btn:active,
+  .chv-dbtn:active {
+    transform: none;
+  }
+}
+
+/* Save floats at the bottom right, above the dock */
+.chv-phone .chv-save {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--dock-h, 92px) + 12px + env(safe-area-inset-bottom, 0px));
+  z-index: 4;
+}
+/* the tile editor hides the dock: Save drops to the corner (the page leaves room for it) */
+.chv-phone.chv-mode-tile .chv-save {
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}

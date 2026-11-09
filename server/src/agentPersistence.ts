@@ -37,7 +37,7 @@ export function toPersistedAgent(agent: AgentState): PersistedAgent | null {
     teamUsesTmux: agent.teamUsesTmux,
     backgroundSpawns: persistBackgroundSpawns(agent.backgroundSpawns),
     palette: agent.palette,
-    hueShift: agent.hueShift,
+    repeat: agent.repeat,
   };
 }
 
@@ -74,6 +74,13 @@ export function restoredAgentInit(p: PersistedAgent): Omit<AgentStateInit, 'isEx
     leadAgentId: p.leadAgentId,
     teamUsesTmux: p.teamUsesTmux,
     palette: p.palette,
-    hueShift: p.hueShift,
+    repeat: p.repeat ?? legacyRepeat(p.clothesHue ?? p.hueShift),
   };
+}
+
+/** An older save's look, in degrees, as a repeat: which colour it was can't
+ *  be told apart any more, only that it was a repeat. */
+function legacyRepeat(degrees: number | undefined): number | undefined {
+  if (degrees === undefined) return undefined;
+  return degrees === 0 ? 0 : 1;
 }

@@ -10,24 +10,16 @@
 
 import { rgbaToHex } from '../../core/src/assets/colorUtils.ts';
 import {
-  CHAR_FRAME_H,
-  CHAR_FRAME_W,
-  CHAR_FRAMES_PER_ROW,
-  CHARACTER_DIRECTIONS,
   FLOOR_TILE_SIZE,
   WALL_BITMASK_COUNT,
   WALL_GRID_COLS,
   WALL_PIECE_HEIGHT,
   WALL_PIECE_WIDTH,
 } from '../../core/src/assets/constants.ts';
-import type {
-  AssetIndex,
-  CatalogEntry,
-  CharacterDirectionSprites,
-} from '../../core/src/assets/types.ts';
+import type { AssetIndex, CatalogEntry } from '../../core/src/assets/types.ts';
+import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.ts';
 
 interface MockPayload {
-  characters: CharacterDirectionSprites[];
   floorSprites: string[][][];
   wallSets: string[][][][];
   carpetSets: string[][][][];
@@ -108,32 +100,8 @@ async function fetchJsonOptional<T>(url: string): Promise<T | null> {
   }
 }
 
-function getIndexedAssetPath(kind: 'characters' | 'floors' | 'walls', relPath: string): string {
+function getIndexedAssetPath(kind: 'floors' | 'walls', relPath: string): string {
   return relPath.startsWith(`${kind}/`) ? relPath : `${kind}/${relPath}`;
-}
-
-async function decodeCharactersFromPng(
-  base: string,
-  index: AssetIndex,
-): Promise<CharacterDirectionSprites[]> {
-  const sprites: CharacterDirectionSprites[] = [];
-  for (const relPath of index.characters) {
-    const png = await decodePng(`${base}assets/${getIndexedAssetPath('characters', relPath)}`);
-    const byDir: CharacterDirectionSprites = { down: [], up: [], right: [] };
-
-    for (let dirIdx = 0; dirIdx < CHARACTER_DIRECTIONS.length; dirIdx++) {
-      const dir = CHARACTER_DIRECTIONS[dirIdx];
-      const rowOffsetY = dirIdx * CHAR_FRAME_H;
-      const frames: string[][][] = [];
-      for (let frame = 0; frame < CHAR_FRAMES_PER_ROW; frame++) {
-        frames.push(readSprite(png, CHAR_FRAME_W, CHAR_FRAME_H, frame * CHAR_FRAME_W, rowOffsetY));
-      }
-      byDir[dir] = frames;
-    }
-
-    sprites.push(byDir);
-  }
-  return sprites;
 }
 
 async function decodeFloorsFromPng(base: string, index: AssetIndex): Promise<string[][][]> {
@@ -190,16 +158,15 @@ export async function initBrowserMock(): Promise<void> {
   ]);
 
   const shouldTryDecoded = import.meta.env.DEV;
-  const [decodedCharacters, decodedFloors, decodedWalls, decodedFurniture] = shouldTryDecoded
+  const [decodedFloors, decodedWalls, decodedFurniture] = shouldTryDecoded
     ? await Promise.all([
-        fetchJsonOptional<CharacterDirectionSprites[]>(`${base}assets/decoded/characters.json`),
         fetchJsonOptional<string[][][]>(`${base}assets/decoded/floors.json`),
         fetchJsonOptional<string[][][][]>(`${base}assets/decoded/walls.json`),
         fetchJsonOptional<Record<string, string[][]>>(`${base}assets/decoded/furniture.json`),
       ])
-    : [null, null, null, null];
+    : [null, null, null];
 
-  const hasDecoded = !!(decodedCharacters && decodedFloors && decodedWalls && decodedFurniture);
+  const hasDecoded = !!(decodedFloors && decodedWalls && decodedFurniture);
 
   if (!hasDecoded) {
     if (shouldTryDecoded) {
@@ -209,10 +176,9 @@ export async function initBrowserMock(): Promise<void> {
     }
   }
 
-  const [characters, floorSprites, wallSets, furnitureSprites] = hasDecoded
-    ? [decodedCharacters!, decodedFloors!, decodedWalls!, decodedFurniture!]
+  const [floorSprites, wallSets, furnitureSprites] = hasDecoded
+    ? [decodedFloors!, decodedWalls!, decodedFurniture!]
     : await Promise.all([
-        decodeCharactersFromPng(base, assetIndex),
         decodeFloorsFromPng(base, assetIndex),
         decodeWallsFromPng(base, assetIndex),
         decodeFurnitureFromPng(base, catalog),
@@ -230,7 +196,6 @@ export async function initBrowserMock(): Promise<void> {
       : null) ?? [];
 
   mockPayload = {
-    characters,
     floorSprites,
     wallSets,
     carpetSets,
@@ -240,7 +205,7 @@ export async function initBrowserMock(): Promise<void> {
   };
 
   console.log(
-    `[BrowserMock] Ready (${hasDecoded ? 'decoded-json' : 'browser-png-decode'}) — ${characters.length} chars, ${floorSprites.length} floors, ${wallSets.length} wall sets, ${carpetSets.length} carpets, ${catalog.length} furniture items`,
+    `[BrowserMock] Ready (${hasDecoded ? 'decoded-json' : 'browser-png-decode'}) — ${floorSprites.length} floors, ${wallSets.length} wall sets, ${carpetSets.length} carpets, ${catalog.length} furniture items`,
   );
 }
 
@@ -254,24 +219,18 @@ export async function initBrowserMock(): Promise<void> {
 export function dispatchMockMessages(): void {
   if (!mockPayload) return;
 
-  const {
-    characters,
-    floorSprites,
-    wallSets,
-    carpetSets,
-    furnitureCatalog,
-    furnitureSprites,
-    layout,
-  } = mockPayload;
+  const { floorSprites, wallSets, carpetSets, furnitureCatalog, furnitureSprites, layout } =
+    mockPayload;
 
   function dispatch(data: unknown): void {
     window.dispatchEvent(new MessageEvent('message', { data }));
   }
 
   // Must match the load order defined in CLAUDE.md:
-  // characterSpritesLoaded -> floorTilesLoaded -> wallTilesLoaded -> carpetTilesLoaded
-  //   -> furnitureAssetsLoaded -> layoutLoaded
-  dispatch({ type: 'characterSpritesLoaded', characters });
+  // characterProfilesLoaded -> characterSpritesLoaded -> floorTilesLoaded -> wallTilesLoaded
+  //   -> carpetTilesLoaded -> furnitureAssetsLoaded -> layoutLoaded
+  dispatch({ type: 'characterProfilesLoaded', profiles: DEFAULT_CHARACTER_PROFILES });
+  dispatch({ type: 'characterSpritesLoaded', characters: [] });
   dispatch({ type: 'floorTilesLoaded', sprites: floorSprites });
   dispatch({ type: 'wallTilesLoaded', sets: wallSets });
   dispatch({ type: 'carpetTilesLoaded', sets: carpetSets });

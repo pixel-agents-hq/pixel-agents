@@ -9,7 +9,7 @@ import { PixelIcon } from './ui/PixelIcon.js';
 /** How a given agent's character looks, for the tab mug shot. */
 export interface AgentAppearance {
   palette: number;
-  hueShift: number;
+  repeat: number;
 }
 
 /** Agent activity reflected by the tab's status dot. */
@@ -75,7 +75,7 @@ export function AgentCard({
     >
       <CharacterMugShot
         palette={appearance.palette}
-        hueShift={appearance.hueShift}
+        repeat={appearance.repeat}
         cropTop={CARD_MUGSHOT_CROP_TOP_ROW}
       />
       {/* Close on top, status dot at the bottom, both centred over the

@@ -52,7 +52,7 @@ async function assertUrlOk(url: string): Promise<void> {
   assert.equal(res.status, 200, `GET ${url} returned ${res.status.toString()}`);
 }
 
-function indexedPath(kind: 'characters' | 'floors' | 'walls', relPath: string): string {
+function indexedPath(kind: 'floors' | 'walls', relPath: string): string {
   return relPath.startsWith(`${kind}/`) ? relPath : `${kind}/${relPath}`;
 }
 
@@ -62,21 +62,16 @@ async function verifyAssetUrls(baseUrl: string, basePath: string): Promise<void>
     assetUrl(baseUrl, basePath, 'furniture-catalog.json'),
   );
 
-  await assertUrlOk(assetUrl(baseUrl, basePath, 'decoded/characters.json'));
   await assertUrlOk(assetUrl(baseUrl, basePath, 'decoded/floors.json'));
   await assertUrlOk(assetUrl(baseUrl, basePath, 'decoded/walls.json'));
   await assertUrlOk(assetUrl(baseUrl, basePath, 'decoded/furniture.json'));
 
   assert.ok(assetIndex.floors.length > 0, 'floors index should not be empty');
   assert.ok(assetIndex.walls.length > 0, 'walls index should not be empty');
-  assert.ok(assetIndex.characters.length > 0, 'characters index should not be empty');
   assert.ok(catalog.length > 0, 'furniture catalog should not be empty');
 
   await assertUrlOk(assetUrl(baseUrl, basePath, indexedPath('floors', assetIndex.floors[0])));
   await assertUrlOk(assetUrl(baseUrl, basePath, indexedPath('walls', assetIndex.walls[0])));
-  await assertUrlOk(
-    assetUrl(baseUrl, basePath, indexedPath('characters', assetIndex.characters[0])),
-  );
   await assertUrlOk(assetUrl(baseUrl, basePath, catalog[0].furniturePath));
 
   if (assetIndex.defaultLayout) {

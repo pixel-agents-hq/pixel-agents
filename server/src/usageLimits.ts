@@ -17,10 +17,11 @@ import { isDeepStrictEqual } from 'util';
 import type { UsageBridgeStatus, UsageLimits, UsageWindow } from '../../core/src/messages.js';
 import type { HookProvider, ReportedUsage } from '../../core/src/provider.js';
 import {
-  LAYOUT_FILE_DIR,
+  PIXEL_AGENTS_DIR,
   USAGE_LIMITS_FILE_NAME,
   USAGE_UNCHANGED_REFRESH_MS,
 } from './constants.js';
+import { writeJsonAtomic } from './jsonFileWatcher.js';
 import { hookProviders } from './providers/index.js';
 import { isRecord } from './serverConfig.js';
 
@@ -38,7 +39,7 @@ export const PRIVILEGED_BROADCAST_TYPES: ReadonlySet<string> = new Set([
 let cache: Record<string, StoredUsage> | null = null;
 
 function usageFilePath(): string {
-  return path.join(os.homedir(), LAYOUT_FILE_DIR, USAGE_LIMITS_FILE_NAME);
+  return path.join(os.homedir(), PIXEL_AGENTS_DIR, USAGE_LIMITS_FILE_NAME);
 }
 
 function isWindow(value: unknown): value is UsageWindow {
@@ -110,11 +111,7 @@ export function recordUsageReport(
   if (!moved && prev && now - prev.updatedAt < USAGE_UNCHANGED_REFRESH_MS) return false;
   all[provider.id] = next;
   try {
-    const filePath = usageFilePath();
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    const tmpPath = filePath + '.tmp';
-    fs.writeFileSync(tmpPath, JSON.stringify(all, null, 2), 'utf-8');
-    fs.renameSync(tmpPath, filePath);
+    writeJsonAtomic(usageFilePath(), all);
   } catch (err) {
     // The office still gets the report; only a restart would lose it.
     console.error('[Pixel Agents] Could not save usage limits:', err);
