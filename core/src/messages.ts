@@ -28,6 +28,7 @@ export type ServerMessage =
   | LayoutLoaded
   | FurnitureAssetsLoaded
   | CharacterProfilesLoaded
+  | RecentCharactersLoaded
   | CharacterSpritesLoaded
   | PetSpritesLoaded
   | FloorTilesLoaded
@@ -306,6 +307,11 @@ export interface WardrobeItem {
   png: string;
 }
 
+export interface RecentCharactersLoaded {
+  type: 'recentCharactersLoaded';
+  recent: number[];
+}
+
 export interface CharacterSpritesLoaded {
   type: 'characterSpritesLoaded';
   characters: CharacterSpriteSet[];
@@ -431,9 +437,13 @@ export interface Directory {
   name: string;
   path: string;
   source: DirectorySource;
+  characters?: number[];
+  characterOrder?: DirectoryCharacterOrder;
 }
 
 export type DirectorySource = 'user' | 'host';
+
+export type DirectoryCharacterOrder = 'priority' | 'random';
 
 export interface DirectorySaved {
   type: 'directorySaved';
@@ -480,6 +490,7 @@ export interface WebviewReady {
 export interface LaunchAgent {
   type: 'launchAgent';
   directoryPath?: string;
+  palette?: number;
 }
 
 export interface FocusAgent {
@@ -622,6 +633,8 @@ export interface SaveDirectory {
   name: string;
   path: string;
   previousPath?: string;
+  characters?: number[];
+  characterOrder?: DirectoryCharacterOrder;
 }
 
 export interface RemoveDirectory {

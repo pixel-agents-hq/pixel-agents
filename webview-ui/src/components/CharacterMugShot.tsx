@@ -4,7 +4,6 @@ import {
   MUGSHOT_CROP_LEFT_COL,
   MUGSHOT_CROP_SIDE_PX,
   MUGSHOT_CROP_TOP_ROW,
-  MUGSHOT_DISPLAY_PX,
   MUGSHOT_RENDER_ZOOM,
 } from '../constants.js';
 import { getCachedSprite } from '../office/sprites/spriteCache.js';
@@ -18,8 +17,8 @@ import { Direction } from '../office/types.js';
 interface CharacterMugShotProps {
   palette: number;
   repeat: number;
-  /** On-screen side length in CSS px. Defaults to MUGSHOT_DISPLAY_PX. */
-  size?: number;
+  /** Sprite pixels to CSS pixels, a whole number. Defaults to MUGSHOT_RENDER_ZOOM. */
+  zoom?: number;
   /** First sprite row of the crop. Defaults to MUGSHOT_CROP_TOP_ROW. */
   cropTop?: number;
 }
@@ -35,7 +34,7 @@ interface CharacterMugShotProps {
 export function CharacterMugShot({
   palette,
   repeat,
-  size = MUGSHOT_DISPLAY_PX,
+  zoom = MUGSHOT_RENDER_ZOOM,
   cropTop = MUGSHOT_CROP_TOP_ROW,
 }: CharacterMugShotProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -49,32 +48,26 @@ export function CharacterMugShot({
     if (!ctx) return;
 
     const front = getCharacterSprites(palette, repeat).walk[Direction.DOWN][0];
-    const full = getCachedSprite(front, MUGSHOT_RENDER_ZOOM);
+    const full = getCachedSprite(front, zoom);
 
-    const side = MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM;
+    const side = MUGSHOT_CROP_SIDE_PX * zoom;
     canvas.width = side;
     canvas.height = side;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, side, side);
-    ctx.drawImage(
-      full,
-      MUGSHOT_CROP_LEFT_COL * MUGSHOT_RENDER_ZOOM,
-      cropTop * MUGSHOT_RENDER_ZOOM,
-      side,
-      side,
-      0,
-      0,
-      side,
-      side,
-    );
-  }, [palette, repeat, cropTop, sprites]);
+    ctx.drawImage(full, MUGSHOT_CROP_LEFT_COL * zoom, cropTop * zoom, side, side, 0, 0, side, side);
+  }, [palette, repeat, zoom, cropTop, sprites]);
 
   return (
     <canvas
       ref={canvasRef}
-      width={MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM}
-      height={MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM}
-      style={{ width: size, height: size, imageRendering: 'pixelated' }}
+      width={MUGSHOT_CROP_SIDE_PX * zoom}
+      height={MUGSHOT_CROP_SIDE_PX * zoom}
+      style={{
+        width: MUGSHOT_CROP_SIDE_PX * zoom,
+        height: MUGSHOT_CROP_SIDE_PX * zoom,
+        imageRendering: 'pixelated',
+      }}
     />
   );
 }

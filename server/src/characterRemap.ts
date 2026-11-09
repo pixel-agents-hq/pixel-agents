@@ -1,5 +1,6 @@
 import type { AgentLook } from '../../core/src/messages.js';
 import type { AgentStateStore } from './agentStateStore.js';
+import { readConfig, withDirectoryCharacters, writeConfig } from './configPersistence.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import type { AgentState } from './types.js';
 
@@ -8,9 +9,10 @@ import type { AgentState } from './types.js';
  * when a save inserts, deletes or moves characters: `remap` (core characterRemap) takes an
  * old index to the new one, undefined for a deleted character.
  *
- * Two processes (the VS Code extension and the standalone server) can share
- * ~/.pixel-agents: each renumbers its OWN agents when it sees the list change (its save,
- * or the file watcher).
+ * Two halves, because two processes (the VS Code extension and the standalone server) can
+ * share ~/.pixel-agents: each renumbers its OWN agents when it sees the list change (its
+ * save, or the file watcher), but only the process that saved renumbers the machine-wide
+ * files, or a second process would renumber them twice.
  */
 export type PaletteRemap = (palette: number) => number | undefined;
 
@@ -64,4 +66,43 @@ export function remapAgentLooks(store: AgentStateStore, remap: PaletteRemap): Ag
     adapter.saveSeats(seats);
   }
   return changed.map((a) => ({ id: a.id, palette: a.palette!, repeat: a.repeat ?? 0 }));
+}
+
+/** An index list renumbered, deleted characters left out (and no index twice). */
+function remapList(list: readonly number[], remap: PaletteRemap): number[] {
+  const out: number[] = [];
+  for (const i of list) {
+    const next = remap(i);
+    if (next !== undefined && !out.includes(next)) out.push(next);
+  }
+  return out;
+}
+
+/**
+ * Renumber the machine-wide references: the Directories' default characters and the
+ * roster's recency (config.json).
+ * Returns whether config.json changed (its Directories and recency need re-sending).
+ */
+export function remapSharedCharacterRefs(remap: PaletteRemap): boolean {
+  const cfg = readConfig();
+  // readConfig hands back canonical entries, so an entry changes exactly when
+  // its list does (withDirectoryCharacters then drops an emptied list's order).
+  let changed = false;
+  cfg.directories = cfg.directories.map((d) => {
+    if (!d.characters) return d;
+    const characters = remapList(d.characters, remap);
+    if (sameList(characters, d.characters)) return d;
+    changed = true;
+    return withDirectoryCharacters(d, { ...d, characters });
+  });
+  const recent = remapList(cfg.recentCharacters, remap);
+  if (!sameList(recent, cfg.recentCharacters)) changed = true;
+  cfg.recentCharacters = recent;
+  if (!changed) return false;
+  writeConfig(cfg);
+  return true;
+}
+
+function sameList(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
 }

@@ -8,6 +8,7 @@ import { addAgentForDirectory } from '../../../helpers/internal-agent';
 import { expectOverlayVisibleWithTexts } from '../../../helpers/office';
 import {
   addDirectory,
+  directoryPencil,
   getPixelAgentsFrame,
   openLaunchDrawer,
   openPixelAgentsPanel,
@@ -95,7 +96,8 @@ test.describe('Launch drawer (multi-root)', () => {
     // User-defined, so it is editable here and carries no host badge — unlike
     // the workspace folders beside it.
     await expect(row.getByText('host', { exact: true })).toHaveCount(0);
-    await expect(drawer.getByRole('button', { name: `Edit ${GAMMA}` })).toBeVisible();
+    // The pencil shows while the row is hovered, beside the drawer.
+    await expect(await directoryPencil(frame, drawer, GAMMA)).toBeVisible();
     narrator.check('the new Directory is an editable, unbadged drawer row');
 
     await addAgentForDirectory(frame, GAMMA, tmpHome, mockLogFile);
