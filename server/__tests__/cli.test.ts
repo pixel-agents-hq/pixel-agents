@@ -133,6 +133,17 @@ describe('parseArgs', () => {
     });
   });
 
+  // 11b. The web UI is served by default; --no-static opts out
+  it('serves the web UI by default and not with --no-static', () => {
+    expect(parseArgs([]).serveWebUi).toBe(true);
+    expect(parseArgs(['--no-static']).serveWebUi).toBe(false);
+    expect(parseArgs(['--no-static', '--port', '3100'])).toMatchObject({
+      serveWebUi: false,
+      terminal: true,
+      port: 3100,
+    });
+  });
+
   // 12. --allowed-host is repeatable and validated; --rotate-token is a switch
   it('collects repeated --allowed-host values', () => {
     expect(parseArgs([]).allowedHosts).toEqual([]);
