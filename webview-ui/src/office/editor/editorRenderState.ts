@@ -49,6 +49,8 @@ export function buildEditorRenderState(
     isRotatable: false,
     deleteButtonBounds: null,
     rotateButtonBounds: null,
+    hoveredButton: editorState.selectionButtonHover,
+    pressedButton: editorState.selectionButtonPressed,
     showGhostBorder,
     ghostBorderHoverCol: showGhostBorder ? editorState.ghostCol : GHOST_BORDER_NO_HOVER_TILE,
     ghostBorderHoverRow: showGhostBorder ? editorState.ghostRow : GHOST_BORDER_NO_HOVER_TILE,

@@ -45,6 +45,7 @@ import {
   expectOverlayVisibleForAgent,
   expectOverlayVisibleWithTexts,
   expectSingleAgentOverlay,
+  expectSubagentLabels,
   getOverlayByAgentId,
   readAgentOverlayIds,
 } from '../../../helpers/office';
@@ -441,12 +442,16 @@ test.describe('Hooks ON / lifecycle', () => {
     const panelFrame = await getPixelAgentsFrame(window);
 
     narrator.step('waiting for all three parallel Subtask sub-characters to appear');
+    // The lead's label names the latest subtask; each sub-agent shows its own
+    // label only while selected (expectSubagentLabels selects them in turn).
     await expectOverlayVisible(panelFrame, 'Subtask: Parallel task 3');
-    await expectOverlayVisible(panelFrame, 'Parallel task 1');
-    await expectOverlayVisible(panelFrame, 'Parallel task 2');
-    await expectOverlayVisible(panelFrame, 'Parallel task 3');
     await expectOverlayCount(panelFrame, 4, 10_000);
     expect(await readAgentOverlayIds(panelFrame)).toHaveLength(4);
+    await expectSubagentLabels(panelFrame, [
+      'Parallel task 1',
+      'Parallel task 2',
+      'Parallel task 3',
+    ]);
     narrator.check('parent + 3 subtasks on screen (count → 4)');
 
     narrator.step('after the batched tool_results + turn_duration, the subtasks should collapse');

@@ -190,9 +190,8 @@ test.describe('Standalone / mobile shell', () => {
     await expectView(page, 'office');
 
     // …where a card tap is two-step: the first focuses the character, a
-    // repeat tap on the focused agent opens its terminal.
-    await card.tap();
-    await expectView(page, 'office');
+    // repeat tap on the focused agent opens its terminal. A launched agent
+    // comes in focused, so its card's first tap already opens it.
     await card.tap();
     await expectView(page, 'terminal');
 
@@ -354,11 +353,11 @@ test.describe('Standalone / mobile shell', () => {
     const title = page.getByText('Instant Detection is ON', { exact: true });
     await expect(title).toBeVisible();
     const gotIt = page.getByRole('button', { name: 'Got it', exact: true });
-    // The modal header's close button (the tooltip has an x of its own).
+    // The modal header's close button (the tooltip has a close button of its own).
     const close = page
       .locator('div', { has: title })
       .last()
-      .getByRole('button', { name: 'x', exact: true });
+      .getByRole('button', { name: 'Close', exact: true });
     for (const el of [title, gotIt, close]) {
       const box = await el.boundingBox();
       if (!box) throw new Error('modal part has no box');
@@ -430,13 +429,13 @@ test.describe('Standalone / mobile shell', () => {
     const terminal = await launchTerminal(page, standalone, 'mobile trackpad');
     await terminal.tap();
     await page.setViewportSize({ width: PHONE.width, height: 500 }); // keyboard up
-    const pad = page.getByRole('button', { name: '✜', exact: true });
+    const pad = page.getByRole('button', { name: 'Arrow keys', exact: true });
     await expect(pad).toBeVisible();
     const padBox = await pad.boundingBox();
     if (!padBox) throw new Error('trackpad key has no box');
 
     // A resting finger on the key bar lands FIRST (touches[0]); the pad
-    // finger then slides 3 trackpad steps right.
+    // finger then slides 3 left/right steps (8 px each) right.
     const arrows = await page.evaluate(
       ({ x, y }) => {
         const pad = document.elementFromPoint(x, y);
@@ -459,13 +458,73 @@ test.describe('Standalone / mobile shell', () => {
         const before = input.length;
         fire(bar, 'touchstart', [rest], [rest]);
         fire(pad, 'touchstart', [rest, at(0)], [at(0)]);
-        for (const dx of [16, 32, 48, 52]) fire(pad, 'touchmove', [rest, at(dx)], [at(dx)]);
-        fire(pad, 'touchend', [rest], [at(52)]);
+        for (const dx of [8, 16, 24, 26]) fire(pad, 'touchmove', [rest, at(dx)], [at(dx)]);
+        fire(pad, 'touchend', [rest], [at(26)]);
         fire(bar, 'touchend', [], [rest]);
         return input.slice(before).filter((d) => d === '\x1b[C').length;
       },
       { x: padBox.x + padBox.width / 2, y: padBox.y + padBox.height / 2 },
     );
     expect(arrows).toBe(3);
+  });
+
+  test('a trackpad drag from the pad to either screen edge sweeps a full line @area:mobile', async ({
+    page,
+    standalone,
+  }) => {
+    await page.addInitScript(() => {
+      const sent: string[] = [];
+      (window as unknown as { __ptyInput: string[] }).__ptyInput = sent;
+      const send = WebSocket.prototype.send;
+      WebSocket.prototype.send = function (data) {
+        if (typeof data === 'string' && data.includes('"input"')) {
+          const frame = JSON.parse(data) as { type?: string; data?: string };
+          if (frame.type === 'input' && frame.data) sent.push(frame.data);
+        }
+        send.call(this, data);
+      };
+    });
+    await page.reload();
+    const terminal = await launchTerminal(page, standalone, 'mobile trackpad sweep');
+    await terminal.tap();
+    await page.setViewportSize({ width: PHONE.width, height: 500 }); // keyboard up
+    const pad = page.getByRole('button', { name: 'Arrow keys', exact: true });
+    await expect(pad).toBeVisible();
+    const padBox = await pad.boundingBox();
+    if (!padBox) throw new Error('trackpad key has no box');
+
+    // One press per side, sliding from the pad's centre to the screen edge.
+    const sweep = (toEdge: number) =>
+      page.evaluate(
+        ({ x, y, toEdge }) => {
+          const pad = document.elementFromPoint(x, y);
+          if (!pad) throw new Error('no trackpad key');
+          const at = (px: number) =>
+            new Touch({ identifier: 3, target: pad, clientX: px, clientY: y });
+          const fire = (type: string, touch: Touch, down: boolean) =>
+            pad.dispatchEvent(
+              new TouchEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                touches: down ? [touch] : [],
+                changedTouches: [touch],
+              }),
+            );
+          const input = (window as unknown as { __ptyInput: string[] }).__ptyInput;
+          const before = input.length;
+          fire('touchstart', at(x), true);
+          for (let i = 1; i <= 20; i++) fire('touchmove', at(x + ((toEdge - x) * i) / 20), true);
+          fire('touchend', at(toEdge), false);
+          return input.slice(before);
+        },
+        { x: padBox.x + padBox.width / 2, y: padBox.y + padBox.height / 2, toEdge },
+      );
+    const right = (await sweep(PHONE.width)).filter((d) => d === '\x1b[C').length;
+    const left = (await sweep(0)).filter((d) => d === '\x1b[D').length;
+
+    // Both edges are a full line away, and the outer stretch accelerates:
+    // far more than the linear pace (one column per 8 px) would send.
+    expect(left).toBe(right);
+    expect(right).toBeGreaterThan(Math.ceil(PHONE.width / 2 / 8) + 5);
   });
 });

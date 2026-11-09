@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import type { TerminalDrawerController } from '../hooks/useTerminalDrawer.js';
@@ -14,8 +14,8 @@ export interface MobileShellController {
   toggleView: () => void;
   /** A tap on an agent card. */
   selectCard: (agentId: number) => void;
-  /** A Directory picked from the + card's drawer: launch into it, then
-   *  slide over once the new terminal appears. */
+  /** A Directory picked from the + card's drawer: launch into it. App
+   *  slides over once the new terminal appears (`drawer.lastLaunched`). */
   launch: (directory: Directory) => void;
 }
 
@@ -41,25 +41,7 @@ export function useMobileShell({
   launchAgent,
 }: MobileShellInputs): MobileShellController {
   const [view, setView] = useState<MobileView>('office');
-  const { reveal, lastOpened } = drawer;
-
-  // Slide over only for launches made from the + card: the office is the
-  // app's main screen, so a reload that re-announces live sessions must land
-  // on the office, not whatever terminal happens to exist.
-  const pendingLaunchRef = useRef(false);
-  useEffect(() => {
-    if (!lastOpened) return;
-    if (pendingLaunchRef.current) setView('terminal');
-    pendingLaunchRef.current = false;
-  }, [lastOpened]);
-
-  const launch = useCallback(
-    (directory: Directory) => {
-      pendingLaunchRef.current = true;
-      launchAgent(directory);
-    },
-    [launchAgent],
-  );
+  const { reveal } = drawer;
 
   const showTerminal = useCallback(() => setView('terminal'), []);
 
@@ -105,5 +87,5 @@ export function useMobileShell({
     [getOfficeState, terminalAgentIds, view, reveal],
   );
 
-  return { view, showTerminal, toggleView, selectCard, launch };
+  return { view, showTerminal, toggleView, selectCard, launch: launchAgent };
 }
