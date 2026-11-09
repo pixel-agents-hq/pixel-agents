@@ -65,6 +65,8 @@ export interface RoleLaunchRequest {
   /** The registered Directory's path (never the client's string). */
   directoryPath: string;
   roleName: string;
+  /** The listed Role's file name (its personal KB identity key). */
+  roleId: string;
   snapshotPath: string;
 }
 
@@ -307,6 +309,7 @@ async function handleLaunchWithRole(msg: Record<string, unknown>, deps: RoleMess
     id = deps.launch({
       directoryPath: read.directory.path,
       roleName: read.roleName,
+      roleId: read.roleId,
       snapshotPath,
     });
   } catch (err) {

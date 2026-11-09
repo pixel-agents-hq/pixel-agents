@@ -34,6 +34,15 @@ export interface AgentState {
    *  Runtime-only and display-only: never persisted, so no restore or restart
    *  path can relaunch with a Role. The Role's content and hash never live here. */
   roleName?: string;
+  /** S1b Role file name (roleId, e.g. `writer.md`) this agent was launched with
+   *  (standalone PTY agents only). Recorded at launch, never the display name;
+   *  it is the agent's personal KB identity key (writeGuard/kbIdentity.ts).
+   *  Runtime-only: PTY agents are never restored, so it is never persisted. */
+  roleId?: string;
+  /** realpath of the Directory a standalone PTY agent was launched into,
+   *  recorded at launch. KB rule ownership is decided by this, never by a hook
+   *  payload's cwd (which follows `cd`). Runtime-only, never persisted. */
+  directoryRealPath?: string;
   /** Timestamp of last JSONL data received (ms since epoch) */
   lastDataAt: number;
   /** Total JSONL lines processed for this agent */

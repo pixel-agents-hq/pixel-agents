@@ -9,47 +9,39 @@
  *   在本地判斷是否 fail-closed。Agent 加入、移除、清空、session 註冊變更時
  *   立即更新，另有後備間隔重算；內容不變不寫檔。
  *
- * 受保護根目錄在 P1 沒有正式來源（只由測試直寫）；P2 起由工作空間設定產生。
- * 規則在 P1 是最小版本 protectedRootsRule；P2 以 KB 規則替換。
+ * P2：受保護區的正式來源是工作空間設定（根目錄）與已知 Agent 啟動時記錄的
+ * Directory realpath 與 roleId（kbState.ts）。快照在事件（Agent 加入、移除、清空、
+ * 換工作空間、workspacesLoaded 廣播、session 變更）與後備間隔時重算；裁決只讀快照。
+ * 規則是 kbRules.ts 的 kbRule（取代 P1 的 protectedRootsRule）。setProtectedRoots
+ * 保留為額外受保護根目錄（測試用；正式環境不呼叫）。
  */
 
 import * as os from 'os';
 
+import type { Workspace } from '../../../core/src/messages.js';
 import type { AgentStateStore } from '../agentStateStore.js';
-import {
-  WRITE_GUARD_LIST_REFRESH_INTERVAL_MS,
-  WRITE_GUARD_LIST_VERSION,
-  WRITE_GUARD_RULE_PROTECTED_PATH,
-} from '../constants.js';
+import { WRITE_GUARD_LIST_REFRESH_INTERVAL_MS, WRITE_GUARD_LIST_VERSION } from '../constants.js';
+import type { AgentState } from '../types.js';
+import { listWorkspaces } from '../workspaces.js';
 import type { GuardList, GuardListOwner } from './guardList.js';
 import { removeGuardList, writeGuardList } from './guardList.js';
+import type { KbRuleContext, RuleVerdict } from './kbRules.js';
+import { kbRule } from './kbRules.js';
+import type { KbState } from './kbState.js';
+import { computeKbState, kbProtectedRoots } from './kbState.js';
 import type { PathNormalizer } from './pathNormalization.js';
 import { pathNormalizer } from './pathNormalization.js';
 import type { GuardRequest, GuardVerdict } from './protocol.js';
 import { parseGuardRequest } from './protocol.js';
 
-/** 規則看得到的東西：只有記憶體中的資料。 */
-export interface GuardRuleContext {
-  agentId: number;
-  protectedRoots: readonly string[];
-  isWithin(target: string, root: string): boolean;
+/** 對一個已知 standalone Agent 的請求做出 allow 或 deny（unknown-session 由 WriteGuard 決定）。
+ *  context 只有記憶體中的資料（F13）。 */
+export type GuardRule = (request: GuardRequest, context: KbRuleContext) => RuleVerdict;
+
+/** curator 的查詢來源（CuratorTable）。 */
+export interface CuratorLookup {
+  curatorOf(workspaceId: string | undefined): number | null;
 }
-
-/** 對一個已知 standalone Agent 的請求做出 allow 或 deny（unknown-session 由 WriteGuard 決定）。 */
-export type GuardRule = (
-  request: GuardRequest,
-  context: GuardRuleContext,
-) => Exclude<GuardVerdict, { verdict: 'unknown-session' }>;
-
-/** P1 的最小規則：任何路徑落在受保護根目錄之下就 deny，其餘 allow。 */
-export const protectedRootsRule: GuardRule = (request, context) => {
-  const hit = request.paths.find((p) =>
-    context.protectedRoots.some((root) => context.isWithin(p, root)),
-  );
-  return hit === undefined
-    ? { verdict: 'allow' }
-    : { verdict: 'deny', rule: WRITE_GUARD_RULE_PROTECTED_PATH, path: hit };
-};
 
 /** session 註冊變更的來源（AgentRuntime.onSessionsChanged）。 */
 export interface SessionChangeSource {
@@ -65,6 +57,10 @@ export interface WriteGuardDeps {
   rule?: GuardRule;
   normalizer?: PathNormalizer;
   homeDir?: () => string;
+  /** 工作空間 KB 的 curator；沒有時每個工作空間 KB 區都視為「尚未任命」。 */
+  curators?: CuratorLookup;
+  /** 工作空間清單（含根目錄）；預設讀 ~/.pixel-agents/workspaces.json。重算時才呼叫。 */
+  workspaces?: () => Workspace[];
 }
 
 export class WriteGuard {
@@ -74,21 +70,81 @@ export class WriteGuard {
   private readonly rule: GuardRule;
   private readonly normalizer: PathNormalizer;
   private readonly homeDir: () => string;
+  private readonly curators: CuratorLookup | undefined;
+  private readonly workspaces: () => Workspace[];
 
-  private protectedRoots: string[] = [];
+  /** 額外受保護根目錄（setProtectedRoots）。 */
+  private extraRoots: string[] = [];
+  private kbState: KbState;
+  private readonly storeUnsubscribers: (() => void)[] = [];
   private owner: GuardListOwner | null = null;
   private publishedHome: string | null = null;
   private lastWritten: string | null = null;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
-  private unsubscribers: (() => void)[] = [];
 
   constructor(deps: WriteGuardDeps) {
     this.store = deps.store;
     this.ptyManager = deps.ptyManager;
     this.sessions = deps.sessions;
-    this.rule = deps.rule ?? protectedRootsRule;
+    this.rule = deps.rule ?? kbRule;
     this.normalizer = deps.normalizer ?? pathNormalizer;
     this.homeDir = deps.homeDir ?? (() => os.homedir());
+    this.curators = deps.curators;
+    this.workspaces = deps.workspaces ?? listWorkspaces;
+    this.kbState = this.computeState();
+
+    // 規則快照隨 Agent 與工作空間設定更新（不論是否發佈清單）；發佈時一併寫清單。
+    const onChange = (): void => this.update();
+    const onBroadcast = (message: Record<string, unknown>): void => {
+      if (message.type === 'workspacesLoaded') this.update();
+    };
+    const events = [
+      'agentAdded',
+      'agentRemoved',
+      'agentsCleared',
+      'agentWorkspaceChanged',
+    ] as const;
+    for (const event of events) this.store.on(event, onChange);
+    this.store.on('broadcast', onBroadcast);
+    this.storeUnsubscribers.push(() => {
+      for (const event of events) this.store.off(event, onChange);
+      this.store.off('broadcast', onBroadcast);
+    });
+    if (this.sessions) this.storeUnsubscribers.push(this.sessions.onSessionsChanged(onChange));
+  }
+
+  /** 停止跟隨 store（測試與關閉時）；也停止發佈。 */
+  dispose(): void {
+    this.unpublish();
+    for (const unsubscribe of this.storeUnsubscribers.splice(0)) unsubscribe();
+  }
+
+  /** 重算規則快照並（發佈中時）更新清單。此處可碰檔案系統；裁決不會呼叫它。 */
+  update(): void {
+    try {
+      this.kbState = this.computeState();
+    } catch (err) {
+      console.error(`[Pixel Agents] Write guard: failed to recompute KB rules: ${String(err)}`);
+    }
+    this.refresh();
+  }
+
+  private computeState(): KbState {
+    const knownAgents: [number, AgentState][] = [];
+    for (const [id, agent] of this.store) {
+      if (this.ptyManager.has(id)) knownAgents.push([id, agent]);
+    }
+    return computeKbState({
+      workspaces: this.workspaces(),
+      knownAgents,
+      homeDir: this.homeDir(),
+      normalizer: this.normalizer,
+    });
+  }
+
+  /** 目前的規則快照（測試與診斷用）。 */
+  getKbState(): KbState {
+    return this.kbState;
   }
 
   /**
@@ -101,12 +157,17 @@ export class WriteGuard {
       const resolved = this.normalizer.normalizeRoot(root);
       if (resolved !== null && !normalized.includes(resolved)) normalized.push(resolved);
     }
-    this.protectedRoots = normalized;
+    this.extraRoots = normalized;
     this.refresh();
   }
 
+  /** hook 本地 fail-closed 用的受保護根目錄：額外根目錄加上兩種 KB 區。 */
   getProtectedRoots(): string[] {
-    return [...this.protectedRoots];
+    const roots = [...this.extraRoots];
+    for (const root of kbProtectedRoots(this.kbState)) {
+      if (!roots.includes(root)) roots.push(root);
+    }
+    return roots;
   }
 
   /** 已知 standalone Agent 的 session id（記憶體查詢）。 */
@@ -127,10 +188,13 @@ export class WriteGuard {
     if (!request) return null;
     const agentId = this.knownAgentFor(request.session_id);
     if (agentId === undefined) return { verdict: 'unknown-session' };
+    const curators = this.curators;
     return this.rule(request, {
       agentId,
-      protectedRoots: this.protectedRoots,
-      isWithin: (target, root) => this.normalizer.isWithin(target, root),
+      extraRoots: this.extraRoots,
+      kb: this.kbState,
+      curatorOf: (key) => curators?.curatorOf(key) ?? null,
+      normalizer: this.normalizer,
     });
   }
 
@@ -141,25 +205,15 @@ export class WriteGuard {
     this.publishedHome = this.homeDir();
     this.lastWritten = null;
 
-    const onChange = (): void => this.refresh();
-    this.store.on('agentAdded', onChange);
-    this.store.on('agentRemoved', onChange);
-    this.store.on('agentsCleared', onChange);
-    this.unsubscribers.push(() => {
-      this.store.off('agentAdded', onChange);
-      this.store.off('agentRemoved', onChange);
-      this.store.off('agentsCleared', onChange);
-    });
-    if (this.sessions) this.unsubscribers.push(this.sessions.onSessionsChanged(onChange));
-
-    this.refreshTimer = setInterval(onChange, WRITE_GUARD_LIST_REFRESH_INTERVAL_MS);
+    // 事件已在建構時訂閱（update 會在發佈中時寫清單）；這裡只加後備間隔。
+    // 間隔也重算規則快照，補上事件看不到的變更（例如 .note 之後才被換成 symlink）。
+    this.refreshTimer = setInterval(() => this.update(), WRITE_GUARD_LIST_REFRESH_INTERVAL_MS);
     this.refreshTimer.unref?.();
-    this.refresh();
+    this.update();
   }
 
   /** 停止發佈並刪除自己的清單（伺服器停止時）。 */
   unpublish(): void {
-    for (const unsubscribe of this.unsubscribers.splice(0)) unsubscribe();
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
       this.refreshTimer = null;
@@ -177,7 +231,7 @@ export class WriteGuard {
       version: WRITE_GUARD_LIST_VERSION,
       pid: this.owner.pid,
       port: this.owner.port,
-      protectedRoots: [...this.protectedRoots],
+      protectedRoots: this.getProtectedRoots(),
       knownSessions: this.knownSessions(),
     };
     const serialized = JSON.stringify(list);

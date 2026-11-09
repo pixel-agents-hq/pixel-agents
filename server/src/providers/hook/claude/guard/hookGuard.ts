@@ -14,7 +14,10 @@
  *    舊版伺服器沒有清單，根本不會被詢問，因此照樣放行。
  *
  * 其餘一律放行：沒有清單、清單沒列這個 session、registry 沒有活著的 PID、
- * 不是 PreToolUse、不是 P1 處理的工具。
+ * 不是 PreToolUse、不是要裁決的工具。
+ *
+ * P2：每個原始路徑產生作業系統語意與字面語意兩個候選（normalizeTargetCandidates），
+ * 全部送給伺服器；寫入類工具抽不到或無法正規化路徑時帶 unresolved（F7）。
  */
 
 import * as http from 'http';
@@ -32,12 +35,15 @@ import { renderDenyMessage } from '../../../../writeGuard/denyMessage.js';
 import type { GuardList } from '../../../../writeGuard/guardList.js';
 import { readGuardList } from '../../../../writeGuard/guardList.js';
 import type { PathNormalizer } from '../../../../writeGuard/pathNormalization.js';
-import { pathNormalizer } from '../../../../writeGuard/pathNormalization.js';
+import {
+  normalizeTargetCandidates,
+  pathNormalizer,
+} from '../../../../writeGuard/pathNormalization.js';
 import type { GuardRequest, GuardVerdict } from '../../../../writeGuard/protocol.js';
 import { parseGuardVerdict } from '../../../../writeGuard/protocol.js';
 import { formatDenyOutput } from './decisionOutput.js';
 import type { FieldExtractor } from './fieldExtraction.js';
-import { extractGuardFields } from './fieldExtraction.js';
+import { extractGuardFields, isFileWriteTool } from './fieldExtraction.js';
 
 export type GuardDecision = { decision: 'allow' } | { decision: 'deny'; reason: string };
 
@@ -102,19 +108,32 @@ export function planGuard(
   }
   if (lists.length === 0) return null;
 
+  // F7：寫入類工具抽不到路徑、或任何路徑無法正規化，都是明確的「無法判斷」，
+  // 不能被默默丟掉（P1 的版本會丟掉它而放行）。
   const paths: string[] = [];
+  let unresolved = isFileWriteTool(fields.toolName) && fields.pathFields.length === 0;
   for (const raw of fields.pathFields) {
-    const normalized = deps.normalizer.normalizeTarget(raw, fields.cwd);
-    if (normalized !== null && !paths.includes(normalized)) paths.push(normalized);
+    const candidates = normalizeTargetCandidates(deps.normalizer, raw, fields.cwd);
+    if (candidates === null) {
+      unresolved = true;
+      continue;
+    }
+    for (const candidate of candidates) {
+      if (!paths.includes(candidate)) paths.push(candidate);
+    }
   }
 
   let firstHit: string | undefined;
+  let unresolvedHit = false;
   const targets: GuardTarget[] = lists.map(({ server, list }) => {
     const hit = paths.find((p) =>
       list.protectedRoots.some((root) => deps.normalizer.isWithin(p, root)),
     );
     if (hit !== undefined) firstHit ??= hit;
-    return { server, protectedHit: hit !== undefined };
+    // 無法判斷的寫入：該伺服器有任何受保護根目錄（KB 規則啟用中）就視為命中。
+    const unresolvedProtected = unresolved && list.protectedRoots.length > 0;
+    if (unresolvedProtected) unresolvedHit = true;
+    return { server, protectedHit: hit !== undefined || unresolvedProtected };
   });
 
   const request: GuardRequest = {
@@ -123,13 +142,14 @@ export function planGuard(
     cwd: fields.cwd,
     paths,
     ...(fields.command !== undefined ? { command: fields.command } : {}),
+    ...(unresolved ? { unresolved: true as const } : {}),
   };
   return {
     request,
     body: JSON.stringify(request),
     targets,
     fallback:
-      firstHit === undefined
+      firstHit === undefined && !unresolvedHit
         ? ALLOW
         : {
             decision: 'deny',

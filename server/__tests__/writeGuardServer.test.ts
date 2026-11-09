@@ -232,6 +232,52 @@ describe('WriteGuard.verdict', () => {
     expect(fsCounter.calls).toEqual([]);
   });
 
+  it('P2: makes no file system call while deciding with KB rules and F17 active (F13)', () => {
+    const wsRoot = path.join(tmpBase, 'workspace');
+    const guard = new WriteGuard({
+      store,
+      ptyManager: { has: (id) => held.has(id) },
+      curators: { curatorOf: () => 1 },
+      workspaces: () => [{ id: 'default', name: 'Default', directoryPaths: [], rootPath: wsRoot }],
+    });
+    for (let i = 1; i <= 5; i++) {
+      held.add(i);
+      store.set(
+        i,
+        createAgentState({
+          id: i,
+          sessionId: `kb-${i}`,
+          projectDir: tmpBase,
+          jsonlFile: path.join(tmpBase, `kb-${i}.jsonl`),
+          isExternal: false,
+          directoryRealPath: path.join(tmpBase, `dir-${i}`),
+          roleId: 'a.md',
+        }),
+      );
+    }
+    expect(guard.getKbState().anyActive).toBe(true);
+    fsCounter.calls = [];
+    fsCounter.on = true;
+    const verdicts = [1, 2, 3, 4, 5].map((i) =>
+      guard.verdict({
+        tool_name: 'Write',
+        session_id: `kb-${i}`,
+        cwd: tmpBase,
+        paths: [
+          path.join(protectedRoot, 'a.md'),
+          path.join(tmpBase, `dir-${i}`, '.note', 'b.md', 'x'),
+          path.join(tmpBase, '.pixel-agents', 'x'),
+        ],
+      }),
+    );
+    guard.verdict({ tool_name: 'Write', session_id: 'kb-2', cwd: '', paths: [], unresolved: true });
+    fsCounter.on = false;
+    expect(fsCounter.calls).toEqual([]);
+    // 1 號是 curator：工作空間 KB 放行，但 b.md 不是自己的識別鍵；其餘不是 curator。
+    for (const v of verdicts) expect(v).toMatchObject({ verdict: 'deny' });
+    guard.dispose();
+  });
+
   it('stores protected roots realpath-resolved (the work happens at list time, not verdict time)', () => {
     const guard = guardWith();
     const link = path.join(tmpBase, 'note-link');

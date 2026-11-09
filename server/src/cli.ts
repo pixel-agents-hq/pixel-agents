@@ -264,10 +264,13 @@ async function main(): Promise<void> {
   // Per-agent capabilities and Workspace curators: memory only, gone on
   // restart. Created before anything else subscribes to the store, so the
   // registry hears every removal first. No launch here passes isKbEnabled, so
-  // nothing is issued yet (S2): the curator controls answer not_eligible.
+  // no capability is issued (S2). Curators (P2) need none: any agent this host
+  // launched into a Workspace is eligible, and the table clears itself from the
+  // store's removal / Workspace-change / clear events.
   const capabilities = new CapabilityRegistry({ store, ptyManager });
   const curators = new CuratorTable({
-    capabilities,
+    store,
+    ptyManager,
     broadcast: (message) => store.broadcast(message),
   });
 
@@ -276,9 +279,10 @@ async function main(): Promise<void> {
     const runtime = new AgentRuntime(store, claudeProvider);
 
     // 阻擋式裁決：只認本行程以 PTY 啟動的 Agent，清單由 server.start 發佈。
-    // P1 沒有受保護根目錄的正式來源（P2 起由工作空間設定產生），所以目前
-    // 沒有任何寫入會被拒；清單只列出已知 session。
-    const writeGuard = new WriteGuard({ store, ptyManager, sessions: runtime });
+    // 受保護區的正式來源（P2）：工作空間根目錄（~/.pixel-agents/workspaces.json）
+    // 與已知 Agent 啟動時記錄的 Directory realpath、roleId；curator 由 CuratorTable 提供。
+    // 沒有任何工作空間設定根目錄時，KB 規則與 F17 都不啟用，行為與現況相同。
+    const writeGuard = new WriteGuard({ store, ptyManager, sessions: runtime, curators });
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {

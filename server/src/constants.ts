@@ -354,7 +354,7 @@ export const CAPABILITY_BEARER_PREFIX = 'Bearer ';
 export const CURATOR_INVALID_REASON = 'That curator request is not valid.';
 export const CURATOR_EXISTS_REASON = 'That Workspace already has a curator.';
 export const CURATOR_NOT_ELIGIBLE_REASON =
-  'That agent cannot be the curator of this Workspace (it holds no capability there).';
+  'That agent cannot be the curator of this Workspace (it is not an agent this office launched in that Workspace).';
 export const CURATOR_UNAVAILABLE_REASON = 'Curators are only available in the standalone office.';
 
 // ── Write guard（阻擋式裁決通道，standalone 限定） ─────────
@@ -398,6 +398,49 @@ export const WRITE_GUARD_BAD_REQUEST_BODY = 'bad request';
 export const WRITE_GUARD_RULE_PROTECTED_PATH = 'protected-path';
 /** hook 端 fail-closed：已知 standalone session 對受保護路徑寫入，伺服器卻沒有回答。 */
 export const WRITE_GUARD_RULE_UNREACHABLE = 'guard-unreachable';
+/** 工作空間 KB 區（<根目錄>/.note/）：寫入者不是該工作空間的 curator。 */
+export const WRITE_GUARD_RULE_KB_WORKSPACE = 'kb-workspace';
+/** 工作空間 KB 區：該工作空間已設根目錄，但還沒有任命 curator（KB Writer）。 */
+export const WRITE_GUARD_RULE_KB_WORKSPACE_NO_WRITER = 'kb-workspace-no-writer';
+/** 個人 KB 區（<Agent Directory>/.note/）：路徑不在寫入者自己的識別鍵之下。 */
+export const WRITE_GUARD_RULE_KB_PERSONAL = 'kb-personal';
+/** 寫入類工具的目標路徑抽不到或無法正規化（F7）。 */
+export const WRITE_GUARD_RULE_KB_PATH_UNRESOLVED = 'kb-path-unresolved';
+/** F17 拒絕清單：~/.pixel-agents/、~/.claude/settings*.json、<Agent Directory>/.claude/。 */
+export const WRITE_GUARD_RULE_PROTECTED_CONFIG = 'protected-config';
+
+/**
+ * 寫入類檔案工具（Claude Code 的工具名稱）。hook 端與伺服器端共用：抽不到路徑時
+ * KB 規則 deny（F7）。假設（未實測，P0 #5）：NotebookEdit 的路徑欄位可能是
+ * `notebook_path`；欄位抽取兩個名稱都收，抽不到就 deny。
+ */
+export const WRITE_GUARD_FILE_WRITE_TOOLS: readonly string[] = ['Write', 'Edit', 'NotebookEdit'];
+/** 路徑正規化時最多跟隨的 symlink 次數（與常見作業系統的 MAXSYMLINKS 同量級）；
+ *  超過視為無法判斷（fail-closed）。 */
+export const WRITE_GUARD_MAX_SYMLINK_HOPS = 40;
+
+// ── KB 寫入阻擋（P2） ───────────────────────────────────────
+/** 工作空間 KB 與個人 KB 共用的目錄名稱。 */
+export const KB_NOTE_DIR_NAME = '.note';
+/**
+ * 未設角色的 Agent 在個人 KB 中的識別鍵。必須是 S1b 角色檔名白名單
+ * （ROLE_ID_PATTERN：英數開頭、以 `.md` 結尾）產生不出來的字串：
+ * `_` 開頭且不以 `.md` 結尾，大小寫折疊後也一樣，因此不會與任何角色檔撞名。
+ */
+export const KB_PERSONAL_RESERVED_KEY = '_default';
+/** F17：Claude Code 設定檔的檔名規則（~/.claude/settings*.json）。 */
+export const KB_CLAUDE_SETTINGS_FILE_PATTERN = /^settings.*\.json$/i;
+/** F17：Claude Code 使用者層設定目錄名稱（位於 HOME 之下）。 */
+export const KB_CLAUDE_HOME_DIR_NAME = '.claude';
+
+/** setWorkspaceRoot 的 workspaceRejected 理由（固定字串）。 */
+export const WORKSPACE_ROOT_INVALID_ID_REASON = 'That Workspace no longer exists.';
+export const WORKSPACE_ROOT_NOT_ABSOLUTE_REASON =
+  'The Workspace root must be an absolute path to an existing directory.';
+export const WORKSPACE_ROOT_NOT_DIRECTORY_REASON =
+  'The Workspace root must be an existing directory.';
+export const WORKSPACE_ROOT_OVERLAP_REASON =
+  "The Workspace KB (<root>/.note/) would be the same as, or nested with, an agent Directory's personal KB (<Directory>/.note/). Choose another root.";
 
 /**
  * 拒絕訊息的固定範本（F16）：原因、理由、建議三段。只會插入該 Agent 自己送出的
@@ -424,6 +467,37 @@ export const WRITE_GUARD_DENY_TEMPLATES: Readonly<Record<string, WriteGuardDenyT
       'Without an answer the write cannot be checked, so writes to protected paths are refused rather than allowed.',
     suggestion:
       'Retry once the Pixel Agents server is running, or ask the user to make the change.',
+  },
+  [WRITE_GUARD_RULE_KB_WORKSPACE]: {
+    reason: "This write targets the Workspace Knowledge Base (the Workspace root's .note/ folder).",
+    rationale: "Only the Workspace's KB Writer may write the Workspace Knowledge Base.",
+    suggestion:
+      'Do not write this path directly. Propose the change to the KB Writer, who reviews and applies it.',
+  },
+  [WRITE_GUARD_RULE_KB_WORKSPACE_NO_WRITER]: {
+    reason: "This write targets the Workspace Knowledge Base (the Workspace root's .note/ folder).",
+    rationale:
+      'Only the Workspace KB Writer may write it, and this Workspace has no KB Writer assigned yet.',
+    suggestion: 'Ask the user to assign a KB Writer for this Workspace, then propose the change.',
+  },
+  [WRITE_GUARD_RULE_KB_PERSONAL]: {
+    reason:
+      "This write targets a personal Knowledge Base folder (.note/) outside this agent's own area.",
+    rationale:
+      'In a personal Knowledge Base each Role writes only its own subfolder: .note/<Role file name>/, or .note/_default/ for an agent launched without a Role.',
+    suggestion: 'Write under your own subfolder instead, or ask the user to make this change.',
+  },
+  [WRITE_GUARD_RULE_KB_PATH_UNRESOLVED]: {
+    reason: 'The target path of this file write could not be determined.',
+    rationale:
+      'While Knowledge Base rules are on, a file write whose target cannot be checked is refused rather than allowed.',
+    suggestion: 'Retry with an absolute file path.',
+  },
+  [WRITE_GUARD_RULE_PROTECTED_CONFIG]: {
+    reason: 'This write targets Pixel Agents or Claude Code configuration.',
+    rationale:
+      "Agents may not change ~/.pixel-agents/, ~/.claude/settings*.json or their Directory's .claude/ folder, which hold the rules they run under.",
+    suggestion: 'Ask the user to make this change.',
   },
 };
 export const WRITE_GUARD_DENY_GENERIC: WriteGuardDenyTemplate = {

@@ -38,7 +38,7 @@ describe('launchStandaloneAgent with a Role snapshot', () => {
   const launchWithSnapshot = (manager: PtySessionManager, provider = claudeProvider) =>
     launchStandaloneAgent(
       { store, runtime, ptyManager: manager, provider },
-      { directoryPath: tempHome, role: { name: 'frontend', snapshotPath } },
+      { directoryPath: tempHome, role: { name: 'frontend', roleId: 'frontend.md', snapshotPath } },
     );
 
   beforeEach(async () => {

@@ -58,6 +58,8 @@ export interface LaunchInput {
   /** Pass no registry at all (the launch must then issue nothing). */
   withoutRegistry?: boolean;
   provider?: Partial<HookProvider>;
+  /** Launch with a Role (already validated by the caller in production). */
+  role?: { name: string; roleId: string; snapshotPath: string };
 }
 
 export interface Launched {
@@ -100,7 +102,8 @@ export class KbHarness {
     // Same order as cli.ts: the registry subscribes before anything else.
     this.capabilities = new CapabilityRegistry({ store: this.store, ptyManager: this.manager });
     this.curators = new CuratorTable({
-      capabilities: this.capabilities,
+      store: this.store,
+      ptyManager: this.manager,
       broadcast: (message) => this.store.broadcast(message),
     });
     this.runtime = new AgentRuntime(this.store, claudeProvider);
@@ -132,7 +135,7 @@ export class KbHarness {
         capabilities: input.withoutRegistry ? undefined : this.capabilities,
         isKbEnabled: kb === undefined ? undefined : typeof kb === 'function' ? kb : () => kb,
       },
-      { directoryPath: input.directoryPath },
+      { directoryPath: input.directoryPath, role: input.role },
     );
     const spawn = this.spawned.length > before ? this.spawned[this.spawned.length - 1] : undefined;
     return { id, spawn, token: spawn?.options.env?.[CAPABILITY_ENV_NAME] };

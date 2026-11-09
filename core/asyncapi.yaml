@@ -171,6 +171,7 @@ components:
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/SaveWorkspace'
         - $ref: '#/components/schemas/RemoveWorkspace'
+        - $ref: '#/components/schemas/SetWorkspaceRoot'
         - $ref: '#/components/schemas/SetWorkspaceCurator'
         - $ref: '#/components/schemas/UnsetWorkspaceCurator'
         - $ref: '#/components/schemas/RequestRoles'
@@ -937,8 +938,8 @@ components:
         every agent on arrival.
 
         Rebroadcast to every connected office after every Workspace mutation
-        (`saveWorkspace`, `removeWorkspace`). A client learns its own save or
-        delete succeeded from this.
+        (`saveWorkspace`, `removeWorkspace`, `setWorkspaceRoot`). A client learns
+        its own save or delete succeeded from this.
       type: object
       additionalProperties: false
       required: [type, workspaces]
@@ -952,8 +953,8 @@ components:
 
     WorkspaceRejected:
       description: |
-        A `saveWorkspace` or `removeWorkspace` failed validation or could not be
-        written. Sent point-to-point to the requesting client (never broadcast)
+        A `saveWorkspace`, `removeWorkspace` or `setWorkspaceRoot` failed
+        validation or could not be written. Sent point-to-point to the requesting client (never broadcast)
         and nothing changed on disk.
       type: object
       additionalProperties: false
@@ -983,15 +984,15 @@ components:
 
     # ── Workspace curators ─────────────────────────────────────────
     # At most one agent per Workspace, appointed by the operator, held in the
-    # host's memory only (a restart starts with none). Only an agent holding a
-    # capability for that Workspace is eligible. Messages carry ids only. The
+    # host's memory only (a restart starts with none). Only an agent this host
+    # launched in a terminal into that Workspace is eligible. Messages carry ids only. The
     # default Workspace is always named `default`.
 
     CuratorsLoaded:
       description: >-
         Sent to this client only during the handshake, after
         `workspacesLoaded`. `available` is true only on a standalone host with
-        a runtime, a terminal manager and a capability registry; the client
+        a runtime, a terminal manager and a curator table; the client
         shows curator controls only when it is true and the office is not
         read-only. `curators` is empty when unavailable.
       type: object
@@ -1011,7 +1012,8 @@ components:
       description: >-
         A Workspace's curator changed. Broadcast to every connected office.
         `agentId` is null when the Workspace no longer has one (dismissed, the
-        agent lost its capability, or the Workspace was removed).
+        agent was removed or moved to another Workspace, all agents were
+        cleared, or the Workspace was removed).
       type: object
       additionalProperties: false
       required: [type, workspaceId, agentId]
@@ -1602,8 +1604,9 @@ components:
     SetWorkspaceCurator:
       description: >-
         Privileged, standalone only. Appoint `agentId` as the curator of
-        `workspaceId`. The agent must hold a live capability issued for that
-        Workspace and the Workspace must have no curator yet. On success the
+        `workspaceId`. The agent must be one this host launched in a terminal
+        (and still holds) in that Workspace, and the Workspace must have no
+        curator yet. On success the
         host broadcasts `workspaceCuratorChanged`; otherwise it replies
         `curatorRejected`. A read-only client's request is dropped without a
         reply.
@@ -1617,6 +1620,28 @@ components:
           type: string
         agentId:
           type: integer
+
+    SetWorkspaceRoot:
+      description: >-
+        Privileged, standalone only. Set (a string) or clear (null) the root
+        directory of `workspaceId`. While a Workspace has a root, its
+        Knowledge Base `<root>/.note/` may be written only by its curator, and
+        the personal Knowledge Base and configuration write rules apply to
+        its agents. The root must be an absolute path to an existing directory;
+        the host stores its realpath. Refused when `<root>/.note/` would equal,
+        contain or be contained in a Directory's `<Directory>/.note/`. On
+        success the host rebroadcasts `workspacesLoaded`; on failure it replies
+        `workspaceRejected`. A read-only client gets `workspacesLoaded` back.
+      type: object
+      additionalProperties: false
+      required: [type, workspaceId, rootPath]
+      properties:
+        type:
+          const: setWorkspaceRoot
+        workspaceId:
+          type: string
+        rootPath:
+          type: [string, 'null']
 
     UnsetWorkspaceCurator:
       description: >-
@@ -1780,6 +1805,11 @@ components:
           type: array
           items:
             type: string
+        rootPath:
+          type: string
+          description: >-
+            Realpath of the Workspace root directory. Absent: no root, and the
+            Knowledge Base write rules are off for this Workspace.
 
     RoleId:
       description: >-
@@ -1845,8 +1875,8 @@ components:
         - `invalid`: a field failed validation, the Workspace does not exist,
           or (dismissing) the Workspace has no curator.
         - `exists`: the Workspace already has a curator.
-        - `not_eligible`: the agent holds no live capability for that
-          Workspace.
+        - `not_eligible`: the agent is not one this host launched in a
+          terminal into that Workspace (or its terminal is gone).
         - `unavailable`: curators are not supported on this host or in this
           mode (VS Code panel, embedded server).
       type: string

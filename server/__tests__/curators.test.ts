@@ -10,7 +10,8 @@ import { KbHarness } from './curatorHarness.js';
 /**
  * Workspace curators over the wire (S2): appointing, dismissing and every
  * refusal, through handleClientMessage with a real store, runtime, registry and
- * curator table. Eligible agents come only from the launcher with isKbEnabled.
+ * curator table. Eligible agents (P2) are the PTY agents the launcher started
+ * in that Workspace; a capability is no longer required.
  */
 
 describe('Workspace curators', () => {
@@ -125,7 +126,7 @@ describe('Workspace curators', () => {
     expect(h.curatorBroadcasts()).toEqual([]);
   });
 
-  it('refuses agents that hold no capability as not_eligible', () => {
+  it('refuses agents that are not known standalone agents of the Workspace as not_eligible', () => {
     const ws = h.workspace('alpha');
     const other = h.workspace('beta');
 
@@ -181,12 +182,17 @@ describe('Workspace curators', () => {
     h.runtime.restoreExternalAgents();
     expect(h.store.get(60)?.workspaceId).toBe(ws.id);
 
-    for (const agentId of [kbOff.id, plain.id, 50, 51, 60]) {
+    for (const agentId of [50, 51, 60]) {
       expect(set(ws.id, agentId)).toEqual(rejected('not_eligible'));
     }
     expect(h.curatorBroadcasts()).toEqual([]);
     // The Lead itself is eligible.
     expect(set(ws.id, lead.id)).toEqual([]);
+    // P2: PTY agents holding no capability are eligible too.
+    for (const agentId of [kbOff.id, plain.id]) {
+      expect(unset(ws.id)).toEqual([]);
+      expect(set(ws.id, agentId)).toEqual([]);
+    }
   });
 
   // ── Access ──────────────────────────────────────────────────
@@ -207,13 +213,13 @@ describe('Workspace curators', () => {
     expect(h.curatorBroadcasts()).toHaveLength(1);
   });
 
-  it('answers unavailable without a terminal manager, runtime or registry', () => {
+  it('answers unavailable without a terminal manager, runtime or curator table', () => {
     const ws = h.workspace('alpha');
     const { id } = h.launch({ kb: true, directoryPath: ws.dir });
+    // P2: a capability registry is no longer required (eligibility needs none).
     for (const missing of [
       { ptyManager: undefined },
       { runtime: undefined },
-      { capabilities: undefined },
       { curators: undefined },
     ]) {
       const context = h.ctx(missing);
@@ -231,11 +237,11 @@ describe('Workspace curators', () => {
     expect(h.curatorBroadcasts()).toEqual([]);
   });
 
-  it('offers no curator controls while nothing can enable a KB (isKbEnabled not wired)', () => {
+  it('offers curator controls even when isKbEnabled is not wired (P2: no capability needed)', () => {
     const loaded = h
-      .send({ type: 'webviewReady' }, h.ctx({ isKbEnabled: undefined }))
+      .send({ type: 'webviewReady' }, h.ctx({ isKbEnabled: undefined, capabilities: undefined }))
       .find((m) => m.type === 'curatorsLoaded');
-    expect(loaded).toEqual({ type: 'curatorsLoaded', available: false, curators: [] });
+    expect(loaded).toEqual({ type: 'curatorsLoaded', available: true, curators: [] });
   });
 
   it('sends curatorsLoaded to the connecting client only, with the current curators', () => {

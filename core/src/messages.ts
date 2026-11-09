@@ -86,6 +86,7 @@ export type ClientMessage =
   | RemoveDirectory
   | SaveWorkspace
   | RemoveWorkspace
+  | SetWorkspaceRoot
   | SetWorkspaceCurator
   | UnsetWorkspaceCurator
   | RequestRoles
@@ -384,6 +385,7 @@ export interface Workspace {
   id: string;
   name: string;
   directoryPaths: string[];
+  rootPath?: string;
 }
 
 export interface WorkspaceRejected {
@@ -624,6 +626,12 @@ export interface SaveWorkspace {
 export interface RemoveWorkspace {
   type: 'removeWorkspace';
   id: string;
+}
+
+export interface SetWorkspaceRoot {
+  type: 'setWorkspaceRoot';
+  workspaceId: string;
+  rootPath: string | null;
 }
 
 export interface SetWorkspaceCurator {

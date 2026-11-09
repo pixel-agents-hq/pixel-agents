@@ -16,8 +16,13 @@ export interface GuardRequest {
   cwd: string;
   /** hook 端正規化（realpath）後的絕對路徑。 */
   paths: string[];
-  /** Bash 的原始指令字串；P1 不對它做路徑判斷。 */
+  /** Bash 的原始指令字串；P2 不對它做路徑判斷（Bash 是 P3）。 */
   command?: string;
+  /**
+   * 寫入類工具的路徑抽不到、或至少一個路徑無法正規化（F7）。只在為 true 時出現；
+   * 伺服器在 KB 規則啟用時一律 deny。
+   */
+  unresolved?: true;
 }
 
 /** 伺服器的三態裁決（F4）。deny 只帶規則識別碼與（請求內的）路徑，不帶任何自由文字。 */
@@ -37,18 +42,20 @@ function isStringArray(value: unknown): value is string[] {
 /** 伺服器端驗證請求形狀；不合格回 null（端點回 400）。多餘欄位一律丟棄。 */
 export function parseGuardRequest(body: unknown): GuardRequest | null {
   if (!isRecord(body)) return null;
-  const { tool_name, session_id, cwd, paths, command } = body;
+  const { tool_name, session_id, cwd, paths, command, unresolved } = body;
   if (typeof tool_name !== 'string' || tool_name.length === 0) return null;
   if (typeof session_id !== 'string' || session_id.length === 0) return null;
   if (typeof cwd !== 'string') return null;
   if (!isStringArray(paths)) return null;
   if (command !== undefined && typeof command !== 'string') return null;
+  if (unresolved !== undefined && typeof unresolved !== 'boolean') return null;
   return {
     tool_name,
     session_id,
     cwd,
     paths: [...paths],
     ...(command !== undefined ? { command } : {}),
+    ...(unresolved === true ? { unresolved: true as const } : {}),
   };
 }
 

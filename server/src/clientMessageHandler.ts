@@ -36,7 +36,11 @@ import { claudeProvider, hookProviderById, hookProviders } from './providers/ind
 import { handleRoleClientMessage, type RoleMessageDeps } from './roleClientMessages.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
-import { handleWorkspaceClientMessage, workspacesLoadedMessage } from './workspaces.js';
+import {
+  handleWorkspaceClientMessage,
+  listWorkspaces,
+  workspacesLoadedMessage,
+} from './workspaces.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -131,6 +135,24 @@ function shownHostDirectoriesFor(ctx: ClientMessageContext): HostDirectoryEntry[
 }
 
 /**
+ * Every Directory a personal KB (`<Directory>/.note/`) can live in, for the
+ * setWorkspaceRoot overlap check: the registered Directories (user + host),
+ * every Workspace's Directories, and the Directory realpath of every agent
+ * this host launched.
+ */
+function personalKbDirectoriesFor(ctx: ClientMessageContext): string[] {
+  const directories = new Set<string>();
+  for (const directory of listDirectories(hostDirectoriesFor(ctx))) directories.add(directory.path);
+  for (const workspace of listWorkspaces()) {
+    for (const directoryPath of workspace.directoryPaths) directories.add(directoryPath);
+  }
+  for (const [, agent] of ctx.store) {
+    if (agent.directoryRealPath) directories.add(agent.directoryRealPath);
+  }
+  return [...directories];
+}
+
+/**
  * Roles need a standalone host that can actually launch (a ptyManager whose
  * terminal works, and a runtime) and are off on Windows until verified there.
  * VS Code embedded mode has no ptyManager, so it is always refused.
@@ -152,7 +174,7 @@ function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
     // depend on whether the host Directory is currently shown.
     hostDirectories: () => hostDirectoriesFor(ctx),
     available: rolesAvailableFor(ctx),
-    launch: ({ directoryPath, roleName, snapshotPath }) => {
+    launch: ({ directoryPath, roleName, roleId, snapshotPath }) => {
       if (!ctx.runtime || !ctx.ptyManager) return null;
       return launchStandaloneAgent(
         {
@@ -169,7 +191,7 @@ function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
           // confirmation because of it.
           bypassPermissions:
             ctx.store.getAdapter()?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
-          role: { name: roleName, snapshotPath },
+          role: { name: roleName, roleId, snapshotPath },
         },
       );
     },
@@ -441,20 +463,22 @@ export function handleClientMessage(
 
     case 'saveWorkspace':
     case 'removeWorkspace':
+    case 'setWorkspaceRoot':
       // Same shape as the Directory messages: success rebroadcasts the list to
       // every office, a rejection answers only the sender. Deleting a Workspace
       // sends its agents back to the default first, one agentWorkspaceChanged each.
       handleWorkspaceClientMessage(msg, {
         broadcast: (message) => store.broadcast(message),
         reply: send,
+        personalKbDirectories: () => personalKbDirectoriesFor(ctx),
         onWorkspaceRemoved: (workspaceId) => {
           for (const [id, agent] of [...store]) {
             if (agent.workspaceId === workspaceId) {
               store.setAgentWorkspace(id, DEFAULT_WORKSPACE_ID);
             }
           }
-          // Moving its agents already revoked their capabilities (and with them
-          // the curator); the record goes too, whoever holds it.
+          // Moving its agents already cleared their curator record (the curator
+          // table follows agentWorkspaceChanged); the record goes too, whoever holds it.
           ctx.curators?.clearWorkspace(workspaceId);
         },
       });
@@ -704,9 +728,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
 
   // 4e. Curators, to this client only. `available` is the host's answer, not
   // this connection's: a read-only office hides the controls itself.
-  send(
-    curatorsLoadedMessage(curatorsAvailable(ctx) && ctx.isKbEnabled !== undefined, ctx.curators),
-  );
+  // No longer gated on isKbEnabled (P2): curator eligibility does not need a capability.
+  send(curatorsLoadedMessage(curatorsAvailable(ctx), ctx.curators));
 
   // Sync runtime refs with the persisted settings so scanners behave correctly
   // from the first tick after a server restart.
@@ -861,6 +884,7 @@ function refuseReadOnly(
       return;
     case 'saveWorkspace':
     case 'removeWorkspace':
+    case 'setWorkspaceRoot':
       send(workspacesLoadedMessage());
       return;
   }
