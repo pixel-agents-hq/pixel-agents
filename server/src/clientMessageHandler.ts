@@ -41,6 +41,7 @@ import {
   listWorkspaces,
   workspacesLoadedMessage,
 } from './workspaces.js';
+import { parsePermissionRoles } from './writeGuard/permissionRoles.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -174,7 +175,7 @@ function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
     // depend on whether the host Directory is currently shown.
     hostDirectories: () => hostDirectoriesFor(ctx),
     available: rolesAvailableFor(ctx),
-    launch: ({ directoryPath, roleName, roleId, snapshotPath }) => {
+    launch: ({ directoryPath, roleName, roleId, snapshotPath, permissionRoles }) => {
       if (!ctx.runtime || !ctx.ptyManager) return null;
       return launchStandaloneAgent(
         {
@@ -192,6 +193,7 @@ function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
           bypassPermissions:
             ctx.store.getAdapter()?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
           role: { name: roleName, roleId, snapshotPath },
+          permissionRoles,
         },
       );
     },
@@ -238,6 +240,14 @@ export function handleClientMessage(
       // the browser drawer (a shell running as the operator -- privileged, like
       // every message past the read-only gate above).
       if (!runtime || !ctx.ptyManager) break;
+      // P3 permission-role override: validated before anything starts; an
+      // invalid one launches nothing (never falls back to the Workspace default).
+      const permissionRoles =
+        msg.permissionRoles === undefined ? undefined : parsePermissionRoles(msg.permissionRoles);
+      if (msg.permissionRoles !== undefined && permissionRoles === undefined) {
+        console.warn('[Pixel Agents] Terminal: not launching -- invalid permissionRoles');
+        break;
+      }
       // Permission posture is a persisted per-host setting, never a per-launch
       // field: the client sends only where to launch. Every launch comes from a
       // drawer row and carries its Directory's path; no directoryPath falls
@@ -254,6 +264,7 @@ export function handleClientMessage(
         {
           directoryPath: msg.directoryPath as string | undefined,
           bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+          ...(permissionRoles !== undefined ? { permissionRoles } : {}),
         },
       );
       break;
@@ -464,6 +475,7 @@ export function handleClientMessage(
     case 'saveWorkspace':
     case 'removeWorkspace':
     case 'setWorkspaceRoot':
+    case 'setWorkspacePermissionRoles':
       // Same shape as the Directory messages: success rebroadcasts the list to
       // every office, a rejection answers only the sender. Deleting a Workspace
       // sends its agents back to the default first, one agentWorkspaceChanged each.
@@ -885,6 +897,7 @@ function refuseReadOnly(
     case 'saveWorkspace':
     case 'removeWorkspace':
     case 'setWorkspaceRoot':
+    case 'setWorkspacePermissionRoles':
       send(workspacesLoadedMessage());
       return;
   }

@@ -408,6 +408,21 @@ export const WRITE_GUARD_RULE_KB_PERSONAL = 'kb-personal';
 export const WRITE_GUARD_RULE_KB_PATH_UNRESOLVED = 'kb-path-unresolved';
 /** F17 拒絕清單：~/.pixel-agents/、~/.claude/settings*.json、<Agent Directory>/.claude/。 */
 export const WRITE_GUARD_RULE_PROTECTED_CONFIG = 'protected-config';
+/** P3：角色缺少某操作類別時的規則識別碼。 */
+export const WRITE_GUARD_RULE_ROLE_READ = 'role-read';
+export const WRITE_GUARD_RULE_ROLE_EDIT = 'role-edit';
+export const WRITE_GUARD_RULE_ROLE_DELETE = 'role-delete';
+/** Bash 的寫入目標無法判斷（指令過長、巢狀過深、目標過多、路徑無法正規化）。 */
+export const WRITE_GUARD_RULE_BASH_UNRESOLVED = 'kb-bash-unresolved';
+/** hook 端裁決流程本身發生例外：已知 session 且 KB 規則啟用時，寫入類工具 fail-closed。 */
+export const WRITE_GUARD_RULE_GUARD_ERROR = 'guard-error';
+/** guard-error 時 fail-closed 的工具（寫入類檔案工具與 Bash）；讀取類與其他工具放行。 */
+export const WRITE_GUARD_ERROR_FAIL_CLOSED_TOOLS: readonly string[] = [
+  'Write',
+  'Edit',
+  'NotebookEdit',
+  'Bash',
+];
 
 /**
  * 寫入類檔案工具（Claude Code 的工具名稱）。hook 端與伺服器端共用：抽不到路徑時
@@ -439,6 +454,10 @@ export const WORKSPACE_ROOT_NOT_ABSOLUTE_REASON =
   'The Workspace root must be an absolute path to an existing directory.';
 export const WORKSPACE_ROOT_NOT_DIRECTORY_REASON =
   'The Workspace root must be an existing directory.';
+/** 權限角色值不合格（setWorkspacePermissionRoles 的 workspaceRejected、帶角色啟動的
+ *  roleRejected 共用的固定字串）。 */
+export const PERMISSION_ROLES_INVALID_REASON =
+  'Permission roles must be null or a list of distinct roles from R, E and D.';
 export const WORKSPACE_ROOT_OVERLAP_REASON =
   "The Workspace KB (<root>/.note/) would be the same as, or nested with, an agent Directory's personal KB (<Directory>/.note/). Choose another root.";
 
@@ -452,7 +471,45 @@ export interface WriteGuardDenyTemplate {
   rationale: string;
   suggestion: string;
 }
+/** P3 的固定範本（權限角色、Bash 目標無法判斷）。併入 WRITE_GUARD_DENY_TEMPLATES（F16）。 */
+export const WRITE_GUARD_ROLE_DENY_TEMPLATES: Readonly<Record<string, WriteGuardDenyTemplate>> = {
+  [WRITE_GUARD_RULE_ROLE_READ]: {
+    reason:
+      "This tool call reads files, and this agent's permission roles do not include Read (R).",
+    rationale:
+      'Each agent may only perform the kinds of operations its permission roles allow: R to read, E to edit, D to delete.',
+    suggestion: 'Ask the user to grant this agent the Read (R) role, or to perform this step.',
+  },
+  [WRITE_GUARD_RULE_ROLE_EDIT]: {
+    reason:
+      "This tool call edits files or runs a command that may change files, and this agent's permission roles do not include Edit (E).",
+    rationale:
+      'Each agent may only perform the kinds of operations its permission roles allow: R to read, E to edit, D to delete. Commands Pixel Agents cannot classify count as edits.',
+    suggestion: 'Ask the user to grant this agent the Edit (E) role, or to perform this step.',
+  },
+  [WRITE_GUARD_RULE_ROLE_DELETE]: {
+    reason:
+      "This command deletes files, and this agent's permission roles do not include Delete (D).",
+    rationale:
+      'Each agent may only perform the kinds of operations its permission roles allow: R to read, E to edit, D to delete.',
+    suggestion: 'Ask the user to grant this agent the Delete (D) role, or to perform this step.',
+  },
+  [WRITE_GUARD_RULE_BASH_UNRESOLVED]: {
+    reason: 'Where this shell command writes could not be fully determined.',
+    rationale:
+      'While Knowledge Base rules are on, a command whose write targets cannot be checked (too long, too deeply nested, too many targets, or a path that cannot be resolved) is refused rather than allowed.',
+    suggestion:
+      'Split the command into shorter, simpler commands with plain paths, or use the Write and Edit tools.',
+  },
+};
 export const WRITE_GUARD_DENY_TEMPLATES: Readonly<Record<string, WriteGuardDenyTemplate>> = {
+  ...WRITE_GUARD_ROLE_DENY_TEMPLATES,
+  [WRITE_GUARD_RULE_GUARD_ERROR]: {
+    reason: 'Pixel Agents could not check this write because its local check failed.',
+    rationale:
+      'While Knowledge Base rules are on, a write that cannot be checked is refused rather than allowed.',
+    suggestion: 'Retry the step; if it keeps failing, ask the user to make the change.',
+  },
   [WRITE_GUARD_RULE_PROTECTED_PATH]: {
     reason: 'This write targets a path Pixel Agents protects for this agent.',
     rationale:
@@ -507,6 +564,37 @@ export const WRITE_GUARD_DENY_GENERIC: WriteGuardDenyTemplate = {
 };
 /** 拒絕訊息中路徑的長度上限（字元）；超過時截斷，避免把超長輸入回灌給模型。 */
 export const WRITE_GUARD_DENY_PATH_MAX_LENGTH = 512;
+
+// ── Bash 解析（P3，F10） ────────────────────────────────────
+/** hook 端解析 Bash 指令的上限（UTF-8 位元組）。超過時不解析：指令視為無法分類
+ *  （需要 edit），寫入目標視為無法判斷（KB 規則啟用時 deny）。 */
+export const WRITE_GUARD_BASH_MAX_PARSE_BYTES = 1024 * 1024;
+/** `$( )`、反引號、子殼層的巢狀上限；超過時其後內容不分類（需要 edit 與 delete，
+ *  且寫入目標視為無法判斷）。也防止遞迴把堆疊用盡。 */
+export const WRITE_GUARD_BASH_MAX_NESTING = 16;
+/** 一個指令字串最多收集的寫入目標與路徑片段（各自計算）；超過視為無法判斷。 */
+export const WRITE_GUARD_BASH_MAX_TARGETS = 256;
+/** 同一指令字串內 `cd` 造成的可能工作目錄組合上限；超過視為無法判斷。 */
+export const WRITE_GUARD_BASH_MAX_DIR_CHAINS = 8;
+/** 重導向到這些目標不算寫入（P3 補充決定 4）。 */
+export const WRITE_GUARD_BASH_NON_WRITE_TARGETS: readonly string[] = ['/dev/null'];
+/** Bash 分析的確定性工作量預算（lexer 讀過的字元與迴圈、指令數、路徑片段數的總和）。
+ *  用完時視為無法解析（read、edit、delete，寫入目標無法判斷）。約對應 150 KB 的一般指令，
+ *  讓病態輸入（很長的 word、大量運算子、很長的黏著選項）在固定的工作量內結束。 */
+export const WRITE_GUARD_BASH_MAX_WORK = 150_000;
+/** hook 端本地解析（含路徑正規化）的時鐘上限（毫秒）；超過時放棄並視為無法解析。
+ *  是工作量預算之外的最後防線，明顯短於 hook 的裁決截止時間與 hook 逾時。 */
+export const WRITE_GUARD_BASH_LOCAL_DEADLINE_MS = 400;
+/** 拒絕訊息中指令名稱片段的長度上限（字元）。 */
+export const WRITE_GUARD_DENY_FRAGMENT_MAX_LENGTH = 64;
+
+// ── 權限角色（P3，R／E／D） ─────────────────────────────────
+/** 權限角色：三個獨立開關（集合，不是階層），依此順序存放。 */
+export const PERMISSION_ROLES = ['R', 'E', 'D'] as const;
+/** 需要 read（R）的工具；Write、Edit、NotebookEdit（WRITE_GUARD_FILE_WRITE_TOOLS）需要 edit（E）。
+ *  其他工具（Agent、Task、MCP、TodoWrite、WebFetch 等）第一階段不受角色限制。 */
+export const WRITE_GUARD_READ_TOOLS: readonly string[] = ['Read', 'Glob', 'Grep'];
+export const WRITE_GUARD_BASH_TOOL = 'Bash';
 
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';

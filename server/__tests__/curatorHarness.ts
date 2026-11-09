@@ -15,6 +15,7 @@ import type { IPty, PtyModule, PtySpawnOptions } from '../src/terminal/ptyModule
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from '../src/terminal/standaloneAgentLauncher.js';
 import { saveWorkspace } from '../src/workspaces.js';
+import type { PermissionRoles } from '../src/writeGuard/permissionRoles.js';
 
 /**
  * Shared harness for the capability and curator suites: a real store, runtime,
@@ -60,6 +61,8 @@ export interface LaunchInput {
   provider?: Partial<HookProvider>;
   /** Launch with a Role (already validated by the caller in production). */
   role?: { name: string; roleId: string; snapshotPath: string };
+  /** P3：啟動時的權限角色覆寫（undefined = 不帶，沿用工作空間預設）。 */
+  permissionRoles?: PermissionRoles;
 }
 
 export interface Launched {
@@ -135,7 +138,11 @@ export class KbHarness {
         capabilities: input.withoutRegistry ? undefined : this.capabilities,
         isKbEnabled: kb === undefined ? undefined : typeof kb === 'function' ? kb : () => kb,
       },
-      { directoryPath: input.directoryPath, role: input.role },
+      {
+        directoryPath: input.directoryPath,
+        role: input.role,
+        ...(input.permissionRoles !== undefined ? { permissionRoles: input.permissionRoles } : {}),
+      },
     );
     const spawn = this.spawned.length > before ? this.spawned[this.spawned.length - 1] : undefined;
     return { id, spawn, token: spawn?.options.env?.[CAPABILITY_ENV_NAME] };

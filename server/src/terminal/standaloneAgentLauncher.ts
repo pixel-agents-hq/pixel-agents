@@ -29,7 +29,9 @@ import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import { isValidRoleId } from '../roles.js';
 import { removeRoleSnapshot } from '../roleStorage.js';
 import type { AgentState } from '../types.js';
-import { workspaceIdForDirectory } from '../workspaces.js';
+import { workspaceIdForDirectory, workspacePermissionRoles } from '../workspaces.js';
+import type { PermissionRoles } from '../writeGuard/permissionRoles.js';
+import { effectivePermissionRoles } from '../writeGuard/permissionRoles.js';
 import type { PtySessionManager } from './ptySessionManager.js';
 
 export interface LaunchStandaloneAgentDeps {
@@ -66,6 +68,13 @@ export interface LaunchStandaloneAgentOptions {
    * roleId fails the Role allowlist is refused before anything starts.
    */
   role?: { name: string; roleId: string; snapshotPath: string };
+  /**
+   * P3 permission-role override, already validated by the caller: an array is
+   * the agent's R/E/D roles, null means no roles (everything allowed). Absent:
+   * the Workspace default, else null. The result is snapshotted onto the agent
+   * here and never re-read, so a later Workspace change leaves it alone.
+   */
+  permissionRoles?: PermissionRoles;
 }
 
 /**
@@ -138,6 +147,11 @@ export function launchStandaloneAgent(
   // from a hook payload's cwd. Undefined only when the Directory cannot be
   // resolved, in which case the PTY spawn below fails as well.
   const directoryRealPath = realpathOrUndefined(cwd);
+  // Permission roles (P3): snapshotted once here, like the Directory above.
+  const permissionRoles = effectivePermissionRoles(
+    options.permissionRoles,
+    workspacePermissionRoles(workspaceId),
+  );
   // Only a caller that injected both the registry and isKbEnabled can get a
   // capability; the default is a launch exactly as before.
   const capabilities =
@@ -185,6 +199,7 @@ export function launchStandaloneAgent(
       workspaceId,
       role,
       directoryRealPath,
+      permissionRoles,
     });
   } catch (err) {
     // A throwing store listener (or broadcast subscriber) must not leave a
@@ -242,10 +257,12 @@ function registerLaunchedAgent(
     workspaceId: string | undefined;
     role: LaunchStandaloneAgentOptions['role'];
     directoryRealPath: string | undefined;
+    permissionRoles: PermissionRoles;
   },
 ): AgentState {
   const { store, runtime, provider } = deps;
-  const { id, sessionId, cwd, projectDir, workspaceId, role, directoryRealPath } = launched;
+  const { id, sessionId, cwd, projectDir, workspaceId, role, directoryRealPath, permissionRoles } =
+    launched;
 
   // Pre-register the expected JSONL so the project scanner doesn't mistake it
   // for a /clear file, exactly as the VS Code path does.
@@ -276,6 +293,8 @@ function registerLaunchedAgent(
     // rules attribute this agent to.
     roleId: role?.roleId,
     directoryRealPath,
+    // Runtime only: the R/E/D snapshot the write guard reads (never persisted).
+    permissionRoles,
   });
 
   // Server-side, like every other creation path: the palette rides the

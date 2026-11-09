@@ -7,7 +7,9 @@
  * P2 的實作：
  * - Write、Edit：`tool_input.file_path`；
  * - NotebookEdit：`tool_input.notebook_path` 與 `tool_input.file_path`（兩個都收）；
- * - Bash：只回傳原始 `tool_input.command`，不解析、不抽路徑（Bash 解析是 P3）；
+ * - Bash：只回傳原始 `tool_input.command`；解析與路徑抽取在 hookGuard（P3，bashAnalysis.ts），
+ *   這裡維持純粹的欄位抽取；
+ * - Read、Glob、Grep（P3）：只回傳公共欄位，供伺服器判斷權限角色 R；
  * - 其他工具、其他事件：回 null（不裁決）。
  *
  * 寫入類工具（WRITE_GUARD_FILE_WRITE_TOOLS）抽不到任何路徑時 pathFields 為空陣列，
@@ -18,7 +20,11 @@
  * 公共欄位為 session_id、cwd、tool_name）。
  */
 
-import { WRITE_GUARD_FILE_WRITE_TOOLS } from '../../../../constants.js';
+import {
+  WRITE_GUARD_BASH_TOOL,
+  WRITE_GUARD_FILE_WRITE_TOOLS,
+  WRITE_GUARD_READ_TOOLS,
+} from '../../../../constants.js';
 
 /** 裁決需要的欄位。pathFields 為原始字串，正規化由 PathNormalizer 負責。 */
 export interface GuardFields {
@@ -32,7 +38,6 @@ export interface GuardFields {
 export type FieldExtractor = (payload: Record<string, unknown>) => GuardFields | null;
 
 const PRE_TOOL_USE_EVENT = 'PreToolUse';
-const BASH_TOOL = 'Bash';
 /** 每種寫入類工具攜帶目標路徑的欄位（依序收集，全部字串欄位都算）。 */
 const PATH_FIELDS_BY_TOOL: Readonly<Record<string, readonly string[]>> = {
   Write: ['file_path'],
@@ -65,7 +70,7 @@ function extract(payload: Record<string, unknown>): GuardFields | null {
     }
     return { toolName, sessionId, cwd, pathFields };
   }
-  if (toolName === BASH_TOOL) {
+  if (toolName === WRITE_GUARD_BASH_TOOL) {
     const command = input.command;
     return {
       toolName,
@@ -75,8 +80,11 @@ function extract(payload: Record<string, unknown>): GuardFields | null {
       ...(typeof command === 'string' ? { command } : {}),
     };
   }
+  // P3：讀取類工具只為了權限角色（R）而裁決；不需要任何路徑或內容。
+  if (WRITE_GUARD_READ_TOOLS.includes(toolName))
+    return { toolName, sessionId, cwd, pathFields: [] };
   return null;
 }
 
-/** P2 的欄位抽取實作。 */
+/** P2 的欄位抽取實作（P3 加上讀取類工具）。 */
 export const extractGuardFields: FieldExtractor = extract;

@@ -172,6 +172,7 @@ components:
         - $ref: '#/components/schemas/SaveWorkspace'
         - $ref: '#/components/schemas/RemoveWorkspace'
         - $ref: '#/components/schemas/SetWorkspaceRoot'
+        - $ref: '#/components/schemas/SetWorkspacePermissionRoles'
         - $ref: '#/components/schemas/SetWorkspaceCurator'
         - $ref: '#/components/schemas/UnsetWorkspaceCurator'
         - $ref: '#/components/schemas/RequestRoles'
@@ -938,8 +939,9 @@ components:
         every agent on arrival.
 
         Rebroadcast to every connected office after every Workspace mutation
-        (`saveWorkspace`, `removeWorkspace`, `setWorkspaceRoot`). A client learns
-        its own save or delete succeeded from this.
+        (`saveWorkspace`, `removeWorkspace`, `setWorkspaceRoot`,
+        `setWorkspacePermissionRoles`). A client learns its own save or delete
+        succeeded from this.
       type: object
       additionalProperties: false
       required: [type, workspaces]
@@ -953,7 +955,8 @@ components:
 
     WorkspaceRejected:
       description: |
-        A `saveWorkspace`, `removeWorkspace` or `setWorkspaceRoot` failed
+        A `saveWorkspace`, `removeWorkspace`, `setWorkspaceRoot` or
+        `setWorkspacePermissionRoles` failed
         validation or could not be written. Sent point-to-point to the requesting client (never broadcast)
         and nothing changed on disk.
       type: object
@@ -1254,6 +1257,14 @@ components:
         never falls back to a launch without the Role. The VS Code panel always
         refuses it with `roleRejected` code `unavailable`. Without `roleId` the
         launch is exactly as before.
+
+        `permissionRoles` (optional, standalone only) overrides the Workspace's
+        default permission roles for this agent: an array is the agent's
+        roles, `null` means no roles (everything allowed). Absent: the
+        Workspace default, else no roles. The effective roles are snapshotted
+        at launch; changing the Workspace default later does not affect a
+        running agent. An invalid value launches nothing (with a `roleId`, the
+        host replies `roleRejected` code `invalid`).
       type: object
       additionalProperties: false
       required: [type]
@@ -1265,6 +1276,11 @@ components:
           description: Path of the Directory to launch into.
         roleId:
           $ref: '#/components/schemas/RoleId'
+        permissionRoles:
+          type: [array, 'null']
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PermissionRole'
 
     FocusAgent:
       description: Focus an agent's terminal.
@@ -1643,6 +1659,36 @@ components:
         rootPath:
           type: [string, 'null']
 
+    SetWorkspacePermissionRoles:
+      description: >-
+        Privileged, standalone only. Set (an array) or clear (null) the default
+        permission roles of `workspaceId`. R allows reading, E editing, D
+        deleting; they are independent switches, and an empty array turns all
+        three off. Without a default (null) agents launched in the Workspace
+        have no roles, which allows everything. Only agents launched after the
+        change use the new default. On success the host rebroadcasts
+        `workspacesLoaded`; on failure it replies `workspaceRejected`. A
+        read-only client gets `workspacesLoaded` back.
+      type: object
+      additionalProperties: false
+      required: [type, workspaceId, roles]
+      properties:
+        type:
+          const: setWorkspacePermissionRoles
+        workspaceId:
+          type: string
+        roles:
+          type: [array, 'null']
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PermissionRole'
+
+    PermissionRole:
+      description: >-
+        A permission role: R (read), E (edit) or D (delete).
+      type: string
+      enum: [R, E, D]
+
     UnsetWorkspaceCurator:
       description: >-
         Privileged, standalone only. Dismiss the curator of `workspaceId`. On
@@ -1810,6 +1856,15 @@ components:
           description: >-
             Realpath of the Workspace root directory. Absent: no root, and the
             Knowledge Base write rules are off for this Workspace.
+        permissionRoles:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PermissionRole'
+          description: >-
+            Default permission roles for agents launched in this Workspace
+            (snapshotted at launch). Absent: no default, so agents have no
+            roles unless the launch names some. Empty: all roles off.
 
     RoleId:
       description: >-

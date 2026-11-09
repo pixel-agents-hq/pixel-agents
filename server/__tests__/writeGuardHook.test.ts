@@ -236,21 +236,26 @@ describe('server unreachable (F2, F3, F5)', () => {
     expect(h.emitted).toEqual([]);
   });
 
-  it('allows a known session running Bash (P1 does not judge Bash paths)', async () => {
+  // P3 修改：原本是「P1 不判斷 Bash 路徑，所以放行」。P3 補充決定 6 要求 fail-closed
+  // 涵蓋 Bash 的寫入目標，因此同一個指令現在被拒；寫到受保護區外的 Bash 仍放行。
+  it('denies a known session whose Bash redirect writes a protected path (P3 extends fail-closed to Bash)', async () => {
     const server = standaloneServer(4012);
     const h = harness(new Map([[4012, listFor(server, [protectedRoot], [SESSION])]]), unanswered);
+    const bash = (command: string) => ({
+      hook_event_name: 'PreToolUse',
+      session_id: SESSION,
+      cwd: tmpBase,
+      tool_name: 'Bash',
+      tool_input: { command },
+    });
     await runGuardedDelivery(
-      {
-        hook_event_name: 'PreToolUse',
-        session_id: SESSION,
-        cwd: tmpBase,
-        tool_name: 'Bash',
-        tool_input: { command: `echo x > ${path.join(protectedRoot, 'a.md')}` },
-      },
+      bash(`echo x > ${path.join(protectedRoot, 'a.md')}`),
       [server],
       h.deps,
     );
-    expect(h.emitted).toEqual([]);
+    expect(h.emitted).toHaveLength(1);
+    await runGuardedDelivery(bash(`echo x > ${path.join(openDir, 'a.md')}`), [server], h.deps);
+    expect(h.emitted).toHaveLength(1);
   });
 
   it('allows an unknown session (not on any list) without any network call', async () => {
@@ -644,8 +649,9 @@ describe('field extraction (P1 interface)', () => {
       extractGuardFields({
         hook_event_name: 'PreToolUse',
         session_id: 's',
-        tool_name: 'Read',
-        tool_input: { file_path: '/x' },
+        // P3 修改：原本用 Read；P3 起 Read 為了權限角色 R 也送裁決，改用仍不處理的工具。
+        tool_name: 'WebFetch',
+        tool_input: { url: 'https://example.com' },
       }),
     ).toBeNull();
     expect(extractGuardFields({ hook_event_name: 'PreToolUse', tool_name: 'Write' })).toBeNull();

@@ -136,6 +136,7 @@ function lexicalCandidate(raw: string, cwd: string, paths: PlatformPaths): strin
 
 /** createPathNormalizer 產生的實作另外帶著平台語意，供 normalizeTargetCandidates 使用。 */
 const platformOf = new WeakMap<PathNormalizer, PlatformPaths>();
+const platformNameOf = new WeakMap<PathNormalizer, NodeJS.Platform>();
 
 export function createPathNormalizer(options: PathNormalizerOptions = {}): PathNormalizer {
   const platform = options.platform ?? process.platform;
@@ -172,6 +173,7 @@ export function createPathNormalizer(options: PathNormalizerOptions = {}): PathN
     },
   };
   platformOf.set(normalizer, paths);
+  platformNameOf.set(normalizer, platform);
   return normalizer;
 }
 
@@ -204,6 +206,27 @@ export function normalizeTargetCandidates(
     if (!candidates.includes(resolved)) candidates.push(resolved);
   }
   return candidates;
+}
+
+/** normalizer 的平台路徑 API（P3 的 Bash 路徑段組合用）；不是 createPathNormalizer 產生的
+ *  normalizer 用目前平台。 */
+export function pathApiFor(normalizer: PathNormalizer): typeof path.posix {
+  return (platformOf.get(normalizer) ?? platformPaths(process.platform)).api;
+}
+
+/** normalizer 的平台（P3 第二次驗證：指令名稱的大小寫語意）；包裝的 normalizer 用目前平台。 */
+export function platformFor(normalizer: PathNormalizer): NodeJS.Platform {
+  return platformNameOf.get(normalizer) ?? process.platform;
+}
+
+/**
+ * 「子字串包含」比對用的鍵（P3 第二次驗證 P2-4）：與 isWithin 相同的大小寫與 Unicode 折疊，
+ * win32 另把 `/` 統一成 `\`。不切段、不解析 `..`。
+ */
+export function literalComparisonKey(normalizer: PathNormalizer, value: string): string {
+  const platform = platformFor(normalizer);
+  const key = comparisonKey(value, platform);
+  return platform === 'win32' ? key.replace(/\//g, '\\') : key;
 }
 
 /** 目前平台的路徑正規化實作。 */

@@ -7,6 +7,7 @@
  * - 個人 KB 區：每個「所屬工作空間有根目錄」的已知 Agent 的 `<Agent Directory>/.note`。
  * - F17：對「所屬工作空間有根目錄」的已知 Agent 生效。
  * 歸屬一律用啟動時記錄的 directoryRealPath 與 roleId，從不用 payload cwd。
+ * P3：每個已知 Agent 另帶啟動時快照的權限角色（AgentState.permissionRoles）。
  */
 
 import * as fs from 'fs';
@@ -24,6 +25,7 @@ import type { AgentState } from '../types.js';
 import { personalKbKey, personalKbZone } from './kbIdentity.js';
 import { normalizeZone } from './kbOverlap.js';
 import type { PathNormalizer } from './pathNormalization.js';
+import type { PermissionRoles } from './permissionRoles.js';
 
 export interface WorkspaceKbZone {
   workspaceKey: string;
@@ -41,6 +43,10 @@ export interface KbAgentInfo {
   ownRoot?: string;
   /** 正規化後的 `<Agent Directory>/.claude`（F17）。 */
   claudeDir?: string;
+  /** 正規化後的 Agent Directory（P3：Bash 相對路徑的第二個起點候選）。 */
+  directory?: string;
+  /** P3：啟動時快照的有效權限角色；null 為沒設角色（全開）。 */
+  roles: PermissionRoles;
 }
 
 export interface KbConfigGuard {
@@ -59,6 +65,8 @@ export interface KbState {
   config: KbConfigGuard;
   /** 任一工作空間有根目錄（F7 的 unresolved deny 以此為準）。 */
   anyActive: boolean;
+  /** 計算時的 HOME（P3：Bash 的 `~` 以此展開；裁決時不再呼叫 os.homedir）。 */
+  homeDir: string;
 }
 
 export interface KbStateInput {
@@ -99,8 +107,13 @@ export function computeKbState(input: KbStateInput): KbState {
   const personalZones: string[] = [];
   for (const [id, agent] of input.knownAgents) {
     const key = workspaceKey(agent.workspaceId);
-    const info: KbAgentInfo = { workspaceKey: key, rulesActive: activeKeys.has(key) };
+    const info: KbAgentInfo = {
+      workspaceKey: key,
+      rulesActive: activeKeys.has(key),
+      roles: agent.permissionRoles ?? null,
+    };
     if (agent.directoryRealPath !== undefined) {
+      info.directory = normalizeZone(normalizer, agent.directoryRealPath);
       const zone = normalizeZone(normalizer, personalKbZone(agent.directoryRealPath));
       info.personalZone = zone;
       const identity = personalKbKey(agent.roleId);
@@ -126,6 +139,7 @@ export function computeKbState(input: KbStateInput): KbState {
       settingsFiles: settingsFilesIn(path.join(input.homeDir, KB_CLAUDE_HOME_DIR_NAME), normalizer),
     },
     anyActive: workspaceZones.length > 0,
+    homeDir: input.homeDir,
   };
 }
 

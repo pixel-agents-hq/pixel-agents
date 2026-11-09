@@ -13,7 +13,8 @@
  *       自己的識別鍵之下；否則 deny（其他識別鍵、無人使用的識別鍵、不屬於任何
  *       識別鍵的檔案都一樣）。
  *    c. 自己的工作空間有根目錄時套用 F17。
- * Bash 與其他工具：P2 不判斷（P3）。
+ * Bash：bashRules.ts（P3）以 pathWriteVerdict 與 containerVerdict 套用同一套規則。
+ * 角色（P3）：guardRules.ts 在這些規則之後判斷（deny 優先，KB 例外不放寬角色，F11）。
  */
 
 import * as path from 'path';
@@ -88,28 +89,69 @@ function isProtectedConfig(p: string, ctx: KbRuleContext, agent: KbAgentInfo): b
   );
 }
 
+/**
+ * 一個寫入路徑的 KB 與 F17 判斷（檔案工具與 Bash 共用）：工作空間 KB 區優先，
+ * 否則個人 KB 區，再套用 F17。回 null 表示放行。
+ */
+export function pathWriteVerdict(p: string, ctx: KbRuleContext): RuleVerdict | null {
+  const agent = ctx.kb.agents.get(ctx.agentId);
+  const workspace = workspaceZoneVerdict(p, ctx);
+  if (workspace?.verdict === 'deny') return workspace;
+  if (workspace === null) {
+    const personal = personalZoneVerdict(p, ctx, agent);
+    if (personal?.verdict === 'deny') return personal;
+  }
+  if (agent?.rulesActive && isProtectedConfig(p, ctx, agent)) {
+    return deny(WRITE_GUARD_RULE_PROTECTED_CONFIG, p);
+  }
+  return null;
+}
+
+/**
+ * P3：遞迴寫入（rm -r、mv 的來源等）的目標若是受保護區的上層，整個受保護區都會被
+ * 刪除或移走。工作空間 KB 區落在其下：必須是該工作空間的 curator；個人 KB 區落在其下：
+ * 一律 deny（裡面有其他識別鍵）；F17 的目錄或檔案落在其下：deny。回 null 表示放行。
+ */
+export function containerVerdict(p: string, ctx: KbRuleContext): RuleVerdict | null {
+  const { normalizer, kb } = ctx;
+  const agent = kb.agents.get(ctx.agentId);
+  for (const zone of kb.workspaceZones) {
+    if (!normalizer.isWithin(zone.zone, p)) continue;
+    const verdict = workspaceZoneVerdict(zone.zone, ctx);
+    if (verdict?.verdict === 'deny') return { ...verdict, path: p };
+  }
+  if (kb.personalZones.some((zone) => normalizer.isWithin(zone, p))) {
+    return deny(WRITE_GUARD_RULE_KB_PERSONAL, p);
+  }
+  if (agent?.rulesActive) {
+    const { config } = kb;
+    const guarded = [config.pixelAgentsDir, config.claudeHome, ...config.settingsFiles];
+    if (agent.claudeDir !== undefined) guarded.push(agent.claudeDir);
+    if (guarded.some((g) => normalizer.isWithin(g, p))) {
+      return deny(WRITE_GUARD_RULE_PROTECTED_CONFIG, p);
+    }
+  }
+  return null;
+}
+
+/** 額外受保護根目錄（setProtectedRoots）的命中；P1 語意。 */
+export function extraRootVerdict(paths: readonly string[], ctx: KbRuleContext): RuleVerdict | null {
+  const hit = paths.find((p) => ctx.extraRoots.some((root) => ctx.normalizer.isWithin(p, root)));
+  return hit === undefined ? null : deny(WRITE_GUARD_RULE_PROTECTED_PATH, hit);
+}
+
 /** P2 的規則：工作空間 KB、個人 KB、F17、F7。 */
 export function kbRule(request: GuardRequest, ctx: KbRuleContext): RuleVerdict {
-  const extraHit = request.paths.find((p) =>
-    ctx.extraRoots.some((root) => ctx.normalizer.isWithin(p, root)),
-  );
-  if (extraHit !== undefined) return deny(WRITE_GUARD_RULE_PROTECTED_PATH, extraHit);
+  const extra = extraRootVerdict(request.paths, ctx);
+  if (extra !== null) return extra;
   if (!WRITE_GUARD_FILE_WRITE_TOOLS.includes(request.tool_name)) return ALLOW;
 
   if (request.unresolved === true && ctx.kb.anyActive) {
     return deny(WRITE_GUARD_RULE_KB_PATH_UNRESOLVED);
   }
-  const agent = ctx.kb.agents.get(ctx.agentId);
   for (const p of request.paths) {
-    const workspace = workspaceZoneVerdict(p, ctx);
-    if (workspace?.verdict === 'deny') return workspace;
-    if (workspace === null) {
-      const personal = personalZoneVerdict(p, ctx, agent);
-      if (personal?.verdict === 'deny') return personal;
-    }
-    if (agent?.rulesActive && isProtectedConfig(p, ctx, agent)) {
-      return deny(WRITE_GUARD_RULE_PROTECTED_CONFIG, p);
-    }
+    const verdict = pathWriteVerdict(p, ctx);
+    if (verdict !== null) return verdict;
   }
   return ALLOW;
 }

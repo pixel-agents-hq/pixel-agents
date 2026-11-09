@@ -87,6 +87,7 @@ export type ClientMessage =
   | SaveWorkspace
   | RemoveWorkspace
   | SetWorkspaceRoot
+  | SetWorkspacePermissionRoles
   | SetWorkspaceCurator
   | UnsetWorkspaceCurator
   | RequestRoles
@@ -386,7 +387,10 @@ export interface Workspace {
   name: string;
   directoryPaths: string[];
   rootPath?: string;
+  permissionRoles?: PermissionRole[];
 }
+
+export type PermissionRole = 'R' | 'E' | 'D';
 
 export interface WorkspaceRejected {
   type: 'workspaceRejected';
@@ -491,6 +495,7 @@ export interface LaunchAgent {
   type: 'launchAgent';
   directoryPath?: string;
   roleId?: string;
+  permissionRoles?: PermissionRole[] | null;
 }
 
 export interface FocusAgent {
@@ -632,6 +637,12 @@ export interface SetWorkspaceRoot {
   type: 'setWorkspaceRoot';
   workspaceId: string;
   rootPath: string | null;
+}
+
+export interface SetWorkspacePermissionRoles {
+  type: 'setWorkspacePermissionRoles';
+  workspaceId: string;
+  roles: PermissionRole[] | null;
 }
 
 export interface SetWorkspaceCurator {

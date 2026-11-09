@@ -18,6 +18,10 @@
  *
  * P2：每個原始路徑產生作業系統語意與字面語意兩個候選（normalizeTargetCandidates），
  * 全部送給伺服器；寫入類工具抽不到或無法正規化路徑時帶 unresolved（F7）。
+ *
+ * P3：Bash 在本地解析（bashPlan.ts）：寫入目標、遞迴目標、字面路徑片段都正規化後送出，
+ * 也用於本地 fail-closed；讀取類工具（Read、Glob、Grep）也送裁決（權限角色 R）。
+ * 伺服器不可達時角色與 F17 不生效，只有 KB 區 fail-closed（P3 補充決定 6）。
  */
 
 import * as http from 'http';
@@ -25,6 +29,7 @@ import * as os from 'os';
 
 import {
   WRITE_GUARD_API_PATH,
+  WRITE_GUARD_BASH_TOOL,
   WRITE_GUARD_HOOK_DEADLINE_MS,
   WRITE_GUARD_MAX_REQUEST_BYTES,
   WRITE_GUARD_MAX_RESPONSE_BYTES,
@@ -32,6 +37,7 @@ import {
 } from '../../../../constants.js';
 import type { ServerConfig, ServerTarget } from '../../../../serverConfig.js';
 import { renderDenyMessage } from '../../../../writeGuard/denyMessage.js';
+import { renderGuardDenyMessage } from '../../../../writeGuard/guardDenyMessage.js';
 import type { GuardList } from '../../../../writeGuard/guardList.js';
 import { readGuardList } from '../../../../writeGuard/guardList.js';
 import type { PathNormalizer } from '../../../../writeGuard/pathNormalization.js';
@@ -41,9 +47,11 @@ import {
 } from '../../../../writeGuard/pathNormalization.js';
 import type { GuardRequest, GuardVerdict } from '../../../../writeGuard/protocol.js';
 import { parseGuardVerdict } from '../../../../writeGuard/protocol.js';
+import { bashHitsRoot, planBash } from './bashPlan.js';
 import { formatDenyOutput } from './decisionOutput.js';
 import type { FieldExtractor } from './fieldExtraction.js';
 import { extractGuardFields, isFileWriteTool } from './fieldExtraction.js';
+import { guardErrorDecision, readListSafely } from './guardErrorFallback.js';
 
 export type GuardDecision = { decision: 'allow' } | { decision: 'deny'; reason: string };
 
@@ -63,6 +71,8 @@ export interface HookGuardDeps {
   readList(server: ServerConfig): GuardList | null;
   requestVerdict(server: ServerConfig, body: string, deadlineAt: number): Promise<VerdictOutcome>;
   now(): number;
+  /** P3：Bash 的 `~` 展開用；預設 os.homedir()。 */
+  homeDir?(): string;
   log(line: string): void;
 }
 
@@ -76,6 +86,10 @@ export interface GuardPlan {
   request: GuardRequest;
   body: string;
   targets: GuardTarget[];
+  /** 這次請求自己送出的全部路徑（拒絕訊息只放這些路徑，F16）。 */
+  ownPaths: string[];
+  /** P3：這次 Bash 指令自己的指令名稱片段（拒絕訊息只放這些片段，F16）。 */
+  ownFragments: string[];
   /** 伺服器都沒回答時的決定；只有受保護路徑命中才是 deny。 */
   fallback: GuardDecision;
 }
@@ -94,7 +108,8 @@ function isStandaloneServer(server: ServerTarget | ServerConfig): server is Serv
 export function planGuard(
   payload: Record<string, unknown>,
   servers: readonly (ServerTarget | ServerConfig)[],
-  deps: Pick<HookGuardDeps, 'extractFields' | 'normalizer' | 'readList'>,
+  deps: Pick<HookGuardDeps, 'extractFields' | 'normalizer' | 'readList' | 'homeDir'> &
+    Partial<Pick<HookGuardDeps, 'log'>>,
 ): GuardPlan | null {
   const fields = deps.extractFields(payload);
   if (!fields) return null;
@@ -103,7 +118,8 @@ export function planGuard(
   for (const server of servers) {
     // 內嵌（VS Code）伺服器沒有清單，也不會被問（分流）。
     if (!isStandaloneServer(server)) continue;
-    const list = deps.readList(server);
+    // 清單讀取拋例外：無法確認 session 是否已知，這台伺服器不採計（放行，Q1、F5）。
+    const list = readListSafely(deps, server);
     if (list && list.knownSessions.includes(fields.sessionId)) lists.push({ server, list });
   }
   if (lists.length === 0) return null;
@@ -123,12 +139,23 @@ export function planGuard(
     }
   }
 
+  // P3：Bash 在本地解析並正規化寫入目標（不碰網路），fail-closed 才能涵蓋 Bash。
+  const bash =
+    fields.toolName === WRITE_GUARD_BASH_TOOL
+      ? planBash(fields.command, fields.cwd, deps.homeDir?.() ?? os.homedir(), deps.normalizer)
+      : null;
+  if (bash) {
+    for (const p of bash.direct) if (!paths.includes(p)) paths.push(p);
+    unresolved ||= bash.unresolved;
+  }
+  const ownPaths = bash ? [...paths, ...bash.recursive, ...bash.mentioned] : paths;
+
   let firstHit: string | undefined;
   let unresolvedHit = false;
   const targets: GuardTarget[] = lists.map(({ server, list }) => {
-    const hit = paths.find((p) =>
-      list.protectedRoots.some((root) => deps.normalizer.isWithin(p, root)),
-    );
+    const hit = bash
+      ? bashHitsRoot({ ...bash, direct: paths }, list.protectedRoots, deps.normalizer)
+      : paths.find((p) => list.protectedRoots.some((root) => deps.normalizer.isWithin(p, root)));
     if (hit !== undefined) firstHit ??= hit;
     // 無法判斷的寫入：該伺服器有任何受保護根目錄（KB 規則啟用中）就視為命中。
     const unresolvedProtected = unresolved && list.protectedRoots.length > 0;
@@ -143,19 +170,42 @@ export function planGuard(
     paths,
     ...(fields.command !== undefined ? { command: fields.command } : {}),
     ...(unresolved ? { unresolved: true as const } : {}),
+    ...(bash && bash.recursive.length > 0 ? { recursive_paths: bash.recursive } : {}),
+    ...(bash && bash.mentioned.length > 0 ? { mentioned_paths: bash.mentioned } : {}),
   };
   return {
     request,
-    body: JSON.stringify(request),
+    body: requestBody(request, bash?.ops ?? null),
     targets,
+    ownPaths,
+    ownFragments: bash?.fragments ?? [],
     fallback:
       firstHit === undefined && !unresolvedHit
         ? ALLOW
         : {
             decision: 'deny',
-            reason: renderDenyMessage(WRITE_GUARD_RULE_UNREACHABLE, firstHit, paths),
+            reason: renderDenyMessage(WRITE_GUARD_RULE_UNREACHABLE, firstHit, ownPaths),
           },
   };
+}
+
+/**
+ * 請求體。超過上限時（例如很長的 Bash 指令）改送最小請求：不帶 command 與路徑、
+ * 標記 unresolved（KB 規則啟用時 deny），並帶 hook 端解析出的操作類別，讓伺服器
+ * 仍能判斷權限角色；這樣指令再長也不會因為請求送不出去而跳過角色檢查。
+ */
+function requestBody(request: GuardRequest, ops: GuardRequest['bash_ops'] | null): string {
+  const full = JSON.stringify(request);
+  if (Buffer.byteLength(full) <= WRITE_GUARD_MAX_REQUEST_BYTES) return full;
+  const minimal: GuardRequest = {
+    tool_name: request.tool_name,
+    session_id: request.session_id,
+    cwd: request.cwd,
+    paths: [],
+    unresolved: true,
+    ...(ops !== null ? { bash_ops: ops } : {}),
+  };
+  return JSON.stringify(minimal);
 }
 
 /** 等到 promise 或截止時間，先到者為準；截止視為沒有回答。 */
@@ -202,7 +252,7 @@ export async function resolveGuard(
     ),
   );
 
-  let serverDeny: { rule: string; path?: string } | undefined;
+  let serverDeny: { rule: string; path?: string; fragment?: string } | undefined;
   let failClosed = false;
   outcomes.forEach((outcome, i) => {
     const target = plan.targets[i];
@@ -223,7 +273,13 @@ export async function resolveGuard(
   if (serverDeny) {
     return {
       decision: 'deny',
-      reason: renderDenyMessage(serverDeny.rule, serverDeny.path, plan.request.paths),
+      reason: renderGuardDenyMessage(
+        serverDeny.rule,
+        serverDeny.path,
+        serverDeny.fragment,
+        plan.ownPaths,
+        plan.ownFragments,
+      ),
     };
   }
   return failClosed ? plan.fallback : ALLOW;
@@ -238,27 +294,52 @@ export async function runGuardedDelivery(
   guardServers: readonly (ServerTarget | ServerConfig)[],
   deps: HookGuardDeps & { forward(): Promise<void>; emit(output: string): Promise<void> },
 ): Promise<void> {
+  const log = (line: string): void => {
+    try {
+      deps.log(line);
+    } catch {
+      // 記錄失敗不影響決定
+    }
+  };
+  // 裁決流程的任何例外都走同一個 fail-closed 判斷（guardErrorFallback.ts），不再因為
+  // 例外而放行；記錄只寫 stage，不寫例外內容。
+  const onError = (stage: string): GuardDecision => {
+    log(`guard-error stage=${stage}`);
+    return guardErrorDecision(payload, guardServers, deps);
+  };
+
   let plan: GuardPlan | null = null;
+  let decision: GuardDecision = ALLOW;
   try {
     plan = planGuard(payload, guardServers, deps);
-  } catch (err) {
-    deps.log(`guard-error stage=plan err=${err instanceof Error ? err.message : String(err)}`);
+  } catch {
+    decision = onError('plan');
   }
 
-  const forwarding = deps.forward();
+  // 既有的事件轉發；同步拋出時不能跳過下面的拒絕輸出（非同步的失敗照舊往外傳）。
+  let forwarding: Promise<void>;
+  try {
+    forwarding = deps.forward();
+  } catch {
+    log('guard-error stage=forward');
+    forwarding = Promise.resolve();
+  }
 
   if (plan) {
-    const deadlineAt = deps.now() + WRITE_GUARD_HOOK_DEADLINE_MS;
-    let decision: GuardDecision;
     try {
+      const deadlineAt = deps.now() + WRITE_GUARD_HOOK_DEADLINE_MS;
       decision = await resolveGuard(plan, deps, deadlineAt);
-    } catch (err) {
-      deps.log(`guard-error stage=resolve err=${err instanceof Error ? err.message : String(err)}`);
-      decision = plan.fallback;
+    } catch {
+      decision = plan.fallback.decision === 'deny' ? plan.fallback : onError('resolve');
     }
-    if (decision.decision === 'deny') {
-      deps.log('guard-decision deny');
+  }
+  if (decision.decision === 'deny') {
+    log('guard-decision deny');
+    try {
+      // 唯一的輸出點：最多一則 deny JSON，內容只有固定範本與該 Agent 自己的路徑。
       await deps.emit(formatDenyOutput(decision.reason));
+    } catch {
+      log('guard-error stage=emit');
     }
   }
 

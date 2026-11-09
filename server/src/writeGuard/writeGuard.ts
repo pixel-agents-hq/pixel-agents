@@ -12,7 +12,7 @@
  * P2：受保護區的正式來源是工作空間設定（根目錄）與已知 Agent 啟動時記錄的
  * Directory realpath 與 roleId（kbState.ts）。快照在事件（Agent 加入、移除、清空、
  * 換工作空間、workspacesLoaded 廣播、session 變更）與後備間隔時重算；裁決只讀快照。
- * 規則是 kbRules.ts 的 kbRule（取代 P1 的 protectedRootsRule）。setProtectedRoots
+ * 規則是 guardRules.ts 的 guardRule（P3：kbRule 加上 Bash 解析與權限角色）。setProtectedRoots
  * 保留為額外受保護根目錄（測試用；正式環境不呼叫）。
  */
 
@@ -25,8 +25,8 @@ import type { AgentState } from '../types.js';
 import { listWorkspaces } from '../workspaces.js';
 import type { GuardList, GuardListOwner } from './guardList.js';
 import { removeGuardList, writeGuardList } from './guardList.js';
+import { guardRule } from './guardRules.js';
 import type { KbRuleContext, RuleVerdict } from './kbRules.js';
-import { kbRule } from './kbRules.js';
 import type { KbState } from './kbState.js';
 import { computeKbState, kbProtectedRoots } from './kbState.js';
 import type { PathNormalizer } from './pathNormalization.js';
@@ -86,7 +86,7 @@ export class WriteGuard {
     this.store = deps.store;
     this.ptyManager = deps.ptyManager;
     this.sessions = deps.sessions;
-    this.rule = deps.rule ?? kbRule;
+    this.rule = deps.rule ?? guardRule;
     this.normalizer = deps.normalizer ?? pathNormalizer;
     this.homeDir = deps.homeDir ?? (() => os.homedir());
     this.curators = deps.curators;
