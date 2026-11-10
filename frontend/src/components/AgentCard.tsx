@@ -39,6 +39,8 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
         borderColor: 'divider',
         borderRadius: '6px',
         overflow: 'hidden',
+        position: 'relative',
+        '&:hover': { borderColor: 'rgba(91,48,214,0.4)' },
       }}
     >
       <Box
@@ -53,6 +55,8 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
           borderColor: 'rgba(26,26,36,1)',
           textDecoration: 'none',
           color: 'inherit',
+          // 讓連結涵蓋整張卡片，點卡片任何位置都開啟 Agent 詳情頁；Terminal 按鈕才開執行區塊
+          '&::after': { content: '""', position: 'absolute', inset: 0 },
         }}
       >
         <Box sx={{ mt: '4px' }}>
@@ -123,6 +127,8 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
 
       <Box
         sx={{
+          position: 'relative',
+          zIndex: 1,
           p: '10px 16px',
           borderTop: 1,
           borderColor: 'rgba(26,26,36,1)',
