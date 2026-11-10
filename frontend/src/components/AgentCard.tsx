@@ -9,13 +9,15 @@ import { Link as RouterLink } from 'react-router';
 import { useAppDispatch, useAppSelector } from '../app/hooks';
 import {
   RUN_STATE_LABELS,
-  activeTools,
   agentDisplayName,
+  backgroundTools,
   deriveRunState,
+  foregroundTools,
 } from '../features/agents/agentSelectors';
 import type { Agent } from '../features/agents/agentsSlice';
 import { clientMessageRequested } from '../features/connection/actions';
 import { statusColors } from '../theme';
+import { AgentProcessList } from './AgentProcessList';
 import { AgentRoleBadges } from './AgentRoleBadges';
 import { Elapsed } from './Elapsed';
 import { MonoText } from './MonoText';
@@ -35,7 +37,8 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
   const terminalAvailable = useAppSelector((state) => state.connection.terminalAvailable);
   const runState = deriveRunState(agent);
   const { color } = statusColors[runState];
-  const tools = activeTools(agent).slice(-TOOLS_SHOWN);
+  const tools = foregroundTools(agent).slice(-TOOLS_SHOWN);
+  const hasProcesses = agent.subagents.length > 0 || backgroundTools(agent).length > 0;
 
   return (
     <Box
@@ -117,7 +120,11 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
       >
         {tools.length === 0 ? (
           <Typography sx={{ fontSize: 11, color: 'text.disabled', textAlign: 'center' }}>
-            {runState === 'stopped' ? '尚未啟用，按「啟用」開始' : '無進行中的工具呼叫'}
+            {runState === 'stopped'
+              ? '尚未啟用，按「啟用」開始'
+              : hasProcesses
+                ? '主程序無進行中的工具'
+                : '無進行中的工具呼叫'}
           </Typography>
         ) : (
           tools.map((tool) => (
@@ -130,6 +137,8 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
           ))
         )}
       </Box>
+
+      <AgentProcessList agent={agent} />
 
       <Box
         sx={{

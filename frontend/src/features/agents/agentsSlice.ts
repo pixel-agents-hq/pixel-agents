@@ -1,6 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit';
 
-import { TOOL_LOG_LIMIT } from '../../constants';
+import { SUBAGENT_TOOL_LOG_LIMIT, TOOL_LOG_LIMIT } from '../../constants';
 import { DEFAULT_WORKSPACE_ID } from '../../protocol';
 import type { AgentActivityStatus, GuardInactiveReason, PermissionRole } from '../../protocol';
 import { serverMessageReceived } from '../connection/actions';
@@ -11,6 +11,15 @@ export interface ToolActivity {
   toolName?: string;
   startedAt: number;
   done: boolean;
+  /** 背景執行的工具（不會擋住這一輪結束） */
+  runInBackground?: boolean;
+}
+
+/** 由 Agent 的某個工具呼叫（parentToolId）派出的子代理，保留最近的工具活動。 */
+export interface SubagentActivity {
+  parentToolId: string;
+  tools: ToolActivity[];
+  permissionPending: boolean;
 }
 
 export interface AgentGuard {
@@ -33,6 +42,7 @@ export interface Agent {
   awaitingInput: boolean;
   permissionPending: boolean;
   tools: ToolActivity[];
+  subagents: SubagentActivity[];
   contextTokens: number | null;
   maxContextTokens: number | null;
   guard: AgentGuard | null;
@@ -59,6 +69,7 @@ function newAgent(id: number, startedAt: number): Agent {
     awaitingInput: false,
     permissionPending: false,
     tools: [],
+    subagents: [],
     contextTokens: null,
     maxContextTokens: null,
     guard: null,
@@ -128,6 +139,7 @@ const agentsSlice = createSlice({
             toolName: message.toolName,
             startedAt: meta.receivedAt,
             done: false,
+            ...(message.runInBackground ? { runInBackground: true } : {}),
           });
           if (agent.tools.length > TOOL_LOG_LIMIT) agent.tools.shift();
           if (message.permissionActive) agent.permissionPending = true;
@@ -141,6 +153,7 @@ const agentsSlice = createSlice({
         case 'agentToolsClear':
           if (state.byId[message.id]) {
             for (const tool of state.byId[message.id].tools) tool.done = true;
+            state.byId[message.id].subagents = [];
             state.byId[message.id].permissionPending = false;
           }
           break;
@@ -149,6 +162,46 @@ const agentsSlice = createSlice({
           break;
         case 'agentToolPermissionClear':
           if (state.byId[message.id]) state.byId[message.id].permissionPending = false;
+          break;
+        case 'subagentToolStart': {
+          const agent = state.byId[message.id];
+          if (!agent) break;
+          let subagent = agent.subagents.find((s) => s.parentToolId === message.parentToolId);
+          if (!subagent) {
+            subagent = { parentToolId: message.parentToolId, tools: [], permissionPending: false };
+            agent.subagents.push(subagent);
+          }
+          subagent.tools.push({
+            toolId: message.toolId,
+            status: message.status,
+            startedAt: meta.receivedAt,
+            done: false,
+          });
+          if (subagent.tools.length > SUBAGENT_TOOL_LOG_LIMIT) subagent.tools.shift();
+          break;
+        }
+        case 'subagentToolDone': {
+          const subagent = state.byId[message.id]?.subagents.find(
+            (s) => s.parentToolId === message.parentToolId,
+          );
+          const tool = subagent?.tools.find((t) => t.toolId === message.toolId);
+          if (tool) tool.done = true;
+          if (subagent) subagent.permissionPending = false;
+          break;
+        }
+        case 'subagentToolPermission': {
+          const subagent = state.byId[message.id]?.subagents.find(
+            (s) => s.parentToolId === message.parentToolId,
+          );
+          if (subagent) subagent.permissionPending = true;
+          break;
+        }
+        case 'subagentClear':
+          if (state.byId[message.id]) {
+            state.byId[message.id].subagents = state.byId[message.id].subagents.filter(
+              (s) => s.parentToolId !== message.parentToolId,
+            );
+          }
           break;
         case 'agentContextUsage':
           if (state.byId[message.id]) {

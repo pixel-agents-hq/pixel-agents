@@ -3,6 +3,10 @@ export const WS_RECONNECT_DELAYS_MS = [250, 500, 1000, 2000, 4000];
 export const LAST_WORKSPACE_STORAGE_KEY = 'passon-agents:last-workspace';
 
 export const TOOL_LOG_LIMIT = 200;
+/** 每個子代理保留的最近工具活動筆數 */
+export const SUBAGENT_TOOL_LOG_LIMIT = 10;
+/** 卡片收合時，每個子代理顯示的最近工具活動筆數 */
+export const CARD_SUBAGENT_TOOLS_COLLAPSED = 1;
 
 export const LAUNCH_TIMEOUT_MS = 15000;
 
