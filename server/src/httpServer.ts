@@ -336,8 +336,10 @@ function registerWebSocketRoute(
           curators: options.curators,
           guardStatus: options.embedded ? undefined : options.guardStatus,
         });
-      } catch {
-        // Malformed JSON, ignore
+      } catch (error) {
+        // Malformed JSON is dropped; a handler that threw is logged, because a
+        // swallowed exception leaves the client waiting for a reply that never comes.
+        console.error('[Pixel Agents] WS client message failed:', error);
       }
     });
 
