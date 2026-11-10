@@ -216,21 +216,6 @@ export function Sidebar({ workspaceId }: { workspaceId: string }) {
       </Box>
 
       <Box sx={{ px: 1.5, py: 1.25, borderTop: 1, borderColor: 'divider' }}>
-        <Button
-          fullWidth
-          variant="outlined"
-          component={RouterLink}
-          to={`/agents/new?workspace=${workspaceId}`}
-          disabled={readOnly}
-          sx={{
-            justifyContent: 'flex-start',
-            borderStyle: 'dashed',
-            color: 'text.disabled',
-            mb: 0.75,
-          }}
-        >
-          + New Agent
-        </Button>
         <MonoText>
           {CONNECTION_LABELS[connectionStatus]}
           {readOnly && ' · 唯讀'}
