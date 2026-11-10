@@ -27,6 +27,43 @@ export const DISCORD_INVITE_URL = 'https://discord.gg/Yk7jXebv9H';
 
 export const changelogEntries: ChangelogEntry[] = [
   {
+    version: '1.6',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Characters: design your cast with a wardrobe, colours, a pixel editor and custom items',
+          'Launch as a character from the roster, and give each Directory its default characters',
+          'Recent conversations: resume past Claude Code sessions from the sidebar or the phone menu',
+          'Usage bars for your Claude Code plan, and a context health bar on every agent',
+          'Office radio: procedural 8-bit music with moods and shareable song codes',
+          'A livelier office: characters blink and rest in their chairs, and a new loading screen',
+          'Pixel icons and numbers, and one agent card order shared by every device',
+        ],
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Agents and their sub-agents stay correct across resume, restart and reconnect',
+          'Links and paths wrapped across terminal rows open and copy whole',
+        ],
+      },
+    ],
+    contributors: [
+      {
+        name: '@pablodelucca',
+        url: 'https://github.com/pablodelucca',
+        description:
+          'Characters, roster launch, recent conversations, usage bars, the office radio, and the lifecycle fixes',
+      },
+      {
+        name: '@florintimbuc',
+        url: 'https://github.com/florintimbuc',
+        description: 'Review of the whole release and its review fixes',
+      },
+    ],
+  },
+  {
     version: '1.5',
     sections: [
       {

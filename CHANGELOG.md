@@ -1,5 +1,49 @@
 # Changelog
 
+## v1.6.0
+
+### Features
+
+- **Characters** ([#449](https://github.com/pixel-agents-hq/pixel-agents/pull/449)) — Agents are now drawn from a cast you design. The new **Characters** view dresses each character from a wardrobe (body, hair, eyes, clothes, accessories), with colour pickers and colourways, a pixel editor for touch-ups, and custom items you save from it. It edits a draft with undo and redo and an explicit **Save**, and exports a character as a PNG or a config, or the whole roster as a zip. The cast lives in `~/.pixel-agents/characters.json`, shared by VS Code and the browser.
+- **Launch as a character** ([#450](https://github.com/pixel-agents-hq/pixel-agents/pull/450)) — The arrow beside **+** opens the roster: pick a character, then a Directory, and the new agent wears it. A second copy of a character gets the next clothes colour. Each Directory can also list default characters for its launches, in priority or random order.
+- **Recent conversations** ([#451](https://github.com/pixel-agents-hq/pixel-agents/pull/451)) — The standalone office lists each Directory's recent Claude Code conversations, titled the way Claude Code titles them, in a left sidebar (desktop) or a slide-in menu (phone). Click one to resume it with the character and seat it had. "Show 5 more" and a title search reach older ones.
+- **Usage bars** ([#448](https://github.com/pixel-agents-hq/pixel-agents/pull/448)) — A weekly and a 5-hour bar in the office's corner show how much of your Claude Code plan is left, with reset times on hover. Turn them on in **Settings → Usage Bars**: after a confirmation, Pixel Agents wraps your Claude Code status line (your own keeps printing unchanged) to read the limits, and turning them off restores it byte for byte.
+- **Context health bars** ([#448](https://github.com/pixel-agents-hq/pixel-agents/pull/448)) — Every agent's context shows as a health bar on its character and its card: full after a launch or `/clear`, draining as the context fills.
+- **A livelier office** ([#452](https://github.com/pixel-agents-hq/pixel-agents/pull/452)) — Characters blink, and an idle agent back from a walk rests in its chair instead of typing at nothing. A loading screen shows a lamp-lit corner of the office while it loads.
+- **Office radio** ([#452](https://github.com/pixel-agents-hq/pixel-agents/pull/452)) — Procedural 8-bit background music in the office's corner: moods, volume, and song codes (`TOWN-5-8F3A21C0`) that replay a tune anywhere. It never plays until you press play, and **Settings → Music Player** hides it.
+- **Pixel UI** ([#447](https://github.com/pixel-agents-hq/pixel-agents/pull/447)) — Icons are 8×8 pixel art and numbers use a pixel font, crisp at any browser zoom. Desktop and phone show the same agent cards in one order: reorder them on one device and every open office follows.
+- **Terminal** ([#445](https://github.com/pixel-agents-hq/pixel-agents/pull/445), [#447](https://github.com/pixel-agents-hq/pixel-agents/pull/447)) — A URL or path that Claude Code broke across rows opens and copies whole. On a phone: long-press the input area to paste, a Tab key, a forward-delete key, and an arrow-key trackpad on the key bar.
+
+### Changes
+
+- **Bundled character sprites are gone** ([#449](https://github.com/pixel-agents-hq/pixel-agents/pull/449)) — The six characters are now profiles you can edit. External `char_N.png` sheets from an asset directory still load after them.
+- **Repeats change clothes, not hue** ([#449](https://github.com/pixel-agents-hq/pixel-agents/pull/449)) — When two agents wear the same character, the copy is told apart by its clothes colour instead of a hue shift over the whole sprite. A new agent picks among the characters with the fewest copies in the office.
+- **One PC per seat** ([#447](https://github.com/pixel-agents-hq/pixel-agents/pull/447)) — Each seat pairs with the one computer facing it, and only that screen turns on while its agent types. Sub-agents stay by their lead's seat instead of trailing it around.
+- **Settings in the sidebar** ([#451](https://github.com/pixel-agents-hq/pixel-agents/pull/451)) — Where the conversation sidebar exists (standalone), **Settings** sits at its foot instead of in the toolbar.
+- **Usage Bars on Windows** ([#465](https://github.com/pixel-agents-hq/pixel-agents/pull/465)) — A custom status line is not wrapped on Windows yet (the wrapper would run it in `cmd.exe`); Usage Bars connect there only when you have no status line of your own.
+
+### Fixes
+
+- **Agents survive resume, restart and reconnect** ([#446](https://github.com/pixel-agents-hq/pixel-agents/pull/446)) — A resumed or restarted agent keeps only the background agents that are really still running; a background agent that pauses on its own background work is no longer treated as finished; one revived with SendMessage shows up again. A browser that reconnects (a phone waking up) resyncs the whole office, so finished sub-agents no longer linger and a stale browser can't reshuffle characters for everyone.
+- **Reconnects keep what agents are doing** ([#465](https://github.com/pixel-agents-hq/pixel-agents/pull/465)) — A permission bubble and a turn in progress between two tools both survive a reload or reconnect.
+- **Launches don't inherit the office's Claude Code session** ([#445](https://github.com/pixel-agents-hq/pixel-agents/pull/445)) — An agent launched from an office that itself runs inside Claude Code no longer picks up its session markers, which made it save no transcript.
+- **Symlinked Directories** ([#446](https://github.com/pixel-agents-hq/pixel-agents/pull/446)) — Agents launched through a symlinked path are tracked, and found again after a restart.
+- **Roster and cast edits from two offices** ([#465](https://github.com/pixel-agents-hq/pixel-agents/pull/465)) — A roster pick stays on its character when another office edits the cast, and a save that replaces every character renumbers agents, Directory defaults and conversation looks.
+- **The radio never covers the toolbar** ([#465](https://github.com/pixel-agents-hq/pixel-agents/pull/465)) — In a narrow office it gives up its visualizer, then the tune's name, instead of sitting on the toolbar's buttons.
+- Terminal links keep a trailing space a soft-wrapped row ends on, and a wrapped URL after an emoji or an accented letter ([#465](https://github.com/pixel-agents-hq/pixel-agents/pull/465)); a teammate sharing its lead's session no longer takes over the lead's conversation ([#465](https://github.com/pixel-agents-hq/pixel-agents/pull/465)); cast saves in VS Code reach browsers on its embedded server ([#465](https://github.com/pixel-agents-hq/pixel-agents/pull/465)).
+
+### Maintenance
+
+- `npm audit fix`, the unused root `@types/ws` dropped, and knip entries for the PTY host and the status line bridge ([#452](https://github.com/pixel-agents-hq/pixel-agents/pull/452)).
+- `pixel-agents --pty-host` (development only) keeps agents' terminals in a separate process, so a server restart leaves them running ([#445](https://github.com/pixel-agents-hq/pixel-agents/pull/445)).
+
+### Contributors
+
+Thank you to the contributors who made this release possible:
+
+- [@pablodelucca](https://github.com/pablodelucca) — Characters, roster launch, recent conversations, usage bars, the office radio, and the lifecycle fixes
+- [@florintimbuc](https://github.com/florintimbuc) — Review of the whole release and its review fixes ([#465](https://github.com/pixel-agents-hq/pixel-agents/pull/465))
+
 ## v1.5.0
 
 ### Features
