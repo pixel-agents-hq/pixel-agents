@@ -11,6 +11,27 @@ const surface = {
   field: '#0e0e14',
 };
 
+interface BadgeColors {
+  color: string;
+  background: string;
+  border: string;
+}
+
+export const roleColors: Record<'R' | 'E' | 'D' | 'W', BadgeColors> = {
+  R: { color: '#60a5fa', background: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.2)' },
+  E: { color: '#ca8a04', background: 'rgba(234,179,8,0.12)', border: 'rgba(234,179,8,0.25)' },
+  D: { color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.2)' },
+  W: { color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.2)' },
+};
+
+export const statusColors = {
+  running: { color: '#22c55e', glow: '0 0 5px rgba(34,197,94,0.5)' },
+  waiting: { color: '#f59e0b', glow: '0 0 4px rgba(245,158,11,0.4)' },
+  idle: { color: '#374151', glow: 'none' },
+} as const;
+
+export const monoFontFamily = "'JetBrains Mono', ui-monospace, monospace";
+
 export const theme = createTheme({
   palette: {
     mode: 'dark',
