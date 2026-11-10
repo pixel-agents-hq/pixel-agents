@@ -6,10 +6,11 @@ import { Link as RouterLink } from 'react-router';
 import { useAppSelector } from '../app/hooks';
 import { AgentCard } from '../components/AgentCard';
 import { selectAllAgents } from '../features/agents/agentSelectors';
+import { selectVisibleWorkspaces } from '../features/workspaces/workspaceSelectors';
 
 export function AllAgentsPage() {
   const agents = useAppSelector(selectAllAgents);
-  const workspaces = useAppSelector((state) => state.workspaces.workspaces);
+  const workspaces = useAppSelector(selectVisibleWorkspaces);
   const readOnly = useAppSelector((state) => state.connection.readOnly);
 
   return (

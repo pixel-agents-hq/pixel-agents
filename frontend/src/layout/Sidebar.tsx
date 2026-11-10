@@ -20,6 +20,7 @@ import {
 } from '../features/agents/agentSelectors';
 import type { Agent } from '../features/agents/agentsSlice';
 import { controlBorderColor, statusColors } from '../theme';
+import { selectVisibleWorkspaces } from '../features/workspaces/workspaceSelectors';
 
 const SIDEBAR_WIDTH_PX = 240;
 const CONNECTION_LABELS = { connecting: '連線中', connected: '已連線', reconnecting: '重新連線中' };
@@ -100,7 +101,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }) {
   const navigate = useNavigate();
   const agentMatch = useMatch('/w/:workspaceId/agents/:agentId/*');
   const selectedAgentId = agentMatch?.params.agentId;
-  const workspaces = useAppSelector((state) => state.workspaces.workspaces);
+  const workspaces = useAppSelector(selectVisibleWorkspaces);
   const agents = useAppSelector((state) => selectAgentsInWorkspace(state, workspaceId));
   const curatorsAvailable = useAppSelector((state) => state.workspaces.curatorsAvailable);
   const readOnly = useAppSelector((state) => state.connection.readOnly);
@@ -155,6 +156,21 @@ export function Sidebar({ workspaceId }: { workspaceId: string }) {
             </MenuItem>
           ))}
         </Select>
+        <Button
+          fullWidth
+          variant="outlined"
+          component={RouterLink}
+          to="/workspaces/new"
+          disabled={readOnly}
+          sx={{
+            justifyContent: 'flex-start',
+            borderStyle: 'dashed',
+            color: 'text.disabled',
+            mt: 0.75,
+          }}
+        >
+          + 新增工作空間
+        </Button>
       </Box>
 
       <Typography sx={{ ...sectionLabelSx, px: 1.5, pt: 0.5, pb: '6px' }}>

@@ -18,7 +18,10 @@ import { FormField } from '../components/FormField';
 import { agentDisplayName, selectAllAgents } from '../features/agents/agentSelectors';
 import { agentCreationRequested } from '../features/agentCreation/createAgentSaga';
 import { useAwaitCreation } from '../features/agentCreation/useAwaitCreation';
-import { directoryForPath } from '../features/workspaces/workspaceSelectors';
+import {
+  directoryForPath,
+  selectVisibleWorkspaces,
+} from '../features/workspaces/workspaceSelectors';
 import type { PermissionRole } from '../protocol';
 import { controlBorderColor, roleColors } from '../theme';
 
@@ -75,7 +78,7 @@ export function AddAgentPage() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const workspaces = useAppSelector((state) => state.workspaces.workspaces);
+  const workspaces = useAppSelector(selectVisibleWorkspaces);
   const directories = useAppSelector((state) => state.workspaces.directories);
   const curators = useAppSelector((state) => state.workspaces.curators);
   const curatorsAvailable = useAppSelector((state) => state.workspaces.curatorsAvailable);

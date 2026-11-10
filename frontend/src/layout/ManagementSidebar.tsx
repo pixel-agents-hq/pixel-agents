@@ -5,6 +5,7 @@ import { Link as RouterLink, useSearchParams } from 'react-router';
 import { useAppSelector } from '../app/hooks';
 import { Logo } from '../components/Logo';
 import { selectAllAgents } from '../features/agents/agentSelectors';
+import { selectVisibleWorkspaces } from '../features/workspaces/workspaceSelectors';
 
 const SIDEBAR_WIDTH_PX = 220;
 
@@ -34,7 +35,7 @@ interface ManagementSidebarProps {
 export function ManagementSidebar({ placeholder }: ManagementSidebarProps) {
   const [searchParams] = useSearchParams();
   const selectedWorkspaceId = searchParams.get('workspace');
-  const workspaces = useAppSelector((state) => state.workspaces.workspaces);
+  const workspaces = useAppSelector(selectVisibleWorkspaces);
   const agents = useAppSelector(selectAllAgents);
   const connected = useAppSelector((state) => state.connection.status === 'connected');
 

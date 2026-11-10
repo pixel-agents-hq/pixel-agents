@@ -3,8 +3,8 @@ import CircularProgress from '@mui/material/CircularProgress';
 import { Navigate } from 'react-router';
 
 import { useAppSelector } from '../app/hooks';
-import { DEFAULT_WORKSPACE_ID } from '../protocol';
 import { LAST_WORKSPACE_STORAGE_KEY } from '../constants';
+import { selectVisibleWorkspaces } from '../features/workspaces/workspaceSelectors';
 
 function readLastWorkspace(): string | null {
   try {
@@ -15,7 +15,8 @@ function readLastWorkspace(): string | null {
 }
 
 export function HomeRedirect() {
-  const { loaded, workspaces } = useAppSelector((state) => state.workspaces);
+  const loaded = useAppSelector((state) => state.workspaces.loaded);
+  const workspaces = useAppSelector(selectVisibleWorkspaces);
   if (!loaded) {
     return (
       <Box sx={{ height: '100vh', display: 'grid', placeItems: 'center' }}>
@@ -23,7 +24,7 @@ export function HomeRedirect() {
       </Box>
     );
   }
-  const candidates = [readLastWorkspace(), DEFAULT_WORKSPACE_ID, workspaces[0]?.id];
-  const target = candidates.find((id) => id && workspaces.some((workspace) => workspace.id === id));
-  return <Navigate to={target ? `/w/${target}` : '/not-found'} replace />;
+  const lastId = readLastWorkspace();
+  const target = workspaces.find((workspace) => workspace.id === lastId) ?? workspaces[0];
+  return <Navigate to={target ? `/w/${target.id}` : '/workspaces/new'} replace />;
 }
