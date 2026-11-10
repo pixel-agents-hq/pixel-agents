@@ -9,6 +9,7 @@ import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { AgentRoleBadges } from '../../components/AgentRoleBadges';
 import { Elapsed } from '../../components/Elapsed';
 import { MonoText } from '../../components/MonoText';
+import { StartAgentButton } from '../../components/StartAgentButton';
 import { StatusDot } from '../../components/StatusDot';
 import { agentDisplayName, deriveRunState } from '../../features/agents/agentSelectors';
 import { clientMessageRequested } from '../../features/connection/actions';
@@ -32,13 +33,12 @@ export function AgentDetailLayout() {
     (state) => state.workspaces.directories.find((d) => d.name === agent.directoryName)?.path,
   );
   const readOnly = useAppSelector((state) => state.connection.readOnly);
-  const terminalAvailable = useAppSelector((state) => state.connection.terminalAvailable);
   const runState = deriveRunState(agent);
   const currentTab =
     TABS.find((tab) => location.pathname.endsWith(`/${tab.path}`))?.path ?? 'claude';
   const basePath = `/w/${workspaceId}/agents/${agent.id}`;
 
-  const stop = () => {
+  const remove = () => {
     dispatch(clientMessageRequested({ type: 'closeAgent', id: agent.id }));
     void navigate(`/w/${workspaceId}`);
   };
@@ -63,25 +63,16 @@ export function AgentDetailLayout() {
         {directoryPath && <MonoText>{directoryPath}</MonoText>}
         <AgentRoleBadges agent={agent} isCurator={isCurator} />
         <Box sx={{ ml: 'auto', display: 'flex', gap: 0.75 }}>
-          <Button
-            size="small"
-            variant="outlined"
-            component={RouterLink}
-            to={`${basePath}/terminal`}
-            disabled={!terminalAvailable}
-            sx={{ fontSize: 11 }}
-          >
-            Terminal
-          </Button>
+          {runState === 'stopped' && <StartAgentButton agentId={agent.id} />}
           <Button
             size="small"
             variant="outlined"
             color="error"
-            onClick={stop}
+            onClick={remove}
             disabled={readOnly}
             sx={{ fontSize: 11 }}
           >
-            Stop
+            刪除
           </Button>
         </Box>
       </Box>

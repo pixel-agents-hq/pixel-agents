@@ -9,7 +9,7 @@ import { useAppDispatch, useAppSelector } from '../app/hooks';
 import { EventFlow } from '../components/EventFlow';
 import type { EventFlowStep } from '../components/EventFlow';
 import { FormField } from '../components/FormField';
-import { useAwaitCreation } from '../features/launch/useAwaitCreation';
+import { useAwaitCreation } from '../features/agentCreation/useAwaitCreation';
 import { workspaceCreationRequested } from '../features/workspaces/createWorkspaceSaga';
 
 const FLOW_STEPS: EventFlowStep[] = [

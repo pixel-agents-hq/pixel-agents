@@ -3,20 +3,28 @@ import { createSelector } from '@reduxjs/toolkit';
 import type { RootState } from '../../app/store';
 import type { Agent, ToolActivity } from './agentsSlice';
 
-export type AgentRunState = 'running' | 'waiting' | 'idle';
+export type AgentRunState = 'running' | 'waiting' | 'idle' | 'stopped';
 
 /**
- * 協定只有 active 與 waiting：
+ * 還沒啟用的紀錄是 stopped。其餘協定只有 active 與 waiting：
  * waiting 且 awaitingInput 為真是等使用者，否則是該回合已完成（協定描述為 "Done"）。
  */
 export function deriveRunState(agent: Agent): AgentRunState {
+  if (agent.stopped) return 'stopped';
   if (agent.status === 'active') return 'running';
   if (agent.awaitingInput || agent.permissionPending) return 'waiting';
   return 'idle';
 }
 
+export const RUN_STATE_LABELS: Record<AgentRunState, string> = {
+  running: 'running',
+  waiting: 'waiting',
+  idle: 'idle',
+  stopped: '未啟用',
+};
+
 export function agentDisplayName(agent: Agent): string {
-  return agent.directoryName ?? `agent-${agent.id}`;
+  return agent.name ?? agent.directoryName ?? `agent-${agent.id}`;
 }
 
 export function activeTools(agent: Agent): ToolActivity[] {

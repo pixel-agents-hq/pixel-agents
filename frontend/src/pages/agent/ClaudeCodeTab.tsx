@@ -1,7 +1,6 @@
-import { TerminalPanel } from '../../features/terminal/TerminalPanel';
+import { AgentTerminal } from './AgentTerminal';
 import { useRouteAgent } from './useRouteAgent';
 
 export function ClaudeCodeTab() {
-  const agent = useRouteAgent();
-  return <TerminalPanel agentId={agent.id} />;
+  return <AgentTerminal agent={useRouteAgent()} />;
 }

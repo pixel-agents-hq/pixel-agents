@@ -1,9 +1,12 @@
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Switch from '@mui/material/Switch';
+import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { useCallback, useState } from 'react';
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router';
@@ -13,8 +16,8 @@ import { EventFlow } from '../components/EventFlow';
 import type { EventFlowStep } from '../components/EventFlow';
 import { FormField } from '../components/FormField';
 import { agentDisplayName, selectAllAgents } from '../features/agents/agentSelectors';
-import { launchRequested } from '../features/launch/launchSaga';
-import { useAwaitCreation } from '../features/launch/useAwaitCreation';
+import { agentCreationRequested } from '../features/agentCreation/createAgentSaga';
+import { useAwaitCreation } from '../features/agentCreation/useAwaitCreation';
 import { directoryForPath } from '../features/workspaces/workspaceSelectors';
 import type { PermissionRole } from '../protocol';
 import { controlBorderColor, roleColors } from '../theme';
@@ -85,6 +88,8 @@ export function AddAgentPage() {
   const [chosenPath, setChosenPath] = useState<string | null>(null);
   const [roles, setRoles] = useState<PermissionRole[]>(() => defaultRolesOf(initialWorkspaceId));
   const [becomeCurator, setBecomeCurator] = useState(false);
+  const [name, setName] = useState('');
+  const [startNow, setStartNow] = useState(false);
 
   const workspace = workspaces.find((w) => w.id === workspaceId);
   const directoryPaths = workspace?.directoryPaths ?? [];
@@ -93,7 +98,9 @@ export function AddAgentPage() {
   const existingCuratorId = curators[workspaceId];
   const existingCurator =
     existingCuratorId === undefined ? undefined : agents.find((a) => a.id === existingCuratorId);
-  const curatorLocked = !curatorsAvailable || readOnly || existingCuratorId !== undefined;
+  // KB Writer 必須是已經啟用的 Agent，所以沒勾「建立後立即啟用」時不能指定
+  const curatorLocked =
+    !curatorsAvailable || readOnly || existingCuratorId !== undefined || !startNow;
   const willBecomeCurator = becomeCurator && !curatorLocked;
 
   const workspaceAgentIds = agents.filter((a) => a.workspaceId === workspaceId).map((a) => a.id);
@@ -116,9 +123,11 @@ export function AddAgentPage() {
     if (!workspace || !directoryPath) return;
     launch.begin();
     dispatch(
-      launchRequested({
+      agentCreationRequested({
         workspaceId: workspace.id,
+        name: name.trim(),
         directoryPath,
+        start: startNow,
         permissionRoles: roles.length > 0 ? roles : null,
         becomeCurator: willBecomeCurator,
       }),
@@ -129,11 +138,21 @@ export function AddAgentPage() {
     { label: 'submit', value: 'form data', tone: 'plain' },
     {
       label: 'send',
-      value: 'launchAgent',
-      detail: '{directoryPath, permissionRoles}',
+      value: 'createAgent',
+      detail: '{name, directoryPath, permissionRoles, start}',
       tone: 'send',
     },
-    { label: 'receive', value: 'agentCreated', detail: '{id, workspaceId}', tone: 'receive' },
+    { label: 'receive', value: 'agentCreated', detail: '{id, stopped}', tone: 'receive' },
+    ...(startNow
+      ? [
+          {
+            label: 'receive',
+            value: 'terminalSessionOpened',
+            detail: '{agentId}',
+            tone: 'receive',
+          } as const,
+        ]
+      : []),
     ...(willBecomeCurator
       ? [
           {
@@ -164,6 +183,16 @@ export function AddAgentPage() {
           </Button>
           <Typography variant="h6">New Agent</Typography>
         </Box>
+
+        <FormField label="Name" hint="Agent 的顯示名稱，留空則使用目錄名稱">
+          <TextField
+            fullWidth
+            size="small"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            slotProps={{ htmlInput: { maxLength: 64 } }}
+          />
+        </FormField>
 
         <FormField label="Workspace" hint="Agent 所屬的工作空間">
           <Select
@@ -294,6 +323,25 @@ export function AddAgentPage() {
             </Typography>
           )}
         </Box>
+
+        <FormControlLabel
+          sx={{ mb: 2.5, display: 'flex' }}
+          control={
+            <Checkbox
+              size="small"
+              checked={startNow}
+              onChange={(event) => setStartNow(event.target.checked)}
+            />
+          }
+          label={
+            <Box>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>建立後立即啟用</Typography>
+              <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
+                不勾選則只建立，之後在工作空間裡按「啟用」才會開始執行 Claude Code
+              </Typography>
+            </Box>
+          }
+        />
 
         <EventFlow steps={flowSteps} />
 

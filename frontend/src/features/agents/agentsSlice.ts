@@ -22,9 +22,13 @@ export interface AgentGuard {
 export interface Agent {
   id: number;
   directoryName: string | null;
+  /** 建立時給的顯示名稱；沒有就以目錄名稱標示 */
+  name: string | null;
   workspaceId: string;
   roleName: string | null;
   isExternal: boolean;
+  /** 紀錄已建立但還沒有程序：等待「啟用」 */
+  stopped: boolean;
   status: AgentActivityStatus;
   awaitingInput: boolean;
   permissionPending: boolean;
@@ -46,9 +50,11 @@ function newAgent(id: number, startedAt: number): Agent {
   return {
     id,
     directoryName: null,
+    name: null,
     workspaceId: DEFAULT_WORKSPACE_ID,
     roleName: null,
     isExternal: false,
+    stopped: false,
     status: 'waiting',
     awaitingInput: false,
     permissionPending: false,
@@ -76,6 +82,8 @@ const agentsSlice = createSlice({
               directoryName: message.directoryNames[key] ?? null,
               workspaceId: message.workspaceIds?.[key] ?? DEFAULT_WORKSPACE_ID,
               roleName: message.roleNames?.[key] ?? null,
+              name: message.names?.[key] ?? null,
+              stopped: message.stoppedAgents?.[key] ?? false,
               isExternal: message.externalAgents[key] ?? false,
             };
           }
@@ -90,8 +98,13 @@ const agentsSlice = createSlice({
             directoryName: message.directoryName ?? null,
             workspaceId: message.workspaceId ?? DEFAULT_WORKSPACE_ID,
             roleName: message.roleName ?? null,
+            name: message.name ?? null,
+            stopped: message.stopped ?? false,
             isExternal: message.isExternal ?? false,
           };
+          break;
+        case 'terminalSessionOpened':
+          if (state.byId[message.agentId]) state.byId[message.agentId].stopped = false;
           break;
         case 'agentClosed':
           delete state.byId[message.id];

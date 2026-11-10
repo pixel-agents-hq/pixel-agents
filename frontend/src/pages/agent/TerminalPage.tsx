@@ -7,7 +7,7 @@ import { useAppSelector } from '../../app/hooks';
 import { MonoText } from '../../components/MonoText';
 import { StatusDot } from '../../components/StatusDot';
 import { agentDisplayName, deriveRunState } from '../../features/agents/agentSelectors';
-import { TerminalPanel } from '../../features/terminal/TerminalPanel';
+import { AgentTerminal } from './AgentTerminal';
 import { useRouteAgent } from './useRouteAgent';
 
 export function TerminalPage() {
@@ -47,7 +47,7 @@ export function TerminalPage() {
         </Box>
       </Box>
 
-      <TerminalPanel agentId={agent.id} />
+      <AgentTerminal agent={agent} />
     </>
   );
 }

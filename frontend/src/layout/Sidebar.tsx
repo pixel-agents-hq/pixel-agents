@@ -13,6 +13,7 @@ import { MonoText } from '../components/MonoText';
 import { RoleBadge } from '../components/RoleBadge';
 import { StatusDot } from '../components/StatusDot';
 import {
+  RUN_STATE_LABELS,
   agentDisplayName,
   deriveRunState,
   selectAgentsInWorkspace,
@@ -48,7 +49,7 @@ function AgentItem({
       </>
     ) : (
       <>
-        {runState}
+        {RUN_STATE_LABELS[runState]}
         {isCurator && ' · KB Writer'}
       </>
     );

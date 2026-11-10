@@ -7,13 +7,19 @@ import { useState } from 'react';
 import { Link as RouterLink } from 'react-router';
 
 import { useAppDispatch, useAppSelector } from '../app/hooks';
-import { activeTools, agentDisplayName, deriveRunState } from '../features/agents/agentSelectors';
+import {
+  RUN_STATE_LABELS,
+  activeTools,
+  agentDisplayName,
+  deriveRunState,
+} from '../features/agents/agentSelectors';
 import type { Agent } from '../features/agents/agentsSlice';
 import { clientMessageRequested } from '../features/connection/actions';
 import { statusColors } from '../theme';
 import { AgentRoleBadges } from './AgentRoleBadges';
 import { Elapsed } from './Elapsed';
 import { MonoText } from './MonoText';
+import { StartAgentButton } from './StartAgentButton';
 import { StatusDot } from './StatusDot';
 
 const TOOLS_SHOWN = 2;
@@ -94,7 +100,7 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
             flexShrink: 0,
           }}
         >
-          {runState}
+          {RUN_STATE_LABELS[runState]}
         </Box>
       </Box>
 
@@ -111,7 +117,7 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
       >
         {tools.length === 0 ? (
           <Typography sx={{ fontSize: 11, color: 'text.disabled', textAlign: 'center' }}>
-            無進行中的工具呼叫
+            {runState === 'stopped' ? '尚未啟用，按「啟用」開始' : '無進行中的工具呼叫'}
           </Typography>
         ) : (
           tools.map((tool) => (
@@ -141,16 +147,20 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
           {runState === 'running' ? <Elapsed since={agent.startedAt} /> : '—'}
         </Typography>
         <Box sx={{ ml: 'auto', display: 'flex', gap: '6px' }}>
-          <Button
-            size="small"
-            variant="outlined"
-            component={RouterLink}
-            to={`/w/${workspaceId}/agents/${agent.id}/terminal`}
-            disabled={!terminalAvailable}
-            sx={{ fontSize: 11, py: '4px', px: '10px' }}
-          >
-            Terminal
-          </Button>
+          {runState === 'stopped' ? (
+            <StartAgentButton agentId={agent.id} />
+          ) : (
+            <Button
+              size="small"
+              variant="outlined"
+              component={RouterLink}
+              to={`/w/${workspaceId}/agents/${agent.id}/terminal`}
+              disabled={!terminalAvailable}
+              sx={{ fontSize: 11, py: '4px', px: '10px' }}
+            >
+              Terminal
+            </Button>
+          )}
           <Button
             size="small"
             variant="outlined"
@@ -173,7 +183,7 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
               }}
               sx={{ fontSize: 12, color: 'error.main' }}
             >
-              關閉 Agent
+              刪除 Agent
             </MenuItem>
           </Menu>
         </Box>

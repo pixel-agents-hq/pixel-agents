@@ -36,6 +36,7 @@ export const statusColors = {
   running: { color: '#22c55e', glow: '0 0 5px rgba(34,197,94,0.5)' },
   waiting: { color: '#f59e0b', glow: '0 0 4px rgba(245,158,11,0.4)' },
   idle: { color: '#8b93a1', glow: 'none' },
+  stopped: { color: '#8b93a1', glow: 'none' },
 } as const;
 
 export const theme = createTheme({

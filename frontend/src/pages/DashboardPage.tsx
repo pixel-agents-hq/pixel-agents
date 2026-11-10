@@ -1,9 +1,11 @@
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
+import { useState } from 'react';
 import { Link as RouterLink, useParams } from 'react-router';
 
 import { useAppSelector } from '../app/hooks';
+import { ActivateAgentDialog } from '../components/ActivateAgentDialog';
 import { AgentCard } from '../components/AgentCard';
 import {
   agentDisplayName,
@@ -19,6 +21,7 @@ export function DashboardPage() {
   const curatorId = useAppSelector((state) => state.workspaces.curators[workspaceId]);
   const curatorsAvailable = useAppSelector((state) => state.workspaces.curatorsAvailable);
   const readOnly = useAppSelector((state) => state.connection.readOnly);
+  const [activating, setActivating] = useState(false);
 
   const running = agents.filter((agent) => deriveRunState(agent) === 'running').length;
   const idle = agents.filter((agent) => deriveRunState(agent) === 'idle').length;
@@ -81,9 +84,12 @@ export function DashboardPage() {
         ))}
         {!readOnly && (
           <Box
-            component={RouterLink}
-            to={`/agents/new?workspace=${workspaceId}`}
+            component="button"
+            type="button"
+            onClick={() => setActivating(true)}
             sx={{
+              font: 'inherit',
+              cursor: 'pointer',
               minHeight: 160,
               display: 'flex',
               flexDirection: 'column',
@@ -104,6 +110,12 @@ export function DashboardPage() {
           </Box>
         )}
       </Box>
+      <ActivateAgentDialog
+        workspaceId={workspaceId}
+        workspaceName={workspace?.name ?? ''}
+        open={activating}
+        onClose={() => setActivating(false)}
+      />
     </>
   );
 }

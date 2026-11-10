@@ -6,15 +6,19 @@ import { DEFAULT_WORKSPACE_ID } from '../../protocol';
 import type { PermissionRole } from '../../protocol';
 import { clientMessageRequested, serverMessageReceived } from '../connection/actions';
 
-interface LaunchRequest {
+interface CreateAgentRequest {
   workspaceId: string;
+  /** 空字串表示沒有名稱，以目錄名稱標示 */
+  name: string;
   directoryPath: string;
   permissionRoles: PermissionRole[] | null;
-  /** 啟動成功後，把新 agent 指定為該工作空間的 KB Writer */
+  /** 建立後立即啟用；否則只建立紀錄，之後在工作空間裡啟用 */
+  start: boolean;
+  /** 建立後，把新 agent 指定為該工作空間的 KB Writer（需要已啟用） */
   becomeCurator: boolean;
 }
 
-export const launchRequested = createAction<LaunchRequest>('launch/requested');
+export const agentCreationRequested = createAction<CreateAgentRequest>('agents/creationRequested');
 
 type ReceivedAction = ReturnType<typeof serverMessageReceived>;
 
@@ -25,9 +29,18 @@ function isCreatedIn(workspaceId: string) {
     (action.payload.workspaceId ?? DEFAULT_WORKSPACE_ID) === workspaceId;
 }
 
-function* handleLaunch(action: ReturnType<typeof launchRequested>) {
-  const { workspaceId, directoryPath, permissionRoles, becomeCurator } = action.payload;
-  yield put(clientMessageRequested({ type: 'launchAgent', directoryPath, permissionRoles }));
+function* handleCreation(action: ReturnType<typeof agentCreationRequested>) {
+  const { workspaceId, name, directoryPath, permissionRoles, start, becomeCurator } =
+    action.payload;
+  yield put(
+    clientMessageRequested({
+      type: 'createAgent',
+      directoryPath,
+      permissionRoles,
+      start,
+      ...(name === '' ? {} : { name }),
+    }),
+  );
   if (!becomeCurator) return;
 
   const { created }: { created?: ReceivedAction } = yield race({
@@ -46,6 +59,6 @@ function* handleLaunch(action: ReturnType<typeof launchRequested>) {
   }
 }
 
-export function* launchSaga() {
-  yield takeEvery(launchRequested.type, handleLaunch);
+export function* createAgentSaga() {
+  yield takeEvery(agentCreationRequested.type, handleCreation);
 }

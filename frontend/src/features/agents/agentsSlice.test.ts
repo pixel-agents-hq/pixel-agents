@@ -43,6 +43,38 @@ describe('agentsReducer', () => {
     expect(state.byId[1].tools[0].done).toBe(true);
   });
 
+  it('建立時帶名稱並標示為尚未啟用，收到 terminalSessionOpened 後變成已啟用', () => {
+    let state = agentsReducer(
+      empty,
+      serverMessageReceived({ type: 'agentCreated', id: 1, name: 'backend', stopped: true }),
+    );
+    expect(state.byId[1]).toMatchObject({ name: 'backend', stopped: true });
+    expect(deriveRunState(state.byId[1])).toBe('stopped');
+
+    state = agentsReducer(
+      state,
+      serverMessageReceived({ type: 'terminalSessionOpened', agentId: 1 }),
+    );
+    expect(state.byId[1].stopped).toBe(false);
+  });
+
+  it('existingAgents 帶出名稱與尚未啟用的 Agent', () => {
+    const state = agentsReducer(
+      empty,
+      serverMessageReceived({
+        type: 'existingAgents',
+        agents: [1, 2],
+        agentMeta: {},
+        directoryNames: { '1': 'a', '2': 'b' },
+        externalAgents: {},
+        names: { '1': 'backend' },
+        stoppedAgents: { '2': true },
+      }),
+    );
+    expect(state.byId[1]).toMatchObject({ name: 'backend', stopped: false });
+    expect(state.byId[2]).toMatchObject({ name: null, stopped: true });
+  });
+
   it('agentClosed 移除 Agent', () => {
     let state = agentsReducer(empty, serverMessageReceived({ type: 'agentCreated', id: 1 }));
     state = agentsReducer(state, serverMessageReceived({ type: 'agentClosed', id: 1 }));
