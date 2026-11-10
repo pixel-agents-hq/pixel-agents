@@ -97,6 +97,7 @@
     "build": "npm run compile",
     "dev": "node scripts/dev.mjs",
     "start": "node dist/cli.js",
+    "start:server": "node dist/cli.js --no-static",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",

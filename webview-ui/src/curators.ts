@@ -6,9 +6,8 @@
 // The host is the authority. `curatorsLoaded.available` says whether this host
 // supports curators at all; it is false (or never sent) in the VS Code panel
 // and in any embedded host, and a read-only office never shows the controls
-// either. Note that the standalone host issues no capability yet (S2), so on a
-// real host every appointment is answered `not_eligible`: the controls exist,
-// but no agent can take the role until a later release issues capabilities.
+// either. A standalone host appoints any PTY agent of the Workspace (no
+// capability needed); an external or restored agent is answered `not_eligible`.
 
 import type {
   ClientMessage,

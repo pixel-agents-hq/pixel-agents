@@ -447,9 +447,11 @@ describe('capabilities', () => {
 
       h.store.setAgentWorkspace(id!, alpha.id);
       expect(h.capabilities.verify(token)).toBeNull();
-      expect(h.send({ type: 'setWorkspaceCurator', workspaceId: alpha.id, agentId: id })).toEqual([
-        expect.objectContaining({ type: 'curatorRejected', code: 'not_eligible' }),
-      ]);
+      // P2: curator eligibility no longer needs a capability -- a PTY agent of
+      // this host filed under alpha is eligible again, token or not.
+      expect(h.send({ type: 'setWorkspaceCurator', workspaceId: alpha.id, agentId: id })).toEqual(
+        [],
+      );
     });
 
     it('a restarted server (new store and registry) knows no capability and no curator', () => {
@@ -459,7 +461,7 @@ describe('capabilities', () => {
 
       const store = new AgentStateStore();
       const capabilities = new CapabilityRegistry({ store, ptyManager: h.manager });
-      const curators = new CuratorTable({ capabilities, broadcast: () => {} });
+      const curators = new CuratorTable({ store, ptyManager: h.manager, broadcast: () => {} });
       expect(capabilities.verify(token)).toBeNull();
       expect(curators.list()).toEqual([]);
 

@@ -354,8 +354,251 @@ export const CAPABILITY_BEARER_PREFIX = 'Bearer ';
 export const CURATOR_INVALID_REASON = 'That curator request is not valid.';
 export const CURATOR_EXISTS_REASON = 'That Workspace already has a curator.';
 export const CURATOR_NOT_ELIGIBLE_REASON =
-  'That agent cannot be the curator of this Workspace (it holds no capability there).';
+  'That agent cannot be the curator of this Workspace (it is not an agent this office launched in that Workspace).';
 export const CURATOR_UNAVAILABLE_REASON = 'Curators are only available in the standalone office.';
+
+// ── Write guard（阻擋式裁決通道，standalone 限定） ─────────
+/** hook 向伺服器詢問裁決的端點。與 HOOK_API_PREFIX 分開，既有的事件轉發路由不變。 */
+export const WRITE_GUARD_API_PATH = '/api/guard/verdict';
+/** 裁決請求的 body 上限。請求只含路徑、command 等欄位（F9），不含檔案內容；
+ *  超過上限時 hook 不送出，視同伺服器未回答（只有受保護路徑才 fail-closed）。 */
+export const WRITE_GUARD_MAX_REQUEST_BYTES = MAX_HOOK_BODY_SIZE;
+/** hook 讀取裁決回應的上限；伺服器只回很短的 JSON，超過視同沒有回答。 */
+export const WRITE_GUARD_MAX_RESPONSE_BYTES = 4_096;
+/**
+ * hook 端裁決的總截止時間（毫秒）。必須明顯短於安裝器寫入的 hook 逾時
+ * （claudeHookInstaller.ts makeHookEntry 的 `timeout: 5`，單位秒），
+ * 讓 hook 在被 Claude Code 砍掉之前就能自己做出 fail-closed 決定（F2、F13）。
+ */
+export const WRITE_GUARD_HOOK_DEADLINE_MS = 1_200;
+/** 受保護根目錄清單與已知 session 清單（每台 standalone 伺服器一份）所在的
+ *  子目錄（位於 SERVER_JSON_DIR 之下），檔名與 registry 相同：`<pid>-<port>.json`。 */
+export const WRITE_GUARD_LISTS_DIR = 'guard';
+/** 清單檔格式版本。hook 只採認同版本的清單，其他一律視為沒有清單。 */
+export const WRITE_GUARD_LIST_VERSION = 1;
+/** 已知 session 清單的後備重算間隔。session id 的變更大多透過事件立即反映；
+ *  這個間隔只補上不經 AgentRuntime.registerAgent 的變更路徑（例如 heuristic 的
+ *  /clear 重新指派）。只在內容改變時才寫檔。 */
+export const WRITE_GUARD_LIST_REFRESH_INTERVAL_MS = 1_000;
+/** agentGuardStatus 的 hook 鏈檢查間隔（讀 settings.json 與腳本檔）。檢查結果快取，
+ *  裁決路徑從不碰檔案系統（F13）；hooks 狀態變更時另外立即重查。 */
+export const GUARD_STATUS_CHAIN_CHECK_INTERVAL_MS = 5_000;
+/** 裁決端點只接受從 loopback 對端來的請求（縱深防禦，沿用 S3b /mcp 的作法）。 */
+export const WRITE_GUARD_LOOPBACK_PEERS: readonly string[] = [
+  '127.0.0.1',
+  '::1',
+  '::ffff:127.0.0.1',
+];
+/** 標示「轉送過的請求」的標頭；裁決端點一律拒絕。 */
+export const WRITE_GUARD_FORWARDING_HEADERS: readonly string[] = ['forwarded', 'via'];
+export const WRITE_GUARD_FORWARDING_HEADER_PREFIX = 'x-forwarded-';
+/** 裁決端點的錯誤回應 body：固定字串。 */
+export const WRITE_GUARD_FORBIDDEN_BODY = 'forbidden';
+export const WRITE_GUARD_UNAUTHORIZED_BODY = 'unauthorized';
+export const WRITE_GUARD_BAD_REQUEST_BODY = 'bad request';
+
+/** 伺服器回 deny 時的規則識別碼（hook 依此套用固定範本，不轉送伺服器的任何文字）。 */
+export const WRITE_GUARD_RULE_PROTECTED_PATH = 'protected-path';
+/** hook 端 fail-closed：已知 standalone session 對受保護路徑寫入，伺服器卻沒有回答。 */
+export const WRITE_GUARD_RULE_UNREACHABLE = 'guard-unreachable';
+/** 工作空間 KB 區（<根目錄>/.note/）：寫入者不是該工作空間的 curator。 */
+export const WRITE_GUARD_RULE_KB_WORKSPACE = 'kb-workspace';
+/** 工作空間 KB 區：該工作空間已設根目錄，但還沒有任命 curator（KB Writer）。 */
+export const WRITE_GUARD_RULE_KB_WORKSPACE_NO_WRITER = 'kb-workspace-no-writer';
+/** 個人 KB 區（<Agent Directory>/.note/）：路徑不在寫入者自己的識別鍵之下。 */
+export const WRITE_GUARD_RULE_KB_PERSONAL = 'kb-personal';
+/** 寫入類工具的目標路徑抽不到或無法正規化（F7）。 */
+export const WRITE_GUARD_RULE_KB_PATH_UNRESOLVED = 'kb-path-unresolved';
+/** F17 拒絕清單：~/.pixel-agents/、~/.claude/settings*.json、<Agent Directory>/.claude/。 */
+export const WRITE_GUARD_RULE_PROTECTED_CONFIG = 'protected-config';
+/** P3：角色缺少某操作類別時的規則識別碼。 */
+export const WRITE_GUARD_RULE_ROLE_READ = 'role-read';
+export const WRITE_GUARD_RULE_ROLE_EDIT = 'role-edit';
+export const WRITE_GUARD_RULE_ROLE_DELETE = 'role-delete';
+/** Bash 的寫入目標無法判斷（指令過長、巢狀過深、目標過多、路徑無法正規化）。 */
+export const WRITE_GUARD_RULE_BASH_UNRESOLVED = 'kb-bash-unresolved';
+/** hook 端裁決流程本身發生例外：已知 session 且 KB 規則啟用時，寫入類工具 fail-closed。 */
+export const WRITE_GUARD_RULE_GUARD_ERROR = 'guard-error';
+/** guard-error 時 fail-closed 的工具（寫入類檔案工具與 Bash）；讀取類與其他工具放行。 */
+export const WRITE_GUARD_ERROR_FAIL_CLOSED_TOOLS: readonly string[] = [
+  'Write',
+  'Edit',
+  'NotebookEdit',
+  'Bash',
+];
+
+/**
+ * 寫入類檔案工具（Claude Code 的工具名稱）。hook 端與伺服器端共用：抽不到路徑時
+ * KB 規則 deny（F7）。假設（未實測，P0 #5）：NotebookEdit 的路徑欄位可能是
+ * `notebook_path`；欄位抽取兩個名稱都收，抽不到就 deny。
+ */
+export const WRITE_GUARD_FILE_WRITE_TOOLS: readonly string[] = ['Write', 'Edit', 'NotebookEdit'];
+/** 路徑正規化時最多跟隨的 symlink 次數（與常見作業系統的 MAXSYMLINKS 同量級）；
+ *  超過視為無法判斷（fail-closed）。 */
+export const WRITE_GUARD_MAX_SYMLINK_HOPS = 40;
+
+// ── KB 寫入阻擋（P2） ───────────────────────────────────────
+/** 工作空間 KB 與個人 KB 共用的目錄名稱。 */
+export const KB_NOTE_DIR_NAME = '.note';
+/**
+ * 未設角色的 Agent 在個人 KB 中的識別鍵。必須是 S1b 角色檔名白名單
+ * （ROLE_ID_PATTERN：英數開頭、以 `.md` 結尾）產生不出來的字串：
+ * `_` 開頭且不以 `.md` 結尾，大小寫折疊後也一樣，因此不會與任何角色檔撞名。
+ */
+export const KB_PERSONAL_RESERVED_KEY = '_default';
+/** F17：Claude Code 設定檔的檔名規則（~/.claude/settings*.json）。 */
+export const KB_CLAUDE_SETTINGS_FILE_PATTERN = /^settings.*\.json$/i;
+/** F17：Claude Code 使用者層設定目錄名稱（位於 HOME 之下）。 */
+export const KB_CLAUDE_HOME_DIR_NAME = '.claude';
+
+/** setWorkspaceRoot 的 workspaceRejected 理由（固定字串）。 */
+export const WORKSPACE_ROOT_INVALID_ID_REASON = 'That Workspace no longer exists.';
+export const WORKSPACE_ROOT_NOT_ABSOLUTE_REASON =
+  'The Workspace root must be an absolute path to an existing directory.';
+export const WORKSPACE_ROOT_NOT_DIRECTORY_REASON =
+  'The Workspace root must be an existing directory.';
+/** 權限角色值不合格（setWorkspacePermissionRoles 的 workspaceRejected、帶角色啟動的
+ *  roleRejected 共用的固定字串）。 */
+export const PERMISSION_ROLES_INVALID_REASON =
+  'Permission roles must be null or a list of distinct roles from R, E and D.';
+export const WORKSPACE_ROOT_OVERLAP_REASON =
+  "The Workspace KB (<root>/.note/) would be the same as, or nested with, an agent Directory's personal KB (<Directory>/.note/). Choose another root.";
+
+/**
+ * 拒絕訊息的固定範本（F16）：原因、理由、建議三段。只會插入該 Agent 自己送出的
+ * 路徑，絕不插入 curator 身分、其他 Agent 的路徑或任何可命名的字串。
+ * 未知的規則識別碼一律套用 WRITE_GUARD_DENY_GENERIC。
+ */
+export interface WriteGuardDenyTemplate {
+  reason: string;
+  rationale: string;
+  suggestion: string;
+}
+/** P3 的固定範本（權限角色、Bash 目標無法判斷）。併入 WRITE_GUARD_DENY_TEMPLATES（F16）。 */
+export const WRITE_GUARD_ROLE_DENY_TEMPLATES: Readonly<Record<string, WriteGuardDenyTemplate>> = {
+  [WRITE_GUARD_RULE_ROLE_READ]: {
+    reason:
+      "This tool call reads files, and this agent's permission roles do not include Read (R).",
+    rationale:
+      'Each agent may only perform the kinds of operations its permission roles allow: R to read, E to edit, D to delete.',
+    suggestion: 'Ask the user to grant this agent the Read (R) role, or to perform this step.',
+  },
+  [WRITE_GUARD_RULE_ROLE_EDIT]: {
+    reason:
+      "This tool call edits files or runs a command that may change files, and this agent's permission roles do not include Edit (E).",
+    rationale:
+      'Each agent may only perform the kinds of operations its permission roles allow: R to read, E to edit, D to delete. Commands Pixel Agents cannot classify count as edits.',
+    suggestion: 'Ask the user to grant this agent the Edit (E) role, or to perform this step.',
+  },
+  [WRITE_GUARD_RULE_ROLE_DELETE]: {
+    reason:
+      "This command deletes files, and this agent's permission roles do not include Delete (D).",
+    rationale:
+      'Each agent may only perform the kinds of operations its permission roles allow: R to read, E to edit, D to delete.',
+    suggestion: 'Ask the user to grant this agent the Delete (D) role, or to perform this step.',
+  },
+  [WRITE_GUARD_RULE_BASH_UNRESOLVED]: {
+    reason: 'Where this shell command writes could not be fully determined.',
+    rationale:
+      'While Knowledge Base rules are on, a command whose write targets cannot be checked (too long, too deeply nested, too many targets, or a path that cannot be resolved) is refused rather than allowed.',
+    suggestion:
+      'Split the command into shorter, simpler commands with plain paths, or use the Write and Edit tools.',
+  },
+};
+export const WRITE_GUARD_DENY_TEMPLATES: Readonly<Record<string, WriteGuardDenyTemplate>> = {
+  ...WRITE_GUARD_ROLE_DENY_TEMPLATES,
+  [WRITE_GUARD_RULE_GUARD_ERROR]: {
+    reason: 'Pixel Agents could not check this write because its local check failed.',
+    rationale:
+      'While Knowledge Base rules are on, a write that cannot be checked is refused rather than allowed.',
+    suggestion: 'Retry the step; if it keeps failing, ask the user to make the change.',
+  },
+  [WRITE_GUARD_RULE_PROTECTED_PATH]: {
+    reason: 'This write targets a path Pixel Agents protects for this agent.',
+    rationale:
+      'Protected paths (such as a Knowledge Base) may only be written by the agent assigned to them.',
+    suggestion:
+      'Do not write this path directly. Tell the user what should be recorded, so the assigned writer can make the change.',
+  },
+  [WRITE_GUARD_RULE_UNREACHABLE]: {
+    reason:
+      'This write targets a protected path, and the Pixel Agents server did not answer in time.',
+    rationale:
+      'Without an answer the write cannot be checked, so writes to protected paths are refused rather than allowed.',
+    suggestion:
+      'Retry once the Pixel Agents server is running, or ask the user to make the change.',
+  },
+  [WRITE_GUARD_RULE_KB_WORKSPACE]: {
+    reason: "This write targets the Workspace Knowledge Base (the Workspace root's .note/ folder).",
+    rationale: "Only the Workspace's KB Writer may write the Workspace Knowledge Base.",
+    suggestion:
+      'Do not write this path directly. The Knowledge Base is maintained only by the KB Writer; tell the user what should be recorded so they can hand it to the KB Writer.',
+  },
+  [WRITE_GUARD_RULE_KB_WORKSPACE_NO_WRITER]: {
+    reason: "This write targets the Workspace Knowledge Base (the Workspace root's .note/ folder).",
+    rationale:
+      'Only the Workspace KB Writer may write it, and this Workspace has no KB Writer assigned yet.',
+    suggestion:
+      'Ask the user to assign a KB Writer for this Workspace, and tell the user what should be recorded.',
+  },
+  [WRITE_GUARD_RULE_KB_PERSONAL]: {
+    reason:
+      "This write targets a personal Knowledge Base folder (.note/) outside this agent's own area.",
+    rationale:
+      'In a personal Knowledge Base each Role writes only its own subfolder: .note/<Role file name>/, or .note/_default/ for an agent launched without a Role.',
+    suggestion: 'Write under your own subfolder instead, or ask the user to make this change.',
+  },
+  [WRITE_GUARD_RULE_KB_PATH_UNRESOLVED]: {
+    reason: 'The target path of this file write could not be determined.',
+    rationale:
+      'While Knowledge Base rules are on, a file write whose target cannot be checked is refused rather than allowed.',
+    suggestion: 'Retry with an absolute file path.',
+  },
+  [WRITE_GUARD_RULE_PROTECTED_CONFIG]: {
+    reason: 'This write targets Pixel Agents or Claude Code configuration.',
+    rationale:
+      "Agents may not change ~/.pixel-agents/, ~/.claude/settings*.json or their Directory's .claude/ folder, which hold the rules they run under.",
+    suggestion: 'Ask the user to make this change.',
+  },
+};
+export const WRITE_GUARD_DENY_GENERIC: WriteGuardDenyTemplate = {
+  reason: 'Pixel Agents refused this tool call.',
+  rationale: 'A Pixel Agents rule for this agent does not allow it.',
+  suggestion: 'Ask the user how to proceed.',
+};
+/** 拒絕訊息中路徑的長度上限（字元）；超過時截斷，避免把超長輸入回灌給模型。 */
+export const WRITE_GUARD_DENY_PATH_MAX_LENGTH = 512;
+
+// ── Bash 解析（P3，F10） ────────────────────────────────────
+/** hook 端解析 Bash 指令的上限（UTF-8 位元組）。超過時不解析：指令視為無法分類
+ *  （需要 edit），寫入目標視為無法判斷（KB 規則啟用時 deny）。 */
+export const WRITE_GUARD_BASH_MAX_PARSE_BYTES = 1024 * 1024;
+/** `$( )`、反引號、子殼層的巢狀上限；超過時其後內容不分類（需要 edit 與 delete，
+ *  且寫入目標視為無法判斷）。也防止遞迴把堆疊用盡。 */
+export const WRITE_GUARD_BASH_MAX_NESTING = 16;
+/** 一個指令字串最多收集的寫入目標與路徑片段（各自計算）；超過視為無法判斷。 */
+export const WRITE_GUARD_BASH_MAX_TARGETS = 256;
+/** 同一指令字串內 `cd` 造成的可能工作目錄組合上限；超過視為無法判斷。 */
+export const WRITE_GUARD_BASH_MAX_DIR_CHAINS = 8;
+/** 重導向到這些目標不算寫入（P3 補充決定 4）。 */
+export const WRITE_GUARD_BASH_NON_WRITE_TARGETS: readonly string[] = ['/dev/null'];
+/** Bash 分析的確定性工作量預算（lexer 讀過的字元與迴圈、指令數、路徑片段數的總和）。
+ *  用完時視為無法解析（read、edit、delete，寫入目標無法判斷）。約對應 150 KB 的一般指令，
+ *  讓病態輸入（很長的 word、大量運算子、很長的黏著選項）在固定的工作量內結束。 */
+export const WRITE_GUARD_BASH_MAX_WORK = 150_000;
+/** hook 端本地解析（含路徑正規化）的時鐘上限（毫秒）；超過時放棄並視為無法解析。
+ *  是工作量預算之外的最後防線，明顯短於 hook 的裁決截止時間與 hook 逾時。 */
+export const WRITE_GUARD_BASH_LOCAL_DEADLINE_MS = 400;
+/** 拒絕訊息中指令名稱片段的長度上限（字元）。 */
+export const WRITE_GUARD_DENY_FRAGMENT_MAX_LENGTH = 64;
+
+// ── 權限角色（P3，R／E／D） ─────────────────────────────────
+/** 權限角色：三個獨立開關（集合，不是階層），依此順序存放。 */
+export const PERMISSION_ROLES = ['R', 'E', 'D'] as const;
+/** 需要 read（R）的工具；Write、Edit、NotebookEdit（WRITE_GUARD_FILE_WRITE_TOOLS）需要 edit（E）。
+ *  其他工具（Agent、Task、MCP、TodoWrite、WebFetch 等）第一階段不受角色限制。 */
+export const WRITE_GUARD_READ_TOOLS: readonly string[] = ['Read', 'Glob', 'Grep'];
+export const WRITE_GUARD_BASH_TOOL = 'Bash';
 
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';

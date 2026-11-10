@@ -49,6 +49,7 @@ export type ServerMessage =
   | CuratorsLoaded
   | WorkspaceCuratorChanged
   | CuratorRejected
+  | AgentGuardStatus
   | RolesAvailable
   | RolePreview
   | RoleConfirmed
@@ -86,6 +87,8 @@ export type ClientMessage =
   | RemoveDirectory
   | SaveWorkspace
   | RemoveWorkspace
+  | SetWorkspaceRoot
+  | SetWorkspacePermissionRoles
   | SetWorkspaceCurator
   | UnsetWorkspaceCurator
   | RequestRoles
@@ -384,7 +387,11 @@ export interface Workspace {
   id: string;
   name: string;
   directoryPaths: string[];
+  rootPath?: string;
+  permissionRoles?: PermissionRole[];
 }
+
+export type PermissionRole = 'R' | 'E' | 'D';
 
 export interface WorkspaceRejected {
   type: 'workspaceRejected';
@@ -421,6 +428,23 @@ export interface CuratorRejected {
 }
 
 export type CuratorRejectionCode = 'invalid' | 'exists' | 'not_eligible' | 'unavailable';
+
+export interface AgentGuardStatus {
+  type: 'agentGuardStatus';
+  id: number;
+  active: boolean;
+  reasons: GuardInactiveReason[];
+  permissionRoles: PermissionRole[] | null;
+}
+
+export type GuardInactiveReason =
+  | 'not_standalone_agent'
+  | 'hooks_not_installed'
+  | 'pretooluse_hook_missing'
+  | 'hook_script_missing'
+  | 'awaiting_first_verdict'
+  | 'no_workspace_root'
+  | 'no_curator';
 
 export interface RolesAvailable {
   type: 'rolesAvailable';
@@ -489,6 +513,7 @@ export interface LaunchAgent {
   type: 'launchAgent';
   directoryPath?: string;
   roleId?: string;
+  permissionRoles?: PermissionRole[] | null;
 }
 
 export interface FocusAgent {
@@ -624,6 +649,18 @@ export interface SaveWorkspace {
 export interface RemoveWorkspace {
   type: 'removeWorkspace';
   id: string;
+}
+
+export interface SetWorkspaceRoot {
+  type: 'setWorkspaceRoot';
+  workspaceId: string;
+  rootPath: string | null;
+}
+
+export interface SetWorkspacePermissionRoles {
+  type: 'setWorkspacePermissionRoles';
+  workspaceId: string;
+  roles: PermissionRole[] | null;
 }
 
 export interface SetWorkspaceCurator {

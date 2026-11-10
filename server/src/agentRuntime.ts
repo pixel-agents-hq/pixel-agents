@@ -85,6 +85,8 @@ export class AgentRuntime {
   readonly subagentWatch: SubagentWatch;
   private hookEventHandler: HookEventHandler;
   private lifecycleCallbacks: RuntimeLifecycleCallbacks = {};
+  /** session 註冊變更的監聽者（阻擋式裁決的已知 session 清單用）。 */
+  private readonly sessionListeners = new Set<() => void>();
 
   constructor(
     private readonly store: AgentStateStore,
@@ -299,11 +301,32 @@ export class AgentRuntime {
   /** Register an agent with the hook event handler for session->agent mapping. */
   registerAgent(sessionId: string, agentId: number): void {
     this.hookEventHandler.registerAgent(sessionId, agentId);
+    this.notifySessionsChanged();
   }
 
   /** Unregister an agent from the hook event handler. */
   unregisterAgent(sessionId: string): void {
     this.hookEventHandler.unregisterAgent(sessionId);
+    this.notifySessionsChanged();
+  }
+
+  /**
+   * 每次 session 註冊或取消註冊之後呼叫（例如 /clear 換了 session id）。
+   * 回傳取消訂閱的函式。監聽者丟出的錯誤只記錄，不影響註冊本身。
+   */
+  onSessionsChanged(listener: () => void): () => void {
+    this.sessionListeners.add(listener);
+    return () => this.sessionListeners.delete(listener);
+  }
+
+  private notifySessionsChanged(): void {
+    for (const listener of [...this.sessionListeners]) {
+      try {
+        listener();
+      } catch (err) {
+        console.error('[Pixel Agents] Session change listener failed:', err);
+      }
+    }
   }
 
   // ── Agent removal (shared cleanup) ──

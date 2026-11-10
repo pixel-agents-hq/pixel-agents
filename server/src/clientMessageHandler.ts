@@ -36,7 +36,13 @@ import { claudeProvider, hookProviderById, hookProviders } from './providers/ind
 import { handleRoleClientMessage, type RoleMessageDeps } from './roleClientMessages.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
-import { handleWorkspaceClientMessage, workspacesLoadedMessage } from './workspaces.js';
+import {
+  handleWorkspaceClientMessage,
+  listWorkspaces,
+  workspacesLoadedMessage,
+} from './workspaces.js';
+import type { GuardStatusReporter } from './writeGuard/guardStatusReporter.js';
+import { parsePermissionRoles } from './writeGuard/permissionRoles.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -89,6 +95,8 @@ export interface ClientMessageContext {
   capabilities?: CapabilityRegistry;
   /** Workspace curators (standalone only, in memory). */
   curators?: CuratorTable;
+  /** agentGuardStatus 回報（standalone only）：握手補送、hooks 狀態變更時重查鏈。 */
+  guardStatus?: GuardStatusReporter;
   /** Whether a launch into a Workspace is issued a capability (the Workspace's
    *  KB is on). Handed to every launch. Absent while nothing can enable a KB:
    *  no agent could ever be a curator, so the office offers no curator
@@ -131,6 +139,24 @@ function shownHostDirectoriesFor(ctx: ClientMessageContext): HostDirectoryEntry[
 }
 
 /**
+ * Every Directory a personal KB (`<Directory>/.note/`) can live in, for the
+ * setWorkspaceRoot overlap check: the registered Directories (user + host),
+ * every Workspace's Directories, and the Directory realpath of every agent
+ * this host launched.
+ */
+function personalKbDirectoriesFor(ctx: ClientMessageContext): string[] {
+  const directories = new Set<string>();
+  for (const directory of listDirectories(hostDirectoriesFor(ctx))) directories.add(directory.path);
+  for (const workspace of listWorkspaces()) {
+    for (const directoryPath of workspace.directoryPaths) directories.add(directoryPath);
+  }
+  for (const [, agent] of ctx.store) {
+    if (agent.directoryRealPath) directories.add(agent.directoryRealPath);
+  }
+  return [...directories];
+}
+
+/**
  * Roles need a standalone host that can actually launch (a ptyManager whose
  * terminal works, and a runtime) and are off on Windows until verified there.
  * VS Code embedded mode has no ptyManager, so it is always refused.
@@ -152,7 +178,7 @@ function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
     // depend on whether the host Directory is currently shown.
     hostDirectories: () => hostDirectoriesFor(ctx),
     available: rolesAvailableFor(ctx),
-    launch: ({ directoryPath, roleName, snapshotPath }) => {
+    launch: ({ directoryPath, roleName, roleId, snapshotPath, permissionRoles }) => {
       if (!ctx.runtime || !ctx.ptyManager) return null;
       return launchStandaloneAgent(
         {
@@ -169,7 +195,8 @@ function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
           // confirmation because of it.
           bypassPermissions:
             ctx.store.getAdapter()?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
-          role: { name: roleName, snapshotPath },
+          role: { name: roleName, roleId, snapshotPath },
+          permissionRoles,
         },
       );
     },
@@ -216,6 +243,14 @@ export function handleClientMessage(
       // the browser drawer (a shell running as the operator -- privileged, like
       // every message past the read-only gate above).
       if (!runtime || !ctx.ptyManager) break;
+      // P3 permission-role override: validated before anything starts; an
+      // invalid one launches nothing (never falls back to the Workspace default).
+      const permissionRoles =
+        msg.permissionRoles === undefined ? undefined : parsePermissionRoles(msg.permissionRoles);
+      if (msg.permissionRoles !== undefined && permissionRoles === undefined) {
+        console.warn('[Pixel Agents] Terminal: not launching -- invalid permissionRoles');
+        break;
+      }
       // Permission posture is a persisted per-host setting, never a per-launch
       // field: the client sends only where to launch. Every launch comes from a
       // drawer row and carries its Directory's path; no directoryPath falls
@@ -232,6 +267,7 @@ export function handleClientMessage(
         {
           directoryPath: msg.directoryPath as string | undefined,
           bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+          ...(permissionRoles !== undefined ? { permissionRoles } : {}),
         },
       );
       break;
@@ -441,20 +477,23 @@ export function handleClientMessage(
 
     case 'saveWorkspace':
     case 'removeWorkspace':
+    case 'setWorkspaceRoot':
+    case 'setWorkspacePermissionRoles':
       // Same shape as the Directory messages: success rebroadcasts the list to
       // every office, a rejection answers only the sender. Deleting a Workspace
       // sends its agents back to the default first, one agentWorkspaceChanged each.
       handleWorkspaceClientMessage(msg, {
         broadcast: (message) => store.broadcast(message),
         reply: send,
+        personalKbDirectories: () => personalKbDirectoriesFor(ctx),
         onWorkspaceRemoved: (workspaceId) => {
           for (const [id, agent] of [...store]) {
             if (agent.workspaceId === workspaceId) {
               store.setAgentWorkspace(id, DEFAULT_WORKSPACE_ID);
             }
           }
-          // Moving its agents already revoked their capabilities (and with them
-          // the curator); the record goes too, whoever holds it.
+          // Moving its agents already cleared their curator record (the curator
+          // table follows agentWorkspaceChanged); the record goes too, whoever holds it.
           ctx.curators?.clearWorkspace(workspaceId);
         },
       });
@@ -514,6 +553,7 @@ async function applyHooksPreference(
     }
     // Always report the ACTUAL install state — the toggle expresses intent,
     // not outcome (the installer refuses to touch an unparseable file).
+    ctx.guardStatus?.refreshChain();
     send({ type: 'hooksStatus', providerId: provider.id, installed });
   } catch (err) {
     console.error('[Pixel Agents] Applying the hooks preference failed:', err);
@@ -553,6 +593,7 @@ function standaloneConsentEffects(
     },
     reportHooksStatus: async () => {
       try {
+        ctx.guardStatus?.refreshChain();
         send({
           type: 'hooksStatus',
           providerId: provider.id,
@@ -704,9 +745,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
 
   // 4e. Curators, to this client only. `available` is the host's answer, not
   // this connection's: a read-only office hides the controls itself.
-  send(
-    curatorsLoadedMessage(curatorsAvailable(ctx) && ctx.isKbEnabled !== undefined, ctx.curators),
-  );
+  // No longer gated on isKbEnabled (P2): curator eligibility does not need a capability.
+  send(curatorsLoadedMessage(curatorsAvailable(ctx), ctx.curators));
 
   // Sync runtime refs with the persisted settings so scanners behave correctly
   // from the first tick after a server restart.
@@ -758,6 +798,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     workspaceIds,
     roleNames,
   });
+
+  // 6b. Write-guard status for every existing agent, AFTER existingAgents.
+  ctx.guardStatus?.sendAll(send);
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents
   // into characters once seats are rebuilt.
@@ -861,6 +904,8 @@ function refuseReadOnly(
       return;
     case 'saveWorkspace':
     case 'removeWorkspace':
+    case 'setWorkspaceRoot':
+    case 'setWorkspacePermissionRoles':
       send(workspacesLoadedMessage());
       return;
   }

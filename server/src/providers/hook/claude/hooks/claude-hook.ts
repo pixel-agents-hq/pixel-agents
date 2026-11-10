@@ -11,6 +11,7 @@ import {
 } from '../../../../constants.js';
 import type { ServerConfig, ServerTarget } from '../../../../serverConfig.js';
 import { isServerConfig, isServerTarget } from '../../../../serverConfig.js';
+import { defaultHookGuardDeps, runGuardedDelivery } from '../guard/hookGuard.js';
 
 const SERVER_JSON = path.join(os.homedir(), SERVER_JSON_DIR, SERVER_JSON_NAME);
 const SERVERS_REGISTRY_DIR = path.join(os.homedir(), SERVER_JSON_DIR, SERVERS_DIR);
@@ -166,7 +167,10 @@ async function main(): Promise<void> {
   // Multi-server fan-out (D4): deliver to every live server in the registry.
   // Falls back to the single legacy server.json when the registry has no live
   // entries -- e.g. a server on disk that predates the registry (A1/A2).
-  let servers: ServerTarget[] = readRegistry();
+  // 阻擋式裁決只看 registry 中 PID 仍存活的項目，從不看 legacy server.json
+  // （registry 沒有活著的 PID 時規則視為未生效，F3）。
+  const registry = readRegistry();
+  let servers: ServerTarget[] = registry;
   if (servers.length === 0) {
     try {
       const legacy = JSON.parse(fs.readFileSync(SERVER_JSON, 'utf-8')) as unknown;
@@ -190,7 +194,26 @@ async function main(): Promise<void> {
   }
 
   const body = JSON.stringify(data);
-  await Promise.all(servers.map((server) => postToServer(server, body, eventName, sid)));
+  // 本地判斷（抽欄位、讀清單、正規化路徑）在 runGuardedDelivery 內、任何網路
+  // 呼叫之前完成；之後既有的事件轉發與裁決並行（F2）。allow 時不輸出任何東西（F1）。
+  await runGuardedDelivery(data, registry, {
+    ...defaultHookGuardDeps(hookDebug),
+    forward: async () => {
+      await Promise.all(servers.map((server) => postToServer(server, body, eventName, sid)));
+    },
+    emit: writeStdout,
+  });
+}
+
+/** 寫 stdout 並等它真的送出，避免 process.exit 截斷管線輸出。 */
+function writeStdout(output: string): Promise<void> {
+  return new Promise((resolve) => {
+    try {
+      process.stdout.write(output, () => resolve());
+    } catch {
+      resolve();
+    }
+  });
 }
 
 main()
