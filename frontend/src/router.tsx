@@ -9,6 +9,7 @@ import { AddWorkspacePage } from './pages/AddWorkspacePage';
 import { AllAgentsPage } from './pages/AllAgentsPage';
 import { AgentDetailLayout } from './pages/agent/AgentDetailLayout';
 import { AgentRoute } from './pages/agent/AgentRoute';
+import { ClaudeCodeTab } from './pages/agent/ClaudeCodeTab';
 import { FilesChangedTab } from './pages/agent/FilesChangedTab';
 import { RoleActivityTab } from './pages/agent/RoleActivityTab';
 import { SessionLogTab } from './pages/agent/SessionLogTab';
@@ -47,6 +48,7 @@ export const router = createBrowserRouter([
                 element: <AgentDetailLayout />,
                 children: [
                   { index: true, element: <Navigate to="log" replace /> },
+                  { path: 'claude', element: <ClaudeCodeTab /> },
                   { path: 'log', element: <SessionLogTab /> },
                   { path: 'files', element: <FilesChangedTab /> },
                   { path: 'roles', element: <RoleActivityTab /> },

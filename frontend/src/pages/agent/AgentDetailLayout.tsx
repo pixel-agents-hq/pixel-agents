@@ -15,6 +15,7 @@ import { clientMessageRequested } from '../../features/connection/actions';
 import { useRouteAgent } from './useRouteAgent';
 
 const TABS = [
+  { path: 'claude', label: 'Claude Code' },
   { path: 'log', label: 'Session Log' },
   { path: 'files', label: 'Files Changed' },
   { path: 'roles', label: 'Role Activity' },
@@ -107,7 +108,9 @@ export function AgentDetailLayout() {
         ))}
       </Tabs>
 
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <Box
+        sx={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}
+      >
         <Outlet />
       </Box>
 
