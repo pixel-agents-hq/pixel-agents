@@ -45,7 +45,7 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
     >
       <Box
         component={RouterLink}
-        to={`/w/${workspaceId}/agents/${agent.id}/log`}
+        to={`/w/${workspaceId}/agents/${agent.id}`}
         sx={{
           display: 'flex',
           alignItems: 'flex-start',

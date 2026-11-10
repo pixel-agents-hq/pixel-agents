@@ -34,7 +34,8 @@ export function AgentDetailLayout() {
   const readOnly = useAppSelector((state) => state.connection.readOnly);
   const terminalAvailable = useAppSelector((state) => state.connection.terminalAvailable);
   const runState = deriveRunState(agent);
-  const currentTab = TABS.find((tab) => location.pathname.endsWith(`/${tab.path}`))?.path ?? 'log';
+  const currentTab =
+    TABS.find((tab) => location.pathname.endsWith(`/${tab.path}`))?.path ?? 'claude';
   const basePath = `/w/${workspaceId}/agents/${agent.id}`;
 
   const stop = () => {

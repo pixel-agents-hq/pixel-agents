@@ -47,7 +47,7 @@ export const router = createBrowserRouter([
               {
                 element: <AgentDetailLayout />,
                 children: [
-                  { index: true, element: <Navigate to="log" replace /> },
+                  { index: true, element: <Navigate to="claude" replace /> },
                   { path: 'claude', element: <ClaudeCodeTab /> },
                   { path: 'log', element: <SessionLogTab /> },
                   { path: 'files', element: <FilesChangedTab /> },

@@ -55,7 +55,7 @@ function AgentItem({
   return (
     <Box
       component={RouterLink}
-      to={`/w/${workspaceId}/agents/${agent.id}/log`}
+      to={`/w/${workspaceId}/agents/${agent.id}`}
       sx={{
         display: 'block',
         p: '8px',

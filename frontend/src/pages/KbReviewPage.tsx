@@ -76,7 +76,7 @@ export function KbReviewPage() {
           <Button
             variant="outlined"
             component={RouterLink}
-            to={`/w/${workspaceId}/agents/${curator.id}/log`}
+            to={`/w/${workspaceId}/agents/${curator.id}`}
           >
             前往 KB Writer
           </Button>

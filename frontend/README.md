@@ -82,6 +82,8 @@ BACKEND_URL=http://127.0.0.1:4000 npm run dev
 | ------------------------------------------ | -------------------------------------------------------- |
 | `/w/:workspaceId`                          | Dashboard                                                |
 | `/w/:workspaceId/agents/new`               | 新增 Agent                                               |
+| `/w/:workspaceId/agents/:agentId`          | 轉址到 Claude Code 分頁（點 Agent 的落點）               |
+| `/w/:workspaceId/agents/:agentId/claude`   | Claude Code：完整終端機輸出，可直接輸入                  |
 | `/w/:workspaceId/agents/:agentId/log`      | Session Log                                              |
 | `/w/:workspaceId/agents/:agentId/files`    | Files Changed                                            |
 | `/w/:workspaceId/agents/:agentId/roles`    | Role Activity                                            |
