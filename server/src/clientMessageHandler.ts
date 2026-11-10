@@ -35,7 +35,13 @@ import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
 import { handleRoleClientMessage, type RoleMessageDeps } from './roleClientMessages.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
+import type { LaunchStandaloneAgentDeps } from './terminal/standaloneAgentLauncher.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
+import {
+  createStoppedAgent,
+  normalizeAgentName,
+  startStoppedAgent,
+} from './terminal/standaloneAgentRecords.js';
 import {
   handleWorkspaceClientMessage,
   listWorkspaces,
@@ -171,6 +177,23 @@ function rolesAvailableFor(ctx: ClientMessageContext): boolean {
 }
 
 /** The Role handlers' view of this connection. Replies go to the sender only. */
+/** What starting an agent's process needs, from the connection's own context. */
+function launchDepsFor(
+  ctx: ClientMessageContext,
+  store: AgentStateStore,
+  runtime: AgentRuntime,
+  ptyManager: PtySessionManager,
+): LaunchStandaloneAgentDeps {
+  return {
+    store,
+    runtime,
+    ptyManager,
+    provider: claudeProvider,
+    capabilities: ctx.capabilities,
+    isKbEnabled: ctx.isKbEnabled,
+  };
+}
+
 function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
   return {
     reply: send,
@@ -270,6 +293,43 @@ export function handleClientMessage(
           ...(permissionRoles !== undefined ? { permissionRoles } : {}),
         },
       );
+      break;
+    }
+
+    case 'createAgent': {
+      // A record with no process: standalone only, privileged like every message
+      // past the read-only gate. Starting it is a separate step (or `start`).
+      const ptyManager = ctx.ptyManager;
+      if (!runtime || !ptyManager) break;
+      if (typeof msg.directoryPath !== 'string' || msg.directoryPath === '') break;
+      const permissionRoles =
+        msg.permissionRoles === undefined ? undefined : parsePermissionRoles(msg.permissionRoles);
+      if (msg.permissionRoles !== undefined && permissionRoles === undefined) {
+        console.warn('[Pixel Agents] Terminal: not creating -- invalid permissionRoles');
+        break;
+      }
+      const id = createStoppedAgent(
+        { store, provider: claudeProvider },
+        {
+          directoryPath: msg.directoryPath,
+          name: normalizeAgentName(msg.name),
+          ...(permissionRoles !== undefined ? { permissionRoles } : {}),
+        },
+      );
+      if (id !== null && msg.start === true) {
+        startStoppedAgent(launchDepsFor(ctx, store, runtime, ptyManager), id, {
+          bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+        });
+      }
+      break;
+    }
+
+    case 'startAgent': {
+      const ptyManager = ctx.ptyManager;
+      if (!runtime || !ptyManager) break;
+      startStoppedAgent(launchDepsFor(ctx, store, runtime, ptyManager), msg.id as number, {
+        bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+      });
       break;
     }
 
@@ -766,6 +826,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const workspaceIds: Record<number, string> = {};
   // Only agents launched with a Role, and only its display name.
   const roleNames: Record<number, string> = {};
+  // Only agents created with a display name, and only agents with no process yet.
+  const names: Record<number, string> = {};
+  const stoppedAgents: Record<number, boolean> = {};
   const persistedSeats = adapter?.loadSeats() ?? {};
   const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
   for (const [id, agent] of store) {
@@ -782,6 +845,12 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     if (agent.roleName) {
       roleNames[id] = agent.roleName;
     }
+    if (agent.displayName) {
+      names[id] = agent.displayName;
+    }
+    if (agent.stopped) {
+      stoppedAgents[id] = true;
+    }
     const persisted = persistedSeats[String(id)];
     agentMeta[id] = {
       palette: agent.palette,
@@ -797,6 +866,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     externalAgents,
     workspaceIds,
     roleNames,
+    names,
+    stoppedAgents,
   });
 
   // 6b. Write-guard status for every existing agent, AFTER existingAgents.

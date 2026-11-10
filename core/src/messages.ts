@@ -62,6 +62,8 @@ export type ServerMessage =
 export type ClientMessage =
   | WebviewReady
   | LaunchAgent
+  | CreateAgent
+  | StartAgent
   | FocusAgent
   | CloseAgent
   | SaveAgentSeats
@@ -112,6 +114,8 @@ export interface AgentCreated {
   hueShift?: number;
   workspaceId?: string;
   roleName?: string;
+  name?: string;
+  stopped?: boolean;
 }
 
 export interface AgentClosed {
@@ -131,6 +135,8 @@ export interface ExistingAgents {
   directoryNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
   workspaceIds?: Record<string, string>;
+  names?: Record<string, string>;
+  stoppedAgents?: Record<string, boolean>;
   roleNames?: Record<string, string>;
 }
 
@@ -514,6 +520,19 @@ export interface LaunchAgent {
   directoryPath?: string;
   roleId?: string;
   permissionRoles?: PermissionRole[] | null;
+}
+
+export interface CreateAgent {
+  type: 'createAgent';
+  name?: string;
+  directoryPath: string;
+  permissionRoles?: PermissionRole[] | null;
+  start?: boolean;
+}
+
+export interface StartAgent {
+  type: 'startAgent';
+  id: number;
 }
 
 export interface FocusAgent {

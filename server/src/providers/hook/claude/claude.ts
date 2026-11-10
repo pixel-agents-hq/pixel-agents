@@ -103,9 +103,11 @@ function getSessionDirs(workspacePath: string): string[] {
 function buildLaunchCommand(
   sessionId: string,
   cwd: string,
-  opts?: { bypassPermissions?: boolean; appendSystemPromptFile?: string },
+  opts?: { bypassPermissions?: boolean; appendSystemPromptFile?: string; resume?: boolean },
 ): { command: string; args: string[]; env?: Record<string, string> } {
-  const args = ['--session-id', sessionId];
+  // --resume continues the same session id (only --fork-session mints a new
+  // one), so hook events and the transcript still map to the same agent.
+  const args = opts?.resume ? ['--resume', sessionId] : ['--session-id', sessionId];
   if (opts?.bypassPermissions) args.push('--dangerously-skip-permissions');
   // A Role's snapshot path, as one argv element: the standalone PTY spawns
   // claude directly, never through a shell. An unknown flag makes claude exit

@@ -148,6 +148,8 @@ components:
       oneOf:
         - $ref: '#/components/schemas/WebviewReady'
         - $ref: '#/components/schemas/LaunchAgent'
+        - $ref: '#/components/schemas/CreateAgent'
+        - $ref: '#/components/schemas/StartAgent'
         - $ref: '#/components/schemas/FocusAgent'
         - $ref: '#/components/schemas/CloseAgent'
         - $ref: '#/components/schemas/SaveAgentSeats'
@@ -236,6 +238,18 @@ components:
             agents).
         roleName:
           $ref: '#/components/schemas/RoleName'
+        name:
+          type: string
+          description: >-
+            Display name given when the agent was created (`createAgent`). Absent:
+            the client labels the agent by its Directory name.
+        stopped:
+          type: boolean
+          description: >-
+            True when the agent exists as a record with no process yet
+            (`createAgent` without `start`, or a record restored after a restart).
+            `terminalSessionOpened` follows when it is started. Absent or false:
+            the agent is running or was observed from outside.
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -295,6 +309,21 @@ components:
             map (or the whole map being absent) belongs to the default Workspace.
           additionalProperties:
             type: string
+        names:
+          type: object
+          description: >-
+            Map of agent ID (string) to the display name given at creation. An
+            agent missing from the map is labelled by its Directory name.
+          additionalProperties:
+            type: string
+        stoppedAgents:
+          type: object
+          description: >-
+            Map of agent ID (string) to true for agents that exist as a record
+            with no process yet (see `agentCreated.stopped`). Absent entries are
+            running or observed from outside.
+          additionalProperties:
+            type: boolean
         roleNames:
           type: object
           description: >-
@@ -1283,6 +1312,55 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/PermissionRole'
+
+    CreateAgent:
+      description: |
+        Privileged, standalone only. Create an agent record in the Workspace that
+        owns `directoryPath`, without starting Claude Code (unless `start` is
+        true). The host replies `agentCreated` (with `stopped: true` when not
+        started); a started agent also gets `terminalSessionOpened`. A stopped
+        record survives a host restart and is started later with `startAgent`.
+
+        `permissionRoles` has the same meaning as on `launchAgent` and is stored
+        on the record: an array is the agent's roles, `null` means no roles,
+        absent takes the Workspace default at start time. An invalid value
+        creates nothing.
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath]
+      properties:
+        type:
+          const: createAgent
+        name:
+          type: string
+          description: Display name (trimmed, at most 64 characters). Empty is ignored.
+        directoryPath:
+          type: string
+          description: Path of the Directory to run the agent in.
+        permissionRoles:
+          type: [array, 'null']
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/PermissionRole'
+        start:
+          type: boolean
+          description: Start the agent right after creating it. Default false.
+
+    StartAgent:
+      description: |
+        Privileged, standalone only. Start Claude Code for a stopped agent record.
+        The host resumes the agent's conversation (`claude --resume`) when its
+        transcript already exists, and starts a fresh one otherwise. On success
+        the host sends `terminalSessionOpened`; an agent that is not stopped, or
+        a spawn that fails, changes nothing.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: startAgent
+        id:
+          type: integer
 
     FocusAgent:
       description: Focus an agent's terminal.

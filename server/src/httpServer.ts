@@ -302,6 +302,8 @@ function registerWebSocketRoute(
         hueShift: agent.hueShift,
         workspaceId: agent.workspaceId,
         roleName: agent.roleName,
+        name: agent.displayName,
+        stopped: agent.stopped || undefined,
       });
     };
 

@@ -75,6 +75,13 @@ export interface LaunchStandaloneAgentOptions {
    * here and never re-read, so a later Workspace change leaves it alone.
    */
   permissionRoles?: PermissionRoles;
+  /**
+   * Start an existing stopped record instead of creating an agent: its id and
+   * session id are reused, and `resume` continues its conversation (the
+   * transcript already exists) rather than starting a fresh one. A failure
+   * leaves the record exactly as it was.
+   */
+  existing?: { id: number; sessionId: string; resume: boolean };
 }
 
 /**
@@ -105,7 +112,8 @@ export function launchStandaloneAgent(
   }
 
   const cwd = options.directoryPath ?? process.cwd();
-  const sessionId = crypto.randomUUID();
+  const { existing } = options;
+  const sessionId = existing?.sessionId ?? crypto.randomUUID();
 
   // Without a Role the options object is exactly the pre-Role one, so the
   // command is byte-for-byte what it always was.
@@ -114,7 +122,9 @@ export function launchStandaloneAgent(
     cwd,
     role
       ? { bypassPermissions: options.bypassPermissions, appendSystemPromptFile: role.snapshotPath }
-      : { bypassPermissions: options.bypassPermissions },
+      : existing
+        ? { bypassPermissions: options.bypassPermissions, resume: existing.resume }
+        : { bypassPermissions: options.bypassPermissions },
   );
   if (!launch) {
     console.error('[Pixel Agents] Terminal: provider.buildLaunchCommand is not implemented');
@@ -157,7 +167,7 @@ export function launchStandaloneAgent(
   const capabilities =
     deps.isKbEnabled?.(workspaceKey(workspaceId)) === true ? deps.capabilities : undefined;
 
-  const id = store.nextAgentId.current++;
+  const id = existing?.id ?? store.nextAgentId.current++;
 
   const grant = capabilities?.issue({ agentId: id, sessionId, workspaceId });
   // Layered last, so nothing the provider returns can replace it.
@@ -177,8 +187,9 @@ export function launchStandaloneAgent(
       rows: options.rows,
     });
   } catch (err) {
-    // Roll the id back so a failed spawn doesn't burn an agent id.
-    store.nextAgentId.current--;
+    // Roll the id back so a failed spawn doesn't burn an agent id (a started
+    // record keeps its own id and stays a record).
+    if (!existing) store.nextAgentId.current--;
     grant?.revoke();
     console.error(`[Pixel Agents] Terminal: spawn failed: ${String(err)}`);
     releaseRoleSnapshot();
@@ -200,6 +211,7 @@ export function launchStandaloneAgent(
       role,
       directoryRealPath,
       permissionRoles,
+      existing: existing !== undefined,
     });
   } catch (err) {
     // A throwing store listener (or broadcast subscriber) must not leave a
@@ -208,7 +220,11 @@ export function launchStandaloneAgent(
     grant?.revoke();
     releaseRoleSnapshot();
     try {
-      if (store.has(id)) {
+      if (existing) {
+        const record = store.get(id);
+        if (record) record.stopped = true;
+        runtime.unregisterAgent(sessionId);
+      } else if (store.has(id)) {
         runtime.unregisterAgent(sessionId);
         runtime.removeAgent(id);
       }
@@ -237,6 +253,15 @@ export function launchStandaloneAgent(
     }
   });
 
+  if (existing?.resume) {
+    // The transcript already holds the conversation so far: watch from its end,
+    // or the whole history would replay as live tool activity.
+    try {
+      agent.fileOffset = fs.statSync(agent.jsonlFile).size;
+    } catch {
+      /* no transcript after all: the poll below waits for it */
+    }
+  }
   startJsonlPoll(deps, id, agent);
 
   return id;
@@ -258,16 +283,29 @@ function registerLaunchedAgent(
     role: LaunchStandaloneAgentOptions['role'];
     directoryRealPath: string | undefined;
     permissionRoles: PermissionRoles;
+    /** The agent's record already exists (it was stopped): update it in place. */
+    existing: boolean;
   },
 ): AgentState {
   const { store, runtime, provider } = deps;
-  const { id, sessionId, cwd, projectDir, workspaceId, role, directoryRealPath, permissionRoles } =
-    launched;
+  const {
+    id,
+    sessionId,
+    cwd,
+    projectDir,
+    workspaceId,
+    role,
+    directoryRealPath,
+    permissionRoles,
+    existing,
+  } = launched;
 
   // Pre-register the expected JSONL so the project scanner doesn't mistake it
   // for a /clear file, exactly as the VS Code path does.
   const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
   runtime.knownJsonlFiles.add(expectedFile);
+
+  if (existing) return startRecord(deps, launched);
 
   const agent = createAgentState({
     id,
@@ -314,6 +352,32 @@ function registerLaunchedAgent(
   return agent;
 }
 
+/** Bring a stopped record to life: the process now exists, the rest of the record stays. */
+function startRecord(
+  deps: LaunchStandaloneAgentDeps,
+  launched: Parameters<typeof registerLaunchedAgent>[1],
+): AgentState {
+  const { store, runtime } = deps;
+  const { id, sessionId, projectDir, directoryRealPath, permissionRoles } = launched;
+  const agent = store.get(id);
+  if (!agent) throw new Error(`Agent ${id} has no record to start`);
+
+  const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
+  runtime.knownJsonlFiles.add(expectedFile);
+  agent.stopped = false;
+  agent.launchDirectory = undefined;
+  agent.projectDir = projectDir;
+  agent.jsonlFile = expectedFile;
+  agent.directoryRealPath = directoryRealPath;
+  agent.permissionRoles = permissionRoles;
+
+  runtime.activeAgentId.current = id;
+  runtime.registerAgent(sessionId, id);
+  store.persist();
+  store.broadcast({ type: 'terminalSessionOpened', agentId: id });
+  return agent;
+}
+
 function realpathOrUndefined(directory: string): string | undefined {
   try {
     return fs.realpathSync(directory);
@@ -327,8 +391,9 @@ function realpathOrUndefined(directory: string): string | undefined {
  *
  * Hooks (the default) already route by sessionId, so this is what backfills tool
  * content and keeps hooks-off standalone working at all. Unlike the VS Code
- * path this does NOT implement /resume reassignment -- standalone always spawns
- * a fresh --session-id, so there's no resume case to detect here.
+ * path this does NOT implement /resume reassignment: a started record resumes
+ * with `--resume <its own session id>`, which keeps that id (only
+ * --fork-session mints a new one), so the transcript file never changes.
  */
 function startJsonlPoll(deps: LaunchStandaloneAgentDeps, id: number, agent: AgentState): void {
   const { store, runtime } = deps;

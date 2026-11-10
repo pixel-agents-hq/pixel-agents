@@ -220,6 +220,16 @@ export class AgentStateStore {
         palette: agent.palette,
         hueShift: agent.hueShift,
         workspaceId: agent.workspaceId,
+        // A stopped record is the only standalone agent that comes back after a
+        // restart, so it alone carries what `startAgent` needs.
+        ...(agent.stopped
+          ? {
+              stopped: true,
+              displayName: agent.displayName,
+              launchDirectory: agent.launchDirectory,
+              permissionRoles: agent.permissionRoles,
+            }
+          : {}),
       });
     }
     this.adapter.saveAgents(persisted);
