@@ -10,6 +10,8 @@ export const APP_FONT_FAMILY = "'Hack', ui-monospace, monospace";
 export const TERMINAL_FONT_SIZE_PX = 12.5;
 export const TERMINAL_SCROLLBACK_LINES = 5000;
 export const TERMINAL_RESIZE_DEBOUNCE_MS = 100;
+/** Shift+Enter 送出 ESC + CR（等同 Alt+Enter），讓 Claude Code 換行而不是送出 */
+export const TERMINAL_SHIFT_ENTER_SEQUENCE = '\x1b\r';
 export const TERMINAL_THEME = {
   background: '#0d0d12',
   foreground: '#c8d0dc',

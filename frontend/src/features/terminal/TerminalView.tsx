@@ -9,6 +9,7 @@ import {
   TERMINAL_FONT_SIZE_PX,
   TERMINAL_RESIZE_DEBOUNCE_MS,
   TERMINAL_SCROLLBACK_LINES,
+  TERMINAL_SHIFT_ENTER_SEQUENCE,
   TERMINAL_THEME,
 } from '../../constants';
 import { TerminalConnection } from './terminalConnection';
@@ -56,6 +57,13 @@ export function TerminalView({ agentId, onStatusChange }: TerminalViewProps) {
         terminal.write(data);
       },
       onStatusChange: (status) => statusRef.current(status),
+    });
+    // xterm 把 Shift+Enter 當成 Enter（都是 CR），Claude Code 分不出來；改送換行序列
+    terminal.attachCustomKeyEventHandler((event) => {
+      const isShiftEnter = event.key === 'Enter' && event.shiftKey;
+      if (!isShiftEnter) return true;
+      if (event.type === 'keydown') connection.write(TERMINAL_SHIFT_ENTER_SEQUENCE);
+      return false;
     });
     const input = terminal.onData((data) => connection.write(data));
     const size = terminal.onResize(({ cols, rows }) => connection.resize(cols, rows));
