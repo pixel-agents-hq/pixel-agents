@@ -4,6 +4,8 @@ Thanks for your interest in contributing to Pixel Agents! All contributions are 
 
 This project is licensed under the [MIT License](LICENSE), so your contributions will be too. No CLA or DCO is required.
 
+Questions while you work on something? Ask in [Discord](https://discord.gg/Yk7jXebv9H).
+
 ## Getting Started
 
 ### Prerequisites
@@ -20,7 +22,13 @@ npm install
 npm run build
 ```
 
-Then press **F5** in VS Code to launch the Extension Development Host.
+Then press **F5** in VS Code to launch the Extension Development Host. To run the standalone CLI built from source:
+
+```bash
+node dist/cli.js
+```
+
+It prints a local URL, the same as `npx pixel-agents`.
 
 ### Build and install the packaged extension locally
 
@@ -99,18 +107,33 @@ Vite will print a local URL (typically `http://localhost:5173`) where the mocked
 
 Pixel Agents uses a layered codebase. `core/` depends on nothing; `server/` and `webview-ui/` depend only on `core/`; `adapters/vscode/` depends on `core/` and `server/`.
 
-| Directory                   | Description                                                                                                                                                                                                                                           |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `core/`                     | Protocol + interface definitions (AsyncAPI 3.0 contract, HookProvider, MessageTransport, StateAdapter). Zero runtime side effects.                                                                                                                    |
-| `server/`                   | Lifecycle runtime: `AgentRuntime`, `AgentStateStore`, `SessionRouter`, `DismissalTracker`, Fastify HTTP/WS server, file watching, transcript parsing, hook installer, providers, Vitest test suite. Also ships the `npx pixel-agents` standalone CLI. |
-| `adapters/vscode/`          | VS Code surface — `extension.ts`, `WebviewViewProvider`, terminal lifecycle, one-time state migration. Composes `core/` and `server/`.                                                                                                                |
-| `webview-ui/`               | React 19 + Canvas UI. Transport abstraction (`PostMessageTransport` + `WebSocketTransport`). Depends only on `core/`.                                                                                                                                 |
-| `webview-ui/public/assets/` | Bundled sprites, furniture catalog, default layout, fonts.                                                                                                                                                                                            |
-| `scripts/`                  | Build/CI tooling: `generate-messages.ts` (AsyncAPI → TS), `run-e2e.mjs`, `build-allure-report.mjs`, `assemble-vercel-output.mjs`, and the asset extraction pipeline.                                                                                  |
-| `e2e/`                      | Playwright suite — fixtures, helpers, specs for `claude/hooks-on/`, `claude/hooks-off/`, and `standalone/`.                                                                                                                                           |
-| `eslint-rules/`             | Custom rules (`no-inline-colors`, `pixel-shadow`, `pixel-font`) enforced project-wide.                                                                                                                                                                |
+| Directory                        | Description                                                                                                                                                                                                                                           |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core/`                          | Protocol + interface definitions (AsyncAPI 3.0 contract, HookProvider, MessageTransport, StateAdapter). Zero runtime side effects.                                                                                                                    |
+| `server/`                        | Lifecycle runtime: `AgentRuntime`, `AgentStateStore`, `SessionRouter`, `DismissalTracker`, Fastify HTTP/WS server, file watching, transcript parsing, hook installer, providers, Vitest test suite. Also ships the `npx pixel-agents` standalone CLI. |
+| `adapters/vscode/`               | VS Code surface — `extension.ts`, `WebviewViewProvider`, terminal lifecycle, one-time state migration. Composes `core/` and `server/`.                                                                                                                |
+| `webview-ui/`                    | React 19 + Canvas UI. Transport abstraction (`PostMessageTransport` + `WebSocketTransport`). Depends only on `core/`.                                                                                                                                 |
+| `webview-ui/public/assets/`      | Bundled office art: furniture (one folder and `manifest.json` per item), floors, walls, carpets, pets, and the default layout.                                                                                                                        |
+| `webview-ui/src/characters/art/` | Character wardrobe art (one PNG per part) and `wardrobe.json`; characters are composed from it in the webview.                                                                                                                                        |
+| `scripts/`                       | Build/CI tooling: `generate-messages.ts` (AsyncAPI → TS), `run-e2e.mjs`, `build-allure-report.mjs`, `assemble-vercel-output.mjs`, and the asset extraction pipeline.                                                                                  |
+| `e2e/`                           | Playwright suite — fixtures, helpers, specs for `claude/hooks-on/`, `claude/hooks-off/`, and `standalone/`.                                                                                                                                           |
+| `eslint-rules/`                  | Custom rules (`no-inline-colors`, `pixel-shadow`, `pixel-font`) enforced project-wide.                                                                                                                                                                |
 
 The repo uses **npm workspaces** (`server`, `webview-ui` declared in the root `package.json`). A single `npm install` at the root installs dependencies for all workspaces; no nested `cd ... && npm install` is needed.
+
+The extension and CLI are bundled with esbuild; the webview is built with Vite. Unit tests use Vitest, and end-to-end coverage uses Playwright against VS Code and the standalone server.
+
+### How an event reaches the office
+
+Agent activity comes from two sources: the hook script (`POST /api/hooks/:providerId`) and the JSONL session transcripts, which are also read in hooks mode for details an event doesn't carry. The provider normalizes both into a shared `AgentEvent` model. `AgentRuntime` updates the central `AgentStateStore`, and the active transport (postMessage in VS Code, WebSocket in the browser) sends typed messages to the React webview, which renders the office on a Canvas 2D with pathfinding and character state machines.
+
+### Adding another agent CLI
+
+Claude Code is the only provider today, and everything that knows about it lives in `server/src/providers/hook/claude/`. The integration boundary is the typed `HookProvider` interface in `core/src/provider.ts`: a new CLI is one subdirectory under `server/src/providers/hook/<id>/` (provider, installer, hook scripts, and optionally a `TeamProvider`), with no changes to the runtime or the UI. If the interface is missing something your CLI needs, open an issue or a Discussion before changing `core/`.
+
+### Office assets
+
+Each furniture item has its own folder under `webview-ui/public/assets/furniture/` with a `manifest.json` describing its sprites, rotation groups, state groups (on/off), and animation frames. [docs/external-assets.md](docs/external-assets.md) documents the directory structure and manifest format, which external asset directories (**Settings → Add Asset Directory**) share. The visual asset manager at `scripts/asset-manager.html` helps create and edit manifests.
 
 ## Manual Hook Testing
 
@@ -175,7 +198,7 @@ Server tests cover `AgentStateStore` (typed mutations + events), `HookEventHandl
 
 ## End-to-End Tests
 
-The `e2e/` directory contains Playwright tests that launch a real VS Code instance with the extension loaded in development mode.
+The `e2e/` directory contains Playwright tests of both surfaces: the VS Code specs (`e2e/tests/claude/`) launch a real VS Code instance with the extension loaded in development mode, and the standalone specs (`e2e/tests/standalone/`) start the CLI server and drive it from a headless browser. The VS Code specs open real windows one after another, which take over the screen and keyboard focus while they run.
 
 ### Running e2e tests locally
 
@@ -234,13 +257,28 @@ For the normative model behind this (the process-boundary principle, append-only
 
 ### E2E test naming
 
-Tests use behavioral sentences with `@area:<tag>` suffixes for grouping. Areas: `spawn`, `lifecycle`, `cross-cutting`, `teams`, `matrix`, `standalone`. Example:
+Tests use behavioral sentences with `@area:<tag>` suffixes for grouping. Areas: `spawn`, `lifecycle`, `cross-cutting`, `teams`, `matrix`, `standalone`, `mobile`, `editor`, `areas`, `carpet`, `pets`. Example:
 
 ```typescript
 test('rapid /clear then new tool within 500ms lands on the reassigned agent @area:lifecycle', ...);
 ```
 
 The auto-generated test inventory in `e2e/README.md` groups tests by `@area:` tag. After adding or removing tests, run `npm run e2e:inventory` to regenerate — CI fails if it drifts.
+
+### Hosted Test Reports
+
+Build the combined Allure report locally and stage it for Vercel:
+
+```bash
+npm run test
+npm run e2e
+npm run e2e -- --attach-videos-on-success
+npm run vercel:prepare
+```
+
+Use `npm run test:report` to build the combined report without preparing the Vercel output, then `npm run test:report:open` to serve it locally.
+
+The staged output serves the combined `e2e`, `server`, and `webview` Allure report at `/reports/allure/`; it does not include a standalone webview preview. GitHub Actions creates a Vercel Preview deployment only for same-repository pull requests targeting `main`. The deploy job expects `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID` secrets and skips fork pull requests.
 
 ## Submitting a Pull Request
 

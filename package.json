@@ -8,6 +8,7 @@
     "type": "git",
     "url": "https://github.com/pixel-agents-hq/pixel-agents"
   },
+  "homepage": "https://pixel-agents.com",
   "workspaces": [
     "server",
     "webview-ui"
