@@ -11,7 +11,6 @@ import type { EventFlowStep } from '../components/EventFlow';
 import { FormField } from '../components/FormField';
 import { useAwaitCreation } from '../features/launch/useAwaitCreation';
 import { workspaceCreationRequested } from '../features/workspaces/createWorkspaceSaga';
-import { monoFontFamily } from '../theme';
 
 const FLOW_STEPS: EventFlowStep[] = [
   { label: 'submit', value: 'form data', tone: 'plain' },
@@ -70,7 +69,7 @@ export function AddWorkspacePage() {
             size="small"
             value={path}
             onChange={(event) => setPath(event.target.value)}
-            sx={{ '& input': { fontFamily: monoFontFamily, fontSize: 12 } }}
+            sx={{ '& input': { fontSize: 12 } }}
           />
         </FormField>
 

@@ -2,8 +2,6 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { Fragment } from 'react';
 
-import { monoFontFamily } from '../theme';
-
 type StepTone = 'plain' | 'send' | 'receive' | 'server';
 
 export interface EventFlowStep {
@@ -21,13 +19,13 @@ const TONES: Record<
     label: 'text.disabled',
     value: 'text.secondary',
     background: '#111117',
-    border: '#2a2a38',
+    border: '#4a4a62',
   },
   send: {
-    label: 'primary.main',
+    label: 'primary.light',
     value: 'primary.light',
-    background: 'rgba(91,48,214,0.08)',
-    border: 'rgba(91,48,214,0.25)',
+    background: 'rgba(109,63,232,0.15)',
+    border: 'rgba(167,139,250,0.4)',
   },
   receive: {
     label: 'success.main',
@@ -39,7 +37,7 @@ const TONES: Record<
     label: 'text.disabled',
     value: 'text.disabled',
     background: '#111117',
-    border: '#1e1e2a',
+    border: '#2c2c3c',
   },
 };
 
@@ -86,13 +84,10 @@ export function EventFlow({ steps }: { steps: EventFlowStep[] }) {
                 <Typography sx={{ fontSize: 9, color: tone.label, mb: '2px' }}>
                   {step.label}
                 </Typography>
-                <Typography sx={{ fontFamily: monoFontFamily, fontSize: 10, color: tone.value }}>
-                  {step.value}
-                </Typography>
+                <Typography sx={{ fontSize: 10, color: tone.value }}>{step.value}</Typography>
                 {step.detail && (
                   <Typography
                     sx={{
-                      fontFamily: monoFontFamily,
                       fontSize: 9,
                       color: 'text.disabled',
                       mt: '2px',

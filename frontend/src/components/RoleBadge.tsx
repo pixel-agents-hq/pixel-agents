@@ -16,7 +16,7 @@ export function RoleBadge({ role, label }: RoleBadgeProps) {
       component="span"
       sx={{
         flexShrink: 0,
-        fontSize: 9,
+        fontSize: 10,
         lineHeight: 1.4,
         px: label ? '6px' : '5px',
         borderRadius: '2px',

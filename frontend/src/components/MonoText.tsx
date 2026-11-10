@@ -1,8 +1,6 @@
 import type { ReactNode } from 'react';
 import Typography from '@mui/material/Typography';
 
-import { monoFontFamily } from '../theme';
-
 export function MonoText({
   children,
   color = 'text.disabled',
@@ -11,10 +9,7 @@ export function MonoText({
   color?: string;
 }) {
   return (
-    <Typography
-      component="span"
-      sx={{ fontFamily: monoFontFamily, fontSize: 10, color, whiteSpace: 'nowrap' }}
-    >
+    <Typography component="span" sx={{ fontSize: 10, color, whiteSpace: 'nowrap' }}>
       {children}
     </Typography>
   );

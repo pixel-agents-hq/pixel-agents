@@ -5,7 +5,7 @@ import Box from '@mui/material/Box';
 import { useEffect, useRef } from 'react';
 
 import {
-  TERMINAL_FONT_FAMILY,
+  APP_FONT_FAMILY,
   TERMINAL_FONT_SIZE_PX,
   TERMINAL_RESIZE_DEBOUNCE_MS,
   TERMINAL_SCROLLBACK_LINES,
@@ -32,7 +32,7 @@ export function TerminalView({ agentId, onStatusChange }: TerminalViewProps) {
     if (!host) return;
 
     const terminal = new Terminal({
-      fontFamily: TERMINAL_FONT_FAMILY,
+      fontFamily: APP_FONT_FAMILY,
       fontSize: TERMINAL_FONT_SIZE_PX,
       scrollback: TERMINAL_SCROLLBACK_LINES,
       theme: TERMINAL_THEME,
@@ -42,6 +42,11 @@ export function TerminalView({ agentId, onStatusChange }: TerminalViewProps) {
     terminal.loadAddon(fit);
     terminal.open(host);
     fit.fit();
+    // Hack 是按需載入的字型：載入完成後字元寬度才準，要重新計算欄數
+    let disposed = false;
+    void document.fonts.load(`${TERMINAL_FONT_SIZE_PX}px Hack`).then(() => {
+      if (!disposed) fit.fit();
+    });
 
     const connection = new TerminalConnection(agentId, {
       onOutput: (data) => terminal.write(data),
@@ -65,6 +70,7 @@ export function TerminalView({ agentId, onStatusChange }: TerminalViewProps) {
     observer.observe(host);
 
     return () => {
+      disposed = true;
       clearTimeout(resizeTimer);
       observer.disconnect();
       input.dispose();

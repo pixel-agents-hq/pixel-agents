@@ -110,9 +110,9 @@ export function ManagementSidebar({ placeholder }: ManagementSidebarProps) {
               sx={{
                 ...itemSx,
                 ...(selected && {
-                  bgcolor: 'rgba(91,48,214,0.1)',
+                  bgcolor: 'rgba(109,63,232,0.2)',
                   borderLeft: '2px solid',
-                  borderLeftColor: 'primary.main',
+                  borderLeftColor: 'primary.light',
                 }),
               }}
             >
@@ -142,11 +142,11 @@ export function ManagementSidebar({ placeholder }: ManagementSidebarProps) {
               px: 1,
               py: '6px',
               borderRadius: '4px',
-              bgcolor: 'rgba(91,48,214,0.08)',
-              border: '1px dashed rgba(91,48,214,0.3)',
+              bgcolor: 'rgba(109,63,232,0.15)',
+              border: '1px dashed rgba(167,139,250,0.5)',
             }}
           >
-            <Typography sx={{ fontSize: 13, color: 'primary.main', fontStyle: 'italic' }}>
+            <Typography sx={{ fontSize: 13, color: 'primary.light', fontStyle: 'italic' }}>
               {placeholder}
             </Typography>
           </Box>

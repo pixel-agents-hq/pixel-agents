@@ -18,7 +18,7 @@ import {
   selectAgentsInWorkspace,
 } from '../features/agents/agentSelectors';
 import type { Agent } from '../features/agents/agentsSlice';
-import { statusColors } from '../theme';
+import { controlBorderColor, statusColors } from '../theme';
 
 const SIDEBAR_WIDTH_PX = 240;
 const CONNECTION_LABELS = { connecting: '連線中', connected: '已連線', reconnecting: '重新連線中' };
@@ -65,9 +65,9 @@ function AgentItem({
         border: '1px solid transparent',
         borderLeft: '3px solid transparent',
         ...(selected && {
-          bgcolor: 'rgba(91,48,214,0.1)',
-          borderColor: 'rgba(91,48,214,0.2)',
-          borderLeftColor: 'primary.main',
+          bgcolor: 'rgba(109,63,232,0.2)',
+          borderColor: 'rgba(167,139,250,0.4)',
+          borderLeftColor: 'primary.light',
         }),
       }}
     >
@@ -87,7 +87,7 @@ function AgentItem({
         <AgentRoleBadges agent={agent} isCurator={isCurator} />
       </Box>
       <Box sx={{ mt: '3px', pl: '14px' }}>
-        <MonoText color={selected ? 'primary.main' : statusColors[runState].color}>
+        <MonoText color={selected ? 'primary.light' : statusColors[runState].color}>
           {detail}
         </MonoText>
       </Box>
@@ -145,7 +145,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }) {
           sx={{
             fontSize: 13,
             bgcolor: 'background.default',
-            '& fieldset': { borderColor: 'rgba(42,42,56,1)' },
+            '& fieldset': { borderColor: controlBorderColor },
           }}
         >
           {workspaces.map((workspace) => (

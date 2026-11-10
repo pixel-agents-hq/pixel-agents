@@ -40,7 +40,7 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
         borderRadius: '6px',
         overflow: 'hidden',
         position: 'relative',
-        '&:hover': { borderColor: 'rgba(91,48,214,0.4)' },
+        '&:hover': { borderColor: 'rgba(167,139,250,0.6)' },
       }}
     >
       <Box

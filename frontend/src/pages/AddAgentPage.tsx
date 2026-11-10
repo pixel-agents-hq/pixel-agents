@@ -17,7 +17,7 @@ import { launchRequested } from '../features/launch/launchSaga';
 import { useAwaitCreation } from '../features/launch/useAwaitCreation';
 import { directoryForPath } from '../features/workspaces/workspaceSelectors';
 import type { PermissionRole } from '../protocol';
-import { monoFontFamily, roleColors } from '../theme';
+import { controlBorderColor, roleColors } from '../theme';
 
 const ROLE_OPTIONS: { role: PermissionRole; label: string }[] = [
   { role: 'R', label: 'Read' },
@@ -50,9 +50,9 @@ function RoleChip({
         gap: 0.625,
         borderRadius: '4px',
         border: '1px solid',
-        borderColor: active ? colors.color : 'rgba(42,42,56,1)',
+        borderColor: active ? colors.color : controlBorderColor,
         bgcolor: active ? colors.background : 'background.paper',
-        opacity: disabled ? 0.5 : 1,
+        opacity: disabled ? 0.65 : 1,
       }}
     >
       <Box
@@ -176,9 +176,7 @@ export function AddAgentPage() {
               <MenuItem key={item.id} value={item.id}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Typography sx={{ fontSize: 13 }}>{item.name}</Typography>
-                  <Typography
-                    sx={{ fontFamily: monoFontFamily, fontSize: 11, color: 'text.disabled' }}
-                  >
+                  <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
                     {item.rootPath ?? item.directoryPaths[0] ?? ''}
                   </Typography>
                 </Box>
@@ -201,11 +199,7 @@ export function AddAgentPage() {
                     <Typography sx={{ fontSize: 13 }}>
                       {directoryForPath(directories, path)?.name ?? path}
                     </Typography>
-                    <Typography
-                      sx={{ fontFamily: monoFontFamily, fontSize: 11, color: 'text.disabled' }}
-                    >
-                      {path}
-                    </Typography>
+                    <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>{path}</Typography>
                   </Box>
                 </MenuItem>
               ))}

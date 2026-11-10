@@ -3,7 +3,6 @@ import Typography from '@mui/material/Typography';
 
 import { useAppSelector } from '../../app/hooks';
 import { MonoText } from '../../components/MonoText';
-import { monoFontFamily } from '../../theme';
 import { useRouteAgent } from './useRouteAgent';
 
 /** MCP 工具名稱是 mcp__伺服器__工具，只顯示最後的工具名，完整名稱放在 title。 */
@@ -38,7 +37,6 @@ export function SessionLogTab() {
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
-                  fontFamily: monoFontFamily,
                   fontSize: 11,
                   px: '6px',
                   py: '2px',
@@ -53,7 +51,6 @@ export function SessionLogTab() {
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography
                 sx={{
-                  fontFamily: monoFontFamily,
                   fontSize: 11,
                   color: tool.done ? 'text.disabled' : 'text.secondary',
                   overflowWrap: 'anywhere',
@@ -62,7 +59,7 @@ export function SessionLogTab() {
                 {tool.status}
               </Typography>
             </Box>
-            {!tool.done && <MonoText color="primary.main">running</MonoText>}
+            {!tool.done && <MonoText color="primary.light">running</MonoText>}
           </Box>
         );
       })}

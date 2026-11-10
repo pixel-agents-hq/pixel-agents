@@ -17,6 +17,7 @@
     "@reduxjs/toolkit": "^2.14.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "hack-font": "^3.3.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-redux": "^9.3.1",
