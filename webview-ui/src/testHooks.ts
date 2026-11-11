@@ -62,6 +62,10 @@ declare global {
         row: number;
         color?: ColorValue;
       }>;
+      /** The declared state a piece is drawn in now (a PC's "on" while an agent works
+       *  at it or its PC shell lives), or null for its usual sprite — the canvas
+       *  draws it, so e2e reads it here like getPets. */
+      getPieceShownState?: (uid: string) => string | null;
       /** Seated top-level agents with the area their seat falls in (or null). */
       getAgentSeats?: () => Array<{
         id: number;
@@ -300,6 +304,8 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       color: f.color,
     }));
   };
+
+  hooks.getPieceShownState = (uid) => officeStateRef.current?.pieceShownState(uid) ?? null;
 
   hooks.getAgentSeats = () => {
     const os = officeStateRef.current;

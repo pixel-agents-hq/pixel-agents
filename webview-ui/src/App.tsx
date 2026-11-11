@@ -69,6 +69,7 @@ import { useAgentLayoutEdits } from './officeMcp/useAgentLayoutEdits.js';
 import { useOfficeMcp } from './officeMcp/useOfficeMcp.js';
 import { type DirectoryChoice, PcDirectorySelector } from './pcShells/PcDirectorySelector.js';
 import { PcShellCloseDialog } from './pcShells/PcShellCloseDialog.js';
+import { PcShellRejectedModal } from './pcShells/PcShellRejectedModal.js';
 import { closePcShell, openPcShell, usePcShells } from './pcShells/pcShellStore.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
@@ -1085,6 +1086,7 @@ function App() {
       />
       {/* This office's × on a PC shell with a command still running in it. */}
       <PcShellCloseDialog />
+      <PcShellRejectedModal />
 
       <ChangelogModal
         isOpen={isChangelogOpen}

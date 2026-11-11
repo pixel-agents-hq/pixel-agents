@@ -103,7 +103,7 @@ Text or named keys one agent types into another agent's terminal: a request, or 
 _Avoid_: prompt (that's what the user types), chat, DM
 
 **Card bar**:
-The row of agent cards: one card per running main agent (teammates and sub-agents get none), in an order the user can drag and every open office shares. Pressing a card reaches its agent.
+The row of cards for the office's terminals: one card per running main agent (teammates and sub-agents get none) and one per live PC shell, in one order the user can drag and every open office shares. Pressing a card reaches its agent or shell. A PC shell's card shows the PC and its Directory's name (or "Home"), with no status dot and no context gauge, since a shell is not an agent; its × ends the shell, asking first while a command still runs in it.
 _Avoid_: agent list, tabs, roster (that's the characters to launch as)
 
 **Roster**:

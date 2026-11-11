@@ -144,37 +144,76 @@ Use `"rotationScheme": "3-way-mirror"` and add `"mirrorSide": true` to the side 
 
 ### Root fields (all manifests)
 
-| Field | Type | Description |
-|---|---|---|
-| `id` | string | Unique identifier. Must be unique across all loaded assets |
-| `name` | string | Display name shown in the palette |
-| `category` | string | Palette category: `desks`, `chairs`, `electronics`, `storage`, `decor`, `misc`, `wall` |
-| `type` | `"asset"` \| `"group"` | Single sprite or grouped (rotation/state/animation) |
-| `canPlaceOnWalls` | boolean | Whether the item can be placed on wall tiles |
-| `canPlaceOnSurfaces` | boolean | Whether the item can be placed on top of desk surfaces |
-| `backgroundTiles` | number | Number of floor tiles the sprite extends below its footprint (for tall sprites) |
+| Field                | Type                   | Description                                                                            |
+| -------------------- | ---------------------- | -------------------------------------------------------------------------------------- |
+| `id`                 | string                 | Unique identifier. Must be unique across all loaded assets                             |
+| `name`               | string                 | Display name shown in the palette                                                      |
+| `category`           | string                 | Palette category: `desks`, `chairs`, `electronics`, `storage`, `decor`, `misc`, `wall` |
+| `type`               | `"asset"` \| `"group"` | Single sprite or grouped (rotation/state/animation)                                    |
+| `canPlaceOnWalls`    | boolean                | Whether the item can be placed on wall tiles                                           |
+| `canPlaceOnSurfaces` | boolean                | Whether the item can be placed on top of desk surfaces                                 |
+| `backgroundTiles`    | number                 | Number of floor tiles the sprite extends below its footprint (for tall sprites)        |
 
 ### Asset-only fields
 
-| Field | Type | Description |
-|---|---|---|
-| `file` | string | PNG filename relative to the item folder |
-| `width` | number | Sprite width in pixels |
-| `height` | number | Sprite height in pixels |
+| Field        | Type   | Description                              |
+| ------------ | ------ | ---------------------------------------- |
+| `file`       | string | PNG filename relative to the item folder |
+| `width`      | number | Sprite width in pixels                   |
+| `height`     | number | Sprite height in pixels                  |
 | `footprintW` | number | Footprint width in tiles (1 tile = 16px) |
-| `footprintH` | number | Footprint height in tiles |
+| `footprintH` | number | Footprint height in tiles                |
 
 ### Group fields
 
-| Field | Type | Description |
-|---|---|---|
-| `groupType` | `"rotation"` \| `"state"` \| `"animation"` | How members relate to each other |
-| `rotationScheme` | `"2-way"` \| `"3-way-mirror"` \| `"4-way"` | Rotation variants available |
-| `members` | array | Child assets or nested groups |
+| Field            | Type                                       | Description                      |
+| ---------------- | ------------------------------------------ | -------------------------------- |
+| `groupType`      | `"rotation"` \| `"state"` \| `"animation"` | How members relate to each other |
+| `rotationScheme` | `"2-way"` \| `"3-way-mirror"` \| `"4-way"` | Rotation variants available      |
+| `members`        | array                                      | Child assets or nested groups    |
 
 ### Member orientation values
 
 `"front"`, `"back"`, `"side"`, `"left"`, `"right"`
+
+## Interactive furniture (`interactive` block)
+
+Furniture can also say how it takes part in the office, with one optional `interactive` block at the root of its manifest. It works the same for bundled furniture and for yours; the bundled PC (`assets/furniture/PC/manifest.json`) is built entirely on it. Every part is optional, so a label-only or reaction-only piece is valid; furniture with no block is plain furniture.
+
+```json
+"interactive": {
+  "agentUse": "workstation",
+  "label": {
+    "name": "PC",
+    "lines": [
+      { "when": "panelInUse", "text": "Shell in {panel}" },
+      { "when": "agentWorking", "text": "{agent} works here" },
+      { "when": "free", "text": "Free" }
+    ]
+  },
+  "panel": "terminal",
+  "states": [{ "state": "on", "when": ["agentWorking", "panelInUse"] }]
+}
+```
+
+| Part       | Values              | What it does                                                                                                                                                                                                                                                                       |
+| ---------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agentUse` | `"workstation"`     | Agents work here: a seat whose desk holds this piece (screen facing the seat, within reach) is paired with it, and agents are seated at it as at a PC                                                                                                                              |
+| `label`    | `{ name, lines? }`  | The Furniture label shown while the piece is hovered (or, on a phone, tapped once): `name` on top, then the **first** line whose `when` holds — one line at most. With no line holding, the name alone                                                                             |
+| `panel`    | `"terminal"`        | What a click opens, a panel the office provides. Without a panel the piece can be hovered but offers nothing to click (no pointer cursor)                                                                                                                                          |
+| `states`   | `[{ state, when }]` | Which declared state the piece shows: the first rule whose `when` holds wins; with none holding, the usual sprite. `state` must be a state the manifest declares (a member's `"state"`, e.g. `"on"`); a piece with no art for it in its current orientation keeps its usual sprite |
+
+**Conditions** (`when`: one condition, or a list where any one holding is enough) are a closed set of facts the office holds about a piece:
+
+- `agentWorking` — an agent is working at it (active, sitting in its paired seat and typing; walking there or resting in the chair between turns doesn't count)
+- `panelInUse` — its panel is in use (for `terminal`: the piece has a live PC shell)
+- `free` — neither
+
+**Placeholders** in a label line: `{agent}` (the working agent's name — its Nickname, else its character's name, else its Directory) only on a line shown on `agentWorking` alone, and `{panel}` (a PC shell's Directory, or `Home`) only on a line shown on `panelInUse` alone.
+
+**What a click on a `terminal` piece opens**, in order: its live PC shell; else the terminal of the agent working at it; else a new PC shell — the user's login shell on the host — in the Directory mapped to the Area the piece stands in (several: a small selector over the piece asks which; none: the home folder, in VS Code the first workspace folder). Clicks do nothing while the layout editor is open, and a read-only office offers none.
+
+**Validation**: the block is checked once, where manifests are read (bundled and external directories alike). An unknown key, agent use, panel, condition or placeholder, a state the furniture doesn't declare, or a misplaced placeholder drops the whole block with a `[Furniture] <id>: interactive block dropped (…)` warning in the log, and the furniture loads as plain furniture — never removed from the catalogue.
 
 ## Using Third-Party Asset Packs
 

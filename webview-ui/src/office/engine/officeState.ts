@@ -1274,8 +1274,9 @@ export class OfficeState {
    * A click or tap at this world point, against furniture. Null = no piece there
    * (the hovered one is cleared: a tap elsewhere dismisses it). Two-step (touch):
    * the first tap on a piece only hovers it, `click: null`; a second on the same
-   * piece answers its click. One step (mouse): the click at once. `click` is null
-   * too where the piece offers none (label only, or a read-only office).
+   * piece answers its click, and clears the hover when it offers one. One step
+   * (mouse): the click at once. `click` is null too where the piece offers none
+   * (label only, or a read-only office).
    */
   tapPieceAt(
     worldX: number,
@@ -1287,7 +1288,12 @@ export class OfficeState {
     this.hoveredPieceUid = uid;
     if (uid === null) return null;
     if (ctx.twoStep && !wasHovered) return { uid, click: null };
-    return { uid, click: this.hoveredPiece(ctx)?.view.click ?? null };
+    const click = this.hoveredPiece(ctx)?.view.click ?? null;
+    // Touch: the click opened something (a terminal page, the Directory selector),
+    // so the label goes with it — back on the office the PC is a first tap again,
+    // not a stale label left over it.
+    if (ctx.twoStep && click) this.hoveredPieceUid = null;
+    return { uid, click };
   }
 
   /** Forget the hovered piece (the pointer left, the editor opened). */
@@ -1322,6 +1328,12 @@ export class OfficeState {
     if (!instance) return null;
     const width = instance.sprite[0]?.length ?? TILE_SIZE;
     return { x: instance.x + width / 2, y: instance.y };
+  }
+
+  /** The declared state a piece is drawn in now (its state rules' pick, e.g. a PC's
+   *  "on"), or null when it shows its usual sprite. */
+  pieceShownState(uid: string): string | null {
+    return this.shownStates.get(uid) ?? null;
   }
 
   /** Each piece whose state rules hold a declared state now: piece uid → that state. */

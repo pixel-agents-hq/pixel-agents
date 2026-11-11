@@ -20,7 +20,7 @@ export interface PcShellEntry {
   ready: { id: number; seq: number } | null;
   /** The question this office's × got (a command still runs), until answered or dismissed. */
   question: PcShellCloseQuestion | null;
-  /** This office's last refused open, numbered. */
+  /** This office's last refused open, numbered, until dismissed (PcShellRejectedModal). */
   rejected: { reason: string; seq: number } | null;
 }
 
@@ -90,6 +90,11 @@ export function openPcShell(uid: string, directory?: string | null): void {
 export function closePcShell(id: number, confirmed = false): void {
   if (entry.question?.id === id) update({ ...entry, question: null });
   transport.send({ type: 'closePcShell', id, ...(confirmed ? { confirmed: true } : {}) });
+}
+
+/** The refusal was read: it goes. */
+export function dismissPcShellRejection(): void {
+  if (entry.rejected) update({ ...entry, rejected: null });
 }
 
 /** Leave the shell running: the question goes. */

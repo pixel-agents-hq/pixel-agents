@@ -25,7 +25,10 @@ export function PcShellCloseDialog() {
       onClose={dismissPcShellQuestion}
       title="A command is still running"
     >
-      <div data-testid="pc-shell-close-question" className="flex flex-col gap-8">
+      <div
+        data-testid="pc-shell-close-question"
+        className="flex flex-col gap-8 px-10 py-4 max-w-md"
+      >
         <p className="text-sm m-0 break-words">
           {shown.command ? (
             <>

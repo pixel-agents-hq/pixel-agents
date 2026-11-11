@@ -224,6 +224,15 @@ describe('tapping a piece (touch: two steps)', () => {
     });
   });
 
+  test('the click takes the label with it: back on the office, the next tap is a first tap again', () => {
+    const os = office();
+    os.tapPieceAt(...at(5, 3), TOUCH);
+    os.tapPieceAt(...at(5, 3), TOUCH);
+    assert.equal(os.hoveredPieceUid, null);
+    assert.equal(os.hoveredPiece(OFFICE), null);
+    assert.deepEqual(os.tapPieceAt(...at(5, 3), TOUCH), { uid: 'kiosk', click: null });
+  });
+
   test('a tap elsewhere clears it; a tap on another piece moves it there', () => {
     const os = office();
     os.tapPieceAt(...at(5, 3), TOUCH);
