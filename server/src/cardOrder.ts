@@ -8,7 +8,7 @@ import { MAX_CARD_ORDER_LENGTH } from './constants.js';
  * these helpers; persistence is the StateAdapter's (beside agents and seats).
  */
 
-/** A card order from untrusted JSON: agent ids (non-negative integers), each
+/** A card order from untrusted JSON: card ids (agents' and PC shells', non-negative integers), each
  *  once, at most MAX_CARD_ORDER_LENGTH. null when it isn't a list at all. */
 export function parseCardOrder(raw: unknown): number[] | null {
   if (!Array.isArray(raw)) return null;
@@ -21,15 +21,16 @@ export function cardOrderMessage(adapter: StateAdapter | undefined) {
   return { type: 'cardOrderLoaded', order: adapter?.loadCardOrder?.() ?? [] } as const;
 }
 
-/** Persist a client's reorder, keeping only agents that still exist. Returns
- *  the message to broadcast, or null for a payload that isn't an order. */
+/** Persist a client's reorder, keeping only cards that still exist (agents',
+ *  and PC shells' where the surface has them). Returns the message to
+ *  broadcast, or null for a payload that isn't an order. */
 export function saveCardOrder(
   adapter: StateAdapter | undefined,
   raw: unknown,
-  isAgent: (id: number) => boolean,
+  hasCard: (id: number) => boolean,
 ): ReturnType<typeof cardOrderMessage> | null {
   const order = parseCardOrder(raw);
   if (!order || !adapter?.saveCardOrder) return null;
-  adapter.saveCardOrder(order.filter(isAgent));
+  adapter.saveCardOrder(order.filter(hasCard));
   return cardOrderMessage(adapter);
 }

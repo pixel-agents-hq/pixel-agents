@@ -68,7 +68,8 @@ export function useMobileShell({
   // with no pane jump back to the office). In office view it mirrors the
   // character's two-step tap: the first tap focuses the character (camera
   // follow + status label), a repeat tap on the already-focused agent opens
-  // its terminal.
+  // its terminal. A card with no character (a PC shell's) has nothing to
+  // focus: one tap opens its terminal.
   const selectCard = useCallback(
     (agentId: number) => {
       const os = getOfficeState();
@@ -79,7 +80,7 @@ export function useMobileShell({
         else setView('office');
         return;
       }
-      if (os.selectedAgentId === agentId && hasTerminal) {
+      if (hasTerminal && (os.selectedAgentId === agentId || !os.characters.has(agentId))) {
         reveal(agentId);
         setView('terminal');
         return;

@@ -24,6 +24,7 @@ import type { OfficeMcpFeature } from './mcp/composeOfficeMcp.js';
 import type { ServerConfig, StandaloneAccess } from './serverConfig.js';
 import { isServerConfig, isServerTarget, sameStandaloneAccess } from './serverConfig.js';
 import { loadOrCreateStandaloneToken } from './serverToken.js';
+import type { PcShells } from './terminal/pcShells.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
 
@@ -76,6 +77,8 @@ export class PixelAgentsServer {
     onSetHooksEnabled?: SetHooksEnabledSideEffect;
     onReloadAssets?: ReloadAssetsSideEffect;
     ptyManager?: TerminalSessions;
+    /** The PC shells (standalone), over `ptyManager`'s terminals. */
+    pcShells?: PcShells;
     /** Package root holding dist/hooks/ (standalone; see HttpServerOptions). */
     packageRoot?: string;
     /** Extra privileged Host names (standalone; see wsAuth.privilegedHostnames). */
@@ -154,6 +157,7 @@ export class PixelAgentsServer {
       onSetHooksEnabled: options?.onSetHooksEnabled,
       onReloadAssets: options?.onReloadAssets,
       ptyManager: options?.ptyManager,
+      pcShells: options?.pcShells,
       packageRoot: options?.packageRoot,
       allowedHosts: standalone?.allowedHosts,
       officeMcp: options?.officeMcp,

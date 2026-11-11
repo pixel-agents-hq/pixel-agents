@@ -67,6 +67,10 @@ export type ServerMessage =
   | TerminalAvailability
   | TerminalSessionOpened
   | TerminalSessionClosed
+  | PcShellsLoaded
+  | PcShellReady
+  | PcShellCloseQuestion
+  | PcShellRejected
   | AgentDiagnostics;
 
 export type ClientMessage =
@@ -116,6 +120,8 @@ export type ClientMessage =
   | RequestWorktrees
   | RequestWorktreeOptions
   | DecideWorktree
+  | OpenPcShell
+  | ClosePcShell
   | RequestDiagnostics;
 
 export interface ProviderCapabilities {
@@ -760,6 +766,35 @@ export interface TerminalSessionClosed {
   exitCode?: number;
 }
 
+export interface PcShellsLoaded {
+  type: 'pcShellsLoaded';
+  shells: PcShell[];
+}
+
+export interface PcShell {
+  id: number;
+  uid: string;
+  furnitureType: string;
+  directoryName?: string;
+}
+
+export interface PcShellReady {
+  type: 'pcShellReady';
+  id: number;
+}
+
+export interface PcShellCloseQuestion {
+  type: 'pcShellCloseQuestion';
+  id: number;
+  command?: string;
+}
+
+export interface PcShellRejected {
+  type: 'pcShellRejected';
+  uid: string;
+  reason: string;
+}
+
 export interface AgentDiagnostics {
   type: 'agentDiagnostics';
   agents: Record<string, any>[];
@@ -1031,6 +1066,17 @@ export interface DecideWorktree {
 }
 
 export type WorktreeChoice = 'save' | 'keep' | 'discard' | 'remove' | 'deleteBranch';
+
+export interface OpenPcShell {
+  type: 'openPcShell';
+  uid: string;
+}
+
+export interface ClosePcShell {
+  type: 'closePcShell';
+  id: number;
+  confirmed?: boolean;
+}
 
 export interface RequestDiagnostics {
   type: 'requestDiagnostics';

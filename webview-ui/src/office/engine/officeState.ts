@@ -6,8 +6,9 @@ import {
   pieceView,
 } from '../../../../core/src/furniture/pieceRules.js';
 import { spotBeside } from '../../../../core/src/layout/visitSpot.js';
-import type { AgentWorktree, LayoutBuildout } from '../../../../core/src/messages.js';
+import type { AgentWorktree, LayoutBuildout, PcShell } from '../../../../core/src/messages.js';
 import { chooseLook } from '../../../../core/src/paletteUtils.js';
+import { pcShellName } from '../../../../core/src/pcShells.js';
 import {
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
@@ -142,6 +143,9 @@ export class OfficeState {
   /** The piece the pointer hovers (mouse) or the first tap picked (touch): outlined,
    *  with its Furniture label over it. Set through hoverPieceAt / tapPieceAt. */
   hoveredPieceUid: string | null = null;
+  /** Piece uid → its live PC shell, as the server announced them (pcShellsLoaded).
+   *  Never in the layout: the "panel in use" fact is derived from this alone. */
+  private pcShellsByPiece: ReadonlyMap<string, PcShell> = new Map();
   /** The name of the character at a palette, from the cast (App wires it to the
    *  cast store): how a Furniture label names the agent working at a piece. */
   characterName: (palette: number) => string | undefined = () => undefined;
@@ -1143,9 +1147,26 @@ export class OfficeState {
   }
 
   /**
+   * The live PC shells, the server's whole list (pcShellsLoaded: on every change and
+   * in each connect's snapshot, so a list is the truth and a shell it leaves out has
+   * ended). Their PCs show their state rules' "panel in use" state from now on; a
+   * shell whose piece is no longer in the layout lights nothing.
+   */
+  setPcShells(shells: readonly PcShell[]): void {
+    this.pcShellsByPiece = new Map(shells.map((shell) => [shell.uid, shell]));
+    this.rebuildFurnitureInstances();
+  }
+
+  /** The live PC shell of a piece, or null. */
+  pcShellOf(uid: string): PcShell | null {
+    return this.pcShellsByPiece.get(uid) ?? null;
+  }
+
+  /**
    * What the office knows about a piece, for core's pieceView (furniture/pieceRules.ts):
    * the agent working at it, named by core's agentLabelOf (Nickname, else its
-   * character's name, else its Directory). No panel is in use yet.
+   * character's name, else its Directory), and its panel in use — its live PC shell,
+   * named by its Directory (or "Home").
    */
   pieceFacts(
     uid: string,
@@ -1153,9 +1174,10 @@ export class OfficeState {
     atWork: ReadonlyMap<string, Character> = this.agentsAtWork(),
   ): PieceFacts {
     const ch = atWork.get(uid);
+    const shell = this.pcShellsByPiece.get(uid);
     return {
       agentAtWork: ch ? { id: ch.id, name: this.agentName(ch) } : null,
-      panelInUse: null,
+      panelInUse: shell ? { name: pcShellName(shell) } : null,
       readOnly,
     };
   }

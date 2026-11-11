@@ -47,9 +47,10 @@ import { screenTokenGuard } from '../../src/mcp/messaging.js';
 import type { AgentMcpAccess } from '../../src/mcp/officeMcp.js';
 import type { AgentLaunch, OfficeOperations } from '../../src/mcp/officeOperations.js';
 import type { OfficeTool } from '../../src/mcp/tool.js';
-import { claudeProvider } from '../../src/providers/index.js';
+import { claudeProvider, hookProviders } from '../../src/providers/index.js';
 import { PixelAgentsServer } from '../../src/server.js';
 import { ptyAgentTerminals } from '../../src/terminal/agentTerminals.js';
+import { type ForegroundProbe, PcShells } from '../../src/terminal/pcShells.js';
 import { PtySessionManager } from '../../src/terminal/ptySessionManager.js';
 import { closeStandaloneAgent } from '../../src/terminal/standaloneClose.js';
 import { launchForOffice } from '../../src/terminal/standaloneLaunches.js';
@@ -266,6 +267,10 @@ export interface StandaloneOfficeOptions {
   /** The CLI the MCP writes agents' config files for, and the tutorial's
    *  Guide is launched with. Default: Claude's. */
   provider?: HookProvider;
+  /** The office runs no terminals (`--no-terminal`). */
+  noTerminal?: boolean;
+  /** What the PC shells' × sees running (default: the real `ps` probe). */
+  foreground?: ForegroundProbe;
 }
 
 export interface Launched {
@@ -283,6 +288,8 @@ export interface StandaloneOffice extends AgentSide {
   readonly store: AgentStateStore;
   readonly runtime: AgentRuntime;
   readonly ptyManager: PtySessionManager;
+  /** The PC shells, composed as cli.ts composes them over the test's layout and catalogue. */
+  readonly pcShells: PcShells;
   readonly office: OfficeOperations;
   readonly officeMcp: OfficeMcpFeature;
   readonly server: PixelAgentsServer;
@@ -345,6 +352,7 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
   let store: AgentStateStore;
   let runtime: AgentRuntime;
   let ptyManager: PtySessionManager;
+  let pcShells: PcShells;
   let officeMcp: OfficeMcpFeature;
   let server: PixelAgentsServer;
   let unhold: (() => void) | undefined;
@@ -384,6 +392,9 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
     },
     get ptyManager() {
       return ptyManager;
+    },
+    get pcShells() {
+      return pcShells;
     },
     get office() {
       return officeMcp.office;
@@ -515,7 +526,9 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
     store.setAdapter(adapter);
     runtime = new AgentRuntime(store, claudeProvider);
     unhold = options.holdWorktrees ? holdWorktreesOf(store) : undefined;
-    ptyManager = new PtySessionManager();
+    ptyManager = options.noTerminal
+      ? PtySessionManager.disabled('Terminal disabled with --no-terminal.')
+      : new PtySessionManager();
     const counts = options.assets;
     const terminals = ptyAgentTerminals(ptyManager);
     // Composed as cli.ts composes it, over the test's layout, catalogue and assets.
@@ -583,12 +596,23 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       store.broadcast(message);
       officeMcp.charactersChanged();
     }, store);
+    pcShells = new PcShells({
+      ptyManager,
+      broadcast: (message) => store.broadcast({ ...message }),
+      layout: layout === 'file' ? () => readLayoutFromFile() : (layout ?? (() => null)),
+      catalog,
+      areaMappings: () => readConfig().standalone.areaMappings,
+      directories: () => listDirectoryLocations(directories),
+      providers: hookProviders,
+      ...(options.foreground ? { foreground: options.foreground } : {}),
+    });
     server = new PixelAgentsServer();
     const config = await server.start({
       store,
       runtime,
       embedded: false,
       ptyManager,
+      pcShells,
       officeMcp,
     });
     if (options.forwardHooks) {

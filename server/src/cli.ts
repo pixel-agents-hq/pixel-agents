@@ -54,6 +54,7 @@ import {
 } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 import { ptyAgentTerminals } from './terminal/agentTerminals.js';
+import { PcShells } from './terminal/pcShells.js';
 import {
   defaultPtyHostSocket,
   ptyHostLogFile,
@@ -498,6 +499,18 @@ async function main(): Promise<void> {
     });
     officeMcpFeature = officeMcp;
 
+    // PC shells: a PC's plain login shell, on the agents' terminal sessions
+    // (never an agent: the MCP above never sees one).
+    const pcShells = new PcShells({
+      ptyManager,
+      broadcast: (message) => store.broadcast({ ...message }),
+      layout: () => readLayoutFromFile() ?? assetCache.defaultLayout,
+      catalog: () => assetCache.furniture?.catalog ?? [],
+      areaMappings: () => readConfig().standalone.areaMappings,
+      directories: () => listDirectoryLocations([hostDirectory()]),
+      providers: hookProviders,
+    });
+
     const config = await server.start({
       store,
       runtime,
@@ -509,6 +522,7 @@ async function main(): Promise<void> {
       onSetHooksEnabled,
       onReloadAssets,
       ptyManager,
+      pcShells,
       packageRoot,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,

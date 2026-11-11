@@ -153,6 +153,11 @@ components:
         - $ref: '#/components/schemas/TerminalAvailability'
         - $ref: '#/components/schemas/TerminalSessionOpened'
         - $ref: '#/components/schemas/TerminalSessionClosed'
+        # PC shells (a PC's plain login shell on the host: not an agent)
+        - $ref: '#/components/schemas/PcShellsLoaded'
+        - $ref: '#/components/schemas/PcShellReady'
+        - $ref: '#/components/schemas/PcShellCloseQuestion'
+        - $ref: '#/components/schemas/PcShellRejected'
         # Diagnostics
         - $ref: '#/components/schemas/AgentDiagnostics'
       discriminator: type
@@ -205,6 +210,8 @@ components:
         - $ref: '#/components/schemas/RequestWorktrees'
         - $ref: '#/components/schemas/RequestWorktreeOptions'
         - $ref: '#/components/schemas/DecideWorktree'
+        - $ref: '#/components/schemas/OpenPcShell'
+        - $ref: '#/components/schemas/ClosePcShell'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
 
@@ -1792,6 +1799,90 @@ components:
         exitCode:
           type: integer
 
+    PcShell:
+      description: >-
+        One live PC shell: the plain login shell on the host a PC opened for
+        the user. Not an agent: no provider, session, transcript, hooks, look
+        or seat. Its id is its own (from PC_SHELL_ID_BASE up, apart from every
+        agent id), the id its terminal socket (GET /terminal/:id) and its card
+        go by.
+      type: object
+      additionalProperties: false
+      required: [id, uid, furnitureType]
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+          description: The piece (placed furniture uid) that opened it; the piece may have left the layout since.
+        furnitureType:
+          type: string
+          description: The piece's furniture type when it opened (the card draws its sprite).
+        directoryName:
+          type: string
+          description: The Directory it started in, by name as it was then. Absent = the home folder.
+
+    PcShellsLoaded:
+      description: >-
+        Every live PC shell, the whole list: broadcast to every office (read-only
+        ones too: a lit PC is no secret) whenever one opens or ends, and sent in
+        the connect snapshot, so a reconnect is a resync.
+      type: object
+      additionalProperties: false
+      required: [type, shells]
+      properties:
+        type:
+          const: pcShellsLoaded
+        shells:
+          type: array
+          items:
+            $ref: '#/components/schemas/PcShell'
+
+    PcShellReady:
+      description: >-
+        The answer to an `openPcShell`, to its sender alone: the shell that
+        answers it (a new one, or the piece's live one). The office opens its
+        terminal.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: pcShellReady
+        id:
+          type: integer
+
+    PcShellCloseQuestion:
+      description: >-
+        The answer to a `closePcShell` (not `confirmed`) for a shell with a
+        command still running in it (its foreground process is not the shell
+        itself): the shell is NOT closed, and the office asks the user once. A
+        `closePcShell` with `confirmed` closes it. To the sender alone.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: pcShellCloseQuestion
+        id:
+          type: integer
+        command:
+          type: string
+          description: The running command's name, when the host could tell.
+
+    PcShellRejected:
+      description: An `openPcShell` that could not be done, to its sender alone.
+      type: object
+      additionalProperties: false
+      required: [type, uid, reason]
+      properties:
+        type:
+          const: pcShellRejected
+        uid:
+          type: string
+        reason:
+          type: string
+
     # ── Client message variants ────────────────────────────────────
 
     WebviewReady:
@@ -2365,7 +2456,7 @@ components:
               type: string
 
     SaveCardOrder:
-      description: Persist a reordered agent-card list (agent ids, first card first).
+      description: Persist a reordered card list (agent and PC shell ids, first card first).
       type: object
       additionalProperties: false
       required: [type, order]
@@ -2376,6 +2467,39 @@ components:
           type: array
           items:
             type: integer
+
+    OpenPcShell:
+      description: >-
+        Open the PC shell of a piece (a placed furniture uid whose furniture
+        declares the `terminal` panel): its live shell when it has one, else a
+        new login shell in the single Directory mapped to the piece's Area, else
+        the home folder. Answered with `pcShellReady` (or `pcShellRejected`).
+        Privileged, and refused where the office offers no terminal.
+      type: object
+      additionalProperties: false
+      required: [type, uid]
+      properties:
+        type:
+          const: openPcShell
+        uid:
+          type: string
+
+    ClosePcShell:
+      description: >-
+        End a PC shell (its card's ×). An idle shell ends at once; one running a
+        command is answered with `pcShellCloseQuestion` unless `confirmed`.
+        Privileged.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: closePcShell
+        id:
+          type: integer
+        confirmed:
+          type: boolean
+          description: The user confirmed closing it with a command running.
 
     SetBypassPermissions:
       description: >-

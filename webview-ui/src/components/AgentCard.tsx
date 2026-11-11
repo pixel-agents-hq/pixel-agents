@@ -3,6 +3,7 @@ import { CARD_CONTEXT_BAR_HEIGHT_PX, CARD_MUGSHOT_CROP_TOP_ROW } from '../consta
 import { ContextBar } from '../office/ContextBar.js';
 import { contextLeft, useAgentContextUsed } from '../office/contextGauge.js';
 import type { CardVariant, CloseMode } from './cardBar.js';
+import { CARD_VARIANT, CLOSE_MODE } from './cardStyles.js';
 import { CharacterMugShot } from './CharacterMugShot.js';
 import { STATUS_DOT } from './statusDot.js';
 import { Button } from './ui/Button.js';
@@ -23,20 +24,6 @@ export type AgentActivity = 'idle' | 'working' | 'attention';
 
 /** Activity plus the drawer-owned "connection broken" state. */
 export type TabStatus = AgentActivity | 'disconnected';
-
-const CARD_VARIANT: Record<CardVariant, string> = {
-  default: 'bg-btn-bg border-transparent hover:bg-btn-hover',
-  focused: 'bg-active-bg border-transparent',
-  active: 'bg-active-bg border-accent',
-};
-
-// `hover` fades with opacity rather than visibility, so the × stays a
-// hit target (a pointer over it hovers the card anyway).
-const CLOSE_MODE: Record<CloseMode, string> = {
-  shown: '',
-  hover: 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity',
-  hidden: 'invisible',
-};
 
 interface AgentCardProps {
   agentId: number;

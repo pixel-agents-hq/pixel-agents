@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import type { Directory } from '../../../core/src/messages.js';
+import { isPcShellId } from '../../../core/src/pcShells.js';
 import type { HookProvider } from '../../../core/src/provider.js';
 import type { PersistedAgent } from '../../../core/src/schemas.js';
 import { restoredAgentInit } from '../agentPersistence.js';
@@ -222,6 +223,8 @@ export function reattachTerminalAgents(deps: LaunchStandaloneAgentDeps): number[
 
   for (const session of ptyManager.survivors()) {
     const id = session.agentId;
+    // A PC shell's terminal, not an agent's: its own id space, never an agent id.
+    if (isPcShellId(id)) continue;
     // Never hand a new launch an id a live terminal still holds.
     if (id >= store.nextAgentId.current) store.nextAgentId.current = id + 1;
     if (store.has(id)) continue;

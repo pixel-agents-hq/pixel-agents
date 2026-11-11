@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
+import type { PieceClick } from '../../core/src/furniture/pieceRules.js';
+import { isPcShellId } from '../../core/src/pcShells.js';
 import { toMajorMinor } from './changelogData.js';
 import { castStore } from './characters/castStore.js';
 import { CharactersView } from './characters/ui/CharactersView.js';
@@ -65,6 +67,8 @@ import { getPetCount } from './office/sprites/petSpriteData.js';
 import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
 import { useAgentLayoutEdits } from './officeMcp/useAgentLayoutEdits.js';
 import { useOfficeMcp } from './officeMcp/useOfficeMcp.js';
+import { PcShellCloseDialog } from './pcShells/PcShellCloseDialog.js';
+import { closePcShell, openPcShell, usePcShells } from './pcShells/pcShellStore.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
@@ -471,8 +475,11 @@ function App() {
     editor.handleToggleEditMode,
   );
 
+  // A card's ×: an agent's, or a PC shell's (which asks first when a command
+  // still runs in it: PcShellCloseDialog).
   const handleCloseAgent = useCallback((id: number) => {
-    transport.send({ type: 'closeAgent', id });
+    if (isPcShellId(id)) closePcShell(id);
+    else transport.send({ type: 'closeAgent', id });
   }, []);
 
   const { reveal: revealTerminal } = terminalDrawer;
@@ -510,6 +517,8 @@ function App() {
         selectTerminal(agentId);
         return;
       }
+      // A PC shell's card with no pane here (a read-only office): nothing to raise.
+      if (isPcShellId(agentId)) return;
       transport.send({ type: 'focusAgent', id: agentId });
       getOfficeState().selectAndFollow(agentId);
     },
@@ -531,6 +540,26 @@ function App() {
     },
     [handleCardSelect],
   );
+
+  // A PC opens a panel the office provides (the terminal): only where this
+  // office runs terminals and may change things. Elsewhere its label still
+  // shows, with nothing to click (a VS Code surface adds its own way).
+  const canOpenPanels = terminalAvailable && !officeReadOnly;
+  const handlePieceClick = useCallback((click: PieceClick, uid: string) => {
+    // A PC's own shell, live or new: the server answers with the one to open.
+    // An agent's terminal (`agentTerminal`) is the click-resolution ticket's.
+    if (click.kind === 'openPanel' || click.kind === 'newPanel') openPcShell(uid);
+  }, []);
+  // The shell this office's open was answered with: opened as its card would,
+  // on the phone sliding to the terminal page.
+  const { ready: pcShellReady } = usePcShells();
+  useEffect(() => {
+    if (!pcShellReady || !terminalAgentIds.includes(pcShellReady.id)) return;
+    if (isMobile) mobileShell.openAgent(pcShellReady.id);
+    else selectTerminal(pcShellReady.id);
+    // Keyed on the answer alone (its pane is listed by the same render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pcShellReady]);
 
   const officeState = getOfficeState();
 
@@ -657,7 +686,8 @@ function App() {
         showAreas={effectiveShowAreas}
         activeAreaLabel={activeAreaLabel}
         tapSelectsFirst={isMobile}
-        readOnly={officeReadOnly}
+        readOnly={!canOpenPanels}
+        onPieceClick={canOpenPanels ? handlePieceClick : undefined}
       />
 
       {!isDebugMode ? (
@@ -790,7 +820,7 @@ function App() {
               containerRef={containerRef}
               zoom={editor.zoom}
               panRef={editor.panRef}
-              readOnly={officeReadOnly}
+              readOnly={!canOpenPanels}
               editing={editor.isEditMode}
             />
           </div>
@@ -1009,6 +1039,8 @@ function App() {
         directories={directories}
         onDone={clearAgentCloseQuestion}
       />
+      {/* This office's × on a PC shell with a command still running in it. */}
+      <PcShellCloseDialog />
 
       <ChangelogModal
         isOpen={isChangelogOpen}

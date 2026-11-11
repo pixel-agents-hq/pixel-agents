@@ -29,18 +29,16 @@ export function closeMode(variant: CardVariant, onlyWhenActive: boolean): CloseM
   return variant === 'active' ? 'shown' : 'hidden';
 }
 
-/** The cards, in order: main agents only (a Teammate is shown by its
- *  character beside its Lead, never as a card of its own), in the saved
- *  order with new ones appended (mergeOrder). */
+/** The cards, in order: main agents (a Teammate is shown by its character
+ *  beside its Lead, never as a card of its own) and the live PC shells, in
+ *  the saved order with new ones appended (mergeOrder). */
 export function cardOrderOf(
   saved: readonly number[],
   agents: readonly number[],
   teammateIds: ReadonlySet<number>,
+  pcShells: readonly number[] = [],
 ): number[] {
-  return mergeOrder(
-    saved,
-    agents.filter((id) => !teammateIds.has(id)),
-  );
+  return mergeOrder(saved, [...agents.filter((id) => !teammateIds.has(id)), ...pcShells]);
 }
 
 /** Saved order first (dropping closed agents), then any new agents appended

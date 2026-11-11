@@ -2,14 +2,17 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useEffect } from 'react';
 
 import { CARD_SCROLL_INTO_VIEW_MARGIN_PX } from '../constants.js';
+import { usePcShells } from '../pcShells/pcShellStore.js';
 import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCard } from './AgentCard.js';
 import { cardVariant, closeMode } from './cardBar.js';
+import { PcShellCard } from './PcShellCard.js';
 import type { CardAxis } from './useCardReorder.js';
 import { useCardReorder } from './useCardReorder.js';
 
 interface AgentCardListProps {
-  /** The cards, in the shared order (useExtensionMessages' cardAgents). */
+  /** The cards, in the shared order (useExtensionMessages' cardAgents):
+   *  agents', and PC shells' (drawn as PcShellCard). */
   agentIds: number[];
   /** A row (phone) or a column (desktop). */
   axis: CardAxis;
@@ -64,6 +67,7 @@ export function AgentCardList({
     onTouchTap,
   });
   const { container, cardElement } = reorder;
+  const { shells: pcShells } = usePcShells();
 
   // Selecting a character on the canvas focuses an agent whose card may sit
   // outside the scroller: bring it fully into view.
@@ -83,6 +87,7 @@ export function AgentCardList({
           focusedId: focusedAgentId,
         });
         const lifted = reorder.draggingId === agentId;
+        const shell = pcShells.find((s) => s.id === agentId) ?? null;
         return (
           <div
             key={agentId}
@@ -93,15 +98,25 @@ export function AgentCardList({
               lifted ? `relative z-10 opacity-70 ${LIFT[axis]}` : ''
             }`}
           >
-            <AgentCard
-              agentId={agentId}
-              variant={variant}
-              appearance={getAppearance(agentId)}
-              status={statusFor(agentId)}
-              close={closeMode(variant, closeOnlyWhenActive)}
-              onSelect={onSelect}
-              onClose={onClose}
-            />
+            {shell ? (
+              <PcShellCard
+                shell={shell}
+                variant={variant}
+                close={closeMode(variant, closeOnlyWhenActive)}
+                onSelect={onSelect}
+                onClose={onClose}
+              />
+            ) : (
+              <AgentCard
+                agentId={agentId}
+                variant={variant}
+                appearance={getAppearance(agentId)}
+                status={statusFor(agentId)}
+                close={closeMode(variant, closeOnlyWhenActive)}
+                onSelect={onSelect}
+                onClose={onClose}
+              />
+            )}
           </div>
         );
       })}
