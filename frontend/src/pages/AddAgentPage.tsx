@@ -16,13 +16,10 @@ import { EventFlow } from '../components/EventFlow';
 import type { EventFlowStep } from '../components/EventFlow';
 import { FormField } from '../components/FormField';
 import { agentDisplayName, selectAllAgents } from '../features/agents/agentSelectors';
+import { canCreateAgent, normalizeAgentPath } from '../features/agentCreation/createAgentForm';
 import { agentCreationRequested } from '../features/agentCreation/createAgentSaga';
 import { useAwaitCreation } from '../features/agentCreation/useAwaitCreation';
-import {
-  directoryForPath,
-  selectVisibleWorkspaces,
-} from '../features/workspaces/workspaceSelectors';
-import { selectableDirectoryPaths } from '../features/workspaces/workspaceRoot';
+import { selectVisibleWorkspaces } from '../features/workspaces/workspaceSelectors';
 import type { PermissionRole } from '../protocol';
 import { controlBorderColor, roleColors } from '../theme';
 
@@ -80,7 +77,6 @@ export function AddAgentPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const workspaces = useAppSelector(selectVisibleWorkspaces);
-  const directories = useAppSelector((state) => state.workspaces.directories);
   const curators = useAppSelector((state) => state.workspaces.curators);
   const curatorsAvailable = useAppSelector((state) => state.workspaces.curatorsAvailable);
   const agents = useAppSelector(selectAllAgents);
@@ -88,19 +84,13 @@ export function AddAgentPage() {
   const initialWorkspaceId = searchParams.get('workspace') ?? workspaces[0]?.id ?? '';
   const defaultRolesOf = (id: string) => workspaces.find((w) => w.id === id)?.permissionRoles ?? [];
   const [workspaceId, setWorkspaceId] = useState(initialWorkspaceId);
-  const [chosenPath, setChosenPath] = useState<string | null>(null);
+  const [agentPath, setAgentPath] = useState('');
   const [roles, setRoles] = useState<PermissionRole[]>(() => defaultRolesOf(initialWorkspaceId));
   const [becomeCurator, setBecomeCurator] = useState(false);
   const [name, setName] = useState('');
   const [startNow, setStartNow] = useState(false);
 
   const workspace = workspaces.find((w) => w.id === workspaceId);
-  const directoryPaths = selectableDirectoryPaths(
-    workspace?.directoryPaths ?? [],
-    workspace?.rootPath,
-  );
-  const directoryPath =
-    chosenPath && directoryPaths.includes(chosenPath) ? chosenPath : directoryPaths[0];
   const existingCuratorId = curators[workspaceId];
   const existingCurator =
     existingCuratorId === undefined ? undefined : agents.find((a) => a.id === existingCuratorId);
@@ -114,7 +104,6 @@ export function AddAgentPage() {
 
   const chooseWorkspace = (id: string) => {
     setWorkspaceId(id);
-    setChosenPath(null);
     setRoles(defaultRolesOf(id));
     setBecomeCurator(false);
   };
@@ -125,13 +114,13 @@ export function AddAgentPage() {
     );
 
   const submit = () => {
-    if (!workspace || !directoryPath) return;
+    if (!workspace || !canCreateAgent(workspace.id, agentPath, launch.pending)) return;
     launch.begin();
     dispatch(
       agentCreationRequested({
         workspaceId: workspace.id,
         name: name.trim(),
-        directoryPath,
+        directoryPath: normalizeAgentPath(agentPath),
         start: startNow,
         permissionRoles: roles.length > 0 ? roles : null,
         becomeCurator: willBecomeCurator,
@@ -144,7 +133,7 @@ export function AddAgentPage() {
     {
       label: 'send',
       value: 'createAgent',
-      detail: '{name, directoryPath, permissionRoles, start}',
+      detail: '{name, workspaceId, directoryPath, permissionRoles, start}',
       tone: 'send',
     },
     { label: 'receive', value: 'agentCreated', detail: '{id, stopped}', tone: 'receive' },
@@ -219,32 +208,20 @@ export function AddAgentPage() {
           </Select>
         </FormField>
 
-        {directoryPaths.length > 1 && (
-          <FormField label="Directory" hint="Agent 啟動的目錄">
-            <Select
-              fullWidth
-              size="small"
-              value={directoryPath ?? ''}
-              onChange={(event) => setChosenPath(event.target.value)}
-            >
-              {directoryPaths.map((path) => (
-                <MenuItem key={path} value={path}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography sx={{ fontSize: 13 }}>
-                      {directoryForPath(directories, path)?.name ?? path}
-                    </Typography>
-                    <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>{path}</Typography>
-                  </Box>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormField>
-        )}
-        {directoryPaths.length === 0 && (
-          <Typography sx={{ fontSize: 11, color: 'warning.main', mb: 2.5 }}>
-            這個工作空間沒有目錄，無法啟動 Agent
-          </Typography>
-        )}
+        <FormField
+          label="Path"
+          hint="Agent 工作的資料夾（絕對路徑）。不存在會自動建立，並登記為此工作空間的目錄，建立後初始化 Agent 的個人知識庫"
+        >
+          <TextField
+            fullWidth
+            size="small"
+            required
+            placeholder="/Users/you/projects/my-agent"
+            value={agentPath}
+            onChange={(event) => setAgentPath(event.target.value)}
+            slotProps={{ htmlInput: { 'aria-label': 'Path' } }}
+          />
+        </FormField>
 
         <FormField label="Roles" hint="點擊切換 Agent 在此工作空間的操作權限">
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
@@ -353,7 +330,7 @@ export function AddAgentPage() {
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <Button
             variant="contained"
-            disabled={launch.pending || !directoryPath}
+            disabled={!canCreateAgent(workspaceId, agentPath, launch.pending)}
             onClick={submit}
             sx={{ px: 2.5, py: 1, fontSize: 13 }}
           >

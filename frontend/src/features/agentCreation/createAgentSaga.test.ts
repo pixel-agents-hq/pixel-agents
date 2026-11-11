@@ -37,6 +37,7 @@ describe('createAgentSaga', () => {
     expect(dispatched).toContainEqual(
       clientMessageRequested({
         type: 'createAgent',
+        workspaceId: 'w1',
         directoryPath: '/p/a',
         permissionRoles: null,
         start: false,
@@ -51,6 +52,7 @@ describe('createAgentSaga', () => {
     expect(dispatched).toContainEqual(
       clientMessageRequested({
         type: 'createAgent',
+        workspaceId: 'w1',
         directoryPath: '/p/a',
         permissionRoles: null,
         start: true,

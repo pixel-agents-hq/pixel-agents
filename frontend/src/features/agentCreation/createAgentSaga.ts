@@ -10,6 +10,7 @@ interface CreateAgentRequest {
   workspaceId: string;
   /** 空字串表示沒有名稱，以目錄名稱標示 */
   name: string;
+  /** Agent 工作的資料夾（絕對路徑）；伺服器會建立它、登記到該工作空間並初始化個人 KB */
   directoryPath: string;
   permissionRoles: PermissionRole[] | null;
   /** 建立後立即啟用；否則只建立紀錄，之後在工作空間裡啟用 */
@@ -35,6 +36,7 @@ function* handleCreation(action: ReturnType<typeof agentCreationRequested>) {
   yield put(
     clientMessageRequested({
       type: 'createAgent',
+      workspaceId,
       directoryPath,
       permissionRoles,
       start,
