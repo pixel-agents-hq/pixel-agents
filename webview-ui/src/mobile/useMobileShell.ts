@@ -22,7 +22,8 @@ export interface MobileShellController {
   /** A running conversation pressed in the menu: focus its agent and, when it
    *  has a pane, slide to it. */
   openAgent: (agentId: number) => void;
-  /** This office's PC shell opened: slide to its pane. */
+  /** This office's PC shell opened: slide to its pane (shown even before the
+   *  pane list that holds it has rendered). */
   openPane: (id: number) => void;
 }
 
@@ -49,7 +50,7 @@ export function useMobileShell({
   launchAgent,
 }: MobileShellInputs): MobileShellController {
   const [view, setView] = useState<MobileView>('office');
-  const { reveal } = drawer;
+  const { reveal, show } = drawer;
 
   const showTerminal = useCallback(() => setView('terminal'), []);
 
@@ -76,17 +77,16 @@ export function useMobileShell({
   // its terminal.
   const openPane = useCallback(
     (id: number) => {
-      if (!paneIds.includes(id)) return;
-      reveal(id);
+      show(id);
       setView('terminal');
     },
-    [paneIds, reveal],
+    [show],
   );
 
   const selectCard = useCallback(
     (card: Card) => {
       if (card.kind === 'pcShell') {
-        openPane(card.id);
+        if (paneIds.includes(card.id)) openPane(card.id);
         return;
       }
       const agentId = card.id;
@@ -113,9 +113,9 @@ export function useMobileShell({
   const openAgent = useCallback(
     (agentId: number) => {
       getOfficeState().selectAndFollow(agentId);
-      openPane(agentId);
+      if (paneIds.includes(agentId)) openPane(agentId);
     },
-    [getOfficeState, openPane],
+    [getOfficeState, paneIds, openPane],
   );
 
   return {

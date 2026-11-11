@@ -1,17 +1,6 @@
-import { agentLabelOf } from '../../../../core/src/agentLabel.js';
-import { areaDirectories, pieceArea } from '../../../../core/src/furniture/piecePlaces.js';
-import {
-  type PieceClick,
-  type PieceFacts,
-  pieceState,
-  type PieceUse,
-  type PieceView,
-  pieceView,
-} from '../../../../core/src/furniture/pieceRules.js';
 import { spotBeside } from '../../../../core/src/layout/visitSpot.js';
-import type { AgentWorktree, LayoutBuildout, PcShell } from '../../../../core/src/messages.js';
+import type { AgentWorktree, LayoutBuildout } from '../../../../core/src/messages.js';
 import { chooseLook } from '../../../../core/src/paletteUtils.js';
-import { pcShellName } from '../../../../core/src/pcShells.js';
 import {
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
@@ -25,13 +14,10 @@ import {
   MAX_PET_ID_LENGTH,
   PET_HIT_HALF_WIDTH,
   PET_HIT_HEIGHT,
-  UNNAMED_AGENT_LABEL,
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
 import { contextUsedShare } from '../contextGauge.js';
-import { furnitureAt } from '../editor/editorActions.js';
 import {
-  activeCatalog,
   getAnimationFrames,
   getCatalogEntry,
   getStateVariant,
@@ -70,6 +56,7 @@ import {
 import { GreeterHandoff } from './greeterHandoff.js';
 import { advanceMatrixEffect, startMatrixEffect } from './matrixEffectState.js';
 import { createPet, updatePet } from './petEntity.js';
+import { PiecesController } from './piecesController.js';
 import { anchorTile, closestFreeSeat } from './seatPlacement.js';
 import { VisitsController } from './visitsController.js';
 
@@ -80,13 +67,6 @@ function takesSeat(ch: Character): boolean {
 }
 
 type Tile = { col: number; row: number };
-
-/** Where a pointer on furniture is used: a read-only office offers no click, and
- *  the layout editor keeps hover and click on furniture for itself. */
-export interface PieceContext {
-  readOnly: boolean;
-  editing: boolean;
-}
 
 function sameMap<K, V>(a: ReadonlyMap<K, V>, b: ReadonlyMap<K, V>): boolean {
   return a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
@@ -144,15 +124,6 @@ export class OfficeState {
   cameraFollowId: number | null = null;
   hoveredAgentId: number | null = null;
   hoveredTile: { col: number; row: number } | null = null;
-  /** The piece the pointer hovers (mouse) or the first tap picked (touch): outlined,
-   *  with its Furniture label over it. Set through hoverPieceAt / tapPieceAt. */
-  hoveredPieceUid: string | null = null;
-  /** Piece uid → its live PC shell, as the server announced them (pcShellsLoaded).
-   *  Never in the layout: the "panel in use" fact is derived from this alone. */
-  private pcShellsByPiece: ReadonlyMap<string, PcShell> = new Map();
-  /** The name of the character at a palette, from the cast (App wires it to the
-   *  cast store): how a Furniture label names the agent working at a piece. */
-  characterName: (palette: number) => string | undefined = () => undefined;
   /** Maps "parentId:toolId" → sub-agent character ID (negative) */
   subagentIdMap: Map<string, number> = new Map();
   /** Reverse lookup: sub-agent character ID → parent info */
@@ -172,10 +143,6 @@ export class OfficeState {
    * `findFreeSeat()` to bias new agents toward seats inside their Directory's Area.
    */
   areaMappings: Record<string, string[]> = {};
-
-  /** The Directories' names, in the host's order (directoriesLoaded): where a PC in
-   *  an Area mapped to several offers its Directory selector (pieceFacts' places). */
-  directoryNames: readonly string[] = [];
 
   /**
    * The first-run consent greeter, deliberately NOT in `characters`.
@@ -201,6 +168,20 @@ export class OfficeState {
 
   /** The Buildout playing, if any: drawing reads it (shownLayout, shownTileMap). */
   readonly buildout = new BuildoutPlayer();
+
+  /** Interactive furniture: each piece's facts, state, label and click, and the
+   *  piece under a pointer (piecesController.ts). */
+  readonly pieces = new PiecesController({
+    layout: () => this.layout,
+    shownLayout: () => this.shownLayout(),
+    furniture: () => this.furniture,
+    characters: this.characters,
+    seats: () => this.seats,
+    seatWorkstations: () => this.seatWorkstations,
+    areaMappings: () => this.areaMappings,
+    occupiedAt: (x, y) => this.getCharacterAt(x, y) !== null || this.getPetAt(x, y) !== null,
+    shellsChanged: () => this.rebuildFurnitureInstances(),
+  });
 
   /** Visits, Message shows and Buildout work: each character's errand stack. */
   readonly visits = new VisitsController({
@@ -246,10 +227,6 @@ export class OfficeState {
 
   setAreaMappings(mappings: Record<string, string[]>): void {
     this.areaMappings = mappings;
-  }
-
-  setDirectoryNames(names: readonly string[]): void {
-    this.directoryNames = names;
   }
 
   constructor(layout?: OfficeLayout) {
@@ -441,7 +418,7 @@ export class OfficeState {
     for (const [uid, seat] of this.seats) {
       if (seat.assigned) continue;
       const piece = this.seatWorkstations.get(uid);
-      (piece !== undefined && this.pcShellsByPiece.has(piece) ? shared : free).push(uid);
+      (piece !== undefined && this.pieces.hasShell(piece) ? shared : free).push(uid);
     }
     return free.length > 0 ? free : shared;
   }
@@ -1160,199 +1137,16 @@ export class OfficeState {
     this.rebuildFurnitureInstances();
   }
 
-  /**
-   * Piece uid → the agent working at it: active, sitting in the piece's
-   * workstation seat and typing. Walking to the seat, resting there between
-   * turns, or standing beside it does not count.
-   */
-  private agentsAtWork(): Map<string, Character> {
-    const atWork = new Map<string, Character>();
-    for (const ch of this.characters.values()) {
-      if (!ch.isActive || !ch.seatId || ch.state !== CharacterState.TYPE || ch.matrixEffect) {
-        continue;
-      }
-      const seat = this.seats.get(ch.seatId);
-      if (!seat || ch.tileCol !== seat.seatCol || ch.tileRow !== seat.seatRow) continue;
-      const piece = this.seatWorkstations.get(ch.seatId);
-      if (piece) atWork.set(piece, ch);
-    }
-    return atWork;
-  }
-
-  /**
-   * The live PC shells, the server's whole list (pcShellsLoaded: on every change and
-   * in each connect's snapshot, so a list is the truth and a shell it leaves out has
-   * ended). Their PCs show their state rules' "panel in use" state from now on; a
-   * shell whose piece is no longer in the layout lights nothing.
-   */
-  setPcShells(shells: readonly PcShell[]): void {
-    this.pcShellsByPiece = new Map(shells.map((shell) => [shell.uid, shell]));
-    this.rebuildFurnitureInstances();
-  }
-
-  /** The live PC shell of a piece, or null. */
-  pcShellOf(uid: string): PcShell | null {
-    return this.pcShellsByPiece.get(uid) ?? null;
-  }
-
-  /**
-   * What the office knows about a piece, for core's pieceView (furniture/pieceRules.ts):
-   * the agent working at it, named by core's agentLabelOf (Nickname, else its
-   * character's name, else its Directory), its panel in use — its live PC shell,
-   * named by its Directory (or "Home") — and where a new one may open: the
-   * Directories mapped to the Area it stands in (core's piecePlaces, as the server
-   * resolves an open).
-   */
-  pieceFacts(uid: string, readOnly: boolean): PieceFacts {
-    return { ...this.pieceUse(uid, this.agentsAtWork()), places: this.piecePlaces(uid), readOnly };
-  }
-
-  /** Who and what is using a piece: the agent working at it, its live PC shell. */
-  private pieceUse(uid: string, atWork: ReadonlyMap<string, Character>): PieceUse {
-    const ch = atWork.get(uid);
-    const shell = this.pcShellsByPiece.get(uid);
-    return {
-      agentAtWork: ch ? { id: ch.id, name: this.agentName(ch) } : null,
-      panelInUse: shell ? { name: pcShellName(shell) } : null,
-    };
-  }
-
-  /** The Directories mapped to the Area a piece stands in, by name (none without one). */
-  private piecePlaces(uid: string): string[] {
-    const item = this.layout.furniture.find((f) => f.uid === uid);
-    if (!item) return [];
-    const area = pieceArea(this.layout, activeCatalog(), item);
-    const named = this.directoryNames.map((name) => ({ name }));
-    return areaDirectories(area, named, this.areaMappings).map((d) => d.name);
-  }
-
-  /** How the office names an agent to the user (core's agentLabelOf). */
-  private agentName(ch: Character): string {
-    return (
-      agentLabelOf({
-        nickname: ch.nickname,
-        characterName: this.characterName(ch.palette),
-        directoryName: ch.directoryName,
-      }) ?? UNNAMED_AGENT_LABEL
-    );
-  }
-
-  /**
-   * The piece a pointer at this world point is on, for hover and click: the layout
-   * editor's own pick (furnitureAt: a surface item wins over the desk under it),
-   * kept only when the rules give it something to show or offer (a Furniture label
-   * or a click). Nothing while the editor is open, and nothing under a character
-   * or a pet: they stand in front of the furniture, and win.
-   */
-  pieceAt(worldX: number, worldY: number, ctx: PieceContext): string | null {
-    if (ctx.editing) return null;
-    if (this.getCharacterAt(worldX, worldY) !== null) return null;
-    if (this.getPetAt(worldX, worldY) !== null) return null;
-    const col = Math.floor(worldX / TILE_SIZE);
-    const row = Math.floor(worldY / TILE_SIZE);
-    if (col < 0 || row < 0 || col >= this.layout.cols || row >= this.layout.rows) return null;
-    const hit = furnitureAt(this.layout, col, row);
-    if (!hit) return null;
-    const view = this.pieceViewOf(hit, ctx.readOnly);
-    return view.label || view.click ? hit.uid : null;
-  }
-
-  private pieceViewOf(item: PlacedFurniture, readOnly: boolean): PieceView {
-    return pieceView(getCatalogEntry(item.type)?.interactive, this.pieceFacts(item.uid, readOnly));
-  }
-
-  /**
-   * A mouse over this world point: the piece there becomes the hovered one (or
-   * none). Returns its view, whose `click` decides the cursor.
-   */
-  hoverPieceAt(worldX: number, worldY: number, ctx: PieceContext): PieceView | null {
-    this.hoveredPieceUid = this.pieceAt(worldX, worldY, ctx);
-    return this.hoveredPiece(ctx)?.view ?? null;
-  }
-
-  /**
-   * A click or tap at this world point, against furniture. Null = no piece there
-   * (the hovered one is cleared: a tap elsewhere dismisses it). Two-step (touch):
-   * the first tap on a piece only hovers it, `click: null`; a second on the same
-   * piece answers its click, and clears the hover when it offers one. One step
-   * (mouse): the click at once. `click` is null too where the piece offers none
-   * (label only, or a read-only office).
-   */
-  tapPieceAt(
-    worldX: number,
-    worldY: number,
-    ctx: PieceContext & { twoStep: boolean },
-  ): { uid: string; click: PieceClick | null } | null {
-    const uid = this.pieceAt(worldX, worldY, ctx);
-    const wasHovered = uid !== null && this.hoveredPieceUid === uid;
-    this.hoveredPieceUid = uid;
-    if (uid === null) return null;
-    if (ctx.twoStep && !wasHovered) return { uid, click: null };
-    const click = this.hoveredPiece(ctx)?.view.click ?? null;
-    // Touch: the click opened something (a terminal page, the Directory selector),
-    // so the label goes with it — back on the office the PC is a first tap again,
-    // not a stale label left over it.
-    if (ctx.twoStep && click) this.hoveredPieceUid = null;
-    return { uid, click };
-  }
-
-  /** Forget the hovered piece (the pointer left, the editor opened). */
-  clearPieceHover(): void {
-    this.hoveredPieceUid = null;
-  }
-
-  /**
-   * The hovered piece as the office shows it now: its view under the current facts
-   * (the label follows an agent sitting down) and where its Furniture label hangs —
-   * the top edge of its sprite, centred, in world pixels. Null when nothing is
-   * hovered, the piece is gone from the layout, or the editor is open.
-   */
-  hoveredPiece(
-    ctx: PieceContext,
-  ): { uid: string; view: PieceView; anchor: { x: number; y: number } } | null {
-    const uid = this.hoveredPieceUid;
-    if (uid === null || ctx.editing) return null;
-    const item = this.layout.furniture.find((f) => f.uid === uid);
-    const anchor = this.pieceAnchor(uid);
-    if (!item || !anchor) return null;
-    const view = this.pieceViewOf(item, ctx.readOnly);
-    if (!view.label && !view.click) return null;
-    return { uid, view, anchor };
-  }
-
-  /** Where a piece's overlays hang (its Furniture label, its Directory selector): the
-   *  top edge of its sprite as drawn now, centred, in world pixels. Null once it is
-   *  no longer drawn. */
-  pieceAnchor(uid: string): { x: number; y: number } | null {
-    const instance = this.furniture.find((f) => f.uid === uid);
-    if (!instance) return null;
-    const width = instance.sprite[0]?.length ?? TILE_SIZE;
-    return { x: instance.x + width / 2, y: instance.y };
-  }
-
+  /** Rebuild furniture instances, each piece in the state its rules say (a piece
+   *  with no art for that state keeps its usual sprite), animated states on the
+   *  current frame. */
   /** The declared state a piece is drawn in now (its state rules' pick, e.g. a PC's
    *  "on"), or null when it shows its usual sprite. */
   pieceShownState(uid: string): string | null {
     return this.shownStates.get(uid) ?? null;
   }
 
-  /** Each piece whose state rules hold a declared state now: piece uid → that state. */
-  private piecesShowingStates(): Map<string, string> {
-    const shown = new Map<string, string>();
-    const atWork = this.agentsAtWork();
-    for (const item of this.shownLayout().furniture) {
-      const interactive = getCatalogEntry(item.type)?.interactive;
-      if (!interactive?.states) continue;
-      const state = pieceState(interactive, this.pieceUse(item.uid, atWork));
-      if (state) shown.set(item.uid, state);
-    }
-    return shown;
-  }
-
-  /** Rebuild furniture instances, each piece in the state its rules say (a piece
-   *  with no art for that state keeps its usual sprite), animated states on the
-   *  current frame. */
-  private rebuildFurnitureInstances(shown = this.piecesShowingStates()): void {
+  private rebuildFurnitureInstances(shown = this.pieces.showingStates()): void {
     this.shownStates = shown;
     const placed = this.shownLayout().furniture;
     if (shown.size === 0) {
@@ -1661,7 +1455,7 @@ export class OfficeState {
 
     // A piece's state follows its facts as they change: a PC turns on when its agent
     // sits down to work, not when the turn starts.
-    const shown = this.piecesShowingStates();
+    const shown = this.pieces.showingStates();
     if (!sameMap(shown, this.shownStates)) this.rebuildFurnitureInstances(shown);
 
     // ── Pet FSM ────────────────────────────────────────────────

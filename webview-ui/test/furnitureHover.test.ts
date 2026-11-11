@@ -2,8 +2,9 @@
  * Hovering and tapping furniture in the office: the piece under the pointer is the
  * layout editor's pick (a surface item wins over the desk under it), a character in
  * front of it wins, plain furniture is never hovered, the Furniture label comes from
- * core's pieceView, a read-only office offers no click, the layout editor turns it
- * all off, and on touch the first tap hovers while the second clicks.
+ * core's pieceView, a read-only office offers no click, the layout editor opening
+ * clears it (the label hears so), and on touch the first tap hovers while the
+ * second clicks.
  *
  *   row 3..4  table (4..6, 3..4); KIOSK (5,3) and MUG (6,3) on it, SIGN (4,3) too
  *   row 5     chair↑ (5,5) faces the kiosk
@@ -102,22 +103,22 @@ function office(): OfficeState {
 const at = (col: number, row: number) =>
   [col * TILE_SIZE + TILE_SIZE / 2, row * TILE_SIZE + TILE_SIZE / 2] as const;
 
-const OFFICE = { readOnly: false, editing: false };
+const OFFICE = { readOnly: false };
 
 describe('the piece under the pointer', () => {
   test('is a declared piece standing on a desk, not the desk under it', () => {
     const os = office();
-    assert.equal(os.pieceAt(...at(5, 3), OFFICE), 'kiosk');
-    assert.equal(os.pieceAt(...at(4, 3), OFFICE), 'sign');
+    assert.equal(os.pieces.at(...at(5, 3), OFFICE), 'kiosk');
+    assert.equal(os.pieces.at(...at(4, 3), OFFICE), 'sign');
   });
 
   test('is nothing over plain furniture: the desk, a mug on it, a plant, a chair', () => {
     const os = office();
-    assert.equal(os.pieceAt(...at(5, 4), OFFICE), null); // the table's own tile
-    assert.equal(os.pieceAt(...at(6, 3), OFFICE), null); // the mug wins over the table
-    assert.equal(os.pieceAt(...at(2, 7), OFFICE), null);
-    assert.equal(os.pieceAt(...at(5, 5), OFFICE), null);
-    assert.equal(os.pieceAt(...at(8, 8), OFFICE), null); // bare floor
+    assert.equal(os.pieces.at(...at(5, 4), OFFICE), null); // the table's own tile
+    assert.equal(os.pieces.at(...at(6, 3), OFFICE), null); // the mug wins over the table
+    assert.equal(os.pieces.at(...at(2, 7), OFFICE), null);
+    assert.equal(os.pieces.at(...at(5, 5), OFFICE), null);
+    assert.equal(os.pieces.at(...at(8, 8), OFFICE), null); // bare floor
   });
 
   test('gives way to a character standing in front of it', () => {
@@ -128,30 +129,20 @@ describe('the piece under the pointer', () => {
     ch.x = x;
     ch.y = y;
     assert.equal(os.getCharacterAt(x, y), 1);
-    assert.equal(os.pieceAt(x, y, OFFICE), null);
+    assert.equal(os.pieces.at(x, y, OFFICE), null);
   });
 
-  test('is nothing while the layout editor is open', () => {
-    const os = office();
-    assert.equal(os.pieceAt(...at(5, 3), { readOnly: false, editing: true }), null);
-    os.hoverPieceAt(...at(5, 3), { readOnly: false, editing: true });
-    assert.equal(os.hoveredPieceUid, null);
-    assert.equal(
-      os.tapPieceAt(...at(5, 3), { readOnly: false, editing: true, twoStep: true }),
-      null,
-    );
-  });
 });
 
 describe('hovering a piece (mouse)', () => {
   test('outlines it, shows its Furniture label from the rules, and offers its click', () => {
     const os = office();
-    const view = os.hoverPieceAt(...at(5, 3), OFFICE);
-    assert.equal(os.hoveredPieceUid, 'kiosk');
+    const view = os.pieces.hoverAt(...at(5, 3), OFFICE);
+    assert.equal(os.pieces.hoveredUid, 'kiosk');
     assert.deepEqual(view?.label, { name: 'Kiosk', line: 'Free' });
     assert.deepEqual(view?.click, { kind: 'newPanel', panel: 'terminal', place: null });
 
-    const shown = os.hoveredPiece(OFFICE);
+    const shown = os.pieces.hovered(OFFICE);
     assert.equal(shown?.uid, 'kiosk');
     assert.deepEqual(shown?.view.label, { name: 'Kiosk', line: 'Free' });
     // Anchored over the piece: its sprite's top edge, centred.
@@ -161,47 +152,54 @@ describe('hovering a piece (mouse)', () => {
 
   test('a label-only piece shows its label and offers no click', () => {
     const os = office();
-    const view = os.hoverPieceAt(...at(4, 3), OFFICE);
-    assert.equal(os.hoveredPieceUid, 'sign');
+    const view = os.pieces.hoverAt(...at(4, 3), OFFICE);
+    assert.equal(os.pieces.hoveredUid, 'sign');
     assert.deepEqual(view?.label, { name: 'Sign', line: null });
     assert.equal(view?.click, null);
   });
 
   test('a read-only office shows the label and offers no click', () => {
     const os = office();
-    const view = os.hoverPieceAt(...at(5, 3), { readOnly: true, editing: false });
+    const view = os.pieces.hoverAt(...at(5, 3), { readOnly: true });
     assert.deepEqual(view?.label, { name: 'Kiosk', line: 'Free' });
     assert.equal(view?.click, null);
   });
 
   test('moving off it, onto plain furniture, clears it', () => {
     const os = office();
-    os.hoverPieceAt(...at(5, 3), OFFICE);
-    assert.equal(os.hoverPieceAt(...at(2, 7), OFFICE), null);
-    assert.equal(os.hoveredPieceUid, null);
-    assert.equal(os.hoveredPiece(OFFICE), null);
+    os.pieces.hoverAt(...at(5, 3), OFFICE);
+    assert.equal(os.pieces.hoverAt(...at(2, 7), OFFICE), null);
+    assert.equal(os.pieces.hoveredUid, null);
+    assert.equal(os.pieces.hovered(OFFICE), null);
   });
 
-  test('the label shows nothing once the layout editor opens', () => {
+  test('the layout editor opening clears it: no outline, no label, and the label hears so', () => {
     const os = office();
-    os.hoverPieceAt(...at(5, 3), OFFICE);
-    assert.equal(os.hoveredPiece({ readOnly: false, editing: true }), null);
+    let heard = 0;
+    os.pieces.subscribeHover(() => heard++);
+    os.pieces.hoverAt(...at(5, 3), OFFICE);
+    assert.equal(heard, 1);
+    // What OfficeCanvas does as the editor opens (the one place that says so).
+    os.pieces.clearHover();
+    assert.equal(os.pieces.hoveredUid, null);
+    assert.equal(os.pieces.hovered(OFFICE), null);
+    assert.equal(heard, 2);
   });
 
   test("names the agent working there: Nickname, else its character's name, else its Directory", () => {
     const os = office();
-    os.characterName = (palette) => (palette === 0 ? 'Byte' : undefined);
+    os.pieces.setCharacterName((palette) => (palette === 0 ? 'Byte' : undefined));
     os.addAgent(1, 0, 0, 'chair', true, 'webapp');
     os.setAgentActive(1, true);
-    os.hoverPieceAt(...at(5, 3), OFFICE);
-    const line = () => os.hoveredPiece(OFFICE)?.view.label?.line;
+    os.pieces.hoverAt(...at(5, 3), OFFICE);
+    const line = () => os.pieces.hovered(OFFICE)?.view.label?.line;
     assert.equal(line(), 'Byte works here');
     os.characters.get(1)!.nickname = 'Scout';
     assert.equal(line(), 'Scout works here');
     os.characters.get(1)!.nickname = undefined;
-    os.characterName = () => undefined;
+    os.pieces.setCharacterName(() => undefined);
     assert.equal(line(), 'webapp works here');
-    assert.deepEqual(os.hoveredPiece(OFFICE)?.view.click, { kind: 'agentTerminal', agentId: 1 });
+    assert.deepEqual(os.pieces.hovered(OFFICE)?.view.click, { kind: 'agentTerminal', agentId: 1 });
   });
 });
 
@@ -210,15 +208,15 @@ describe('tapping a piece (touch: two steps)', () => {
 
   test('the first tap outlines it and shows its label, without clicking', () => {
     const os = office();
-    assert.deepEqual(os.tapPieceAt(...at(5, 3), TOUCH), { uid: 'kiosk', click: null });
-    assert.equal(os.hoveredPieceUid, 'kiosk');
-    assert.deepEqual(os.hoveredPiece(OFFICE)?.view.label?.line, 'Free');
+    assert.deepEqual(os.pieces.tapAt(...at(5, 3), TOUCH), { uid: 'kiosk', click: null });
+    assert.equal(os.pieces.hoveredUid, 'kiosk');
+    assert.deepEqual(os.pieces.hovered(OFFICE)?.view.label?.line, 'Free');
   });
 
   test('a second tap on the same piece performs its click', () => {
     const os = office();
-    os.tapPieceAt(...at(5, 3), TOUCH);
-    assert.deepEqual(os.tapPieceAt(...at(5, 3), TOUCH), {
+    os.pieces.tapAt(...at(5, 3), TOUCH);
+    assert.deepEqual(os.pieces.tapAt(...at(5, 3), TOUCH), {
       uid: 'kiosk',
       click: { kind: 'newPanel', panel: 'terminal', place: null },
     });
@@ -226,36 +224,36 @@ describe('tapping a piece (touch: two steps)', () => {
 
   test('the click takes the label with it: back on the office, the next tap is a first tap again', () => {
     const os = office();
-    os.tapPieceAt(...at(5, 3), TOUCH);
-    os.tapPieceAt(...at(5, 3), TOUCH);
-    assert.equal(os.hoveredPieceUid, null);
-    assert.equal(os.hoveredPiece(OFFICE), null);
-    assert.deepEqual(os.tapPieceAt(...at(5, 3), TOUCH), { uid: 'kiosk', click: null });
+    os.pieces.tapAt(...at(5, 3), TOUCH);
+    os.pieces.tapAt(...at(5, 3), TOUCH);
+    assert.equal(os.pieces.hoveredUid, null);
+    assert.equal(os.pieces.hovered(OFFICE), null);
+    assert.deepEqual(os.pieces.tapAt(...at(5, 3), TOUCH), { uid: 'kiosk', click: null });
   });
 
   test('a tap elsewhere clears it; a tap on another piece moves it there', () => {
     const os = office();
-    os.tapPieceAt(...at(5, 3), TOUCH);
-    assert.equal(os.tapPieceAt(...at(8, 8), TOUCH), null);
-    assert.equal(os.hoveredPieceUid, null);
+    os.pieces.tapAt(...at(5, 3), TOUCH);
+    assert.equal(os.pieces.tapAt(...at(8, 8), TOUCH), null);
+    assert.equal(os.pieces.hoveredUid, null);
 
-    os.tapPieceAt(...at(5, 3), TOUCH);
-    assert.deepEqual(os.tapPieceAt(...at(4, 3), TOUCH), { uid: 'sign', click: null });
-    assert.equal(os.hoveredPieceUid, 'sign');
+    os.pieces.tapAt(...at(5, 3), TOUCH);
+    assert.deepEqual(os.pieces.tapAt(...at(4, 3), TOUCH), { uid: 'sign', click: null });
+    assert.equal(os.pieces.hoveredUid, 'sign');
   });
 
   test('a second tap on a read-only office, or on a label-only piece, clicks nothing', () => {
     const os = office();
     const readOnly = { ...TOUCH, readOnly: true };
-    os.tapPieceAt(...at(5, 3), readOnly);
-    assert.deepEqual(os.tapPieceAt(...at(5, 3), readOnly), { uid: 'kiosk', click: null });
-    os.tapPieceAt(...at(4, 3), TOUCH);
-    assert.deepEqual(os.tapPieceAt(...at(4, 3), TOUCH), { uid: 'sign', click: null });
+    os.pieces.tapAt(...at(5, 3), readOnly);
+    assert.deepEqual(os.pieces.tapAt(...at(5, 3), readOnly), { uid: 'kiosk', click: null });
+    os.pieces.tapAt(...at(4, 3), TOUCH);
+    assert.deepEqual(os.pieces.tapAt(...at(4, 3), TOUCH), { uid: 'sign', click: null });
   });
 
   test('a mouse click (one step) clicks at once', () => {
     const os = office();
-    assert.deepEqual(os.tapPieceAt(...at(5, 3), { ...OFFICE, twoStep: false }), {
+    assert.deepEqual(os.pieces.tapAt(...at(5, 3), { ...OFFICE, twoStep: false }), {
       uid: 'kiosk',
       click: { kind: 'newPanel', panel: 'terminal', place: null },
     });

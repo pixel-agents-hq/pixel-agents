@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 
 import { FURNITURE_LABEL_GAP_PX, FURNITURE_LABEL_Z_INDEX } from '../../constants.js';
+import { useFrameTick } from '../../hooks/useFrameTick.js';
 import type { OfficeState } from '../engine/officeState.js';
 import { overlayProjection } from '../projection.js';
 
@@ -10,16 +11,16 @@ interface FurnitureLabelProps {
   zoom: number;
   panRef: React.RefObject<{ x: number; y: number }>;
   readOnly: boolean;
-  /** The layout editor is open: furniture is the editor's, no label shows. */
-  editing: boolean;
+  /** No label shows (the Directory selector stands where it would). */
+  hidden: boolean;
 }
 
 /**
- * The Furniture label: the small box over the hovered piece (OfficeState.hoveredPiece)
+ * The Furniture label: the small box over the hovered piece (OfficeState.pieces.hovered)
  * naming it and showing the line its rules pick (core's pieceView), the furniture's
  * counterpart of an agent's activity label (ToolOverlay), styled and positioned like
  * it: through the shared world-to-screen projection, re-read every frame so it
- * follows the camera and says what is true now.
+ * follows the camera and says what is true now — while a piece is hovered only.
  */
 export function FurnitureLabel({
   officeState,
@@ -27,21 +28,14 @@ export function FurnitureLabel({
   zoom,
   panRef,
   readOnly,
-  editing,
+  hidden,
 }: FurnitureLabelProps) {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    let rafId = 0;
-    const tick = () => {
-      setTick((n) => n + 1);
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
+  const { pieces } = officeState;
+  const hoveredUid = useSyncExternalStore(pieces.subscribeHover, () => pieces.hoveredUid);
+  useFrameTick(hoveredUid !== null && !hidden);
 
   const el = containerRef.current;
-  const piece = officeState.hoveredPiece({ readOnly, editing });
+  const piece = hidden ? null : pieces.hovered({ readOnly });
   if (!el || !piece?.view.label) return null;
   const { name, line } = piece.view.label;
   const project = overlayProjection(

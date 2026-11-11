@@ -52,6 +52,9 @@ export interface TerminalDrawerController {
    *  character click routes here: standalone has no editor panel to raise, so
    *  "focus the agent" means "open its tab", mirroring VS Code's terminalRef.show(). */
   reveal: (agentId: number) => void;
+  /** Show pane `id` now (a PC shell this office just opened), even before the
+   *  pane list that holds it has rendered: shownAgentId follows once it has. */
+  show: (id: number) => void;
   /** Card click: open the tab AND select + follow the character, so the card
    *  and the office stay in sync. */
   select: (agentId: number) => void;
@@ -136,6 +139,11 @@ export function useTerminalDrawer({
     },
     [paneIds],
   );
+
+  const show = useCallback((id: number) => {
+    setActiveAgentId(id);
+    setIsOpen(true);
+  }, []);
 
   const select = useCallback(
     (agentId: number) => {
@@ -236,6 +244,7 @@ export function useTerminalDrawer({
     isOpen,
     widthPx,
     reveal,
+    show,
     select,
     close,
     onResizeStart,

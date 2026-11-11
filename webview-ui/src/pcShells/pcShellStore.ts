@@ -36,7 +36,7 @@ export function handlePcShellMessage(
   if (msg.type === 'pcShellsLoaded') {
     if (!Array.isArray(msg.shells)) return true;
     const shells = msg.shells as PcShell[];
-    os.setPcShells(shells);
+    os.pieces.setPcShells(shells);
     const live = new Set(shells.map((s) => s.id));
     update({
       ...entry,

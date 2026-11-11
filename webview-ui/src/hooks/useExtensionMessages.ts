@@ -903,7 +903,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'directoriesLoaded') {
         const directories = msg.directories as Directory[];
         setDirectories(directories);
-        os.setDirectoryNames(directories.map((d) => d.name));
+        os.pieces.setDirectoryNames(directories.map((d) => d.name));
       } else if (msg.type === 'directorySuggestions') {
         setDirectorySuggestions((msg.paths ?? []) as string[]);
       } else if (msg.type === 'directorySaved') {

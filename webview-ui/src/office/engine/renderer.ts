@@ -458,12 +458,12 @@ export function renderScene(
   offsetX: number,
   offsetY: number,
   zoom: number,
-  selectedAgentId: number | null,
-  hoveredAgentId: number | null,
+  selection: Pick<SelectionRenderState, 'selectedAgentId' | 'hoveredAgentId' | 'hoveredPieceUid'>,
   pets: Pet[] = [],
   dissolving: DissolvingSprite[] = [],
-  hoveredPieceUid: string | null = null,
 ): void {
+  const { selectedAgentId, hoveredAgentId } = selection;
+  const hoveredPieceUid = selection.hoveredPieceUid ?? null;
   const drawables: ZDrawable[] = [];
 
   // A Buildout's removed walls and furniture, dissolving in matrix rain where they stood
@@ -1022,7 +1022,8 @@ export interface EditorRenderState {
 export interface SelectionRenderState {
   selectedAgentId: number | null;
   hoveredAgentId: number | null;
-  /** The hovered piece of interactive furniture (outlined faintly), or null. */
+  /** The hovered piece of interactive furniture (outlined faintly), or null. None
+   *  while the layout editor is open: opening it clears the hover (OfficeCanvas). */
   hoveredPieceUid?: string | null;
   hoveredTile: { col: number; row: number } | null;
   seats: Map<string, Seat>;
@@ -1111,8 +1112,6 @@ export function renderFrame(
   const allFurniture = wallInstances.length > 0 ? [...wallInstances, ...furniture] : furniture;
 
   // Draw walls + furniture + characters (z-sorted)
-  const selectedId = selection?.selectedAgentId ?? null;
-  const hoveredId = selection?.hoveredAgentId ?? null;
   renderScene(
     ctx,
     allFurniture,
@@ -1120,12 +1119,9 @@ export function renderFrame(
     offsetX,
     offsetY,
     zoom,
-    selectedId,
-    hoveredId,
+    selection ?? { selectedAgentId: null, hoveredAgentId: null },
     pets ?? [],
     buildout && buildout.dissolving.length > 0 ? buildoutSceneDissolves(buildout) : [],
-    // The editor keeps furniture for itself: no hover outline while it is open.
-    editor ? null : (selection?.hoveredPieceUid ?? null),
   );
 
   // Character speech bubbles render in ToolOverlay (DOM, above the labels).

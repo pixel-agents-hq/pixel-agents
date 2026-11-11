@@ -93,8 +93,7 @@ function office(): OfficeState {
 
 const lit = (os: OfficeState): boolean => os.furniture.some((f) => f.sprite === ON);
 const view = (os: OfficeState, readOnly = false) => {
-  os.hoveredPieceUid = 'kiosk';
-  return os.hoveredPiece({ readOnly, editing: false })?.view;
+  return os.pieces.view('kiosk', { readOnly }) ?? undefined;
 };
 
 const SHELL: PcShell = {
@@ -108,25 +107,25 @@ describe('a PC with a live PC shell', () => {
   test('is lit, says where its shell is, and opens it', () => {
     const os = office();
     assert.equal(lit(os), false);
-    os.setPcShells([SHELL]);
+    os.pieces.setPcShells([SHELL]);
     assert.equal(lit(os), true);
     assert.deepEqual(view(os)?.label?.line, 'Shell in proj');
     assert.deepEqual(view(os)?.click, { kind: 'openPanel', panel: 'terminal' });
-    assert.equal(os.pcShellOf('kiosk')?.id, SHELL.id);
+    assert.equal(os.pieces.shellOf('kiosk')?.id, SHELL.id);
   });
 
   test('names a shell in the home folder Home', () => {
     const os = office();
-    os.setPcShells([{ id: SHELL.id, uid: 'kiosk', furnitureType: 'KIOSK_FRONT_OFF' }]);
+    os.pieces.setPcShells([{ id: SHELL.id, uid: 'kiosk', furnitureType: 'KIOSK_FRONT_OFF' }]);
     assert.deepEqual(view(os)?.label?.line, 'Shell in Home');
   });
 
   test('turns off once a list leaves its shell out (it ended, or a resync dropped it)', () => {
     const os = office();
-    os.setPcShells([SHELL]);
-    os.setPcShells([]);
+    os.pieces.setPcShells([SHELL]);
+    os.pieces.setPcShells([]);
     assert.equal(lit(os), false);
-    assert.equal(os.pcShellOf('kiosk'), null);
+    assert.equal(os.pieces.shellOf('kiosk'), null);
     assert.deepEqual(view(os)?.label?.line, 'Free');
     assert.deepEqual(view(os)?.click, { kind: 'newPanel', panel: 'terminal', place: null });
   });
@@ -135,23 +134,23 @@ describe('a PC with a live PC shell', () => {
     const os = office();
     os.addAgent(1, 0, 0, 'chair', true);
     os.setAgentActive(1, true);
-    os.setPcShells([SHELL]);
+    os.pieces.setPcShells([SHELL]);
     os.setAgentActive(1, false);
     assert.equal(lit(os), true);
-    os.setPcShells([]);
+    os.pieces.setPcShells([]);
     assert.equal(lit(os), false);
   });
 
   test('is lit in a read-only office too, which is offered no click', () => {
     const os = office();
-    os.setPcShells([SHELL]);
+    os.pieces.setPcShells([SHELL]);
     assert.equal(lit(os), true);
     assert.equal(view(os, true)?.click, null);
   });
 
   test('lights nothing for a shell whose piece is not in the layout', () => {
     const os = office();
-    os.setPcShells([{ ...SHELL, uid: 'gone' }]);
+    os.pieces.setPcShells([{ ...SHELL, uid: 'gone' }]);
     assert.equal(lit(os), false);
   });
 });
@@ -173,29 +172,29 @@ describe('PC shells across a reconnect and layout changes', () => {
     os.addAgent(1, 0, 0, 'chair', true);
     // Resting in its chair: its PC is lit by a shell alone.
     os.setAgentActive(1, false);
-    os.setPcShells([SHELL, OTHER]);
+    os.pieces.setPcShells([SHELL, OTHER]);
     const saved = [OTHER.id, 1, SHELL.id];
     assert.deepEqual(cardIds(cardOrderOf(saved, [1], new Set(), [SHELL, OTHER])), saved);
 
     // SHELL ended while the office was away; the snapshot lists OTHER alone.
     const snapshot = [OTHER];
-    os.setPcShells(snapshot);
-    assert.equal(os.pcShellOf('kiosk'), null);
+    os.pieces.setPcShells(snapshot);
+    assert.equal(os.pieces.shellOf('kiosk'), null);
     assert.equal(litCount(os), 1);
-    assert.equal(os.pcShellOf('kiosk2')?.id, OTHER.id);
+    assert.equal(os.pieces.shellOf('kiosk2')?.id, OTHER.id);
     assert.deepEqual(cardIds(cardOrderOf(saved, [1], new Set(), snapshot)), [OTHER.id, 1]);
   });
 
   test('a shell whose PC left the layout keeps its card and lights nothing; its PC back, lit again', () => {
     const os = new OfficeState(twoKiosks());
-    os.setPcShells([SHELL, OTHER]);
+    os.pieces.setPcShells([SHELL, OTHER]);
     const withoutKiosk = {
       ...twoKiosks(),
       furniture: twoKiosks().furniture.filter((f) => f.uid !== 'kiosk'),
     };
     os.rebuildFromLayout(withoutKiosk);
     // Still the office's shell (its card stays), but no piece to light.
-    assert.equal(os.pcShellOf('kiosk')?.id, SHELL.id);
+    assert.equal(os.pieces.shellOf('kiosk')?.id, SHELL.id);
     // Only the other shell's PC.
     assert.equal(litCount(os), 1);
     assert.deepEqual(cardIds(cardOrderOf([], [], new Set(), [SHELL, OTHER])), [

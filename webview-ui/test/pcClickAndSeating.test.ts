@@ -90,7 +90,7 @@ function office(furniture: PlacedFurniture[] = ROOM): OfficeState {
     areaTiles: Array.from({ length: COLS * ROWS }, (_, i) => (i % COLS <= 4 ? 'Blue' : 'Red')),
   };
   const os = new OfficeState(layout);
-  os.setDirectoryNames(['web', 'api', 'docs']);
+  os.pieces.setDirectoryNames(['web', 'api', 'docs']);
   return os;
 }
 
@@ -115,8 +115,7 @@ const shell = (uid: string, id = 1_000_000_001): PcShell => ({
 });
 
 const view = (os: OfficeState, uid = 'kiosk-a') => {
-  os.hoveredPieceUid = uid;
-  return os.hoveredPiece({ readOnly: false, editing: false })?.view;
+  return os.pieces.view(uid, { readOnly: false }) ?? undefined;
 };
 
 const seatOf = (os: OfficeState, id: number) => os.characters.get(id)?.seatId;
@@ -149,9 +148,9 @@ describe("a click on a PC: its shell, else its agent's terminal, else a new shel
     const os = office();
     os.setAreaMappings({ web: ['Blue'], api: ['Blue'] });
     const at = [2 * TILE_SIZE + 8, 3 * TILE_SIZE + 8] as const;
-    const touch = { readOnly: false, editing: false, twoStep: true };
-    assert.deepEqual(os.tapPieceAt(...at, touch), { uid: 'kiosk-a', click: null });
-    assert.deepEqual(os.tapPieceAt(...at, touch), {
+    const touch = { readOnly: false, twoStep: true };
+    assert.deepEqual(os.pieces.tapAt(...at, touch), { uid: 'kiosk-a', click: null });
+    assert.deepEqual(os.pieces.tapAt(...at, touch), {
       uid: 'kiosk-a',
       click: { kind: 'choosePlace', panel: 'terminal', places: ['web', 'api'] },
     });
@@ -171,7 +170,7 @@ describe("a click on a PC: its shell, else its agent's terminal, else a new shel
     assert.deepEqual(view(os)?.click, { kind: 'agentTerminal', agentId: 1 });
     assert.equal(view(os)?.label?.line, 'webapp works here');
 
-    os.setPcShells([shell('kiosk-a')]);
+    os.pieces.setPcShells([shell('kiosk-a')]);
     assert.deepEqual(view(os)?.click, { kind: 'openPanel', panel: 'terminal' });
     assert.deepEqual(view(os)?.label, { name: 'Kiosk', line: 'Shell in web' });
   });
@@ -181,7 +180,7 @@ describe('seating new agents round PCs with a live shell', () => {
   test('a new agent avoids a PC whose shell lives, for another PC', () => {
     for (let i = 0; i < 20; i++) {
       const os = office();
-      os.setPcShells([shell('kiosk-a')]);
+      os.pieces.setPcShells([shell('kiosk-a')]);
       os.addAgent(1, 0, 0, undefined, true);
       assert.equal(seatOf(os, 1), 'chair-b');
     }
@@ -189,14 +188,14 @@ describe('seating new agents round PCs with a live shell', () => {
 
   test('…and for a seat at no PC, when every PC has a live shell', () => {
     const os = office();
-    os.setPcShells([shell('kiosk-a'), shell('kiosk-b', 1_000_000_002)]);
+    os.pieces.setPcShells([shell('kiosk-a'), shell('kiosk-b', 1_000_000_002)]);
     os.addAgent(1, 0, 0, undefined, true);
     assert.equal(seatOf(os, 1), 'plain');
   });
 
   test('falls back to it when no other seat is free', () => {
     const os = office(ONE_DESK);
-    os.setPcShells([shell('kiosk-a')]);
+    os.pieces.setPcShells([shell('kiosk-a')]);
     os.addAgent(1, 0, 0, undefined, true);
     assert.equal(seatOf(os, 1), 'chair-a');
   });
@@ -204,14 +203,14 @@ describe('seating new agents round PCs with a live shell', () => {
   test("a Directory's Area does not outweigh it", () => {
     const os = office();
     os.setAreaMappings({ web: ['Blue'] });
-    os.setPcShells([shell('kiosk-a')]);
+    os.pieces.setPcShells([shell('kiosk-a')]);
     os.addAgent(1, 0, 0, undefined, true, 'web');
     assert.notEqual(seatOf(os, 1), 'chair-a');
   });
 
   test('a teammate seated beside its lead avoids it too', () => {
     const os = office();
-    os.setPcShells([shell('kiosk-a')]);
+    os.pieces.setPcShells([shell('kiosk-a')]);
     os.addAgent(1, 0, 0, 'plain', true);
     // chair-a and chair-b are both 5 tiles from the lead's seat, chair-a listed first:
     // the shell decides, and the teammate takes chair-b.
@@ -221,12 +220,12 @@ describe('seating new agents round PCs with a live shell', () => {
 
   test('a seat asked for by name, or given by hand, is taken; that PC then opens the shell', () => {
     const asked = office();
-    asked.setPcShells([shell('kiosk-a')]);
+    asked.pieces.setPcShells([shell('kiosk-a')]);
     asked.addAgent(1, 0, 0, 'chair-a', true);
     assert.equal(seatOf(asked, 1), 'chair-a');
 
     const os = office();
-    os.setPcShells([shell('kiosk-a')]);
+    os.pieces.setPcShells([shell('kiosk-a')]);
     os.addAgent(1, 0, 0, undefined, true);
     assert.notEqual(seatOf(os, 1), 'chair-a');
     os.reassignSeat(1, 'chair-a');
@@ -242,7 +241,7 @@ describe('seating new agents round PCs with a live shell', () => {
     });
     os.setAgentActive(1, true);
     os.update(0.01);
-    assert.equal(os.pieceFacts('kiosk-a', false).agentAtWork?.id, 1);
+    assert.equal(os.pieces.facts('kiosk-a', false).agentAtWork?.id, 1);
     assert.deepEqual(view(os)?.click, { kind: 'openPanel', panel: 'terminal' });
   });
 });

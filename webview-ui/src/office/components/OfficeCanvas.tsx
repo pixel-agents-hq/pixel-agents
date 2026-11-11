@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
 import type { PieceClick } from '../../../../core/src/furniture/pieceRules.js';
 import {
@@ -35,10 +35,17 @@ function dragMoveCursor(editorState: EditorState): string {
   return editorState.dragDuplicate ? 'copy' : 'grabbing';
 }
 
-/** Whether the pointer can hover (a mouse). Furniture hover by mouse is off on
- *  touch devices: there the first tap hovers a piece (OfficeState.tapPieceAt). */
+/** Whether the pointer can hover (a mouse), read once and kept current. Furniture
+ *  hover by mouse is off on touch devices: there the first tap hovers a piece
+ *  (OfficeState.pieces.tapAt). */
+const hoverQuery =
+  typeof window !== 'undefined' ? (window.matchMedia?.('(hover: hover)') ?? null) : null;
+let canHover = hoverQuery?.matches ?? true;
+hoverQuery?.addEventListener?.('change', (e) => {
+  canHover = e.matches;
+});
 function mouseHovers(): boolean {
-  return window.matchMedia?.('(hover: hover)').matches ?? true;
+  return canHover;
 }
 
 interface OfficeCanvasProps {
@@ -196,7 +203,7 @@ export function OfficeCanvas({
           selectedAgentId: officeState.selectedAgentId,
           hoveredAgentId: officeState.hoveredAgentId,
           hoveredTile: officeState.hoveredTile,
-          hoveredPieceUid: officeState.hoveredPieceUid,
+          hoveredPieceUid: officeState.pieces.hoveredUid,
           seats: officeState.seats,
           characters: officeState.characters,
         };
@@ -433,7 +440,7 @@ export function OfficeCanvas({
       officeState.hoveredTile = tile;
       // The piece of furniture under the mouse (none under a character or a pet).
       const piece = mouseHovers()
-        ? officeState.hoverPieceAt(pos.worldX, pos.worldY, { readOnly, editing: false })
+        ? officeState.pieces.hoverAt(pos.worldX, pos.worldY, { readOnly })
         : null;
       const canvas = canvasRef.current;
       if (canvas) {
@@ -680,9 +687,8 @@ export function OfficeCanvas({
       // A piece of interactive furniture (never under a character or a pet: they
       // win). On touch the first tap only shows its outline and label; a tap
       // anywhere else clears them.
-      const piece = officeState.tapPieceAt(pos.worldX, pos.worldY, {
+      const piece = officeState.pieces.tapAt(pos.worldX, pos.worldY, {
         readOnly,
-        editing: false,
         twoStep: touch,
       });
       if (piece) {
@@ -794,7 +800,7 @@ export function OfficeCanvas({
     officeState.hoveredAgentId = null;
     officeState.hoveredTile = null;
     // A touch-picked piece stays until a tap elsewhere: only a mouse leaves.
-    if (mouseHovers()) officeState.clearPieceHover();
+    if (mouseHovers()) officeState.pieces.clearHover();
 
     // Reset cursor in non-edit mode so pointer doesn't get stuck after hovering a pet.
     if (!isEditMode) {
@@ -805,9 +811,12 @@ export function OfficeCanvas({
     }
   }, [officeState, editorState, isEditMode]);
 
-  // The layout editor keeps hover and click on furniture for itself.
-  useEffect(() => {
-    if (isEditMode) officeState.clearPieceHover();
+  // The layout editor keeps hover and click on furniture for itself: the one
+  // place that says so. Opening it clears the hover before the next frame draws
+  // (a layout effect), and while it is open the pointer never reaches the
+  // pieces, so no outline or Furniture label shows over the editor.
+  useLayoutEffect(() => {
+    if (isEditMode) officeState.pieces.clearHover();
   }, [isEditMode, officeState]);
 
   // Alt tapped or released with the mouse already down flips the in-flight drag

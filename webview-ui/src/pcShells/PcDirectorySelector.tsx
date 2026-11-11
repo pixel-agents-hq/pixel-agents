@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { Button } from '../components/ui/Button.js';
 import { FURNITURE_LABEL_GAP_PX, PC_DIRECTORY_SELECTOR_Z_INDEX } from '../constants.js';
 import { useDismiss } from '../hooks/useDismiss.js';
+import { useFrameTick } from '../hooks/useFrameTick.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { overlayProjection } from '../office/projection.js';
 
@@ -41,18 +42,9 @@ export function PcDirectorySelector({
 }: PcDirectorySelectorProps) {
   const ref = useRef<HTMLDivElement>(null);
   useDismiss(true, ref, onClose);
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    let rafId = 0;
-    const tick = () => {
-      setTick((n) => n + 1);
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
+  useFrameTick();
 
-  const anchor = officeState.pieceAnchor(choice.uid);
+  const anchor = officeState.pieces.anchor(choice.uid);
   const gone = anchor === null;
   useEffect(() => {
     if (gone) onClose();

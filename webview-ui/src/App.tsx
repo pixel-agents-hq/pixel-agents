@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
-import type { PieceClick } from '../../core/src/furniture/pieceRules.js';
 import { toMajorMinor } from './changelogData.js';
 import { castStore } from './characters/castStore.js';
 import { CharactersView } from './characters/ui/CharactersView.js';
@@ -67,10 +66,11 @@ import { getPetCount } from './office/sprites/petSpriteData.js';
 import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
 import { useAgentLayoutEdits } from './officeMcp/useAgentLayoutEdits.js';
 import { useOfficeMcp } from './officeMcp/useOfficeMcp.js';
-import { type DirectoryChoice, PcDirectorySelector } from './pcShells/PcDirectorySelector.js';
+import { PcDirectorySelector } from './pcShells/PcDirectorySelector.js';
 import { PcShellCloseDialog } from './pcShells/PcShellCloseDialog.js';
 import { PcShellRejectedModal } from './pcShells/PcShellRejectedModal.js';
-import { closePcShell, openPcShell, usePcShells } from './pcShells/pcShellStore.js';
+import { closePcShell } from './pcShells/pcShellStore.js';
+import { usePcShellPanels } from './pcShells/usePcShellPanels.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
@@ -93,7 +93,9 @@ function getOfficeState(): OfficeState {
   if (!officeStateRef.current) {
     const os = new OfficeState();
     // A Furniture label names the agent at a piece by its character's name too.
-    os.characterName = (palette) => castStore.getState().profiles[palette]?.name || undefined;
+    os.pieces.setCharacterName(
+      (palette) => castStore.getState().profiles[palette]?.name || undefined,
+    );
     officeStateRef.current = os;
   }
   return officeStateRef.current;
@@ -558,52 +560,18 @@ function App() {
     [handleCardSelect],
   );
 
-  // A PC opens a panel the office provides (the terminal): only where this
-  // office runs terminals — its own (standalone) or the editor's (VS Code, an
-  // integrated terminal) — and may change things. Elsewhere its label still
-  // shows, with nothing to click.
-  const canOpenPanels = (terminalAvailable || !isBrowserRuntime) && !officeReadOnly;
-  // A PC whose Area has several Directories asks where its new shell opens.
-  const [directoryChoice, setDirectoryChoice] = useState<DirectoryChoice | null>(null);
-  const closeDirectoryChoice = useCallback(() => setDirectoryChoice(null), []);
-  const chooseDirectory = useCallback((uid: string, directory: string) => {
-    setDirectoryChoice(null);
-    openPcShell(uid, directory);
-  }, []);
-  // A click on a piece, as core's pieceView resolved it: its live shell, else the
-  // terminal of the agent working at it (as its card would open it), else a new
-  // shell — at once in its one place (or home), or through the Directory selector.
-  const handlePieceClick = useCallback(
-    (click: PieceClick, uid: string) => {
-      setDirectoryChoice(null);
-      switch (click.kind) {
-        case 'openPanel':
-          openPcShell(uid);
-          break;
-        case 'newPanel':
-          openPcShell(uid, click.place);
-          break;
-        case 'choosePlace':
-          setDirectoryChoice({ uid, places: click.places });
-          break;
-        case 'agentTerminal':
-          if (isMobile) openMobileAgent(click.agentId);
-          else openAgentFromSidebar(click.agentId);
-          break;
-      }
-    },
-    [isMobile, openMobileAgent, openAgentFromSidebar],
-  );
-  // The shell this office's open was answered with: opened as its card would,
-  // on the phone sliding to the terminal page.
-  const { ready: pcShellReady } = usePcShells();
-  useEffect(() => {
-    if (!pcShellReady || !paneIds.includes(pcShellReady.id)) return;
-    if (isMobile) mobileShell.openPane(pcShellReady.id);
-    else revealTerminal(pcShellReady.id);
-    // Keyed on the answer alone (its pane is listed by the same render).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pcShellReady]);
+  // Interactive furniture: what a click on a piece opens, and this office's
+  // own PC shell shown once it opens (pcShells/usePcShellPanels.ts).
+  const { show: showPaneOnDesktop } = terminalDrawer;
+  const { openPane: openMobilePane } = mobileShell;
+  const pcShellPanels = usePcShellPanels({
+    terminalAvailable,
+    isBrowser: isBrowserRuntime,
+    officeReadOnly,
+    openAgent: isMobile ? openMobileAgent : openAgentFromSidebar,
+    showPane: isMobile ? openMobilePane : showPaneOnDesktop,
+  });
+  const { canOpenPanels, directoryChoice } = pcShellPanels;
 
   const officeState = getOfficeState();
 
@@ -731,7 +699,7 @@ function App() {
         activeAreaLabel={activeAreaLabel}
         tapSelectsFirst={isMobile}
         readOnly={!canOpenPanels}
-        onPieceClick={canOpenPanels ? handlePieceClick : undefined}
+        onPieceClick={pcShellPanels.onPieceClick}
       />
 
       {!isDebugMode ? (
@@ -866,7 +834,7 @@ function App() {
               panRef={editor.panRef}
               readOnly={!canOpenPanels}
               // The Directory selector stands where the label would.
-              editing={editor.isEditMode || directoryChoice !== null}
+              hidden={directoryChoice !== null}
             />
             {directoryChoice && canOpenPanels && !editor.isEditMode && (
               <PcDirectorySelector
@@ -875,8 +843,8 @@ function App() {
                 containerRef={containerRef}
                 zoom={editor.zoom}
                 panRef={editor.panRef}
-                onChoose={chooseDirectory}
-                onClose={closeDirectoryChoice}
+                onChoose={pcShellPanels.chooseDirectory}
+                onClose={pcShellPanels.closeDirectoryChoice}
               />
             )}
           </div>
