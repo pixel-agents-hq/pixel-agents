@@ -367,6 +367,9 @@ export const OFFICE_MCP_TOKEN_BYTES = 32;
 export const OFFICE_MCP_READ_ONLY_REASON =
   'The Pixel Office MCP is read-only in Pixel Agents settings: listing and reading work, changes are refused. Ask the user to turn read-only off in Settings if this change is needed.';
 
+/** How many Pixel Office MCP layout edits the server remembers for undo (newest first). */
+export const LAYOUT_UNDO_DEPTH = 10;
+
 // ── Character art (server/src/characterArt.ts) ──────────────
 /** Screen pixels per sprite pixel in a character preview PNG (whole number, so the
  *  pixel art stays crisp): a 16x32 frame becomes 64x128. */

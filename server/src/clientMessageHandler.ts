@@ -122,9 +122,12 @@ export interface ClientMessageContext {
    *  mode, where the editor owns terminal lifecycle. */
   ptyManager?: TerminalSessions;
   /** The Pixel Office MCP, on a server that offers it: launches and resumes
-   *  get its per-agent config; its consent and settings messages are answered.
-   *  Absent = no MCP, those messages ignored. */
+   *  get its per-agent config; its consent and settings messages, the editing
+   *  lock and the editor's "Undo <agent>'s edit" are answered. Absent = no MCP,
+   *  those messages ignored. */
   officeMcp?: OfficeMcpFeature;
+  /** This connection, as the editing lock keys its report (dropped when it closes). */
+  client?: object;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -384,14 +387,18 @@ export function handleClientMessage(
         // A /ws client's save: the VS Code panel learns of it through its layout
         // watcher (the standalone server has none), so don't silence it.
         writeLayoutToFile(msg.layout as Record<string, unknown>, { reportToWatchers: true });
+        // An editor save over an agent's edit takes away what its undo would restore.
+        ctx.officeMcp?.layoutSaved();
       }
       break;
 
+    case 'layoutEditing':
+    case 'undoAgentLayoutEdit':
     case 'officeMcpConsentResponse':
     case 'setOfficeMcpEnabled':
     case 'setOfficeMcpReadOnly':
-      // The Pixel Office MCP's consent and its switches.
-      ctx.officeMcp?.handleMessage(msg);
+      // The Pixel Office MCP's consent, its switches, the editing lock and undo.
+      ctx.officeMcp?.handleMessage(msg, ctx.client, (m) => send({ ...m }));
       break;
 
     case 'saveCharacterProfiles':
@@ -552,6 +559,8 @@ export function handleClientMessage(
       const cfg = readConfig();
       cfg.standalone.areaMappings = rawMappings as Record<string, string[]>;
       writeConfig(cfg);
+      // Mappings an agent's edit wrote, changed by hand: its undo no longer applies.
+      ctx.officeMcp?.layoutSaved();
       break;
     }
 
@@ -814,6 +823,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // unanswered — privileged clients only, and the ask strictly AFTER the hooks
   // asks, so an office asked both opens the full tour with this step after
   // the hooks one (an office asked only this shows the step alone).
+  // What the editor's "Undo <agent>'s edit" would revert comes with it.
   if (ctx.privileged) {
     ctx.officeMcp?.handshake((m) => send({ ...m }), Promise.allSettled(hookAsks));
   }

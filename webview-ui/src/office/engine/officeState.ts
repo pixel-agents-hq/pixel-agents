@@ -1,4 +1,4 @@
-import type { AgentWorktree } from '../../../../core/src/messages.js';
+import type { AgentWorktree, LayoutBuildout } from '../../../../core/src/messages.js';
 import { chooseLook } from '../../../../core/src/paletteUtils.js';
 import {
   CHARACTER_HIT_HALF_WIDTH,
@@ -40,6 +40,7 @@ import type {
 } from '../types.js';
 import { CharacterState, Direction, PetState, TILE_SIZE } from '../types.js';
 import { tickBlink } from './blink.js';
+import { BuildoutPlayer } from './buildoutPlayer.js';
 import { createCharacter, restInChair, updateCharacter, updateHelper } from './characters.js';
 import { advanceMatrixEffect, startMatrixEffect } from './matrixEffectState.js';
 import { createPet, updatePet } from './petEntity.js';
@@ -150,6 +151,9 @@ export class OfficeState {
    *  overlay's per-frame updates stop re-centering. Reset on spawn/despawn. */
   private greeterCameraCancelled = false;
 
+  /** The Buildout playing, if any: drawing reads it (shownLayout, shownTileMap). */
+  readonly buildout = new BuildoutPlayer();
+
   setAreaMappings(mappings: Record<string, string[]>): void {
     this.areaMappings = mappings;
   }
@@ -169,6 +173,8 @@ export class OfficeState {
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
    *  @param shift Optional pixel shift to apply when grid expands left/up */
   rebuildFromLayout(layout: OfficeLayout, shift?: { col: number; row: number }): void {
+    // Any layout ends a Buildout under way: what it was building shows at once.
+    this.buildout.stop();
     this.layout = layout;
     this.tileMap = layoutToTileMap(layout);
     this.seats = layoutToSeats(layout.furniture);
@@ -782,6 +788,40 @@ export class OfficeState {
     return true;
   }
 
+  /**
+   * Apply an agent's layout edit as a Buildout (`layoutLoaded.buildout`): the
+   * office takes `layout` at once (state, seats, walking — the edit is saved
+   * already), and SHOWS it building in from `origin` (buildout.ts: changes one
+   * by one outward, removals in matrix rain, within BUILDOUT_MAX_SEC), diffed
+   * against the layout it held until now — so an edit arriving mid-buildout
+   * builds from the last one's result. The builder's character, when this
+   * office shows it, walks to a spot beside the origin, faces it and works
+   * there for the build's length (after it gets there), then goes back to its
+   * desk; the build never waits for the walk. An edit with nothing visible to
+   * build (Areas only) just applies.
+   */
+  startBuildout(
+    layout: OfficeLayout,
+    buildout: LayoutBuildout,
+    shift?: { col: number; row: number },
+  ): void {
+    const before = this.layout;
+    this.rebuildFromLayout(layout, shift);
+    const plan = this.buildout.start(before, layout, buildout.origin, shift);
+    if (!plan) return;
+    this.rebuildFurnitureInstances();
+  }
+
+  /** The layout as the office draws it now: the Buildout's frame, else the layout. */
+  shownLayout(): OfficeLayout {
+    return this.buildout.layout() ?? this.layout;
+  }
+
+  /** The tile map as the office draws it now (shownLayout's). */
+  shownTileMap(): TileTypeVal[][] {
+    return this.buildout.tileMap() ?? this.tileMap;
+  }
+
   /** Create a sub-agent character with the parent's palette. Returns the sub-agent ID. */
   addSubagent(parentAgentId: number, parentToolId: string): number {
     const key = `${parentAgentId}:${parentToolId}`;
@@ -969,14 +1009,15 @@ export class OfficeState {
   /** Rebuild furniture instances with auto-state applied (a working agent's PC turns ON) */
   private rebuildFurnitureInstances(lit = this.litWorkstations()): void {
     this.litPcs = lit;
+    const placed = this.shownLayout().furniture;
     if (lit.size === 0) {
-      this.furniture = layoutToFurnitureInstances(this.layout.furniture);
+      this.furniture = layoutToFurnitureInstances(placed);
       return;
     }
 
     // Build modified furniture list with auto-state and animation applied
     const animFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
-    const modifiedFurniture: PlacedFurniture[] = this.layout.furniture.map((item) => {
+    const modifiedFurniture: PlacedFurniture[] = placed.map((item) => {
       if (!lit.has(item.uid)) return item;
       let onType = getOnStateType(item.type);
       if (onType === item.type) return item;
@@ -1206,6 +1247,8 @@ export class OfficeState {
   }
 
   update(dt: number): void {
+    if (this.buildout.advance(dt)) this.rebuildFurnitureInstances();
+
     // Furniture animation cycling
     const prevFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
     this.furnitureAnimTimer += dt;

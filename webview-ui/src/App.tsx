@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { toMajorMinor } from './changelogData.js';
 import { CharactersView } from './characters/ui/CharactersView.js';
 import { AgentCardBar } from './components/AgentCardBar.js';
+import { AgentEditUndoBar } from './components/AgentEditUndoBar.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
@@ -57,6 +58,7 @@ import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
 import { overlayProjection } from './office/projection.js';
 import { getPetCount } from './office/sprites/petSpriteData.js';
 import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
+import { useAgentLayoutEdits } from './officeMcp/useAgentLayoutEdits.js';
 import { useOfficeMcp } from './officeMcp/useOfficeMcp.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
@@ -99,6 +101,8 @@ function App() {
     () => editor.isEditMode && editor.isDirty,
     [editor.isEditMode, editor.isDirty],
   );
+  // While the editor holds unsaved changes, agents' layout edits wait (the server's lock).
+  const agentLayoutEdits = useAgentLayoutEdits(editor.isEditMode && editor.isDirty);
 
   const {
     agents,
@@ -638,6 +642,7 @@ function App() {
           {editor.isEditMode && editor.isDirty && (
             <EditActionBar editor={editor} editorState={editorState} />
           )}
+          {editor.isEditMode && !editor.isDirty && <AgentEditUndoBar edits={agentLayoutEdits} />}
 
           {showRotateHint && (
             <div

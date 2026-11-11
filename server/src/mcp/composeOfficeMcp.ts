@@ -8,14 +8,19 @@
  * provider carry as their single `officeMcp`.
  */
 
+import { randomUUID } from 'crypto';
 import type { FastifyInstance } from 'fastify';
 
 import type { ServerMessage } from '../../../core/src/messages.js';
+import { agentLabel } from './agentLabel.js';
 import { createAgentsView } from './agentsView.js';
+import { createLayoutEdits } from './layoutEdits.js';
+import { createLayoutOps } from './layoutOps.js';
 import type { OfficeFacts } from './officeFacts.js';
 import { type AgentMcpAccess, OfficeMcp } from './officeMcp.js';
 import { handleOfficeMcpMessage } from './officeMcpMessages.js';
 import type { OfficeOperations } from './officeOperations.js';
+import { catalogOf } from './seatPlace.js';
 import type { OfficeTool } from './tool.js';
 
 /** What a surface brings to the Pixel Office MCP. */
@@ -41,14 +46,25 @@ export interface OfficeMcpFeature extends AgentMcpAccess {
   offered(): boolean;
   /**
    * Its part of a privileged office's connect snapshot, where the MCP is
-   * offered: its settings, then the Intro's ask while unanswered — after
-   * `afterHooksAsks`, so an office asked both shows this step after the hooks
-   * one. A handshake that comes before the server has said whether it serves
-   * /mcp (`setEndpoint`) waits for it.
+   * offered: its settings and what an agent edit's undo would revert, then
+   * the Intro's ask while unanswered — after `afterHooksAsks`, so an office
+   * asked both shows this step after the hooks one. A handshake that comes
+   * before the server has said whether it serves /mcp (`setEndpoint`) waits
+   * for it.
    */
   handshake(send: (message: ServerMessage) => void, afterHooksAsks?: Promise<unknown>): void;
-  /** Answer one of an office's MCP messages (consent, its switches); false when it isn't one. */
-  handleMessage(message: Record<string, unknown>): boolean;
+  /** Answer one of an office's MCP messages (consent, its switches, the editing
+   *  lock, the editor's undo); false when it isn't one. `client` is the office
+   *  sending it; replies meant for it alone go to `reply`. */
+  handleMessage(
+    message: Record<string, unknown>,
+    client: object | undefined,
+    reply: (message: ServerMessage) => void,
+  ): boolean;
+  /** An office saved the layout or the Area mappings: what an undo would revert may have changed. */
+  layoutSaved(): void;
+  /** An office went: its editing-lock report goes with it. */
+  clientGone(client: object): void;
   /** Revoke every token, stop following the store (shutdown). */
   dispose(): void;
 }
@@ -57,8 +73,29 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
   const { facts } = surface;
   const { store } = facts;
 
+  const layoutEdits = createLayoutEdits({
+    readLayout: facts.layout,
+    writeLayout: facts.writeLayout,
+    catalog: () => catalogOf(facts.catalog()),
+    assets: () => {
+      const { floorPatterns, wallSets, carpets, pets } = facts.assets();
+      return { floorPatterns, wallSets, carpets, pets: pets.length };
+    },
+    directories: () => facts.directories().map((d) => d.name),
+    readAreaMappings: facts.readAreaMappings,
+    writeAreaMappings: facts.writeAreaMappings,
+    // The store's broadcast reaches every office of the surface.
+    broadcast: (message) => store.broadcast(message),
+    agentName: (id) => {
+      const agent = store.get(id);
+      return (agent && agentLabel(agent)) ?? `agent ${id}`;
+    },
+    newId: () => randomUUID(),
+  });
+
   const office: OfficeOperations = {
     agents: createAgentsView(facts),
+    layout: createLayoutOps(facts, layoutEdits),
   };
   const officeMcp = new OfficeMcp({ office, provider: facts.provider, tools: surface.tools });
   // Tokens die with their agents.
@@ -86,6 +123,7 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
       const offer = () => {
         if (!officeMcp.offered()) return;
         send(officeMcp.statusMessage());
+        send(layoutEdits.statusMessage());
         const ask = () => {
           const request = officeMcp.consentRequest();
           if (request) send(request);
@@ -97,11 +135,17 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
       else void whenDecided.then(offer);
     },
 
-    handleMessage: (message) =>
+    handleMessage: (message, client, reply) =>
       handleOfficeMcpMessage(message, {
         officeMcp,
+        layoutEdits,
+        client,
         broadcast: (m) => store.broadcast({ ...m }),
+        reply,
       }),
+
+    layoutSaved: () => layoutEdits.layoutSaved(),
+    clientGone: (client) => layoutEdits.clientGone(client),
 
     dispose() {
       // Every agent's token dies with the server (and its config files go).

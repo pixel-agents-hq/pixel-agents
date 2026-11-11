@@ -4,7 +4,9 @@ import type {
   AgentCloseQuestion,
   AgentWorktree,
   Directory,
+  GridShift,
   HooksConsentRequest,
+  LayoutBuildout,
   WorktreeSummary,
 } from '../../../core/src/messages.js';
 import { handleCastMessage } from '../characters/castMessages.js';
@@ -33,11 +35,13 @@ import {
 } from '../office/toolUtils.js';
 import type { OfficeLayout, ToolActivity } from '../office/types.js';
 import { setWallSprites } from '../office/wallTiles.js';
+import { handleAgentLayoutEditMessage } from '../officeMcp/agentLayoutEdits.js';
 import { handleOfficeMcpMessage } from '../officeMcp/officeMcpStore.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
 import { transport } from '../transport/index.js';
 import { onReconnect } from '../transport/onReconnect.js';
 import { handleUsageMessage } from '../usage/usageStore.js';
+import { prefersReducedMotion } from './usePresence.js';
 
 /**
  * A Headless agent is one the office adopted from outside (`claude -p`, a session
@@ -410,6 +414,7 @@ export function useExtensionMessages(
       if (handleUsageMessage(msg)) return;
       // The Pixel Office MCP (officeMcp/officeMcpStore.ts): its settings and Intro step.
       if (handleOfficeMcpMessage(msg)) return;
+      if (handleAgentLayoutEditMessage(msg)) return;
       // The cast (characters/castMessages.ts): profiles, items, looks, external sprites.
       if (handleCastMessage(msg, os)) return;
 
@@ -458,7 +463,16 @@ export function useExtensionMessages(
         const rawLayout = msg.layout as OfficeLayout | null;
         const layout = rawLayout && rawLayout.version === 1 ? migrateLayoutColors(rawLayout) : null;
         if (layout) {
-          os.rebuildFromLayout(layout);
+          // An agent's edit builds in (the Buildout) in an office already showing
+          // the layout, unless the user prefers reduced motion: then, like any
+          // other layout, it just appears (moved with the edit's resize).
+          const buildout = msg.buildout as LayoutBuildout | undefined;
+          const shift = msg.shift as GridShift | undefined;
+          if (buildout && layoutReadyRef.current && !prefersReducedMotion()) {
+            os.startBuildout(layout, buildout, shift);
+          } else {
+            os.rebuildFromLayout(layout, shift);
+          }
           onLayoutLoaded?.(layout);
         } else {
           // Default layout — snapshot whatever OfficeState built

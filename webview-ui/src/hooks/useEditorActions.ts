@@ -13,6 +13,7 @@ import {
 import type { ExpandDirection } from '../office/editor/editorActions.js';
 import {
   addArea,
+  addPet,
   areaStrokeErases,
   dropFurniture,
   eraseArea,
@@ -27,6 +28,7 @@ import {
   placeNewFurniture,
   removeArea,
   removeFurnitureGroup,
+  removePet,
   renameArea,
   rotateFurnitureGroup,
   toggleFurnitureStates,
@@ -48,7 +50,6 @@ import { getRotatedType, getToggledType } from '../office/layout/furnitureCatalo
 import type {
   EditTool as EditToolType,
   OfficeLayout,
-  PlacedPet,
   TileType as TileTypeVal,
 } from '../office/types.js';
 import { EditTool } from '../office/types.js';
@@ -136,9 +137,17 @@ export function useEditorActions(
   const lastSavedLayoutRef = useRef<OfficeLayout | null>(null);
 
   // Called by useExtensionMessages on layoutLoaded to set the initial checkpoint
-  const setLastSavedLayout = useCallback((layout: OfficeLayout) => {
-    lastSavedLayoutRef.current = structuredClone(layout);
-  }, []);
+  // An outside layout (another office's save, an agent's edit, an import) replaces
+  // the office: the editor's undo history describes a layout that is gone, and
+  // undoing into it would silently discard that newer work.
+  const setLastSavedLayout = useCallback(
+    (layout: OfficeLayout) => {
+      lastSavedLayoutRef.current = structuredClone(layout);
+      editorState.undoStack = [];
+      editorState.redoStack = [];
+    },
+    [editorState],
+  );
 
   // Clear the dirty flag after a browser layout import: the imported layout is the
   // new saved baseline (already persisted via saveLayout). setIsDirty also forces a
@@ -154,6 +163,17 @@ export function useEditorActions(
     saveTimerRef.current = setTimeout(() => {
       transport.send({ type: 'saveLayout', layout: layout as unknown as Record<string, unknown> });
     }, LAYOUT_SAVE_DEBOUNCE_MS);
+  }, []);
+
+  /** Send `layout` now, dropping a debounced save still pending: the editor turns
+   *  clean (or closes) at once, which lifts the agents' editing lock, and a late
+   *  save would overwrite an agent's edit made in between. */
+  const flushSave = useCallback((layout: OfficeLayout) => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    transport.send({ type: 'saveLayout', layout: layout as unknown as Record<string, unknown> });
   }, []);
 
   const bumpTick = useCallback(() => setEditorTick((n) => n + 1), []);
@@ -276,6 +296,8 @@ export function useEditorActions(
   );
 
   const handleToggleEditMode = useCallback(() => {
+    // Closing with a save still pending: send it before the lock lifts.
+    if (editorState.isEditMode && saveTimerRef.current) flushSave(getOfficeState().getLayout());
     setIsEditMode((prev) => {
       const next = !prev;
       editorState.isEditMode = next;
@@ -301,7 +323,7 @@ export function useEditorActions(
       }
       return next;
     });
-  }, [editorState, getOfficeState]);
+  }, [editorState, getOfficeState, flushSave]);
 
   // Tool toggle: clicking already-active tool deselects it (returns to SELECT)
   const handleToolChange = useCallback(
@@ -574,23 +596,18 @@ export function useEditorActions(
     if (!lastSavedLayoutRef.current) return;
     const saved = structuredClone(lastSavedLayoutRef.current);
     applyEdit(saved);
+    flushSave(saved);
     editorState.reset();
     setIsDirty(false);
-  }, [editorState, applyEdit]);
+  }, [editorState, applyEdit, flushSave]);
 
   const handleSave = useCallback(() => {
-    // Flush any pending debounced save immediately
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-    const os = getOfficeState();
-    const layout = os.getLayout();
+    const layout = getOfficeState().getLayout();
     lastSavedLayoutRef.current = structuredClone(layout);
-    transport.send({ type: 'saveLayout', layout: layout as unknown as Record<string, unknown> });
+    flushSave(layout);
     editorState.isDirty = false;
     setIsDirty(false);
-  }, [getOfficeState, editorState]);
+  }, [getOfficeState, editorState, flushSave]);
 
   // Notify React that imperative editor selection changed (e.g., from OfficeCanvas mouseUp)
   const handleEditorSelectionChange = bumpTick;
@@ -671,27 +688,10 @@ export function useEditorActions(
 
   const handlePetToggle = useCallback(
     (petType: number, active: boolean) => {
-      const os = getOfficeState();
-      const layout = os.getLayout();
-      const currentPets: PlacedPet[] = layout.pets ?? [];
-
-      let newPets: PlacedPet[];
-      if (active) {
-        // Idempotent: if this pet type is already placed, no-op (prevent double-write).
-        if (currentPets.some((p) => p.petType === petType)) {
-          return;
-        }
-        newPets = [...currentPets, { id: crypto.randomUUID(), petType }];
-      } else {
-        newPets = currentPets.filter((p) => p.petType !== petType);
-        // Idempotent: nothing to remove → no-op.
-        if (newPets.length === currentPets.length) {
-          return;
-        }
-      }
-
-      const newLayout: OfficeLayout = { ...layout, pets: newPets };
-      applyEdit(newLayout);
+      const layout = getOfficeState().getLayout();
+      // Idempotent both ways (core's addPet / removePet): a type already placed, or
+      // none to remove, leaves the layout as it is, which commitLayout skips.
+      applyEdit(active ? addPet(layout, petType, crypto.randomUUID()) : removePet(layout, petType));
     },
     [getOfficeState, applyEdit],
   );

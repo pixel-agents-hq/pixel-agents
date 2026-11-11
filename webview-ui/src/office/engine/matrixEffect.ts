@@ -36,21 +36,55 @@ export function renderMatrixEffect(
   drawY: number,
   zoom: number,
 ): void {
-  const progress = ch.matrixEffectTimer / MATRIX_EFFECT_DURATION;
-  const isSpawn = ch.matrixEffect === 'spawn';
-  const time = ch.matrixEffectTimer;
-  const totalSweep = MATRIX_SPRITE_ROWS + MATRIX_TRAIL_LENGTH;
+  if (!ch.matrixEffect) return;
+  renderMatrixSprite(ctx, spriteData, drawX, drawY, zoom, {
+    kind: ch.matrixEffect,
+    timer: ch.matrixEffectTimer,
+    seeds: ch.matrixEffectSeeds,
+    cols: MATRIX_SPRITE_COLS,
+    rows: MATRIX_SPRITE_ROWS,
+  });
+}
 
-  for (let col = 0; col < MATRIX_SPRITE_COLS; col++) {
+/**
+ * The same rain over any sprite (a Buildout's removed furniture, wall or
+ * floor tile dissolving): `timer` seconds into a MATRIX_EFFECT_DURATION run,
+ * one stagger seed per column (cycled when the sprite is wider), over
+ * `cols` × `rows` sprite pixels (the sprite's own size when not given).
+ */
+export function renderMatrixSprite(
+  ctx: CanvasRenderingContext2D,
+  spriteData: SpriteData,
+  drawX: number,
+  drawY: number,
+  zoom: number,
+  effect: {
+    kind: 'spawn' | 'despawn';
+    timer: number;
+    seeds: readonly number[];
+    cols?: number;
+    rows?: number;
+  },
+): void {
+  const progress = effect.timer / MATRIX_EFFECT_DURATION;
+  const isSpawn = effect.kind === 'spawn';
+  const time = effect.timer;
+  const spriteRows = effect.rows ?? spriteData.length;
+  const spriteCols = effect.cols ?? spriteData[0]?.length ?? 0;
+  const seeds = effect.seeds;
+  const totalSweep = spriteRows + MATRIX_TRAIL_LENGTH;
+
+  for (let col = 0; col < spriteCols; col++) {
     // Stagger: each column starts at a slightly different time
-    const stagger = (ch.matrixEffectSeeds[col] ?? 0) * MATRIX_COLUMN_STAGGER_RANGE;
+    const seed = seeds.length > 0 ? seeds[col % seeds.length] : 0;
+    const stagger = seed * MATRIX_COLUMN_STAGGER_RANGE;
     const colProgress = Math.max(
       0,
       Math.min(1, (progress - stagger) / (1 - MATRIX_COLUMN_STAGGER_RANGE)),
     );
     const headRow = colProgress * totalSweep;
 
-    for (let row = 0; row < MATRIX_SPRITE_ROWS; row++) {
+    for (let row = 0; row < spriteRows; row++) {
       const pixel = spriteData[row]?.[col];
       const hasPixel = pixel && pixel !== '';
       const distFromHead = headRow - row;

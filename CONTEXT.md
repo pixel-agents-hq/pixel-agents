@@ -200,6 +200,10 @@ _Avoid_: zone, region, room (what people call an Area; accept it in requests, do
 **Area mapping**:
 The assignment of a directory to one or more areas. Many directories may share an area. Agents launched into a directory prefer seats inside any of its areas.
 
+**Buildout**:
+How an agent's layout edit appears in an open office: its character walks to the spot and works there while the new floor, walls and furniture appear one by one outward from it; what the edit removed dissolves in matrix rain. Only a show: the layout is already saved, and an office opened afterwards just shows the result.
+_Avoid_: animation (too generic), construction
+
 **Furniture**:
 A placeable item in the layout — desks, chairs, storage, electronics, decor.
 _Avoid_: object, prop, item

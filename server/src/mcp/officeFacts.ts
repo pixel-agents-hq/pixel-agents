@@ -1,7 +1,7 @@
 /**
  * The office as the Pixel Office MCP reads it: the facts a surface supplies
- * (OfficeFacts — where its layout, catalogue, Directories and seats
- * come from), and the per-call snapshot every operation works on
+ * (OfficeFacts — where its layout, catalogue, assets, Directories, seats and
+ * Area mappings come from), and the per-call snapshot every operation works on
  * (officeSnapshot: the layout read and migrated once, the catalogue, the seats
  * with who holds each, the walk grid on first use). One request sees one
  * layout, however many operations it runs.
@@ -15,7 +15,12 @@ import {
 } from '../../../core/src/layout/index.js';
 import type { HookProvider } from '../../../core/src/provider.js';
 import type { AgentStateStore } from '../agentStateStore.js';
+import type { AreaMappings } from './layoutEditOps.js';
+import type { OfficeAssets } from './officeOperations.js';
 import { catalogOf, type SeatPlace, seatsOf } from './seatPlace.js';
+
+/** How many floor patterns, wall sets and carpets are loaded, and the pets (by petType). */
+export type AssetCounts = Omit<OfficeAssets, 'catalog'>;
 
 /** What a surface's office is made of, as the MCP reads and writes it. */
 export interface OfficeFacts {
@@ -23,12 +28,18 @@ export interface OfficeFacts {
   provider: HookProvider;
   /** The saved layout (or the default one), as JSON. */
   layout(): Record<string, unknown> | null;
+  /** Save a layout (the office's layout persistence: atomic, watchers marked). */
+  writeLayout(layout: Record<string, unknown>): void;
   /** The furniture catalogue data (empty before it is loaded). */
   catalog(): readonly CatalogSource[];
+  assets(): AssetCounts;
   /** This host's Directories (name → path). */
   directories(): ReadonlyArray<{ name: string; path: string }>;
   /** The seats the office saved (agent id → seat id). */
   seats(): Record<string, { seatId?: string }>;
+  /** Directory name → the Area labels it is mapped to (the office's areaMappings). */
+  readAreaMappings(): AreaMappings;
+  writeAreaMappings(mappings: AreaMappings): void;
 }
 
 /** The office at one moment: what one operation (one tool call) works on. */

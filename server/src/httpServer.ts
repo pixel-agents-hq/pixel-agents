@@ -77,7 +77,8 @@ export interface HttpServerOptions {
   allowedHosts?: readonly string[];
   /** The Pixel Office MCP: mounted at /mcp when given (its own per-agent
    *  tokens, never this server's), and handed to the message handler for its
-   *  messages, its part of the handshake and launches. */
+   *  messages, its part of the handshake and launches; each socket's
+   *  editing-lock report is dropped when it closes. */
   officeMcp?: OfficeMcpFeature;
 }
 
@@ -310,6 +311,7 @@ function registerWebSocketRoute(
           privileged,
           ptyManager: options.ptyManager,
           officeMcp: options.officeMcp,
+          client: socket,
         });
       } catch {
         // Malformed JSON, ignore
@@ -320,6 +322,8 @@ function registerWebSocketRoute(
       store.off('agentAdded', onAgentAdded);
       store.off('agentRemoved', onAgentRemoved);
       store.off('broadcast', onBroadcast);
+      // A closed office no longer holds unsaved layout changes.
+      options.officeMcp?.clientGone(socket);
     });
   });
 }
