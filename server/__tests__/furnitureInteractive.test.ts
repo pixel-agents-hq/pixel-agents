@@ -145,6 +145,18 @@ describe('withInteractive: where a manifest is read', () => {
     expect(withInteractive(undefined, assets, 'LAMP', warn)).toEqual(assets);
     expect(warn).not.toHaveBeenCalled();
   });
+
+  it('says once that electronics with on/off art no longer pair by category', () => {
+    const warn = vi.fn();
+    const laptop = assets.map((a) => ({ ...a, category: 'electronics' }));
+    expect(withInteractive(undefined, laptop, 'LAPTOP', warn)).toEqual(laptop);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toMatch(/LAPTOP.*agentUse.*workstation/);
+    // Electronics without states, or with a block, are not told.
+    withInteractive(undefined, [{ id: 'RADIO', category: 'electronics' }], 'RADIO', warn);
+    withInteractive({ agentUse: 'workstation' }, laptop, 'LAPTOP', warn);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('pieceView: the one rules function', () => {

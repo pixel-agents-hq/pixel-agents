@@ -211,9 +211,20 @@ Furniture can also say how it takes part in the office, with one optional `inter
 
 **Placeholders** in a label line: `{agent}` (the working agent's name — its Nickname, else its character's name, else its Directory) only on a line shown on `agentWorking` alone, and `{panel}` (a PC shell's Directory, or `Home`) only on a line shown on `panelInUse` alone.
 
-**What a click on a `terminal` piece opens**, in order: its live PC shell; else the terminal of the agent working at it; else a new PC shell — the user's login shell on the host — in the Directory mapped to the Area the piece stands in (several: a small selector over the piece asks which; none: the home folder, in VS Code the first workspace folder). Clicks do nothing while the layout editor is open, and a read-only office offers none.
+**What a click on a `terminal` piece opens**, in order: its live PC shell; else the terminal of the agent working at it; else a new PC shell — the user's login shell on the host — in the Directory mapped to the Area the piece stands in (several: a small selector over the piece asks which; none: the home folder, in VS Code the first workspace folder). Only the Directories the office lists count: with Settings → Show host Directories off (the default), the host's own folder is neither offered nor picked. Clicks do nothing while the layout editor is open, and a read-only office offers none.
 
 **Validation**: the block is checked once, where manifests are read (bundled and external directories alike). An unknown key, agent use, panel, condition or placeholder, a state the furniture doesn't declare, or a misplaced placeholder drops the whole block with a `[Furniture] <id>: interactive block dropped (…)` warning in the log, and the furniture loads as plain furniture — never removed from the catalogue.
+
+**Migrating from earlier versions**: before the `interactive` block, every `electronics` piece paired with seats and turned on while its agent worked, by its category alone. That rule is gone: only a block makes a piece a workstation. To keep an existing laptop or monitor with on/off art working as before, add
+
+```json
+"interactive": {
+  "agentUse": "workstation",
+  "states": [{ "state": "on", "when": "agentWorking" }]
+}
+```
+
+Until it has one, an `electronics` piece with states and no block loads as plain furniture, with a `[Furniture] <id>: electronics no longer pair with seats by category …` warning in the log.
 
 ## Using Third-Party Asset Packs
 

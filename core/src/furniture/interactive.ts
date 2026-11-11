@@ -186,15 +186,25 @@ export function parseInteractive(
 /**
  * Where a manifest is read: its furniture's flattened assets, each carrying the
  * validated block — or, with no block or a malformed one, unchanged (plain
- * furniture), a malformed one logged through `warn`.
+ * furniture), a malformed one logged through `warn`, and so is an electronics
+ * piece with states and no block (it was a workstation by category before).
  */
-export function withInteractive<A extends { state?: string }>(
+export function withInteractive<A extends { state?: string; category?: string }>(
   raw: unknown,
   assets: A[],
   furniture: string,
   warn: (message: string) => void = console.warn,
 ): Array<A & { interactive?: FurnitureInteractive }> {
-  if (raw === undefined) return assets;
+  if (raw === undefined) {
+    // Before the contract, electronics paired with seats and lit up by their
+    // category alone; now only a block says so (docs/external-assets.md).
+    if (assets.some((a) => a.category === 'electronics' && a.state)) {
+      warn(
+        `[Furniture] ${furniture}: electronics no longer pair with seats by category; add an interactive block with agentUse "workstation" and a states rule to keep it a workstation`,
+      );
+    }
+    return assets;
+  }
   const declared = new Set(assets.flatMap((a) => (a.state ? [a.state] : [])));
   const parsed = parseInteractive(raw, declared);
   if (!parsed.ok) {
