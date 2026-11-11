@@ -187,3 +187,13 @@ test('default cursor when getSeat returns undefined for a known seatId', () => {
   });
   assert.equal(computeNormalModeCursor(state), 'default');
 });
+
+// ── 5. Furniture ──────────────────────────────────────────────
+
+test('pointer over a piece of furniture that offers a click', () => {
+  assert.equal(computeNormalModeCursor(buildState({ pieceClickable: true })), 'pointer');
+});
+
+test('default over a piece that offers no click (label only, or a read-only office)', () => {
+  assert.equal(computeNormalModeCursor(buildState({ pieceClickable: false })), 'default');
+});

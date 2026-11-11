@@ -21,6 +21,7 @@ core/                                Protocol + interface definitions (zero runt
     terminalAdapter.ts               TerminalAdapter (editor-driven terminal management)
     normalizeProjectPath.ts
     constants.ts
+    agentLabel.ts                    agentLabelOf: how an agent is named to people (Nickname, else its character's name, else its Directory), for the server's MCP tags and the office's Furniture label
     isRecord.ts, localId.ts          The one "is this a JSON object" guard; newLocalId (character, item and save ids)
     layout/                          The layout, shared by the editor and the server (pure, no sprites, no module state; catalogue passed in): types.ts (OfficeLayout, TileType, Direction, Seat…), constants.ts, catalog.ts (createFurnitureCatalog from catalogue data: entries, rotation/state/animation groups), editOps.ts + editOps/{tiles,furniture,areas,grid,pets}.ts (every pure layout edit, one family per file — tiles: floor/wall paint, wall sets, erase; furniture: placement, riders, move/copy/rotate/toggle; areas: carpets + Areas; grid: expand/shrink; pets — re-exported by the editOps.ts barrel), sections.ts, layoutSerializer.ts (tile map, blocked tiles, walkGrid, layoutToSeats, (de)serialize + migrate; layoutFromJson = an already-parsed layout migrated, no string round-trip), tileMap.ts (walkability, BFS), workstations.ts, visitSpot.ts (a Visit's tile checked — visitTileProblem — and the spot beside furniture or a seat, facing it — spotBeside; Facing ↔ Direction); index.ts = the barrel
     furniture/                       The furniture contract (CONTEXT.md → Interactive Furniture, docs/adr/0005), pure: interactive.ts (a manifest's optional `interactive` block — agentUse `workstation`, a label, panel `terminal`, state rules over the conditions agentWorking / panelInUse / free — and the ONE validator, `withInteractive`, run by every manifest reader: server assetLoader.ts, external asset directories included, and assets/build.ts; a bad block is dropped with a warning, the furniture loads plain), pieceRules.ts (`pieceView(interactive, PieceFacts)`: shown state, label, click — the ONE rules function, knows no furniture by name)
@@ -272,6 +273,7 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
         OfficeCanvas.tsx             Canvas, resize, DPR, mouse hit-testing, drag-to-move
         useCanvasTouchGestures.ts    Touch pan / pinch zoom / tap on the canvas
         ToolOverlay.tsx              Activity label + speech bubbles (DOM, above the labels) per character
+        FurnitureLabel.tsx           The hovered piece's Furniture label (DOM, via projection.ts; OfficeState.hoveredPiece: pieceAt = the editor's furnitureAt, characters and pets win, nothing in the editor; hoverPieceAt for the mouse, tapPieceAt for clicks — touch: first tap hovers, second clicks → OfficeCanvas `onPieceClick`); the renderer outlines the piece faintly (FURNITURE_HOVER_OUTLINE_ALPHA)
 
 e2e/                                 Playwright suite (real VS Code + mock-claude scenarios)
   playwright.config.ts

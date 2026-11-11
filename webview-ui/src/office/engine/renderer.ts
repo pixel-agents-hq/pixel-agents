@@ -21,6 +21,7 @@ import {
   DELETE_BUTTON_BG,
   DELETE_BUTTON_HOVER_BG,
   FALLBACK_FLOOR_COLOR,
+  FURNITURE_HOVER_OUTLINE_ALPHA,
   GHOST_BORDER_HOVER_FILL,
   GHOST_BORDER_HOVER_STROKE,
   GHOST_BORDER_STROKE,
@@ -461,6 +462,7 @@ export function renderScene(
   hoveredAgentId: number | null,
   pets: Pet[] = [],
   dissolving: DissolvingSprite[] = [],
+  hoveredPieceUid: string | null = null,
 ): void {
   const drawables: ZDrawable[] = [];
 
@@ -481,6 +483,27 @@ export function renderScene(
     const cached = getCachedSprite(f.sprite, zoom);
     const fx = offsetX + f.x * zoom;
     const fy = offsetY + f.y * zoom;
+    // A hovered piece: a character's selection outline, faint, sorted just before it.
+    if (hoveredPieceUid !== null && f.uid === hoveredPieceUid) {
+      const outline = getCachedSprite(getOutlineSprite(f.sprite), zoom);
+      const mirrored = f.mirrored === true;
+      drawables.push({
+        zY: f.zY - OUTLINE_Z_SORT_OFFSET,
+        draw: (c) => {
+          c.save();
+          c.globalAlpha = FURNITURE_HOVER_OUTLINE_ALPHA;
+          if (mirrored) {
+            // The outline is the sprite's, a sprite pixel bigger all round: flip it the same way.
+            c.translate(fx + cached.width + zoom, fy - zoom);
+            c.scale(-1, 1);
+            c.drawImage(outline, 0, 0);
+          } else {
+            c.drawImage(outline, fx - zoom, fy - zoom);
+          }
+          c.restore();
+        },
+      });
+    }
     if (f.mirrored) {
       drawables.push({
         zY: f.zY,
@@ -999,6 +1022,8 @@ export interface EditorRenderState {
 export interface SelectionRenderState {
   selectedAgentId: number | null;
   hoveredAgentId: number | null;
+  /** The hovered piece of interactive furniture (outlined faintly), or null. */
+  hoveredPieceUid?: string | null;
   hoveredTile: { col: number; row: number } | null;
   seats: Map<string, Seat>;
   characters: Map<number, Character>;
@@ -1099,6 +1124,8 @@ export function renderFrame(
     hoveredId,
     pets ?? [],
     buildout && buildout.dissolving.length > 0 ? buildoutSceneDissolves(buildout) : [],
+    // The editor keeps furniture for itself: no hover outline while it is open.
+    editor ? null : (selection?.hoveredPieceUid ?? null),
   );
 
   // Character speech bubbles render in ToolOverlay (DOM, above the labels).

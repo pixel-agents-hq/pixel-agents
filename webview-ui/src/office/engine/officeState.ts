@@ -1,4 +1,10 @@
-import { type PieceFacts, pieceView } from '../../../../core/src/furniture/pieceRules.js';
+import { agentLabelOf } from '../../../../core/src/agentLabel.js';
+import {
+  type PieceClick,
+  type PieceFacts,
+  type PieceView,
+  pieceView,
+} from '../../../../core/src/furniture/pieceRules.js';
 import { spotBeside } from '../../../../core/src/layout/visitSpot.js';
 import type { AgentWorktree, LayoutBuildout } from '../../../../core/src/messages.js';
 import { chooseLook } from '../../../../core/src/paletteUtils.js';
@@ -15,9 +21,11 @@ import {
   MAX_PET_ID_LENGTH,
   PET_HIT_HALF_WIDTH,
   PET_HIT_HEIGHT,
+  UNNAMED_AGENT_LABEL,
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
 import { contextUsedShare } from '../contextGauge.js';
+import { furnitureAt } from '../editor/editorActions.js';
 import {
   getAnimationFrames,
   getCatalogEntry,
@@ -67,6 +75,13 @@ function takesSeat(ch: Character): boolean {
 }
 
 type Tile = { col: number; row: number };
+
+/** Where a pointer on furniture is used: a read-only office offers no click, and
+ *  the layout editor keeps hover and click on furniture for itself. */
+export interface PieceContext {
+  readOnly: boolean;
+  editing: boolean;
+}
 
 function sameMap<K, V>(a: ReadonlyMap<K, V>, b: ReadonlyMap<K, V>): boolean {
   return a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
@@ -124,6 +139,12 @@ export class OfficeState {
   cameraFollowId: number | null = null;
   hoveredAgentId: number | null = null;
   hoveredTile: { col: number; row: number } | null = null;
+  /** The piece the pointer hovers (mouse) or the first tap picked (touch): outlined,
+   *  with its Furniture label over it. Set through hoverPieceAt / tapPieceAt. */
+  hoveredPieceUid: string | null = null;
+  /** The name of the character at a palette, from the cast (App wires it to the
+   *  cast store): how a Furniture label names the agent working at a piece. */
+  characterName: (palette: number) => string | undefined = () => undefined;
   /** Maps "parentId:toolId" → sub-agent character ID (negative) */
   subagentIdMap: Map<string, number> = new Map();
   /** Reverse lookup: sub-agent character ID → parent info */
@@ -1123,7 +1144,8 @@ export class OfficeState {
 
   /**
    * What the office knows about a piece, for core's pieceView (furniture/pieceRules.ts):
-   * the agent working at it, named as its activity label names it. No panel is in use yet.
+   * the agent working at it, named by core's agentLabelOf (Nickname, else its
+   * character's name, else its Directory). No panel is in use yet.
    */
   pieceFacts(
     uid: string,
@@ -1132,12 +1154,99 @@ export class OfficeState {
   ): PieceFacts {
     const ch = atWork.get(uid);
     return {
-      agentAtWork: ch
-        ? { id: ch.id, name: [ch.directoryName, ch.nickname].filter(Boolean).join(' · ') }
-        : null,
+      agentAtWork: ch ? { id: ch.id, name: this.agentName(ch) } : null,
       panelInUse: null,
       readOnly,
     };
+  }
+
+  /** How the office names an agent to the user (core's agentLabelOf). */
+  private agentName(ch: Character): string {
+    return (
+      agentLabelOf({
+        nickname: ch.nickname,
+        characterName: this.characterName(ch.palette),
+        directoryName: ch.directoryName,
+      }) ?? UNNAMED_AGENT_LABEL
+    );
+  }
+
+  /**
+   * The piece a pointer at this world point is on, for hover and click: the layout
+   * editor's own pick (furnitureAt: a surface item wins over the desk under it),
+   * kept only when the rules give it something to show or offer (a Furniture label
+   * or a click). Nothing while the editor is open, and nothing under a character
+   * or a pet: they stand in front of the furniture, and win.
+   */
+  pieceAt(worldX: number, worldY: number, ctx: PieceContext): string | null {
+    if (ctx.editing) return null;
+    if (this.getCharacterAt(worldX, worldY) !== null) return null;
+    if (this.getPetAt(worldX, worldY) !== null) return null;
+    const col = Math.floor(worldX / TILE_SIZE);
+    const row = Math.floor(worldY / TILE_SIZE);
+    if (col < 0 || row < 0 || col >= this.layout.cols || row >= this.layout.rows) return null;
+    const hit = furnitureAt(this.layout, col, row);
+    if (!hit) return null;
+    const view = this.pieceViewOf(hit, ctx.readOnly);
+    return view.label || view.click ? hit.uid : null;
+  }
+
+  private pieceViewOf(item: PlacedFurniture, readOnly: boolean): PieceView {
+    return pieceView(getCatalogEntry(item.type)?.interactive, this.pieceFacts(item.uid, readOnly));
+  }
+
+  /**
+   * A mouse over this world point: the piece there becomes the hovered one (or
+   * none). Returns its view, whose `click` decides the cursor.
+   */
+  hoverPieceAt(worldX: number, worldY: number, ctx: PieceContext): PieceView | null {
+    this.hoveredPieceUid = this.pieceAt(worldX, worldY, ctx);
+    return this.hoveredPiece(ctx)?.view ?? null;
+  }
+
+  /**
+   * A click or tap at this world point, against furniture. Null = no piece there
+   * (the hovered one is cleared: a tap elsewhere dismisses it). Two-step (touch):
+   * the first tap on a piece only hovers it, `click: null`; a second on the same
+   * piece answers its click. One step (mouse): the click at once. `click` is null
+   * too where the piece offers none (label only, or a read-only office).
+   */
+  tapPieceAt(
+    worldX: number,
+    worldY: number,
+    ctx: PieceContext & { twoStep: boolean },
+  ): { uid: string; click: PieceClick | null } | null {
+    const uid = this.pieceAt(worldX, worldY, ctx);
+    const wasHovered = uid !== null && this.hoveredPieceUid === uid;
+    this.hoveredPieceUid = uid;
+    if (uid === null) return null;
+    if (ctx.twoStep && !wasHovered) return { uid, click: null };
+    return { uid, click: this.hoveredPiece(ctx)?.view.click ?? null };
+  }
+
+  /** Forget the hovered piece (the pointer left, the editor opened). */
+  clearPieceHover(): void {
+    this.hoveredPieceUid = null;
+  }
+
+  /**
+   * The hovered piece as the office shows it now: its view under the current facts
+   * (the label follows an agent sitting down) and where its Furniture label hangs —
+   * the top edge of its sprite, centred, in world pixels. Null when nothing is
+   * hovered, the piece is gone from the layout, or the editor is open.
+   */
+  hoveredPiece(
+    ctx: PieceContext,
+  ): { uid: string; view: PieceView; anchor: { x: number; y: number } } | null {
+    const uid = this.hoveredPieceUid;
+    if (uid === null || ctx.editing) return null;
+    const item = this.layout.furniture.find((f) => f.uid === uid);
+    const instance = this.furniture.find((f) => f.uid === uid);
+    if (!item || !instance) return null;
+    const view = this.pieceViewOf(item, ctx.readOnly);
+    if (!view.label && !view.click) return null;
+    const width = instance.sprite[0]?.length ?? TILE_SIZE;
+    return { uid, view, anchor: { x: instance.x + width / 2, y: instance.y } };
   }
 
   /** Each piece whose state rules hold a declared state now: piece uid → that state. */

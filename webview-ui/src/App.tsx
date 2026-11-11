@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
+import { castStore } from './characters/castStore.js';
 import { CharactersView } from './characters/ui/CharactersView.js';
 import { AgentCardBar } from './components/AgentCardBar.js';
 import { AgentEditUndoBar } from './components/AgentEditUndoBar.js';
@@ -50,6 +51,7 @@ import { MobileShell } from './mobile/MobileShell.js';
 import { useMobileMenu } from './mobile/useMobileMenu.js';
 import { useMobileShell } from './mobile/useMobileShell.js';
 import { MusicPlayer } from './music/MusicPlayer.js';
+import { FurnitureLabel } from './office/components/FurnitureLabel.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -83,7 +85,10 @@ if (isE2E) installTestHooks(officeStateRef);
 
 function getOfficeState(): OfficeState {
   if (!officeStateRef.current) {
-    officeStateRef.current = new OfficeState();
+    const os = new OfficeState();
+    // A Furniture label names the agent at a piece by its character's name too.
+    os.characterName = (palette) => castStore.getState().profiles[palette]?.name || undefined;
+    officeStateRef.current = os;
   }
   return officeStateRef.current;
 }
@@ -652,6 +657,7 @@ function App() {
         showAreas={effectiveShowAreas}
         activeAreaLabel={activeAreaLabel}
         tapSelectsFirst={isMobile}
+        readOnly={officeReadOnly}
       />
 
       {!isDebugMode ? (
@@ -778,6 +784,14 @@ function App() {
               panRef={editor.panRef}
               onCloseAgent={handleCloseAgent}
               alwaysShowOverlay={alwaysShowOverlay}
+            />
+            <FurnitureLabel
+              officeState={officeState}
+              containerRef={containerRef}
+              zoom={editor.zoom}
+              panRef={editor.panRef}
+              readOnly={officeReadOnly}
+              editing={editor.isEditMode}
             />
           </div>
         </>

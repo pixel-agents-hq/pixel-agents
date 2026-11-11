@@ -1,3 +1,4 @@
+import { SELECTION_OUTLINE_COLOR } from '../../constants.js';
 import type { SpriteData } from '../types.js';
 
 const zoomCaches = new Map<number, WeakMap<SpriteData, HTMLCanvasElement>>();
@@ -6,7 +7,7 @@ const zoomCaches = new Map<number, WeakMap<SpriteData, HTMLCanvasElement>>();
 
 const outlineCache = new WeakMap<SpriteData, SpriteData>();
 
-/** Generate a 1px white outline SpriteData (2px larger in each dimension) */
+/** Generate a 1px outline (SELECTION_OUTLINE_COLOR) SpriteData (2px larger in each dimension) */
 export function getOutlineSprite(sprite: SpriteData): SpriteData {
   const cached = outlineCache.get(sprite);
   if (cached) return cached;
@@ -25,10 +26,10 @@ export function getOutlineSprite(sprite: SpriteData): SpriteData {
       if (sprite[r][c] === '') continue;
       const er = r + 1;
       const ec = c + 1;
-      if (outline[er - 1][ec] === '') outline[er - 1][ec] = '#FFFFFF';
-      if (outline[er + 1][ec] === '') outline[er + 1][ec] = '#FFFFFF';
-      if (outline[er][ec - 1] === '') outline[er][ec - 1] = '#FFFFFF';
-      if (outline[er][ec + 1] === '') outline[er][ec + 1] = '#FFFFFF';
+      if (outline[er - 1][ec] === '') outline[er - 1][ec] = SELECTION_OUTLINE_COLOR;
+      if (outline[er + 1][ec] === '') outline[er + 1][ec] = SELECTION_OUTLINE_COLOR;
+      if (outline[er][ec - 1] === '') outline[er][ec - 1] = SELECTION_OUTLINE_COLOR;
+      if (outline[er][ec + 1] === '') outline[er][ec + 1] = SELECTION_OUTLINE_COLOR;
     }
   }
 
