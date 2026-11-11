@@ -4,7 +4,7 @@ Pixel art office where AI agents (Claude Code terminals today, any tool tomorrow
 
 `CONTEXT.md` is the canonical glossary — read it for what terms like Agent, Sub-agent, Teammate, Lead, Adopt, or Headless agent mean here, and use its vocabulary in code, comments, and docs.
 
-啟用 AI 知識庫：筆記一律放在專案目錄下的 `.note/`（已列入 `.gitignore`，不提交）。
+啟用 AI 知識庫：筆記一律放在專案目錄下的 `.note/`（已列入 `.gitignore`，不提交）。寫入知識庫時使用 skills，不要用 Bash。
 
 ## Claude 在本專案的角色
 
