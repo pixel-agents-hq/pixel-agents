@@ -30,6 +30,7 @@ import type { AgentMcpAccess } from '../mcp/officeMcp.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import type { AgentState } from '../types.js';
 import { retireWorktreesLeftBy } from '../worktreeLeave.js';
+import type { CheckedLaunchAsks } from './launchAsks.js';
 import { inheritedEnv, terminalEnv } from './terminalEnv.js';
 import type { TerminalSession, TerminalSessions } from './terminalSessions.js';
 
@@ -52,9 +53,10 @@ export interface LaunchStandaloneAgentOptions {
    *  the server's cwd (also the Directory standalone contributes as its host
    *  entry). It need not be the Directory's path. */
   cwd?: string;
-  /** Read from the host's persisted permission posture by the caller; never a
-   *  per-launch choice made in the office. */
-  bypassPermissions?: boolean;
+  /** What the launch asks for, checked (launchAsks.ts): its permission
+   *  posture (the host's, or the bypass mode that posture allows), Nickname,
+   *  model, first message and seat. Absent = none asked, permissions not skipped. */
+  asks?: CheckedLaunchAsks;
   /** The character picked from the roster (a palette index). Out of range or
    *  absent, the Directory's default characters apply, else a random pick. */
   palette?: number;
@@ -113,9 +115,12 @@ export function launchStandaloneAgent(
   // the token). Launches and resumes alike.
   const mcpConfig = deps.mcp?.configFor(id);
   const launch = provider.buildLaunchCommand(sessionId, cwd, {
-    bypassPermissions: options.bypassPermissions,
+    bypassPermissions: options.asks?.bypassPermissions,
     resume: options.resume !== undefined,
     mcpConfig,
+    permissionMode: options.asks?.permissionMode,
+    model: options.asks?.model,
+    prompt: options.asks?.firstMessage,
   });
 
   const agent = createAgentState({
@@ -134,8 +139,9 @@ export function launchStandaloneAgent(
     // for a launch into no Directory at all.
     directoryName: directory?.name ?? directoryNameFor(cwd),
     providerId: provider.id,
-    seatId: options.resume?.seatId,
+    seatId: options.asks?.seatId ?? options.resume?.seatId,
     worktree: options.worktree,
+    nickname: options.asks?.nickname,
     // Where its session runs: a hook naming this folder is no move.
     cwd,
   });

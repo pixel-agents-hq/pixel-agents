@@ -191,11 +191,14 @@ describe('Pixel Office MCP (composed server, mock-claude launches)', () => {
     expect(mine.you).toBe(true);
     expect(agents.find((a) => a.id === other.id)!.you).toBeUndefined();
     expect(mine).toMatchObject({
+      nickname: null,
       directory: { name: 'proj', path: h.workspace },
       working_directory: h.workspace,
       worktree: null,
       lead_id: null,
       teammates: [],
+      at_desk: true,
+      messageable: true,
     });
     expect(['active', 'done', 'waiting for input', 'permission request']).toContain(mine.status);
     expect(String(mine.transcript_path)).toMatch(/\.jsonl$/);

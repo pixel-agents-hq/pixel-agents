@@ -26,6 +26,8 @@ export type ServerMessage =
   | AgentTeamInfo
   | AgentWorktreeChanged
   | AgentContextUsage
+  | AgentVisit
+  | AgentMessageShow
   | LayoutLoaded
   | AgentLayoutEditStatus
   | FurnitureAssetsLoaded
@@ -124,6 +126,7 @@ export interface AgentCreated {
   repeat?: number;
   seatId?: string;
   worktree?: AgentWorktree;
+  nickname?: string;
 }
 
 export interface AgentWorktree {
@@ -148,6 +151,7 @@ export interface ExistingAgents {
   directoryNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
   worktrees?: Record<string, AgentWorktree>;
+  nicknames?: Record<string, string>;
 }
 
 export interface AgentSeatMeta {
@@ -247,6 +251,29 @@ export interface AgentContextUsage {
   maxContextTokens: number;
 }
 
+export interface AgentVisit {
+  type: 'agentVisit';
+  id: number;
+  to?: TilePosition;
+  facing?: Facing;
+  stay?: boolean;
+  cleared?: boolean;
+}
+
+export interface TilePosition {
+  col: number;
+  row: number;
+}
+
+export type Facing = 'up' | 'down' | 'left' | 'right';
+
+export interface AgentMessageShow {
+  type: 'agentMessageShow';
+  fromId: number;
+  toIds: number[];
+  gist: string;
+}
+
 export interface LayoutLoaded {
   type: 'layoutLoaded';
   layout: Record<string, any> | null;
@@ -258,11 +285,6 @@ export interface LayoutLoaded {
 export interface LayoutBuildout {
   agentId: number;
   origin: TilePosition;
-}
-
-export interface TilePosition {
-  col: number;
-  row: number;
 }
 
 export interface GridShift {

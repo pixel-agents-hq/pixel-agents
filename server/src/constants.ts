@@ -367,8 +367,43 @@ export const OFFICE_MCP_TOKEN_BYTES = 32;
 export const OFFICE_MCP_READ_ONLY_REASON =
   'The Pixel Office MCP is read-only in Pixel Agents settings: listing and reading work, changes are refused. Ask the user to turn read-only off in Settings if this change is needed.';
 
+// ── Messages (read_agent_terminal / send_message) ───────────
+/** A Message's gist (shown in the sender's speech bubble) is at most this long. */
+export const MESSAGE_GIST_MAX_LENGTH = 80;
+/** Wait between a Message's text and the Enter that submits it. Claude Code's
+ *  TUI takes an Enter arriving with (or right on the heels of) a paste as
+ *  part of it — a newline in the input box, not a submit — so the Enter goes
+ *  as its own write, once the paste has landed. */
+export const MESSAGE_SUBMIT_DELAY_MS = 150;
+/** Hex characters of the screen hash a screen token keeps. */
+export const MESSAGE_SCREEN_TOKEN_LENGTH = 16;
+/** Wait between a Message's keys: each key is its own write, as a person's
+ *  keypresses are — a TUI may read one chunk of several keys as one input. */
+export const MESSAGE_KEY_DELAY_MS = 50;
+
+// ── Visits (server/src/visits.ts) ────────────────────────────
+/** A visit without `stay` is over once its character has walked there and
+ *  lingered (core's VISIT_LINGER_MS); this is the walk's allowance. An office
+ *  opened after linger + allowance no longer shows the visit. */
+export const VISIT_WALK_ALLOWANCE_MS = 30_000;
+
+// ── Launch (launch_agent) ───────────────────────────────────
+/** How long launch_agent waits for its agent to join before it says it didn't. */
+export const LAUNCH_JOIN_TIMEOUT_MS = 15_000;
+/** After an agent's CLI first draws, how long it must keep running to count as
+ *  joined: a CLI that rejects its arguments prints why and exits at once. */
+export const LAUNCH_JOIN_SETTLE_MS = 500;
+/** A Nickname is at most this long. */
+export const NICKNAME_MAX_LENGTH = 32;
+
 /** How many Pixel Office MCP layout edits the server remembers for undo (newest first). */
 export const LAYOUT_UNDO_DEPTH = 10;
+
+// ── Close (close_agent) ─────────────────────────────────────
+/** An agent closing itself is ended when its turn ends (the reply has reached
+ *  its CLI and the CLI has recorded the turn), or this long after close_agent
+ *  replied when no turn end is heard (a CLI without hooks or transcript). */
+export const SELF_CLOSE_FALLBACK_MS = 10_000;
 
 // ── Character art (server/src/characterArt.ts) ──────────────
 /** Screen pixels per sprite pixel in a character preview PNG (whole number, so the

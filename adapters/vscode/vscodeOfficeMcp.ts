@@ -5,15 +5,27 @@
  * module, so it is tested as it runs (server/__tests__/officeMcpVsCode.test.ts);
  * the provider hands in what only it holds (its terminals, loaded assets,
  * Directories).
+ *
+ * What differs from standalone:
+ * - **Terminals can be typed into, not read** (`screenlessAgentTerminals`,
+ *   guarded by `turnGuard`): read_agent_terminal gives status only, and
+ *   send_message types text, no token, only into agents that are done or
+ *   active.
+ * - **No launching or closing**: launch_agent and close_agent aren't offered
+ *   (VS Code's launch has none of launch_agent's asks — nickname, model, first
+ *   message, seat, resume — nor a way to tell when the CLI joined).
  */
 
 import type { CatalogSource } from '../../core/src/layout/index.js';
+import type { TerminalHandle } from '../../core/src/terminalAdapter.js';
 import type { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../../server/src/layoutPersistence.js';
 import { composeOfficeMcp, type OfficeMcpFeature } from '../../server/src/mcp/composeOfficeMcp.js';
+import { turnGuard } from '../../server/src/mcp/messaging.js';
 import type { AssetCounts } from '../../server/src/mcp/officeFacts.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
+import { screenlessAgentTerminals } from '../../server/src/terminal/agentTerminals.js';
 
 /** What the office's assets are, once the webview's handshake loaded them. */
 export interface VscodeOfficeAssets extends AssetCounts {
@@ -22,6 +34,8 @@ export interface VscodeOfficeAssets extends AssetCounts {
 
 export interface VscodeOfficeMcpDeps {
   store: AgentStateStore;
+  /** Types into a terminal (the terminal adapter's sendText). */
+  sendText(terminal: TerminalHandle, text: string): void;
   /** The bundled default layout, for an office that saved none. */
   defaultLayout(): Record<string, unknown> | null;
   /** The loaded assets, or null before they are. */
@@ -32,6 +46,10 @@ export interface VscodeOfficeMcpDeps {
 
 export function createVscodeOfficeMcp(deps: VscodeOfficeMcpDeps): OfficeMcpFeature {
   const { store } = deps;
+  const terminals = screenlessAgentTerminals(
+    (id) => store.get(id)?.terminalRef,
+    (terminal, text) => deps.sendText(terminal, text),
+  );
   return composeOfficeMcp({
     facts: {
       store,
@@ -57,5 +75,7 @@ export function createVscodeOfficeMcp(deps: VscodeOfficeMcpDeps): OfficeMcpFeatu
         writeConfig(cfg);
       },
     },
+    terminals,
+    deliveryGuard: turnGuard(store),
   });
 }

@@ -11,6 +11,7 @@ export {
   MAX_COLS,
   MAX_ROWS,
   TILE_SIZE,
+  VISIT_LINGER_MS,
 } from '../../core/src/layout/constants.js';
 
 // ── Character Animation ─────────────────────────────────────
@@ -894,3 +895,14 @@ export const VERSION_NOTICE_ABOVE_PX = 34;
 export const BUILDOUT_MAX_SEC = 2;
 /** The gap between two changes appearing, for an edit small enough not to need squeezing (s). */
 export const BUILDOUT_STEP_SEC = 0.12;
+/** How long the builder works at the spot once it gets there, beyond the build's own length (s). */
+export const BUILDOUT_WORK_TAIL_SEC = 1;
+
+// ── Message show ────────────────────────────────────────────
+/** How long a sender stands by each recipient with the gist in its bubble
+ *  (also how long the gist shows in place, without the walk). */
+export const MESSAGE_SHOW_LINGER_MS = 4000;
+/** The gist bubble's widest (CSS px): longer gists wrap. */
+export const MESSAGE_BUBBLE_MAX_WIDTH_PX = 220;
+/** The gist's text size (CSS px). */
+export const MESSAGE_BUBBLE_FONT_SIZE_PX = 20;

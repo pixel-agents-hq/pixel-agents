@@ -127,17 +127,39 @@ function sessionDirOf(workspacePath: string): string {
   return projectDir;
 }
 
+/** Claude Code's `--permission-mode` choices. */
+const CLAUDE_PERMISSION_MODES = [
+  'default',
+  'acceptEdits',
+  'plan',
+  'auto',
+  'dontAsk',
+  'bypassPermissions',
+] as const;
+
 function buildLaunchCommand(
   sessionId: string,
   cwd: string,
-  opts?: { bypassPermissions?: boolean; resume?: boolean; mcpConfig?: string },
+  opts?: {
+    bypassPermissions?: boolean;
+    resume?: boolean;
+    mcpConfig?: string;
+    model?: string;
+    permissionMode?: string;
+    prompt?: string;
+  },
 ): { command: string; args: string[]; env?: Record<string, string> } {
   // A resumed session keeps its id and appends to its old transcript.
   const args = [opts?.resume ? '--resume' : '--session-id', sessionId];
   if (opts?.bypassPermissions) args.push('--dangerously-skip-permissions');
+  else if (opts?.permissionMode) args.push('--permission-mode', opts.permissionMode);
+  if (opts?.model) args.push('--model', opts.model);
   // Added to whatever MCP servers the user configured, never replacing them
   // (no --strict-mcp-config): the file names only the Pixel Office MCP.
   if (opts?.mcpConfig) args.push('--mcp-config', opts.mcpConfig);
+  // The starting prompt last, after `--`: --mcp-config takes several values
+  // and would swallow it, and a prompt starting with `-` would read as a flag.
+  if (opts?.prompt) args.push('--', opts.prompt);
   return { command: 'claude', args, env: { PWD: cwd } };
 }
 
@@ -415,6 +437,8 @@ export const claudeProvider: HookProvider = {
   buildLaunchCommand,
   mcpConfigFile,
   isInheritedSessionEnv: isInheritedClaudeSessionEnv,
+  permissionModes: CLAUDE_PERMISSION_MODES,
+  bypassPermissionMode: 'bypassPermissions',
   conversationTitle,
   worktrees: claudeWorktreeConvention,
 

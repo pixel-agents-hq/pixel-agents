@@ -12,20 +12,35 @@ import { randomUUID } from 'crypto';
 import type { FastifyInstance } from 'fastify';
 
 import type { ServerMessage } from '../../../core/src/messages.js';
+import type { AgentTerminals } from '../terminal/agentTerminals.js';
 import { agentLabel } from './agentLabel.js';
 import { createAgentsView } from './agentsView.js';
 import { createLayoutEdits } from './layoutEdits.js';
 import { createLayoutOps } from './layoutOps.js';
+import { createClosing, createLaunching } from './lifecycle.js';
+import { createMessaging, type DeliveryGuard } from './messaging.js';
 import type { OfficeFacts } from './officeFacts.js';
 import { type AgentMcpAccess, OfficeMcp } from './officeMcp.js';
 import { handleOfficeMcpMessage } from './officeMcpMessages.js';
-import type { OfficeOperations } from './officeOperations.js';
+import type { AgentLaunch, AgentLaunchOutcome, OfficeOperations } from './officeOperations.js';
 import { catalogOf } from './seatPlace.js';
 import type { OfficeTool } from './tool.js';
+import { createVisitOps } from './visitsOps.js';
 
 /** What a surface brings to the Pixel Office MCP. */
 export interface OfficeMcpSurface {
   facts: OfficeFacts;
+  /** How it reads and writes its agents' terminals (Messages). */
+  terminals: AgentTerminals;
+  /** How a Message is checked before it is typed, and again before its Enter
+   *  (messaging.ts: `screenTokenGuard` where screens can be read, `turnGuard` where not). */
+  deliveryGuard: DeliveryGuard;
+  /** How it launches an agent for launch_agent, waiting until it joined; the
+   *  launch gets the MCP like any other (`mcp`). Absent: launch_agent isn't offered. */
+  launch?(request: AgentLaunch, mcp: AgentMcpAccess): Promise<AgentLaunchOutcome>;
+  /** How it ends an agent closed from close_agent (as its card's × does).
+   *  Absent: close_agent isn't offered. */
+  close?(id: number): void;
   /** Defaults to every tool. */
   tools?: readonly OfficeTool[];
 }
@@ -70,7 +85,7 @@ export interface OfficeMcpFeature extends AgentMcpAccess {
 }
 
 export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
-  const { facts } = surface;
+  const { facts, terminals } = surface;
   const { store } = facts;
 
   const layoutEdits = createLayoutEdits({
@@ -93,9 +108,17 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
     newId: () => randomUUID(),
   });
 
+  const visits = createVisitOps(facts);
+  const closing = surface.close ? createClosing(facts, surface.close, terminals) : undefined;
+  const launch = surface.launch;
   const office: OfficeOperations = {
-    agents: createAgentsView(facts),
+    agents: createAgentsView(facts, (id) => terminals.has(id)),
     layout: createLayoutOps(facts, layoutEdits),
+    messaging: createMessaging(store, terminals, surface.deliveryGuard),
+    visits,
+    // launch_agent's launch gives the agent this MCP, like any other launch.
+    ...(launch ? { launch: createLaunching(facts, (request) => launch(request, officeMcp)) } : {}),
+    ...(closing ? { close: closing } : {}),
   };
   const officeMcp = new OfficeMcp({ office, provider: facts.provider, tools: surface.tools });
   // Tokens die with their agents.
@@ -150,6 +173,8 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
     dispose() {
       // Every agent's token dies with the server (and its config files go).
       officeMcp.dispose();
+      visits.dispose();
+      closing?.dispose();
     },
   };
 }

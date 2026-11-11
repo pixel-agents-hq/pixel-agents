@@ -278,7 +278,7 @@ describe('launchStandaloneAgent', () => {
   it('passes bypassPermissions through to the launch command', () => {
     const harness = workingPtyManager();
 
-    launch(harness, { bypassPermissions: true });
+    launch(harness, { asks: { bypassPermissions: true } });
 
     expect(harness.spawnArgs[0].args).toContain('--dangerously-skip-permissions');
   });

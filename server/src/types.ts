@@ -1,6 +1,7 @@
 import type * as vscode from 'vscode';
 
 import type { BackgroundSpawns } from './backgroundSpawns.js';
+import type { AgentVisit } from './visits.js';
 
 /** An agent's turn: running (`active`), ended (`done`), or ended on a
  *  question to its user (`waiting for input`). */
@@ -46,6 +47,9 @@ export interface AgentState {
    *  branch of its own, server/src/worktreeCreate.ts). The agent is still an agent
    *  of its Directory: `directoryName` stays the Directory's. */
   worktree?: { name: string; path: string; branch: string };
+  /** The Nickname it was launched with (Pixel Office MCP): a label shown after
+   *  its Directory, never a Teammate's name (`agentName`). */
+  nickname?: string;
   /** The folder the session was last seen running in (a hook's cwd, a
    *  transcript's relocation record); how a move is noticed. Unknown until
    *  a signal says. Transient, never persisted. */
@@ -122,4 +126,6 @@ export interface AgentState {
   /** The seat it asks for when it appears (a resumed conversation's old seat);
    *  the office seats it elsewhere when that one is taken. */
   seatId?: string;
+  /** The Visit its character is on, if any (server/src/visits.ts). Never persisted. */
+  visit?: AgentVisit;
 }

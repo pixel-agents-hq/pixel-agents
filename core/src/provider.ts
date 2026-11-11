@@ -265,6 +265,14 @@ export interface HookProvider {
        *  and a command line is readable by every process on the machine. Its
        *  contents are this provider's own (`mcpConfigFile`). */
       mcpConfig?: string;
+      /** The model to run (the CLI's own model names and aliases). */
+      model?: string;
+      /** One of `permissionModes`, other than `bypassPermissionMode` (that one
+       *  is `bypassPermissions`). */
+      permissionMode?: string;
+      /** The session's first message, passed as the CLI's starting prompt (an
+       *  argv entry: never typed into the terminal, never a shell string). */
+      prompt?: string;
     },
   ): {
     command: string;
@@ -280,6 +288,13 @@ export interface HookProvider {
    *  Settings the user exported (models, API config) are not markers.
    *  Undefined = this CLI marks nothing. */
   isInheritedSessionEnv?(name: string): boolean;
+  /** The permission modes a launch may ask for (the CLI's own names), the
+   *  default included. Undefined = this CLI takes no permission mode. */
+  readonly permissionModes?: readonly string[];
+  /** The one of `permissionModes` that skips every permission prompt: allowed
+   *  only while the office's skip-permissions setting is on, and launched as
+   *  `bypassPermissions` rather than as a mode. */
+  readonly bypassPermissionMode?: string;
   /** A session transcript's title as the CLI shows it (a user rename wins over
    *  the generated one), or undefined when it has none. Read by the sidebar's
    *  recent conversations; undefined = this provider names no conversations

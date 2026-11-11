@@ -102,6 +102,10 @@ components:
         - $ref: '#/components/schemas/AgentWorktreeChanged'
         # Context window
         - $ref: '#/components/schemas/AgentContextUsage'
+        # Visits (a character sent somewhere through the Pixel Office MCP)
+        - $ref: '#/components/schemas/AgentVisit'
+        # Message show (an agent messaged others through the Pixel Office MCP)
+        - $ref: '#/components/schemas/AgentMessageShow'
         # Layout
         - $ref: '#/components/schemas/LayoutLoaded'
         - $ref: '#/components/schemas/AgentLayoutEditStatus'
@@ -248,6 +252,12 @@ components:
             picks one.
         worktree:
           $ref: '#/components/schemas/AgentWorktree'
+        nickname:
+          type: string
+          description: >-
+            The Nickname the agent was launched with (Pixel Office MCP
+            launch_agent): shown after its Directory on its card and label.
+            Only a label: it never makes the agent a Teammate.
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -308,6 +318,13 @@ components:
             missing an id = that agent runs in its Directory's own checkout.
           additionalProperties:
             $ref: '#/components/schemas/AgentWorktree'
+        nicknames:
+          type: object
+          description: >-
+            Map of agent ID (string) to the Nickname it was launched with, for
+            the agents launched with one.
+          additionalProperties:
+            type: string
 
     AgentStatus:
       description: Active vs waiting state for an agent (drives character animation).
@@ -528,6 +545,56 @@ components:
         maxContextTokens:
           type: integer
 
+    AgentVisit:
+      description: |
+        An agent's character is on a Visit (CONTEXT.md): it walks to `to`,
+        faces `facing`, and lingers a while before wandering as usual — or,
+        with `stay`, holds there until its agent's next turn. `cleared: true`
+        (and nothing else) ends the visit: the agent's next turn started, so
+        its character goes back to its seat. The server resolved and checked
+        the tile, and re-sends every agent's current visit (or `cleared`) in
+        the connect snapshot, so every office shows the same visits.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentVisit
+        id:
+          type: integer
+        to:
+          $ref: '#/components/schemas/TilePosition'
+        facing:
+          $ref: '#/components/schemas/Facing'
+        stay:
+          type: boolean
+        cleared:
+          type: boolean
+
+    AgentMessageShow:
+      description: |
+        Agent `fromId` messaged the agents `toIds` (delivered, in order)
+        through the Pixel Office MCP, saying `gist` (one line, at most 80
+        characters). Each office shows it: the sender's character walks to
+        a tile beside each recipient's character in turn, faces it with the
+        gist in its speech bubble, then goes back to its desk. Only offices
+        open at the time show it — it is not part of the connect snapshot —
+        and delivery never waits for it.
+      type: object
+      additionalProperties: false
+      required: [type, fromId, toIds, gist]
+      properties:
+        type:
+          const: agentMessageShow
+        fromId:
+          type: integer
+        toIds:
+          type: array
+          items:
+            type: integer
+        gist:
+          type: string
+
     TilePosition:
       description: A tile of the office grid (column and row, from the top left).
       type: object
@@ -538,6 +605,11 @@ components:
           type: integer
         row:
           type: integer
+
+    Facing:
+      description: The way a character faces.
+      type: string
+      enum: [up, down, left, right]
 
     LayoutLoaded:
       description: |

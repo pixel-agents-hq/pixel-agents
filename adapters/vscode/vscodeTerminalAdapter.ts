@@ -11,4 +11,10 @@ export class VscodeTerminalAdapter implements ITerminalAdapter {
   allTerminals(): TerminalHandle[] {
     return [...vscode.window.terminals];
   }
+
+  sendText(terminal: TerminalHandle, text: string): void {
+    // Every handle this adapter hands out (and every agent's terminalRef) is a
+    // vscode.Terminal. `shouldExecute: false`: the caller writes its own Enter.
+    (terminal as vscode.Terminal).sendText(text, false);
+  }
 }

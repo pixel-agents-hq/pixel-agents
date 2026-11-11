@@ -24,6 +24,18 @@ function parseSessionId(argv) {
   return '';
 }
 
+/** The value after `flag` in argv (`--mcp-config <file>`), or ''. */
+function argAfter(argv, flag) {
+  const at = argv.indexOf(flag);
+  return at >= 0 && at + 1 < argv.length ? argv[at + 1] : '';
+}
+
+/** The starting prompt: what follows `--` (the CLI's positional prompt). */
+function parsePrompt(argv) {
+  const at = argv.indexOf('--');
+  return at >= 0 ? argv.slice(at + 1).join(' ') : '';
+}
+
 function claudeProjectDirName(workspacePath) {
   return workspacePath.replace(/[^a-zA-Z0-9-]/g, '-');
 }
@@ -75,6 +87,8 @@ function logInvocation(homeDir, sessionId, cwd, args) {
     'invocations.log',
     `${new Date().toISOString()} session-id=${sessionId} cwd=${cwd} args=${args.join(' ')}`,
   );
+  // The argv exactly (an argument may hold spaces: a first message).
+  logLine(homeDir, 'argv.log', JSON.stringify({ sessionId, cwd, args }));
 }
 
 function logAction(homeDir, message) {
@@ -225,16 +239,23 @@ function resolveTemplateString(template, context) {
   }
 
   return template.replace(/\{\{([^}]+)\}\}/g, (_match, rawKey) => {
-    const key = rawKey.trim();
-    const value = key.split('.').reduce((accumulator, segment) => {
-      if (accumulator && Object.prototype.hasOwnProperty.call(accumulator, segment)) {
-        return accumulator[segment];
-      }
-      return undefined;
-    }, context);
-
+    const value = lookupPath(context, rawKey);
     return value === undefined || value === null ? '' : String(value);
   });
+}
+
+/** The value at a dotted `{{path}}` in the context (undefined when absent). */
+function lookupPath(context, rawKey) {
+  return rawKey
+    .trim()
+    .split('.')
+    .reduce(
+      (accumulator, segment) =>
+        accumulator && Object.prototype.hasOwnProperty.call(accumulator, segment)
+          ? accumulator[segment]
+          : undefined,
+      context,
+    );
 }
 
 function resolveValue(value, context) {
@@ -257,9 +278,12 @@ function resolveValue(value, context) {
   return value;
 }
 
-function buildContext(homeDir, scenario, sessionId, cwd) {
+function buildContext(homeDir, scenario, sessionId, cwd, mcpConfigPath) {
   const self = ensureSessionContextWithTranscript(homeDir, sessionId, cwd);
   const context = {
+    mcpConfigPath,
+    // Results of callOfficeMcp actions, by their saveAs name.
+    mcp: {},
     sessionId: self.sessionId,
     cwd: self.cwd,
     projectDir: self.projectDir,
@@ -395,6 +419,77 @@ async function emitHook(homeDir, context, payload) {
   }
 }
 
+/** Like resolveValue, for MCP arguments: object keys are templated too, and a
+ *  string that is ONE whole `{{path}}` takes that value as it is (an agent id
+ *  stays a number). */
+function resolveMcpValue(value, context) {
+  if (typeof value === 'string') {
+    const whole = /^\{\{([^}]+)\}\}$/.exec(value);
+    if (whole) {
+      const found = lookupPath(context, whole[1]);
+      if (found !== undefined && found !== null) return found;
+    }
+    return resolveTemplateString(value, context);
+  }
+  if (Array.isArray(value)) return value.map((item) => resolveMcpValue(item, context));
+  if (value && typeof value === 'object') {
+    const resolved = {};
+    for (const [key, nested] of Object.entries(value)) {
+      resolved[resolveTemplateString(key, context)] = resolveMcpValue(nested, context);
+    }
+    return resolved;
+  }
+  return value;
+}
+
+/**
+ * Call one tool of the Pixel Office MCP the way Claude Code's HTTP MCP client
+ * does: the endpoint and headers come from the `--mcp-config` file this
+ * process was launched with (nothing else knows its token), `initialize` then
+ * `tools/call`, one POST each. Resolves with the tool's parsed JSON result, or
+ * `{ error }`.
+ */
+async function callOfficeMcp(configPath, tool, args) {
+  if (!configPath) return { error: 'launched without --mcp-config' };
+  const servers = JSON.parse(fs.readFileSync(configPath, 'utf8')).mcpServers || {};
+  // The server id Pixel Agents names its MCP (OFFICE_MCP_SERVER_NAME).
+  const server = servers['pixel-office'];
+  if (!server || typeof server.url !== 'string') return { error: 'no pixel-office server' };
+  const headers = {
+    ...(server.headers || {}),
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
+  };
+  let nextId = 1;
+  const rpc = async (method, params, extraHeaders = {}) => {
+    const response = await fetch(server.url, {
+      method: 'POST',
+      headers: { ...headers, ...extraHeaders },
+      body: JSON.stringify({ jsonrpc: '2.0', id: nextId++, method, params }),
+    });
+    const body = await response.json();
+    if (body.error) throw new Error(`${method}: ${body.error.message}`);
+    return body.result;
+  };
+  try {
+    const init = await rpc('initialize', {
+      protocolVersion: '2025-06-18',
+      capabilities: {},
+      clientInfo: { name: 'mock-claude', version: '0.0.0' },
+    });
+    const result = await rpc(
+      'tools/call',
+      { name: tool, arguments: args },
+      { 'mcp-protocol-version': init.protocolVersion },
+    );
+    const text = (result.content || []).map((part) => part.text || '').join('');
+    if (result.isError) return { error: text };
+    return JSON.parse(text);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 async function playScenario(homeDir, scenario, context) {
   for (const [alias, session] of Object.entries(context.sessions)) {
     if (!session.sidecarPath || session.sidecarJson === undefined) {
@@ -501,6 +596,19 @@ async function playScenario(homeDir, scenario, context) {
       continue;
     }
 
+    if (action.kind === 'callOfficeMcp') {
+      if (typeof action.waitMs === 'number' && action.waitMs > 0) await sleep(action.waitMs);
+      const args = resolveMcpValue(action.args || {}, context);
+      const result = await callOfficeMcp(context.mcpConfigPath, action.tool, args);
+      if (action.saveAs) context.mcp[action.saveAs] = result;
+      logAction(homeDir, `callOfficeMcp ${action.tool} ${JSON.stringify({ args, result })}`);
+      echo(
+        atMs,
+        `${ANSI_CYAN}mcp${ANSI_RESET} ${action.tool} → ${result && result.error ? `error: ${result.error}` : 'ok'}`,
+      );
+      continue;
+    }
+
     if (action.kind === 'exit') {
       logAction(homeDir, `exit code=${action.code || 0}`);
       echo(atMs, `exit code=${action.code || 0}`);
@@ -541,8 +649,34 @@ async function main() {
     `mock claude session ${shortId(sessionId)}${scenario.name ? ` — scenario: ${scenario.name}` : ''}`,
   );
 
-  const context = buildContext(homeDir, scenario, sessionId, cwd);
+  // Shown like the TUI shows a starting prompt (the CLI's positional argument).
+  const prompt = parsePrompt(process.argv.slice(2));
+  if (prompt) echo(null, `> ${prompt}`);
+
+  recordStdinIfAsked(homeDir, sessionId);
+  const mcpConfigPath = argAfter(process.argv.slice(2), '--mcp-config');
+  const context = buildContext(homeDir, scenario, sessionId, cwd, mcpConfigPath);
   await playScenario(homeDir, scenario, context);
+}
+
+/**
+ * Opt-in (PIXEL_AGENTS_MOCK_STDIN=record): read the terminal the way Claude
+ * Code's TUI does — raw mode, bracketed paste on — and record every chunk
+ * typed into it (`stdin-<session id>.log` under ~/.claude-mock, one JSON
+ * string per line), echoing each one to the screen so the screen changes like
+ * a TUI's would. Off by default: other scenarios never read their stdin.
+ */
+function recordStdinIfAsked(homeDir, sessionId) {
+  if (process.env.PIXEL_AGENTS_MOCK_STDIN !== 'record' || !process.stdin.isTTY) return;
+  process.stdin.setRawMode(true);
+  process.stdout.write('\u001b[?2004h');
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => {
+    logLine(homeDir, `stdin-${sessionId}.log`, JSON.stringify(chunk));
+    process.stdout.write(`typed ${JSON.stringify(chunk)}\n`);
+  });
+  // Reading must not keep the session open past its scenario.
+  process.stdin.unref();
 }
 
 main().catch((error) => {

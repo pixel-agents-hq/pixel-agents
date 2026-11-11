@@ -206,9 +206,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       this.sendOrBuffer(message);
     });
 
-    setTerminalAdapter(new VscodeTerminalAdapter());
+    const terminalAdapter = new VscodeTerminalAdapter();
+    setTerminalAdapter(terminalAdapter);
     this.mcp = createVscodeOfficeMcp({
       store: this.store,
+      sendText: (terminal, text) => terminalAdapter.sendText(terminal, text),
       defaultLayout: () => this.defaultLayout,
       assets: () => this.officeAssets,
       directories: () => listDirectoryLocations(this.hostDirectories()),

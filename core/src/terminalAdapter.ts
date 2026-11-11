@@ -13,4 +13,8 @@ export interface TerminalHandle {
 export interface ITerminalAdapter {
   activeTerminal(): TerminalHandle | undefined;
   allTerminals(): TerminalHandle[];
+  /** Type `text` into `terminal` exactly as given: no line break is added
+   *  (a Message's Enter is its own write). What a Message needs of an editor
+   *  whose terminals can be typed into but not read. */
+  sendText(terminal: TerminalHandle, text: string): void;
 }

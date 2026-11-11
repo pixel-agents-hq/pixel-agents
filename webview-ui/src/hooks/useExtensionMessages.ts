@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   AgentCloseQuestion,
+  AgentMessageShow,
+  AgentVisit,
   AgentWorktree,
   Directory,
   GridShift,
@@ -15,6 +17,7 @@ import { startOfficeSync } from '../characters/officeSprites.js';
 import { cardOrderOf } from '../components/cardBar.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import { clearAgentContextUsed, setAgentContextUsed } from '../office/contextGauge.js';
+import { applyAgentMessageShow, applyAgentVisit } from '../office/engine/agentVisit.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
 import {
   reconcileExistingAgents,
@@ -541,6 +544,7 @@ export function useExtensionMessages(
           const worktree = msg.worktree as AgentWorktree | undefined;
           const ch = os.characters.get(id);
           if (ch && worktree) ch.worktree = worktree;
+          if (ch) ch.nickname = msg.nickname as string | undefined;
           if (isHeadlessAgent(msg.isExternal as boolean | undefined)) {
             os.setHeadless(id, true);
           }
@@ -576,6 +580,7 @@ export function useExtensionMessages(
             pendingAgents,
             headlessAgents,
             (msg.worktrees || {}) as Record<number, AgentWorktree>,
+            (msg.nicknames || {}) as Record<number, string>,
           )
         ) {
           saveAgentSeats(os);
@@ -1017,6 +1022,15 @@ export function useExtensionMessages(
         const id = msg.id as number;
         os.setAgentContext(id, msg.contextTokens as number, msg.maxContextTokens as number);
         setAgentContextUsed(id, msg.contextTokens as number, msg.maxContextTokens as number);
+      } else if (msg.type === 'agentVisit') {
+        // A Visit sent through the Pixel Office MCP (or its end); the connect
+        // snapshot re-sends every agent's, so a reconnect takes it as the truth.
+        applyAgentVisit(os, msg as AgentVisit);
+      } else if (msg.type === 'agentMessageShow') {
+        // An agent messaged others: its character walks to each one with the
+        // gist in its bubble (shown only by the offices open at the time).
+        // Under reduced motion it says it at its desk instead.
+        applyAgentMessageShow(os, msg as AgentMessageShow, { walk: !prefersReducedMotion() });
       }
     };
     const unsubscribe = transport.onMessage(handler);

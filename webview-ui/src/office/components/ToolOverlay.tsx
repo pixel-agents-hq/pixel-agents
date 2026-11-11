@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
 import { PixelIcon } from '../../components/ui/PixelIcon.js';
@@ -10,6 +10,8 @@ import {
   CONTEXT_GAUGE_GAP_PX,
   CONTEXT_GAUGE_HEIGHT_PX,
   CONTEXT_GAUGE_WIDTH_PX,
+  MESSAGE_BUBBLE_FONT_SIZE_PX,
+  MESSAGE_BUBBLE_MAX_WIDTH_PX,
   OVERLAY_BUBBLE_Z_INDEX,
   OVERLAY_LABEL_SELECTED_Z_INDEX,
   OVERLAY_LABEL_Z_INDEX,
@@ -100,6 +102,34 @@ function OverlayBubble({ cached, dpr }: { cached: HTMLCanvasElement; dpr: number
   );
 }
 
+/** A Message's gist as a speech bubble: text in a pixel panel, wrapping at
+ *  MESSAGE_BUBBLE_MAX_WIDTH_PX. Its height goes in `heights` whenever the
+ *  text changes (the label above it needs it), and leaves with it. */
+function GistBubble({
+  text,
+  id,
+  heights,
+}: {
+  text: string;
+  id: number;
+  heights: Map<number, number>;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (ref.current) heights.set(id, ref.current.offsetHeight);
+  }, [text, id, heights]);
+  useEffect(() => () => void heights.delete(id), [id, heights]);
+  return (
+    <div
+      ref={ref}
+      className="pixel-panel px-6 pt-2 pb-4 leading-none w-max"
+      style={{ maxWidth: MESSAGE_BUBBLE_MAX_WIDTH_PX, fontSize: MESSAGE_BUBBLE_FONT_SIZE_PX }}
+    >
+      {text}
+    </div>
+  );
+}
+
 export function ToolOverlay({
   officeState,
   agents,
@@ -113,6 +143,9 @@ export function ToolOverlay({
   alwaysShowOverlay,
 }: ToolOverlayProps) {
   const [, setTick] = useState(0);
+  // Each shown gist bubble's height (CSS px), measured when its text changes:
+  // the label stacks above it (a frame late after a change).
+  const gistHeights = useRef(new Map<number, number>());
   useEffect(() => {
     let rafId = 0;
     const tick = () => {
@@ -164,19 +197,44 @@ export function ToolOverlay({
         let bubbleNode = null;
         // Screen y of the bubble's top edge, when one shows: the label stacks above it.
         let bubbleTop: number | null = null;
-        if (ch.bubbleType && !(ch.bubbleType === 'waiting' && ch.waitingAwaitingInput)) {
+        // A Message's gist, while the character says it, outranks the sprite bubbles.
+        // Where a bubble's foot goes: the character's anchor, lifted (and
+        // lower while it sits), in CSS px.
+        const bubbleSittingOff = ch.state === CharacterState.TYPE ? BUBBLE_SITTING_OFFSET_PX : 0;
+        const bubbleAnchorY = project.toScreenY(
+          ch.y + bubbleSittingOff - BUBBLE_VERTICAL_OFFSET_PX,
+        );
+        // A Message's gist, while the character says it, outranks the sprite bubbles.
+        const gist = officeState.visits.gistOf(id);
+        if (gist) {
+          // Its foot sits where a sprite bubble's would, one zoomed pixel
+          // above the anchor; it grows upward from there.
+          const bubbleBottom = bubbleAnchorY - zoom / dpr;
+          bubbleTop = bubbleBottom - (gistHeights.current.get(id) ?? 0);
+          bubbleNode = (
+            <div
+              className="absolute -translate-x-1/2 -translate-y-full pointer-events-none"
+              style={{
+                left: project.toScreenX(ch.x),
+                top: bubbleBottom,
+                zIndex: OVERLAY_BUBBLE_Z_INDEX,
+              }}
+              data-testid="agent-gist"
+              data-agent-id={id}
+            >
+              <GistBubble text={gist} id={id} heights={gistHeights.current} />
+            </div>
+          );
+        } else if (ch.bubbleType && !(ch.bubbleType === 'waiting' && ch.waitingAwaitingInput)) {
           const cachedBubble = getCachedSprite(
             ch.bubbleType === 'permission' ? BUBBLE_PERMISSION_SPRITE : BUBBLE_WAITING_SPRITE,
             zoom,
           );
-          const bubbleSittingOff = ch.state === CharacterState.TYPE ? BUBBLE_SITTING_OFFSET_PX : 0;
           const alpha =
             ch.bubbleType === 'waiting' && ch.bubbleTimer < BUBBLE_FADE_DURATION_SEC
               ? ch.bubbleTimer / BUBBLE_FADE_DURATION_SEC
               : 1;
-          bubbleTop =
-            project.toScreenY(ch.y + bubbleSittingOff - BUBBLE_VERTICAL_OFFSET_PX) -
-            (cachedBubble.height + zoom) / dpr;
+          bubbleTop = bubbleAnchorY - (cachedBubble.height + zoom) / dpr;
           bubbleNode = (
             <div
               className="absolute -translate-x-1/2 pointer-events-none"
@@ -336,16 +394,16 @@ export function ToolOverlay({
                   >
                     {activityText}
                   </span>
-                  {(ch.directoryName || ch.worktree) && (
-                    // `<directory> · <icon> <branch>` for an agent in a Worktree.
+                  {(ch.directoryName || ch.nickname || ch.worktree) && (
+                    // `<directory> · <nickname> · <icon> <branch>`, each part when it has one.
                     <span
                       data-testid="agent-overlay-origin"
                       className="text-2xs leading-none overflow-hidden text-ellipsis block"
                     >
-                      {ch.directoryName}
+                      {[ch.directoryName, ch.nickname].filter(Boolean).join(' · ')}
                       {ch.worktree && (
                         <>
-                          {ch.directoryName && ' · '}
+                          {(ch.directoryName || ch.nickname) && ' · '}
                           <span data-testid="agent-overlay-worktree" className="inline-flex">
                             <PixelIcon name="worktree" scale={1} />
                           </span>{' '}
