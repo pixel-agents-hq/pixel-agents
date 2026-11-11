@@ -1,6 +1,7 @@
 import type { ReactNode, RefObject } from 'react';
 import { useCallback, useRef } from 'react';
 
+import type { Card } from '../components/cardBar.js';
 import { MobileAgentBar } from '../components/MobileAgentBar.js';
 import { MobileKeyBar } from '../components/MobileKeyBar.js';
 import { MobileTerminalPage } from '../components/MobileTerminalPage.js';
@@ -24,9 +25,10 @@ interface MobileShellProps {
   office: ReactNode;
   shell: MobileShellController;
   drawer: TerminalDrawerController;
-  /** Every top-level office agent, for the card bar. */
-  agentIds: number[];
-  terminalAgentIds: number[];
+  /** The cards (agents' and PC shells'), for the card bar. */
+  cards: Card[];
+  /** Every pane's id (agents' and PC shells'). */
+  paneIds: number[];
   focusedAgentId: number | null;
   terminalAvailable: boolean;
   terminalUnavailableReason: string | null;
@@ -34,7 +36,7 @@ interface MobileShellProps {
   directories: Directory[];
   onAddDirectory: () => void;
   onEditDirectory: (directory: Directory) => void;
-  onCloseAgent: (agentId: number) => void;
+  onCloseCard: (card: Card) => void;
   /** Persist a dragged card order; absent in a read-only office. */
   onReorder?: (order: number[]) => void;
   /** Opens the Characters view; absent in a read-only office, which hides the
@@ -58,15 +60,15 @@ export function MobileShell({
   office,
   shell,
   drawer,
-  agentIds,
-  terminalAgentIds,
+  cards,
+  paneIds,
   focusedAgentId,
   terminalAvailable,
   terminalUnavailableReason,
   directories,
   onAddDirectory,
   onEditDirectory,
-  onCloseAgent,
+  onCloseCard,
   onReorder,
   onOpenCharacters,
   keyboardOpen,
@@ -113,7 +115,7 @@ export function MobileShell({
           <div className="w-1/2 h-full relative overflow-hidden">{office}</div>
           <div className="w-1/2 h-full">
             <MobileTerminalPage
-              agentIds={terminalAgentIds}
+              agentIds={paneIds}
               shownAgentId={drawer.shownAgentId}
               onStatusChange={drawer.onStatusChange}
               inputRef={inputRef}
@@ -140,13 +142,13 @@ export function MobileShell({
       </div>
 
       <MobileAgentBar
-        agentIds={agentIds}
+        cards={cards}
         focusedAgentId={focusedAgentId}
         // The accent border marks the showing pane, so it only exists on the
         // terminal page; the focused character keeps its tint on both.
         activeAgentId={shell.view === 'terminal' ? drawer.activeAgentId : null}
         onSelectAgent={shell.selectCard}
-        onCloseAgent={onCloseAgent}
+        onCloseAgent={onCloseCard}
         onReorder={onReorder}
         onLaunchDirectory={shell.launch}
         directories={directories}

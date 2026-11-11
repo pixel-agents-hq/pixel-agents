@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 
+import type { Card } from '../components/cardBar.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import type { TerminalDrawerController } from '../hooks/useTerminalDrawer.js';
 import type { OfficeState } from '../office/engine/officeState.js';
@@ -12,8 +13,8 @@ export interface MobileShellController {
   showTerminal: () => void;
   /** The >_ / Office button and the edge swipe. */
   toggleView: () => void;
-  /** A tap on an agent card. */
-  selectCard: (agentId: number) => void;
+  /** A tap on a card (an agent's or a PC shell's). */
+  selectCard: (card: Card) => void;
   /** A Directory picked from the + card's drawer: launch into it (wearing
    *  `palette` when a character was picked first). App slides over once the
    *  new terminal appears (`drawer.lastLaunched`). */
@@ -21,11 +22,14 @@ export interface MobileShellController {
   /** A running conversation pressed in the menu: focus its agent and, when it
    *  has a pane, slide to it. */
   openAgent: (agentId: number) => void;
+  /** This office's PC shell opened: slide to its pane. */
+  openPane: (id: number) => void;
 }
 
 interface MobileShellInputs {
   getOfficeState: () => OfficeState;
-  terminalAgentIds: number[];
+  /** Every pane's id (agents' and PC shells'). */
+  paneIds: number[];
   drawer: TerminalDrawerController;
   focusedAgentId: number | null;
   launchAgent: (directory: Directory, palette?: number, worktree?: boolean) => void;
@@ -39,7 +43,7 @@ interface MobileShellInputs {
  */
 export function useMobileShell({
   getOfficeState,
-  terminalAgentIds,
+  paneIds,
   drawer,
   focusedAgentId,
   launchAgent,
@@ -68,19 +72,33 @@ export function useMobileShell({
   // with no pane jump back to the office). In office view it mirrors the
   // character's two-step tap: the first tap focuses the character (camera
   // follow + status label), a repeat tap on the already-focused agent opens
-  // its terminal. A card with no character (a PC shell's) has nothing to
-  // focus: one tap opens its terminal.
+  // its terminal. A PC shell's card has no character to focus: one tap opens
+  // its terminal.
+  const openPane = useCallback(
+    (id: number) => {
+      if (!paneIds.includes(id)) return;
+      reveal(id);
+      setView('terminal');
+    },
+    [paneIds, reveal],
+  );
+
   const selectCard = useCallback(
-    (agentId: number) => {
+    (card: Card) => {
+      if (card.kind === 'pcShell') {
+        openPane(card.id);
+        return;
+      }
+      const agentId = card.id;
       const os = getOfficeState();
-      const hasTerminal = terminalAgentIds.includes(agentId);
+      const hasTerminal = paneIds.includes(agentId);
       if (view === 'terminal') {
         os.selectAndFollow(agentId);
         if (hasTerminal) reveal(agentId);
         else setView('office');
         return;
       }
-      if (hasTerminal && (os.selectedAgentId === agentId || !os.characters.has(agentId))) {
+      if (hasTerminal && os.selectedAgentId === agentId) {
         reveal(agentId);
         setView('terminal');
         return;
@@ -89,17 +107,15 @@ export function useMobileShell({
       // Pre-select the pane (and the card highlight) without leaving the office.
       reveal(agentId);
     },
-    [getOfficeState, terminalAgentIds, view, reveal],
+    [getOfficeState, paneIds, view, reveal, openPane],
   );
 
   const openAgent = useCallback(
     (agentId: number) => {
       getOfficeState().selectAndFollow(agentId);
-      if (!terminalAgentIds.includes(agentId)) return;
-      reveal(agentId);
-      setView('terminal');
+      openPane(agentId);
     },
-    [getOfficeState, terminalAgentIds, reveal],
+    [getOfficeState, openPane],
   );
 
   return {
@@ -109,5 +125,6 @@ export function useMobileShell({
     selectCard,
     launch: launchAgent,
     openAgent,
+    openPane,
   };
 }

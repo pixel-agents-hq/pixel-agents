@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import type { PieceClick } from '../../core/src/furniture/pieceRules.js';
-import { isPcShellId } from '../../core/src/pcShells.js';
 import { toMajorMinor } from './changelogData.js';
 import { castStore } from './characters/castStore.js';
 import { CharactersView } from './characters/ui/CharactersView.js';
 import { AgentCardBar } from './components/AgentCardBar.js';
 import { AgentEditUndoBar } from './components/AgentEditUndoBar.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
+import type { Card } from './components/cardBar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
@@ -168,7 +168,8 @@ function App() {
     terminalAvailable,
     terminalUnavailableReason,
     terminalAgentIds,
-    cardAgents,
+    panes,
+    cards,
     saveCardOrder,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
   const usage = useUsageBridge();
@@ -222,7 +223,7 @@ function App() {
   // active tab on both shells; the desktop-only bits (isOpen, width, resize)
   // are simply unread on mobile, where the sliding track plays the drawer.
   const terminalDrawer = useTerminalDrawer({
-    terminalAgentIds,
+    panes,
     getOfficeState,
     agentTools,
     agentStatuses,
@@ -244,9 +245,11 @@ function App() {
     },
     [askNewWorktree, launchAgent],
   );
+  // Every pane's id: agents' terminals and PC shells'.
+  const paneIds = useMemo(() => panes.map((pane) => pane.id), [panes]);
   const mobileShell = useMobileShell({
     getOfficeState,
-    terminalAgentIds,
+    paneIds,
     drawer: terminalDrawer,
     focusedAgentId,
     launchAgent: launchIntoDirectory,
@@ -480,9 +483,15 @@ function App() {
   // A card's ×: an agent's, or a PC shell's (which asks first when a command
   // still runs in it: PcShellCloseDialog).
   const handleCloseAgent = useCallback((id: number) => {
-    if (isPcShellId(id)) closePcShell(id);
-    else transport.send({ type: 'closeAgent', id });
+    transport.send({ type: 'closeAgent', id });
   }, []);
+  const handleCloseCard = useCallback(
+    (card: Card) => {
+      if (card.kind === 'pcShell') closePcShell(card.id);
+      else handleCloseAgent(card.id);
+    },
+    [handleCloseAgent],
+  );
 
   const { reveal: revealTerminal } = terminalDrawer;
   const handleClick = useCallback(
@@ -514,21 +523,23 @@ function App() {
   // show — and select its character so the office follows the click.
   const { select: selectTerminal } = terminalDrawer;
   const handleCardSelect = useCallback(
-    (agentId: number) => {
-      if (terminalAgentIds.includes(agentId)) {
-        selectTerminal(agentId);
+    (card: Card) => {
+      if (card.kind === 'pcShell') {
+        // Its pane (standalone); else VS Code shows its integrated terminal,
+        // and a browser office without one (read-only) has nothing to raise.
+        if (paneIds.includes(card.id)) revealTerminal(card.id);
+        else if (!isBrowserRuntime) transport.send({ type: 'focusAgent', id: card.id });
         return;
       }
-      // A PC shell's card with no pane here: VS Code shows its integrated
-      // terminal; a browser office without one (read-only) has nothing to raise.
-      if (isPcShellId(agentId)) {
-        if (!isBrowserRuntime) transport.send({ type: 'focusAgent', id: agentId });
+      const agentId = card.id;
+      if (paneIds.includes(agentId)) {
+        selectTerminal(agentId);
         return;
       }
       transport.send({ type: 'focusAgent', id: agentId });
       getOfficeState().selectAndFollow(agentId);
     },
-    [terminalAgentIds, selectTerminal],
+    [paneIds, selectTerminal, revealTerminal],
   );
 
   // A running conversation pressed in the desktop sidebar: its agent, as its
@@ -542,7 +553,7 @@ function App() {
   const openAgentFromSidebar = useCallback(
     (agentId: number) => {
       getOfficeState().selectAndFollow(agentId);
-      handleCardSelect(agentId);
+      handleCardSelect({ kind: 'agent', id: agentId });
     },
     [handleCardSelect],
   );
@@ -587,9 +598,9 @@ function App() {
   // on the phone sliding to the terminal page.
   const { ready: pcShellReady } = usePcShells();
   useEffect(() => {
-    if (!pcShellReady || !terminalAgentIds.includes(pcShellReady.id)) return;
-    if (isMobile) mobileShell.openAgent(pcShellReady.id);
-    else selectTerminal(pcShellReady.id);
+    if (!pcShellReady || !paneIds.includes(pcShellReady.id)) return;
+    if (isMobile) mobileShell.openPane(pcShellReady.id);
+    else revealTerminal(pcShellReady.id);
     // Keyed on the answer alone (its pane is listed by the same render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pcShellReady]);
@@ -975,15 +986,15 @@ function App() {
           office={officeRegion}
           shell={mobileShell}
           drawer={terminalDrawer}
-          agentIds={cardAgents}
-          terminalAgentIds={terminalAgentIds}
+          cards={cards}
+          paneIds={paneIds}
           focusedAgentId={focusedAgentId}
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
           directories={directories}
           onAddDirectory={directoryEditor.add}
           onEditDirectory={directoryEditor.edit}
-          onCloseAgent={handleCloseAgent}
+          onCloseCard={handleCloseCard}
           onReorder={officeReadOnly ? undefined : saveCardOrder}
           onOpenCharacters={officeReadOnly ? undefined : openCharacters}
           keyboardOpen={keyboard.keyboardOpen}
@@ -1013,16 +1024,16 @@ function App() {
               character. */}
           {!(isDebugMode && !terminalAvailable) && (
             <AgentCardBar
-              agentIds={cardAgents}
+              cards={cards}
               activeAgentId={terminalAvailable ? terminalDrawer.shownAgentId : null}
               focusedAgentId={focusedAgentId}
               getAppearance={terminalDrawer.getAppearance}
               statusFor={terminalDrawer.statusFor}
               onSelect={handleCardSelect}
-              onClose={handleCloseAgent}
+              onClose={handleCloseCard}
               onReorder={officeReadOnly ? undefined : saveCardOrder}
               trailing={
-                terminalAvailable && terminalAgentIds.length > 0 ? (
+                terminalAvailable && paneIds.length > 0 ? (
                   <TerminalHideRibbon shown={terminalDrawer.isOpen} onHide={terminalDrawer.close} />
                 ) : undefined
               }
@@ -1035,7 +1046,7 @@ function App() {
               region reflows beside it instead of being overlaid. */}
           {terminalAvailable && (
             <TerminalDrawer
-              agentIds={terminalAgentIds}
+              agentIds={paneIds}
               shownAgentId={terminalDrawer.shownAgentId}
               isOpen={terminalDrawer.isOpen}
               widthPx={terminalDrawer.widthPx}

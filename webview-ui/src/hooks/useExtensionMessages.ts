@@ -14,7 +14,7 @@ import type {
 import { handleCastMessage } from '../characters/castMessages.js';
 import { castStore } from '../characters/castStore.js';
 import { startOfficeSync } from '../characters/officeSprites.js';
-import { cardOrderOf } from '../components/cardBar.js';
+import { type Card, cardOrderOf } from '../components/cardBar.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import { clearAgentContextUsed, setAgentContextUsed } from '../office/contextGauge.js';
 import { applyAgentMessageShow, applyAgentVisit } from '../office/engine/agentVisit.js';
@@ -47,6 +47,7 @@ import { transport } from '../transport/index.js';
 import { onReconnect } from '../transport/onReconnect.js';
 import { handleTutorialMessage } from '../tutorial/tutorialStore.js';
 import { handleUsageMessage } from '../usage/usageStore.js';
+import type { Pane } from './terminalPanes.js';
 import { prefersReducedMotion } from './usePresence.js';
 
 /**
@@ -211,13 +212,15 @@ interface ExtensionMessageState {
   // own terminals and never sends these messages)
   terminalAvailable: boolean;
   terminalUnavailableReason: string | null;
-  /** Ids with a live server-side PTY this office may attach to, in the order
-   *  they opened: agents', then PC shells' (only where this office runs
-   *  terminals: a read-only one shows their cards, not their panes). */
+  /** Agent ids with a live server-side PTY, in the order they opened. */
   terminalAgentIds: number[];
+  /** The panes this office may attach to, in the order they opened: agents',
+   *  then PC shells' (only where this office runs terminals: a read-only one
+   *  shows their cards, not their panes). */
+  panes: Pane[];
   /** The cards, in the card order every client shares: `agents` minus
    *  Teammates, and the live PC shells; the server's order first, newer after. */
-  cardAgents: number[];
+  cards: Card[];
   /** Reorder the cards (a finished drag): shown at once, saved by the server,
    *  which tells every open office. */
   saveCardOrder: (order: number[]) => void;
@@ -310,14 +313,16 @@ export function useExtensionMessages(
   // PC shells (pcShells/pcShellStore.ts): a card each, and a pane where this
   // office runs terminals. Not agents: never in `agents` or the office's characters.
   const { shells: pcShells } = usePcShells();
-  const pcShellIds = useMemo(() => pcShells.map((shell) => shell.id), [pcShells]);
-  const cardAgents = useMemo(
-    () => cardOrderOf(cardOrder, agents, teammateIds, pcShellIds),
-    [cardOrder, agents, teammateIds, pcShellIds],
+  const cards = useMemo(
+    () => cardOrderOf(cardOrder, agents, teammateIds, pcShells),
+    [cardOrder, agents, teammateIds, pcShells],
   );
-  const terminalIds = useMemo(
-    () => (terminalAvailable ? [...terminalAgentIds, ...pcShellIds] : terminalAgentIds),
-    [terminalAvailable, terminalAgentIds, pcShellIds],
+  const panes = useMemo(
+    (): Pane[] => [
+      ...terminalAgentIds.map((id): Pane => ({ kind: 'agent', id })),
+      ...(terminalAvailable ? pcShells.map((shell): Pane => ({ kind: 'pcShell', id: shell.id })) : []),
+    ],
+    [terminalAvailable, terminalAgentIds, pcShells],
   );
   const saveCardOrder = useCallback((order: number[]) => {
     setCardOrder(order);
@@ -1093,7 +1098,7 @@ export function useExtensionMessages(
 
   return {
     agents,
-    cardAgents,
+    cards,
     saveCardOrder,
     selectedAgent,
     agentTools,
@@ -1152,6 +1157,7 @@ export function useExtensionMessages(
     officeReadOnly,
     terminalAvailable,
     terminalUnavailableReason,
-    terminalAgentIds: terminalIds,
+    terminalAgentIds,
+    panes,
   };
 }

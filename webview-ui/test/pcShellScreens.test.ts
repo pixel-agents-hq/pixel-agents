@@ -16,7 +16,7 @@ import { beforeAll, describe, test } from 'vitest';
 
 import type { FurnitureInteractive } from '../../core/src/furniture/interactive.js';
 import type { PcShell } from '../../core/src/messages.js';
-import { cardOrderOf } from '../src/components/cardBar.js';
+import { type Card, cardOrderOf } from '../src/components/cardBar.js';
 import { OfficeState } from '../src/office/engine/officeState.js';
 import type { LoadedAssetData } from '../src/office/layout/furnitureCatalog.js';
 import { buildDynamicCatalog } from '../src/office/layout/furnitureCatalog.js';
@@ -165,6 +165,7 @@ describe('PC shells across a reconnect and layout changes', () => {
     tiles: new Array(100).fill(TileType.FLOOR_1),
     furniture: [...ROOM, { uid: 'kiosk2', type: 'KIOSK_FRONT_OFF', col: 6, row: 3 }],
   });
+  const cardIds = (cards: Card[]): number[] => cards.map((card) => card.id);
   const litCount = (os: OfficeState): number => os.furniture.filter((f) => f.sprite === ON).length;
 
   test("a reconnect's snapshot is the whole truth: a shell that ended meanwhile loses its card and light", () => {
@@ -174,7 +175,7 @@ describe('PC shells across a reconnect and layout changes', () => {
     os.setAgentActive(1, false);
     os.setPcShells([SHELL, OTHER]);
     const saved = [OTHER.id, 1, SHELL.id];
-    assert.deepEqual(cardOrderOf(saved, [1], new Set(), [SHELL.id, OTHER.id]), saved);
+    assert.deepEqual(cardIds(cardOrderOf(saved, [1], new Set(), [SHELL, OTHER])), saved);
 
     // SHELL ended while the office was away; the snapshot lists OTHER alone.
     const snapshot = [OTHER];
@@ -182,15 +183,7 @@ describe('PC shells across a reconnect and layout changes', () => {
     assert.equal(os.pcShellOf('kiosk'), null);
     assert.equal(litCount(os), 1);
     assert.equal(os.pcShellOf('kiosk2')?.id, OTHER.id);
-    assert.deepEqual(
-      cardOrderOf(
-        saved,
-        [1],
-        new Set(),
-        snapshot.map((s) => s.id),
-      ),
-      [OTHER.id, 1],
-    );
+    assert.deepEqual(cardIds(cardOrderOf(saved, [1], new Set(), snapshot)), [OTHER.id, 1]);
   });
 
   test('a shell whose PC left the layout keeps its card and lights nothing; its PC back, lit again', () => {
@@ -205,7 +198,10 @@ describe('PC shells across a reconnect and layout changes', () => {
     assert.equal(os.pcShellOf('kiosk')?.id, SHELL.id);
     // Only the other shell's PC.
     assert.equal(litCount(os), 1);
-    assert.deepEqual(cardOrderOf([], [], new Set(), [SHELL.id, OTHER.id]), [SHELL.id, OTHER.id]);
+    assert.deepEqual(cardIds(cardOrderOf([], [], new Set(), [SHELL, OTHER])), [
+      SHELL.id,
+      OTHER.id,
+    ]);
     // An undo puts the piece back: lit again.
     os.rebuildFromLayout(twoKiosks());
     assert.equal(litCount(os), 2);

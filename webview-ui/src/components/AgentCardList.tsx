@@ -1,19 +1,18 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { CARD_SCROLL_INTO_VIEW_MARGIN_PX } from '../constants.js';
-import { usePcShells } from '../pcShells/pcShellStore.js';
 import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCard } from './AgentCard.js';
-import { cardVariant, closeMode } from './cardBar.js';
+import { type Card, cardVariant, closeMode } from './cardBar.js';
 import { PcShellCard } from './PcShellCard.js';
 import type { CardAxis } from './useCardReorder.js';
 import { useCardReorder } from './useCardReorder.js';
 
 interface AgentCardListProps {
-  /** The cards, in the shared order (useExtensionMessages' cardAgents):
-   *  agents', and PC shells' (drawn as PcShellCard). */
-  agentIds: number[];
+  /** The cards, in the shared order (useExtensionMessages' cards): agents'
+   *  (AgentCard) and PC shells' (PcShellCard), by kind. */
+  cards: Card[];
   /** A row (phone) or a column (desktop). */
   axis: CardAxis;
   /** The scroller's own classes and style: everything that differs per shell. */
@@ -31,8 +30,8 @@ interface AgentCardListProps {
   closeOnlyWhenActive?: boolean;
   getAppearance: (agentId: number) => AgentAppearance;
   statusFor: (agentId: number) => TabStatus | null;
-  onSelect: (agentId: number) => void;
-  onClose: (agentId: number) => void;
+  onSelect: (card: Card) => void;
+  onClose: (card: Card) => void;
   /** Drawn after the cards, in the same scroller (the desktop terminal's hide ribbon). */
   trailing?: ReactNode;
 }
@@ -44,7 +43,7 @@ interface AgentCardListProps {
  * along the office's right edge; that layout is all the two wrappers add.
  */
 export function AgentCardList({
-  agentIds,
+  cards,
   axis,
   className,
   style,
@@ -59,15 +58,16 @@ export function AgentCardList({
   onClose,
   trailing,
 }: AgentCardListProps) {
+  const ids = useMemo(() => cards.map((card) => card.id), [cards]);
+  const byId = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
   const reorder = useCardReorder({
-    ids: agentIds,
+    ids,
     axis,
     enabled: onReorder !== undefined,
     onCommit: (order) => onReorder?.(order),
     onTouchTap,
   });
   const { container, cardElement } = reorder;
-  const { shells: pcShells } = usePcShells();
 
   // Selecting a character on the canvas focuses an agent whose card may sit
   // outside the scroller: bring it fully into view.
@@ -77,17 +77,19 @@ export function AgentCardList({
     if (container && card) scrollIntoBar(container, card, axis);
   }, [focusedAgentId, axis, container, cardElement]);
 
-  if (agentIds.length === 0) return null;
+  if (cards.length === 0) return null;
 
   return (
     <div ref={reorder.containerRef} className={className} style={style}>
       {reorder.displayIds.map((agentId) => {
+        const card = byId.get(agentId);
+        if (!card) return null;
         const variant = cardVariant(agentId, {
           activeId: activeAgentId,
           focusedId: focusedAgentId,
         });
+        const close = closeMode(variant, closeOnlyWhenActive);
         const lifted = reorder.draggingId === agentId;
-        const shell = pcShells.find((s) => s.id === agentId) ?? null;
         return (
           <div
             key={agentId}
@@ -98,13 +100,13 @@ export function AgentCardList({
               lifted ? `relative z-10 opacity-70 ${LIFT[axis]}` : ''
             }`}
           >
-            {shell ? (
+            {card.kind === 'pcShell' ? (
               <PcShellCard
-                shell={shell}
+                shell={card.shell}
                 variant={variant}
-                close={closeMode(variant, closeOnlyWhenActive)}
-                onSelect={onSelect}
-                onClose={onClose}
+                close={close}
+                onSelect={() => onSelect(card)}
+                onClose={() => onClose(card)}
               />
             ) : (
               <AgentCard
@@ -112,9 +114,9 @@ export function AgentCardList({
                 variant={variant}
                 appearance={getAppearance(agentId)}
                 status={statusFor(agentId)}
-                close={closeMode(variant, closeOnlyWhenActive)}
-                onSelect={onSelect}
-                onClose={onClose}
+                close={close}
+                onSelect={() => onSelect(card)}
+                onClose={() => onClose(card)}
               />
             )}
           </div>
