@@ -1424,7 +1424,18 @@ components:
           description: Display name (trimmed, at most 64 characters). Empty is ignored.
         directoryPath:
           type: string
-          description: Path of the Directory to run the agent in.
+          description: |
+            Path of the Directory to run the agent in. With `workspaceId` it is a
+            free absolute path: created when missing, added to that Workspace's
+            Directories, and its personal Knowledge Base (`.note/_default/`) is
+            initialized. Without `workspaceId` it must already exist.
+        workspaceId:
+          type: string
+          description: |
+            The Workspace the agent belongs to. Membership stays derived from the
+            Directory, so the host registers `directoryPath` with this Workspace
+            first. Refused for the default Workspace, for a path another Workspace
+            owns, and for an unsafe path; a refusal creates nothing.
         permissionRoles:
           type: [array, 'null']
           uniqueItems: true

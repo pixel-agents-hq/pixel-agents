@@ -576,6 +576,7 @@ export interface CreateAgent {
   type: 'createAgent';
   name?: string;
   directoryPath: string;
+  workspaceId?: string;
   permissionRoles?: PermissionRole[] | null;
   start?: boolean;
 }

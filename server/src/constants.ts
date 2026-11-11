@@ -161,6 +161,27 @@ export const WORKSPACE_WRITE_FAILED_REASON =
 export const WORKSPACES_FILE_UNREADABLE_REASON =
   "Couldn't change Workspaces: ~/.pixel-agents/workspaces.json is unreadable or malformed. Fix or delete it, then try again.";
 
+// ── createAgent 帶 workspaceId 的自由路徑（agentPath.ts） ─────
+/** 單一路徑段的 UTF-8 位元組上限（常見檔案系統的檔名上限）。 */
+export const AGENT_PATH_SEGMENT_MAX_BYTES = 255;
+/** 一次 createAgent 最多新建的目錄段數（不含 `.note`／`_default`）。 */
+export const AGENT_PATH_MAX_NEW_SEGMENTS = 8;
+/** 新建目錄的權限（逐段非遞迴 mkdir；實際值仍受 umask 影響）。 */
+export const AGENT_DIRECTORY_MODE = 0o755;
+/** HOME 之外不得作為 Agent 目錄的系統根目錄（比對前先 realpath，只比對相等）。 */
+export const AGENT_PATH_SYSTEM_ROOTS: readonly string[] = [
+  '/etc',
+  '/usr',
+  '/bin',
+  '/sbin',
+  '/System',
+  '/Library',
+  '/private',
+  '/var',
+  '/opt',
+  '/Applications',
+];
+
 // ── Roles ───────────────────────────────────────────────────
 /** Where a Directory keeps its Roles: one `.md` file per Role. One letter away
  *  from `.claude/rules/`, which Claude Code loads into EVERY agent of the folder. */

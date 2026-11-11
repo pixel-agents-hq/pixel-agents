@@ -14,7 +14,7 @@ import {
   setHooksEnabled,
   writeConfig,
 } from './configPersistence.js';
-import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT } from './constants.js';
+import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT, WORKSPACE_ID_MAX_LENGTH } from './constants.js';
 import {
   curatorsAvailable,
   curatorsLoadedMessage,
@@ -41,12 +41,14 @@ import type { LaunchStandaloneAgentDeps } from './terminal/standaloneAgentLaunch
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 import {
   createStoppedAgent,
+  createWorkspaceAgent,
   normalizeAgentName,
   startStoppedAgent,
 } from './terminal/standaloneAgentRecords.js';
 import {
   handleWorkspaceClientMessage,
   listWorkspaces,
+  type WorkspaceMessageDeps,
   workspacesLoadedMessage,
 } from './workspaces.js';
 import type { GuardStatusReporter } from './writeGuard/guardStatusReporter.js';
@@ -259,6 +261,32 @@ function pruneCuratorBinding(ctx: ClientMessageContext, workspaceId: string): vo
 }
 
 /**
+ * Workspace 訊息的依賴（這條連線的視角）。saveWorkspace 訊息與 createAgent 加入／回復
+ * Directory 都用這一份，因此儲存後的副作用（onWorkspaceSaved、廣播）只有一套。
+ */
+function workspaceMessageDepsFor(ctx: ClientMessageContext, send: WsSend): WorkspaceMessageDeps {
+  const { store } = ctx;
+  return {
+    broadcast: (message) => store.broadcast(message),
+    reply: send,
+    personalKbDirectories: () => personalKbDirectoriesFor(ctx),
+    onWorkspaceRemoved: (workspaceId) => {
+      for (const [id, agent] of [...store]) {
+        if (agent.workspaceId === workspaceId) {
+          store.setAgentWorkspace(id, DEFAULT_WORKSPACE_ID);
+        }
+      }
+      // Moving its agents already cleared their curator record (the curator
+      // table follows agentWorkspaceChanged); the record goes too, whoever holds it.
+      ctx.curators?.clearWorkspace(workspaceId);
+      // KB Writer 綁定也一併移除。
+      removeCuratorBinding(ctx, workspaceId);
+    },
+    onWorkspaceSaved: (workspaceId) => pruneCuratorBinding(ctx, workspaceId),
+  };
+}
+
+/**
  * Handle incoming ClientMessage from a WebSocket client.
  *
  * In standalone mode, the server is the authority for all state: assets,
@@ -335,20 +363,51 @@ export function handleClientMessage(
         console.warn('[Pixel Agents] Terminal: not creating -- invalid permissionRoles');
         break;
       }
-      const id = createStoppedAgent(
-        { store, provider: claudeProvider },
-        {
-          directoryPath: msg.directoryPath,
-          name: normalizeAgentName(msg.name),
-          ...(permissionRoles !== undefined ? { permissionRoles } : {}),
-        },
-      );
-      if (id !== null && msg.start === true) {
-        const started = startStoppedAgent(launchDepsFor(ctx, store, runtime, ptyManager), id, {
-          bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
-        });
+      if (
+        msg.workspaceId !== undefined &&
+        (typeof msg.workspaceId !== 'string' ||
+          msg.workspaceId.length === 0 ||
+          msg.workspaceId.length > WORKSPACE_ID_MAX_LENGTH)
+      ) {
+        console.warn('[Pixel Agents] Terminal: not creating -- invalid workspaceId');
+        break;
+      }
+      // 帶 workspaceId：自由路徑，必要時建立目錄並加入該 Workspace（見 createWorkspaceAgent）；
+      // 紀錄存的是 realpath 後的路徑。不帶：與以前完全相同，路徑必須已存在。
+      let created: { id: number; directoryPath: string } | null;
+      if (typeof msg.workspaceId === 'string') {
+        created = createWorkspaceAgent(
+          {
+            store,
+            provider: claudeProvider,
+            workspaceEffects: workspaceMessageDepsFor(ctx, send),
+          },
+          {
+            directoryPath: msg.directoryPath,
+            workspaceId: msg.workspaceId,
+            name: normalizeAgentName(msg.name),
+            ...(permissionRoles !== undefined ? { permissionRoles } : {}),
+          },
+        );
+      } else {
+        const id = createStoppedAgent(
+          { store, provider: claudeProvider },
+          {
+            directoryPath: msg.directoryPath,
+            name: normalizeAgentName(msg.name),
+            ...(permissionRoles !== undefined ? { permissionRoles } : {}),
+          },
+        );
+        created = id === null ? null : { id, directoryPath: msg.directoryPath };
+      }
+      if (created !== null && msg.start === true) {
+        const started = startStoppedAgent(
+          launchDepsFor(ctx, store, runtime, ptyManager),
+          created.id,
+          { bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false },
+        );
         // 第 3 個操作者啟動處理器：createAgent 帶 start。
-        if (started) restoreCuratorAfterOperatorLaunch(ctx, id, msg.directoryPath);
+        if (started) restoreCuratorAfterOperatorLaunch(ctx, created.id, created.directoryPath);
       }
       break;
     }
@@ -576,24 +635,7 @@ export function handleClientMessage(
       // Same shape as the Directory messages: success rebroadcasts the list to
       // every office, a rejection answers only the sender. Deleting a Workspace
       // sends its agents back to the default first, one agentWorkspaceChanged each.
-      handleWorkspaceClientMessage(msg, {
-        broadcast: (message) => store.broadcast(message),
-        reply: send,
-        personalKbDirectories: () => personalKbDirectoriesFor(ctx),
-        onWorkspaceRemoved: (workspaceId) => {
-          for (const [id, agent] of [...store]) {
-            if (agent.workspaceId === workspaceId) {
-              store.setAgentWorkspace(id, DEFAULT_WORKSPACE_ID);
-            }
-          }
-          // Moving its agents already cleared their curator record (the curator
-          // table follows agentWorkspaceChanged); the record goes too, whoever holds it.
-          ctx.curators?.clearWorkspace(workspaceId);
-          // KB Writer 綁定也一併移除。
-          removeCuratorBinding(ctx, workspaceId);
-        },
-        onWorkspaceSaved: (workspaceId) => pruneCuratorBinding(ctx, workspaceId),
-      });
+      handleWorkspaceClientMessage(msg, workspaceMessageDepsFor(ctx, send));
       break;
 
     case 'setWorkspaceCurator':

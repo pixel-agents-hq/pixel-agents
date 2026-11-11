@@ -616,6 +616,106 @@ export interface WorkspaceMessageDeps {
   personalKbDirectories?: () => string[];
 }
 
+/** 一次 Workspace 儲存成功之後要做的事（saveWorkspace 訊息與 createAgent 共用）。 */
+export type WorkspaceSaveEffects = Pick<WorkspaceMessageDeps, 'broadcast' | 'onWorkspaceSaved'>;
+
+/**
+ * saveWorkspace 的唯一執行路徑：寫入，成功後呼叫 onWorkspaceSaved，再把清單廣播
+ * 給每個 office。saveWorkspace 訊息處理器與 createAgent（新增／回復一個 Directory）
+ * 都走這裡，兩者的副作用因此不會分歧。失敗時不廣播，原因交給呼叫端回覆。
+ */
+export function saveWorkspaceAndAnnounce(
+  msg: Record<string, unknown>,
+  effects: WorkspaceSaveEffects,
+): WorkspaceMutationResult & { id?: string } {
+  const result = saveWorkspace(msg);
+  if (!result.ok) return result;
+  if (result.id !== undefined) effects.onWorkspaceSaved?.(result.id);
+  effects.broadcast(workspacesLoadedMessage());
+  return result;
+}
+
+/** createAgent 對一個 Directory 的歸屬判定：可用（是否需要加入），或拒絕原因。 */
+export type DirectoryClaim = { ok: true; add: boolean } | { ok: false; reason: string };
+
+/**
+ * 判定已 realpath 的 `realDirectory` 能否作為 `workspaceId` 的 Directory（以 realpath
+ * 比對，見 workspaceContainsDirectory）：
+ * - 預設 Workspace 或不存在的 Workspace：拒絕；
+ * - 其他任一 Workspace 回答 'member' 或 'unknown'：拒絕；
+ * - 目標 Workspace 已包含它：可用、不加入；但它的登記字串必須讓
+ *   workspaceIdForDirectory 推得回這個 Workspace（Agent 的歸屬是由 Directory 推導的），
+ *   否則拒絕；
+ * - 其他情況：可用、需要加入。
+ * 只讀，不寫任何東西。
+ */
+export function claimDirectoryForWorkspace(
+  workspaceId: string,
+  realDirectory: string,
+): DirectoryClaim {
+  if (workspaceId === DEFAULT_WORKSPACE_ID) {
+    return reject('The default Workspace cannot take a new Directory.');
+  }
+  const workspaces = listWorkspaces();
+  const target = workspaces.find((w) => w.id === workspaceId);
+  if (!target) return reject('That Workspace no longer exists.');
+  for (const other of workspaces) {
+    if (other.id === workspaceId) continue;
+    if (workspaceContainsDirectory(other, realDirectory) !== 'not-member') {
+      return reject('That Directory belongs to another Workspace (or cannot be checked).');
+    }
+  }
+  if (workspaceContainsDirectory(target, realDirectory) === 'member') {
+    if (workspaceIdForDirectory(realDirectory) !== workspaceId) {
+      return reject('That Directory is listed in the Workspace under another path.');
+    }
+    return { ok: true, add: false };
+  }
+  return { ok: true, add: true };
+}
+
+/**
+ * 把 `directoryPath` 加到 Workspace 目前（伺服器端重新讀取）的 Directory 清單末尾，
+ * 經 saveWorkspaceAndAnnounce 寫入並廣播。絕不採用用戶端送來的清單。
+ */
+export function addWorkspaceDirectory(
+  workspaceId: string,
+  directoryPath: string,
+  effects: WorkspaceSaveEffects,
+): WorkspaceMutationResult {
+  const target = listWorkspaces().find((w) => w.id === workspaceId);
+  if (!target || target.id === DEFAULT_WORKSPACE_ID) {
+    return reject('That Workspace no longer exists.');
+  }
+  return saveWorkspaceAndAnnounce(
+    { id: target.id, name: target.name, directoryPaths: [...target.directoryPaths, directoryPath] },
+    effects,
+  );
+}
+
+/**
+ * 回復 addWorkspaceDirectory：從 Workspace 目前的清單只移除字面上等於
+ * `directoryPath` 的那一筆，經 saveWorkspaceAndAnnounce 寫入並再次廣播。
+ */
+export function removeWorkspaceDirectory(
+  workspaceId: string,
+  directoryPath: string,
+  effects: WorkspaceSaveEffects,
+): WorkspaceMutationResult {
+  const target = listWorkspaces().find((w) => w.id === workspaceId);
+  if (!target || target.id === DEFAULT_WORKSPACE_ID) {
+    return reject('That Workspace no longer exists.');
+  }
+  return saveWorkspaceAndAnnounce(
+    {
+      id: target.id,
+      name: target.name,
+      directoryPaths: target.directoryPaths.filter((entry) => entry !== directoryPath),
+    },
+    effects,
+  );
+}
+
 /**
  * Dispatch saveWorkspace / removeWorkspace / setWorkspaceRoot / setWorkspacePermissionRoles.
  * Returns false for anything else.
@@ -628,13 +728,10 @@ export function handleWorkspaceClientMessage(
 ): boolean {
   switch (msg.type) {
     case 'saveWorkspace': {
-      const result = saveWorkspace(msg);
+      const result = saveWorkspaceAndAnnounce(msg, deps);
       if (!result.ok) {
         deps.reply({ type: 'workspaceRejected', reason: result.reason });
-        return true;
       }
-      if (result.id !== undefined) deps.onWorkspaceSaved?.(result.id);
-      deps.broadcast(workspacesLoadedMessage());
       return true;
     }
 
