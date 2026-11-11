@@ -346,7 +346,10 @@ export function handleClientMessage(
       // A PC's shell: privileged (past the gate above) and only where this
       // office runs terminals (PcShells.open refuses otherwise).
       if (!ctx.pcShells || typeof msg.uid !== 'string') break;
-      const opened = ctx.pcShells.open(msg.uid);
+      const opened = ctx.pcShells.open(
+        msg.uid,
+        typeof msg.directory === 'string' ? msg.directory : undefined,
+      );
       send(
         opened.ok
           ? { type: 'pcShellReady', id: opened.id }

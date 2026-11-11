@@ -31,9 +31,9 @@ const KIOSK: FurnitureInteractive = {
   label: {
     name: 'Kiosk',
     lines: [
-      { when: ['free'], text: 'Free' },
-      { when: ['agentWorking'], text: '{agent} works here' },
       { when: ['panelInUse'], text: 'Shell in {panel}' },
+      { when: ['agentWorking'], text: '{agent} works here' },
+      { when: ['free'], text: 'Free' },
     ],
   },
   panel: 'terminal',
@@ -110,7 +110,7 @@ describe('a PC with a live PC shell', () => {
     assert.equal(lit(os), false);
     os.setPcShells([SHELL]);
     assert.equal(lit(os), true);
-    assert.deepEqual(view(os)?.label?.lines, ['Shell in proj']);
+    assert.deepEqual(view(os)?.label?.line, 'Shell in proj');
     assert.deepEqual(view(os)?.click, { kind: 'openPanel', panel: 'terminal' });
     assert.equal(os.pcShellOf('kiosk')?.id, SHELL.id);
   });
@@ -118,7 +118,7 @@ describe('a PC with a live PC shell', () => {
   test('names a shell in the home folder Home', () => {
     const os = office();
     os.setPcShells([{ id: SHELL.id, uid: 'kiosk', furnitureType: 'KIOSK_FRONT_OFF' }]);
-    assert.deepEqual(view(os)?.label?.lines, ['Shell in Home']);
+    assert.deepEqual(view(os)?.label?.line, 'Shell in Home');
   });
 
   test('turns off once a list leaves its shell out (it ended, or a resync dropped it)', () => {
@@ -127,8 +127,8 @@ describe('a PC with a live PC shell', () => {
     os.setPcShells([]);
     assert.equal(lit(os), false);
     assert.equal(os.pcShellOf('kiosk'), null);
-    assert.deepEqual(view(os)?.label?.lines, ['Free']);
-    assert.deepEqual(view(os)?.click, { kind: 'newPanel', panel: 'terminal' });
+    assert.deepEqual(view(os)?.label?.line, 'Free');
+    assert.deepEqual(view(os)?.click, { kind: 'newPanel', panel: 'terminal', place: null });
   });
 
   test('stays lit while the agent working there stops, and goes off with the shell', () => {

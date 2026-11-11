@@ -13,9 +13,9 @@
     "label": {
       "name": "PC",
       "lines": [
-        { "when": "free", "text": "Free" },
+        { "when": "panelInUse", "text": "Shell in {panel}" },
         { "when": "agentWorking", "text": "{agent} works here" },
-        { "when": "panelInUse", "text": "Shell in {panel}" }
+        { "when": "free", "text": "Free" }
       ]
     },
     "panel": "terminal",

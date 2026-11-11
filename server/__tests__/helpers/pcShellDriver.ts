@@ -33,6 +33,8 @@ export interface ShellTerminal {
 export interface PcShellDriver {
   /** Send openPcShell from an office (the first one unless given); its answer. */
   open(uid: string, ws?: WebSocket, received?: Json[]): Promise<Json>;
+  /** Send openPcShell naming a Directory (the office's Directory selector); its answer. */
+  openIn(uid: string, directory: string): Promise<Json>;
   /** Send closePcShell; resolves once `until` holds. */
   close(id: number, opts?: { confirmed?: boolean; ws?: WebSocket }): void;
   /** The newest pcShellsLoaded an office was sent (the first office unless given). */
@@ -59,6 +61,17 @@ export function pcShellDriver(h: StandaloneOffice): PcShellDriver {
             .slice(before)
             .find((m) => m.type === 'pcShellReady' || m.type === 'pcShellRejected'),
         `the answer to opening ${uid}`,
+      );
+    },
+    async openIn(uid, directory) {
+      const before = h.received.length;
+      h.send({ type: 'openPcShell', uid, directory });
+      return waitFor(
+        () =>
+          h.received
+            .slice(before)
+            .find((m) => m.type === 'pcShellReady' || m.type === 'pcShellRejected'),
+        `the answer to opening ${uid} in ${directory}`,
       );
     },
     close(id, { confirmed, ws = h.socket } = {}) {

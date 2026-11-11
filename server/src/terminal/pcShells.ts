@@ -35,7 +35,7 @@ import {
   PC_SHELL_PROBE_TIMEOUT_MS,
 } from '../constants.js';
 import { catalogOf } from '../mcp/seatPlace.js';
-import { pcShellPiece, type PlaceDirectory, soleDirectory } from '../pcShellPlace.js';
+import { pcShellPiece, type PlaceDirectory, shellDirectory } from '../pcShellPlace.js';
 import { inheritedEnv, terminalEnv } from './terminalEnv.js';
 import type { TerminalSession, TerminalSessions } from './terminalSessions.js';
 
@@ -109,11 +109,13 @@ export class PcShells {
 
   /**
    * Open the PC shell of piece `uid`: its live one when it has one, else a new
-   * login shell in the single Directory mapped to the piece's Area, else the
-   * home folder. Refused where the office runs no terminals, and for a piece
-   * that is not in the layout or opens no terminal.
+   * login shell in `directory` (the office's Directory selector: one of the
+   * Directories mapped to the piece's Area), else the single Directory mapped
+   * to the piece's Area, else the home folder. Refused where the office runs no
+   * terminals, for a piece that is not in the layout or opens no terminal, and
+   * for a named Directory that is not one of its Area's.
    */
-  open(uid: string): PcShellOpen {
+  open(uid: string, directory?: string): PcShellOpen {
     if (!this.available) {
       return {
         ok: false,
@@ -132,8 +134,9 @@ export class PcShells {
       directories: this.deps.directories(),
     });
     if (!piece.ok) return piece;
-    const directory = soleDirectory(piece.directories);
-    const cwd = directory?.path ?? os.homedir();
+    const place = shellDirectory(piece.directories, directory);
+    if (!place.ok) return place;
+    const cwd = place.directory?.path ?? os.homedir();
 
     const id = this.nextId++;
     const shell = loginShell();
@@ -161,7 +164,7 @@ export class PcShells {
       uid,
       furnitureType: piece.type,
       cwd,
-      ...(directory ? { directoryName: directory.name } : {}),
+      ...(place.directory ? { directoryName: place.directory.name } : {}),
     };
     this.admit(record, session);
     this.changed();

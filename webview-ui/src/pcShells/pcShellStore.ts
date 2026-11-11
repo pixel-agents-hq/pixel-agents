@@ -78,9 +78,12 @@ export function usePcShells(): PcShellEntry {
   return useSyncExternalStore(subscribePcShells, pcShellEntry);
 }
 
-/** Open a piece's PC shell (its live one, or a new one): answered with `ready`. */
-export function openPcShell(uid: string): void {
-  transport.send({ type: 'openPcShell', uid });
+/**
+ * Open a piece's PC shell (its live one, or a new one — in `directory`, the
+ * Directory selector's pick, when given): answered with `ready`.
+ */
+export function openPcShell(uid: string, directory?: string | null): void {
+  transport.send({ type: 'openPcShell', uid, ...(directory ? { directory } : {}) });
 }
 
 /** A shell card's ×; `confirmed` answers the question a running command raised. */

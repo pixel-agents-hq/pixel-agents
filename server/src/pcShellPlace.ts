@@ -6,9 +6,9 @@
  * VS Code to its first workspace folder.
  */
 
+import { areaDirectories, pieceArea } from '../../core/src/furniture/piecePlaces.js';
 import type { FurnitureCatalog, OfficeLayout } from '../../core/src/layout/index.js';
-import { catalogEntry, footprintTiles } from '../../core/src/layout/index.js';
-import { areaAt } from './mcp/seatPlace.js';
+import { catalogEntry } from '../../core/src/layout/index.js';
 
 /** A Directory as the place resolution needs it. */
 export interface PlaceDirectory {
@@ -47,20 +47,27 @@ export function pcShellPiece(input: {
   if (catalogEntry(catalog, piece.type)?.interactive?.panel !== 'terminal') {
     return { ok: false, reason: `Piece ${uid} opens no terminal.` };
   }
-  const area =
-    footprintTiles(catalog, piece)
-      .map((tile) => areaAt(layout, tile))
-      .find((label) => label !== null) ?? null;
-  const seen = new Set<string>();
-  const directories =
-    area === null
-      ? []
-      : input.directories.filter((d) => {
-          if (seen.has(d.name) || !input.areaMappings[d.name]?.includes(area)) return false;
-          seen.add(d.name);
-          return true;
-        });
+  // core's piecePlaces: the office's Directory selector reads the same.
+  const area = pieceArea(layout, catalog, piece);
+  const directories = areaDirectories(area, input.directories, input.areaMappings);
   return { ok: true, type: piece.type, area, directories };
+}
+
+/**
+ * The Directory a new shell opens in: the one named (it must be one of the Area's),
+ * else the Area's only one, else none (the surface's fallback folder).
+ */
+export function shellDirectory(
+  directories: readonly PlaceDirectory[],
+  named?: string,
+): { ok: true; directory: PlaceDirectory | null } | { ok: false; reason: string } {
+  if (named !== undefined) {
+    const directory = directories.find((d) => d.name === named);
+    return directory
+      ? { ok: true, directory }
+      : { ok: false, reason: `"${named}" is not a Directory of this PC's Area.` };
+  }
+  return { ok: true, directory: soleDirectory(directories) };
 }
 
 /** The Directory a new shell opens in without one named: the Area's only one, else none. */

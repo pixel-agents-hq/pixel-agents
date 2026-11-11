@@ -188,10 +188,10 @@ describe('PC shells in a VS Code office (vscode-free composition, fake terminals
     expect(announced()?.find((s) => s.id === chosen)?.directoryName).toBe('b');
   });
 
-  it('a chosen Directory not mapped to the Area is not honoured', () => {
+  it("refuses a chosen Directory that is not one of the Area's", () => {
     areaMappings = { a: ['Blue room'] };
-    open(FRONT_PC, 'b');
-    expect(terminals[0].cwd).toBe(userDirs[0].path);
+    expect(open(FRONT_PC, 'b')).toMatchObject({ type: 'pcShellRejected', uid: FRONT_PC });
+    expect(terminals).toHaveLength(0);
   });
 
   it('a PC with a live shell shows that terminal and makes no other', () => {

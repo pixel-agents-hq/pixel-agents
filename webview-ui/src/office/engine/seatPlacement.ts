@@ -36,16 +36,18 @@ export function anchorTile(
     : { col: anchor.tileCol, row: anchor.tileRow };
 }
 
-/** Free seat closest (Manhattan) to a tile — seats teammates beside their lead. */
+/** Free seat closest (Manhattan) to a tile — seats teammates beside their lead —
+ *  among those `allowed` keeps (every free seat when not given). */
 export function closestFreeSeat(
   seats: ReadonlyMap<string, SeatLike>,
   col: number,
   row: number,
+  allowed: (uid: string) => boolean = () => true,
 ): string | null {
   let best: string | null = null;
   let bestDist = Infinity;
   for (const [uid, seat] of seats) {
-    if (seat.assigned) continue;
+    if (seat.assigned || !allowed(uid)) continue;
     const d = Math.abs(seat.seatCol - col) + Math.abs(seat.seatRow - row);
     if (d < bestDist) {
       best = uid;

@@ -17,6 +17,12 @@ export interface PieceFacts {
   agentAtWork: { id: number; name: string } | null;
   /** The piece's panel is in use (a PC: a live PC shell), naming what it holds, or null. */
   panelInUse: { name: string } | null;
+  /**
+   * Where a new panel may open, by name (a PC: the Directories mapped to the Area it
+   * stands in, piecePlaces.ts). Several = the user chooses; one = there; none = the
+   * panel's default place (a PC shell: the home folder).
+   */
+  places: readonly string[];
   /** The office is read-only: it offers no click. */
   readOnly: boolean;
 }
@@ -27,14 +33,19 @@ export type PieceClick =
   | { kind: 'openPanel'; panel: FurniturePanel }
   /** The terminal of the agent working at it (a `terminal` panel with no shell of its own). */
   | { kind: 'agentTerminal'; agentId: number }
-  /** A new panel for the piece (a PC: start a PC shell). */
-  | { kind: 'newPanel'; panel: FurniturePanel };
+  /** A new panel for the piece, now (a PC: start a PC shell), in `place` (null = its default). */
+  | { kind: 'newPanel'; panel: FurniturePanel; place: string | null }
+  /** A new panel, once the user picks one of `places` (a PC: the Directory selector). */
+  | { kind: 'choosePlace'; panel: FurniturePanel; places: string[] };
 
 export interface PieceView {
   /** The declared state to show, or null for the piece's usual sprite. */
   state: string | null;
-  /** The Furniture label, or null when the furniture declares none. */
-  label: { name: string; lines: string[] } | null;
+  /**
+   * The Furniture label, or null when the furniture declares none: its name and the
+   * first of its lines whose condition holds (null when none does), filled in.
+   */
+  label: { name: string; line: string | null } | null;
   /** Where a click leads, or null when the piece offers no click. */
   click: PieceClick | null;
 }
@@ -72,7 +83,8 @@ function clickOf(panel: FurniturePanel | undefined, facts: PieceFacts): PieceCli
   if (panel === 'terminal' && facts.agentAtWork) {
     return { kind: 'agentTerminal', agentId: facts.agentAtWork.id };
   }
-  return { kind: 'newPanel', panel };
+  if (facts.places.length > 1) return { kind: 'choosePlace', panel, places: [...facts.places] };
+  return { kind: 'newPanel', panel, place: facts.places[0] ?? null };
 }
 
 /** A piece's state, label and click under the office's facts about it. */
@@ -83,16 +95,12 @@ export function pieceView(
   if (!interactive) return NOTHING;
   const rule = interactive.states?.find((r) => anyHolds(r.when, facts));
   const spec = interactive.label;
+  // Like the state rules, the first line that holds: a label says one thing, and a
+  // manifest that lists its lines in its click's order says what a click opens.
+  const line = spec?.lines?.find((l) => anyHolds(l.when, facts));
   return {
     state: rule?.state ?? null,
-    label: spec
-      ? {
-          name: spec.name,
-          lines: (spec.lines ?? [])
-            .filter((line) => anyHolds(line.when, facts))
-            .map((line) => fill(line.text, facts)),
-        }
-      : null,
+    label: spec ? { name: spec.name, line: line ? fill(line.text, facts) : null } : null,
     click: clickOf(interactive.panel, facts),
   };
 }

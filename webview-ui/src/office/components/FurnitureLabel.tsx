@@ -16,7 +16,7 @@ interface FurnitureLabelProps {
 
 /**
  * The Furniture label: the small box over the hovered piece (OfficeState.hoveredPiece)
- * naming it and showing the lines its rules pick (core's pieceView), the furniture's
+ * naming it and showing the line its rules pick (core's pieceView), the furniture's
  * counterpart of an agent's activity label (ToolOverlay), styled and positioned like
  * it: through the shared world-to-screen projection, re-read every frame so it
  * follows the camera and says what is true now.
@@ -43,7 +43,7 @@ export function FurnitureLabel({
   const el = containerRef.current;
   const piece = officeState.hoveredPiece({ readOnly, editing });
   if (!el || !piece?.view.label) return null;
-  const { name, lines } = piece.view.label;
+  const { name, line } = piece.view.label;
   const project = overlayProjection(
     officeState.getLayout(),
     el.getBoundingClientRect(),
@@ -70,15 +70,14 @@ export function FurnitureLabel({
         >
           {name}
         </span>
-        {lines.map((line, i) => (
+        {line !== null && (
           <span
-            key={i}
             data-testid="furniture-label-line"
             className="text-2xs leading-none overflow-hidden text-ellipsis block"
           >
             {line}
           </span>
-        ))}
+        )}
       </div>
     </div>
   );

@@ -28,7 +28,11 @@ import type { PcShell, PcShellsLoaded } from '../../core/src/messages.js';
 import { isPcShellId, pcShellName } from '../../core/src/pcShells.js';
 import type { ITerminalAdapter, TerminalHandle } from '../../core/src/terminalAdapter.js';
 import { catalogOf } from '../../server/src/mcp/seatPlace.js';
-import { pcShellPiece, type PlaceDirectory, soleDirectory } from '../../server/src/pcShellPlace.js';
+import {
+  pcShellPiece,
+  type PlaceDirectory,
+  shellDirectory,
+} from '../../server/src/pcShellPlace.js';
 import { PC_SHELL_TERMINAL_NAME_PREFIX } from './constants.js';
 
 export interface VscodePcShellsDeps {
@@ -92,8 +96,8 @@ export class VscodePcShells {
 
   /**
    * Open the PC shell of piece `uid`, and show it: its live one when it has
-   * one, else a new integrated terminal in `directoryName` when that is one of
-   * the Directories mapped to the piece's Area, else the Area's single one,
+   * one, else a new integrated terminal in `directoryName` (refused unless it is one
+   * of the Directories mapped to the piece's Area), else the Area's single one,
    * else the first workspace folder, else the home folder.
    */
   open(uid: string, directoryName?: string): VscodePcShellOpen {
@@ -111,11 +115,10 @@ export class VscodePcShells {
       directories: this.deps.directories(),
     });
     if (!piece.ok) return piece;
-    const directory =
-      piece.directories.find((d) => directoryName !== undefined && d.name === directoryName) ??
-      soleDirectory(piece.directories) ??
-      this.deps.workspaceFolders()[0] ??
-      null;
+    // The standalone server's own rule: a named Directory must be one of the Area's.
+    const chosen = shellDirectory(piece.directories, directoryName);
+    if (!chosen.ok) return chosen;
+    const directory = chosen.directory ?? this.deps.workspaceFolders()[0] ?? null;
     const cwd = directory?.path ?? os.homedir();
     const named = directory ? { directoryName: directory.name } : {};
 

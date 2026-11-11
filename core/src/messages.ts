@@ -1070,6 +1070,7 @@ export type WorktreeChoice = 'save' | 'keep' | 'discard' | 'remove' | 'deleteBra
 export interface OpenPcShell {
   type: 'openPcShell';
   uid: string;
+  directory?: string;
 }
 
 export interface ClosePcShell {

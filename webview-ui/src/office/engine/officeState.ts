@@ -1,4 +1,5 @@
 import { agentLabelOf } from '../../../../core/src/agentLabel.js';
+import { areaDirectories, pieceArea } from '../../../../core/src/furniture/piecePlaces.js';
 import {
   type PieceClick,
   type PieceFacts,
@@ -28,6 +29,7 @@ import {
 import { contextUsedShare } from '../contextGauge.js';
 import { furnitureAt } from '../editor/editorActions.js';
 import {
+  activeCatalog,
   getAnimationFrames,
   getCatalogEntry,
   getStateVariant,
@@ -169,6 +171,10 @@ export class OfficeState {
    */
   areaMappings: Record<string, string[]> = {};
 
+  /** The Directories' names, in the host's order (directoriesLoaded): where a PC in
+   *  an Area mapped to several offers its Directory selector (pieceFacts' places). */
+  directoryNames: readonly string[] = [];
+
   /**
    * The first-run consent greeter, deliberately NOT in `characters`.
    *
@@ -238,6 +244,10 @@ export class OfficeState {
 
   setAreaMappings(mappings: Record<string, string[]>): void {
     this.areaMappings = mappings;
+  }
+
+  setDirectoryNames(names: readonly string[]): void {
+    this.directoryNames = names;
   }
 
   constructor(layout?: OfficeLayout) {
@@ -417,6 +427,29 @@ export class OfficeState {
     return result;
   }
 
+  /**
+   * The free seats a new agent may be given: every unassigned seat, except those
+   * whose workstation has a live PC shell (the user works there) while any other
+   * seat is free. Only the office's own picks go through this; a seat asked for
+   * by name (a resume's, launch_agent's) or assigned by hand ignores it.
+   */
+  private seatChoices(): string[] {
+    const free: string[] = [];
+    const shared: string[] = [];
+    for (const [uid, seat] of this.seats) {
+      if (seat.assigned) continue;
+      const piece = this.seatWorkstations.get(uid);
+      (piece !== undefined && this.pcShellsByPiece.has(piece) ? shared : free).push(uid);
+    }
+    return free.length > 0 ? free : shared;
+  }
+
+  /** The free seat closest to a tile (teammates beside their lead), by seatChoices. */
+  private closestSeatChoice(col: number, row: number): string | null {
+    const choices = new Set(this.seatChoices());
+    return closestFreeSeat(this.seats, col, row, (uid) => choices.has(uid));
+  }
+
   /** Find the area label assigned to a seat's tile, or null. Public for e2e
    *  observability (getAgentSeats hook reads a seated agent's area). */
   seatZone(uid: string): string | null {
@@ -460,16 +493,14 @@ export class OfficeState {
    *   Stage 2: Prefer free seats whose tile has NO area label (unzoned).
    *   Stage 3: Any free seat.
    *
-   * Each stage routes through `pickFromSeats` for the PC-bias rule. Returns
-   * null only when every seat is already occupied. Passing `undefined`
+   * Each stage routes through `pickFromSeats` for the PC-bias rule, over
+   * `seatChoices` (a seat at a PC with a live PC shell only once no other is
+   * free). Returns null only when every seat is already occupied. Passing `undefined`
    * preserves pre-Areas single-stage behavior (skips Stage 1; Stage 2 picks
    * unzoned seats from a layout without `areaTiles`, which is every seat).
    */
   private findFreeSeat(directoryName?: string): string | null {
-    const freeSeats: string[] = [];
-    for (const [uid, seat] of this.seats) {
-      if (!seat.assigned) freeSeats.push(uid);
-    }
+    const freeSeats = this.seatChoices();
     if (freeSeats.length === 0) return null;
 
     const areaLabels = directoryName ? this.areaMappings[directoryName] : undefined;
@@ -587,7 +618,7 @@ export class OfficeState {
       }
     }
     if (!seatId && anchorAt) {
-      seatId = closestFreeSeat(this.seats, anchorAt.col, anchorAt.row);
+      seatId = this.closestSeatChoice(anchorAt.col, anchorAt.row);
     }
     if (!seatId) {
       seatId = this.findFreeSeat(directoryName);
@@ -863,7 +894,7 @@ export class OfficeState {
     if (!teammate || !lead) return;
     const anchorAt = anchorTile(lead, this.seats);
     if (!anchorAt) return;
-    const target = closestFreeSeat(this.seats, anchorAt.col, anchorAt.row);
+    const target = this.closestSeatChoice(anchorAt.col, anchorAt.row);
     if (!target || target === teammate.seatId) return;
     const targetSeat = this.seats.get(target)!;
     const targetDist =
@@ -1165,21 +1196,34 @@ export class OfficeState {
   /**
    * What the office knows about a piece, for core's pieceView (furniture/pieceRules.ts):
    * the agent working at it, named by core's agentLabelOf (Nickname, else its
-   * character's name, else its Directory), and its panel in use — its live PC shell,
-   * named by its Directory (or "Home").
+   * character's name, else its Directory), its panel in use — its live PC shell,
+   * named by its Directory (or "Home") — and where a new one may open: the
+   * Directories mapped to the Area it stands in (core's piecePlaces, as the server
+   * resolves an open).
    */
   pieceFacts(
     uid: string,
     readOnly = false,
     atWork: ReadonlyMap<string, Character> = this.agentsAtWork(),
+    places: readonly string[] = this.piecePlaces(uid),
   ): PieceFacts {
     const ch = atWork.get(uid);
     const shell = this.pcShellsByPiece.get(uid);
     return {
       agentAtWork: ch ? { id: ch.id, name: this.agentName(ch) } : null,
       panelInUse: shell ? { name: pcShellName(shell) } : null,
+      places,
       readOnly,
     };
+  }
+
+  /** The Directories mapped to the Area a piece stands in, by name (none without one). */
+  private piecePlaces(uid: string): string[] {
+    const item = this.layout.furniture.find((f) => f.uid === uid);
+    if (!item) return [];
+    const area = pieceArea(this.layout, activeCatalog(), item);
+    const named = this.directoryNames.map((name) => ({ name }));
+    return areaDirectories(area, named, this.areaMappings).map((d) => d.name);
   }
 
   /** How the office names an agent to the user (core's agentLabelOf). */
@@ -1263,12 +1307,21 @@ export class OfficeState {
     const uid = this.hoveredPieceUid;
     if (uid === null || ctx.editing) return null;
     const item = this.layout.furniture.find((f) => f.uid === uid);
-    const instance = this.furniture.find((f) => f.uid === uid);
-    if (!item || !instance) return null;
+    const anchor = this.pieceAnchor(uid);
+    if (!item || !anchor) return null;
     const view = this.pieceViewOf(item, ctx.readOnly);
     if (!view.label && !view.click) return null;
+    return { uid, view, anchor };
+  }
+
+  /** Where a piece's overlays hang (its Furniture label, its Directory selector): the
+   *  top edge of its sprite as drawn now, centred, in world pixels. Null once it is
+   *  no longer drawn. */
+  pieceAnchor(uid: string): { x: number; y: number } | null {
+    const instance = this.furniture.find((f) => f.uid === uid);
+    if (!instance) return null;
     const width = instance.sprite[0]?.length ?? TILE_SIZE;
-    return { uid, view, anchor: { x: instance.x + width / 2, y: instance.y } };
+    return { x: instance.x + width / 2, y: instance.y };
   }
 
   /** Each piece whose state rules hold a declared state now: piece uid → that state. */
@@ -1278,7 +1331,8 @@ export class OfficeState {
     for (const item of this.shownLayout().furniture) {
       const interactive = getCatalogEntry(item.type)?.interactive;
       if (!interactive?.states) continue;
-      const { state } = pieceView(interactive, this.pieceFacts(item.uid, false, atWork));
+      // A state rule never reads where a new panel opens: skip working it out.
+      const { state } = pieceView(interactive, this.pieceFacts(item.uid, false, atWork, []));
       if (state) shown.set(item.uid, state);
     }
     return shown;

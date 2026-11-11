@@ -148,12 +148,12 @@ describe('hovering a piece (mouse)', () => {
     const os = office();
     const view = os.hoverPieceAt(...at(5, 3), OFFICE);
     assert.equal(os.hoveredPieceUid, 'kiosk');
-    assert.deepEqual(view?.label, { name: 'Kiosk', lines: ['Free'] });
-    assert.deepEqual(view?.click, { kind: 'newPanel', panel: 'terminal' });
+    assert.deepEqual(view?.label, { name: 'Kiosk', line: 'Free' });
+    assert.deepEqual(view?.click, { kind: 'newPanel', panel: 'terminal', place: null });
 
     const shown = os.hoveredPiece(OFFICE);
     assert.equal(shown?.uid, 'kiosk');
-    assert.deepEqual(shown?.view.label, { name: 'Kiosk', lines: ['Free'] });
+    assert.deepEqual(shown?.view.label, { name: 'Kiosk', line: 'Free' });
     // Anchored over the piece: its sprite's top edge, centred.
     assert.equal(shown?.anchor.x, 5 * TILE_SIZE + TILE_SIZE / 2);
     assert.equal(shown?.anchor.y, 3 * TILE_SIZE);
@@ -163,14 +163,14 @@ describe('hovering a piece (mouse)', () => {
     const os = office();
     const view = os.hoverPieceAt(...at(4, 3), OFFICE);
     assert.equal(os.hoveredPieceUid, 'sign');
-    assert.deepEqual(view?.label, { name: 'Sign', lines: [] });
+    assert.deepEqual(view?.label, { name: 'Sign', line: null });
     assert.equal(view?.click, null);
   });
 
   test('a read-only office shows the label and offers no click', () => {
     const os = office();
     const view = os.hoverPieceAt(...at(5, 3), { readOnly: true, editing: false });
-    assert.deepEqual(view?.label, { name: 'Kiosk', lines: ['Free'] });
+    assert.deepEqual(view?.label, { name: 'Kiosk', line: 'Free' });
     assert.equal(view?.click, null);
   });
 
@@ -194,13 +194,13 @@ describe('hovering a piece (mouse)', () => {
     os.addAgent(1, 0, 0, 'chair', true, 'webapp');
     os.setAgentActive(1, true);
     os.hoverPieceAt(...at(5, 3), OFFICE);
-    const lines = () => os.hoveredPiece(OFFICE)?.view.label?.lines;
-    assert.deepEqual(lines(), ['Byte works here']);
+    const line = () => os.hoveredPiece(OFFICE)?.view.label?.line;
+    assert.equal(line(), 'Byte works here');
     os.characters.get(1)!.nickname = 'Scout';
-    assert.deepEqual(lines(), ['Scout works here']);
+    assert.equal(line(), 'Scout works here');
     os.characters.get(1)!.nickname = undefined;
     os.characterName = () => undefined;
-    assert.deepEqual(lines(), ['webapp works here']);
+    assert.equal(line(), 'webapp works here');
     assert.deepEqual(os.hoveredPiece(OFFICE)?.view.click, { kind: 'agentTerminal', agentId: 1 });
   });
 });
@@ -212,7 +212,7 @@ describe('tapping a piece (touch: two steps)', () => {
     const os = office();
     assert.deepEqual(os.tapPieceAt(...at(5, 3), TOUCH), { uid: 'kiosk', click: null });
     assert.equal(os.hoveredPieceUid, 'kiosk');
-    assert.deepEqual(os.hoveredPiece(OFFICE)?.view.label?.lines, ['Free']);
+    assert.deepEqual(os.hoveredPiece(OFFICE)?.view.label?.line, 'Free');
   });
 
   test('a second tap on the same piece performs its click', () => {
@@ -220,7 +220,7 @@ describe('tapping a piece (touch: two steps)', () => {
     os.tapPieceAt(...at(5, 3), TOUCH);
     assert.deepEqual(os.tapPieceAt(...at(5, 3), TOUCH), {
       uid: 'kiosk',
-      click: { kind: 'newPanel', panel: 'terminal' },
+      click: { kind: 'newPanel', panel: 'terminal', place: null },
     });
   });
 
@@ -248,7 +248,7 @@ describe('tapping a piece (touch: two steps)', () => {
     const os = office();
     assert.deepEqual(os.tapPieceAt(...at(5, 3), { ...OFFICE, twoStep: false }), {
       uid: 'kiosk',
-      click: { kind: 'newPanel', panel: 'terminal' },
+      click: { kind: 'newPanel', panel: 'terminal', place: null },
     });
   });
 });

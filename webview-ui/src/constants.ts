@@ -279,6 +279,9 @@ export const OVERLAY_BUBBLE_Z_INDEX = 43;
 /** A hovered piece's Furniture label: under the characters' labels and bubbles
  *  (a character in front of a piece wins over it). */
 export const FURNITURE_LABEL_Z_INDEX = 40;
+/** A PC's Directory selector: over the characters' labels and bubbles (the user
+ *  just asked for it), under the Intro and modals. */
+export const PC_DIRECTORY_SELECTOR_Z_INDEX = 44;
 /** CSS px between a Furniture label's bottom and the top of the piece's sprite. */
 export const FURNITURE_LABEL_GAP_PX = 2;
 /** How a Furniture label names an agent that has no Nickname, character name or Directory. */

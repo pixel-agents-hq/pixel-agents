@@ -67,6 +67,7 @@ import { getPetCount } from './office/sprites/petSpriteData.js';
 import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
 import { useAgentLayoutEdits } from './officeMcp/useAgentLayoutEdits.js';
 import { useOfficeMcp } from './officeMcp/useOfficeMcp.js';
+import { type DirectoryChoice, PcDirectorySelector } from './pcShells/PcDirectorySelector.js';
 import { PcShellCloseDialog } from './pcShells/PcShellCloseDialog.js';
 import { closePcShell, openPcShell, usePcShells } from './pcShells/pcShellStore.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
@@ -259,7 +260,7 @@ function App() {
   // app's main screen, so a reload that re-announces live sessions must land
   // on the office.
   const { lastLaunched } = terminalDrawer;
-  const { showTerminal: showMobileTerminal } = mobileShell;
+  const { showTerminal: showMobileTerminal, openAgent: openMobileAgent } = mobileShell;
   useEffect(() => {
     if (!lastLaunched) return;
     getOfficeState().selectAndFollow(lastLaunched.agentId);
@@ -550,11 +551,37 @@ function App() {
   // integrated terminal) — and may change things. Elsewhere its label still
   // shows, with nothing to click.
   const canOpenPanels = (terminalAvailable || !isBrowserRuntime) && !officeReadOnly;
-  const handlePieceClick = useCallback((click: PieceClick, uid: string) => {
-    // A PC's own shell, live or new: the server answers with the one to open.
-    // An agent's terminal (`agentTerminal`) is the click-resolution ticket's.
-    if (click.kind === 'openPanel' || click.kind === 'newPanel') openPcShell(uid);
+  // A PC whose Area has several Directories asks where its new shell opens.
+  const [directoryChoice, setDirectoryChoice] = useState<DirectoryChoice | null>(null);
+  const closeDirectoryChoice = useCallback(() => setDirectoryChoice(null), []);
+  const chooseDirectory = useCallback((uid: string, directory: string) => {
+    setDirectoryChoice(null);
+    openPcShell(uid, directory);
   }, []);
+  // A click on a piece, as core's pieceView resolved it: its live shell, else the
+  // terminal of the agent working at it (as its card would open it), else a new
+  // shell — at once in its one place (or home), or through the Directory selector.
+  const handlePieceClick = useCallback(
+    (click: PieceClick, uid: string) => {
+      setDirectoryChoice(null);
+      switch (click.kind) {
+        case 'openPanel':
+          openPcShell(uid);
+          break;
+        case 'newPanel':
+          openPcShell(uid, click.place);
+          break;
+        case 'choosePlace':
+          setDirectoryChoice({ uid, places: click.places });
+          break;
+        case 'agentTerminal':
+          if (isMobile) openMobileAgent(click.agentId);
+          else openAgentFromSidebar(click.agentId);
+          break;
+      }
+    },
+    [isMobile, openMobileAgent, openAgentFromSidebar],
+  );
   // The shell this office's open was answered with: opened as its card would,
   // on the phone sliding to the terminal page.
   const { ready: pcShellReady } = usePcShells();
@@ -826,8 +853,20 @@ function App() {
               zoom={editor.zoom}
               panRef={editor.panRef}
               readOnly={!canOpenPanels}
-              editing={editor.isEditMode}
+              // The Directory selector stands where the label would.
+              editing={editor.isEditMode || directoryChoice !== null}
             />
+            {directoryChoice && canOpenPanels && !editor.isEditMode && (
+              <PcDirectorySelector
+                choice={directoryChoice}
+                officeState={officeState}
+                containerRef={containerRef}
+                zoom={editor.zoom}
+                panRef={editor.panRef}
+                onChoose={chooseDirectory}
+                onClose={closeDirectoryChoice}
+              />
+            )}
           </div>
         </>
       ) : (

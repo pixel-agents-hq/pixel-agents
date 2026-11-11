@@ -28,7 +28,7 @@ import { loadAllFurniture } from '../src/assetReload.js';
 const ASSETS_ROOT = path.resolve(__dirname, '../../webview-ui/public');
 const ON_OFF = new Set(['on', 'off']);
 
-const FREE: PieceFacts = { agentAtWork: null, panelInUse: null, readOnly: false };
+const FREE: PieceFacts = { agentAtWork: null, panelInUse: null, places: [], readOnly: false };
 const AGENT: PieceFacts = { ...FREE, agentAtWork: { id: 7, name: 'Ada' } };
 const SHELL: PieceFacts = { ...FREE, panelInUse: { name: 'pixel-agents' } };
 const BOTH: PieceFacts = { ...AGENT, panelInUse: { name: 'pixel-agents' } };
@@ -38,9 +38,9 @@ const PC_LIKE: FurnitureInteractive = {
   label: {
     name: 'PC',
     lines: [
-      { when: ['free'], text: 'Free' },
-      { when: ['agentWorking'], text: '{agent} works here' },
       { when: ['panelInUse'], text: 'Shell in {panel}' },
+      { when: ['agentWorking'], text: '{agent} works here' },
+      { when: ['free'], text: 'Free' },
     ],
   },
   panel: 'terminal',
@@ -168,31 +168,55 @@ describe('pieceView: the one rules function', () => {
     expect(pieceView(block, FREE).state).toBe('off');
   });
 
-  it('labels with the name and every line whose condition holds, filled in', () => {
-    expect(pieceView(PC_LIKE, FREE).label).toEqual({ name: 'PC', lines: ['Free'] });
-    expect(pieceView(PC_LIKE, AGENT).label).toEqual({ name: 'PC', lines: ['Ada works here'] });
-    expect(pieceView(PC_LIKE, SHELL).label).toEqual({
-      name: 'PC',
-      lines: ['Shell in pixel-agents'],
-    });
-    expect(pieceView(PC_LIKE, BOTH).label).toEqual({
-      name: 'PC',
-      lines: ['Ada works here', 'Shell in pixel-agents'],
-    });
+  it('labels with the name and the first line whose condition holds, filled in', () => {
+    expect(pieceView(PC_LIKE, FREE).label).toEqual({ name: 'PC', line: 'Free' });
+    expect(pieceView(PC_LIKE, AGENT).label).toEqual({ name: 'PC', line: 'Ada works here' });
+    expect(pieceView(PC_LIKE, SHELL).label).toEqual({ name: 'PC', line: 'Shell in pixel-agents' });
+    // An agent at work AND a live shell: one line, the first that holds.
+    expect(pieceView(PC_LIKE, BOTH).label).toEqual({ name: 'PC', line: 'Shell in pixel-agents' });
+    const agentFirst: FurnitureInteractive = {
+      label: { name: 'PC', lines: [...PC_LIKE.label!.lines!].reverse() },
+    };
+    expect(pieceView(agentFirst, BOTH).label?.line).toBe('Ada works here');
+    expect(
+      pieceView({ label: { name: 'PC', lines: [{ when: ['free'], text: 'Free' }] } }, AGENT),
+    ).toEqual({ state: null, label: { name: 'PC', line: null }, click: null });
   });
 
   it('resolves a click: the live panel, else the agent at work, else a new panel', () => {
     expect(pieceView(PC_LIKE, BOTH).click).toEqual({ kind: 'openPanel', panel: 'terminal' });
     expect(pieceView(PC_LIKE, SHELL).click).toEqual({ kind: 'openPanel', panel: 'terminal' });
     expect(pieceView(PC_LIKE, AGENT).click).toEqual({ kind: 'agentTerminal', agentId: 7 });
-    expect(pieceView(PC_LIKE, FREE).click).toEqual({ kind: 'newPanel', panel: 'terminal' });
+    expect(pieceView(PC_LIKE, FREE).click).toEqual({
+      kind: 'newPanel',
+      panel: 'terminal',
+      place: null,
+    });
+    // Places only matter to a new panel: a live one or an agent's terminal comes first.
+    const places = ['web', 'api'];
+    expect(pieceView(PC_LIKE, { ...BOTH, places }).click?.kind).toBe('openPanel');
+    expect(pieceView(PC_LIKE, { ...AGENT, places }).click?.kind).toBe('agentTerminal');
+  });
+
+  it('a new panel opens in its one place at once, asks among several, and takes the default with none', () => {
+    expect(pieceView(PC_LIKE, { ...FREE, places: ['web'] }).click).toEqual({
+      kind: 'newPanel',
+      panel: 'terminal',
+      place: 'web',
+    });
+    expect(pieceView(PC_LIKE, { ...FREE, places: ['web', 'api'] }).click).toEqual({
+      kind: 'choosePlace',
+      panel: 'terminal',
+      places: ['web', 'api'],
+    });
+    expect(pieceView(PC_LIKE, { ...FREE, places: [] }).click).toMatchObject({ place: null });
   });
 
   it('offers no click in a read-only office, but still labels and lights', () => {
     const view = pieceView(PC_LIKE, { ...AGENT, readOnly: true });
     expect(view.click).toBeNull();
     expect(view.state).toBe('on');
-    expect(view.label?.lines).toEqual(['Ada works here']);
+    expect(view.label?.line).toBe('Ada works here');
   });
 
   it('answers nothing for each part left out', () => {
@@ -201,12 +225,12 @@ describe('pieceView: the one rules function', () => {
       expect(pieceView({}, facts)).toEqual({ state: null, label: null, click: null });
     }
     const labelOnly = pieceView({ label: { name: 'Plant' } }, AGENT);
-    expect(labelOnly).toEqual({ state: null, label: { name: 'Plant', lines: [] }, click: null });
+    expect(labelOnly).toEqual({ state: null, label: { name: 'Plant', line: null }, click: null });
     const panelOnly = pieceView({ panel: 'terminal' }, FREE);
     expect(panelOnly).toEqual({
       state: null,
       label: null,
-      click: { kind: 'newPanel', panel: 'terminal' },
+      click: { kind: 'newPanel', panel: 'terminal', place: null },
     });
   });
 });
@@ -229,9 +253,12 @@ describe('the PC as it ships', () => {
     expect(pieceView(pc, FREE).state).toBeNull();
     expect(pieceView(pc, AGENT).state).toBe('on');
     expect(pieceView(pc, SHELL).state).toBe('on');
-    expect(pieceView(pc, FREE).label?.lines).toHaveLength(1);
-    expect(pieceView(pc, AGENT).label?.lines.join(' ')).toContain('Ada');
-    expect(pieceView(pc, SHELL).label?.lines.join(' ')).toContain('pixel-agents');
+    expect(pieceView(pc, FREE).label?.line).toBe('Free');
+    expect(pieceView(pc, AGENT).label?.line).toContain('Ada');
+    expect(pieceView(pc, SHELL).label?.line).toContain('pixel-agents');
+    // One line that says what a click opens: the shell over the agent working there.
+    expect(pieceView(pc, BOTH).label?.line).toContain('pixel-agents');
+    expect(pieceView(pc, BOTH).click?.kind).toBe('openPanel');
   });
 
   it('carries its block on every orientation, the mirrored one too', () => {

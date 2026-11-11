@@ -2472,9 +2472,12 @@ components:
       description: >-
         Open the PC shell of a piece (a placed furniture uid whose furniture
         declares the `terminal` panel): its live shell when it has one, else a
-        new login shell in the single Directory mapped to the piece's Area, else
-        the home folder. Answered with `pcShellReady` (or `pcShellRejected`).
-        Privileged, and refused where the office offers no terminal.
+        new login shell in the named `directory` (one of the Directories mapped
+        to the piece's Area: the office's Directory selector), else the single
+        Directory mapped to the piece's Area, else the home folder. A
+        `directory` that is not one of the Area's is refused. Answered with
+        `pcShellReady` (or `pcShellRejected`). Privileged, and refused where the
+        office offers no terminal.
       type: object
       additionalProperties: false
       required: [type, uid]
@@ -2483,6 +2486,9 @@ components:
           const: openPcShell
         uid:
           type: string
+        directory:
+          type: string
+          description: The chosen Directory's name.
 
     ClosePcShell:
       description: >-
@@ -3154,7 +3160,8 @@ components:
 
     FurnitureLabelSpec:
       description: |
-        A Furniture label: its name, then every line whose condition holds, in order.
+        A Furniture label: its name, then the first of its lines whose condition
+        holds (a label says one thing: list the lines in the order a click resolves).
         A line's text may name `{agent}` (the agent working at it; only in a line shown
         on `agentWorking` alone) or `{panel}` (what its panel holds, a PC shell's
         Directory; only in a line shown on `panelInUse` alone).

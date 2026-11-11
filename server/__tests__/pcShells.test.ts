@@ -122,6 +122,38 @@ describe('PC shells', () => {
     t2.close();
   });
 
+  it("opens in the Directory the office's selector named, one of the Area's several", async () => {
+    addUserDirectory('a', path.join(h.home, 'a'));
+    addUserDirectory('b', path.join(h.home, 'b'));
+    mapDirectory('a', 'Blue room');
+    mapDirectory('b', 'Blue room');
+    const answer = await shells.openIn(FRONT_PC, 'b');
+    expect(answer.type).toBe('pcShellReady');
+    const id = answer.id as number;
+    const term = await shells.attach(id);
+    term.type(WHERE);
+    expect((await term.waitFor(WHERE_RE))[1]).toBe(path.join(h.home, 'b'));
+    term.close();
+    expect(shells.shells()).toEqual([
+      { id, uid: FRONT_PC, furnitureType: 'PC_FRONT_OFF', directoryName: 'b' },
+    ]);
+  });
+
+  it("refuses a named Directory that is not one of the PC's Area", async () => {
+    addUserDirectory('a', path.join(h.home, 'a'));
+    addUserDirectory('elsewhere', path.join(h.home, 'elsewhere'));
+    mapDirectory('a', 'Blue room');
+    mapDirectory('elsewhere', 'Some other room');
+    for (const name of ['elsewhere', 'no-such-directory']) {
+      expect(await shells.openIn(FRONT_PC, name)).toMatchObject({
+        type: 'pcShellRejected',
+        uid: FRONT_PC,
+      });
+    }
+    expect(h.ptyManager.size).toBe(0);
+    expect(shells.shells() ?? []).toEqual([]);
+  });
+
   it('opens in the home folder for a PC in no Area', async () => {
     const plain = seededLayout();
     delete plain.areas;
