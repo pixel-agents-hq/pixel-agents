@@ -21,6 +21,11 @@ import {
   AGENT_PATH_MAX_NEW_SEGMENTS,
   AGENT_PATH_SEGMENT_MAX_BYTES,
   AGENT_PATH_SYSTEM_ROOTS,
+  CREATE_AGENT_PATH_CREATE_REASON,
+  CREATE_AGENT_PATH_FORBIDDEN_REASON,
+  CREATE_AGENT_PATH_FORMAT_REASON,
+  CREATE_AGENT_PATH_IO_REASON,
+  CREATE_AGENT_PATH_KB_REASON,
   KB_CLAUDE_HOME_DIR_NAME,
   KB_NOTE_DIR_NAME,
   KB_PERSONAL_RESERVED_KEY,
@@ -59,6 +64,39 @@ export type AgentPathRefusal =
   | 'mkdir-failed'
   | 'not-real-directory'
   | 'realpath-mismatch';
+
+/** 給使用者看的拒絕理由：只依規則類別給固定字串，不含路徑。 */
+export function describeAgentPathRefusal(reason: AgentPathRefusal): string {
+  switch (reason) {
+    case 'not-a-string':
+    case 'too-long':
+    case 'control-character':
+    case 'segment-whitespace':
+    case 'segment-too-long':
+    case 'not-absolute':
+    case 'not-normalized':
+    case 'dot-segment':
+      return CREATE_AGENT_PATH_FORMAT_REASON;
+    case 'root-or-home':
+    case 'system-root':
+    case 'protected-zone':
+      return CREATE_AGENT_PATH_FORBIDDEN_REASON;
+    case 'note-segment':
+    case 'workspace-kb-overlap':
+    case 'kb-folder-not-directory':
+      return CREATE_AGENT_PATH_KB_REASON;
+    case 'ancestor-unresolvable':
+    case 'ancestor-not-directory':
+    case 'create-outside-home':
+    case 'too-many-new-segments':
+      return CREATE_AGENT_PATH_CREATE_REASON;
+    case 'home-unresolvable':
+    case 'mkdir-failed':
+    case 'not-real-directory':
+    case 'realpath-mismatch':
+      return CREATE_AGENT_PATH_IO_REASON;
+  }
+}
 
 export type AgentPathResult<T> = ({ ok: true } & T) | { ok: false; reason: AgentPathRefusal };
 

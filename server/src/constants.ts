@@ -168,6 +168,26 @@ export const AGENT_PATH_SEGMENT_MAX_BYTES = 255;
 export const AGENT_PATH_MAX_NEW_SEGMENTS = 8;
 /** 新建目錄的權限（逐段非遞迴 mkdir；實際值仍受 umask 影響）。 */
 export const AGENT_DIRECTORY_MODE = 0o755;
+
+/** createAgent 被拒絕時的 workspaceRejected 理由（固定字串，不回傳使用者輸入的路徑）。 */
+export const CREATE_AGENT_PATH_FORMAT_REASON =
+  "Couldn't create the Agent: the Path must be an absolute path, without '..', control characters, or spaces at the start or end of a folder name.";
+export const CREATE_AGENT_PATH_FORBIDDEN_REASON =
+  "Couldn't create the Agent: that folder is not allowed (system folders, your home folder itself, and the Claude and Pixel Agents settings folders are refused).";
+export const CREATE_AGENT_PATH_KB_REASON =
+  "Couldn't create the Agent: the Path cannot contain a .note folder or overlap a Workspace's Knowledge Base.";
+export const CREATE_AGENT_PATH_CREATE_REASON =
+  "Couldn't create the Agent: new folders can only be created inside your home folder, up to 8 levels deep. Anywhere else the folder must already exist.";
+export const CREATE_AGENT_PATH_IO_REASON =
+  "Couldn't create the Agent: creating the folder failed (see the host's log).";
+export const CREATE_AGENT_FAILED_REASON =
+  "Couldn't create the Agent: saving it failed and nothing was changed (see the host's log).";
+export const CREATE_AGENT_NOT_A_DIRECTORY_REASON =
+  "Couldn't create the Agent: that folder does not exist or is not a directory.";
+export const CREATE_AGENT_INVALID_REQUEST_REASON =
+  "Couldn't create the Agent: the request is incomplete or invalid.";
+export const CREATE_AGENT_TERMINAL_UNAVAILABLE_REASON =
+  "Couldn't create the Agent: the terminal is not available on this host.";
 /** HOME 之外不得作為 Agent 目錄的系統根目錄（比對前先 realpath，只比對相等）。 */
 export const AGENT_PATH_SYSTEM_ROOTS: readonly string[] = [
   '/etc',

@@ -13,8 +13,14 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { createAgentDirectories, planAgentPath, removeCreatedDirectories } from '../agentPath.js';
+import {
+  createAgentDirectories,
+  describeAgentPathRefusal,
+  planAgentPath,
+  removeCreatedDirectories,
+} from '../agentPath.js';
 import { createAgentState } from '../agentState.js';
+import { CREATE_AGENT_FAILED_REASON } from '../constants.js';
 import { directoryNameForLaunch } from '../directories.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
@@ -57,6 +63,8 @@ export interface CreateWorkspaceAgentDeps extends Pick<
 > {
   /** 與 saveWorkspace 訊息處理器相同的副作用（廣播、onWorkspaceSaved）。 */
   workspaceEffects: WorkspaceSaveEffects;
+  /** 建立被拒絕或失敗時，告訴操作者原因（固定字串，不含路徑）。 */
+  onRefused?: (reason: string) => void;
 }
 
 /**
@@ -78,23 +86,27 @@ export function createWorkspaceAgent(
   const plan = planAgentPath(options.directoryPath, { homeDir: os.homedir(), workspaceRoots });
   if (!plan.ok) {
     console.error(`[Pixel Agents] Terminal: not creating -- path refused (${plan.reason})`);
+    deps.onRefused?.(describeAgentPathRefusal(plan.reason));
     return null;
   }
   const claim = claimDirectoryForWorkspace(options.workspaceId, plan.finalPath);
   if (!claim.ok) {
     console.error(`[Pixel Agents] Terminal: not creating -- ${claim.reason}`);
+    deps.onRefused?.(`Couldn't create the Agent: ${claim.reason}`);
     return null;
   }
 
   const directories = createAgentDirectories(plan);
   if (!directories.ok) {
     console.error(`[Pixel Agents] Terminal: not creating -- path refused (${directories.reason})`);
+    deps.onRefused?.(describeAgentPathRefusal(directories.reason));
     return null;
   }
 
   let addedToWorkspace = false;
   const undo = (why: string): null => {
     console.error(`[Pixel Agents] Terminal: not creating -- ${why}; rolling back`);
+    deps.onRefused?.(CREATE_AGENT_FAILED_REASON);
     if (addedToWorkspace) {
       let reason: string | undefined;
       try {

@@ -114,8 +114,15 @@ describe('createAgent with workspaceId', () => {
       const pathsBefore = directoryPathsOf(ws.id);
       h.broadcasts.length = 0;
 
-      create(input());
+      const replies = create(input());
 
+      // 操作者要知道被拒絕：只回一則 workspaceRejected，理由是固定字串、不含輸入的路徑。
+      expect(replies).toHaveLength(1);
+      expect(replies[0]).toMatchObject({ type: 'workspaceRejected' });
+      expect(String(replies[0].reason)).toMatch(/^Couldn't create the Agent: /);
+      if (typeof input() === 'string' && (input() as string).length > 1) {
+        expect(String(replies[0].reason)).not.toContain(input() as string);
+      }
       expect(h.store.size).toBe(0);
       expect(tree(h.tempHome)).toEqual(homeBefore);
       expect(tree(outside)).toEqual(outsideBefore);
@@ -127,10 +134,21 @@ describe('createAgent with workspaceId', () => {
       const target = path.join(work, 'p');
       const before = tree(h.tempHome);
 
-      h.send({ type: 'createAgent', directoryPath: target, workspaceId: DEFAULT_WORKSPACE_ID });
-      h.send({ type: 'createAgent', directoryPath: target, workspaceId: 'no-such-workspace' });
-      h.send({ type: 'createAgent', directoryPath: target, workspaceId: 7 });
+      const replies = [
+        ...h.send({
+          type: 'createAgent',
+          directoryPath: target,
+          workspaceId: DEFAULT_WORKSPACE_ID,
+        }),
+        ...h.send({ type: 'createAgent', directoryPath: target, workspaceId: 'no-such-workspace' }),
+        ...h.send({ type: 'createAgent', directoryPath: target, workspaceId: 7 }),
+      ];
 
+      expect(replies.map((m) => m.type)).toEqual([
+        'workspaceRejected',
+        'workspaceRejected',
+        'workspaceRejected',
+      ]);
       expect(h.store.size).toBe(0);
       expect(tree(h.tempHome)).toEqual(before);
     });

@@ -990,8 +990,8 @@ components:
 
     WorkspaceRejected:
       description: |
-        A `saveWorkspace`, `removeWorkspace`, `setWorkspaceRoot` or
-        `setWorkspacePermissionRoles` failed
+        A `saveWorkspace`, `removeWorkspace`, `setWorkspaceRoot`,
+        `setWorkspacePermissionRoles` or `createAgent` failed
         validation or could not be written. Sent point-to-point to the requesting client (never broadcast)
         and nothing changed on disk.
       type: object
