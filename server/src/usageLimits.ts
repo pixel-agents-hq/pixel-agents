@@ -34,6 +34,8 @@ interface StoredUsage extends ReportedUsage {
 export const PRIVILEGED_BROADCAST_TYPES: ReadonlySet<string> = new Set([
   'usageLimits',
   'usageBridgeStatus',
+  // A Worktree's branch, size and pending decision: the operator's to act on.
+  'worktreesLoaded',
 ]);
 
 let cache: Record<string, StoredUsage> | null = null;

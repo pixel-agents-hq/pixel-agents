@@ -49,6 +49,10 @@ export interface PersistedAgent {
    *  "a repeat" (non-zero = 1); never written. */
   clothesHue?: number;
   hueShift?: number;
+  /** The Worktree the agent runs in (its Directory's repo checked out on a
+   *  branch of its own): its folder name, path and branch. Persisted so a
+   *  reload keeps the marker and branch; `directoryName` stays the Directory's. */
+  worktree?: { name: string; path: string; branch: string };
 }
 
 /** Agent seat assignment with visual identity

@@ -11,14 +11,26 @@ import {
   CONVERSATION_EXPANDED_KEY,
   CONVERSATION_UNFOLD_MS,
   CONVERSATIONS_PER_DIRECTORY,
+  CONVERSATIONS_REFRESH_DEBOUNCE_MS,
   CONVERSATIONS_SHOW_MORE_STEP,
   MUGSHOT_CROP_SIDE_PX,
   RECENT_CONVERSATIONS_COUNT,
 } from '../constants.js';
 import { prefersReducedMotion } from '../hooks/usePresence.js';
+import { transport } from '../transport/index.js';
 import { recentAcross } from './recent.js';
 import { timeAgo } from './timeAgo.js';
 import { type ConversationLimits, useConversations } from './useConversations.js';
+import { WorktreeList, type WorktreesListing } from './WorktreeList.js';
+
+/** Messages after which an open section's Worktrees may have changed: an agent
+ *  arrived (perhaps in a new Worktree), left, moved, or a reconnect resynced. */
+const WORKTREES_REFRESH_ON = new Set([
+  'agentCreated',
+  'agentClosed',
+  'existingAgents',
+  'agentWorktreeChanged',
+]);
 
 interface ConversationListProps {
   /** Whether it shows: the list is only fetched (and kept fresh) while it does. */
@@ -31,6 +43,8 @@ interface ConversationListProps {
   statusFor: (agentId: number) => TabStatus | null;
   /** Rows sized for a finger (the phone's panel). */
   roomy?: boolean;
+  /** Each Directory's Worktrees, listed in its section (privileged offices). */
+  worktrees?: WorktreesListing;
   /** Open the search over every conversation (or one Directory's). */
   onSearch?: (scope: ConversationSearchScope) => void;
 }
@@ -57,6 +71,7 @@ export function ConversationList({
   onOpenAgent,
   statusFor,
   roomy = false,
+  worktrees,
   onSearch,
 }: ConversationListProps) {
   /** What pressing a row does: a running one opens its agent, a past one resumes. */
@@ -134,6 +149,9 @@ export function ConversationList({
           press={press}
           statusFor={statusFor}
           roomy={roomy}
+          worktrees={worktrees}
+          onResume={onResume}
+          onOpenAgent={onOpenAgent}
           onShowMore={() => showMore(directory.path)}
           onSearch={
             onSearch &&
@@ -224,6 +242,9 @@ interface SectionProps {
   press: (conversation: Conversation, directory: DirectoryConversations) => () => void;
   statusFor: ConversationListProps['statusFor'];
   roomy: boolean;
+  worktrees: WorktreesListing | undefined;
+  onResume: ConversationListProps['onResume'];
+  onOpenAgent: ConversationListProps['onOpenAgent'];
   /** Lists CONVERSATIONS_SHOW_MORE_STEP more of its conversations. */
   onShowMore: () => void;
   /** Opens the search on this Directory's conversations. */
@@ -238,9 +259,34 @@ function DirectorySection({
   press,
   statusFor,
   roomy,
+  worktrees,
+  onResume,
+  onOpenAgent,
   onShowMore,
   onSearch,
 }: SectionProps) {
+  // Open: ask for its Worktrees, and again whenever an agent arrives, leaves
+  // or moves (a launch into a new Worktree, a Claude Code worktree entered:
+  // those are found only on asking; ours also arrive as broadcasts when the
+  // leave rules or a decision change them).
+  const listsWorktrees = worktrees !== undefined;
+  useEffect(() => {
+    if (!expanded || !listsWorktrees) return;
+    const request = () =>
+      transport.send({ type: 'requestWorktrees', directoryPath: directory.path });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = transport.onMessage((msg) => {
+      if (!WORKTREES_REFRESH_ON.has(msg.type)) return;
+      clearTimeout(timer);
+      timer = setTimeout(request, CONVERSATIONS_REFRESH_DEBOUNCE_MS);
+    });
+    request();
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [expanded, listsWorktrees, directory.path]);
+  const directoryWorktrees = worktrees?.byDirectory[directory.path] ?? [];
   const { conversations } = directory;
   const empty = conversations.length === 0;
   const runningIds = conversations.flatMap((c) => (c.agentId !== undefined ? [c.agentId] : []));
@@ -304,6 +350,17 @@ function DirectorySection({
               </div>
             )}
           </div>
+        )}
+        {worktrees && (
+          <WorktreeList
+            directoryPath={directory.path}
+            worktrees={directoryWorktrees}
+            error={worktrees.error}
+            onResume={onResume}
+            onOpenAgent={onOpenAgent}
+            statusFor={statusFor}
+            roomy={roomy}
+          />
         )}
       </Unfold>
     </section>
@@ -377,7 +434,7 @@ export interface RowProps {
 }
 
 export function ConversationRow({ conversation, where, onPress, statusFor, now, roomy }: RowProps) {
-  const { title, updatedAt, palette, repeat, agentId } = conversation;
+  const { title, updatedAt, palette, repeat, agentId, worktree } = conversation;
   const status = agentId !== undefined ? statusFor(agentId) : null;
   return (
     <button
@@ -385,7 +442,7 @@ export function ConversationRow({ conversation, where, onPress, statusFor, now, 
       data-testid="conversation-row"
       onClick={onPress}
       title={agentId !== undefined ? `Go to "${title}"` : `Resume "${title}"`}
-      className={`w-full flex items-center gap-8 px-10 ${roomy ? 'py-8' : where ? 'py-3' : 'py-5'} bg-transparent border-none rounded-none cursor-pointer text-left text-text hover:bg-btn-bg`}
+      className={`w-full flex items-center gap-8 px-10 ${roomy ? 'py-8' : where || worktree ? 'py-3' : 'py-5'} bg-transparent border-none rounded-none cursor-pointer text-left text-text hover:bg-btn-bg`}
     >
       <span className="shrink-0 flex" style={{ width: MUGSHOT_CROP_SIDE_PX }}>
         {palette !== undefined ? (
@@ -403,9 +460,27 @@ export function ConversationRow({ conversation, where, onPress, statusFor, now, 
           between the title and its Directory. */}
       <span className="flex-1 min-w-0 flex flex-col leading-none">
         <span className="text-sm overflow-hidden text-ellipsis whitespace-nowrap">{title}</span>
-        {where && (
-          <span className="-mt-1 text-2xs text-text-muted overflow-hidden text-ellipsis whitespace-nowrap">
-            {where}
+        {(where || worktree) && (
+          <span className="-mt-1 flex items-center gap-4 min-w-0 text-2xs text-text-muted">
+            {where && (
+              <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                {where}
+              </span>
+            )}
+            {worktree && (
+              <span
+                data-testid="conversation-worktree"
+                title={`Worktree ${worktree.branch}`}
+                className="min-w-0 flex items-center gap-2"
+              >
+                <span className="shrink-0 flex">
+                  <PixelIcon name="worktree" scale={1} />
+                </span>
+                <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+                  {worktree.branch}
+                </span>
+              </span>
+            )}
           </span>
         )}
       </span>

@@ -1,3 +1,4 @@
+import type { AgentWorktree } from '../../../core/src/messages.js';
 import { CARD_CONTEXT_BAR_HEIGHT_PX, CARD_MUGSHOT_CROP_TOP_ROW } from '../constants.js';
 import { ContextBar } from '../office/ContextBar.js';
 import { contextLeft, useAgentContextUsed } from '../office/contextGauge.js';
@@ -11,6 +12,8 @@ import { PixelIcon } from './ui/PixelIcon.js';
 export interface AgentAppearance {
   palette: number;
   repeat: number;
+  /** The Worktree the agent runs in: the card wears its icon, the title its branch. */
+  worktree?: AgentWorktree;
 }
 
 /** Agent activity reflected by the tab's status dot. */
@@ -65,13 +68,29 @@ export function AgentCard({
     <div
       className={`group relative pointer-events-auto flex items-stretch gap-1 p-1 cursor-pointer border-2 shrink-0 ${CARD_VARIANT[variant]}`}
       onClick={() => onSelect(agentId)}
-      title={`Agent ${agentId}`}
+      title={
+        appearance.worktree
+          ? `Agent ${agentId} · worktree ${appearance.worktree.branch}`
+          : `Agent ${agentId}`
+      }
     >
-      <CharacterMugShot
-        palette={appearance.palette}
-        repeat={appearance.repeat}
-        cropTop={CARD_MUGSHOT_CROP_TOP_ROW}
-      />
+      <span className="relative flex shrink-0">
+        <CharacterMugShot
+          palette={appearance.palette}
+          repeat={appearance.repeat}
+          cropTop={CARD_MUGSHOT_CROP_TOP_ROW}
+        />
+        {/* A Worktree agent's mark, over the mug shot's top-left corner (the
+            context bar runs along the foot). */}
+        {appearance.worktree && (
+          <span
+            data-testid="card-worktree"
+            className="absolute top-0 left-0 flex bg-bg text-text p-1 pointer-events-none"
+          >
+            <PixelIcon name="worktree" scale={1} />
+          </span>
+        )}
+      </span>
       {/* Close on top, status dot at the bottom, both centred over the
           same column beside the mug shot. */}
       <div className="flex flex-col items-center justify-between shrink-0">

@@ -11,13 +11,15 @@ import { transport } from '../transport/index.js';
  *  conversation leaves the list), left (it joins), a reconnect resynced, an
  *  agent's turn started or ended (its transcript now exists, or its title
  *  was written — the desktop sidebar stays open, so nothing else would ask),
- *  or a Directory was added, renamed or removed (one section per Directory). */
+ *  a Directory was added, renamed or removed (one section per Directory), or
+ *  its Worktrees changed (a removed one's chats lose their worktree mark). */
 const REFRESH_ON = new Set([
   'agentCreated',
   'agentClosed',
   'existingAgents',
   'agentStatus',
   'directoriesLoaded',
+  'worktreesLoaded',
 ]);
 
 export interface ConversationList {

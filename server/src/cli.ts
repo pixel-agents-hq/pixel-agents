@@ -32,8 +32,12 @@ import {
   PTY_HOST_SCRIPT,
   TERMINAL_DISABLED_BY_FLAG_REASON,
   WILDCARD_HOSTNAMES,
+  WORKTREE_SHUTDOWN_WAIT_MS,
+  WORKTREE_SWEEP_DELAY_MS,
 } from './constants.js';
+import { listDirectoryLocations } from './directories.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
+import { hostDirectory } from './hostDirectory.js';
 import {
   claudeProvider,
   copyHookScript,
@@ -50,6 +54,8 @@ import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { RemotePtySessions, startPtyHostProcess } from './terminal/remotePtySessions.js';
 import { reattachTerminalAgents } from './terminal/standaloneAgentLauncher.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
+import { setAttributionDirectories } from './worktreeAttribution.js';
+import { holdWorktreesOf, stopRetiring, sweepWorktrees } from './worktreeLeave.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -302,6 +308,9 @@ async function main(): Promise<void> {
   const store = new AgentStateStore();
   const adapter = new FileStateAdapter({ namespace: 'standalone' });
   store.setAdapter(adapter);
+  // This process holds the Worktrees its agents run in (before the reattach
+  // below adds any), so another Pixel Agents process never retires them.
+  holdWorktreesOf(store);
 
   // characters.json is shared with the VS Code surface (and hand-editable): follow it.
   const characterProfilesWatcher = watchCharacterProfiles(
@@ -484,6 +493,10 @@ async function main(): Promise<void> {
       );
     }
 
+    // Sessions in a Directory's worktrees (ours or Claude's own) belong to
+    // that Directory: every Directory, the start directory included.
+    setAttributionDirectories(() => listDirectoryLocations([hostDirectory()]));
+
     // Start scanning for external sessions (Claude running in user's terminal)
     const cwd = process.cwd();
     const dirs = claudeProvider.getSessionDirs?.(cwd);
@@ -494,6 +507,18 @@ async function main(): Promise<void> {
       runtime.startExternalScanning(projectDir);
       runtime.startStaleCheck();
     }
+
+    // The startup tidy-up of the Worktrees a crash or a closed window left
+    // behind. After the reattach above (a Worktree whose agent outlived the
+    // last server is locked, never retired), and a moment after the server
+    // is up, so the first office's handshake never waits on git.
+    // Saved external agents hold their Worktrees (restored when an office
+    // connects); saved terminal agents were reattached before this, or died
+    // with the last server.
+    setTimeout(
+      () => void sweepWorktrees(store, { savedAgentsHold: (saved) => saved.isExternal === true }),
+      WORKTREE_SWEEP_DELAY_MS,
+    ).unref();
 
     // The URL the operator opens has to be REACHABLE (a wildcard bind address
     // is a bind target, not an address you can browse to — `--host 0.0.0.0`
@@ -514,6 +539,9 @@ async function main(): Promise<void> {
       if (shuttingDown) return;
       shuttingDown = true;
       console.log('\nShutting down...');
+      // No Worktree is retired while the server ends its own agents (the next
+      // sweep does it unhurried); git work already under way finishes first.
+      await stopRetiring(WORKTREE_SHUTDOWN_WAIT_MS);
       // In process: kill child terminals and wait for them (each exit closes
       // its agent): exiting now would cancel the SIGKILL escalation and leave
       // a child that ignores SIGHUP orphaned on a dead server. With the PTY

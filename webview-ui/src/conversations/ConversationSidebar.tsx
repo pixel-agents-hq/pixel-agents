@@ -3,6 +3,7 @@ import { Button } from '../components/ui/Button.js';
 import { CONVERSATION_SIDEBAR_WIDTH_PX, SIDE_PANEL_CONTENT_SHIFT_PX } from '../constants.js';
 import { useSlidePanel } from '../hooks/useSlidePanel.js';
 import { ConversationList, type ConversationSearchScope } from './ConversationList.js';
+import type { WorktreesListing } from './WorktreeList.js';
 
 /**
  * Left-docked home of the recent conversations (ConversationList) on the
@@ -24,6 +25,8 @@ interface ConversationSidebarProps {
   statusFor: (agentId: number) => TabStatus | null;
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
+  /** Each Directory's Worktrees, listed in its section. */
+  worktrees?: WorktreesListing;
   /** Open the conversation search. */
   onSearch?: (scope: ConversationSearchScope) => void;
 }
@@ -35,6 +38,7 @@ export function ConversationSidebar({
   statusFor,
   isSettingsOpen,
   onToggleSettings,
+  worktrees,
   onSearch,
 }: ConversationSidebarProps) {
   const { rendered, shown, panelTransition, contentTransition, onPanelTransitionEnd } =
@@ -67,6 +71,7 @@ export function ConversationSidebar({
           onResume={onResume}
           onOpenAgent={onOpenAgent}
           statusFor={statusFor}
+          worktrees={worktrees}
           onSearch={onSearch}
         />
         <div className="p-8 border-t-2 border-border">

@@ -11,6 +11,8 @@
 // Depending on layoutLoaded always arriving last stranded restored agents on any
 // surface that sends layout first (e.g. the VS Code no-assets path), issue #334.
 
+import type { AgentWorktree } from '../../../../core/src/messages.js';
+
 /** Per-agent seat metadata carried by the existingAgents message. */
 export interface ExistingAgentMeta {
   palette?: number;
@@ -26,6 +28,8 @@ export interface PendingAgent {
   seatId?: string;
   directoryName?: string;
   isHeadless?: boolean;
+  /** The Worktree it runs in (its card's marker, its label's branch). */
+  worktree?: AgentWorktree;
 }
 
 /** Minimal structural view of OfficeState this reconciler needs. */
@@ -44,6 +48,8 @@ export interface ExistingAgentsOffice {
   restAgent: (id: number) => void;
   /** Give an agent the office already shows the server's look and seat. */
   syncAgent: (id: number, palette?: number, repeat?: number, seatId?: string) => void;
+  /** Give an agent (and its sub-agents) the Worktree it runs in, or none. */
+  setAgentWorktree?: (id: number, worktree: AgentWorktree | undefined) => void;
 }
 
 /**
@@ -54,6 +60,7 @@ export interface ExistingAgentsOffice {
 export function restoreAgent(os: ExistingAgentsOffice, p: PendingAgent): void {
   os.addAgent(p.id, p.palette, p.repeat, p.seatId, true, p.directoryName);
   if (p.isHeadless) os.setHeadless(p.id, true);
+  if (p.worktree) os.setAgentWorktree?.(p.id, p.worktree);
   os.restAgent(p.id);
 }
 
@@ -73,6 +80,7 @@ export function reconcileExistingAgents(
   layoutReady: boolean,
   pending: PendingAgent[],
   headlessAgents: Record<number, boolean> = {},
+  worktrees: Record<number, AgentWorktree> = {},
 ): boolean {
   let addedDirectly = false;
   for (const id of incoming) {
@@ -84,6 +92,7 @@ export function reconcileExistingAgents(
       seatId: m?.seatId,
       directoryName: directoryNames[id],
       isHeadless: headlessAgents[id] === true,
+      ...(worktrees[id] ? { worktree: worktrees[id] } : {}),
     };
     if (layoutReady) {
       if (!os.characters.has(p.id)) {
@@ -94,6 +103,7 @@ export function reconcileExistingAgents(
         // office's own look and seat and saving them back reshuffled the
         // office for every other viewer.
         os.syncAgent(p.id, p.palette, p.repeat, p.seatId);
+        os.setAgentWorktree?.(p.id, p.worktree);
       }
     } else {
       pending.push(p);

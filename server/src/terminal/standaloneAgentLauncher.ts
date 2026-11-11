@@ -15,6 +15,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
+import type { Directory } from '../../../core/src/messages.js';
 import type { HookProvider } from '../../../core/src/provider.js';
 import type { PersistedAgent } from '../../../core/src/schemas.js';
 import { restoredAgentInit } from '../agentPersistence.js';
@@ -23,11 +24,11 @@ import { createAgentState } from '../agentState.js';
 import type { AgentStateStore } from '../agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../constants.js';
 import { clearContextUsage } from '../contextUsage.js';
-import { directoryAt } from '../directories.js';
 import { startFileWatching } from '../fileWatcher.js';
-import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
+import { directoryNameFor } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import type { AgentState } from '../types.js';
+import { retireWorktreesLeftBy } from '../worktreeLeave.js';
 import { inheritedEnv, terminalEnv } from './terminalEnv.js';
 import type { TerminalSession, TerminalSessions } from './terminalSessions.js';
 
@@ -39,9 +40,15 @@ export interface LaunchStandaloneAgentDeps {
 }
 
 export interface LaunchStandaloneAgentOptions {
-  /** Path of the Directory to launch into. Defaults to the server's cwd, which
-   *  is also the Directory standalone contributes as its host entry. */
-  directoryPath?: string;
+  /** The Directory launched into, as the launch request named it (resolved by
+   *  the caller): the agent's name, its default characters and, through the
+   *  name, its Area seating. Absent = a launch into no Directory, named after
+   *  its folder. Never derived here from the folder the process runs in. */
+  directory?: Directory;
+  /** The folder the process runs in. Defaults to the Directory's path, else
+   *  the server's cwd (also the Directory standalone contributes as its host
+   *  entry). It need not be the Directory's path. */
+  cwd?: string;
   /** Read from the host's persisted permission posture by the caller; never a
    *  per-launch choice made in the office. */
   bypassPermissions?: boolean;
@@ -52,6 +59,12 @@ export interface LaunchStandaloneAgentOptions {
    *  id, same transcript (read from its end), and the seat its agent sat in
    *  when that one is free. */
   resume?: { sessionId: string; transcript: string; seatId?: string };
+  /** The Worktree `cwd` is, when the launch made one: its agent wears the
+   *  marker and branch (still named after `directory`). */
+  worktree?: AgentState['worktree'];
+  /** The new session's id, when the caller already chose it (a Worktree
+   *  records the session it was made for). Absent = a fresh UUID. */
+  sessionId?: string;
   cols?: number;
   rows?: number;
 }
@@ -71,8 +84,9 @@ export function launchStandaloneAgent(
     return null;
   }
 
-  const cwd = options.directoryPath ?? process.cwd();
-  const sessionId = options.resume?.sessionId ?? crypto.randomUUID();
+  const directory = options.directory;
+  const cwd = options.cwd ?? directory?.path ?? process.cwd();
+  const sessionId = options.resume?.sessionId ?? options.sessionId ?? crypto.randomUUID();
 
   const launch = provider.buildLaunchCommand?.(sessionId, cwd, {
     bypassPermissions: options.bypassPermissions,
@@ -95,8 +109,6 @@ export function launchStandaloneAgent(
 
   const id = store.nextAgentId.current++;
 
-  // The Directory launched into, if the cwd is one: its name and its default characters.
-  const directory = directoryAt(cwd, [hostDirectory()]);
   const agent = createAgentState({
     id,
     sessionId,
@@ -110,10 +122,13 @@ export function launchStandaloneAgent(
     // Directory it was launched into, as the user named it — so an entry called
     // "Side Project" labels its agents that, not "side-project", and the Areas
     // it was assigned in the modal actually match. Falls back to the basename
-    // for a cwd that is no Directory at all.
+    // for a launch into no Directory at all.
     directoryName: directory?.name ?? directoryNameFor(cwd),
     providerId: provider.id,
     seatId: options.resume?.seatId,
+    worktree: options.worktree,
+    // Where its session runs: a hook naming this folder is no move.
+    cwd,
   });
   if (options.resume) {
     // Its history is the past: replaying it would resurrect finished tools.
@@ -272,6 +287,10 @@ function admitTerminalAgent(
       runtime.unregisterAgent(agent.sessionId);
       runtime.closeAgent(id);
     }
+    // Its process is gone (however it left: the card's x, /exit, the
+    // terminal ending): the leave rules apply once no other agent runs in
+    // its Worktree. In the background — closing never waits on git.
+    void retireWorktreesLeftBy(store, agent);
   });
 
   startJsonlPoll(deps, id, agent);

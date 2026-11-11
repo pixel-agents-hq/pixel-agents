@@ -4,8 +4,10 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { Directory } from '../../core/src/messages.js';
 import type { PersistedAgent } from '../../core/src/schemas.js';
 import { resendAgentActivity } from '../../server/src/agentActivityResend.js';
+import { existingAgentWorktrees } from '../../server/src/agentMessages.js';
 import {
   isPersistedSpawnChild,
   restoredAgentInit,
@@ -15,7 +17,6 @@ import { createAgentState } from '../../server/src/agentState.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
 import { clearContextUsage } from '../../server/src/contextUsage.js';
-import { directoryAt } from '../../server/src/directories.js';
 import {
   ensureProjectScan,
   readNewLines,
@@ -28,7 +29,9 @@ import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/cla
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { sessionMarkersUnset } from '../../server/src/terminal/terminalEnv.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
-import { workspaceDirectories } from './hostDirectories.js';
+import type { AgentState } from '../../server/src/types.js';
+import { retireWorktreesLeftBy } from '../../server/src/worktreeLeave.js';
+import { savedOccupant, type WorktreeOccupant } from '../../server/src/worktreeOccupancy.js';
 
 export function getProjectDirPath(cwd?: string): string {
   // Fall back to home directory when no workspace folder is open (common on Linux/macOS
@@ -46,8 +49,13 @@ export function getProjectDirPath(cwd?: string): string {
 
 /** What a launch asks for, beyond the runtime it registers with. */
 export interface LaunchTerminalOptions {
-  /** The Directory to launch into; absent = the first workspace folder, else home. */
-  directoryPath?: string;
+  /** The Directory launched into, as the launch request named it (resolved by
+   *  the caller): the agent's name, its default characters and, through the
+   *  name, its Area seating. Never derived here from the folder it runs in. */
+  directory?: Directory;
+  /** The folder the terminal runs in; absent = the Directory's path, else the
+   *  first workspace folder, else home. It need not be the Directory's path. */
+  cwd?: string;
   /** The host's persisted permission posture (never a per-launch choice). */
   bypassPermissions?: boolean;
   /** Keep the panel on Pixel Agents instead of showing the terminal. */
@@ -55,6 +63,13 @@ export interface LaunchTerminalOptions {
   /** The character picked from the roster (a palette index); absent = the
    *  launch Directory's default characters, else a random pick. */
   palette?: number;
+  /** The Worktree `cwd` is, when the launch made one: its agent wears the
+   *  marker and branch (still named after `directory`), and the terminal
+   *  closing applies the leave rules to it. */
+  worktree?: AgentState['worktree'];
+  /** The new session's id, when the caller already chose it (a Worktree
+   *  records the session it was made for). Absent = a fresh UUID. */
+  sessionId?: string;
 }
 
 export async function launchNewTerminal(
@@ -70,13 +85,21 @@ export async function launchNewTerminal(
   jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
   projectScanTimerRef: { current: ReturnType<typeof setInterval> | null },
   persistAgents: () => void,
-  { directoryPath, bypassPermissions, suppressShow, palette }: LaunchTerminalOptions = {},
-): Promise<void> {
+  {
+    directory,
+    cwd: launchCwd,
+    bypassPermissions,
+    suppressShow,
+    palette,
+    worktree,
+    sessionId: chosenSessionId,
+  }: LaunchTerminalOptions = {},
+): Promise<number> {
   const folders = vscode.workspace.workspaceFolders;
   // Use home directory as fallback cwd when no workspace is open (common on Linux/macOS).
   // This ensures the terminal starts in a predictable location that matches the project
   // dir hash Claude Code will use for JSONL transcript files.
-  const cwd = directoryPath || folders?.[0]?.uri.fsPath || os.homedir();
+  const cwd = launchCwd || directory?.path || folders?.[0]?.uri.fsPath || os.homedir();
   const isMultiRoot = !!(folders && folders.length > 1);
   const idx = nextTerminalIndexRef.current++;
   const terminal = vscode.window.createTerminal({
@@ -95,7 +118,7 @@ export async function launchNewTerminal(
     terminal.show();
   }
 
-  const sessionId = crypto.randomUUID();
+  const sessionId = chosenSessionId ?? crypto.randomUUID();
   const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
   if (!launch) {
     throw new Error('claudeProvider.buildLaunchCommand is not implemented');
@@ -112,18 +135,16 @@ export async function launchNewTerminal(
   const id = nextAgentIdRef.current++;
   // The character's origin label, and the key areaMappings is looked up by.
   //
-  // A launch the office aimed somewhere (a Directory row, or the Default
-  // directory the caller resolved — both arrive as directoryPath) wears that
-  // Directory's name as the user wrote it, so "Side Project" doesn't come out
-  // as "side-project" and the Areas assigned to it in the modal match.
+  // A launch the office aimed at a Directory (the caller resolved it from the
+  // launch request) wears that Directory's name as the user wrote it, so
+  // "Side Project" doesn't come out as "side-project" and the Areas assigned
+  // to it in the modal match.
   //
   // Everything else keeps the old multi-root rule: the most specific containing
   // workspace folder (longest path wins for nested folders), and nothing at all
   // in a single-root window, where an origin label would say what the whole
   // office already says.
-  const chosenDirectory =
-    directoryPath === undefined ? undefined : directoryAt(cwd, workspaceDirectories());
-  const chosenDirectoryName = chosenDirectory?.name;
+  const chosenDirectoryName = directory?.name;
   const owningFolder = (folders ?? [])
     .filter((f) => cwd === f.uri.fsPath || cwd.startsWith(f.uri.fsPath + path.sep))
     .sort((a, b) => b.uri.fsPath.length - a.uri.fsPath.length)[0];
@@ -138,10 +159,13 @@ export async function launchNewTerminal(
     projectDir,
     jsonlFile: expectedFile,
     directoryName,
+    worktree,
+    // Where its session runs: a hook naming this folder is no move.
+    cwd,
   });
 
   // Only a launch the office aimed at a Directory wears its defaults.
-  assignPaletteIfNeeded(agent, agents, { picked: palette, directory: chosenDirectory });
+  assignPaletteIfNeeded(agent, agents, { picked: palette, directory });
   agents.set(id, agent);
   // A fresh session starts with an empty context: a full gauge from the spawn on.
   clearContextUsage(id, agents);
@@ -248,6 +272,7 @@ export async function launchNewTerminal(
     }
   }, JSONL_POLL_INTERVAL_MS);
   jsonlPollTimers.set(id, pollTimer);
+  return id;
 }
 
 export function removeAgent(
@@ -332,6 +357,9 @@ export function restoreAgents(
   // webviewReady) must not be culled by this restore-time grace period, since
   // their JSONL may still be on its way (heuristic /resume path waits ~11s).
   const justRestoredTerminalIds: number[] = [];
+  // The Worktrees of saved terminal agents whose terminal is gone: the leave
+  // rules apply to them once the store holds everyone who did come back.
+  const leftAgents: WorktreeOccupant[] = [];
 
   for (const p of persisted) {
     // Skip agents already in the map — prevents duplicate file watchers on re-entry
@@ -356,7 +384,11 @@ export function restoreAgents(
     } else {
       // Terminal agents — find matching terminal by name
       terminal = liveTerminals.find((t) => t.name === p.terminalName);
-      if (!terminal) continue;
+      if (!terminal) {
+        // Its terminal closed while no window watched it: the agent left.
+        leftAgents.push(savedOccupant(p));
+        continue;
+      }
     }
 
     const agent = createAgentState({
@@ -458,6 +490,8 @@ export function restoreAgents(
             permissionTimers,
             jsonlPollTimers,
           );
+          // Claude is no longer running there: the agent has left its Worktree.
+          void retireWorktreesLeftBy(store, agent);
         }
       }
     }, 10_000); // 10 seconds grace period
@@ -473,6 +507,7 @@ export function restoreAgents(
 
   // Re-persist cleaned-up list (removes entries whose terminals are gone)
   store.persist();
+  for (const left of leftAgents) void retireWorktreesLeftBy(store, left);
 
   // Start project scan for /clear detection
   if (restoredProjectDir) {
@@ -528,6 +563,7 @@ export function sendExistingAgents(
     agentMeta,
     directoryNames,
     externalAgents,
+    worktrees: existingAgentWorktrees(agents),
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
   // so that agentStatus/agentToolStart messages arrive after characters are created.

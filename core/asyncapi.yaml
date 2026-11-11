@@ -98,6 +98,8 @@ components:
         - $ref: '#/components/schemas/SubagentToolPermission'
         # Agent Teams
         - $ref: '#/components/schemas/AgentTeamInfo'
+        # Worktree an agent moved into or out of
+        - $ref: '#/components/schemas/AgentWorktreeChanged'
         # Context window
         - $ref: '#/components/schemas/AgentContextUsage'
         # Layout
@@ -129,6 +131,12 @@ components:
         - $ref: '#/components/schemas/DirectorySuggestions'
         - $ref: '#/components/schemas/ConversationsLoaded'
         - $ref: '#/components/schemas/ConversationSearchResults'
+        # Worktrees
+        - $ref: '#/components/schemas/WorktreeRejected'
+        - $ref: '#/components/schemas/WorktreeOptions'
+        - $ref: '#/components/schemas/WorktreeDecisionRejected'
+        - $ref: '#/components/schemas/AgentCloseQuestion'
+        - $ref: '#/components/schemas/WorktreesLoaded'
         # Terminal (standalone embedded terminal control plane)
         - $ref: '#/components/schemas/TerminalAvailability'
         - $ref: '#/components/schemas/TerminalSessionOpened'
@@ -173,6 +181,9 @@ components:
         - $ref: '#/components/schemas/RequestConversations'
         - $ref: '#/components/schemas/SearchConversations'
         - $ref: '#/components/schemas/ResumeConversation'
+        - $ref: '#/components/schemas/RequestWorktrees'
+        - $ref: '#/components/schemas/RequestWorktreeOptions'
+        - $ref: '#/components/schemas/DecideWorktree'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
 
@@ -226,6 +237,8 @@ components:
             The seat the agent should take when it is free (a resumed
             conversation's agent returns to where it sat). Absent, the office
             picks one.
+        worktree:
+          $ref: '#/components/schemas/AgentWorktree'
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -278,6 +291,14 @@ components:
           description: Map of agent ID (string) to external flag.
           additionalProperties:
             type: boolean
+        worktrees:
+          type: object
+          description: >-
+            Map of agent ID (string) to the Worktree it runs in, for the
+            agents that run in one (a Teammate wears its Lead's). Absent or
+            missing an id = that agent runs in its Directory's own checkout.
+          additionalProperties:
+            $ref: '#/components/schemas/AgentWorktree'
 
     AgentStatus:
       description: Active vs waiting state for an agent (drives character animation).
@@ -455,6 +476,25 @@ components:
           type: integer
         teamUsesTmux:
           type: boolean
+
+    AgentWorktreeChanged:
+      description: |
+        A running agent moved into or out of a Worktree mid-session (Claude
+        Code's EnterWorktree / ExitWorktree, or a background session's own
+        move): the same agent, now in `worktree`, or in its Directory's own
+        checkout (or somewhere else) when absent. Only a folder under a
+        Directory's `.claude/worktrees/` is a Worktree; the agent keeps its
+        Directory, name and look. Its sub-agents wear the same marker.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: agentWorktreeChanged
+        id:
+          type: integer
+        worktree:
+          $ref: '#/components/schemas/AgentWorktree'
 
     AgentContextUsage:
       description: |
@@ -1027,6 +1067,271 @@ components:
           type: string
           description: Human-readable cause, shown inline in the Directory modal.
 
+    WorktreeRejected:
+      description: |
+        A `launchAgent` with `worktree: true` could not create its Worktree (the
+        Directory is not a git repo, no free name, git failed): nothing was
+        launched and nothing was left on disk. Also the answer to a
+        `resumeConversation` of a Worktree's conversation that could not be
+        resumed (its branch was deleted, something else sits at its path).
+        Sent point-to-point to the client that asked (never broadcast); the
+        office shows `reason`.
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath, reason]
+      properties:
+        type:
+          const: worktreeRejected
+        directoryPath:
+          type: string
+          description: The Directory the launch (or the resume) named.
+        reason:
+          type: string
+
+    WorktreeOptions:
+      description: |
+        The answer to `requestWorktreeOptions`, to that client only: what the
+        new-worktree modal offers. `name` is a fresh generated name (free as a
+        folder and, with `prefix`, as a branch); `branches` are the repo's
+        local branches and origin's (as last fetched), newest commit first;
+        `defaultBase` is the branch the Directory's own base setting points at
+        (its current branch, or origin's default branch), absent when its
+        checkout is detached and the setting is the current commit. A
+        Directory that is no git repo is answered `worktreeRejected` instead.
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath, name, prefix, branches]
+      properties:
+        type:
+          const: worktreeOptions
+        directoryPath:
+          type: string
+        name:
+          type: string
+          description: A generated Worktree name the user may keep or change.
+        prefix:
+          type: string
+          description: The Directory's branch prefix (the branch is prefix + name).
+        branches:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorktreeBranch'
+        defaultBase:
+          $ref: '#/components/schemas/WorktreeBranch'
+
+    WorktreeBranch:
+      description: >-
+        A branch a new Worktree can start from: a local one (`refs/heads/`) or
+        origin's (`refs/remotes/origin/`), `name` without that prefix.
+        `current`: the main checkout's own branch.
+      type: object
+      additionalProperties: false
+      required: [name, location]
+      properties:
+        name:
+          type: string
+        location:
+          $ref: '#/components/schemas/WorktreeBranchLocation'
+        current:
+          type: boolean
+
+    WorktreeBranchLocation:
+      description: Where a branch lives — `local` (refs/heads) or `origin` (refs/remotes/origin).
+      type: string
+      enum: [local, origin]
+
+    WorktreeDecisionRejected:
+      description: |
+        The answer to a `decideWorktree` that could not be carried out (git
+        refused the save, more files changed than the user agreed to discard,
+        an agent or Claude session still runs in it, it is Claude Code's and
+        the choice is not `remove`): the Worktree is left
+        as it was. Sent point-to-point to the client that asked; the decision
+        dialog (or the Worktrees list) shows `reason`.
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath, name, reason]
+      properties:
+        type:
+          const: worktreeDecisionRejected
+        directoryPath:
+          type: string
+          description: The Directory the decision named.
+        name:
+          type: string
+          description: The Worktree the decision named.
+        reason:
+          type: string
+
+    AgentCloseQuestion:
+      description: |
+        The answer to a `closeAgent` (no `worktreeChoice`) for an agent that
+        would leave a Worktree of Pixel Agents' with uncommitted files: the
+        agent is NOT closed and keeps running, and the client asks the user
+        (Commit to branch, Leave as is, Delete changes). The answer comes back as a
+        `closeAgent` carrying `worktreeChoice`; dismissing the question
+        leaves the agent running. Sent point-to-point to the client that
+        pressed close.
+      type: object
+      additionalProperties: false
+      required: [type, id, directoryPath, name, branch, uncommittedFiles]
+      properties:
+        type:
+          const: agentCloseQuestion
+        id:
+          type: integer
+          description: The agent that was asked to close.
+        directoryPath:
+          type: string
+          description: The Directory the Worktree belongs to, as the office lists it.
+        name:
+          type: string
+          description: The Worktree's name (its folder under `.claude/worktrees/`).
+        branch:
+          type: string
+        uncommittedFiles:
+          type: integer
+          minimum: 0
+          description: How many files are uncommitted now.
+
+    WorktreesLoaded:
+      description: |
+        One Directory's Worktrees (the ones Pixel Agents made, then the ones
+        Claude Code made under its `.claude/worktrees/`, `owner: claude`), each
+        with what it holds now. Sent to the client that asked (`requestWorktrees`), to
+        every privileged client on connect for each Directory that has any,
+        and broadcast to every privileged client after every change (an agent
+        leaving, a decision). Never sent to read-only clients. A Worktree in
+        state `needsDecision` opens the office's decision dialog; the list
+        replaces whatever the client held for `directoryPath`.
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath, worktrees]
+      properties:
+        type:
+          const: worktreesLoaded
+        directoryPath:
+          type: string
+          description: The Directory (its repo root) the Worktrees belong to.
+        worktrees:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorktreeSummary'
+
+    WorktreeSummary:
+      description: |
+        A Worktree as the office lists it. `uncommittedFiles`: changed and
+        untracked files (not gitignored ones). `uniqueCommits`: commits on its
+        branch whose changes are not in its base (patch-equivalence, so
+        squash- or rebase-merged work counts as none). `agentId`: the agent
+        running in it, when one is. `palette` + `repeat`: the look of the agent
+        it belongs to (the first seen running in it, until that one has gone
+        and another runs there), else its newest conversation's; absent when
+        neither is known.
+      type: object
+      additionalProperties: false
+      required: [name, branch, state, sizeBytes, uncommittedFiles, uniqueCommits, owner]
+      properties:
+        name:
+          type: string
+        branch:
+          type: string
+        owner:
+          $ref: '#/components/schemas/WorktreeOwner'
+        latestSessionId:
+          type: string
+          description: >-
+            Its newest conversation (a session id `resumeConversation` takes),
+            when it has one: the list's Resume action.
+        state:
+          $ref: '#/components/schemas/WorktreeState'
+        sizeBytes:
+          type: integer
+          minimum: 0
+        uncommittedFiles:
+          type: integer
+          minimum: 0
+        uniqueCommits:
+          type: integer
+          minimum: 0
+        agentId:
+          type: integer
+        palette:
+          type: integer
+          minimum: 0
+        repeat:
+          type: integer
+          minimum: 0
+
+    WorktreeOwner:
+      description: |
+        Who made a Worktree. `pixelAgents`: Pixel Agents (listed in its
+        registry), so the office manages it. `claude`: Claude Code made it
+        under the Directory's `.claude/worktrees/` (`claude -w`, EnterWorktree):
+        shown, and only ever removed — `remove` deletes its folder and branch
+        once no agent or Claude session is in it (confirmed files and commits
+        only), every other `decideWorktree` on it is refused — and its state
+        is only `active` (an agent runs in it) or `kept`.
+      type: string
+      enum: [pixelAgents, claude]
+
+    WorktreeState:
+      description: |
+        `active`: an agent runs in it. `kept`: its folder stays by the user's
+        choice. `parked`: its folder was removed, its branch kept.
+        `needsDecision`: its agent left uncommitted changes; the user decides.
+      type: string
+      enum: [active, kept, parked, needsDecision]
+
+    WorktreeChoice:
+      description: |
+        The answer for a Worktree that needs a decision. `save`: commit every
+        change (untracked files included) to its branch, then remove the
+        folder. `keep`: leave the folder as it is. `discard`: delete the
+        changes and the folder, and the branch too when it has no commits of
+        its own. From the Worktrees list: `remove` applies the leave rules a
+        departing agent's Worktree gets (so it may come back needing a
+        decision), and `deleteBranch` deletes a parked Worktree's branch
+        (needs `confirmedCommits` when its commits are merged nowhere). On one
+        of Claude Code's, `remove` deletes the folder and its branch (needs
+        `confirmedFiles` / `confirmedCommits` for what that loses).
+      type: string
+      enum: [save, keep, discard, remove, deleteBranch]
+
+    WorktreeLeaveChoice:
+      description: |
+        The answer, given before an agent is closed, for the Worktree it
+        leaves with uncommitted files: `save` (commit them to its branch,
+        then remove the folder), `keep` (leave the folder) or `discard`
+        (delete the changes with the folder). The same answers as
+        `WorktreeChoice`'s first three.
+      type: string
+      enum: [save, keep, discard]
+
+    AgentWorktree:
+      description: |
+        The Worktree an agent runs in: a separate checkout of its Directory's
+        repo on a branch of its own. `name` is its folder under the repo's
+        `.claude/worktrees/`, `branch` its branch (the Directory's prefix +
+        the name).
+      type: object
+      additionalProperties: false
+      required: [name, branch]
+      properties:
+        name:
+          type: string
+        branch:
+          type: string
+
+    WorktreeBase:
+      description: |
+        What a Directory's new Worktrees start from. `head`: the main
+        checkout's current commit (unpushed local work included). `fresh`: the
+        latest default branch on origin, fetched at launch (the current commit
+        when the fetch fails). Absent = `head`.
+      type: string
+      enum: [head, fresh]
+
     DirectorySuggestions:
       description: |
         Candidate paths for the Directory modal, recovered from the working
@@ -1125,6 +1430,10 @@ components:
           $ref: '#/components/schemas/Conversation'
 
     Conversation:
+      description: >-
+        One conversation. `worktree`: the Directory's Worktree it ran in
+        (Pixel Agents' or Claude Code's); resuming one whose folder was
+        removed rebuilds the folder from its branch first.
       type: object
       additionalProperties: false
       required: [sessionId, title, updatedAt]
@@ -1145,6 +1454,8 @@ components:
         agentId:
           type: integer
           description: The agent in the office running it right now; absent for a past conversation.
+        worktree:
+          $ref: '#/components/schemas/AgentWorktree'
 
     AgentDiagnostics:
       description: Connection diagnostics for all agents (response to requestDiagnostics).
@@ -1257,6 +1568,25 @@ components:
             Character the agent wears, as an index into the character profiles
             (picked from the roster). Absent, the Directory's default characters
             apply, else the server picks one at random.
+        worktree:
+          type: boolean
+          description: >-
+            Launch into a new Worktree of the Directory's repo instead of the
+            Directory itself. The agent is still an agent of its Directory
+            (name, default characters, Areas). A failed create launches
+            nothing and is answered with `worktreeRejected`.
+        worktreeName:
+          type: string
+          description: >-
+            With `worktree: true`: the Worktree's name (its folder, and its
+            branch after the Directory's prefix). Absent = a generated one. A
+            taken or invalid name is refused with `worktreeRejected`.
+        worktreeFrom:
+          $ref: '#/components/schemas/WorktreeBranch'
+          description: >-
+            With `worktree: true`: the branch to start from (an origin branch
+            is fetched first, falling back to what was last fetched). Absent =
+            the Directory's base setting.
 
     FocusAgent:
       description: Focus an agent's terminal.
@@ -1270,7 +1600,12 @@ components:
           type: integer
 
     CloseAgent:
-      description: Close (dismiss) an agent.
+      description: >-
+        Close (dismiss) an agent. One that would leave a Worktree of Pixel
+        Agents' with uncommitted files is not closed: the server answers
+        `agentCloseQuestion`, and the user's answer comes back as a
+        `closeAgent` with `worktreeChoice`, which closes it and is applied to
+        the Worktree once the agent has exited.
       type: object
       additionalProperties: false
       required: [type, id]
@@ -1279,6 +1614,15 @@ components:
           const: closeAgent
         id:
           type: integer
+        worktreeChoice:
+          $ref: '#/components/schemas/WorktreeLeaveChoice'
+        confirmedFiles:
+          type: integer
+          minimum: 0
+          description: >-
+            `worktreeChoice: discard` only: how many files the user confirmed
+            losing. Asked again (`agentCloseQuestion`) when more are
+            uncommitted by the time it arrives.
 
     SaveAgentSeats:
       description: Persist seat assignments for current agents.
@@ -1638,6 +1982,11 @@ components:
             minimum: 0
         characterOrder:
           $ref: '#/components/schemas/DirectoryCharacterOrder'
+        worktreeBase:
+          $ref: '#/components/schemas/WorktreeBase'
+        worktreeBranchPrefix:
+          type: string
+          description: The branch prefix for new Worktrees. Empty or absent = none.
 
     RemoveDirectory:
       description: >-
@@ -1714,7 +2063,11 @@ components:
       description: >-
         Resume a past conversation in a new terminal: the agent comes back
         wearing the character it wore, in the seat it sat in when that seat is
-        free. Ignored when an agent in the office is already running it.
+        free. Ignored when an agent in the office is already running it. A
+        conversation of a Worktree resumes in the Worktree's folder, rebuilt
+        from its branch when it was removed (saved changes come back
+        uncommitted); refused with `worktreeRejected` when it can't be (its
+        branch was deleted, something else sits at its path).
       type: object
       additionalProperties: false
       required: [type, sessionId, directoryPath]
@@ -1726,6 +2079,69 @@ components:
         directoryPath:
           type: string
           description: Path of the Directory the conversation was listed under.
+
+    RequestWorktrees:
+      description: >-
+        Ask for one Directory's Worktrees; the host replies `worktreesLoaded`
+        to this client only. Privileged (refused for read-only clients).
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath]
+      properties:
+        type:
+          const: requestWorktrees
+        directoryPath:
+          type: string
+
+    RequestWorktreeOptions:
+      description: >-
+        Ask what a new Worktree of a Directory's repo can be: the host replies
+        `worktreeOptions` to this client only. Privileged.
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath]
+      properties:
+        type:
+          const: requestWorktreeOptions
+        directoryPath:
+          type: string
+
+    DecideWorktree:
+      description: >-
+        Answer for a Worktree no agent runs in (the decision dialog). Decided
+        on the Worktree's state when it arrives, and answered by a
+        `worktreesLoaded` broadcast, or `worktreeDecisionRejected` to this
+        client when it could not be done. Privileged (refused for read-only clients).
+      type: object
+      additionalProperties: false
+      required: [type, directoryPath, name, choice]
+      properties:
+        type:
+          const: decideWorktree
+        directoryPath:
+          type: string
+          description: The Directory the Worktree belongs to.
+        name:
+          type: string
+          description: The Worktree's name (its folder under `.claude/worktrees/`).
+        choice:
+          $ref: '#/components/schemas/WorktreeChoice'
+        confirmedFiles:
+          type: integer
+          minimum: 0
+          description: >-
+            `discard`, and `remove` of one of Claude Code's worktrees: how
+            many files the user confirmed losing. Refused when more are
+            uncommitted by the time it arrives.
+        confirmedCommits:
+          type: integer
+          minimum: 0
+          description: >-
+            `deleteBranch`, and `remove` of one of Claude Code's worktrees
+            (which deletes its branch too): how many commits the user
+            confirmed losing (the ones merged into no other branch). Refused
+            when more would be lost by the time it arrives; absent = none may
+            be.
 
     SetShowAreas:
       description: Toggle the Areas overlay (translucent rendering on top of the office).
@@ -1800,7 +2216,7 @@ components:
         read-only in the office; `user` entries are defined by the user.
       type: object
       additionalProperties: false
-      required: [name, path, source]
+      required: [name, path, source, isRepo]
       properties:
         name:
           type: string
@@ -1808,6 +2224,23 @@ components:
           type: string
         source:
           $ref: '#/components/schemas/DirectorySource'
+        isRepo:
+          type: boolean
+          description: >-
+            Whether the Directory is a git repo's root, so agents can be
+            launched into Worktrees of it.
+        hasOrigin:
+          type: boolean
+          description: >-
+            Whether that repo has an `origin` remote, so its Worktrees can
+            start from origin's default branch. Absent = no.
+        worktreeBase:
+          $ref: '#/components/schemas/WorktreeBase'
+        worktreeBranchPrefix:
+          type: string
+          description: >-
+            Put before a new Worktree's generated name to make its branch
+            (`feature/` gives `feature/brave-otter`). Absent = none.
         characters:
           type: array
           description: >-

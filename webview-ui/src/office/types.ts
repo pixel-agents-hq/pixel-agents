@@ -24,6 +24,7 @@ export type TileType = (typeof TileType)[keyof typeof TileType];
 
 /** Re-export ColorValue for consumers that import color types from office/types */
 export type { ColorValue } from '../components/ui/types.js';
+import type { AgentWorktree } from '../../../core/src/messages.js';
 import type { ColorValue } from '../components/ui/types.js';
 
 export const CharacterState = {
@@ -248,6 +249,9 @@ export interface Character extends Blinker {
   matrixEffectSeeds: number[];
   /** Directory name — the agent's origin label (only set for multi-root workspaces) */
   directoryName?: string;
+  /** The Worktree the agent runs in (its label and card show the branch);
+   *  teammates show their lead's. */
+  worktree?: AgentWorktree;
   /** Headless agent: adopted from outside the office, so there is no terminal to
    *  focus. Rendered translucent. Teammates and sub-agents are never headless —
    *  clicking them reaches their lead's / parent's terminal. */

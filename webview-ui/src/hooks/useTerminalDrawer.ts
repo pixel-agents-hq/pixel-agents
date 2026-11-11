@@ -175,7 +175,9 @@ export function useTerminalDrawer({
   const getAppearance = useCallback(
     (id: number): AgentAppearance => {
       const ch = getOfficeState().characters.get(id);
-      return ch ? { palette: ch.palette, repeat: ch.repeat } : DEFAULT_APPEARANCE;
+      return ch
+        ? { palette: ch.palette, repeat: ch.repeat, worktree: ch.worktree }
+        : DEFAULT_APPEARANCE;
     },
     [getOfficeState],
   );

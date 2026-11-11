@@ -1,9 +1,10 @@
 import path from 'node:path';
 
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { expect, test } from '../../fixtures/standalone';
 import { arrangeNextClaudeInvocation, claudeScenario } from '../../helpers/mock-claude';
+import { heldTouch } from '../../helpers/touch';
 
 /**
  * The standalone mobile shell on a phone-sized touch viewport: office and
@@ -133,22 +134,6 @@ async function longPress(page: Page, x: number, y: number, ms: number) {
   await fire('touchstart', true);
   await page.waitForTimeout(ms);
   await fire('touchend', false);
-}
-
-/** A real one-finger press held for `ms` on the middle of `target`, through
- *  CDP so the page also gets the pointer events a finger produces (the
- *  TouchEvent-only `longPress` above has none). */
-async function heldTouch(page: Page, target: Locator, ms: number) {
-  // A trial tap waits for the target to stop moving (the roster slides in).
-  await target.tap({ trial: true });
-  const box = await target.boundingBox();
-  if (!box) throw new Error('nothing to press');
-  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
-  await page.waitForTimeout(ms);
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await cdp.detach();
 }
 
 /** Launch a mock-claude session from the + card and wait for its terminal. */

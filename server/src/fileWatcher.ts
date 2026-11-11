@@ -27,9 +27,10 @@ import type * as vscode from 'vscode';
 
 const debug = process.env.PIXEL_AGENTS_DEBUG !== '0';
 
-import type { HookProvider } from '../../core/src/provider.js';
+import type { HookProvider, SessionWhereabouts } from '../../core/src/provider.js';
 import type { TeamProvider } from '../../core/src/teamProvider.js';
 import type { ITerminalAdapter } from '../../core/src/terminalAdapter.js';
+import { agentForTranscript, findMovedTranscript } from './agentMoves.js';
 import { createAgentState } from './agentState.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { classifySpawn, spawnToolIdOfTask } from './backgroundSpawns.js';
@@ -51,6 +52,14 @@ import type { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer, clearAgentActivity } from './timerManager.js';
 import { getHookProvider, processTranscriptLine } from './transcriptParser.js';
 import type { AgentState } from './types.js';
+import {
+  familyHashes,
+  isWorktreeFamilyDir,
+  seedWorktreeFamilyDirs,
+  worktreeAttribution,
+  worktreeFamilyDirs,
+} from './worktreeAttribution.js';
+import { carrySession } from './worktreeOccupancy.js';
 
 /** Dismissal tracker instance. Set once at startup via setDismissalTracker().
  *  Replaces the former module-global dismissedJsonlFiles, clearDismissedFiles,
@@ -86,6 +95,29 @@ let agentRemovalCallback: ((id: number) => void) | null = null;
 /** Register the agent removal callback. Called by PixelAgentsViewProvider. */
 export function setAgentRemovalCallback(cb: typeof agentRemovalCallback): void {
   agentRemovalCallback = cb;
+}
+
+/** Called when a scanner finds a known session's transcript somewhere other
+ *  than where its agent reads it, after that file vanished: the session moved
+ *  (agentMoves.ts). Injected by the runtime. */
+let agentMovedCallback: ((agentId: number, where: SessionWhereabouts) => void) | null = null;
+
+/** Register the moved-session callback (the runtime's relocateAgent). */
+export function setAgentMovedCallback(cb: typeof agentMovedCallback): void {
+  agentMovedCallback = cb;
+}
+
+/**
+ * Whether `file` is already an agent's transcript (agentMoves.ts
+ * `agentForTranscript`): its own, or one it moved to — which it then follows.
+ * Never adopted as a new session either way. False = no agent's: the usual
+ * adoption checks apply.
+ */
+function claimedByAgent(file: string, agents: AgentStateStore): boolean {
+  const known = agentForTranscript(agents, file);
+  if (!known) return false;
+  if (known.moved) agentMovedCallback?.(known.agentId, { transcriptPath: file });
+  return true;
 }
 
 /** Dependencies for per-agent /clear detection in readNewLines polling.
@@ -154,16 +186,9 @@ export function startFileWatching(
         // The main scanner does NOT add non-adopted files to knownJsonlFiles,
         // so /clear files remain findable here.
         for (const file of dirFiles) {
+          if (claimedByAgent(file, agents)) continue;
           if (deps.knownJsonlFiles.has(file)) continue;
           if (dismissalTracker!.isDismissed(file)) continue;
-          let tracked = false;
-          for (const a of agents.values()) {
-            if (pathsMatch(a.jsonlFile, file)) {
-              tracked = true;
-              break;
-            }
-          }
-          if (tracked) continue;
           // Content-based /clear detection: only claim files with the /clear command
           // record. Dropped "last-prompt" check because it also appears in --resume
           // sessions. "/clear</command-name>" is specific to /clear (~1.5KB in file).
@@ -255,14 +280,25 @@ export function readNewLines(
 // Track all project directories to scan (supports multi-root workspaces)
 const trackedProjectDirs = new Set<string>();
 
-/** Check if a project dir is tracked by the workspace scanner. */
-export function isTrackedProjectDir(dir: string): boolean {
+/** Check if a project dir is tracked by the workspace scanner. A scan that
+ *  asks for many dirs computes `hashes` (familyHashes) once and passes it. */
+export function isTrackedProjectDir(
+  dir: string,
+  hashes: ReadonlySet<string> = familyHashes(trackedProjectDirs),
+): boolean {
   if (trackedProjectDirs.has(dir)) return true;
   // Case-insensitive fallback for Windows (drive letter casing: c:\ vs C:\)
   for (const tracked of trackedProjectDirs) {
     if (pathsMatch(tracked, dir)) return true;
   }
-  return false;
+  // A worktree of a tracked dir or of a Directory (ours or Claude's own):
+  // its sessions are that Directory's, adopted without Watch All Sessions.
+  return isWorktreeFamilyDir(dir, hashes);
+}
+
+/** Every worktree project dir of the tracked dirs and the Directories now. */
+function currentFamilyDirs(hashes = familyHashes(trackedProjectDirs)): string[] {
+  return worktreeFamilyDirs(hookProvider?.getAllSessionRoots?.() ?? [], hashes, trackedProjectDirs);
 }
 
 /**
@@ -392,6 +428,7 @@ export function scanForNewJsonlFiles(
   }
 
   for (const file of files) {
+    if (claimedByAgent(file, agents)) continue;
     if (knownJsonlFiles.has(file)) continue;
 
     // Main scanner does NOT do /clear detection. /clear is handled per-agent
@@ -721,6 +758,8 @@ export function scanForTeammateFiles(
       leadAgentId: parentAgentId,
       teamName: parentAgent?.teamName,
       teamUsesTmux: parentAgent?.teamUsesTmux,
+      // A Teammate works on its Lead's branch: it wears the Lead's Worktree.
+      worktree: parentAgent?.worktree,
     });
 
     if (parentAgent?.palette !== undefined) {
@@ -872,6 +911,7 @@ export function scanForBackgroundAgentFiles(
       agentName: sidecar.name,
       leadAgentId: leadId,
       spawnToolUseId: spawnToolId,
+      worktree: lead.worktree,
     });
 
     if (lead.palette !== undefined) {
@@ -1067,6 +1107,7 @@ export function adoptExternalSessionFromHook(
       permissionTimers,
       persistAgents,
       directoryName,
+      cwd,
     );
 
     const adoptedAgent = [...agents.values()].find((a) => pathsMatch(a.jsonlFile, transcriptPath));
@@ -1078,13 +1119,17 @@ export function adoptExternalSessionFromHook(
     if (adoptedAgent) {
       adoptedAgent.sessionId = sessionId;
       adoptedAgent.hookDelivered = true;
+      if (cwd) adoptedAgent.cwd = cwd;
       onAgentCreated?.(adoptedAgent);
     }
   } else {
     // Hooks-only provider (OpenCode, Copilot): no transcript file, all state from hooks
     const id = nextAgentIdRef.current++;
+    const located = worktreeAttribution(cwd, undefined);
     const directoryName =
-      directoryNameResolver?.({ cwd }) ?? (cwd ? path.basename(cwd) : undefined);
+      located?.directoryName ??
+      directoryNameResolver?.({ cwd }) ??
+      (cwd ? path.basename(cwd) : undefined);
     const agent = createAgentState({
       id,
       sessionId,
@@ -1095,6 +1140,8 @@ export function adoptExternalSessionFromHook(
       hooksOnly: true,
       lastDataAt: Date.now(),
       directoryName,
+      worktree: located?.worktree,
+      cwd: cwd || undefined,
     });
     assignPaletteIfNeeded(agent, agents);
     agents.set(id, agent);
@@ -1155,9 +1202,12 @@ function adoptExternalSession(
 
   persistAgents: () => void,
   directoryName?: string,
+  cwd?: string,
 ): void {
   const id = nextAgentIdRef.current++;
   const fileOffset = initialReadOffset(jsonlFile);
+  // In a Directory's worktree: the Directory's agent, wearing the worktree.
+  const located = worktreeAttribution(cwd, projectDir);
   const agent = createAgentState({
     id,
     sessionId: path.basename(jsonlFile, '.jsonl'),
@@ -1166,7 +1216,8 @@ function adoptExternalSession(
     jsonlFile,
     fileOffset,
     lastDataAt: Date.now(),
-    directoryName,
+    directoryName: located?.directoryName ?? directoryName,
+    worktree: located?.worktree,
   });
 
   assignPaletteIfNeeded(agent, agents);
@@ -1207,11 +1258,22 @@ export function startExternalSessionScanning(
   watchAllSessionsRef?: { current: boolean },
   hooksEnabledRef?: { current: boolean },
 ): ReturnType<typeof setInterval> {
+  seedWorktreeFamilyDirs(currentFamilyDirs(), (file) => {
+    knownJsonlFiles.add(file);
+    try {
+      dismissalTracker!.seedMtime(file, fs.statSync(file).mtimeMs);
+    } catch {
+      /* ignore */
+    }
+  });
   return setInterval(() => {
     // Scan all tracked project dirs in both hooks and heuristic modes. Hooks are
     // a fast path for producers that emit hook events; polling remains the
     // discovery path for workspace JSONL sessions created without hooks.
-    for (const dir of trackedProjectDirs) {
+    // A tracked dir's worktrees (and every Directory's) are scanned with them.
+    // One reading of the Directories per tick, shared by every dir it asks about.
+    const hashes = familyHashes(trackedProjectDirs);
+    for (const dir of [...trackedProjectDirs, ...currentFamilyDirs(hashes)]) {
       scanExternalDir(
         dir,
         knownJsonlFiles,
@@ -1228,6 +1290,7 @@ export function startExternalSessionScanning(
     // If "Watch All Sessions" is ON, also scan all global project dirs
     if (watchAllSessionsRef?.current) {
       scanGlobalProjectDirs(
+        hashes,
         knownJsonlFiles,
         nextAgentIdRef,
         agents,
@@ -1268,6 +1331,11 @@ export function scanExternalDir(
   }
 
   const now = Date.now();
+
+  // An agent's own transcript, or one its session moved to here (EnterWorktree
+  // / ExitWorktree), before anything else: seeded, known or not, never a new
+  // session.
+  files = files.filter((file) => !claimedByAgent(file, agents));
 
   // If an internal agent in this projectDir is still waiting for its JSONL file
   // (file doesn't exist), skip all adoptions. The agent may have done /resume,
@@ -1324,18 +1392,6 @@ export function scanExternalDir(
     // Skip files recently dismissed by the user (closed via X).
     // isDismissed() handles the 3-minute cooldown and auto-expires old entries.
     if (dismissalTracker!.isDismissed(file)) continue;
-
-    // Check if already tracked by an agent (normalize paths for comparison).
-    // This prevents the external scanner from adopting /clear files (already
-    // reassigned to a terminal agent) while allowing untracked files through.
-    let tracked = false;
-    for (const agent of agents.values()) {
-      if (pathsMatch(agent.jsonlFile, file)) {
-        tracked = true;
-        break;
-      }
-    }
-    if (tracked) continue;
 
     // WITH HOOKS ON, teammate sessions belong to team discovery, not to generic
     // external adoption. Newer harnesses run each spawned agent as its own
@@ -1418,6 +1474,8 @@ function directoryNameFromProjectDir(dirName: string): string {
 /** Scan every session root the active provider exposes for active sessions
  *  (global discovery — powers the "Watch All Sessions" toggle). */
 function scanGlobalProjectDirs(
+  /** This tick's familyHashes: which dirs are already tracked as a family. */
+  hashes: ReadonlySet<string>,
   knownJsonlFiles: Set<string>,
   nextAgentIdRef: { current: number },
   agents: AgentStateStore,
@@ -1446,7 +1504,7 @@ function scanGlobalProjectDirs(
   const now = Date.now();
   for (const dirPath of projectDirs) {
     // Skip directories already tracked by workspace scanning
-    if (isTrackedProjectDir(dirPath)) continue;
+    if (isTrackedProjectDir(dirPath, hashes)) continue;
 
     let files: string[];
     try {
@@ -1524,6 +1582,12 @@ export function startStaleExternalAgentCheck(
         fs.statSync(agent.jsonlFile);
         // File still exists — keep the agent alive regardless of mtime
       } catch {
+        // Moved, not deleted (EnterWorktree / ExitWorktree): follow it.
+        const moved = findMovedTranscript(agent, hookProvider?.getAllSessionRoots?.() ?? []);
+        if (moved && agentMovedCallback) {
+          agentMovedCallback(id, { transcriptPath: moved });
+          continue;
+        }
         // File deleted — remove agent
         toRemove.push(id);
       }
@@ -1574,7 +1638,10 @@ export function reassignAgentToFile(
 
   // Swap to new file (update sessionId for hook registration).
   // Keep hookDelivered — if hooks worked before /clear, they'll work after.
+  const previousSession = agent.sessionId;
   agent.sessionId = path.basename(newFilePath, '.jsonl');
+  // Same agent, same process: the Worktrees its old session held stay its own.
+  carrySession(previousSession, agent.sessionId);
   agent.jsonlFile = newFilePath;
   // A /clear file is new and read whole; a resumed session's file is its old
   // transcript, read from the end (initialReadOffset says why).

@@ -24,10 +24,13 @@ import {
   readConfig,
   type UserDirectory,
   withDirectoryCharacters,
+  withDirectoryWorktrees,
   writeConfig,
 } from './configPersistence.js';
 import { DIRECTORY_WRITE_FAILED_REASON } from './constants.js';
 import { directoryNameFor } from './hostDirectory.js';
+import { invalidateAttributionDirectories } from './worktreeAttribution.js';
+import { branchPrefixProblem, hasOriginRemote, isRepo } from './worktreeGit.js';
 
 /** What a host contributes to the union. `source` is the union's business, so
  *  a host only says what and where. */
@@ -103,10 +106,12 @@ export function buildDirectoryUnion(
 ): Directory[] {
   const byPath = new Map<string, Directory>();
   for (const host of hostDirectories) {
+    // A host row has no settings of its own: its Worktrees take the defaults.
     byPath.set(normalizeDirectoryPath(host.path), {
       name: host.name,
       path: host.path,
       source: 'host',
+      ...repoFacts(host.path),
     });
   }
   // User entries are applied second, so they overwrite a host entry at the same
@@ -123,12 +128,36 @@ export function buildDirectoryUnion(
 
 /** A stored user-defined Directory as the office sees it. */
 function userDirectory(user: UserDirectory): Directory {
-  return { ...user, source: 'user' };
+  return { ...user, source: 'user', ...repoFacts(user.path) };
+}
+
+/** What the office needs to know about a Directory's repo: whether it is
+ *  one, and whether it has an origin (stated only when it has). */
+function repoFacts(directoryPath: string): Pick<Directory, 'isRepo' | 'hasOrigin'> {
+  const repo = isRepo(directoryPath);
+  return repo && hasOriginRemote(directoryPath)
+    ? { isRepo: true, hasOrigin: true }
+    : { isRepo: repo };
 }
 
 /** The union for this host, read fresh from the shared config. */
 export function listDirectories(hostDirectories: HostDirectoryEntry[]): Directory[] {
   return buildDirectoryUnion(readConfig().directories, hostDirectories);
+}
+
+/** Where this host's Directories are, by name: the union without the `.git`
+ *  probe each `isRepo` costs, for the scanners' worktree attribution. */
+export function listDirectoryLocations(
+  hostDirectories: HostDirectoryEntry[],
+): Array<{ name: string; path: string }> {
+  const byPath = new Map<string, { name: string; path: string }>();
+  for (const host of hostDirectories) {
+    byPath.set(normalizeDirectoryPath(host.path), { name: host.name, path: host.path });
+  }
+  for (const user of readConfig().directories) {
+    byPath.set(normalizeDirectoryPath(user.path), { name: user.name, path: user.path });
+  }
+  return [...byPath.values()];
 }
 
 /**
@@ -143,10 +172,20 @@ export function saveUserDirectory(input: {
   /** Default characters, as sent (validated here). */
   characters?: unknown;
   characterOrder?: unknown;
+  /** Worktree settings, as sent (validated here). */
+  worktreeBase?: unknown;
+  worktreeBranchPrefix?: unknown;
 }): DirectoryStoreResult {
   const validation = validateDirectoryPath(input.path);
   if (!validation.ok) {
     return validation;
+  }
+  const prefixProblem =
+    typeof input.worktreeBranchPrefix === 'string'
+      ? branchPrefixProblem(input.worktreeBranchPrefix.trim())
+      : null;
+  if (prefixProblem) {
+    return { ok: false, reason: prefixProblem };
   }
   const resolvedPath = validation.path;
   const name = input.name.trim() || directoryNameFor(resolvedPath);
@@ -162,7 +201,10 @@ export function saveUserDirectory(input: {
     const key = normalizeDirectoryPath(entry.path);
     return key !== newKey && key !== previousKey;
   });
-  const stored = withDirectoryCharacters({ name, path: resolvedPath }, input);
+  const stored = withDirectoryWorktrees(
+    withDirectoryCharacters({ name, path: resolvedPath }, input),
+    input,
+  );
   cfg.directories.push(stored);
 
   if (!writeConfig(cfg)) {
@@ -246,6 +288,8 @@ export function handleDirectoryClientMessage(
         previousPath: typeof msg.previousPath === 'string' ? msg.previousPath : undefined,
         characters: msg.characters,
         characterOrder: msg.characterOrder,
+        worktreeBase: msg.worktreeBase,
+        worktreeBranchPrefix: msg.worktreeBranchPrefix,
       });
       if (!result.ok) {
         deps.reply({ type: 'directoryRejected', path: submittedPath, reason: result.reason });
@@ -288,6 +332,7 @@ export function handleDirectoryClientMessage(
 }
 
 function broadcastDirectories(deps: DirectoryMessageDeps): void {
+  invalidateAttributionDirectories();
   deps.broadcast({
     type: 'directoriesLoaded',
     directories: listDirectories(deps.hostDirectories()),

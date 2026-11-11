@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { Directory, HooksConsentRequest } from '../../../core/src/messages.js';
+import type {
+  AgentCloseQuestion,
+  AgentWorktree,
+  Directory,
+  HooksConsentRequest,
+  WorktreeSummary,
+} from '../../../core/src/messages.js';
 import { handleCastMessage } from '../characters/castMessages.js';
 import { castStore } from '../characters/castStore.js';
 import { startOfficeSync } from '../characters/officeSprites.js';
@@ -92,6 +98,23 @@ export interface DirectorySaved {
   seq: number;
 }
 
+/** A Worktree launch the server could not make (nothing was launched): shown
+ *  to this office until dismissed. `seq` rises with every one. */
+export interface WorktreeRejection {
+  directoryPath: string;
+  reason: string;
+  seq: number;
+}
+
+/** A `decideWorktree` this office sent that the server could not carry out
+ *  (the Worktree is as it was): the decision dialog shows `reason`. */
+export interface WorktreeDecisionError {
+  directoryPath: string;
+  name: string;
+  reason: string;
+  seq: number;
+}
+
 interface ExtensionMessageState {
   agents: number[];
   selectedAgent: number | null;
@@ -114,6 +137,19 @@ interface ExtensionMessageState {
   /** Paths the host recovered from past sessions, offered as taps in the
    *  Directory modal. Refreshed every time the modal asks. */
   directorySuggestions: string[];
+  /** The last Worktree launch this office made that failed, until dismissed. */
+  worktreeRejection: WorktreeRejection | null;
+  dismissWorktreeRejection: () => void;
+  /** Each Directory's Worktrees as the server last listed them (privileged
+   *  offices only; read-only ones are never sent any). */
+  worktreesByDirectory: Record<string, WorktreeSummary[]>;
+  /** The last decision of this office's the server refused. */
+  worktreeDecisionError: WorktreeDecisionError | null;
+  /** The × this office pressed on an agent that would leave a Worktree with
+   *  uncommitted files: the server asked before closing it. Cleared when
+   *  answered, dismissed, or the agent goes. */
+  agentCloseQuestion: AgentCloseQuestion | null;
+  clearAgentCloseQuestion: () => void;
   /** Distinct directoryNames seen across agents this session — source for the Areas Directory dropdown. */
   agentDirectoryNames: string[];
   externalAssetDirectories: string[];
@@ -210,6 +246,16 @@ export function useExtensionMessages(
   const [directoryRejection, setDirectoryRejection] = useState<DirectoryRejection | null>(null);
   const [directorySaved, setDirectorySaved] = useState<DirectorySaved | null>(null);
   const [directorySuggestions, setDirectorySuggestions] = useState<string[]>([]);
+  const [worktreeRejection, setWorktreeRejection] = useState<WorktreeRejection | null>(null);
+  const dismissWorktreeRejection = useCallback(() => setWorktreeRejection(null), []);
+  const [worktreesByDirectory, setWorktreesByDirectory] = useState<
+    Record<string, WorktreeSummary[]>
+  >({});
+  const [worktreeDecisionError, setWorktreeDecisionError] = useState<WorktreeDecisionError | null>(
+    null,
+  );
+  const [agentCloseQuestion, setAgentCloseQuestion] = useState<AgentCloseQuestion | null>(null);
+  const clearAgentCloseQuestion = useCallback(() => setAgentCloseQuestion(null), []);
   const [agentDirectoryNames, setAgentDirectoryNames] = useState<string[]>([]);
   const [externalAssetDirectories, setExternalAssetDirectories] = useState<string[]>([]);
   const [lastSeenVersion, setLastSeenVersion] = useState('');
@@ -294,6 +340,8 @@ export function useExtensionMessages(
       // an agent can be removed without its PTY ever reporting an exit (e.g.
       // stale cleanup), and a tab for a gone agent would attach to nothing.
       setTerminalAgentIds((prev) => prev.filter((a) => a !== id));
+      // Gone on its own while asked: its leave asks again if it must.
+      setAgentCloseQuestion((prev) => (prev?.id === id ? null : prev));
       unmarkTeammate(id);
       setAgentTools((prev) => omitKey(prev, id));
       setAgentStatuses((prev) => omitKey(prev, id));
@@ -368,6 +416,9 @@ export function useExtensionMessages(
 
       if (msg.type === 'officeAccess') {
         setOfficeReadOnly(msg.readOnly === true);
+        // Every connect's snapshot re-sends the Worktrees from scratch: one
+        // answered (or removed) while this office was away must not linger.
+        setWorktreesByDirectory({});
         return;
       }
 
@@ -456,6 +507,8 @@ export function useExtensionMessages(
             ch.leadAgentId = teammateParentId;
             ch.teamName = teamName ?? parentCh?.teamName;
             ch.agentName = teammateName;
+            // A teammate works on its lead's branch.
+            ch.worktree = (msg.worktree as AgentWorktree | undefined) ?? parentCh?.worktree;
           }
         } else {
           const palette = msg.palette as number | undefined;
@@ -464,6 +517,9 @@ export function useExtensionMessages(
           const seatId = msg.seatId as string | undefined;
           os.addAgent(id, palette, repeat, seatId, undefined, directoryName);
           noteDirectoryName(directoryName);
+          const worktree = msg.worktree as AgentWorktree | undefined;
+          const ch = os.characters.get(id);
+          if (ch && worktree) ch.worktree = worktree;
           if (isHeadlessAgent(msg.isExternal as boolean | undefined)) {
             os.setHeadless(id, true);
           }
@@ -498,6 +554,7 @@ export function useExtensionMessages(
             layoutReadyRef.current,
             pendingAgents,
             headlessAgents,
+            (msg.worktrees || {}) as Record<number, AgentWorktree>,
           )
         ) {
           saveAgentSeats(os);
@@ -793,6 +850,26 @@ export function useExtensionMessages(
       } else if (msg.type === 'directorySaved') {
         const directory = msg.directory as Directory;
         setDirectorySaved((prev) => ({ directory, seq: (prev?.seq ?? 0) + 1 }));
+      } else if (msg.type === 'worktreesLoaded') {
+        const directoryPath = msg.directoryPath as string;
+        const worktrees = msg.worktrees as WorktreeSummary[];
+        setWorktreesByDirectory((prev) => ({ ...prev, [directoryPath]: worktrees }));
+      } else if (msg.type === 'worktreeDecisionRejected') {
+        // The decision dialog (or the Worktrees list) says why.
+        setWorktreeDecisionError((prev) => ({
+          directoryPath: msg.directoryPath as string,
+          name: msg.name as string,
+          reason: msg.reason as string,
+          seq: (prev?.seq ?? 0) + 1,
+        }));
+      } else if (msg.type === 'agentCloseQuestion') {
+        setAgentCloseQuestion(msg as AgentCloseQuestion);
+      } else if (msg.type === 'worktreeRejected') {
+        setWorktreeRejection((prev) => ({
+          directoryPath: msg.directoryPath as string,
+          reason: msg.reason as string,
+          seq: (prev?.seq ?? 0) + 1,
+        }));
       } else if (msg.type === 'directoryRejected') {
         setDirectoryRejection((prev) => ({
           path: msg.path as string,
@@ -909,6 +986,11 @@ export function useExtensionMessages(
           msg.leadAgentId as number | undefined,
           msg.teamUsesTmux as boolean | undefined,
         );
+      } else if (msg.type === 'agentWorktreeChanged') {
+        // The agent moved itself into or out of a worktree mid-session: its
+        // label and card follow (the card re-renders with the agent list).
+        os.setAgentWorktree(msg.id as number, msg.worktree as AgentWorktree | undefined);
+        setAgents((prev) => [...prev]);
       } else if (msg.type === 'agentContextUsage') {
         const id = msg.id as number;
         os.setAgentContext(id, msg.contextTokens as number, msg.maxContextTokens as number);
@@ -962,6 +1044,12 @@ export function useExtensionMessages(
     directoryRejection,
     directorySaved,
     directorySuggestions,
+    worktreeRejection,
+    dismissWorktreeRejection,
+    worktreesByDirectory,
+    worktreeDecisionError,
+    agentCloseQuestion,
+    clearAgentCloseQuestion,
     agentDirectoryNames,
     externalAssetDirectories,
     lastSeenVersion,

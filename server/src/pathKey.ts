@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 
 /**
@@ -25,6 +26,54 @@ export function toPathKey(p: string): string {
 /** True when both paths point at the same file/directory (case-insensitive on Windows). */
 export function pathsMatch(left: string, right: string): boolean {
   return toPathKey(left) === toPathKey(right);
+}
+
+/**
+ * A path with its symlinks resolved, as far as the disk goes: the realpath of
+ * its deepest existing ancestor, with the rest appended. So a folder that is
+ * gone (a parked Worktree) still resolves through a symlinked Directory, the
+ * way it did while it existed.
+ */
+export function realPath(p: string): string {
+  const resolved = path.resolve(p);
+  const rest: string[] = [];
+  let current = resolved;
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(current), ...rest);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return resolved;
+      rest.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
+/** {@link toPathKey} of {@link realPath}: one key for every spelling of a folder. */
+export function realPathKey(p: string): string {
+  return toPathKey(realPath(p));
+}
+
+/**
+ * Whether two paths name the same file or folder, however spelled: the same
+ * path (case-insensitive on Windows), or the same once symlinks are resolved
+ * (a Directory reached through a link, a hook naming the resolved folder).
+ * The one comparison for Worktree folders. Undefined only equals undefined.
+ */
+export function sameFolder(a: string | undefined, b: string | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return pathsMatch(a, b) || realPathKey(a) === realPathKey(b);
+}
+
+/** Whether anything is at `p` (a dangling symlink counts: it is something). */
+export function exists(p: string): boolean {
+  try {
+    fs.lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

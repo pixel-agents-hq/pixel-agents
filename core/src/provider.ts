@@ -70,6 +70,23 @@ export type AgentEvent =
     }
   | { kind: 'sessionEnd'; reason?: string };
 
+/**
+ * Where a session runs now, as one signal tells it: a hook payload (every
+ * event names its working folder and transcript) or a transcript record that
+ * says the session moved (Claude: EnterWorktree / ExitWorktree write
+ * `relocated` and `worktree-state`). The runtime follows the agent when this
+ * differs from where it was (server/src/agentMoves.ts).
+ */
+export interface SessionWhereabouts {
+  /** The folder the session runs in now. */
+  cwd?: string;
+  /** Where the CLI says the transcript is now. A hint only: it is followed
+   *  when that file exists (Claude's `-p` sessions name a file never made). */
+  transcriptPath?: string;
+  /** The branch checked out there, when the signal names it. */
+  branch?: string;
+}
+
 // ── Account usage (plan rate limits) ──────────────────────────
 
 /** The account's plan limits as one report states them (windows on the wire
@@ -137,6 +154,9 @@ export interface HookProvider {
   normalizeHookEvent(raw: Record<string, unknown>): {
     sessionId: string;
     event: AgentEvent;
+    /** Where the session runs as of this event (every event, not only
+     *  sessionStart): how the runtime notices an agent that moved. */
+    where?: SessionWhereabouts;
   } | null;
 
   /** Install hook scripts that POST to our server. */
@@ -186,6 +206,10 @@ export interface HookProvider {
   readonly sessionFilePattern?: string;
   /** Parse one line of a transcript file into an AgentEvent. */
   parseTranscriptLine?(line: string): AgentEvent | null;
+  /** The session's new whereabouts when a transcript record says it moved
+   *  (Claude: `relocated`, `worktree-state`), else null. What the runtime
+   *  follows an agent by without hooks. Undefined = no such records. */
+  sessionMoveFromRecord?(record: unknown): SessionWhereabouts | null;
   /** Build CLI launch command for +Agent button. `resume`: continue the
    *  existing session `sessionId` (its transcript) instead of starting one. Only
    *  a provider with `conversationTitle` is asked to resume (the conversation
@@ -214,6 +238,11 @@ export interface HookProvider {
    *  recent conversations; undefined = this provider names no conversations
    *  (and is never asked to resume one). */
   conversationTitle?(transcriptPath: string): string | undefined;
+  /** Folders (relative to the repo root) a new Worktree of `repoPath` links to
+   *  the main checkout instead of copying, as this CLI's own settings list them
+   *  (Claude: `worktree.symlinkDirectories`, user and project scope).
+   *  Undefined = this provider has no such setting. */
+  worktreeSymlinkDirectories?(repoPath: string): string[];
 
   /** Optional account-usage reporting (the office's usage bars). */
   readonly usageBridge?: UsageBridge;

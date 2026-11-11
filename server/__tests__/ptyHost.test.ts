@@ -295,7 +295,7 @@ describe('PTY host', () => {
       const first = await connect();
       const id = launchStandaloneAgent(
         { store: before.store, runtime: before.runtime, ptyManager: first, provider: provider() },
-        { directoryPath: dir, palette: 2 },
+        { cwd: dir, palette: 2 },
       );
       expect(id).toBe(1);
       const launched = before.store.get(1);
@@ -336,7 +336,7 @@ describe('PTY host', () => {
       const first = await connect();
       launchStandaloneAgent(
         { store: before.store, runtime: before.runtime, ptyManager: first, provider: provider() },
-        { directoryPath: dir },
+        { cwd: dir },
       );
       const launched = before.store.get(1)!;
       await until(() => spawned.length === 1);
@@ -373,7 +373,7 @@ describe('PTY host', () => {
       const first = await connect();
       launchStandaloneAgent(
         { store: before.store, runtime: before.runtime, ptyManager: first, provider: provider() },
-        { directoryPath: dir },
+        { cwd: dir },
       );
       const launched = before.store.get(1)!;
       await until(() => spawned.length === 1);
@@ -438,7 +438,7 @@ describe('PTY host', () => {
       const first = await connect();
       launchStandaloneAgent(
         { store: before.store, runtime: before.runtime, ptyManager: first, provider: provider() },
-        { directoryPath: dir },
+        { cwd: dir },
       );
       await until(() => spawned.length === 1);
       await first.shutdown();

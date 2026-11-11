@@ -21,6 +21,9 @@ interface CharacterMugShotProps {
   zoom?: number;
   /** First sprite row of the crop. Defaults to MUGSHOT_CROP_TOP_ROW. */
   cropTop?: number;
+  /** Which way the head looks: at the viewer (default) or to the right, along a
+   *  row's text, as a Worktree row draws it. */
+  facing?: 'front' | 'right';
 }
 
 /**
@@ -36,6 +39,7 @@ export function CharacterMugShot({
   repeat,
   zoom = MUGSHOT_RENDER_ZOOM,
   cropTop = MUGSHOT_CROP_TOP_ROW,
+  facing = 'front',
 }: CharacterMugShotProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Redraw when the character sprites change (the cast arrives or is edited).
@@ -47,8 +51,10 @@ export function CharacterMugShot({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const front = getCharacterSprites(palette, repeat).walk[Direction.DOWN][0];
-    const full = getCachedSprite(front, zoom);
+    const pose = getCharacterSprites(palette, repeat).walk[
+      facing === 'right' ? Direction.RIGHT : Direction.DOWN
+    ][0];
+    const full = getCachedSprite(pose, zoom);
 
     const side = MUGSHOT_CROP_SIDE_PX * zoom;
     canvas.width = side;
@@ -56,7 +62,7 @@ export function CharacterMugShot({
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, side, side);
     ctx.drawImage(full, MUGSHOT_CROP_LEFT_COL * zoom, cropTop * zoom, side, side, 0, 0, side, side);
-  }, [palette, repeat, zoom, cropTop, sprites]);
+  }, [palette, repeat, zoom, cropTop, facing, sprites]);
 
   return (
     <canvas

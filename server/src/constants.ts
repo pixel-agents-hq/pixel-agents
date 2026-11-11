@@ -270,3 +270,83 @@ export const NEW_CONVERSATION_TITLE = 'New conversation';
 /** Most agent ids a saved card order keeps. The order is pruned to live agents
  *  on every save, so this only bounds a hand-edited or hostile payload. */
 export const MAX_CARD_ORDER_LENGTH = 1_000;
+
+// ── Worktrees (server/src/worktree*.ts) ─────────────────────
+/** The registry of the Worktrees Pixel Agents created, in the persistence dir
+ *  (machine-wide, like config.json). Being listed here is the only proof a
+ *  worktree is ours to manage. */
+export const WORKTREES_FILE_NAME = 'worktrees.json';
+/** Whose character each Worktree's row wears (the session of the agent it
+ *  belongs to, by folder), in the persistence dir. Both kinds of Worktree. */
+export const WORKTREE_AGENTS_FILE_NAME = 'worktree-agents.json';
+/** Most Worktrees whose agent is remembered (the newest are kept). */
+export const WORKTREE_AGENTS_MAX = 500;
+/** How long the scanners' reading of the host's Directories (worktree
+ *  attribution) is reused before config.json is read again. This process's
+ *  own Directory changes drop it at once; this only bounds how long another
+ *  process's edit takes to be seen. */
+export const ATTRIBUTION_DIRECTORIES_TTL_MS = 10_000;
+/** Where a Directory's Worktrees live, relative to its repo root: Claude Code's
+ *  own convention (`claude --worktree`), so their transcripts share the
+ *  Directory's project-hash prefix. */
+export const WORKTREES_SUBDIR = '.claude/worktrees';
+/** The line the repo's local exclude file (`<git common dir>/info/exclude`)
+ *  gets, once, so the Worktrees never show in the main checkout's status. */
+export const WORKTREES_EXCLUDE_LINE = '/.claude/worktrees/';
+/** The repo file listing the gitignored files a new Worktree gets a copy of
+ *  (gitignore syntax; the convention Claude Code, Conductor and Codex share). */
+export const WORKTREE_INCLUDE_FILE = '.worktreeinclude';
+/** Generated names tried before a create gives up on finding a free one. */
+export const WORKTREE_NAME_ATTEMPTS = 25;
+/** Base `fresh`: how long the fetch from origin may take before the Worktree
+ *  falls back to the main checkout's current commit. */
+export const WORKTREE_FETCH_TIMEOUT_MS = 15_000;
+/** The most branches the new-worktree modal lists (newest commit first). */
+export const WORKTREE_OPTIONS_MAX_BRANCHES = 500;
+/** Any other git call (all local): a hung one fails the create instead of
+ *  hanging the launch. */
+export const WORKTREE_GIT_TIMEOUT_MS = 30_000;
+/** The reason `git worktree lock` records on every Worktree of ours, for as
+ *  long as it lasts (running, kept or waiting on a decision): the lock keeps
+ *  `git worktree prune` and other tools' cleanup off it, and the reason says
+ *  where it is removed from. */
+export const WORKTREE_LOCK_REASON = 'Pixel Agents worktree: remove it from the Worktrees list';
+/** The trailer that marks a Save & remove commit (so a later restore can tell
+ *  it apart from the agent's own commits). */
+export const WORKTREE_SAVED_TRAILER = 'Pixel-Agents-Saved: true';
+/** The Save & remove commit's subject. */
+export const WORKTREE_SAVE_SUBJECT = 'Save uncommitted changes';
+/** The Save commit's identity when the user has none configured: a save must
+ *  never fail just because git doesn't know who is committing. */
+export const WORKTREE_FALLBACK_NAME = 'Pixel Agents';
+export const WORKTREE_FALLBACK_EMAIL = 'pixel-agents@localhost';
+/** Where what a half-done `git worktree remove` left is moved before it is
+ *  deleted: `<worktrees folder>/<prefix><name>-<ms>` (a dot name, so no
+ *  Worktree is ever made there). */
+export const WORKTREE_REMOVING_PREFIX = '.removing-';
+/** Commits of the base read when looking for a squash merge of a whole
+ *  branch: a bound on the work, newest first. */
+export const WORKTREE_SQUASH_SCAN_COMMITS = 500;
+/** The startup sweep: a kept Worktree folder nobody touched for this long
+ *  needs a decision again (the user forgot it). */
+export const WORKTREE_KEPT_STALE_MS = 7 * 24 * 60 * 60 * 1000;
+/** The startup sweep waits this long after the server is up, so the first
+ *  office's handshake (and the agents restored or reattached for it) goes
+ *  first; git work runs in the background after it. */
+export const WORKTREE_SWEEP_DELAY_MS = 3000;
+/** How long a worktree's branch, read from its HEAD, is trusted before it is
+ *  read again (adoption asks once per session; the scanner never re-reads). */
+export const WORKTREE_BRANCH_CACHE_MS = 5000;
+/** Shutting down: how long the server waits for Worktree git work already
+ *  under way (a retirement, the sweep) before it exits anyway. */
+export const WORKTREE_SHUTDOWN_WAIT_MS = 10_000;
+/** An agent that moved (EnterWorktree / ExitWorktree) whose transcript isn't
+ *  where the CLI said yet: the move and the signal race, so look again this
+ *  often, this many times, before leaving it to the scanners. */
+export const AGENT_MOVE_RETRY_INTERVAL_MS = 500;
+export const AGENT_MOVE_RETRY_ATTEMPTS = 10;
+
+/** How long an answer given at the card's × (save / keep / discard) waits for
+ *  its agent to exit; past it the answer is dropped and the Worktree's leave
+ *  asks again, so a stale answer never applies to some later leave. */
+export const WORKTREE_CLOSE_CHOICE_TTL_MS = 30_000;

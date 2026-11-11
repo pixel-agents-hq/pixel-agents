@@ -1,3 +1,4 @@
+import type { AgentWorktree } from '../../../../core/src/messages.js';
 import { chooseLook } from '../../../../core/src/paletteUtils.js';
 import {
   CHARACTER_HIT_HALF_WIDTH,
@@ -650,6 +651,15 @@ export class OfficeState {
     }
   }
 
+  /** Give an agent the Worktree it runs in (or none); its sub-agents wear it too. */
+  setAgentWorktree(agentId: number, worktree: AgentWorktree | undefined): void {
+    for (const ch of this.characters.values()) {
+      if (ch.id === agentId || (ch.isSubagent && ch.parentAgentId === agentId)) {
+        ch.worktree = worktree;
+      }
+    }
+  }
+
   /** Give an agent a new look (its character moved in the list); its sub-agents wear it too. */
   setAgentLook(agentId: number, palette: number, repeat: number): void {
     for (const ch of this.characters.values()) {
@@ -801,6 +811,8 @@ export class OfficeState {
     ch.dir = this.helperFacing(parentCh) ?? ch.dir;
     ch.isSubagent = true;
     ch.parentAgentId = parentAgentId;
+    // A sub-agent works on its parent's branch: same Worktree marker.
+    ch.worktree = parentCh?.worktree;
     const spot = this.resyncSubagentSpots.get(key);
     if (spot) {
       // Re-created by a resync replay: it never left, so no spawn effect.

@@ -1,0 +1,251 @@
+/**
+ * Claude Code's own worktrees (`claude -w`, EnterWorktree): linked worktrees
+ * under a Directory's `.claude/worktrees/` that are not in our registry.
+ * Listed for the office and read without writing (no index refresh, no
+ * lock). The one action taken on one is the user's Remove from the Worktrees
+ * list, once no Claude session is in it (`removeClaudeWorktree`): Claude Code
+ * only offers to clean one up when its session ends from inside, so one whose
+ * agent was stopped from outside would otherwise stay for good.
+ */
+
+import * as path from 'path';
+
+import { realPath, sameFolder } from './pathKey.js';
+import {
+  git,
+  gitIn,
+  gitReason,
+  isLinkedWorktreeFolder,
+  isRepo,
+  type LinkedWorktree,
+  listLinkedWorktrees,
+} from './worktreeGit.js';
+import { folderSize } from './worktreeInspect.js';
+import { isWorktreeName, worktreeDirectoryOf, worktreePathIn } from './worktreeLocation.js';
+import { readRegistry, serialized } from './worktreeRegistry.js';
+
+/** A worktree Claude Code made under a Directory's `.claude/worktrees/`
+ *  (`claude -w`, EnterWorktree): not in our registry, so never ours. */
+export interface ClaudeWorktree {
+  name: string;
+  path: string;
+  /** Its branch, or its short commit when detached. */
+  branch: string;
+  /** Its commit. */
+  head: string;
+}
+
+/** What one of Claude Code's worktrees holds, read without writing. */
+export interface ClaudeWorktreeHoldings {
+  uncommittedFiles: number;
+  /** Commits on it that the main checkout's current commit lacks. */
+  uniqueCommits: number;
+  sizeBytes: number;
+}
+
+/**
+ * Where Claude Code's own worktrees of a Directory are: the linked worktrees
+ * git lists whose folder is `<directoryPath>/.claude/worktrees/<name>` and
+ * that are not in our registry. Cheap (one `git worktree list`); what each
+ * holds is `claudeWorktreeHoldings`.
+ */
+export function listClaudeWorktrees(directoryPath: string): Promise<ClaudeWorktree[]> {
+  const root = path.resolve(directoryPath);
+  return serialized(root, async () =>
+    (await claudeWorktreesIn(root)).map(({ worktree }) => worktree),
+  );
+}
+
+/** Claude Code's worktrees of the repo at `root`, with git's own line on
+ *  each (its lock). Unserialized: callers hold the repo's queue. */
+async function claudeWorktreesIn(
+  root: string,
+): Promise<Array<{ worktree: ClaudeWorktree; linked: LinkedWorktree }>> {
+  if (!isRepo(root)) return [];
+  const listed = await listLinkedWorktrees(root);
+  if (!listed) return [];
+  const registry = readRegistry();
+  const out: Array<{ worktree: ClaudeWorktree; linked: LinkedWorktree }> = [];
+  for (const linked of listed) {
+    const { path: folder, head, branch } = linked;
+    if (!isLinkedWorktreeFolder(folder)) continue;
+    // Under this Directory's worktrees folder, wherever its symlinks lead.
+    const at = worktreeDirectoryOf(realPath(folder));
+    if (!at || !sameFolder(at.directoryPath, root)) continue;
+    if (registry.some((e) => sameFolder(e.path, folder))) continue;
+    out.push({
+      worktree: { name: at.name, path: folder, branch: branch ?? head.slice(0, 7), head },
+      linked,
+    });
+  }
+  return out;
+}
+
+/** What one of Claude Code's worktrees holds: uncommitted files, commits the
+ *  main checkout lacks, size. Read with --no-optional-locks: nothing of
+ *  theirs is ever written, not even the index. */
+export function claudeWorktreeHoldings(
+  directoryPath: string,
+  worktree: ClaudeWorktree,
+): Promise<ClaudeWorktreeHoldings> {
+  const root = path.resolve(directoryPath);
+  return serialized(root, async () => ({
+    uncommittedFiles: await uncommittedIn(worktree.path),
+    uniqueCommits: await commitsMissingFromHead(root, worktree.head),
+    sizeBytes: await folderSize(worktree.path),
+  }));
+}
+
+/** Uncommitted files in a worktree, untracked ones included, read without
+ *  writing its index. Unreadable reads as none: a remove then leaves it to
+ *  git, which refuses a folder that holds changes. */
+async function uncommittedIn(folder: string): Promise<number> {
+  const status = await gitIn(folder, [
+    '--no-optional-locks',
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
+  ]);
+  if (!status.ok) return 0;
+  let files = 0;
+  const fields = status.stdout.split('\0');
+  for (let i = 0; i < fields.length; i++) {
+    if (fields[i].length < 4) continue;
+    files++;
+    if (/[RC]/.test(fields[i].slice(0, 2))) i++;
+  }
+  return files;
+}
+
+/** Commits at `head` the main checkout's current commit lacks. */
+async function commitsMissingFromHead(root: string, head: string): Promise<number> {
+  if (!head) return 0;
+  const count = await git(root, ['rev-list', '--count', `HEAD..${head}`]);
+  return count.ok ? Number(count.stdout.trim()) || 0 : 0;
+}
+
+/** Commits on `branch` that deleting it loses: in no other branch, remote
+ *  branch or tag, nor the main checkout's commit. */
+async function commitsOnlyOn(root: string, branch: string, head: string): Promise<number> {
+  const count = await git(root, [
+    'rev-list',
+    '--count',
+    head,
+    '--not',
+    `--exclude=${branch}`,
+    '--branches',
+    '--remotes',
+    '--tags',
+    'HEAD',
+  ]);
+  // Unreadable: count every commit the main checkout lacks, so the user's
+  // confirmation has to have covered them.
+  return count.ok ? Number(count.stdout.trim()) || 0 : commitsMissingFromHead(root, head);
+}
+
+/** The Claude Code session a worktree's lock names (`claude session <name>
+ *  (pid N …)`), if that process is still alive. */
+function liveClaudeSession(lockReason: string | undefined): number | null {
+  const pid = /\(pid (\d+)/.exec(lockReason ?? '')?.[1];
+  if (!pid) return null;
+  try {
+    process.kill(Number(pid), 0);
+    return Number(pid);
+  } catch (err) {
+    // EPERM: alive, just not ours to signal.
+    return (err as NodeJS.ErrnoException).code === 'EPERM' ? Number(pid) : null;
+  }
+}
+
+export interface RemoveClaudeWorktreeOptions {
+  /** How many uncommitted files the user confirmed losing. */
+  confirmedFiles?: number;
+  /** How many commits the user confirmed losing. */
+  confirmedCommits?: number;
+  /** Whether an agent in the office runs in this folder. */
+  inUse: (folder: string) => boolean;
+}
+
+/**
+ * Remove one of Claude Code's worktrees, as its own exit prompt would: the
+ * folder (`git worktree remove`, --force only over files the user confirmed
+ * losing) and then its branch. Refused while an office agent or a live Claude
+ * session (the pid in Claude's lock) is in it, and when it would lose more
+ * uncommitted files or commits than the user confirmed. A branch git won't
+ * delete is left, and said so in the log: the folder is what was asked for.
+ */
+export function removeClaudeWorktree(
+  directoryPath: string,
+  name: string,
+  options: RemoveClaudeWorktreeOptions,
+): Promise<{ ok: true; branchKept: boolean } | { ok: false; reason: string }> {
+  const root = path.resolve(directoryPath);
+  return serialized(root, async () => {
+    const found = (await claudeWorktreesIn(root)).find((w) => w.worktree.name === name);
+    if (!found) return { ok: false, reason: `There is no Claude Code worktree ${name} here.` };
+    const { worktree, linked } = found;
+    if (options.inUse(worktree.path)) {
+      return { ok: false, reason: `An agent is still running in ${worktree.branch}.` };
+    }
+    const pid = liveClaudeSession(linked.lockReason);
+    if (pid !== null) {
+      return {
+        ok: false,
+        reason: `A Claude Code session (pid ${pid}) is still running in ${worktree.branch}.`,
+      };
+    }
+    const files = await uncommittedIn(worktree.path);
+    if (files > (options.confirmedFiles ?? 0)) {
+      return {
+        ok: false,
+        reason: `${worktree.branch} holds ${files} uncommitted ${files === 1 ? 'file' : 'files'}; confirm losing ${files === 1 ? 'it' : 'them'} first.`,
+      };
+    }
+    const lost = linked.branch ? await commitsOnlyOn(root, linked.branch, worktree.head) : 0;
+    if (lost > (options.confirmedCommits ?? 0)) {
+      return {
+        ok: false,
+        reason: `${worktree.branch} has ${lost} ${lost === 1 ? 'commit' : 'commits'} merged nowhere else; confirm losing ${lost === 1 ? 'it' : 'them'} first.`,
+      };
+    }
+
+    if (linked.locked) await git(root, ['worktree', 'unlock', worktree.path]);
+    const removed = await git(root, [
+      'worktree',
+      'remove',
+      ...(files > 0 ? ['--force'] : []),
+      worktree.path,
+    ]);
+    if (!removed.ok) {
+      // Leave it as it was, Claude's lock included.
+      if (linked.locked) {
+        await git(root, [
+          'worktree',
+          'lock',
+          ...(linked.lockReason ? ['--reason', linked.lockReason] : []),
+          worktree.path,
+        ]);
+      }
+      return { ok: false, reason: gitReason(removed) };
+    }
+    if (!linked.branch) return { ok: true, branchKept: false };
+    const deleted = await git(root, ['branch', '-D', linked.branch]);
+    if (!deleted.ok) {
+      console.warn(
+        `[Pixel Agents] Worktrees: kept Claude Code's branch ${linked.branch}: ${gitReason(deleted)}`,
+      );
+    }
+    return { ok: true, branchKept: !deleted.ok };
+  });
+}
+
+/** Whether `name` names a worktree Claude Code made in the Directory: a
+ *  linked worktree's folder at `<directoryPath>/.claude/worktrees/<name>` that
+ *  is not in our registry. A filesystem check: what the office's actions on
+ *  it are refused by. */
+export function isClaudeWorktree(directoryPath: string, name: string): boolean {
+  if (!isWorktreeName(name)) return false;
+  const folder = worktreePathIn(directoryPath, name);
+  return isLinkedWorktreeFolder(folder) && !readRegistry().some((e) => sameFolder(e.path, folder));
+}
