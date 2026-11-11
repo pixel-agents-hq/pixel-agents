@@ -75,8 +75,10 @@ export class StandalonePcShells extends PcShellRegistry {
           return terminalOf(ptyManager, session);
         },
         busy: async (id) => {
+          // A PTY host session has no pid until the host's create reply lands:
+          // that can't tell, and a probe that can't tell counts as running.
           const pid = ptyManager.get(id)?.pid ?? null;
-          if (pid === null) return null;
+          if (pid === null) return {};
           return (standalone.foreground ?? foregroundOf)(pid);
         },
       },

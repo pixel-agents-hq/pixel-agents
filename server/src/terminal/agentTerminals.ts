@@ -10,6 +10,7 @@
  * with no screen to read (`screenlessAgentTerminals`, below).
  */
 
+import { isPcShellId } from '../../../core/src/pcShells.js';
 import type { TerminalHandle } from '../../../core/src/terminalAdapter.js';
 import { MESSAGE_KEY_DELAY_MS } from '../constants.js';
 import { pause } from '../pause.js';
@@ -130,14 +131,18 @@ export async function typeInto(
 
 /** The standalone surface's terminals: its PTY sessions (in process or in the PTY host). */
 export function ptyAgentTerminals(sessions: TerminalSessions): AgentTerminals {
+  // The terminal sessions also hold the PC shells (the user's own login
+  // shells): this seam never addresses one, whatever its caller checked.
+  const agentSession = (agentId: number) =>
+    isPcShellId(agentId) ? undefined : sessions.get(agentId);
   return {
-    has: (agentId) => sessions.has(agentId),
+    has: (agentId) => agentSession(agentId) !== undefined,
     async screen(agentId) {
-      const session = sessions.get(agentId);
+      const session = agentSession(agentId);
       return session ? readScreen(session) : null;
     },
     write(agentId, bytes) {
-      const session = sessions.get(agentId);
+      const session = agentSession(agentId);
       if (!session) throw new Error(`agent ${agentId} has no terminal`);
       session.write(bytes);
     },

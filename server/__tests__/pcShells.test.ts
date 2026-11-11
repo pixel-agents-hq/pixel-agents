@@ -14,7 +14,13 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { PC_SHELL_ID_BASE } from '../../core/src/constants.js';
 import { readConfig, writeConfig } from '../src/configPersistence.js';
 import { WS_CLOSE_UNAUTHORIZED } from '../src/constants.js';
-import { foregroundOf, type ForegroundProbe } from '../src/terminal/pcShells.js';
+import { ptyAgentTerminals } from '../src/terminal/agentTerminals.js';
+import {
+  foregroundOf,
+  type ForegroundProbe,
+  StandalonePcShells,
+} from '../src/terminal/pcShells.js';
+import type { TerminalSession, TerminalSessions } from '../src/terminal/terminalSessions.js';
 import {
   type Json,
   loadBundledAssets,
@@ -330,7 +336,74 @@ describe('PC shells', () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(term.text()).not.toContain('pwned');
     expect(h.pcShells.has(id)).toBe(true);
+
+    // By construction too: the MCP's terminal seam cannot address a shell,
+    // whatever a tool forgets to check first.
+    const seam = ptyAgentTerminals(h.terminals);
+    expect(seam.has(id)).toBe(false);
+    expect(await seam.screen(id)).toBeNull();
+    expect(() => seam.write(id, 'touch pwned2\r')).toThrow();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(term.text()).not.toContain('pwned2');
     term.close();
+  });
+});
+
+describe('PC shells whose terminal has no pid yet (a PTY host spawn in flight)', () => {
+  /** A shell session the host has not answered for: running, no pid. */
+  function pendingSessions(): TerminalSessions {
+    const sessions = new Map<number, TerminalSession>();
+    const fake = {
+      enabled: true,
+      isAvailable: () => true,
+      unavailableReason: () => null,
+      create: ({ agentId }: { agentId: number }) => {
+        const session = {
+          agentId,
+          pid: null,
+          onExit: () => () => {},
+        } as unknown as TerminalSession;
+        sessions.set(agentId, session);
+        return session;
+      },
+      get: (id: number) => sessions.get(id),
+      has: (id: number) => sessions.has(id),
+      dispose: (id: number) => void sessions.delete(id),
+      survivors: () => [],
+    };
+    return fake as unknown as TerminalSessions;
+  }
+
+  it('the × asks first: a probe that cannot tell counts as running', async () => {
+    const ptyManager = pendingSessions();
+    const asked: number[] = [];
+    const registry = new StandalonePcShells({
+      ptyManager,
+      saves: { loadPcShells: () => [], savePcShells: () => {} },
+      facts: {
+        layout: () => seededLayout(),
+        catalog: () => catalog,
+        readAreaMappings: () => ({}),
+      },
+      directories: () => [],
+      broadcast: () => {},
+      providers: [],
+      foreground: async (pid) => {
+        asked.push(pid);
+        return null;
+      },
+    });
+    const opened = registry.open(FRONT_PC);
+    expect(opened.ok).toBe(true);
+    const id = (opened as { id: number }).id;
+
+    expect(await registry.close(id, false)).toEqual({ closed: false, question: {} });
+    expect(registry.has(id)).toBe(true);
+    expect(ptyManager.has(id)).toBe(true);
+    // Confirmed, it closes.
+    expect(await registry.close(id, true)).toEqual({ closed: true });
+    expect(ptyManager.has(id)).toBe(false);
+    expect(asked).toEqual([]);
   });
 });
 
