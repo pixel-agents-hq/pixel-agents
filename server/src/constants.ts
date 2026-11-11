@@ -89,14 +89,12 @@ export const MAX_PORT = 65_535;
 export const SERVER_REGISTRY_PROTOCOL_VERSION = 1;
 
 // ── WebSocket close codes (application range 4000-4999) ────
-/** The handshake's token is missing or wrong: the embedded `/ws` Bearer header,
- *  or the `?token=` query on `/terminal/:agentId` (an untokened standalone `/ws`
- *  still connects, unprivileged -- see wsAuth.ts). */
+/** Embedded mode: the `/ws` handshake's Bearer header is missing or wrong. */
 export const WS_CLOSE_UNAUTHORIZED = 4001;
 
 /** Standalone mode: the handshake's Origin is not this server's own origin.
  *  WebSocket connects bypass CORS, so this is the only thing standing between
- *  a drive-by web page and the privileged client-message channel. */
+ *  a drive-by web page and the client-message channel. */
 export const WS_CLOSE_FORBIDDEN_ORIGIN = 4003;
 /** Terminal socket: the agent has no PTY on this server (never spawned, or
  *  already exited). The route only ever attaches; it cannot start one. */
@@ -118,12 +116,8 @@ export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
  *  means anyone who prefers the Microsoft package can just install it.
  *  See docs/design/standalone-terminal.md. */
 export const PTY_MODULE_CANDIDATES = ['@lydell/node-pty', 'node-pty'] as const;
-/** Loopback hostnames. Used to warn when the server binds off-loopback, and
- *  always part of the privileged-Host allowlist (wsAuth.privilegedHostnames). */
+/** Loopback hostnames. Used to warn when the server binds off-loopback. */
 export const LOOPBACK_HOSTNAMES = ['127.0.0.1', 'localhost', '::1'] as const;
-/** Wildcard bind addresses: listen targets, never a name a browser sends as
- *  Host, so binding to one adds nothing to the privileged-Host allowlist. */
-export const WILDCARD_HOSTNAMES = ['0.0.0.0', '::'] as const;
 
 /** Scrollback lines the per-session headless-xterm mirror retains. Matches the
  *  browser's TERMINAL_SCROLLBACK_LINES so a reattach replays the same depth the
@@ -141,21 +135,11 @@ export const TERMINAL_SHUTDOWN_SLACK_MS = 1_000;
 /** unavailableReason() when the operator opted out with --no-terminal. Shown
  *  verbatim as the disabled + Agent button's tooltip in the browser. */
 export const TERMINAL_DISABLED_BY_FLAG_REASON = 'Terminal disabled with --no-terminal.';
-/** terminalAvailability reason for an UNPRIVILEGED /ws client (no valid token,
- *  or a Host outside the allowlist): the PTY may work, but this connection may
- *  not open one. Launching an agent starts a shell as the operator, so it is
- *  gated exactly like the hooks toggle (wsAuth.standaloneHandshakeVerdict). */
-export const TERMINAL_REQUIRES_TOKEN_REASON =
-  'Open the URL the CLI printed (with its ?token=), at localhost or a name passed with --allowed-host, to launch agents from this browser.';
 /** directoryRejected reason when the shared config write behind a Directory
  *  save or delete failed. The detail (permissions, disk full, ...) is on the
  *  host's console, where writeConfig logged it. */
 export const DIRECTORY_WRITE_FAILED_REASON =
   "Couldn't save the change: writing ~/.pixel-agents/config.json failed (see the host's log).";
-/** Standalone persists its server token here (mode 0600, beside server.json) so
- *  the tokened URL a browser bookmarked keeps working across restarts. The
- *  embedded (VS Code) server still mints a fresh token per process. */
-export const STANDALONE_TOKEN_FILE_NAME = 'standalone-token';
 
 // ── Workspaces ──────────────────────────────────────────────
 /** Machine-wide Workspace list, beside config.json (which readConfig rewrites

@@ -705,7 +705,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         // preference, which defaults true while consent is pending. Opening the office is the moment the user can be
         // asked, so the ask rides this handshake; consentGate owns every condition (standalone calls the same
         // function). Dismissing sends nothing and re-asks next handshake; either durable answer closes the gate for
-        // good. An embedded webview is privileged by construction — our own iframe, reached through no socket.
+        // good.
         for (const provider of hookProviders) {
           // One provider's unreadable settings file degrades to installed=false (the executor's fail-closed read: no
           // choice uninstalls on a guess) rather than aborting the handshake before restored agents are sent, or
@@ -727,7 +727,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
               installed,
               hooksEnabled: getHooksEnabled(provider.id),
               consentAnswered: getHooksConsent(provider.id) !== 'unanswered',
-              privileged: true,
             },
             provider,
           );

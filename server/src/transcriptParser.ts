@@ -272,6 +272,8 @@ export function processTranscriptLine(
       if (Array.isArray(content)) {
         const blocks = content as Array<{ type: string; tool_use_id?: string; content?: unknown }>;
         const hasToolResult = blocks.some((b) => b.type === 'tool_result');
+        // The session moved on (task dispatch's in-flight lock).
+        agents.noteTurnActivity(agentId, hasToolResult ? 'userRecord' : 'userPrompt');
         if (hasToolResult) {
           for (const block of blocks) {
             if (block.type === 'tool_result' && block.tool_use_id) {
@@ -411,6 +413,7 @@ export function processTranscriptLine(
         }
       } else if (typeof content === 'string' && content.trim()) {
         // New user text prompt — new turn starting
+        agents.noteTurnActivity(agentId, 'userPrompt');
         cancelWaitingTimer(agentId, waitingTimers);
         clearAgentActivity(agent, agentId, agents, permissionTimers);
         agent.hadToolsInTurn = false;
@@ -513,6 +516,10 @@ export function processTranscriptLine(
       agent.isWaiting = true;
       agent.permissionSent = false;
       agent.hadToolsInTurn = false;
+      // A turn completed in this session (task dispatch's idle rule). Counted
+      // here AND on the Stop hook: the rule only asks for at least one.
+      agent.turnsCompletedThisSession = (agent.turnsCompletedThisSession ?? 0) + 1;
+      agents.noteTurnActivity(agentId, 'turnEnd');
       // Skip status post when hooks already handled it
       if (!agent.hookDelivered) {
         agents.broadcast({

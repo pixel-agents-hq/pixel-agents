@@ -89,3 +89,6 @@ export const CLAUDE_SMALL_CONTEXT_MODEL_PATTERN = /haiku|claude-[123]|-4-[01]\b/
 /** Appends a file to the system prompt. Not in `claude --help`, but verified on
  *  2.1.285: works with CLAUDE.md and --session-id; an unknown flag exits. */
 export const CLAUDE_APPEND_SYSTEM_PROMPT_FILE_FLAG = '--append-system-prompt-file';
+/** Loads MCP servers from a JSON string (task dispatch's stdio shim). Variadic
+ *  in Claude Code, so it is always the LAST flag of a launch command. */
+export const CLAUDE_MCP_CONFIG_FLAG = '--mcp-config';

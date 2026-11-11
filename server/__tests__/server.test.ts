@@ -251,57 +251,9 @@ describe('PixelAgentsServer', () => {
   });
 
   it('records standalone access in the registry entry', async () => {
-    await server.start({
-      embedded: false,
-      ptyManager: new PtySessionManager(),
-      allowedHosts: ['B.example', 'a.example', 'b.example'],
-    });
+    await server.start({ embedded: false, ptyManager: new PtySessionManager() });
     const entry = JSON.parse(fs.readFileSync(path.join(registryDir, registryFiles()[0]), 'utf-8'));
-    expect(entry.standalone).toEqual({
-      terminal: true,
-      host: '127.0.0.1',
-      allowedHosts: ['a.example', 'b.example'],
-    });
-  });
-
-  it('reuses only when the allowed hosts match (order and case aside)', async () => {
-    const config1 = await server.start({
-      embedded: false,
-      allowedHosts: ['a.example', 'B.example'],
-    });
-    const same = new PixelAgentsServer();
-    expect(
-      (await same.start({ embedded: false, allowedHosts: ['b.example', 'A.example'] })).port,
-    ).toBe(config1.port);
-    const different = new PixelAgentsServer();
-    expect((await different.start({ embedded: false, allowedHosts: ['a.example'] })).port).not.toBe(
-      config1.port,
-    );
-    same.stop();
-    different.stop();
-  });
-
-  // 15c. Token rotation
-  it('rotateToken replaces the persisted standalone token', async () => {
-    const tokenFile = path.join(serverJsonDir, 'standalone-token');
-    const first = await server.start({ embedded: false });
-    server.stop();
-    const rotated = await server.start({ embedded: false, rotateToken: true });
-    expect(rotated.token).not.toBe(first.token);
-    expect(fs.readFileSync(tokenFile, 'utf-8').trim()).toBe(rotated.token);
-    expect(fs.statSync(tokenFile).mode & 0o777).toBe(0o600);
-  });
-
-  it('rotateToken refuses while a standalone server is running', async () => {
-    const running = await server.start({ embedded: false });
-    const server2 = new PixelAgentsServer();
-    await expect(server2.start({ embedded: false, rotateToken: true })).rejects.toThrow(
-      /already running/,
-    );
-    // The running server's token is untouched on disk.
-    expect(fs.readFileSync(path.join(serverJsonDir, 'standalone-token'), 'utf-8').trim()).toBe(
-      running.token,
-    );
+    expect(entry.standalone).toEqual({ terminal: true, host: '127.0.0.1' });
   });
 
   // 16. Dead-pid registry entries are pruned on start, never reused

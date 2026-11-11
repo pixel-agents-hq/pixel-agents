@@ -32,7 +32,6 @@ export type ServerMessage =
   | FloorTilesLoaded
   | WallTilesLoaded
   | CarpetTilesLoaded
-  | OfficeAccess
   | SettingsLoaded
   | BypassPermissionsUpdated
   | HooksStatus
@@ -48,12 +47,16 @@ export type ServerMessage =
   | AgentWorkspaceChanged
   | CuratorsLoaded
   | WorkspaceCuratorChanged
+  | CuratorBindingChanged
   | CuratorRejected
   | AgentGuardStatus
   | RolesAvailable
   | RolePreview
   | RoleConfirmed
   | RoleRejected
+  | KbFilesListed
+  | KbFileRead
+  | KbRejected
   | TerminalAvailability
   | TerminalSessionOpened
   | TerminalSessionClosed
@@ -96,6 +99,8 @@ export type ClientMessage =
   | RequestRoles
   | RequestRolePreview
   | ConfirmRole
+  | ListKbFiles
+  | ReadKbFile
   | RequestDirectorySuggestions
   | RequestDiagnostics;
 
@@ -306,11 +311,6 @@ export interface CarpetTilesLoaded {
   sets: string[][][][];
 }
 
-export interface OfficeAccess {
-  type: 'officeAccess';
-  readOnly: boolean;
-}
-
 export interface SettingsLoaded {
   type: 'settingsLoaded';
   soundEnabled: boolean;
@@ -414,6 +414,7 @@ export interface CuratorsLoaded {
   type: 'curatorsLoaded';
   available: boolean;
   curators: CuratorEntry[];
+  bindings?: CuratorBinding[];
 }
 
 export interface CuratorEntry {
@@ -421,10 +422,21 @@ export interface CuratorEntry {
   agentId: number;
 }
 
+export interface CuratorBinding {
+  workspaceId: string;
+  directoryPath: string;
+}
+
 export interface WorkspaceCuratorChanged {
   type: 'workspaceCuratorChanged';
   workspaceId: string;
   agentId: number | null;
+}
+
+export interface CuratorBindingChanged {
+  type: 'curatorBindingChanged';
+  workspaceId: string;
+  directoryPath: string | null;
 }
 
 export interface CuratorRejected {
@@ -488,6 +500,44 @@ export interface RoleRejected {
 }
 
 export type RoleRejectionCode = 'untrusted' | 'invalid' | 'unavailable' | 'io';
+
+export interface KbFilesListed {
+  type: 'kbFilesListed';
+  target: AgentKbTarget | WorkspaceKbTarget;
+  files: KbFileEntry[];
+  truncated: boolean;
+}
+
+export interface AgentKbTarget {
+  scope: 'agent';
+  agentId: number;
+}
+
+export interface WorkspaceKbTarget {
+  scope: 'workspace';
+  workspaceId: string;
+}
+
+export interface KbFileEntry {
+  path: string;
+  size: number;
+}
+
+export interface KbFileRead {
+  type: 'kbFileRead';
+  target: AgentKbTarget | WorkspaceKbTarget;
+  relPath: string;
+  content: string;
+}
+
+export interface KbRejected {
+  type: 'kbRejected';
+  target?: AgentKbTarget | WorkspaceKbTarget;
+  relPath?: string;
+  reason: KbRejectionReason;
+}
+
+export type KbRejectionReason = 'not_found' | 'too_large' | 'not_text' | 'unsafe' | 'unavailable';
 
 export interface TerminalAvailability {
   type: 'terminalAvailability';
@@ -709,6 +759,17 @@ export interface ConfirmRole {
   directoryPath: string;
   roleId: string;
   sha256: string;
+}
+
+export interface ListKbFiles {
+  type: 'listKbFiles';
+  target: AgentKbTarget | WorkspaceKbTarget;
+}
+
+export interface ReadKbFile {
+  type: 'readKbFile';
+  target: AgentKbTarget | WorkspaceKbTarget;
+  relPath: string;
 }
 
 export interface RequestDirectorySuggestions {

@@ -52,6 +52,15 @@ export function guardRequestForbidden(request: {
   return !WRITE_GUARD_LOOPBACK_PEERS.includes(request.remoteAddress ?? '');
 }
 
+/**
+ * 恰好一個 Authorization 標頭時回傳它的值，否則 null（任務派送的 /mcp 用：
+ * 那裡只接受 capability，從不接受本伺服器的 token，所以由呼叫端自行驗證）。
+ */
+export function singleAuthorizationHeader(rawHeaders: readonly string[]): string | null {
+  const values = headerValues(rawHeaders, 'authorization');
+  return values.length === 1 ? values[0] : null;
+}
+
 /** 恰好一個 Authorization 標頭，且是本伺服器的 Bearer token。 */
 export function guardRequestAuthorized(rawHeaders: readonly string[], token: string): boolean {
   const values = headerValues(rawHeaders, 'authorization');

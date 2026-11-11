@@ -3,10 +3,9 @@
  * launchAgent carrying a roleId. Standalone only.
  *
  * Every answer goes to the requesting client alone (`reply`), never through a
- * broadcast, and the read-only gate in handleClientMessage has already dropped
- * these messages for unprivileged clients. Each handler is async (enumeration
- * and reads are) and catches everything itself: handleClientMessage is
- * synchronous, so a rejection escaping from here would reach no handler.
+ * broadcast. Each handler is async (enumeration and reads are) and catches
+ * everything itself: handleClientMessage is synchronous, so a rejection
+ * escaping from here would reach no handler.
  *
  * A launch with a Role is validated completely BEFORE the launcher runs: the
  * launcher is synchronous and assigns the agent id, so a refused Role never

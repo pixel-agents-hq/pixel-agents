@@ -382,7 +382,7 @@ test.describe('Standalone / permission posture', () => {
     page,
     standalone: _standalone,
   }) => {
-    // A second tokened office, open BEFORE the change: it loaded "off" and
+    // A second office, open BEFORE the change: it loaded "off" and
     // must not keep showing that while every launch now skips permissions.
     const other = await page.context().newPage();
     await other.goto(page.url());

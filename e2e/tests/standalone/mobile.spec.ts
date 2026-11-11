@@ -275,7 +275,7 @@ test.describe('Standalone / mobile shell', () => {
     page,
     standalone,
   }) => {
-    // What a phone opening the tokened LAN http:// URL gets: not a secure
+    // What a phone opening the LAN http:// URL gets: not a secure
     // context, so navigator.clipboard does not exist. Whatever reaches the
     // clipboard through a copy event is recorded instead.
     await page.addInitScript(() => {

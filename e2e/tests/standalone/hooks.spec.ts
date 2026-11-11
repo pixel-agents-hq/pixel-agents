@@ -1,10 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { Page } from '@playwright/test';
-
 import { expect, test } from '../../fixtures/standalone';
-import type { TestHooksWindow } from '../../helpers/editor';
 import {
   ourHookEvents,
   sendHookEvent,
@@ -110,9 +107,9 @@ test.describe('Standalone / hooks', () => {
 
 /**
  * The standalone consent path end to end. The fixture normally seeds a granted Claude consent; these opt out, so the
- * CLI starts with nothing installed and the server asks over the tokened /ws handshake — the SAME in-app dialog the
- * VS Code webview shows (pinned in claude/hooks-on/consent.spec.ts). Here the pins are the standalone-only halves:
- * the token boundary and the checkbox route.
+ * CLI starts with nothing installed and the server asks over the /ws handshake — the SAME in-app dialog the VS Code
+ * webview shows (pinned in claude/hooks-on/consent.spec.ts). Here the pin is the standalone-only half: the checkbox
+ * route.
  */
 test.describe('Standalone / hooks consent', () => {
   test.use({ seedHooksConsent: false });
@@ -131,10 +128,9 @@ test.describe('Standalone / hooks consent', () => {
     return ourHookEvents(tmpHome).length;
   }
 
-  // The operator's route: the printed tokened URL loads a privileged session,
-  // the Intro rides the handshake, and Install (on its consent step) writes
-  // the hooks.
-  test('the tokened page shows the Intro and Install writes the hooks @area:standalone', async ({
+  // The operator's route: the printed URL loads the office, the Intro rides
+  // the handshake, and Install (on its consent step) writes the hooks.
+  test('the page shows the Intro and Install writes the hooks @area:standalone', async ({
     page,
     standalone,
   }) => {
@@ -155,53 +151,6 @@ test.describe('Standalone / hooks consent', () => {
 
     // The install's own hooksStatus broadcast must not yank the closing step.
     await finishIntro(dialog);
-  });
-
-  // The token boundary, at the browser level: a bare-URL session still watches
-  // the office but is never asked — its answer would be ignored
-  // (server/__tests__/httpServerWs.test.ts pins the wire half), so showing it
-  // the dialog would be a lie.
-  test('an untokened spectator page never sees the consent dialog @area:standalone', async ({
-    page,
-    standalone,
-  }) => {
-    void standalone;
-    const bareUrl = new URL(page.url());
-    bareUrl.search = '';
-
-    const spectator = await openSpectator(page);
-    try {
-      // Settle before the negative assertion: the dialog, were it coming,
-      // rides the webviewReady handshake that just completed.
-      await spectator.waitForTimeout(2_000);
-      await expect(spectator.getByRole('dialog')).toHaveCount(0);
-    } finally {
-      await spectator.close();
-    }
-  });
-
-  // A read-only office: every change it could send is refused server-side
-  // (clientMessageHandler's refuseReadOnly), so it is shown no controls that
-  // send one -- while the tokened page beside it keeps them all.
-  test('an untokened spectator page shows no toolbar, only a View only label @area:standalone', async ({
-    page,
-    standalone,
-  }) => {
-    void standalone;
-    const spectator = await openSpectator(page);
-    try {
-      for (const name of ['Settings', 'Layout', '+ Agent']) {
-        await expect(spectator.getByRole('button', { name, exact: true })).toHaveCount(0);
-      }
-      await expect(spectator.getByText('View only', { exact: true })).toBeVisible();
-      // Its dismissal could never be recorded, so the update notice would
-      // return on every load -- a read-only office doesn't show it at all.
-      await expect(spectator.getByText(/^Updated to v/)).toHaveCount(0);
-      await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
-      await expect(page.getByText('View only', { exact: true })).toHaveCount(0);
-    } finally {
-      await spectator.close();
-    }
   });
 
   /**
@@ -252,30 +201,3 @@ test.describe('Standalone / hooks consent', () => {
     await expect.poll(() => isChecked(), { timeout: 15_000 }).toBe(true);
   });
 });
-
-/**
- * Open the office beside `page` at its bare URL (token stripped) and wait for
- * it to load. The loaded signal is the layout arriving -- not a toolbar button,
- * which a read-only office never shows.
- */
-async function openSpectator(page: Page): Promise<Page> {
-  const bareUrl = new URL(page.url());
-  bareUrl.search = '';
-  const spectator = await page.context().newPage();
-  // Same harness flag the fixture gives its own page, so the app installs the
-  // test hooks the loaded check below reads.
-  await spectator.addInitScript(() => {
-    (window as unknown as { __PIXEL_AGENTS_E2E?: boolean }).__PIXEL_AGENTS_E2E = true;
-  });
-  await spectator.goto(bareUrl.toString());
-  await expect
-    .poll(
-      () =>
-        spectator.evaluate(
-          () => (window as TestHooksWindow).__pixelAgentsTestHooks?.getTiles?.()?.tiles.length ?? 0,
-        ),
-      { timeout: 30_000 },
-    )
-    .toBeGreaterThan(0);
-  return spectator;
-}

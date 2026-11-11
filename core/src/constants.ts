@@ -32,8 +32,7 @@ export const TASK_DESCRIPTION_DISPLAY_MAX_LENGTH = 40;
 // are AsyncAPI ServerMessages. See docs/design/standalone-terminal.md.
 
 /** Path prefix for the per-agent terminal WebSocket: `/terminal/:agentId`. The
- *  handshake carries the server token as `?token=`, exactly like `/ws` (see
- *  server/src/wsAuth.ts); the frame shapes are in terminalFrames.ts. */
+ *  frame shapes are in terminalFrames.ts. */
 export const TERMINAL_WS_PREFIX = '/terminal';
 
 // ── Transport ────────────────────────────────────────────────

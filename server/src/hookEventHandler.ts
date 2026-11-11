@@ -416,6 +416,9 @@ export class HookEventHandler {
     agent: AgentState,
     agentId: number,
   ): void {
+    // The session moved on (task dispatch's in-flight lock), whatever is
+    // displayed below.
+    this.agents.noteTurnActivity(agentId, 'toolStart');
     const toolName = normEvent.toolName;
     const toolInput = (normEvent.input as Record<string, unknown> | undefined) ?? {};
     const status = this.provider.formatToolStatus(toolName, toolInput);
@@ -640,6 +643,14 @@ export class HookEventHandler {
   /** Handle Stop: Claude finished responding, mark agent as waiting. */
   private handleStop(agent: AgentState, agentId: number, awaitingInput = false): void {
     this.markAgentWaiting(agent, agentId, awaitingInput);
+    // Only Stop is a completed turn. Notification(idle_prompt) also normalizes
+    // to turnEnd (awaitingInput) but can fire in a session that never finished
+    // a turn, so it must not count (task dispatch's "a turn completed in this
+    // PTY session" rule).
+    if (!awaitingInput) {
+      agent.turnsCompletedThisSession = (agent.turnsCompletedThisSession ?? 0) + 1;
+      this.agents.noteTurnActivity(agentId, 'turnEnd');
+    }
   }
 
   /**

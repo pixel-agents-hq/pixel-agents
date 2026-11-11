@@ -11,7 +11,6 @@ import {
   handleClientMessage,
 } from '../src/clientMessageHandler.js';
 import { getHooksEnabled, readConfig, setHooksEnabled } from '../src/configPersistence.js';
-import { TERMINAL_REQUIRES_TOKEN_REASON } from '../src/constants.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import { CLAUDE_HOOK_EVENTS } from '../src/providers/hook/claude/constants.js';
@@ -67,10 +66,8 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
   let sent: Array<Record<string, unknown>>;
   let ctx: ClientMessageContext;
 
-  // Tokened by default: these suites pin what a message DOES; the read-only
-  // gate for untokened clients has its own suite below.
   function freshCtx(cache: AssetCache | null = null): ClientMessageContext {
-    return { store, cache, privileged: true };
+    return { store, cache };
   }
 
   beforeEach(() => {
@@ -167,7 +164,6 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
 
     it('setHooksEnabled reports the actual outcome after the side effect settles', async () => {
       let sideEffectRan = false;
-      ctx.privileged = true;
       ctx.onSetHooksEnabled = async () => {
         sideEffectRan = true;
       };
@@ -208,7 +204,6 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
     // entirely — never asked again, no route left to remove them.
     it('does not persist hooks-off when the uninstall failed', async () => {
       seedInstalledHooks();
-      ctx.privileged = true;
       ctx.onSetHooksEnabled = () => {
         /* the uninstall failed: settings.json still carries our entries */
       };
@@ -234,7 +229,6 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
     // The mirror case: an install that did not happen must not persist ON.
     it('does not persist hooks-on when the install failed', async () => {
       setHooksEnabled('claude', false);
-      ctx.privileged = true;
       ctx.onSetHooksEnabled = () => {
         /* the install failed: settings.json stays empty */
       };
@@ -251,7 +245,6 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
 
     // The happy path still persists, or the toggle would do nothing at all.
     it('persists the preference when the outcome matches the request', async () => {
-      ctx.privileged = true;
       ctx.onSetHooksEnabled = () => seedInstalledHooks();
 
       handleClientMessage(
@@ -266,34 +259,6 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
         type: 'hooksStatus',
         providerId: 'claude',
         installed: true,
-      });
-    });
-
-    // A non-local client (LAN peer, rebound page) never reaches the side effect
-    // at all: granting consent to modify ~/.claude/settings.json is not a
-    // decision a remote peer gets to make. See httpServerWs.test.ts.
-    it('ignores the toggle entirely when the client is not privileged', async () => {
-      let sideEffectRan = false;
-      ctx.privileged = false;
-      ctx.onSetHooksEnabled = () => {
-        sideEffectRan = true;
-      };
-
-      handleClientMessage(
-        { type: 'setHooksEnabled', providerId: 'claude', enabled: true },
-        (m) => sent.push(m),
-        ctx,
-      );
-      await settle();
-
-      expect(sideEffectRan).toBe(false);
-      expect(getHooksEnabled('claude')).toBe(true);
-      // It still hears the truth, so a LAN viewer's checkbox shows reality
-      // rather than appearing to have worked.
-      expect(sent.find((m) => m.type === 'hooksStatus')).toEqual({
-        type: 'hooksStatus',
-        providerId: 'claude',
-        installed: false,
       });
     });
   });
@@ -436,10 +401,8 @@ describe('clientMessageHandler: saveAgentSeats palette sync', () => {
   let sent: Array<Record<string, unknown>>;
   let ctx: ClientMessageContext;
 
-  // Tokened by default: these suites pin what a message DOES; the read-only
-  // gate for untokened clients has its own suite below.
   function freshCtx(cache: AssetCache | null = null): ClientMessageContext {
-    return { store, cache, privileged: true };
+    return { store, cache };
   }
 
   beforeEach(() => {
@@ -690,11 +653,8 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     };
   }
 
-  /** Tokened connection by default -- the terminal is a privileged surface, so
-   *  every happy path below is what a client that opened the CLI's URL sees.
-   *  The untokened cases pass `privileged: false` explicitly. */
   function ctx(overrides: Partial<ClientMessageContext> = {}): ClientMessageContext {
-    return { store, cache: null, privileged: true, ...overrides };
+    return { store, cache: null, ...overrides };
   }
 
   function dispatch(msg: Record<string, unknown>, context: ClientMessageContext): void {
@@ -755,22 +715,6 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     });
   });
 
-  it('webviewReady tells an untokened client the terminal is unavailable, and why', () => {
-    const { manager } = workingPtyManager();
-    store.set(1, makeAgent(1));
-    manager.create({ agentId: 1, command: 'claude', args: [], cwd: tempHome });
-
-    dispatch({ type: 'webviewReady' }, ctx({ ptyManager: manager, privileged: false }));
-
-    expect(sent).toContainEqual({
-      type: 'terminalAvailability',
-      available: false,
-      reason: TERMINAL_REQUIRES_TOKEN_REASON,
-    });
-    // No drawer tab to rebuild: the client could not attach to it anyway.
-    expect(sent.map((m) => m.type)).not.toContain('terminalSessionOpened');
-  });
-
   it('webviewReady omits every terminal message without a ptyManager (VS Code mode)', () => {
     store.set(1, makeAgent(1));
 
@@ -810,15 +754,6 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     expect(broadcasts).toContainEqual({ type: 'terminalSessionOpened', agentId: id });
   });
 
-  it('launchAgent is ignored from an untokened client', () => {
-    const { manager } = workingPtyManager();
-
-    dispatch({ type: 'launchAgent' }, ctx({ runtime, ptyManager: manager, privileged: false }));
-
-    expect(store.size).toBe(0);
-    expect(broadcasts).toHaveLength(0);
-  });
-
   it('launchAgent applies the persisted permission posture, not a per-launch field', () => {
     const { manager, spawnArgs } = workingPtyManager();
 
@@ -854,26 +789,6 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     broadcasts = [];
     dispatch({ type: 'setBypassPermissions', enabled: false }, ctx());
     expect(broadcasts).toContainEqual({ type: 'bypassPermissionsUpdated', enabled: false });
-  });
-
-  it('refuses setBypassPermissions from an unprivileged client and tells it the truth', () => {
-    // The escalation this pins: an untokened viewer (LAN, DNS-rebound page)
-    // flips the posture, and the operator's NEXT launch from a tokened tab runs
-    // with --dangerously-skip-permissions.
-    const { manager, spawnArgs } = workingPtyManager();
-    const runtime = new AgentRuntime(store, claudeProvider);
-
-    dispatch({ type: 'setBypassPermissions', enabled: true }, ctx({ privileged: false }));
-
-    expect(store.getAdapter()!.getSetting('pixel-agents.bypassPermissions', false)).toBe(false);
-    // Nothing changed, so nothing is published to the other offices.
-    expect(broadcasts.filter((m) => m.type === 'bypassPermissionsUpdated')).toEqual([]);
-    // The optimistic toggle snaps back: the refused client gets the real value.
-    expect(sent).toContainEqual(
-      expect.objectContaining({ type: 'settingsLoaded', bypassPermissions: false }),
-    );
-    dispatch({ type: 'launchAgent' }, ctx({ runtime, ptyManager: manager }));
-    expect(spawnArgs[0]).not.toContain('--dangerously-skip-permissions');
   });
 
   it('webviewReady reports the persisted permission posture in settingsLoaded', () => {
@@ -947,21 +862,6 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     ]);
   });
 
-  it('refuses setShowHostDirectories from an unprivileged client and tells it the truth', () => {
-    const { manager } = workingPtyManager();
-
-    dispatch(
-      { type: 'setShowHostDirectories', enabled: true },
-      ctx({ ptyManager: manager, privileged: false }),
-    );
-
-    expect(store.getAdapter()!.getSetting('pixel-agents.showHostDirectories', false)).toBe(false);
-    expect(broadcasts.filter((m) => m.type === 'directoriesLoaded')).toEqual([]);
-    expect(sent).toContainEqual(
-      expect.objectContaining({ type: 'settingsLoaded', showHostDirectories: false }),
-    );
-  });
-
   it('webviewReady contributes no Directory without a ptyManager (VS Code mode)', () => {
     dispatch({ type: 'webviewReady' }, ctx());
 
@@ -998,51 +898,14 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     expect(readConfig().directories).toEqual([{ name: 'Side Project', path: target }]);
   });
 
-  it('ignores every Directory message from an unprivileged client', () => {
-    // saveDirectory's validation is an exists-oracle for any path, suggestions
-    // list project paths, and both mutations rewrite the machine-wide config.
-    const { manager } = workingPtyManager();
-    const target = path.join(tempHome, 'side-project');
-    fs.mkdirSync(target);
-    const untokened = ctx({ ptyManager: manager, privileged: false });
-
-    dispatch({ type: 'saveDirectory', name: 'Side Project', path: target }, untokened);
-    dispatch({ type: 'saveDirectory', name: 'Probe', path: path.join(tempHome, 'x') }, untokened);
-    dispatch({ type: 'removeDirectory', path: target }, untokened);
-    dispatch({ type: 'requestDirectorySuggestions' }, untokened);
-
-    expect(sent).toEqual([]);
-    expect(broadcasts).toEqual([]);
-    expect(readConfig().directories).toEqual([]);
-  });
-
-  it('refuses external asset directory changes from an unprivileged client', () => {
-    // An asset directory is read from outside ~/.pixel-agents/ and its sprites
-    // are sent back over the socket -- an untokened viewer must not choose it.
+  it('applies external asset directory changes', () => {
     const reloads: number[] = [];
-    const untokened = ctx({ privileged: false, onReloadAssets: async () => void reloads.push(1) });
-    const outside = path.join(tempHome, 'someone-elses-pictures');
-
-    dispatch({ type: 'addExternalAssetDirectory', path: outside }, untokened);
-    dispatch({ type: 'removeExternalAssetDirectory', path: outside }, untokened);
-
-    expect(readConfig().externalAssetDirectories).toEqual([]);
-    expect(reloads).toEqual([]);
-    // Each refusal answers with the real (unchanged) list.
-    expect(sent).toEqual([
-      { type: 'externalAssetDirectoriesUpdated', dirs: [] },
-      { type: 'externalAssetDirectoriesUpdated', dirs: [] },
-    ]);
-  });
-
-  it('applies external asset directory changes from a privileged client', () => {
-    const reloads: number[] = [];
-    const tokened = ctx({ onReloadAssets: async () => void reloads.push(1) });
+    const context = ctx({ onReloadAssets: async () => void reloads.push(1) });
     const assets = path.join(tempHome, 'my-assets');
 
-    dispatch({ type: 'addExternalAssetDirectory', path: assets }, tokened);
+    dispatch({ type: 'addExternalAssetDirectory', path: assets }, context);
     expect(readConfig().externalAssetDirectories).toEqual([assets]);
-    dispatch({ type: 'removeExternalAssetDirectory', path: assets }, tokened);
+    dispatch({ type: 'removeExternalAssetDirectory', path: assets }, context);
     expect(readConfig().externalAssetDirectories).toEqual([]);
     expect(reloads).toHaveLength(2);
   });
@@ -1138,21 +1001,6 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     expect(store.has(5)).toBe(false);
   });
 
-  it('closeAgent from an untokened client leaves a PTY-backed agent running', () => {
-    const { manager, spawned } = workingPtyManager();
-    store.set(5, makeAgent(5));
-    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome });
-
-    dispatch(
-      { type: 'closeAgent', id: 5 },
-      ctx({ runtime, ptyManager: manager, privileged: false }),
-    );
-
-    expect(spawned[0].killSignals).toHaveLength(0);
-    expect(manager.has(5)).toBe(true);
-    expect(store.has(5)).toBe(true);
-  });
-
   it("closeAgent takes the Lead's teammates with it", () => {
     const { manager } = workingPtyManager();
     store.set(5, { ...makeAgent(5), isTeamLead: true });
@@ -1174,148 +1022,5 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     );
 
     expect(store.has(7)).toBe(false);
-  });
-});
-
-/**
- * Tokenless is read-only: an unprivileged client may load the office
- * (webviewReady) and nothing else. One gate at the top of handleClientMessage,
- * so this suite throws EVERY mutating message at it and checks that nothing on
- * disk or in the store moved.
- */
-describe('clientMessageHandler: read-only (untokened) clients', () => {
-  let tempHome: string;
-  let originalHome: string | undefined;
-  let store: AgentStateStore;
-  let sent: Array<Record<string, unknown>>;
-
-  beforeEach(() => {
-    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cmh-readonly-'));
-    originalHome = process.env.HOME;
-    process.env.HOME = tempHome;
-    store = new AgentStateStore();
-    store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
-    sent = [];
-  });
-
-  afterEach(() => {
-    process.env.HOME = originalHome;
-    fs.rmSync(tempHome, { recursive: true, force: true });
-  });
-
-  /** Everything under the temp HOME, as path -> contents. */
-  function snapshotHome(): Record<string, string> {
-    const out: Record<string, string> = {};
-    const walk = (dir: string): void => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) walk(full);
-        else out[full] = fs.readFileSync(full, 'utf-8');
-      }
-    };
-    walk(tempHome);
-    return out;
-  }
-
-  it('refuses every mutating message and changes nothing', () => {
-    const directory = path.join(tempHome, 'project');
-    fs.mkdirSync(directory);
-    const before = snapshotHome();
-    const untokened: ClientMessageContext = {
-      store,
-      cache: null,
-      privileged: false,
-      onSetHooksEnabled: () => {
-        throw new Error('side effect must not run');
-      },
-      onReloadAssets: () => {
-        throw new Error('side effect must not run');
-      },
-    };
-
-    for (const msg of [
-      { type: 'launchAgent' },
-      { type: 'closeAgent', id: 1 },
-      { type: 'saveLayout', layout: { version: 1, cols: 1, rows: 1, tiles: [0], furniture: [] } },
-      { type: 'saveAgentSeats', seats: { 1: { palette: 1 } } },
-      { type: 'setSoundEnabled', enabled: false },
-      { type: 'setLastSeenVersion', version: '9.9' },
-      { type: 'setAlwaysShowLabels', enabled: true },
-      { type: 'setGhostHeadlessAgents', enabled: true },
-      { type: 'setWatchAllSessions', enabled: true },
-      { type: 'setHooksEnabled', providerId: 'claude', enabled: false },
-      { type: 'hooksConsentResponse', providerId: 'claude', choice: 'allow' },
-      { type: 'setHooksInfoShown' },
-      { type: 'addExternalAssetDirectory', path: directory },
-      { type: 'removeExternalAssetDirectory', path: directory },
-      { type: 'saveAreaMappings', mappings: { Lab: ['project'] } },
-      { type: 'setShowAreas', enabled: true },
-      { type: 'setBypassPermissions', enabled: true },
-      { type: 'saveDirectory', name: 'Project', path: directory },
-      { type: 'removeDirectory', path: directory },
-      { type: 'saveWorkspace', name: 'Work', directoryPaths: [directory] },
-      { type: 'removeWorkspace', id: 'some-id' },
-      { type: 'requestDirectorySuggestions' },
-      { type: 'requestDiagnostics' },
-    ]) {
-      handleClientMessage(msg, (m) => sent.push(m), untokened);
-    }
-
-    expect(snapshotHome()).toEqual(before);
-    // Only truth-restoring replies come back -- no suggestions, no diagnostics.
-    const replyTypes = new Set(sent.map((m) => m.type));
-    expect([...replyTypes].sort()).toEqual([
-      'areaMappingsLoaded',
-      'externalAssetDirectoriesUpdated',
-      'settingsLoaded',
-      'workspacesLoaded',
-    ]);
-  });
-
-  it('answers a refused toggle with the real state so the control snaps back', () => {
-    handleClientMessage({ type: 'setShowAreas', enabled: true }, (m) => sent.push(m), {
-      store,
-      cache: null,
-      privileged: false,
-    });
-    expect(sent).toContainEqual(
-      expect.objectContaining({ type: 'settingsLoaded', showAreas: false }),
-    );
-
-    sent = [];
-    handleClientMessage(
-      { type: 'saveAreaMappings', mappings: { Lab: ['x'] } },
-      (m) => sent.push(m),
-      { store, cache: null, privileged: false },
-    );
-    expect(sent).toEqual([{ type: 'areaMappingsLoaded', mappings: {} }]);
-  });
-
-  it('still loads the office', () => {
-    handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), {
-      store,
-      cache: null,
-      privileged: false,
-    });
-    expect(sent.map((m) => m.type)).toEqual(
-      expect.arrayContaining(['settingsLoaded', 'existingAgents', 'layoutLoaded']),
-    );
-  });
-
-  it('tells the client FIRST whether it is read-only, so it never draws the controls', () => {
-    handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), {
-      store,
-      cache: null,
-      privileged: false,
-    });
-    expect(sent[0]).toEqual({ type: 'officeAccess', readOnly: true });
-
-    sent = [];
-    handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), {
-      store,
-      cache: null,
-      privileged: true,
-    });
-    expect(sent[0]).toEqual({ type: 'officeAccess', readOnly: false });
   });
 });

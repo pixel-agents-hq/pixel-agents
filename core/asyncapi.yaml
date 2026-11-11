@@ -110,7 +110,6 @@ components:
         - $ref: '#/components/schemas/WallTilesLoaded'
         - $ref: '#/components/schemas/CarpetTilesLoaded'
         # Settings & config
-        - $ref: '#/components/schemas/OfficeAccess'
         - $ref: '#/components/schemas/SettingsLoaded'
         - $ref: '#/components/schemas/BypassPermissionsUpdated'
         - $ref: '#/components/schemas/HooksStatus'
@@ -128,6 +127,7 @@ components:
         # Workspace curators (standalone only, in memory)
         - $ref: '#/components/schemas/CuratorsLoaded'
         - $ref: '#/components/schemas/WorkspaceCuratorChanged'
+        - $ref: '#/components/schemas/CuratorBindingChanged'
         - $ref: '#/components/schemas/CuratorRejected'
         # Write-guard status (standalone only; one per agent)
         - $ref: '#/components/schemas/AgentGuardStatus'
@@ -136,6 +136,10 @@ components:
         - $ref: '#/components/schemas/RolePreview'
         - $ref: '#/components/schemas/RoleConfirmed'
         - $ref: '#/components/schemas/RoleRejected'
+        # Knowledge Base browsing (read-only; point-to-point replies only)
+        - $ref: '#/components/schemas/KbFilesListed'
+        - $ref: '#/components/schemas/KbFileRead'
+        - $ref: '#/components/schemas/KbRejected'
         # Terminal (standalone embedded terminal control plane)
         - $ref: '#/components/schemas/TerminalAvailability'
         - $ref: '#/components/schemas/TerminalSessionOpened'
@@ -182,6 +186,8 @@ components:
         - $ref: '#/components/schemas/RequestRoles'
         - $ref: '#/components/schemas/RequestRolePreview'
         - $ref: '#/components/schemas/ConfirmRole'
+        - $ref: '#/components/schemas/ListKbFiles'
+        - $ref: '#/components/schemas/ReadKbFile'
         - $ref: '#/components/schemas/RequestDirectorySuggestions'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
@@ -817,9 +823,7 @@ components:
       description: |
         Ask this client to run the first-run hooks consent dialog. Sent during the
         `webviewReady` handshake when the hooks preference is on, consent has not
-        been recorded, and nothing of ours is installed — and, in standalone, only
-        on privileged (tokened) connections, since an untokened spectator could not
-        act on it anyway (its `hooksConsentResponse` would be ignored).
+        been recorded, and nothing of ours is installed.
 
         Carries the provider being asked about and its disclosure copy so the
         client renders the server's exact terms (the provider's
@@ -1021,14 +1025,20 @@ components:
     # host's memory only (a restart starts with none). Only an agent this host
     # launched in a terminal into that Workspace is eligible. Messages carry ids only. The
     # default Workspace is always named `default`.
+    # A non-default Workspace's operator appointment is also remembered as a
+    # binding (Workspace id + the agent's Directory realpath, persisted by the
+    # host): after a restart, the next operator launch that matches it takes
+    # the vacant slot again. Bindings carry a Directory path, never a Role.
 
     CuratorsLoaded:
       description: >-
         Sent to this client only during the handshake, after
         `workspacesLoaded`. `available` is true only on a standalone host with
         a runtime, a terminal manager and a curator table; the client
-        shows curator controls only when it is true and the office is not
-        read-only. `curators` is empty when unavailable.
+        shows curator controls only when it is true. `curators` and
+        `bindings` are empty when unavailable. `bindings` is always sent by this
+        host; it is optional only so a host that predates bindings stays
+        valid (treat an absent list as empty).
       type: object
       additionalProperties: false
       required: [type, available, curators]
@@ -1041,6 +1051,30 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CuratorEntry'
+        bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/CuratorBinding'
+
+    CuratorBindingChanged:
+      description: >-
+        A Workspace's KB Writer binding changed. Broadcast to every connected
+        office on every change: set by an operator appointment, removed by
+        `unsetWorkspaceCurator`, by removing the Workspace, or by a
+        `saveWorkspace` after which the bound Directory no longer belongs to
+        the Workspace. `directoryPath` is the bound Directory's realpath, or
+        null when the Workspace no longer has a binding. An agent exiting
+        never changes a binding.
+      type: object
+      additionalProperties: false
+      required: [type, workspaceId, directoryPath]
+      properties:
+        type:
+          const: curatorBindingChanged
+        workspaceId:
+          type: string
+        directoryPath:
+          type: [string, 'null']
 
     WorkspaceCuratorChanged:
       description: >-
@@ -1080,9 +1114,8 @@ components:
     # A Role is a file `<Directory>/.claude/roles/<roleId>` appended to an
     # agent's system prompt at launch. There is no registry: the Roles of a
     # Directory are the files actually there, enumerated on request. Every
-    # Role reply is point-to-point to the requesting (privileged) client and
-    # never broadcast; a read-only client's Role messages are dropped without
-    # a reply.
+    # Role reply is point-to-point to the requesting client and never
+    # broadcast.
 
     RolesAvailable:
       description: |
@@ -1183,6 +1216,77 @@ components:
           type: string
           description: Human-readable cause, shown inline to the user.
 
+    # ── Knowledge Base browsing (read-only) ───────────────────────
+    # Read-only browsing of an agent's personal KB
+    # (`<agent Directory>/.note/<identity key>/`) or a Workspace KB
+    # (`<Workspace root>/.note/`). Every reply is point-to-point to the
+    # requesting client and never broadcast. Nothing here creates, writes or
+    # follows a symlink.
+
+    KbFilesListed:
+      description: |
+        Reply to `listKbFiles`: the text files found in the KB right now.
+        Listing reads no file contents. Only plain files (no symlinks, FIFOs,
+        devices or hard-linked files) with an allowlisted extension (`.md`,
+        `.txt`) are listed; symlinked directories are not descended, names
+        starting with `.` and names holding control, invisible or
+        bidirectional characters are left out, and names that differ only in
+        letter case are both left out. The scan is bounded in depth and entry
+        count; `truncated` is true when a bound cut it short.
+      type: object
+      additionalProperties: false
+      required: [type, target, files, truncated]
+      properties:
+        type:
+          const: kbFilesListed
+        target:
+          $ref: '#/components/schemas/KbTarget'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/KbFileEntry'
+        truncated:
+          type: boolean
+
+    KbFileRead:
+      description: |
+        Reply to `readKbFile`: one KB file's text. Plain text only -- a client
+        must never render it as HTML. Files that are not valid UTF-8 or that
+        hold control, tag or bidirectional-override characters or a BOM are
+        refused with `kbRejected` (`not_text`) instead.
+      type: object
+      additionalProperties: false
+      required: [type, target, relPath, content]
+      properties:
+        type:
+          const: kbFileRead
+        target:
+          $ref: '#/components/schemas/KbTarget'
+        relPath:
+          $ref: '#/components/schemas/KbRelPath'
+        content:
+          type: string
+
+    KbRejected:
+      description: >-
+        A KB request was refused. `target` and `relPath` echo the request so
+        the client can match the reply; `target` is absent only when the
+        request's own target was malformed, `relPath` when the request carried
+        none (a listing) or an unusable one. Never carries file content or a
+        resolved filesystem path.
+      type: object
+      additionalProperties: false
+      required: [type, reason]
+      properties:
+        type:
+          const: kbRejected
+        target:
+          $ref: '#/components/schemas/KbTarget'
+        relPath:
+          type: string
+        reason:
+          $ref: '#/components/schemas/KbRejectionReason'
+
     AgentDiagnostics:
       description: Connection diagnostics for all agents (response to requestDiagnostics).
       type: object
@@ -1204,22 +1308,6 @@ components:
     # would otherwise pass through this discriminated union and the store's
     # broadcast fan-out (which would also leak one agent's output to every
     # connected client). See docs/design/standalone-terminal.md.
-
-    OfficeAccess:
-      description: >-
-        Whether this connection may change anything. A read-only office (no
-        valid server token, or a Host outside the allowlist) can load and watch
-        the office but every change it sends is refused, so the client hides
-        the controls that would send one. Sent first on webviewReady; a client
-        that never receives it is not read-only.
-      type: object
-      additionalProperties: false
-      required: [type, readOnly]
-      properties:
-        type:
-          const: officeAccess
-        readOnly:
-          type: boolean
 
     TerminalAvailability:
       description: >-
@@ -1315,7 +1403,7 @@ components:
 
     CreateAgent:
       description: |
-        Privileged, standalone only. Create an agent record in the Workspace that
+        Standalone only. Create an agent record in the Workspace that
         owns `directoryPath`, without starting Claude Code (unless `start` is
         true). The host replies `agentCreated` (with `stopped: true` when not
         started); a started agent also gets `terminalSessionOpened`. A stopped
@@ -1348,7 +1436,7 @@ components:
 
     StartAgent:
       description: |
-        Privileged, standalone only. Start Claude Code for a stopped agent record.
+        Standalone only. Start Claude Code for a stopped agent record.
         The host resumes the agent's conversation (`claude --resume`) when its
         transcript already exists, and starts a fresh one otherwise. On success
         the host sends `terminalSessionOpened`; an agent that is not stopped, or
@@ -1481,9 +1569,7 @@ components:
         clearing a recorded grant or decline — so the ask genuinely returns on
         the next connect. Any unrecognized value writes NOTHING and the user is
         asked again — a malformed choice must never be read as approval, a
-        durable decline, or an uninstall trigger. The server ignores this
-        message on unprivileged standalone connections, which were never sent
-        the request.
+        durable decline, or an uninstall trigger.
       type: object
       additionalProperties: false
       required: [type, providerId, choice]
@@ -1662,7 +1748,7 @@ components:
 
     SaveWorkspace:
       description: |
-        Privileged. Add or edit a Workspace. `id` identifies the Workspace being
+        Add or edit a Workspace. `id` identifies the Workspace being
         edited; absent means this is a new one and the host assigns the id. On
         success the host rebroadcasts `workspacesLoaded`; on failure it replies
         `workspaceRejected` and persists nothing.
@@ -1686,7 +1772,7 @@ components:
 
     RemoveWorkspace:
       description: >-
-        Privileged. Delete a Workspace. Its Directories and agents return to the
+        Delete a Workspace. Its Directories and agents return to the
         default Workspace. The default Workspace cannot be removed.
       type: object
       additionalProperties: false
@@ -1699,13 +1785,15 @@ components:
 
     SetWorkspaceCurator:
       description: >-
-        Privileged, standalone only. Appoint `agentId` as the curator of
+        Standalone only. Appoint `agentId` as the curator of
         `workspaceId`. The agent must be one this host launched in a terminal
         (and still holds) in that Workspace, and the Workspace must have no
         curator yet. On success the
         host broadcasts `workspaceCuratorChanged`; otherwise it replies
-        `curatorRejected`. A read-only client's request is dropped without a
-        reply.
+        `curatorRejected`. In a non-default Workspace a success also records the KB Writer
+        binding (`curatorBindingChanged`); if it cannot be saved, the
+        appointment stands and the requester alone gets a `workspaceRejected`
+        (it will not be restored after a restart).
       type: object
       additionalProperties: false
       required: [type, workspaceId, agentId]
@@ -1719,7 +1807,7 @@ components:
 
     SetWorkspaceRoot:
       description: >-
-        Privileged, standalone only. Set (a string) or clear (null) the root
+        Standalone only. Set (a string) or clear (null) the root
         directory of `workspaceId`. While a Workspace has a root, its
         Knowledge Base `<root>/.note/` may be written only by its curator, and
         the personal Knowledge Base and configuration write rules apply to
@@ -1727,7 +1815,7 @@ components:
         the host stores its realpath. Refused when `<root>/.note/` would equal,
         contain or be contained in a Directory's `<Directory>/.note/`. On
         success the host rebroadcasts `workspacesLoaded`; on failure it replies
-        `workspaceRejected`. A read-only client gets `workspacesLoaded` back.
+        `workspaceRejected`.
       type: object
       additionalProperties: false
       required: [type, workspaceId, rootPath]
@@ -1741,14 +1829,13 @@ components:
 
     SetWorkspacePermissionRoles:
       description: >-
-        Privileged, standalone only. Set (an array) or clear (null) the default
+        Standalone only. Set (an array) or clear (null) the default
         permission roles of `workspaceId`. R allows reading, E editing, D
         deleting; they are independent switches, and an empty array turns all
         three off. Without a default (null) agents launched in the Workspace
         have no roles, which allows everything. Only agents launched after the
         change use the new default. On success the host rebroadcasts
-        `workspacesLoaded`; on failure it replies `workspaceRejected`. A
-        read-only client gets `workspacesLoaded` back.
+        `workspacesLoaded`; on failure it replies `workspaceRejected`.
       type: object
       additionalProperties: false
       required: [type, workspaceId, roles]
@@ -1772,7 +1859,7 @@ components:
     AgentGuardStatus:
       description: >-
         Standalone only (an embedded VS Code host never sends it), one per
-        agent, broadcast to every connected office including read-only ones.
+        agent, broadcast to every connected office.
         Reports whether the write-guard rules really apply to the agent: the
         evidence is that the hook chain delivered a verdict request for the
         agent's current session, not the settings. `active` is false while any
@@ -1820,10 +1907,14 @@ components:
 
     UnsetWorkspaceCurator:
       description: >-
-        Privileged, standalone only. Dismiss the curator of `workspaceId`. On
-        success the host broadcasts `workspaceCuratorChanged` with `agentId`
-        null; a Workspace without a curator is refused with `curatorRejected`
-        code `invalid`.
+        Standalone only. Dismiss the curator of `workspaceId` and
+        remove its KB Writer binding. On success the host broadcasts
+        `workspaceCuratorChanged` with `agentId` null (also when the slot was
+        already vacant but a binding existed) and, when a binding was removed,
+        `curatorBindingChanged` with `directoryPath` null; a Workspace with
+        neither a curator nor a binding is refused with `curatorRejected` code
+        `invalid`. If the removal cannot be saved, the requester alone also
+        gets a `workspaceRejected` (the binding may come back after a restart).
       type: object
       additionalProperties: false
       required: [type, workspaceId]
@@ -1835,7 +1926,7 @@ components:
 
     RequestRoles:
       description: >-
-        Privileged, standalone only. List the Roles in a registered Directory's
+        Standalone only. List the Roles in a registered Directory's
         `.claude/roles/`. Replied to this client only with `rolesAvailable`, or
         `roleRejected`.
       type: object
@@ -1850,7 +1941,7 @@ components:
 
     RequestRolePreview:
       description: >-
-        Privileged, standalone only. Read one listed Role for review. Replied
+        Standalone only. Read one listed Role for review. Replied
         to this client only with `rolePreview`, or `roleRejected`.
       type: object
       additionalProperties: false
@@ -1865,7 +1956,7 @@ components:
 
     ConfirmRole:
       description: >-
-        Privileged, standalone only. Trust the Role content the operator just
+        Standalone only. Trust the Role content the operator just
         reviewed. `sha256` is the hash from that `rolePreview`; the host
         re-reads the file and records the trust only when the hash still
         matches, replying `roleConfirmed` -- otherwise `roleRejected` (code
@@ -1882,6 +1973,36 @@ components:
           $ref: '#/components/schemas/RoleId'
         sha256:
           $ref: '#/components/schemas/RoleSha256'
+
+    ListKbFiles:
+      description: >-
+        List the text files in an agent's personal KB or a
+        Workspace KB. Replied to this client only with `kbFilesListed`, or
+        `kbRejected`.
+      type: object
+      additionalProperties: false
+      required: [type, target]
+      properties:
+        type:
+          const: listKbFiles
+        target:
+          $ref: '#/components/schemas/KbTarget'
+
+    ReadKbFile:
+      description: >-
+        Read one KB file, named by its path relative to the KB
+        root exactly as `kbFilesListed` gave it. Replied to this client only
+        with `kbFileRead`, or `kbRejected`.
+      type: object
+      additionalProperties: false
+      required: [type, target, relPath]
+      properties:
+        type:
+          const: readKbFile
+        target:
+          $ref: '#/components/schemas/KbTarget'
+        relPath:
+          $ref: '#/components/schemas/KbRelPath'
 
     RequestDirectorySuggestions:
       description: >-
@@ -2007,8 +2128,8 @@ components:
     RoleName:
       description: >-
         A Role's display name: its id without the `.md` suffix. Shown on agent
-        cards to every office, read-only ones included (the same exposure as a
-        Directory name); never the Role's content or hash.
+        cards to every office (the same exposure as a Directory name); never
+        the Role's content or hash.
       type: string
       pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
       maxLength: 64
@@ -2042,6 +2163,79 @@ components:
       type: string
       enum: [untrusted, invalid, unavailable, io]
 
+    KbTarget:
+      description: |
+        Which KB a request names: an agent's personal KB (by agent id) or a
+        Workspace KB (by Workspace id). One shape per scope, so the id's type
+        always matches its scope.
+      oneOf:
+        - $ref: '#/components/schemas/AgentKbTarget'
+        - $ref: '#/components/schemas/WorkspaceKbTarget'
+      discriminator: scope
+
+    AgentKbTarget:
+      description: >-
+        An agent's personal KB: `<the agent's Directory>/.note/<identity key>/`,
+        where the key is the agent's Role id (or the reserved key when it has
+        no Role). Only agents this host launched in a terminal have one.
+      type: object
+      additionalProperties: false
+      required: [scope, agentId]
+      properties:
+        scope:
+          const: agent
+        agentId:
+          type: integer
+
+    WorkspaceKbTarget:
+      description: "A Workspace KB: `<the Workspace's root>/.note/`."
+      type: object
+      additionalProperties: false
+      required: [scope, workspaceId]
+      properties:
+        scope:
+          const: workspace
+        workspaceId:
+          type: string
+          maxLength: 100
+
+    KbRelPath:
+      description: >-
+        A file's path relative to the KB root, `/`-separated (never `\`),
+        never absolute, with no empty, `.`, `..` or `.`-prefixed segment, at
+        most 8 segments and 1024 characters, ending in `.md` or `.txt`.
+      type: string
+      maxLength: 1024
+
+    KbFileEntry:
+      description: One file listed by `kbFilesListed`.
+      type: object
+      additionalProperties: false
+      required: [path, size]
+      properties:
+        path:
+          $ref: '#/components/schemas/KbRelPath'
+        size:
+          type: integer
+          description: File size in bytes.
+
+    KbRejectionReason:
+      description: |
+        Why a KB request was refused:
+        - `not_found`: no such agent, Workspace, KB or file (or a malformed
+          target).
+        - `too_large`: the file is larger than the read cap (64 KiB).
+        - `not_text`: the file's extension is not allowlisted, or its content
+          is not acceptable text.
+        - `unsafe`: the path is malformed or escapes the KB, or something on
+          the way is a symlink, hard link, FIFO or other non-plain entry, or
+          changed while it was being read.
+        - `unavailable`: KB browsing is not possible here (the agent has no
+          Directory or identity key, the Workspace has no root, an unsupported
+          platform, too many requests at once, or a host read error).
+      type: string
+      enum: [not_found, too_large, not_text, unsafe, unavailable]
+
     CuratorEntry:
       description: One Workspace's curator.
       type: object
@@ -2052,6 +2246,19 @@ components:
           type: string
         agentId:
           type: integer
+
+    CuratorBinding:
+      description: >-
+        One Workspace's KB Writer binding: the realpath of the Directory its
+        appointed agent was launched in. Never the default Workspace.
+      type: object
+      additionalProperties: false
+      required: [workspaceId, directoryPath]
+      properties:
+        workspaceId:
+          type: string
+        directoryPath:
+          type: string
 
     CuratorRejectionCode:
       description: |

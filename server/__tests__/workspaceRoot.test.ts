@@ -56,7 +56,7 @@ function workspace(name: string, dirs: string[] = []): string {
   return result.id;
 }
 
-const ctx = (privileged = true): ClientMessageContext => ({ store, cache: null, privileged });
+const ctx = (): ClientMessageContext => ({ store, cache: null });
 function send(msg: Record<string, unknown>, context = ctx()): Array<Record<string, unknown>> {
   const replies: Array<Record<string, unknown>> = [];
   handleClientMessage(msg, (m) => replies.push(m), context);
@@ -187,16 +187,6 @@ describe('setWorkspaceRoot', () => {
     expect(rootOf(id)).toBe(root);
     // 重設成同一個根目錄不算變更。
     expect(set(root)).toEqual([]);
-  });
-
-  it('refuses a read-only client and snaps it back with workspacesLoaded', () => {
-    const id = workspace('alpha');
-    const replies = send(
-      { type: 'setWorkspaceRoot', workspaceId: id, rootPath: mkdir('r') },
-      ctx(false),
-    );
-    expect(replies.map((m) => m.type)).toEqual(['workspacesLoaded']);
-    expect(rootOf(id)).toBeUndefined();
   });
 
   it('accepts a root on the default Workspace', () => {

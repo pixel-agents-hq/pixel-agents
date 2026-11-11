@@ -18,6 +18,7 @@ import { CONSENT_DISCLOSURE, CONSENT_INSTALL_HEADLINE } from './consentCopy.js';
 import {
   CLAUDE_APPEND_SYSTEM_PROMPT_FILE_FLAG,
   CLAUDE_LARGE_CONTEXT_WINDOW,
+  CLAUDE_MCP_CONFIG_FLAG,
   CLAUDE_SMALL_CONTEXT_MODEL_PATTERN,
   CLAUDE_SMALL_CONTEXT_WINDOW,
   CLAUDE_TERMINAL_NAME_PREFIX,
@@ -100,10 +101,23 @@ function getSessionDirs(workspacePath: string): string[] {
   return [projectDir];
 }
 
+/**
+ * Claude's launch options: the HookProvider ones plus `mcpConfig`, the
+ * `--mcp-config` JSON string task dispatch adds (server-local: the core
+ * interface is unchanged, so another provider simply never sees it -- the
+ * launcher checks the returned args before relying on it).
+ */
+export interface ClaudeLaunchOptions {
+  bypassPermissions?: boolean;
+  appendSystemPromptFile?: string;
+  resume?: boolean;
+  mcpConfig?: string;
+}
+
 function buildLaunchCommand(
   sessionId: string,
   cwd: string,
-  opts?: { bypassPermissions?: boolean; appendSystemPromptFile?: string; resume?: boolean },
+  opts?: ClaudeLaunchOptions,
 ): { command: string; args: string[]; env?: Record<string, string> } {
   // --resume continues the same session id (only --fork-session mints a new
   // one), so hook events and the transcript still map to the same agent.
@@ -114,6 +128,11 @@ function buildLaunchCommand(
   // (verified on 2.1.285) -- a Role is never silently dropped.
   if (opts?.appendSystemPromptFile !== undefined) {
     args.push(CLAUDE_APPEND_SYSTEM_PROMPT_FILE_FLAG, opts.appendSystemPromptFile);
+  }
+  // Last: the flag is variadic. The JSON names `node <shim>` only; the shim's
+  // capability and port are in the PTY env, never here.
+  if (opts?.mcpConfig !== undefined) {
+    args.push(CLAUDE_MCP_CONFIG_FLAG, opts.mcpConfig);
   }
   return { command: 'claude', args, env: { PWD: cwd } };
 }

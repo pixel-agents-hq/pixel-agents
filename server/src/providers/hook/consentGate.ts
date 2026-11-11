@@ -19,24 +19,19 @@ export interface ConsentGateState {
   /** Has this provider's ask been durably answered (config.json
    *  hooksConsent[providerId] holds 'granted' or 'declined')? */
   consentAnswered: boolean;
-  /** May this client's answer actually be acted on? Embedded webviews are
-   *  privileged by construction; a standalone connection must have proved the
-   *  server token. Showing the dialog to a client whose answer would be
-   *  ignored is a lie, so it gates the ASK and not just the response. */
-  privileged: boolean;
 }
 
 /**
  * The `hooksConsentRequest` for one provider's `webviewReady` handshake, or null when this client must not be asked.
  * Each condition is a reason the ask would be WRONG, not merely redundant: nothing to approve, already answered
- * durably, a preference turned off, or a client whose answer would be dropped. All four are checked in their own
- * right, so a hand-edited config cannot resurrect a retired ask.
+ * durably, or a preference turned off. All three are checked in their own right, so a hand-edited config cannot
+ * resurrect a retired ask.
  */
 export function hooksConsentRequest(
   state: ConsentGateState,
   provider: Pick<HookProvider, 'id' | 'consentDisclosure'>,
 ): HooksConsentRequest | null {
-  if (state.installed || state.consentAnswered || !state.hooksEnabled || !state.privileged) {
+  if (state.installed || state.consentAnswered || !state.hooksEnabled) {
     return null;
   }
   const { headline, disclosure } = provider.consentDisclosure();

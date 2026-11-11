@@ -53,6 +53,17 @@ export interface AgentState {
    *  restored, so its snapshot is never written. Undefined on every other agent
    *  = null. */
   permissionRoles?: PermissionRoles;
+  /** Whether this standalone PTY session was launched with
+   *  `--dangerously-skip-permissions` (the bypassPermissions option the launcher
+   *  passed to buildLaunchCommand). Set on every PTY launch, new or a started
+   *  record. Runtime-only: never persisted, never broadcast. Undefined on every
+   *  other agent; task dispatch treats undefined as "launched with bypass". */
+  launchedWithBypass?: boolean;
+  /** Turns completed (turn end that set isWaiting) since THIS PTY session
+   *  started: reset to 0 on every PTY launch, new or a started record, so a
+   *  resumed record's stale isWaiting cannot count before a new turn ends.
+   *  Runtime-only: never persisted, never broadcast. */
+  turnsCompletedThisSession?: number;
   /** Display name given when the agent was created (`createAgent`). Persisted
    *  with the record; absent means the agent is labelled by its Directory. */
   displayName?: string;
