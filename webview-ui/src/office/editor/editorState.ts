@@ -45,7 +45,7 @@ export class EditorState {
   // Floor color settings (applied to new tiles when painting)
   floorColor: ColorValue = { ...DEFAULT_FLOOR_COLOR };
 
-  // Wall color settings (applied to new wall tiles when painting)
+  // Wall colour (applied to wall tiles as they are painted, like the floor's)
   wallColor: ColorValue = { ...DEFAULT_WALL_COLOR };
 
   // Selected wall set index (0-based, indexes into loaded wall sets)
@@ -77,8 +77,7 @@ export class EditorState {
   /**
    * The run of edits the newest undo entry covers, so a continuous gesture
    * collapses to one undo: `'stroke'` for a floor / wall / erase / carpet
-   * click-drag, `'wallColor'` for the wall colour sliders, `` `color:${uid}` ``
-   * for a placed item's colour sliders. An edit pushes undo only when its key
+   * click-drag, `` `color:${uid}` `` for a placed item's colour sliders. An edit pushes undo only when its key
    * differs from this one (see {@link beginEdit}); null means the next edit
    * always starts a fresh entry. Cleared by endStroke (mouse up / leave, tool
    * change, Esc), by selection changes, and by undo / redo.

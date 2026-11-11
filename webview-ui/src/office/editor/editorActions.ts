@@ -49,7 +49,55 @@ export function paintTile(
   tiles[idx] = tileType;
   const tileColors = [...existingColors];
   tileColors[idx] = newColor;
+  // A tile that stops being a wall drops its wall set.
+  if (layout.wallSets?.[idx] != null && tileType !== TileType.WALL) {
+    const wallSets = [...layout.wallSets];
+    wallSets[idx] = null;
+    return { ...layout, tiles, tileColors, wallSets };
+  }
   return { ...layout, tiles, tileColors };
+}
+
+/** The set a wall tile wears (set 0 when the layout records none). */
+export function wallSetOf(layout: OfficeLayout, idx: number): number {
+  return layout.wallSets?.[idx] ?? 0;
+}
+
+/** Whether (col, row) is a wall of this set and colour. */
+export function isWallLike(
+  layout: OfficeLayout,
+  col: number,
+  row: number,
+  set: number,
+  color: ColorValue,
+): boolean {
+  const idx = row * layout.cols + col;
+  if (layout.tiles[idx] !== TileType.WALL || wallSetOf(layout, idx) !== set) return false;
+  const c = layout.tileColors?.[idx];
+  return !!c && c.h === color.h && c.s === color.s && c.b === color.b && c.c === color.c;
+}
+
+/**
+ * Paint a wall of `set` in `color` on (col, row) — a new wall, or a restyled
+ * one. Returns new layout (immutable); unchanged when it already is one.
+ */
+export function paintWall(
+  layout: OfficeLayout,
+  col: number,
+  row: number,
+  set: number,
+  color: ColorValue,
+): OfficeLayout {
+  const idx = row * layout.cols + col;
+  if (idx < 0 || idx >= layout.tiles.length) return layout;
+  if (isWallLike(layout, col, row, set, color)) return layout;
+  const painted = paintTile(layout, col, row, TileType.WALL, color);
+  if (wallSetOf(painted, idx) === set) return painted;
+  const wallSets = painted.wallSets
+    ? [...painted.wallSets]
+    : new Array<number | null>(painted.tiles.length).fill(null);
+  wallSets[idx] = set;
+  return { ...painted, wallSets };
 }
 
 /** Place furniture. Returns new layout (immutable). */
@@ -535,34 +583,36 @@ export function isFloorTile(layout: OfficeLayout, col: number, row: number): boo
 
 /**
  * One tile of a wall-tool stroke. The stroke's first tile decides its
- * direction (`adding`): adding paints a wall in `wallColor`; removing turns a
- * wall back into floor of the given pattern and colour and leaves non-walls
- * alone. Returns new layout (immutable).
+ * direction (`adding`): adding paints the wall (`set` in `color`) over
+ * anything, restyling walls of another set or colour; removing turns a wall
+ * back into floor of the given pattern and colour and leaves non-walls alone.
+ * Returns new layout (immutable).
  */
 export function wallStrokeTile(
   layout: OfficeLayout,
   col: number,
   row: number,
   adding: boolean,
-  wallColor: ColorValue,
+  wall: { set: number; color: ColorValue },
   floor: { type: TileTypeVal; color: ColorValue },
 ): OfficeLayout {
-  if (adding) return paintTile(layout, col, row, TileType.WALL, wallColor);
+  if (adding) return paintWall(layout, col, row, wall.set, wall.color);
   if (layout.tiles[row * layout.cols + col] !== TileType.WALL) return layout;
   return paintTile(layout, col, row, floor.type, floor.color);
 }
 
-/** Recolour every wall tile. Returns new layout (immutable); unchanged when there are no walls. */
-export function recolorWalls(layout: OfficeLayout, color: ColorValue): OfficeLayout {
-  if (!layout.tiles.includes(TileType.WALL)) return layout;
-  const existing = layout.tileColors || new Array(layout.tiles.length).fill(null);
-  const tileColors = existing.map((c, i) => (layout.tiles[i] === TileType.WALL ? { ...color } : c));
-  return { ...layout, tileColors };
-}
-
-/** Whether a wall stroke starting on (col, row) adds walls (it removes them when it starts on one). */
-export function wallStrokeAdds(layout: OfficeLayout, col: number, row: number): boolean {
-  return layout.tiles[row * layout.cols + col] !== TileType.WALL;
+/**
+ * Whether a wall stroke starting on (col, row) adds walls. It removes them
+ * only when it starts on the very wall it would paint (same set and colour),
+ * so clicking a wall toggles it, and dragging from a different wall restyles.
+ */
+export function wallStrokeAdds(
+  layout: OfficeLayout,
+  col: number,
+  row: number,
+  wall: { set: number; color: ColorValue },
+): boolean {
+  return !isWallLike(layout, col, row, wall.set, wall.color);
 }
 
 /** Whether an area stroke starting on (col, row) erases: it does when that tile already carries `label`. */
@@ -725,7 +775,7 @@ export function expandLayout(
   layout: OfficeLayout,
   direction: ExpandDirection,
 ): { layout: OfficeLayout; shift: { col: number; row: number } } | null {
-  const { cols, rows, tiles, furniture, tileColors, carpetTiles, areaTiles } = layout;
+  const { cols, rows, tiles, furniture, tileColors, carpetTiles, areaTiles, wallSets } = layout;
   const existingColors = tileColors || new Array(tiles.length).fill(null);
 
   let newCols = cols;
@@ -757,6 +807,9 @@ export function expandLayout(
   const newAreaTiles: Array<string | null> | undefined = areaTiles
     ? new Array<string | null>(newSize).fill(null)
     : undefined;
+  const newWallSets: Array<number | null> | undefined = wallSets
+    ? new Array<number | null>(newSize).fill(null)
+    : undefined;
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -769,6 +822,9 @@ export function expandLayout(
       }
       if (newAreaTiles && areaTiles) {
         newAreaTiles[newIdx] = areaTiles[oldIdx] ?? null;
+      }
+      if (newWallSets && wallSets) {
+        newWallSets[newIdx] = wallSets[oldIdx] ?? null;
       }
     }
   }
@@ -790,6 +846,7 @@ export function expandLayout(
       furniture: newFurniture,
       ...(newCarpetTiles ? { carpetTiles: newCarpetTiles } : {}),
       ...(newAreaTiles ? { areaTiles: newAreaTiles } : {}),
+      ...(newWallSets ? { wallSets: newWallSets } : {}),
     },
     shift: { col: shiftCol, row: shiftRow },
   };

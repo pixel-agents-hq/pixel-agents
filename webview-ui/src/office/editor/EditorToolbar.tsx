@@ -14,6 +14,7 @@ import {
   EMPTY_SPRITE_THUMBNAIL_BG,
   PET_THUMB_SCALE_MARGIN,
   PET_THUMB_ZOOM,
+  WALL_SET_LABELS,
 } from '../../constants.js';
 import { getColorizedSprite } from '../colorize.js';
 import { getColorizedFloorSprite, getFloorPatternCount, hasFloorSprites } from '../floorTiles.js';
@@ -32,7 +33,7 @@ import { getPetName, getPetSprites } from '../sprites/petSpriteData.js';
 import { getCachedSprite } from '../sprites/spriteCache.js';
 import type { AreaDefinition, CarpetTile, SpriteData, TileType as TileTypeVal } from '../types.js';
 import { EditTool } from '../types.js';
-import { getWallSetCount, getWallSetPreviewSprite } from '../wallTiles.js';
+import { getWallSetCount, getWallSetPreviewSprites } from '../wallTiles.js';
 
 /** Synthetic category id used to show the carpet sub-panel inside the Furniture tab. */
 const CARPET_CATEGORY_ID = '__carpet__' as const;
@@ -178,7 +179,7 @@ export function EditorToolbar({
   const thumbSize = 42; // 2x for items
 
   const isFloorActive = activeTool === EditTool.TILE_PAINT || activeTool === EditTool.EYEDROPPER;
-  const isWallActive = activeTool === EditTool.WALL_PAINT;
+  const isWallActive = activeTool === EditTool.WALL_PAINT || activeTool === EditTool.WALL_PICK;
   const isEraseActive = activeTool === EditTool.ERASE;
   const isCarpetActive =
     activeTool === EditTool.CARPET_PAINT || activeTool === EditTool.CARPET_PICK;
@@ -355,10 +356,18 @@ export function EditorToolbar({
       {/* Sub-panel: Wall — stacked bottom-to-top via column-reverse */}
       {isWallActive && (
         <div className="fade-stagger flex flex-col-reverse gap-4">
-          {/* Color toggle — just above tool row */}
+          {/* Copy + Color toggle — just above tool row */}
           <div className="flex gap-4 items-center">
             <Button
-              variant={showWallColor ? 'active' : 'default'}
+              variant={activeTool === EditTool.WALL_PICK ? 'active' : 'ghost'}
+              size="sm"
+              onClick={() => onToolChange(EditTool.WALL_PICK)}
+              title="Copy wall kind + color from an existing wall"
+            >
+              Copy
+            </Button>
+            <Button
+              variant={showWallColor ? 'active' : 'ghost'}
               size="sm"
               onClick={() => setShowWallColor((v) => !v)}
               title="Adjust wall color"
@@ -373,25 +382,23 @@ export function EditorToolbar({
               {Array.from({ length: getWallSetCount() }, (_, i) => (
                 <ItemSelect
                   key={i}
-                  width={32}
+                  width={64}
                   height={64}
                   selected={selectedWallSet === i}
                   onClick={() => onWallSetChange(i)}
-                  title={`Wall ${i + 1}`}
+                  title={WALL_SET_LABELS[i] ?? `Wall ${i + 1}`}
                   deps={[i, wallColor]}
                   draw={(ctx, w, h) => {
-                    const sprite = getWallSetPreviewSprite(i);
-                    if (!sprite) {
+                    const run = getWallSetPreviewSprites(i, wallColor);
+                    if (!run) {
                       ctx.fillStyle = CANVAS_FALLBACK_TILE_COLOR;
                       ctx.fillRect(0, 0, w, h);
                       return;
                     }
-                    const cacheKey = `wall-preview-${i}-${wallColor.h}-${wallColor.s}-${wallColor.b}-${wallColor.c}`;
-                    const colorized = getColorizedSprite(cacheKey, sprite, {
-                      ...wallColor,
-                      colorize: true,
+                    run.forEach((sprite, k) => {
+                      const piece = getCachedSprite(sprite, THUMB_ZOOM);
+                      ctx.drawImage(piece, k * piece.width, h - piece.height);
                     });
-                    ctx.drawImage(getCachedSprite(colorized, THUMB_ZOOM), 0, 0);
                   }}
                 />
               ))}

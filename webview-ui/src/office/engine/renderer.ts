@@ -860,6 +860,7 @@ export function renderFrame(
   showAreas?: boolean,
   activeAreaLabel?: string | null,
   pets?: Pet[],
+  wallSets?: Array<number | null>,
 ): { offsetX: number; offsetY: number } {
   // Clear
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
@@ -900,7 +901,9 @@ export function renderFrame(
   }
 
   // Build wall instances for z-sorting with furniture and characters
-  const wallInstances = hasWallSprites() ? getWallInstances(tileMap, tileColors, layoutCols) : [];
+  const wallInstances = hasWallSprites()
+    ? getWallInstances(tileMap, tileColors, layoutCols, wallSets)
+    : [];
   const allFurniture = wallInstances.length > 0 ? [...wallInstances, ...furniture] : furniture;
 
   // Draw walls + furniture + characters (z-sorted)
