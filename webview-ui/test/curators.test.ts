@@ -45,7 +45,6 @@ function card(
 ): string {
   const curators: AgentCuratorsValue = {
     state: INITIAL_CURATORS,
-    readOnly: false,
     workspaceOf: (id) => workspaceOf[id] ?? 'default',
     request: () => {},
     ...value,
@@ -69,7 +68,7 @@ function card(
 describe('curator state', () => {
   test('starts unavailable, as under VS Code (which never sends curatorsLoaded)', () => {
     assert.equal(INITIAL_CURATORS.available, false);
-    assert.equal(curatorControlsVisible(INITIAL_CURATORS, false), false);
+    assert.equal(curatorControlsVisible(INITIAL_CURATORS), false);
   });
 
   test('curatorsLoaded sets availability and the map; unavailable drops any list', () => {
@@ -96,26 +95,23 @@ describe('curator state', () => {
     assert.deepEqual(state.byWorkspace, {});
   });
 
-  test('controls are hidden when unavailable or read-only, shown otherwise', () => {
-    assert.equal(curatorControlsVisible(loaded(false), false), false);
-    assert.equal(curatorControlsVisible(loaded(false), true), false);
-    assert.equal(curatorControlsVisible(loaded(true), true), false);
-    assert.equal(curatorControlsVisible(loaded(true), false), true);
+  test('controls are hidden when unavailable, shown otherwise', () => {
+    assert.equal(curatorControlsVisible(loaded(false)), false);
+    assert.equal(curatorControlsVisible(loaded(true)), true);
   });
 
   test('the card offers appoint, dismiss or nothing', () => {
     const state = loaded(true, [{ workspaceId: 'w1', agentId: 2 }]);
-    assert.deepEqual(curatorCardAction(state, false, 2, 'w1'), {
+    assert.deepEqual(curatorCardAction(state, 2, 'w1'), {
       kind: 'dismiss',
       message: { type: 'unsetWorkspaceCurator', workspaceId: 'w1' },
     });
-    assert.deepEqual(curatorCardAction(state, false, 3, 'w1'), { kind: 'none' });
-    assert.deepEqual(curatorCardAction(state, false, 3, 'w2'), {
+    assert.deepEqual(curatorCardAction(state, 3, 'w1'), { kind: 'none' });
+    assert.deepEqual(curatorCardAction(state, 3, 'w2'), {
       kind: 'appoint',
       message: { type: 'setWorkspaceCurator', workspaceId: 'w2', agentId: 3 },
     });
-    assert.deepEqual(curatorCardAction(state, true, 3, 'w2'), { kind: 'none' });
-    assert.deepEqual(curatorCardAction(loaded(false), false, 3, 'w2'), { kind: 'none' });
+    assert.deepEqual(curatorCardAction(loaded(false), 3, 'w2'), { kind: 'none' });
   });
 
   test('a refusal is shown on the card that asked, and cleared by the next change', () => {
@@ -156,13 +152,7 @@ describe('curator controls on the agent card', () => {
     assert.equal(bare.includes('agent-card-curator'), false);
   });
 
-  test('no control in a read-only office', () => {
-    const html = card(7, { state: loaded(true), readOnly: true });
-    assert.equal(html.includes('agent-card-curator-set'), false);
-    assert.equal(html.includes('agent-card-curator-unset'), false);
-  });
-
-  test('an appoint control when available and privileged', () => {
+  test('an appoint control when available', () => {
     const html = card(7, { state: loaded(true) });
     assert.ok(html.includes('data-testid="agent-card-curator-set"'));
     assert.ok(html.includes('>Make curator<'));
@@ -175,11 +165,6 @@ describe('curator controls on the agent card', () => {
     assert.ok(html.includes('data-testid="agent-card-curator"'));
     assert.ok(html.includes('>Curator<'));
     assert.ok(html.includes('data-testid="agent-card-curator-unset"'));
-
-    // Read-only: the badge stays, the control goes.
-    const readOnly = card(7, { state, readOnly: true }, { 7: 'w1' });
-    assert.ok(readOnly.includes('data-testid="agent-card-curator"'));
-    assert.equal(readOnly.includes('agent-card-curator-unset'), false);
   });
 
   test('a refusal reason renders as plain text', () => {

@@ -13,7 +13,6 @@ import { DEFAULT_WORKSPACE_ID } from './workspaces.js';
 
 export interface AgentCuratorsValue {
   state: CuratorState;
-  readOnly: boolean;
   /** The Workspace an agent belongs to (the default's id when none). */
   workspaceOf: (agentId: number) => string;
   /** Send a curator request from an agent's card. */
@@ -22,7 +21,6 @@ export interface AgentCuratorsValue {
 
 const AgentCuratorsContext = createContext<AgentCuratorsValue>({
   state: INITIAL_CURATORS,
-  readOnly: true,
   workspaceOf: () => DEFAULT_WORKSPACE_ID,
   request: () => {},
 });

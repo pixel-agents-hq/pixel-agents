@@ -169,7 +169,7 @@ describe('field extraction for write tools (F7)', () => {
     startedAt: 0,
     servesSpa: true,
     protocol: 1,
-    standalone: { terminal: true, host: '127.0.0.1', allowedHosts: [] },
+    standalone: { terminal: true, host: '127.0.0.1' },
   };
   const plan = (p: Record<string, unknown>, roots: string[]) =>
     planGuard(p, [server], {

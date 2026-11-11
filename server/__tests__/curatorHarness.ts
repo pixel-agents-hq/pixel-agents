@@ -152,7 +152,6 @@ export class KbHarness {
     return {
       store: this.store,
       cache: null,
-      privileged: true,
       runtime: this.runtime,
       ptyManager: this.manager,
       capabilities: this.capabilities,

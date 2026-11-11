@@ -2,8 +2,6 @@
  * The curator client messages: setWorkspaceCurator / unsetWorkspaceCurator,
  * and the curatorsLoaded handshake reply.
  *
- * Both requests are privileged; a read-only client never reaches here (the
- * refuseReadOnly gate in clientMessageHandler drops them without a reply).
  * The wire schema is not enforced at runtime, so every field is checked here.
  * A success is broadcast by the CuratorTable (workspaceCuratorChanged, ids
  * only); a refusal answers the sender alone with a fixed reason string.
@@ -14,6 +12,8 @@ import type { CuratorRejectionCode as WireCuratorRejectionCode } from '../../cor
 import type { AgentRuntime } from './agentRuntime.js';
 import { workspaceKeyExists } from './capabilities.js';
 import {
+  CURATOR_BINDING_REMOVE_FAILED_REASON,
+  CURATOR_BINDING_SAVE_FAILED_REASON,
   CURATOR_EXISTS_REASON,
   CURATOR_INVALID_REASON,
   CURATOR_NOT_ELIGIBLE_REASON,
@@ -54,7 +54,9 @@ export function curatorsAvailable(host: CuratorHost): boolean {
   return host.ptyManager !== undefined && host.runtime !== undefined && host.curators !== undefined;
 }
 
-/** The handshake reply: every current curator, ids only. */
+/** The handshake reply: every current curator (ids only) and every KB Writer
+ *  binding (Workspace id + Directory realpath; never the roleId); the paths
+ *  already ride workspacesLoaded. */
 export function curatorsLoadedMessage(
   available: boolean,
   curators: CuratorTable | undefined,
@@ -63,7 +65,22 @@ export function curatorsLoadedMessage(
     type: 'curatorsLoaded',
     available,
     curators: available && curators ? curators.list() : [],
+    bindings: available && curators?.bindings ? curators.bindings.wireList() : [],
   };
+}
+
+/** 綁定寫不進磁碟時，以 workspaceRejected 只告訴操作者（記憶體中的變更照樣生效）。 */
+function reportBindingPersistence(
+  persisted: Promise<boolean> | null,
+  reason: string,
+  reply: (message: Record<string, unknown>) => void,
+): void {
+  if (!persisted) return;
+  void persisted
+    .then((ok) => {
+      if (!ok) reply({ type: 'workspaceRejected', reason });
+    })
+    .catch(() => undefined);
 }
 
 export interface CuratorMessageDeps {
@@ -103,8 +120,15 @@ export function handleCuratorClientMessage(
   }
 
   if (msg.type === 'unsetWorkspaceCurator') {
+    // 名額空著但還有綁定也算成功：綁定一併刪除（記憶體與廣播先行）。
     const result = curators.dismiss(msg.workspaceId);
     if (!result.ok) deps.reply(curatorRejectedMessage(result.code));
+    else
+      reportBindingPersistence(
+        result.persisted ?? null,
+        CURATOR_BINDING_REMOVE_FAILED_REASON,
+        deps.reply,
+      );
     return true;
   }
 
@@ -113,6 +137,15 @@ export function handleCuratorClientMessage(
     return true;
   }
   const result = curators.appoint(msg.workspaceId, msg.agentId);
-  if (!result.ok) deps.reply(curatorRejectedMessage(result.code));
+  if (!result.ok) {
+    deps.reply(curatorRejectedMessage(result.code));
+    return true;
+  }
+  // 操作者指定（含建立 agent 後由前端送出的這一則）：非預設 Workspace 記錄綁定。
+  reportBindingPersistence(
+    curators.bind(msg.workspaceId, msg.agentId),
+    CURATOR_BINDING_SAVE_FAILED_REASON,
+    deps.reply,
+  );
   return true;
 }
