@@ -86,8 +86,11 @@ export class StandalonePcShells extends PcShellRegistry {
   /**
    * Bring back the shells whose terminals outlived the last server (only the
    * PTY host keeps them; in process there are none), under their own ids and
-   * with what they were announced with. Saved shells with no terminal (ended
-   * with the last server, or while none ran) are dropped. Runs before the
+   * with what they were announced with. A survivor with no saved record (the
+   * state file lost or corrupt) still gets a card of its own — `Home`, no
+   * piece — so it can be seen and closed; a shell outlives its piece anyway.
+   * Saved shells with no terminal (ended with the last server, or while none
+   * ran) are dropped. Runs before the
    * server accepts connections, so the first office's snapshot lists them.
    */
   restore(): number[] {
@@ -101,12 +104,12 @@ export class StandalonePcShells extends PcShellRegistry {
       // terminal under it would kill that one).
       this.reserve(id);
       if (this.has(id)) continue;
-      const record = saved.get(id);
+      let record = saved.get(id);
       if (!record) {
         console.warn(
-          `[Pixel Agents] PC shell ${id} - running in the PTY host with no saved record; left out of the office.`,
+          `[Pixel Agents] PC shell ${id} - running in the PTY host with no saved record; kept as a card of its own.`,
         );
-        continue;
+        record = { id, uid: '', furnitureType: '', cwd: os.homedir() };
       }
       this.adopt(record, terminalOf(ptyManager, session));
       restored.push(id);

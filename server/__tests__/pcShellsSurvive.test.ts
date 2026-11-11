@@ -109,6 +109,30 @@ describe('PC shells across a server restart, with the PTY host', () => {
   });
 });
 
+describe('PC shells the PTY host kept without a saved record', () => {
+  const h = useStandaloneOffice(options('pxl-pcs-orphan', true));
+  const shells = pcShellDriver(h);
+
+  it('come back as a card of their own (Home, no piece), and close from it', async () => {
+    const id = (await shells.open(FRONT_PC)).id as number;
+    await h.restart(() => {
+      // The state file lost: the terminal still runs in the host.
+      new FileStateAdapter({ namespace: 'standalone' }).savePcShells([]);
+    });
+
+    expect(shells.shells()).toEqual([{ id, uid: '', furnitureType: '' }]);
+    expect(h.pcShells.has(id)).toBe(true);
+    const term = await shells.attach(id);
+    term.type('echo ORPHAN-$((40+2))\r');
+    await term.waitFor(/ORPHAN-42/);
+
+    shells.close(id, { confirmed: true });
+    await waitFor(() => shells.shells()?.length === 0, 'the card gone');
+    await waitFor(() => term.exited(), 'the shell ended');
+    term.close();
+  });
+});
+
 describe('PC shells across a server restart, in process (the shipped default)', () => {
   const h = useStandaloneOffice(options('pxl-pcs-inproc', false));
   const shells = pcShellDriver(h);
