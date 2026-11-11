@@ -13,16 +13,13 @@ import { unlockAudio } from '../../notificationSound.js';
 import { transport } from '../../transport/index.js';
 import { furnitureAt } from '../editor/editorActions.js';
 import { buildEditorRenderState } from '../editor/editorRenderState.js';
-import type { EditorState } from '../editor/editorState.js';
+import type { EditorState, SelectionButton } from '../editor/editorState.js';
 import { startGameLoop } from '../engine/gameLoop.js';
 import type { OfficeState } from '../engine/officeState.js';
-import type {
-  DeleteButtonBounds,
-  EditorRenderState,
-  RotateButtonBounds,
-  SelectionRenderState,
-} from '../engine/renderer.js';
+import type { EditorRenderState, SelectionRenderState } from '../engine/renderer.js';
 import { renderFrame } from '../engine/renderer.js';
+import type { ButtonBounds } from '../engine/selectionButtons.js';
+import { selectionButtonAt as buttonAt } from '../engine/selectionButtons.js';
 import { EditTool, TILE_SIZE } from '../types.js';
 import { computeNormalModeCursor } from './officeCanvasCursor.js';
 import { useCanvasTouchGestures } from './useCanvasTouchGestures.js';
@@ -91,8 +88,8 @@ export function OfficeCanvas({
   const isPanningRef = useRef(false);
   const panStartRef = useRef({ mouseX: 0, mouseY: 0, panX: 0, panY: 0 });
   // Delete/rotate button bounds (updated each frame by renderer)
-  const deleteButtonBoundsRef = useRef<DeleteButtonBounds | null>(null);
-  const rotateButtonBoundsRef = useRef<RotateButtonBounds | null>(null);
+  const deleteButtonBoundsRef = useRef<ButtonBounds | null>(null);
+  const rotateButtonBoundsRef = useRef<ButtonBounds | null>(null);
   // Right-click erase dragging
   const isEraseDraggingRef = useRef(false);
   // Zoom scroll accumulator for trackpad pinch sensitivity
@@ -137,12 +134,7 @@ export function OfficeCanvas({
 
     resizeCanvas();
 
-    const observer = new ResizeObserver(() => resizeCanvas());
-    if (containerRef.current) {
-      observer.observe(containerRef.current);
-    }
-
-    const stop = startGameLoop(canvas, {
+    const loop = startGameLoop(canvas, {
       update: (dt) => {
         officeState.update(dt);
       },
@@ -225,8 +217,19 @@ export function OfficeCanvas({
       },
     });
 
+    // Resizing clears the canvas after this frame's render ran, so draw again
+    // at once: a container that grows or shrinks every frame (the sidebar
+    // sliding) would otherwise flash blank.
+    const observer = new ResizeObserver(() => {
+      resizeCanvas();
+      loop.redraw();
+    });
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
     return () => {
-      stop();
+      loop.stop();
       observer.disconnect();
     };
   }, [
@@ -285,23 +288,16 @@ export function OfficeCanvas({
     [screenToWorld, officeState, isEditMode, editorState],
   );
 
-  // Check if device-pixel coords hit the delete button
-  const hitTestDeleteButton = useCallback((deviceX: number, deviceY: number): boolean => {
-    const bounds = deleteButtonBoundsRef.current;
-    if (!bounds) return false;
-    const dx = deviceX - bounds.cx;
-    const dy = deviceY - bounds.cy;
-    return dx * dx + dy * dy <= (bounds.radius + 2) * (bounds.radius + 2); // small padding
-  }, []);
-
-  // Check if device-pixel coords hit the rotate button
-  const hitTestRotateButton = useCallback((deviceX: number, deviceY: number): boolean => {
-    const bounds = rotateButtonBoundsRef.current;
-    if (!bounds) return false;
-    const dx = deviceX - bounds.cx;
-    const dy = deviceY - bounds.cy;
-    return dx * dx + dy * dy <= (bounds.radius + 2) * (bounds.radius + 2);
-  }, []);
+  /** Which of the selected item's buttons is under these device-pixel coords. */
+  const selectionButtonAt = useCallback(
+    (deviceX: number, deviceY: number): SelectionButton | null =>
+      buttonAt(
+        { delete: deleteButtonBoundsRef.current, rotate: rotateButtonBoundsRef.current },
+        deviceX,
+        deviceY,
+      ),
+    [],
+  );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
@@ -378,14 +374,15 @@ export function OfficeCanvas({
         const canvas = canvasRef.current;
         if (canvas) {
           if (editorState.isDragMoving) {
+            editorState.selectionButtonHover = null;
             canvas.style.cursor = dragMoveCursor(editorState);
           } else {
             const pos = screenToWorld(e.clientX, e.clientY);
-            if (
-              pos &&
-              (hitTestDeleteButton(pos.deviceX, pos.deviceY) ||
-                hitTestRotateButton(pos.deviceX, pos.deviceY))
-            ) {
+            // The renderer lights the hovered button up.
+            editorState.selectionButtonHover = pos
+              ? selectionButtonAt(pos.deviceX, pos.deviceY)
+              : null;
+            if (editorState.selectionButtonHover) {
               canvas.style.cursor = 'pointer';
             } else if (
               (editorState.activeTool === EditTool.FURNITURE_PICK ||
@@ -442,8 +439,7 @@ export function OfficeCanvas({
       onEditorTileAction,
       onEditorEraseAction,
       panRef,
-      hitTestDeleteButton,
-      hitTestRotateButton,
+      selectionButtonAt,
       clampPan,
     ],
   );
@@ -490,14 +486,12 @@ export function OfficeCanvas({
 
       if (!isEditMode) return;
 
-      // Check rotate/delete button hit first
+      // Rotate / delete buttons first. A press only sinks the button; it acts
+      // on release over the same button (handleMouseUp), so sliding off cancels.
       const pos = screenToWorld(e.clientX, e.clientY);
-      if (pos && hitTestRotateButton(pos.deviceX, pos.deviceY)) {
-        onRotateSelected();
-        return;
-      }
-      if (pos && hitTestDeleteButton(pos.deviceX, pos.deviceY)) {
-        onDeleteSelected();
+      const button = pos ? selectionButtonAt(pos.deviceX, pos.deviceY) : null;
+      if (button) {
+        editorState.selectionButtonPressed = button;
         return;
       }
 
@@ -543,10 +537,7 @@ export function OfficeCanvas({
       onEditorTileAction,
       onEditorEraseAction,
       onEditorSelectionChange,
-      onDeleteSelected,
-      onRotateSelected,
-      hitTestDeleteButton,
-      hitTestRotateButton,
+      selectionButtonAt,
       panRef,
     ],
   );
@@ -564,6 +555,18 @@ export function OfficeCanvas({
         // Close the in-progress stroke so the next stroke starts a fresh undo
         // entry instead of bundling into this one.
         editorState.endStroke();
+        return;
+      }
+
+      // A rotate / delete press ends: act if released over the same button.
+      if (editorState.selectionButtonPressed) {
+        const pressed = editorState.selectionButtonPressed;
+        editorState.selectionButtonPressed = null;
+        const pos = screenToWorld(e.clientX, e.clientY);
+        if (pos && selectionButtonAt(pos.deviceX, pos.deviceY) === pressed) {
+          if (pressed === 'rotate') onRotateSelected();
+          else onDeleteSelected();
+        }
         return;
       }
 
@@ -597,7 +600,16 @@ export function OfficeCanvas({
       // undo entry — one click-drag collapses to a single undo.
       editorState.endStroke();
     },
-    [editorState, isEditMode, onDrop, onEditorSelectionChange],
+    [
+      editorState,
+      isEditMode,
+      onDrop,
+      onEditorSelectionChange,
+      onRotateSelected,
+      onDeleteSelected,
+      screenToWorld,
+      selectionButtonAt,
+    ],
   );
 
   // Shared by mouse click and touch tap — both resolve a viewport point to a
@@ -697,6 +709,8 @@ export function OfficeCanvas({
 
   const handleMouseLeave = useCallback(() => {
     isPanningRef.current = false;
+    editorState.selectionButtonHover = null;
+    editorState.selectionButtonPressed = null;
     isEraseDraggingRef.current = false;
     editorState.isDragging = false;
     editorState.endStroke();

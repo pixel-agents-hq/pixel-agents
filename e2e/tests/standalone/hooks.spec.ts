@@ -8,12 +8,15 @@ import type { TestHooksWindow } from '../../helpers/editor';
 import {
   ourHookEvents,
   sendHookEvent,
+  sessionEndClear,
   sessionEndExit,
+  sessionStartClear,
   sessionStartStartup,
 } from '../../helpers/hooks';
 import { advanceIntroToConsentStep, finishIntro } from '../../helpers/intro';
-import { expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
+import { expectContextGauge, expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
 import type { RecordedServerMessage } from '../../helpers/standalone';
+import { getClaudeProjectDir } from '../../helpers/team';
 import { openSettingsModal, setSettings } from '../../helpers/webview';
 
 test.describe('Standalone / hooks', () => {
@@ -108,6 +111,56 @@ test.describe('Standalone / hooks', () => {
   });
 });
 
+test.describe('Standalone / context after /clear', () => {
+  // /clear empties the context: a real 0, so the gauge over the character and
+  // the bar along the agent's card both drop to FULL rather than vanishing.
+  test('a cleared session shows a full gauge on the character and the card @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    await setSettings(page, { alwaysShowLabels: true, watchAllSessions: true });
+    const projectDir = getClaudeProjectDir(standalone.tmpHome, standalone.workspaceDir);
+    fs.mkdirSync(projectDir, { recursive: true });
+
+    // A session halfway through a 200k window.
+    const before = 'standalone-clear-before';
+    const beforeTranscript = path.join(projectDir, `${before}.jsonl`);
+    const turn = {
+      type: 'assistant',
+      message: { role: 'assistant', content: [], usage: { cache_read_input_tokens: 100_000 } },
+    };
+    fs.writeFileSync(beforeTranscript, `${JSON.stringify(turn)}\n`);
+    await sendHookEvent(
+      standalone.hookServerConfig,
+      sessionStartStartup(before, standalone.workspaceDir, beforeTranscript),
+    );
+    await sendHookEvent(standalone.hookServerConfig, {
+      session_id: before,
+      hook_event_name: 'Stop',
+    });
+    await expectContextGauge(page, 50);
+    const cardBar = page.getByTestId('card-context-bar');
+    await expect(cardBar).toHaveAttribute('title', '50% context left');
+
+    // /clear: SessionEnd(clear), then SessionStart(clear) on a fresh transcript.
+    const after = 'standalone-clear-after';
+    const afterTranscript = path.join(projectDir, `${after}.jsonl`);
+    const clearRecord = {
+      type: 'user',
+      message: { role: 'user', content: '<command-name>/clear</command-name>' },
+    };
+    fs.writeFileSync(afterTranscript, `${JSON.stringify(clearRecord)}\n`);
+    await sendHookEvent(standalone.hookServerConfig, sessionEndClear(before));
+    await sendHookEvent(
+      standalone.hookServerConfig,
+      sessionStartClear(after, standalone.workspaceDir, afterTranscript),
+    );
+
+    await expectContextGauge(page, 0);
+    await expect(cardBar).toHaveAttribute('title', '100% context left');
+  });
+});
+
 /**
  * The standalone consent path end to end. The fixture normally seeds a granted Claude consent; these opt out, so the
  * CLI starts with nothing installed and the server asks over the tokened /ws handshake — the SAME in-app dialog the
@@ -190,7 +243,7 @@ test.describe('Standalone / hooks consent', () => {
     void standalone;
     const spectator = await openSpectator(page);
     try {
-      for (const name of ['Settings', 'Layout', '+ Agent']) {
+      for (const name of ['Settings', 'Layout', 'New agent']) {
         await expect(spectator.getByRole('button', { name, exact: true })).toHaveCount(0);
       }
       await expect(spectator.getByText('View only', { exact: true })).toBeVisible();

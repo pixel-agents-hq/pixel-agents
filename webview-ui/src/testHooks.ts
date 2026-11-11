@@ -15,6 +15,9 @@ declare global {
         waitingAwaitingInput?: boolean;
         isHeadless?: boolean;
         isGreeter?: boolean;
+        /** The character profile it wears, and which copy of it (0 = the first). */
+        palette: number;
+        repeat: number;
       }>;
       /** The character the camera follows (null = free camera). */
       getCameraFollowId?: () => number | null;
@@ -152,6 +155,8 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       waitingAwaitingInput: ch.waitingAwaitingInput,
       isHeadless: ch.isHeadless,
       isGreeter: ch.isGreeter,
+      palette: ch.palette,
+      repeat: ch.repeat,
     }));
   };
 
@@ -320,7 +325,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
   OfficeState.prototype.addAgent = function (
     id,
     preferredPalette,
-    preferredHueShift,
+    preferredRepeat,
     preferredSeatId,
     skipSpawnEffect,
     directoryName,
@@ -330,7 +335,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       this,
       id,
       preferredPalette,
-      preferredHueShift,
+      preferredRepeat,
       preferredSeatId,
       skipSpawnEffect,
       directoryName,

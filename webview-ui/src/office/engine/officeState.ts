@@ -1,7 +1,5 @@
-import { pickDiversePalette } from '../../../../core/src/paletteUtils.js';
+import { chooseLook } from '../../../../core/src/paletteUtils.js';
 import {
-  AUTO_ON_FACING_DEPTH,
-  AUTO_ON_SIDE_DEPTH,
   CHARACTER_HIT_HALF_WIDTH,
   CHARACTER_HIT_HEIGHT,
   CHARACTER_SITTING_OFFSET_PX,
@@ -16,6 +14,7 @@ import {
   PET_HIT_HEIGHT,
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
+import { contextUsedShare } from '../contextGauge.js';
 import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
 import {
   createDefaultLayout,
@@ -25,6 +24,7 @@ import {
   layoutToTileMap,
 } from '../layout/layoutSerializer.js';
 import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
+import { pairWorkstations } from '../layout/workstations.js';
 import { getPetCount, getPetName } from '../sprites/petSpriteData.js';
 import { getLoadedCharacterCount } from '../sprites/spriteData.js';
 import type {
@@ -38,23 +38,48 @@ import type {
   TileType as TileTypeVal,
 } from '../types.js';
 import { CharacterState, Direction, PetState, TILE_SIZE } from '../types.js';
-import { createCharacter, updateCharacter } from './characters.js';
+import { tickBlink } from './blink.js';
+import { createCharacter, restInChair, updateCharacter, updateHelper } from './characters.js';
 import { advanceMatrixEffect, startMatrixEffect } from './matrixEffectState.js';
 import { createPet, updatePet } from './petEntity.js';
 import { anchorTile, closestFreeSeat } from './seatPlacement.js';
 
-/** Internal helper: facing-tile coords for a seat. Returns null for invalid direction. */
-function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } {
-  if (direction === Direction.RIGHT) return { dCol: 1, dRow: 0 };
-  if (direction === Direction.LEFT) return { dCol: -1, dRow: 0 };
-  if (direction === Direction.DOWN) return { dCol: 0, dRow: 1 };
-  return { dCol: 0, dRow: -1 };
+/** Whether a character sits in a chair: helpers stand by their lead, and a
+ *  departing character is leaving. */
+function takesSeat(ch: Character): boolean {
+  return !ch.isSubagent && ch.matrixEffect !== 'despawn';
+}
+
+type Tile = { col: number; row: number };
+
+function sameSet<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
+  return a.size === b.size && [...a].every((x) => b.has(x));
+}
+
+/** Score by steps from `from` (Manhattan distance). */
+function manhattanFrom(from: Tile): (tile: Tile) => number {
+  return (tile) => Math.abs(tile.col - from.col) + Math.abs(tile.row - from.row);
+}
+
+/** Score by rings around `home`: the 8 tiles around it before any 2 away, so
+ *  helpers surround their lead instead of lining up beside it (a diagonal
+ *  neighbour and a tile 2 straight away are equally far in steps). */
+function ringsAround(home: Tile): (tile: Tile) => number {
+  return (tile) => {
+    const dc = Math.abs(tile.col - home.col);
+    const dr = Math.abs(tile.row - home.row);
+    return Math.max(dc, dr) * 1000 + dc + dr;
+  };
 }
 
 export class OfficeState {
   layout: OfficeLayout;
   tileMap: TileTypeVal[][];
   seats: Map<string, Seat>;
+  /** Seat uid → the uid of the PC that seat works at (workstations.ts). */
+  seatWorkstations: Map<string, string> = new Map();
+  /** The PCs lit in the current furniture instances. */
+  private litPcs: ReadonlySet<string> = new Set();
   blockedTiles: Set<string>;
   furniture: FurnitureInstance[];
   walkableTiles: Array<{ col: number; row: number }>;
@@ -87,6 +112,13 @@ export class OfficeState {
   /** Reverse lookup: sub-agent character ID → parent info */
   subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }> = new Map();
   private nextSubagentId = -1;
+  /** Where each sub-agent stood when a resync detached it ("parentId:toolId" →
+   *  spot). A sub the resync replay re-creates returns there without a spawn
+   *  effect; one it doesn't was stale and stays gone. */
+  private resyncSubagentSpots = new Map<
+    string,
+    { x: number; y: number; tileCol: number; tileRow: number; dir: Character['dir'] }
+  >();
 
   /**
    * directoryName → list of Area labels that Directory belongs to.
@@ -125,6 +157,7 @@ export class OfficeState {
     this.layout = layout || createDefaultLayout();
     this.tileMap = layoutToTileMap(this.layout);
     this.seats = layoutToSeats(this.layout.furniture);
+    this.seatWorkstations = pairWorkstations(this.seats, this.layout.furniture, getCatalogEntry);
     this.blockedTiles = getBlockedTiles(this.layout.furniture);
     this.furniture = layoutToFurnitureInstances(this.layout.furniture);
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles);
@@ -138,6 +171,7 @@ export class OfficeState {
     this.layout = layout;
     this.tileMap = layoutToTileMap(layout);
     this.seats = layoutToSeats(layout.furniture);
+    this.seatWorkstations = pairWorkstations(this.seats, layout.furniture, getCatalogEntry);
     this.blockedTiles = getBlockedTiles(layout.furniture);
     this.rebuildFurnitureInstances();
     this.walkableTiles = getWalkableTiles(this.tileMap, this.blockedTiles);
@@ -194,7 +228,7 @@ export class OfficeState {
 
     // Second pass: assign remaining characters to free seats
     for (const ch of this.characters.values()) {
-      if (ch.seatId) continue;
+      if (ch.seatId || !takesSeat(ch)) continue;
       const seatId = this.findFreeSeat(ch.directoryName);
       if (seatId) {
         this.seats.get(seatId)!.assigned = true;
@@ -283,21 +317,6 @@ export class OfficeState {
     return result;
   }
 
-  /** Collect every tile occupied by electronics furniture (PCs, monitors, etc.). */
-  private buildElectronicsTileSet(): Set<string> {
-    const out = new Set<string>();
-    for (const item of this.layout.furniture) {
-      const entry = getCatalogEntry(item.type);
-      if (!entry || entry.category !== 'electronics') continue;
-      for (let dr = 0; dr < entry.footprintH; dr++) {
-        for (let dc = 0; dc < entry.footprintW; dc++) {
-          out.add(`${item.col + dc},${item.row + dr}`);
-        }
-      }
-    }
-    return out;
-  }
-
   /** Find the area label assigned to a seat's tile, or null. Public for e2e
    *  observability (getAgentSeats hook reads a seated agent's area). */
   seatZone(uid: string): string | null {
@@ -311,44 +330,17 @@ export class OfficeState {
   }
 
   /**
-   * Does this seat face an electronics tile (PC, monitor)? Mirrors the
-   * forward-and-flanking scan used by furniture auto-state.
+   * Random-pick a seat from a candidate list, biased toward seats that have a
+   * PC of their own (see workstations.ts). Returns null when the list is empty.
    */
-  private isSeatFacingElectronics(seat: Seat, electronicsTiles: Set<string>): boolean {
-    const { dCol, dRow } = seatFacingOffset(seat.facingDir);
-    for (let d = 1; d <= AUTO_ON_FACING_DEPTH; d++) {
-      const tileCol = seat.seatCol + dCol * d;
-      const tileRow = seat.seatRow + dRow * d;
-      if (electronicsTiles.has(`${tileCol},${tileRow}`)) return true;
-      if (dCol !== 0) {
-        if (
-          electronicsTiles.has(`${tileCol},${tileRow - 1}`) ||
-          electronicsTiles.has(`${tileCol},${tileRow + 1}`)
-        ) {
-          return true;
-        }
-      } else if (
-        electronicsTiles.has(`${tileCol - 1},${tileRow}`) ||
-        electronicsTiles.has(`${tileCol + 1},${tileRow}`)
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Random-pick a seat from a candidate list, biased toward seats that face an
-   * electronics tile. Returns null when the candidate list is empty.
-   */
-  private pickFromSeats(seatUids: string[], electronicsTiles: Set<string>): string | null {
+  private pickFromSeats(seatUids: string[]): string | null {
     if (seatUids.length === 0) return null;
     const pcSeats: string[] = [];
     const otherSeats: string[] = [];
     for (const uid of seatUids) {
       const seat = this.seats.get(uid);
       if (!seat) continue;
-      if (this.isSeatFacingElectronics(seat, electronicsTiles)) {
+      if (this.seatWorkstations.has(uid)) {
         pcSeats.push(uid);
       } else {
         otherSeats.push(uid);
@@ -374,7 +366,6 @@ export class OfficeState {
    * unzoned seats from a layout without `areaTiles`, which is every seat).
    */
   private findFreeSeat(directoryName?: string): string | null {
-    const electronicsTiles = this.buildElectronicsTileSet();
     const freeSeats: string[] = [];
     for (const [uid, seat] of this.seats) {
       if (!seat.assigned) freeSeats.push(uid);
@@ -390,58 +381,79 @@ export class OfficeState {
         const label = this.seatZone(uid);
         return label !== null && wanted.has(label);
       });
-      const pick = this.pickFromSeats(inArea, electronicsTiles);
+      const pick = this.pickFromSeats(inArea);
       if (pick) return pick;
     }
 
     // Stage 2 — unzoned seats (no area label, or layout has no areas at all).
     const unzoned = freeSeats.filter((uid) => this.seatZone(uid) === null);
-    const pick2 = this.pickFromSeats(unzoned, electronicsTiles);
+    const pick2 = this.pickFromSeats(unzoned);
     if (pick2) return pick2;
 
     // Stage 3 — any free seat.
-    return this.pickFromSeats(freeSeats, electronicsTiles);
+    return this.pickFromSeats(freeSeats);
   }
 
-  /** Closest walkable tile to (col,row) not occupied by another character, or null. */
-  private closestFreeWalkableTile(col: number, row: number): { col: number; row: number } | null {
-    const occupied = new Set<string>();
+  /** The way a lead's sub-agents face: its seat's way (how it sits to work),
+   *  or, seatless, its own. Not its walking direction while it wanders, or
+   *  its helpers would spin with every step. */
+  private helperFacing(lead: Character | undefined): Direction | null {
+    if (!lead) return null;
+    const seat = lead.seatId ? this.seats.get(lead.seatId) : undefined;
+    return seat ? seat.facingDir : lead.dir;
+  }
+
+  /** Tiles taken, as `col,row` keys: every character's tile, except
+   *  character `except`'s; with `destinations`, the tile each is walking to
+   *  too; and `plus`, when given. */
+  private takenTiles(opts: { except?: number; destinations?: boolean; plus?: Tile }): Set<string> {
+    const taken = new Set<string>();
+    if (opts.plus) taken.add(`${opts.plus.col},${opts.plus.row}`);
     for (const ch of this.characters.values()) {
-      occupied.add(`${ch.tileCol},${ch.tileRow}`);
+      if (ch.id === opts.except) continue;
+      taken.add(`${ch.tileCol},${ch.tileRow}`);
+      if (!opts.destinations) continue;
+      const end = ch.path[ch.path.length - 1];
+      if (end) taken.add(`${end.col},${end.row}`);
     }
-    let best: { col: number; row: number } | null = null;
-    let bestDist = Infinity;
+    return taken;
+  }
+
+  /** The walkable tile not in `taken` with the lowest `score`, or null. The
+   *  first one found wins a tie. */
+  private closestTile(taken: Set<string>, score: (tile: Tile) => number): Tile | null {
+    let best: Tile | null = null;
+    let bestScore = Infinity;
     for (const tile of this.walkableTiles) {
-      if (occupied.has(`${tile.col},${tile.row}`)) continue;
-      const d = Math.abs(tile.col - col) + Math.abs(tile.row - row);
-      if (d < bestDist) {
+      if (taken.has(`${tile.col},${tile.row}`)) continue;
+      const d = score(tile);
+      if (d < bestScore) {
         best = tile;
-        bestDist = d;
+        bestScore = d;
       }
     }
     return best;
   }
 
-  /**
-   * Pick a diverse palette for a new agent based on currently active agents.
-   * First 6 agents each get a unique skin (random order). Beyond 6, skins
-   * repeat in balanced rounds with a random hue shift (≥45°).
-   */
-  private pickDiversePalette(): { palette: number; hueShift: number } {
-    // Count how many non-sub-agents use each base palette (0-5)
-    const paletteCount = getLoadedCharacterCount();
-    const counts = new Array(paletteCount).fill(0) as number[];
-    for (const ch of this.characters.values()) {
-      if (ch.isSubagent) continue;
-      if (ch.palette < paletteCount) counts[ch.palette]++;
-    }
-    return pickDiversePalette(paletteCount, counts);
+  /** Closest walkable tile to (col,row) not occupied by another character, or null. */
+  private closestFreeWalkableTile(col: number, row: number): Tile | null {
+    return this.closestTile(this.takenTiles({}), manhattanFrom({ col, row }));
+  }
+
+  /** The free walkable tile closest to `home` (the lead's seat) for helper
+   *  `ch`: not `home` itself, and not one another character stands on or is
+   *  walking to. */
+  private helperSpot(ch: Character, home: Tile): Tile | null {
+    return this.closestTile(
+      this.takenTiles({ except: ch.id, destinations: true, plus: home }),
+      ringsAround(home),
+    );
   }
 
   addAgent(
     id: number,
     preferredPalette?: number,
-    preferredHueShift?: number,
+    preferredRepeat?: number,
     preferredSeatId?: string,
     skipSpawnEffect?: boolean,
     directoryName?: string,
@@ -450,14 +462,15 @@ export class OfficeState {
     if (this.characters.has(id)) return;
 
     let palette: number;
-    let hueShift: number;
+    let repeat: number;
     if (preferredPalette !== undefined) {
       palette = preferredPalette;
-      hueShift = preferredHueShift ?? 0;
+      repeat = preferredRepeat ?? 0;
     } else {
-      const pick = this.pickDiversePalette();
-      palette = pick.palette;
-      hueShift = pick.hueShift;
+      // The server gave no look (core chooseLook: a random character, a repeat
+      // only once the whole cast is in).
+      const worn = [...this.characters.values()].filter((ch) => !ch.isSubagent);
+      ({ palette, repeat } = chooseLook({ paletteCount: getLoadedCharacterCount(), worn }));
     }
 
     // Try preferred seat first, then (for teammates) the seat closest to the
@@ -484,7 +497,7 @@ export class OfficeState {
     if (seatId) {
       const seat = this.seats.get(seatId)!;
       seat.assigned = true;
-      ch = createCharacter(id, palette, seatId, seat, hueShift);
+      ch = createCharacter(id, palette, seatId, seat, repeat);
     } else {
       // No seats — teammates spawn beside their anchor, others at a random walkable tile
       let spawn = anchorAt ? this.closestFreeWalkableTile(anchorAt.col, anchorAt.row) : null;
@@ -494,7 +507,7 @@ export class OfficeState {
             ? this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)]
             : { col: 1, row: 1 };
       }
-      ch = createCharacter(id, palette, null, null, hueShift);
+      ch = createCharacter(id, palette, null, null, repeat);
       ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
       ch.y = spawn.row * TILE_SIZE + TILE_SIZE / 2;
       ch.tileCol = spawn.col;
@@ -511,7 +524,7 @@ export class OfficeState {
   }
 
   // ── Greeter ───────────────────────────────────────────────────
-  // The Intro is diegetic: a char_0 character stands near the office's
+  // The Intro is diegetic: a character (Suit, by id: see greeterPalette) stands near the office's
   // bottom-left corner and "speaks" the tour through a DOM bubble
   // (IntroBubble). It is not an agent — see the `greeter` field.
 
@@ -543,6 +556,11 @@ export class OfficeState {
     ch.tileRow = spawn.row;
     startMatrixEffect(ch, 'spawn');
     this.greeter = ch;
+  }
+
+  /** Dress the greeter as a cast character (IntroBubble picks which). */
+  setGreeterPalette(palette: number): void {
+    if (this.greeter) this.greeter.palette = palette;
   }
 
   /** Start the greeter's despawn effect and release the greeter camera. The
@@ -590,16 +608,23 @@ export class OfficeState {
     const ch = this.characters.get(id);
     if (!ch) return;
     if (ch.matrixEffect === 'despawn') return; // already despawning
-    // Free seat and clear selection immediately
+    // Give the seat up at once: a departing character holds none, so nothing
+    // (a layout rebuild included) can mark it taken again during the effect.
     if (ch.seatId) {
       const seat = this.seats.get(ch.seatId);
       if (seat) seat.assigned = false;
+      ch.seatId = null;
     }
-    if (this.selectedAgentId === id) this.selectedAgentId = null;
-    if (this.cameraFollowId === id) this.cameraFollowId = null;
+    this.forgetSelection(id);
     // Start despawn animation instead of immediate delete
     startMatrixEffect(ch, 'despawn');
     ch.bubbleType = null;
+  }
+
+  /** Stop selecting and following a character that is leaving. */
+  private forgetSelection(id: number): void {
+    if (this.selectedAgentId === id) this.selectedAgentId = null;
+    if (this.cameraFollowId === id) this.cameraFollowId = null;
   }
 
   /** Find seat uid at a given tile position, or null */
@@ -608,6 +633,31 @@ export class OfficeState {
       if (seat.seatCol === col && seat.seatRow === row) return uid;
     }
     return null;
+  }
+
+  /** Give an agent the server's look and seat (a reconnect's snapshot). The
+   *  seat is taken only when it exists and no one else sits there. */
+  syncAgent(agentId: number, palette?: number, repeat?: number, seatId?: string): void {
+    const ch = this.characters.get(agentId);
+    if (!ch) return;
+    if (palette !== undefined) {
+      ch.palette = palette;
+      ch.repeat = repeat ?? 0;
+    }
+    if (seatId !== undefined && seatId !== ch.seatId) {
+      const seat = this.seats.get(seatId);
+      if (seat && !seat.assigned) this.reassignSeat(agentId, seatId);
+    }
+  }
+
+  /** Give an agent a new look (its character moved in the list); its sub-agents wear it too. */
+  setAgentLook(agentId: number, palette: number, repeat: number): void {
+    for (const ch of this.characters.values()) {
+      if (ch.id === agentId || (ch.isSubagent && ch.parentAgentId === agentId)) {
+        ch.palette = palette;
+        ch.repeat = repeat;
+      }
+    }
   }
 
   /** Reassign an agent from their current seat to a new seat */
@@ -730,26 +780,35 @@ export class OfficeState {
     const id = this.nextSubagentId--;
     const parentCh = this.characters.get(parentAgentId);
     const palette = parentCh ? parentCh.palette : 0;
-    const hueShift = parentCh ? parentCh.hueShift : 0;
+    const repeat = parentCh ? parentCh.repeat : 0;
 
-    // Find the closest walkable tile to the parent, avoiding tiles occupied by other characters
-    const parentCol = parentCh ? parentCh.tileCol : 0;
-    const parentRow = parentCh ? parentCh.tileRow : 0;
-    let spawn = { col: parentCol, row: parentRow };
+    // Spawn on the free walkable tile closest to the parent's seat (or to the
+    // parent, when it has none) — where the helper will stay.
+    const home = anchorTile(parentCh, this.seats) ?? { col: 0, row: 0 };
+    let spawn = home;
     if (this.walkableTiles.length > 0) {
-      spawn = this.closestFreeWalkableTile(parentCol, parentRow) ?? this.walkableTiles[0];
+      spawn =
+        this.closestTile(this.takenTiles({ plus: home }), ringsAround(home)) ??
+        this.walkableTiles[0];
     }
 
-    const ch = createCharacter(id, palette, null, null, hueShift);
+    const ch = createCharacter(id, palette, null, null, repeat);
     ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2;
     ch.y = spawn.row * TILE_SIZE + TILE_SIZE / 2;
     ch.tileCol = spawn.col;
     ch.tileRow = spawn.row;
     // Face the same direction as the parent agent
-    if (parentCh) ch.dir = parentCh.dir;
+    ch.dir = this.helperFacing(parentCh) ?? ch.dir;
     ch.isSubagent = true;
     ch.parentAgentId = parentAgentId;
-    startMatrixEffect(ch, 'spawn');
+    const spot = this.resyncSubagentSpots.get(key);
+    if (spot) {
+      // Re-created by a resync replay: it never left, so no spawn effect.
+      this.resyncSubagentSpots.delete(key);
+      Object.assign(ch, spot);
+    } else {
+      startMatrixEffect(ch, 'spawn');
+    }
     this.characters.set(id, ch);
 
     this.subagentIdMap.set(key, id);
@@ -782,8 +841,32 @@ export class OfficeState {
     // Clean up tracking maps immediately so keys don't collide
     this.subagentIdMap.delete(key);
     this.subagentMeta.delete(id);
-    if (this.selectedAgentId === id) this.selectedAgentId = null;
-    if (this.cameraFollowId === id) this.cameraFollowId = null;
+    this.forgetSelection(id);
+  }
+
+  /**
+   * Drop every sub-agent at once, without despawn effects, ahead of a resync
+   * snapshot. The snapshot replays the spawns that are still live, and each
+   * comes back on the spot it left (see addSubagent); the rest were missed
+   * clears and don't return.
+   */
+  detachSubagentsForResync(): void {
+    this.resyncSubagentSpots.clear();
+    for (const [key, id] of this.subagentIdMap) {
+      const ch = this.characters.get(id);
+      if (ch && ch.matrixEffect !== 'despawn') {
+        const { x, y, tileCol, tileRow, dir } = ch;
+        this.resyncSubagentSpots.set(key, { x, y, tileCol, tileRow, dir });
+      }
+      if (ch?.seatId) {
+        const seat = this.seats.get(ch.seatId);
+        if (seat) seat.assigned = false;
+      }
+      this.characters.delete(id);
+      this.forgetSelection(id);
+    }
+    this.subagentIdMap.clear();
+    this.subagentMeta.clear();
   }
 
   /** Remove all sub-agents belonging to a parent agent */
@@ -809,8 +892,7 @@ export class OfficeState {
           ch.bubbleType = null;
         }
         this.subagentMeta.delete(id);
-        if (this.selectedAgentId === id) this.selectedAgentId = null;
-        if (this.cameraFollowId === id) this.cameraFollowId = null;
+        this.forgetSelection(id);
         toRemove.push(key);
       }
     }
@@ -827,8 +909,11 @@ export class OfficeState {
   setAgentActive(id: number, active: boolean): void {
     const ch = this.characters.get(id);
     if (ch) {
+      const turnEnded = !active && ch.isActive;
       ch.isActive = active;
-      if (!active) {
+      // Only a turn that just ended stands the agent up: one already at rest
+      // (restored, or told again on a reconnect) keeps resting.
+      if (turnEnded) {
         // Sentinel -1: signals turn just ended, skip next seat rest timer.
         // Prevents the WALK handler from setting a 2-4 min rest on arrival.
         ch.seatTimer = -1;
@@ -839,41 +924,40 @@ export class OfficeState {
     }
   }
 
-  /** Rebuild furniture instances with auto-state applied (active agents turn electronics ON) */
-  private rebuildFurnitureInstances(): void {
-    // Collect tiles where active agents face desks
-    const autoOnTiles = new Set<string>();
-    for (const ch of this.characters.values()) {
-      if (!ch.isActive || !ch.seatId) continue;
-      const seat = this.seats.get(ch.seatId);
-      if (!seat) continue;
-      // Find the desk tile(s) the agent faces from their seat
-      const dCol =
-        seat.facingDir === Direction.RIGHT ? 1 : seat.facingDir === Direction.LEFT ? -1 : 0;
-      const dRow = seat.facingDir === Direction.DOWN ? 1 : seat.facingDir === Direction.UP ? -1 : 0;
-      // Check tiles in the facing direction (desk could be 1-3 tiles deep)
-      for (let d = 1; d <= AUTO_ON_FACING_DEPTH; d++) {
-        const tileCol = seat.seatCol + dCol * d;
-        const tileRow = seat.seatRow + dRow * d;
-        autoOnTiles.add(`${tileCol},${tileRow}`);
-      }
-      // Also check tiles to the sides of the facing direction (desks can be wide)
-      for (let d = 1; d <= AUTO_ON_SIDE_DEPTH; d++) {
-        const baseCol = seat.seatCol + dCol * d;
-        const baseRow = seat.seatRow + dRow * d;
-        if (dCol !== 0) {
-          // Facing left/right: check tiles above and below
-          autoOnTiles.add(`${baseCol},${baseRow - 1}`);
-          autoOnTiles.add(`${baseCol},${baseRow + 1}`);
-        } else {
-          // Facing up/down: check tiles left and right
-          autoOnTiles.add(`${baseCol - 1},${baseRow}`);
-          autoOnTiles.add(`${baseCol + 1},${baseRow}`);
-        }
-      }
-    }
+  /** Start an agent at rest: not working, and seated for a usual rest when it has a chair
+   *  (then it gets up and wanders); without one it stands at once. */
+  restAgent(id: number): void {
+    const ch = this.characters.get(id);
+    if (!ch) return;
+    ch.isActive = false;
+    if (ch.seatId && ch.state === CharacterState.TYPE) restInChair(ch);
+    else ch.seatTimer = 0;
+    this.rebuildFurnitureInstances();
+  }
 
-    if (autoOnTiles.size === 0) {
+  /**
+   * The PCs whose seat has an agent working at it: active, sitting in that
+   * seat and typing. Walking to the seat, resting there between turns, or
+   * standing beside it does not count.
+   */
+  private litWorkstations(): Set<string> {
+    const lit = new Set<string>();
+    for (const ch of this.characters.values()) {
+      if (!ch.isActive || !ch.seatId || ch.state !== CharacterState.TYPE || ch.matrixEffect) {
+        continue;
+      }
+      const seat = this.seats.get(ch.seatId);
+      if (!seat || ch.tileCol !== seat.seatCol || ch.tileRow !== seat.seatRow) continue;
+      const pc = this.seatWorkstations.get(ch.seatId);
+      if (pc) lit.add(pc);
+    }
+    return lit;
+  }
+
+  /** Rebuild furniture instances with auto-state applied (a working agent's PC turns ON) */
+  private rebuildFurnitureInstances(lit = this.litWorkstations()): void {
+    this.litPcs = lit;
+    if (lit.size === 0) {
       this.furniture = layoutToFurnitureInstances(this.layout.furniture);
       return;
     }
@@ -881,27 +965,13 @@ export class OfficeState {
     // Build modified furniture list with auto-state and animation applied
     const animFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
     const modifiedFurniture: PlacedFurniture[] = this.layout.furniture.map((item) => {
-      const entry = getCatalogEntry(item.type);
-      if (!entry) return item;
-      // Check if any tile of this furniture overlaps an auto-on tile
-      for (let dr = 0; dr < entry.footprintH; dr++) {
-        for (let dc = 0; dc < entry.footprintW; dc++) {
-          if (autoOnTiles.has(`${item.col + dc},${item.row + dr}`)) {
-            let onType = getOnStateType(item.type);
-            if (onType !== item.type) {
-              // Check if the on-state type has animation frames
-              const frames = getAnimationFrames(onType);
-              if (frames && frames.length > 1) {
-                const frameIdx = animFrame % frames.length;
-                onType = frames[frameIdx];
-              }
-              return { ...item, type: onType };
-            }
-            return item;
-          }
-        }
-      }
-      return item;
+      if (!lit.has(item.uid)) return item;
+      let onType = getOnStateType(item.type);
+      if (onType === item.type) return item;
+      // Check if the on-state type has animation frames
+      const frames = getAnimationFrames(onType);
+      if (frames && frames.length > 1) onType = frames[animFrame % frames.length];
+      return { ...item, type: onType };
     });
 
     this.furniture = layoutToFurnitureInstances(modifiedFurniture);
@@ -1117,9 +1187,10 @@ export class OfficeState {
 
   setAgentContext(id: number, contextTokens: number, maxContextTokens: number): void {
     const ch = this.characters.get(id);
-    if (!ch) return;
+    if (!ch || contextUsedShare(contextTokens, maxContextTokens) === null) return;
     ch.contextTokens = contextTokens;
     ch.maxContextTokens = maxContextTokens;
+    ch.contextReported = true;
   }
 
   update(dt: number): void {
@@ -1133,22 +1204,40 @@ export class OfficeState {
 
     // The greeter materializes and dematerializes like anyone else, but runs
     // no FSM — it stands where it spawned for as long as the ask is up.
+    if (this.greeter) tickBlink(this.greeter, dt, false);
     if (this.greeter && advanceMatrixEffect(this.greeter, dt) === 'despawned') {
       this.greeter = null;
     }
 
     const toDelete: number[] = [];
     for (const ch of this.characters.values()) {
+      tickBlink(ch, dt, ch.state === CharacterState.TYPE);
       const effect = advanceMatrixEffect(ch, dt);
       if (effect !== 'none') {
         if (effect === 'despawned') toDelete.push(ch.id);
         continue; // skip normal FSM while the effect is (or just was) active
       }
 
-      // Temporarily unblock own seat so character can pathfind to it
-      this.withOwnSeatUnblocked(ch, () =>
-        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles),
-      );
+      if (ch.isSubagent) {
+        const lead = ch.parentAgentId !== null ? this.characters.get(ch.parentAgentId) : undefined;
+        // Helpers gather around the lead's seat, not the lead: an idle lead
+        // wanders, and its helpers should not trail it around the office.
+        const home = anchorTile(lead, this.seats) ?? null;
+        updateHelper(
+          ch,
+          dt,
+          home,
+          this.helperFacing(lead),
+          () => (home ? this.helperSpot(ch, home) : null),
+          this.tileMap,
+          this.blockedTiles,
+        );
+      } else {
+        // Temporarily unblock own seat so character can pathfind to it
+        this.withOwnSeatUnblocked(ch, () =>
+          updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles),
+        );
+      }
 
       // Tick bubble timer for waiting bubbles
       if (ch.bubbleType === 'waiting') {
@@ -1163,6 +1252,10 @@ export class OfficeState {
     for (const id of toDelete) {
       this.characters.delete(id);
     }
+
+    // A PC turns on when its agent sits down to work, not when the turn starts.
+    const lit = this.litWorkstations();
+    if (!sameSet(lit, this.litPcs)) this.rebuildFurnitureInstances(lit);
 
     // ── Pet FSM ────────────────────────────────────────────────
     for (const pet of this.pets) {
@@ -1185,12 +1278,12 @@ export class OfficeState {
    *  it is not in `characters`. */
   getPersistableSeats(): Record<
     number,
-    { palette: number; hueShift: number; seatId: string | null }
+    { palette: number; repeat: number; seatId: string | null }
   > {
-    const seats: Record<number, { palette: number; hueShift: number; seatId: string | null }> = {};
+    const seats: Record<number, { palette: number; repeat: number; seatId: string | null }> = {};
     for (const ch of this.characters.values()) {
       if (ch.isSubagent) continue;
-      seats[ch.id] = { palette: ch.palette, hueShift: ch.hueShift, seatId: ch.seatId };
+      seats[ch.id] = { palette: ch.palette, repeat: ch.repeat, seatId: ch.seatId };
     }
     return seats;
   }

@@ -19,9 +19,10 @@ import * as path from 'path';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
 import type { PersistedAgent } from '../../core/src/schemas.js';
+import { parseCardOrder } from './cardOrder.js';
 import type { AdapterSettingKey, AdapterSettings, ConfigNamespace } from './configPersistence.js';
 import { ADAPTER_SETTING_KEYS, readConfig, writeConfig } from './configPersistence.js';
-import { LAYOUT_FILE_DIR } from './constants.js';
+import { PIXEL_AGENTS_DIR } from './constants.js';
 
 const ADAPTER_SETTING_KEY_SET: ReadonlySet<string> = new Set(ADAPTER_SETTING_KEYS);
 
@@ -33,10 +34,11 @@ function settingNameOf(key: string): AdapterSettingKey | null {
 
 interface AdapterState {
   agents: PersistedAgent[];
-  seats: Record<string, { palette?: number; hueShift?: number; seatId?: string }>;
+  seats: Record<string, { palette?: number; repeat?: number; seatId?: string }>;
+  cardOrder: number[];
 }
 
-const EMPTY_STATE: AdapterState = { agents: [], seats: {} };
+const EMPTY_STATE: AdapterState = { agents: [], seats: {}, cardOrder: [] };
 
 export interface FileStateAdapterOptions {
   namespace: ConfigNamespace;
@@ -50,7 +52,7 @@ export class FileStateAdapter implements StateAdapter {
     this.namespace = options.namespace;
     this.stateFilePath = path.join(
       os.homedir(),
-      LAYOUT_FILE_DIR,
+      PIXEL_AGENTS_DIR,
       `${options.namespace}-state.json`,
     );
   }
@@ -80,19 +82,23 @@ export class FileStateAdapter implements StateAdapter {
   }
 
   saveAgents(agents: PersistedAgent[]): void {
-    const state = this.readState();
-    state.agents = agents;
-    this.writeState(state);
+    this.patchState({ agents });
   }
 
-  loadSeats(): Record<string, { palette?: number; hueShift?: number; seatId?: string }> {
+  loadSeats(): Record<string, { palette?: number; repeat?: number; seatId?: string }> {
     return this.readState().seats;
   }
 
-  saveSeats(seats: Record<string, { palette?: number; hueShift?: number; seatId?: string }>): void {
-    const state = this.readState();
-    state.seats = seats;
-    this.writeState(state);
+  saveSeats(seats: Record<string, { palette?: number; repeat?: number; seatId?: string }>): void {
+    this.patchState({ seats });
+  }
+
+  loadCardOrder(): number[] {
+    return this.readState().cardOrder;
+  }
+
+  saveCardOrder(order: number[]): void {
+    this.patchState({ cardOrder: order });
   }
 
   // ── Internal state-file I/O ─────────────────────────────────
@@ -100,7 +106,7 @@ export class FileStateAdapter implements StateAdapter {
   private readState(): AdapterState {
     try {
       if (!fs.existsSync(this.stateFilePath)) {
-        return { agents: [], seats: {} };
+        return { ...EMPTY_STATE };
       }
       const raw = fs.readFileSync(this.stateFilePath, 'utf-8');
       const parsed = JSON.parse(raw) as Partial<AdapterState>;
@@ -110,11 +116,17 @@ export class FileStateAdapter implements StateAdapter {
           parsed.seats && typeof parsed.seats === 'object'
             ? (parsed.seats as AdapterState['seats'])
             : {},
+        cardOrder: parseCardOrder(parsed.cardOrder) ?? [],
       };
     } catch (err) {
       console.error('[Pixel Agents] Failed to read adapter state:', err);
       return { ...EMPTY_STATE };
     }
+  }
+
+  /** Read, change these fields, write back. */
+  private patchState(patch: Partial<AdapterState>): void {
+    this.writeState({ ...this.readState(), ...patch });
   }
 
   private writeState(state: AdapterState): void {

@@ -8,7 +8,6 @@ import { defineConfig } from 'vite';
 import { buildAssetIndex, buildFurnitureCatalog } from '../core/src/assets/build.ts';
 import {
   decodeAllCarpets,
-  decodeAllCharacters,
   decodeAllFloors,
   decodeAllFurniture,
   decodeAllWalls,
@@ -17,7 +16,6 @@ import {
 // ── Decoded asset cache (invalidated on file change) ─────────────────────────
 
 interface DecodedCache {
-  characters: ReturnType<typeof decodeAllCharacters> | null;
   floors: ReturnType<typeof decodeAllFloors> | null;
   walls: ReturnType<typeof decodeAllWalls> | null;
   carpets: ReturnType<typeof decodeAllCarpets> | null;
@@ -34,7 +32,6 @@ function browserMockAssetsPlugin(): Plugin {
   let distAssetsDir = path.resolve(__dirname, '../dist/webview/assets');
 
   const cache: DecodedCache = {
-    characters: null,
     floors: null,
     walls: null,
     carpets: null,
@@ -42,7 +39,6 @@ function browserMockAssetsPlugin(): Plugin {
   };
 
   function clearCache(): void {
-    cache.characters = null;
     cache.floors = null;
     cache.walls = null;
     cache.carpets = null;
@@ -69,11 +65,6 @@ function browserMockAssetsPlugin(): Plugin {
       });
 
       // Pre-decoded sprites (new — eliminates browser-side PNG decoding)
-      server.middlewares.use(`${base}/assets/decoded/characters.json`, (_req, res) => {
-        cache.characters ??= decodeAllCharacters(assetsDir);
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify(cache.characters));
-      });
       server.middlewares.use(`${base}/assets/decoded/floors.json`, (_req, res) => {
         cache.floors ??= decodeAllFloors(assetsDir);
         res.setHeader('Content-Type', 'application/json');

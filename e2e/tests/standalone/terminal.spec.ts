@@ -1,3 +1,5 @@
+import type { Page } from '@playwright/test';
+
 import { expect, test } from '../../fixtures/standalone';
 import { preToolUseBash, sendHookEvent, sessionStartStartup } from '../../helpers/hooks';
 import {
@@ -14,6 +16,23 @@ import { clickAddAgent, setSettings } from '../../helpers/webview';
  * follows the scenario-builder rule (e2e/README.md "Mocking model & rules"):
  * the mock performs all timed actions; the test only clicks and observes.
  */
+/** The agent cards' titles, in screen order along the bar's axis. */
+async function cardsInOrder(page: Page, axis: 'x' | 'y'): Promise<string[]> {
+  const cards = page.locator('[title^="Agent "]');
+  const placed = await Promise.all(
+    (await cards.all()).map(async (card) => ({
+      title: (await card.getAttribute('title')) ?? '',
+      box: await card.boundingBox(),
+    })),
+  );
+  return placed
+    .filter((c) => c.box)
+    .sort((a, b) => a.box![axis] - b.box![axis])
+    .map((c) => c.title);
+}
+const cardsTopToBottom = (page: Page) => cardsInOrder(page, 'y');
+const cardsLeftToRight = (page: Page) => cardsInOrder(page, 'x');
+
 test.describe('Standalone / terminal', () => {
   // The PTY spawns `claude` (the mock's bash wrapper) directly, not through a
   // shell. Windows would need a cmd.exe hop to run the .cmd shim — untested
@@ -107,11 +126,52 @@ test.describe('Standalone / terminal', () => {
 
     // The narrowest window that still gets the desktop drawer (below it the
     // mobile shell takes over): the drawer gives way so the office keeps its
-    // card bar, and the panel's own close button stays on screen.
+    // card bar, and the panel's hide tab stays on screen.
     await page.setViewportSize({ width: 800, height: 800 });
-    await expect(page.getByTitle('Close terminal')).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTitle('Hide terminal')).toBeInViewport({ ratio: 1 });
     await expect(page.getByTitle('Agent 1')).toBeInViewport({ ratio: 1 });
     await expect(page.getByTitle('Agent 2')).toBeInViewport({ ratio: 1 });
+  });
+
+  test('a card dragged on the desktop moves on an open phone too, and stays after a reload @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    await waitForClaudeHookSetup(standalone.tmpHome);
+    for (const n of [1, 2]) {
+      await arrangeNextClaudeInvocation(
+        standalone.tmpHome,
+        claudeScenario(`standalone card order ${n}`).holdOpenFor(60_000).build(),
+      );
+      await clickAddAgent(page);
+      await expect(page.getByTitle(`Agent ${n}`)).toBeVisible({ timeout: 15_000 });
+    }
+
+    // A phone already showing the office: its bar lists the same cards.
+    const phone = await page.context().newPage();
+    await phone.setViewportSize({ width: 390, height: 844 });
+    await phone.goto(page.url());
+    await expect(phone.getByTitle('Agent 2')).toBeVisible({ timeout: 30_000 });
+    expect(await cardsLeftToRight(phone)).toEqual(['Agent 1', 'Agent 2']);
+
+    // Drag Agent 2 above Agent 1 in the desktop column.
+    const from = (await page.getByTitle('Agent 2').boundingBox())!;
+    const to = (await page.getByTitle('Agent 1').boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + 4, { steps: 8 });
+    await page.mouse.up();
+
+    expect(await cardsTopToBottom(page)).toEqual(['Agent 2', 'Agent 1']);
+    // No reload: the server tells the open phone.
+    await expect
+      .poll(() => cardsLeftToRight(phone), { timeout: 10_000 })
+      .toEqual(['Agent 2', 'Agent 1']);
+    await phone.close();
+
+    await page.reload();
+    await expect(page.getByTitle('Agent 2')).toBeVisible({ timeout: 30_000 });
+    expect(await cardsTopToBottom(page)).toEqual(['Agent 2', 'Agent 1']);
   });
 
   test('copies are verbatim; Alt+C copies the selection re-flowed as text @area:standalone', async ({
@@ -206,6 +266,99 @@ test.describe('Standalone / terminal', () => {
     await page.keyboard.press('Alt+C');
     await expect.poll(lastWrite).toBe(`${first} ${second.trimStart()}`);
   });
+
+  test('a URL Claude Code broke across rows opens and copies whole @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'Linux x86_64' });
+      const written: string[] = [];
+      (window as unknown as { __clip: string[] }).__clip = written;
+      Object.defineProperty(Navigator.prototype, 'clipboard', {
+        get: () => ({
+          writeText: (text: string) => {
+            written.push(text);
+            return Promise.resolve();
+          },
+        }),
+      });
+    });
+    await page.reload();
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('terminal broken link').holdOpenFor(60_000).build(),
+    );
+    await clickAddAgent(page);
+    const terminal = page.locator('.xterm').first();
+    await expect(terminal).toContainText('mock claude session', { timeout: 15_000 });
+    await terminal.click();
+
+    // What Claude Code draws for a URL longer than its row: the row filled
+    // to the last column, a real newline, the rest after an indent. Typed
+    // through the PTY echo at the terminal's width.
+    const cols = await page.evaluate(() => {
+      const screen = document.querySelector('.xterm-screen');
+      const rows = document.querySelector('.xterm-rows');
+      const walker = document.createTreeWalker(rows ?? document.body, NodeFilter.SHOW_TEXT);
+      const node = walker.nextNode();
+      if (!screen || !node) throw new Error('no terminal text');
+      const range = document.createRange();
+      range.setStart(node, 0);
+      range.setEnd(node, 1);
+      return Math.round(screen.getBoundingClientRect().width / range.getBoundingClientRect().width);
+    });
+    const head = 'https://example.com/' + 'a'.repeat(cols - 'https://example.com/'.length);
+    const tail = 'tail-of-the-link';
+    await page.keyboard.type(head);
+    await page.keyboard.press('Enter');
+    await page.keyboard.type(`     ${tail}`);
+    await expect(terminal).toContainText(tail);
+
+    /** Screen point of `needle`'s first (or last) character. */
+    const pointOf = (needle: string, edge: 'start' | 'end') =>
+      page.evaluate(
+        ({ needle, edge }) => {
+          const rows = document.querySelector('.xterm-rows');
+          const walker = document.createTreeWalker(rows ?? document.body, NodeFilter.SHOW_TEXT);
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            const i = n.textContent?.indexOf(needle) ?? -1;
+            if (i < 0) continue;
+            const range = document.createRange();
+            const at = edge === 'start' ? i : i + needle.length - 1;
+            range.setStart(n, at);
+            range.setEnd(n, at + 1);
+            const r = range.getBoundingClientRect();
+            return { x: edge === 'start' ? r.left + 1 : r.right - 1, y: r.top + r.height / 2 };
+          }
+          throw new Error(`not on screen: ${needle}`);
+        },
+        { needle, edge },
+      );
+
+    // A click on the first half opens all of it.
+    const popups: string[] = [];
+    page.on('popup', (p) => popups.push(p.url()));
+    const onHead = await pointOf('example.com', 'start');
+    await page.mouse.move(onHead.x, onHead.y);
+    await page.mouse.click(onHead.x, onHead.y);
+    await expect.poll(() => popups.length).toBe(1);
+    expect(popups[0]).toBe(head + tail);
+
+    // A plain copy of both rows gives the link back without the break.
+    const from = await pointOf('https://', 'start');
+    const to = await pointOf(tail, 'end');
+    await page.mouse.move(to.x, to.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x, from.y, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.press('Control+Shift+C');
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { __clip: string[] }).__clip.at(-1) ?? null),
+      )
+      .toBe(head + tail);
+  });
 });
 
 test.describe('Standalone / terminal disabled', () => {
@@ -216,7 +369,7 @@ test.describe('Standalone / terminal disabled', () => {
     standalone,
   }) => {
     // The launch surface is off, with the reason discoverable on the button.
-    const addAgent = page.getByRole('button', { name: '+ Agent' });
+    const addAgent = page.getByRole('button', { name: 'New agent' });
     await expect(addAgent).toBeVisible();
     await expect(addAgent).toBeDisabled();
     await expect(addAgent).toHaveAttribute('title', 'Terminal disabled with --no-terminal.');

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readConfig } from '../src/configPersistence.js';
 import {
   buildDirectoryUnion,
-  directoryNameForLaunch,
+  directoryAt,
   expandTilde,
   handleDirectoryClientMessage,
   listDirectories,
@@ -138,8 +138,7 @@ describe('directories', () => {
     it('persists an added Directory into the shared config and lists it', () => {
       expect(saveUserDirectory({ name: 'Mine', path: alpha })).toEqual({
         ok: true,
-        name: 'Mine',
-        path: alpha,
+        directory: { name: 'Mine', path: alpha },
       });
 
       expect(readConfig().directories).toEqual([{ name: 'Mine', path: alpha }]);
@@ -179,6 +178,36 @@ describe('directories', () => {
 
       expect(result.ok).toBe(false);
       expect(readConfig().directories).toEqual([]);
+    });
+
+    it('stores default characters (deduped, valid indices only) and lists them', () => {
+      saveUserDirectory({
+        name: 'Mine',
+        path: alpha,
+        characters: [3, 1, 3, -1, 2.5, 'x', 0],
+        characterOrder: 'random',
+      });
+
+      const stored = { name: 'Mine', path: alpha, characters: [3, 1, 0], characterOrder: 'random' };
+      expect(readConfig().directories).toEqual([stored]);
+      expect(listDirectories([])).toEqual([{ ...stored, source: 'user' }]);
+    });
+
+    it('stores no character fields when there are no defaults, nor the default order', () => {
+      saveUserDirectory({ name: 'Mine', path: alpha, characters: [], characterOrder: 'random' });
+      saveUserDirectory({ name: 'Other', path: beta, characters: [2], characterOrder: 'priority' });
+
+      expect(readConfig().directories).toEqual([
+        { name: 'Mine', path: alpha },
+        { name: 'Other', path: beta, characters: [2] },
+      ]);
+    });
+
+    it('an edit replaces the defaults with the ones it sends', () => {
+      saveUserDirectory({ name: 'Mine', path: alpha, characters: [1, 2] });
+      saveUserDirectory({ name: 'Mine', path: alpha, previousPath: alpha, characters: [4] });
+
+      expect(readConfig().directories).toEqual([{ name: 'Mine', path: alpha, characters: [4] }]);
     });
 
     it('removes an entry without touching the others', () => {
@@ -323,32 +352,32 @@ describe('directories', () => {
 
   // ── launch labelling ─────────────────────────────────────────
 
-  describe('directoryNameForLaunch', () => {
+  describe('directoryAt', () => {
     it('gives a launch the name its Directory was given, not the path basename', () => {
       saveUserDirectory({ name: 'Side Project', path: alpha });
 
-      expect(directoryNameForLaunch(alpha, [])).toBe('Side Project');
+      expect(directoryAt(alpha, [])?.name).toBe('Side Project');
     });
 
     it('matches regardless of how the launch path was written', () => {
       saveUserDirectory({ name: 'Side Project', path: alpha });
 
-      expect(directoryNameForLaunch(`${alpha}${path.sep}`, [])).toBe('Side Project');
-      expect(directoryNameForLaunch('~/alpha', [])).toBe('Side Project');
+      expect(directoryAt(`${alpha}${path.sep}`, [])?.name).toBe('Side Project');
+      expect(directoryAt('~/alpha', [])?.name).toBe('Side Project');
     });
 
     it('names host-contributed Directories too', () => {
-      expect(directoryNameForLaunch(beta, [{ name: 'beta', path: beta }])).toBe('beta');
+      expect(directoryAt(beta, [{ name: 'beta', path: beta }])?.name).toBe('beta');
     });
 
     it("prefers the user's name over the host's for the same path", () => {
       saveUserDirectory({ name: 'My Workspace', path: beta });
 
-      expect(directoryNameForLaunch(beta, [{ name: 'beta', path: beta }])).toBe('My Workspace');
+      expect(directoryAt(beta, [{ name: 'beta', path: beta }])?.name).toBe('My Workspace');
     });
 
     it('is undefined for a path that is no Directory, so the host keeps its own label', () => {
-      expect(directoryNameForLaunch(alpha, [{ name: 'beta', path: beta }])).toBeUndefined();
+      expect(directoryAt(alpha, [{ name: 'beta', path: beta }])?.name).toBeUndefined();
     });
   });
 });

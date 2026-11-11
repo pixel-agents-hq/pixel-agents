@@ -63,7 +63,8 @@ function isStandaloneAccess(value: unknown): value is StandaloneAccess {
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** A JSON object: not null, not an array. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 

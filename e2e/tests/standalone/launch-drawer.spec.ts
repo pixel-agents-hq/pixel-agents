@@ -14,6 +14,7 @@ import { expectOverlayCount, expectOverlayVisibleWithTexts } from '../../helpers
 import { appendJsonlRecord, createClaudeTranscript } from '../../helpers/team';
 import {
   addDirectory,
+  directoryPencil,
   getDirectoryModal,
   getDirectorySuggestions,
   getLaunchDrawer,
@@ -62,7 +63,7 @@ test.describe('Standalone / launch drawer', () => {
 
     // A plain press opens the drawer instead of launching: the first click's
     // only effect is the list.
-    await page.getByRole('button', { name: '+ Agent' }).click();
+    await page.getByRole('button', { name: 'New agent' }).click();
     const drawer = getLaunchDrawer(page);
     await expect(drawer).toBeVisible();
 
@@ -121,7 +122,7 @@ test.describe('Standalone / user-defined Directories', () => {
     const row = drawer.getByRole('button', { name: 'Side Project', exact: true });
     // User-defined: no host badge, and a pencil to re-open the modal on it.
     await expect(row.getByText('host', { exact: true })).toHaveCount(0);
-    await expect(drawer.getByRole('button', { name: 'Edit Side Project' })).toBeVisible();
+    await expect(await directoryPencil(page, drawer, 'Side Project')).toBeVisible();
 
     await row.click();
 
@@ -140,7 +141,9 @@ test.describe('Standalone / user-defined Directories', () => {
     expect(cfg.directories).toEqual([{ name: 'Side Project', path: target }]);
 
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
     // Park the pointer away from the launch button first: the drawer opens on
     // hover, and a mouse already sitting on the remounted button might not
     // produce the enter event the drawer waits for.
@@ -177,11 +180,7 @@ test.describe('Standalone / user-defined Directories', () => {
     await expectOverlayVisibleWithTexts(page, ['Running: npm test', 'Doomed Project']);
 
     // Delete through the pencil's modal.
-    await (
-      await openLaunchDrawer(page)
-    )
-      .getByRole('button', { name: 'Edit Doomed Project' })
-      .click();
+    await (await directoryPencil(page, await openLaunchDrawer(page), 'Doomed Project')).click();
     const modal = getDirectoryModal(page);
     await modal.getByRole('button', { name: 'Delete', exact: true }).click();
     await expect(modal).toBeHidden();
@@ -330,7 +329,9 @@ test.describe('Standalone / host Directory setting', () => {
 
     // The choice is the host's, persisted: a reload keeps the row.
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
     await page.mouse.move(0, 0);
     drawer = await openLaunchDrawer(page);
     await expect(drawer.getByRole('button', { name: directoryName, exact: true })).toBeVisible();
@@ -370,7 +371,9 @@ test.describe('Standalone / permission posture', () => {
     // Reload: the toggle comes back from that persisted config, not from
     // anything the page kept in memory.
     await page.reload();
-    await expect(page.getByRole('button', { name: 'Settings' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
     expect(await getSettingChecked(page, SKIP_PERMISSIONS_LABEL)).toBe(true);
   });
 
@@ -382,7 +385,9 @@ test.describe('Standalone / permission posture', () => {
     // must not keep showing that while every launch now skips permissions.
     const other = await page.context().newPage();
     await other.goto(page.url());
-    await expect(other.getByRole('button', { name: 'Settings' })).toBeVisible({ timeout: 30_000 });
+    await expect(other.getByRole('button', { name: 'Settings', exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
     expect(await getSettingChecked(other, SKIP_PERMISSIONS_LABEL)).toBe(false);
 
     await setSettings(page, { bypassPermissions: true });

@@ -13,13 +13,24 @@ import { expect } from '@playwright/test';
  * advanced.
  */
 
-/** Walk the Intro from its opening step to the consent step. */
+/**
+ * Walk the Intro from its opening step to the consent step, skipping the
+ * "Track your usage" step when the tour offers it (only when the usage bridge
+ * can be installed and isn't yet, so it may or may not come).
+ */
 export async function advanceIntroToConsentStep(dialog: Locator): Promise<void> {
   await expect(dialog).toContainText('Welcome to Pixel Agents!');
   await dialog.getByRole('button', { name: 'Continue' }).click();
   await expect(dialog).toContainText('Claude Code');
   await dialog.getByRole('button', { name: 'Continue' }).click();
-  await expect(dialog.getByRole('button', { name: 'Install Hooks' })).toBeVisible();
+  const install = dialog.getByRole('button', { name: 'Install Hooks' });
+  const skipUsage = dialog.getByRole('button', { name: 'Skip', exact: true });
+  await expect(install.or(skipUsage)).toBeVisible();
+  if (await skipUsage.isVisible()) {
+    await expect(dialog).toContainText('Track your usage');
+    await skipUsage.click();
+  }
+  await expect(install).toBeVisible();
 }
 
 /** Close the Intro from its closing step ("You're all set!"). */

@@ -163,7 +163,7 @@ export async function closeBottomPanel(window: Page): Promise<void> {
         for (const frame of window.frames()) {
           if (!frame.url().startsWith('vscode-webview://')) continue;
           try {
-            if ((await frame.locator('button', { hasText: '+ Agent' }).count()) > 0) return true;
+            if ((await frame.locator('button[aria-label="New agent"]').count()) > 0) return true;
           } catch {
             // Frame detached mid-check — treat as gone.
           }
@@ -212,7 +212,7 @@ async function findPixelAgentsFrameOnce(window: Page): Promise<Frame | null> {
     try {
       // count() resolves immediately (no waiting); a non-zero count means
       // this is the Pixel Agents frame.
-      const buttonCount = await frame.locator('button', { hasText: '+ Agent' }).count();
+      const buttonCount = await frame.locator('button[aria-label="New agent"]').count();
       if (buttonCount === 0) continue;
       const frameElement = await frame.frameElement();
       const box = await frameElement.boundingBox();
@@ -399,7 +399,7 @@ export async function arrangeReviewLayout(window: Page): Promise<void> {
  *
  * VS Code renders WebviewViewProvider content in an <iframe> whose URL
  * starts with "vscode-webview://". Because VS Code can have multiple
- * webviews, we wait until one frame exposes the "+ Agent" button before
+ * webviews, we wait until one frame exposes the "+" (New agent) button before
  * returning it.
  */
 export async function getPixelAgentsFrame(window: Page): Promise<Frame> {
@@ -412,7 +412,7 @@ export async function getPixelAgentsFrame(window: Page): Promise<Frame> {
         return foundFrame !== null;
       },
       {
-        message: 'Pixel Agents webview frame with "+ Agent" button not found',
+        message: 'Pixel Agents webview frame with "+" (New agent) button not found',
         timeout: WEBVIEW_TIMEOUT_MS,
         intervals: [250, 500, 1000],
       },
@@ -431,7 +431,7 @@ export async function getPixelAgentsFrame(window: Page): Promise<Frame> {
  * Clicks the first row — the only one in a single-Directory office.
  */
 export async function clickAddAgent(surface: WebviewSurface): Promise<void> {
-  const btn = surface.locator('button', { hasText: '+ Agent' });
+  const btn = surface.locator('button[aria-label="New agent"]');
   await expect(btn).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
   await btn.click();
   const drawer = getLaunchDrawer(surface);
@@ -451,12 +451,26 @@ export function getLaunchDrawer(surface: WebviewSurface): Locator {
  * so callers select one with `drawer.getByRole('button', { name, exact: true })`.
  */
 export async function openLaunchDrawer(surface: WebviewSurface): Promise<Locator> {
-  const btn = surface.locator('button', { hasText: '+ Agent' });
+  const btn = surface.locator('button[aria-label="New agent"]');
   await expect(btn).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
   await btn.hover();
   const drawer = getLaunchDrawer(surface);
   await expect(drawer).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
   return drawer;
+}
+
+/**
+ * A user Directory row's edit pencil. It shows while the row is hovered, and
+ * hangs outside the drawer's list (beside its right border), so it is looked
+ * up on the surface rather than inside the drawer.
+ */
+export async function directoryPencil(
+  surface: WebviewSurface,
+  drawer: Locator,
+  name: string,
+): Promise<Locator> {
+  await drawer.getByRole('button', { name, exact: true }).hover();
+  return surface.getByRole('button', { name: `Edit ${name}` });
 }
 
 /** The Directory modal, once opened from the drawer's `+ Directory` / pencil. */
@@ -580,7 +594,7 @@ export async function openSettingsModal(frame: WebviewSurface): Promise<Locator>
 }
 
 async function closeSettingsModal(settingsModal: Locator): Promise<void> {
-  const closeButton = settingsModal.getByRole('button', { name: 'x', exact: true });
+  const closeButton = settingsModal.getByRole('button', { name: 'Close', exact: true });
   await expect(closeButton).toBeVisible({ timeout: WEBVIEW_TIMEOUT_MS });
   await closeButton.click();
   await expect(settingsModal).toBeHidden({ timeout: WEBVIEW_TIMEOUT_MS });

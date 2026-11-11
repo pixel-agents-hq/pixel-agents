@@ -2,7 +2,9 @@ import { EventEmitter } from 'node:events';
 import { appendFileSync } from 'node:fs';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
-import type { AgentState, PersistedAgent } from './types.js';
+import type { PersistedAgent } from '../../core/src/schemas.js';
+import { toPersistedAgent } from './agentPersistence.js';
+import type { AgentState } from './types.js';
 
 /**
  * CI / e2e diagnostics: when PIXEL_AGENTS_DEBUG_LOG points to a writable
@@ -152,28 +154,8 @@ export class AgentStateStore {
     }
     const persisted: PersistedAgent[] = [];
     for (const agent of this.agents.values()) {
-      // Background-spawn children are derived state: the 1s scan re-materializes
-      // them from sidecars after a restore. Persisting them would resurrect
-      // immortal characters whose completion signal never comes.
-      if (agent.spawnToolUseId) continue;
-      persisted.push({
-        id: agent.id,
-        sessionId: agent.sessionId,
-        terminalName: agent.terminalRef?.name ?? '',
-        isExternal: agent.isExternal || undefined,
-        jsonlFile: agent.jsonlFile,
-        projectDir: agent.projectDir,
-        directoryName: agent.directoryName,
-        teamName: agent.teamName,
-        agentName: agent.agentName,
-        isTeamLead: agent.isTeamLead,
-        leadAgentId: agent.leadAgentId,
-        teamUsesTmux: agent.teamUsesTmux,
-        backgroundAgentToolIds:
-          agent.backgroundAgentToolIds.size > 0 ? [...agent.backgroundAgentToolIds] : undefined,
-        palette: agent.palette,
-        hueShift: agent.hueShift,
-      });
+      const p = toPersistedAgent(agent);
+      if (p) persisted.push(p);
     }
     this.adapter.saveAgents(persisted);
   }

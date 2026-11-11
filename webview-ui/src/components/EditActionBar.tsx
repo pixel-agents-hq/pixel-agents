@@ -22,6 +22,7 @@ export function EditActionBar({ editor, editorState: es }: EditActionBarProps) {
         size="md"
         onClick={undoDisabled ? undefined : editor.handleUndo}
         title="Undo (Ctrl+Z)"
+        icon="undo"
       >
         Undo
       </Button>
@@ -30,10 +31,17 @@ export function EditActionBar({ editor, editorState: es }: EditActionBarProps) {
         size="md"
         onClick={redoDisabled ? undefined : editor.handleRedo}
         title="Redo (Ctrl+Y)"
+        icon="redo"
       >
         Redo
       </Button>
-      <Button variant="default" size="md" onClick={editor.handleSave} title="Save layout">
+      <Button
+        variant="default"
+        size="md"
+        onClick={editor.handleSave}
+        title="Save layout"
+        icon="save"
+      >
         Save
       </Button>
       {!showResetConfirm ? (
@@ -42,6 +50,7 @@ export function EditActionBar({ editor, editorState: es }: EditActionBarProps) {
           size="md"
           onClick={() => setShowResetConfirm(true)}
           title="Reset to last saved layout"
+          icon="reset"
         >
           Reset
         </Button>

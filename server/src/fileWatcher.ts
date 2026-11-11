@@ -32,6 +32,7 @@ import type { TeamProvider } from '../../core/src/teamProvider.js';
 import type { ITerminalAdapter } from '../../core/src/terminalAdapter.js';
 import { createAgentState } from './agentState.js';
 import type { AgentStateStore } from './agentStateStore.js';
+import { classifySpawn, spawnToolIdOfTask } from './backgroundSpawns.js';
 import {
   CLEAR_IDLE_THRESHOLD_MS,
   EXTERNAL_ACTIVE_THRESHOLD_MS,
@@ -42,7 +43,7 @@ import {
   GLOBAL_SCAN_ACTIVE_MIN_SIZE,
   PROJECT_SCAN_INTERVAL_MS,
 } from './constants.js';
-import { seedContextUsage } from './contextUsage.js';
+import { clearContextUsage, seedContextUsage } from './contextUsage.js';
 import type { DismissalTracker } from './dismissalTracker.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { pathsMatch } from './pathKey.js';
@@ -635,14 +636,15 @@ export function scanForTeammateFiles(
   // teamName lets the provider also find new-style teammates: independent
   // top-level sessions tagged with the team, not files under the lead's dir.
   const teammates = teamProvider.discoverTeammates(projectDir, sessionId, parentAgent?.teamName);
+  const parentLive = parentAgent ? liveSpawnToolIds(parentAgent) : null;
 
-  const parentLiveSpawnIds = parentAgent ? liveSpawnToolIds(parentAgent) : null;
-  for (const { jsonlPath: file, teammateName, sessionId: ownSessionId, toolUseId } of teammates) {
-    // Live-spawn sidecars (they carry the lead's spawn toolUseId) belong to
-    // scanForBackgroundAgentFiles, which classifies them by name: named
-    // background -> teammate, everything else -> watched sub-agent. Adopting
-    // them here would race that classification and mint a spurious teammate.
-    if (toolUseId && parentLiveSpawnIds?.has(toolUseId)) continue;
+  for (const teammate of teammates) {
+    const { jsonlPath: file, teammateName, sessionId: ownSessionId } = teammate;
+    // Live-spawn sidecars belong to scanForBackgroundAgentFiles, which
+    // classifies them by name: named background -> teammate, everything else
+    // -> watched sub-agent. Adopting them here would race that classification
+    // and mint a spurious teammate.
+    if (parentAgent && parentLive && liveSpawnToolIdOf(parentAgent, parentLive, teammate)) continue;
     if (knownTeammateFiles.has(file)) continue;
 
     // Also check if any existing agent already tracks this file
@@ -723,7 +725,7 @@ export function scanForTeammateFiles(
 
     if (parentAgent?.palette !== undefined) {
       agent.palette = parentAgent.palette;
-      agent.hueShift = parentAgent.hueShift ?? 0;
+      agent.repeat = parentAgent.repeat ?? 0;
     } else {
       assignPaletteIfNeeded(agent, agents);
     }
@@ -756,13 +758,13 @@ export function scanForTeammateFiles(
   }
 }
 
-/** All of a lead's LIVE spawn tool ids: background spawns (kept alive past
- *  their tool_result, until the completion queue-operation) plus still-open
+/** A lead's LIVE spawn tool ids: its background spawns (kept alive past their
+ *  tool_result, until the completion queue-operation) and its still-open
  *  foreground spawn tools (Agent run_in_background:false — same sidecar shape
- *  on current harnesses, closes with its tool_result). Sidecars matching any
- *  of these belong to the background-agent flow, not teammate discovery. */
+ *  on current harnesses, closes with its tool_result). Sidecars of live spawns
+ *  belong to the background-agent flow, not teammate discovery. */
 function liveSpawnToolIds(lead: AgentState): Set<string> {
-  const ids = new Set(lead.backgroundAgentToolIds);
+  const ids = new Set(lead.backgroundSpawns.keys());
   for (const toolId of lead.activeToolIds) {
     const toolName = lead.activeToolNames.get(toolId);
     if (toolName && hookProvider?.subagentToolNames.has(toolName)) {
@@ -770,6 +772,18 @@ function liveSpawnToolIds(lead: AgentState): Set<string> {
     }
   }
   return ids;
+}
+
+/** The live spawn tool a discovered transcript runs under: its own spawn's,
+ *  or, for an agent revived by SendMessage, the SendMessage call's — found by
+ *  the agent's task id, since its sidecar still names the original spawn. */
+function liveSpawnToolIdOf(
+  lead: AgentState,
+  live: Set<string>,
+  entry: { toolUseId?: string; taskId?: string },
+): string | undefined {
+  if (entry.toolUseId && live.has(entry.toolUseId)) return entry.toolUseId;
+  return entry.taskId ? spawnToolIdOfTask(lead.backgroundSpawns, entry.taskId) : undefined;
 }
 
 /**
@@ -790,8 +804,8 @@ function liveSpawnToolIds(lead: AgentState): Set<string> {
  *   spawn's transcript is watched in the SHADOW store so its live activity
  *   reaches the sub-character via subagentToolStart/Done translation.
  *
- * The anti-spurious gate is the sidecar's toolUseId matching one of the
- * lead's LIVE backgroundAgentToolIds (instead of the teamName gate real teams
+ * The anti-spurious gate is the sidecar matching one of the lead's LIVE
+ * spawns, by toolUseId or task id (instead of the teamName gate real teams
  * use): only transcripts belonging to a currently-running background spawn
  * are adopted. Completion (queue-operation on the lead) removes both kinds.
  */
@@ -809,17 +823,20 @@ export function scanForBackgroundAgentFiles(
   if (!teamProvider) return;
   const lead = agents.get(leadId);
   if (!lead || !lead.sessionId || !lead.projectDir) return;
-  const liveSpawnIds = liveSpawnToolIds(lead);
-  if (liveSpawnIds.size === 0) return;
+  const live = liveSpawnToolIds(lead);
+  if (live.size === 0) return;
 
   const entries = teamProvider.discoverTeammates(lead.projectDir, lead.sessionId);
-  for (const entry of entries) {
-    if (!entry.toolUseId || !liveSpawnIds.has(entry.toolUseId)) continue;
+  for (const sidecar of entries) {
+    // The spawn is known by its LIVE tool id: the SendMessage call that
+    // revived it, when the sidecar's own spawn is long gone.
+    const spawnToolId = liveSpawnToolIdOf(lead, live, sidecar);
+    if (!spawnToolId) continue;
 
-    let alreadyTracked = subagentWatch?.isWatching(entry.jsonlPath) ?? false;
+    let alreadyTracked = subagentWatch?.isWatching(sidecar.jsonlPath) ?? false;
     if (!alreadyTracked) {
       for (const a of agents.values()) {
-        if (pathsMatch(a.jsonlFile, entry.jsonlPath)) {
+        if (pathsMatch(a.jsonlFile, sidecar.jsonlPath)) {
           alreadyTracked = true;
           break;
         }
@@ -827,18 +844,15 @@ export function scanForBackgroundAgentFiles(
     }
     if (alreadyTracked) continue;
 
-    // Foreground spawns (Agent run_in_background:false — the tool stays open
-    // for the whole run) write the same sidecar shape. They are within-turn
-    // work whatever the sidecar says: watch them, never seat them.
-    const isForeground = !lead.backgroundAgentToolIds.has(entry.toolUseId);
-
-    if (!entry.name || isForeground) {
-      // Unnamed spawn = Sub-agent: keep the Subtask character, watch the
-      // transcript in the shadow store for live activity. No agentCreated, no
-      // subagentClear, no persistence.
+    const kind = classifySpawn(lead, spawnToolId, !!sidecar.name);
+    if (kind === 'wait') continue;
+    if (kind === 'subagent') {
+      // Sub-agent: keep the Subtask character, watch the transcript in the
+      // shadow store for live activity. No agentCreated, no subagentClear, no
+      // persistence.
       subagentWatch?.watch(lead, leadId, {
-        jsonlPath: entry.jsonlPath,
-        toolUseId: entry.toolUseId,
+        jsonlPath: sidecar.jsonlPath,
+        toolUseId: spawnToolId,
       });
       continue;
     }
@@ -852,17 +866,17 @@ export function scanForBackgroundAgentFiles(
       sessionId: lead.sessionId,
       isExternal: true,
       projectDir: lead.projectDir,
-      jsonlFile: entry.jsonlPath,
+      jsonlFile: sidecar.jsonlPath,
       lastDataAt: Date.now(),
       // Teammate-like linkage, but NO teamName: config polling must not touch these.
-      agentName: entry.name,
+      agentName: sidecar.name,
       leadAgentId: leadId,
-      spawnToolUseId: entry.toolUseId,
+      spawnToolUseId: spawnToolId,
     });
 
     if (lead.palette !== undefined) {
       agent.palette = lead.palette;
-      agent.hueShift = lead.hueShift ?? 0;
+      agent.repeat = lead.repeat ?? 0;
     } else {
       assignPaletteIfNeeded(agent, agents);
     }
@@ -885,17 +899,17 @@ export function scanForBackgroundAgentFiles(
     persistAgents();
 
     console.log(
-      `[Pixel Agents] Background teammate detected: "${agent.agentName}" (Agent ${id}) for lead Agent ${leadId} (${path.basename(entry.jsonlPath)})`,
+      `[Pixel Agents] Background teammate detected: "${agent.agentName}" (Agent ${id}) for lead Agent ${leadId} (${path.basename(sidecar.jsonlPath)})`,
     );
 
     // The transient Subtask sub-character is superseded by this real character.
-    agents.broadcast({ type: 'subagentClear', id: leadId, parentToolId: entry.toolUseId });
+    agents.broadcast({ type: 'subagentClear', id: leadId, parentToolId: spawnToolId });
 
     onAgentCreated?.(agent);
 
     startFileWatching(
       id,
-      entry.jsonlPath,
+      sidecar.jsonlPath,
       agents,
       fileWatchers,
       pollingTimers,
@@ -1094,6 +1108,41 @@ export function adoptExternalSessionFromHook(
   }
 }
 
+/**
+ * Where to start reading a transcript an agent is newly attached to: the start
+ * for a file we just watched come to life, the end for anything older.
+ *
+ * The external scanner runs every EXTERNAL_SCAN_INTERVAL_MS. A freshly-created
+ * session writes its first records in the gap between scanner ticks (typical
+ * mock-claude scenarios: tool_use at t=1s, scanner ticks at t=3s). If we
+ * unconditionally skip to the end of the file, those pre-adoption records
+ * are silently discarded — the agent character appears but its tool history
+ * and active tools never surface, producing a "stuck on Idle" UI and flaky
+ * e2e failures whose mode depends entirely on scanner-tick alignment. A /clear
+ * transcript is new the same way.
+ *
+ * Older files are sessions with a past: an adopted session the user already
+ * had running, or a --resume / /resume, which reopens the session's EXISTING
+ * transcript. Replaying those flashes every past tool through the UI and, worse,
+ * resurrects background spawns whose completion the harness never wrote (the
+ * process died with them): they come back as characters that never leave.
+ *
+ * Heuristic: a file whose birthtime is inside the scan window (2× the interval,
+ * for one missed tick of margin) is fresh. birthtimeMs is reliable on macOS
+ * APFS, Windows NTFS, and modern Linux ext4. On filesystems that don't track
+ * it, Node returns the epoch (0) — treated as very old, so we skip to the end.
+ * A file that doesn't exist yet is read from the start.
+ */
+export function initialReadOffset(jsonlFile: string): number {
+  try {
+    const stat = fs.statSync(jsonlFile);
+    const ageMs = stat.birthtimeMs > 0 ? Date.now() - stat.birthtimeMs : Number.POSITIVE_INFINITY;
+    return ageMs <= EXTERNAL_SCAN_INTERVAL_MS * 2 ? 0 : stat.size;
+  } catch {
+    return 0;
+  }
+}
+
 function adoptExternalSession(
   jsonlFile: string,
   projectDir: string,
@@ -1108,35 +1157,7 @@ function adoptExternalSession(
   directoryName?: string,
 ): void {
   const id = nextAgentIdRef.current++;
-  // Decide whether to replay the existing file content or skip to its end.
-  //
-  // The external scanner runs every EXTERNAL_SCAN_INTERVAL_MS. A freshly-created
-  // session writes its first records in the gap between scanner ticks (typical
-  // mock-claude scenarios: tool_use at t=1s, scanner ticks at t=3s). If we
-  // unconditionally skip to the end of the file, those pre-adoption records
-  // are silently discarded — the agent character appears but its tool history
-  // and active tools never surface, producing a "stuck on Idle" UI and flaky
-  // e2e failures whose mode depends entirely on scanner-tick alignment.
-  //
-  // Heuristic: a file whose birthtime is inside the scan window (2× the
-  // interval, for one missed tick of margin) is "a session we just watched
-  // come to life" — replay it from the start so no records are lost. Older
-  // files are ongoing sessions the user already had running before adoption;
-  // for those we keep the original skip-to-end behavior so an hours-long
-  // session doesn't flash hundreds of past tool overlays through the UI.
-  //
-  // birthtimeMs is reliable on macOS APFS, Windows NTFS, and modern Linux
-  // ext4. On filesystems that don't track it, Node returns the epoch (0) —
-  // we treat that as "very old" and skip to end, matching prior behavior.
-  let fileOffset = 0;
-  try {
-    const stat = fs.statSync(jsonlFile);
-    const ageMs = stat.birthtimeMs > 0 ? Date.now() - stat.birthtimeMs : Number.POSITIVE_INFINITY;
-    const freshnessWindowMs = EXTERNAL_SCAN_INTERVAL_MS * 2;
-    fileOffset = ageMs <= freshnessWindowMs ? 0 : stat.size;
-  } catch {
-    /* start from beginning if stat fails */
-  }
+  const fileOffset = initialReadOffset(jsonlFile);
   const agent = createAgentState({
     id,
     sessionId: path.basename(jsonlFile, '.jsonl'),
@@ -1555,8 +1576,14 @@ export function reassignAgentToFile(
   // Keep hookDelivered — if hooks worked before /clear, they'll work after.
   agent.sessionId = path.basename(newFilePath, '.jsonl');
   agent.jsonlFile = newFilePath;
-  agent.fileOffset = 0;
+  // A /clear file is new and read whole; a resumed session's file is its old
+  // transcript, read from the end (initialReadOffset says why).
+  agent.fileOffset = initialReadOffset(newFilePath);
   agent.lineBuffer = '';
+  // Read whole, the new file is a fresh session (/clear): its context starts
+  // empty, a real 0 until its first turn says otherwise. A resumed session
+  // keeps its gauge, its context came back with it.
+  if (agent.fileOffset === 0) clearContextUsage(agentId, agents);
   persistAgents();
 
   // Start watching new file

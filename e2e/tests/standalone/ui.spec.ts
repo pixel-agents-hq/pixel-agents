@@ -198,4 +198,36 @@ test.describe('Standalone / UI', () => {
       timeout: CONNECTION_STATE_TIMEOUT_MS,
     });
   });
+
+  test('in a narrow office the radio stands clear of the toolbar, every button hit where it is drawn @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    void standalone;
+    // Still the desktop shell (wider than the phone breakpoint), but with the
+    // conversation sidebar open the office is too narrow for the radio beside
+    // the toolbar: it used to cover the toolbar's buttons. It gives up its
+    // visualizer and the tune's name instead, where it stands.
+    await page.setViewportSize({ width: NARROW_DESKTOP_WIDTH_PX, height: 700 });
+    const buttons = [
+      page.getByRole('button', { name: 'New agent' }),
+      page.getByRole('button', { name: 'Roster' }),
+      page.getByRole('button', { name: 'Layout', exact: true }),
+      page.getByRole('button', { name: 'Play music' }),
+    ];
+    for (const button of buttons) {
+      await expect(button).toBeVisible();
+      await expect
+        .poll(() =>
+          button.evaluate((el) => {
+            const b = el.getBoundingClientRect();
+            return el.contains(document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2));
+          }),
+        )
+        .toBe(true);
+    }
+  });
 });
+
+// Above the phone breakpoint (768 px), below the whole radio's room beside the toolbar.
+const NARROW_DESKTOP_WIDTH_PX = 780;

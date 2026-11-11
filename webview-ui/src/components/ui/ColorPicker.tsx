@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 
 import { VisualColorPicker } from '../VisualColorPicker.js';
 import { Button } from './Button.js';
+import { PixelText } from './PixelText.js';
 import type { ColorValue } from './types.js';
 
 function ColorSlider({
@@ -30,7 +31,7 @@ function ColorSlider({
         className="pixel-range flex-1 min-w-0"
         style={{ '--range-fill': `${pct}%` } as CSSProperties}
       />
-      <span className="text-sm text-text w-44 text-right shrink-0 tabular-nums">{value}</span>
+      <PixelText text={String(value)} className="text-sm text-text w-44 justify-end shrink-0" />
     </div>
   );
 }
@@ -69,7 +70,7 @@ export function ColorPicker({
   const isColorize = colorize || !!value.colorize;
 
   return (
-    <div className="flex flex-col py-8 px-10 bg-bg-dark border-2 border-border rounded-none">
+    <div className="fade-stagger flex flex-col py-8 px-10 bg-bg-dark border-2 border-border rounded-none">
       <ColorSlider
         label="Hue"
         value={value.h}

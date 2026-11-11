@@ -7,6 +7,7 @@
  * speculation.
  */
 
+import type { UsageWindow } from './messages.js';
 import type { TeamProvider } from './teamProvider.js';
 
 // ── Normalized Events (all provider types produce these) ──────
@@ -39,7 +40,14 @@ export type AgentEvent =
       input?: unknown;
       runInBackground?: boolean;
     }
-  | { kind: 'subagentEnd'; parentToolId: string; toolId: string }
+  | {
+      kind: 'subagentEnd';
+      parentToolId: string;
+      toolId: string;
+      /** The stopped sub-agent's own transcript, when the CLI names it: tells
+       *  WHICH of a lead's in-process teammates finished. */
+      agentTranscriptPath?: string;
+    }
   | {
       kind: 'subagentTurnEnd';
       parentToolId: string;
@@ -61,6 +69,55 @@ export type AgentEvent =
       cwd?: string;
     }
   | { kind: 'sessionEnd'; reason?: string };
+
+// ── Account usage (plan rate limits) ──────────────────────────
+
+/** The account's plan limits as one report states them (windows on the wire
+ *  type, `UsageWindow`). Each window may be absent on its own. */
+export interface ReportedUsage {
+  fiveHour?: UsageWindow;
+  sevenDay?: UsageWindow;
+}
+
+/** One session's context as the CLI itself measures it (Claude: the status
+ *  line's `context_window`), which the office's gauge prefers over its own
+ *  transcript estimate. */
+export interface ReportedContext {
+  sessionId: string;
+  /** Share of the window in use, 0-100. */
+  usedPercentage: number;
+  /** The session's window, in tokens. */
+  windowTokens: number;
+}
+
+/**
+ * How a provider reports the account's plan usage to the server: a small
+ * script the CLI runs, installed into the CLI's own settings (Claude: the
+ * status line, which is the only place Claude Code hands out its rate
+ * limits). The script POSTs to `/api/usage/:providerId`; the provider turns
+ * the body into a ReportedUsage. Install is always an explicit user choice.
+ */
+export interface UsageBridge {
+  /** What installing writes, what data moves, how to undo it — shown before
+   *  the user confirms (paragraphs split on blank lines). */
+  readonly disclosure: string;
+  /** Whether the bridge is installed in the CLI's settings. */
+  isInstalled(): boolean;
+  /** Copy the bridge script from `packageRoot` (the extension / npm package
+   *  root, holding dist/hooks/) and install it. Throws, before any write, when
+   *  it cannot be installed without rewriting something the user wrote. */
+  install(packageRoot: string): Promise<void>;
+  /** Restore the CLI's settings to what they were. Throws when it cannot. */
+  uninstall(): Promise<void>;
+  /** Re-copy an installed bridge's script (startup: a new version ships a new
+   *  script). No-op when not installed. */
+  refreshScript(packageRoot: string): void;
+  /** Validate a report POSTed by the script; null for anything malformed. */
+  normalizeReport(raw: unknown): ReportedUsage | null;
+  /** The reporting session's context from the same POST; null when it
+   *  carries none (before the session's first response) or is malformed. */
+  normalizeContext(raw: unknown): ReportedContext | null;
+}
 
 // ── Hook-based Provider (CLIs with hooks APIs) ────────────────
 
@@ -140,16 +197,37 @@ export interface HookProvider {
   readonly sessionFilePattern?: string;
   /** Parse one line of a transcript file into an AgentEvent. */
   parseTranscriptLine?(line: string): AgentEvent | null;
-  /** Build CLI launch command for +Agent button. */
+  /** Build CLI launch command for +Agent button. `resume`: continue the
+   *  existing session `sessionId` (its transcript) instead of starting one. Only
+   *  a provider with `conversationTitle` is asked to resume (the conversation
+   *  list is its), and it must honour `resume`: ignoring it would start a new
+   *  session under the old id. */
   buildLaunchCommand?(
     sessionId: string,
     cwd: string,
-    opts?: { bypassPermissions?: boolean },
+    opts?: { bypassPermissions?: boolean; resume?: boolean },
   ): {
     command: string;
     args: string[];
     env?: Record<string, string>;
   };
+  /** True for an environment variable a running session of this CLI exports to
+   *  the processes under it as a marker of THAT session (its id, its socket, a
+   *  "you are a child session" flag). An agent the office launches is a session
+   *  of its own: when the office itself runs inside a session (a server started
+   *  from one), these must not reach it — Claude Code, seeing an inherited child
+   *  marker, turns transcript saving off, and the office reads transcripts.
+   *  Settings the user exported (models, API config) are not markers.
+   *  Undefined = this CLI marks nothing. */
+  isInheritedSessionEnv?(name: string): boolean;
+  /** A session transcript's title as the CLI shows it (a user rename wins over
+   *  the generated one), or undefined when it has none. Read by the sidebar's
+   *  recent conversations; undefined = this provider names no conversations
+   *  (and is never asked to resume one). */
+  conversationTitle?(transcriptPath: string): string | undefined;
+
+  /** Optional account-usage reporting (the office's usage bars). */
+  readonly usageBridge?: UsageBridge;
 
   // ── Optional team/subagent extension (Agent Teams on Claude; empty for single-agent CLIs) ──
 

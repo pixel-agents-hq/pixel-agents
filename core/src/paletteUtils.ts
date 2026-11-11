@@ -1,46 +1,111 @@
 /**
- * Palette diversity utilities for agent character assignment.
+ * A new agent's look: which character it wears, and which copy of that
+ * character it is (so two agents never look the same).
  *
  * Pure functions with no DOM/sprite dependencies — safe for use in both
- * browser (webview) and Node.js (server) environments.
+ * browser (webview) and Node.js (server) environments. How a copy looks (its
+ * clothes colour) is the webview's business; here a copy is only a number.
  */
 
-export interface PalettePick {
-  palette: number;
-  hueShift: number;
-}
-
-const HUE_SHIFT_MIN_DEG = 45;
-const HUE_SHIFT_RANGE_DEG = 271;
+import { pickDirectoryCharacter } from './directoryCharacters.js';
+import type { DirectoryCharacterOrder } from './messages.js';
 
 /**
- * Pick a diverse palette based on current palette distribution.
- * First N agents each get a unique skin (where N = paletteCount).
- * Beyond N, skins repeat in balanced rounds with a random hue shift (≥45°).
+ * An agent's look. `repeat` counts the copies of one character in the
+ * office: 0 is the character as drawn, 1 its first repeat, 2 the next…
+ */
+export interface Look {
+  palette: number;
+  repeat: number;
+}
+
+/** An agent's look as far as picking goes (either part may still be unset). */
+export type WornLook = Partial<Look>;
+
+/** The repeat a new agent wearing `palette` gets: the lowest one no agent in
+ *  `worn` wearing that character holds (0 when no one wears it). */
+export function repeatFor(palette: number, worn: Iterable<WornLook>): number {
+  const taken = new Set<number>();
+  for (const look of worn) {
+    if (look.palette === palette) taken.add(look.repeat ?? 0);
+  }
+  let repeat = 0;
+  while (taken.has(repeat)) repeat++;
+  return repeat;
+}
+
+/**
+ * A character picked at random for a new agent among those with the fewest
+ * copies in the office: who walks in is a surprise, but the copies stay even.
+ * It never repeats one already in the office while some character is free,
+ * and once the whole cast is in, no character gets a third copy until every
+ * one has a second (and so on). Among those, it prefers characters no
+ * Directory claims as a default (`reserved`), so a Directory's characters stay
+ * available for its own launches.
  *
  * @param paletteCount - Total number of available palettes (e.g., 6)
- * @param paletteCounts - Array of counts per palette (length must equal paletteCount)
- * @returns Selected palette index and hue shift in degrees
+ * @param worn - The looks of the agents already in the office
+ * @param random - Source of randomness in [0, 1) (tests pass a fixed one)
+ * @param reserved - Palettes to leave for whoever claims them (Directory defaults)
  */
-export function pickDiversePalette(paletteCount: number, paletteCounts: number[]): PalettePick {
-  if (paletteCounts.length !== paletteCount) {
-    throw new Error(
-      `paletteCounts length (${paletteCounts.length}) must equal paletteCount (${paletteCount})`,
-    );
+export function pickRandomPalette(
+  paletteCount: number,
+  worn: readonly WornLook[],
+  random: () => number = Math.random,
+  reserved: ReadonlySet<number> = new Set(),
+): number {
+  const copies = new Array<number>(paletteCount).fill(0);
+  for (const look of worn) {
+    if (look.palette !== undefined && look.palette < paletteCount) copies[look.palette]++;
   }
-
-  const minCount = Math.min(...paletteCounts);
-  const available: number[] = [];
-  for (let i = 0; i < paletteCount; i++) {
-    if (paletteCounts[i] === minCount) available.push(i);
+  const fewest = Math.min(...copies);
+  const candidates: number[] = [];
+  for (let palette = 0; palette < paletteCount; palette++) {
+    if (copies[palette] === fewest) candidates.push(palette);
   }
-  const palette = available[Math.floor(Math.random() * available.length)];
+  const unclaimed = candidates.filter((palette) => !reserved.has(palette));
+  const pool = unclaimed.length > 0 ? unclaimed : candidates;
+  return pool[Math.floor(random() * pool.length)];
+}
 
-  // First round (minCount === 0): no hue shift. Subsequent rounds: random ≥45°.
-  let hueShift = 0;
-  if (minCount > 0) {
-    hueShift = HUE_SHIFT_MIN_DEG + Math.floor(Math.random() * HUE_SHIFT_RANGE_DEG);
-  }
+export interface LookRequest {
+  paletteCount: number;
+  /** The looks of the agents already in the office. */
+  worn: readonly WornLook[];
+  /** A character picked from the roster: worn even when someone else wears it. */
+  picked?: number;
+  /** The launch Directory's default characters (pickDirectoryCharacter). */
+  directory?: { characters?: readonly number[]; characterOrder?: DirectoryCharacterOrder };
+  /** Characters a random pick leaves for their Directories (pickRandomPalette). */
+  reserved?: ReadonlySet<number>;
+  random?: () => number;
+}
 
-  return { palette, hueShift };
+/** A roster pick as it arrives (`launchAgent.palette`, any value), when it
+ *  names a character in the cast: an integer in [0, paletteCount). */
+export function rosterPick(raw: unknown, paletteCount: number): number | undefined {
+  if (typeof raw !== 'number' || !Number.isInteger(raw)) return undefined;
+  return raw >= 0 && raw < paletteCount ? raw : undefined;
+}
+
+/**
+ * A new agent's look, first match wins: the roster pick, else one of the
+ * launch Directory's defaults no one wears, else a random pick. Whichever it
+ * is, an agent wearing a character already in the office is its next repeat.
+ */
+export function chooseLook(request: LookRequest): Look {
+  const { paletteCount, worn, directory, random = Math.random } = request;
+  const wornPalettes = new Set<number>();
+  for (const look of worn) if (look.palette !== undefined) wornPalettes.add(look.palette);
+  const palette =
+    rosterPick(request.picked, paletteCount) ??
+    pickDirectoryCharacter(
+      directory?.characters ?? [],
+      directory?.characterOrder ?? 'priority',
+      paletteCount,
+      wornPalettes,
+      random,
+    ) ??
+    pickRandomPalette(paletteCount, worn, random, request.reserved);
+  return { palette, repeat: repeatFor(palette, worn) };
 }

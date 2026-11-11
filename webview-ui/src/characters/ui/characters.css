@@ -1,0 +1,927 @@
+/* The Characters view. Every class is prefixed chv- (the view mounts over the office).
+   Desktop: a modal of three panes; phones (.chv-phone): a full-screen page. */
+
+.chv-root {
+  position: fixed;
+  inset: 0;
+  color: var(--color-text-solid);
+  font-size: 18px;
+  line-height: 1.25;
+}
+.chv-root canvas {
+  image-rendering: pixelated;
+  display: block;
+  flex: none;
+}
+/* text sizes come from the view, not from the app's Button sizes */
+.chv-root button,
+.chv-root input {
+  font: inherit;
+}
+.chv-root button {
+  cursor: pointer;
+}
+.chv-root button:disabled {
+  cursor: default;
+}
+.chv-root :focus-visible {
+  outline: 2px solid var(--color-accent-bright);
+  outline-offset: 2px;
+}
+.chv-root h2 {
+  font-size: 16px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted-solid);
+  margin: 0;
+}
+.chv-loading {
+  margin: auto;
+  color: var(--color-text-muted-solid);
+}
+
+/* ── Buttons (the app's Button and Checkbox; this lays them out) ── */
+.chv-box {
+  background: var(--color-panel);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-pixel);
+}
+/* ViewButton: bordered (the variants' border is transparent), pressed into its shadow */
+.chv-btn {
+  border-color: var(--color-border);
+  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.chv-btn-primary {
+  border-color: var(--color-accent-bright);
+}
+.chv-btn:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: var(--shadow-pixel-pressed);
+}
+/* the ghost icon Button as a big × in the view's text colour */
+.chv-close {
+  width: auto;
+  height: auto;
+  border: 0;
+  padding: 6px;
+  color: var(--color-text-solid);
+}
+.chv-danger-armed {
+  background: var(--color-danger) !important;
+  border-color: var(--color-danger) !important;
+}
+.chv-seg {
+  display: inline-flex;
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-pixel);
+}
+.chv-seg button {
+  background: var(--color-bg-dark);
+  border: 0;
+  padding: 3px 9px;
+}
+.chv-seg button + button {
+  border-left: 2px solid var(--color-border);
+}
+.chv-seg button[aria-pressed='true'] {
+  background: var(--color-active-bg);
+  color: var(--color-text-on-accent);
+}
+
+/* ── Stage ───────────────────────────────────────────────── */
+.chv-stage {
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.chv-pin {
+  display: grid;
+  gap: 12px;
+}
+.chv-stage-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+.chv-floor {
+  --wall-h: 40%;
+  position: relative;
+  background:
+    linear-gradient(
+      var(--color-preview-wall) calc(var(--wall-h) - 6px),
+      var(--color-border) 0 var(--wall-h),
+      transparent 0
+    ),
+    repeating-linear-gradient(90deg, transparent 0 46px, var(--color-preview-wall-seam) 0 48px)
+      top / 100% var(--wall-h) no-repeat,
+    repeating-conic-gradient(var(--color-preview-floor) 0 25%, var(--color-preview-floor-alt) 0 50%)
+      0 0 / 32px 32px;
+  border: 2px solid var(--color-border);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 16px 12px 12px;
+}
+/* a pixel shadow under every figure */
+.chv-floor canvas,
+.chv-opt canvas,
+.chv-mcard canvas {
+  background: radial-gradient(closest-side, var(--color-figure-shadow) 97%, transparent 100%) 50%
+    100% / 62% 6.5% no-repeat;
+}
+.chv-hero {
+  margin: 0;
+}
+.chv-turn {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+.chv-turn figure {
+  margin: 0;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.chv-turn figcaption {
+  font-size: 14px;
+  text-transform: uppercase;
+  background: var(--color-bg-dark);
+  border: 2px solid var(--color-border);
+  padding: 0 4px;
+  line-height: 16px;
+}
+.chv-sheetbox h2 {
+  margin-bottom: 6px;
+}
+.chv-sheet-wrap {
+  overflow-x: auto;
+}
+.chv-sheet {
+  display: grid;
+  grid-template-columns: 44px repeat(7, var(--cell-w, 48px));
+  grid-template-rows: auto repeat(3, var(--cell-h, 96px)) auto;
+  width: max-content;
+}
+.chv-sheet-row {
+  font-size: 14px;
+  color: var(--color-text-muted-solid);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+}
+.chv-sheet-col {
+  font-size: clamp(11px, calc(var(--cell-w, 48px) / 3.6), 14px);
+  color: var(--color-text-muted-solid);
+  text-align: center;
+  padding-bottom: 4px;
+}
+.chv-sheet canvas {
+  grid-column: 2 / span 7;
+  grid-row: 2 / span 3;
+  outline: 1px dashed var(--color-border);
+  background: var(--color-bg-dark);
+  cursor: pointer;
+}
+.chv-sheet-note {
+  grid-column: 2 / span 7;
+  grid-row: 5;
+  text-align: center;
+  padding-top: 6px;
+  font-size: 16px;
+  color: var(--color-accent-bright);
+}
+
+/* ── Wardrobe ────────────────────────────────────────────── */
+.chv-wardrobe {
+  display: grid;
+}
+.chv-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 8px 8px 10px;
+  border-bottom: 2px solid var(--color-border);
+  background: var(--color-bg-dark);
+}
+.chv-tabs::-webkit-scrollbar {
+  display: none;
+}
+/* every tab as wide as the longest slot name (set in script) */
+.chv-tabs button {
+  flex: 1 0 var(--tab-w, 96px);
+  min-width: 0;
+  background: var(--color-bg-thumb);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-pixel);
+  padding: 4px 8px 5px;
+  display: grid;
+  justify-items: start;
+  text-align: left;
+}
+.chv-tabs button b {
+  font-weight: 400;
+  white-space: nowrap;
+}
+.chv-tabs button:hover {
+  background: var(--color-panel-hover);
+}
+.chv-tabs button span {
+  font-size: 14px;
+  color: var(--color-text-muted-solid);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chv-tabs button[aria-selected='true'] {
+  background: var(--color-active-bg);
+  border-color: var(--color-accent-bright);
+}
+.chv-tabs button[aria-selected='true'] span {
+  color: var(--color-text-solid);
+}
+.chv-slot {
+  padding: 14px 16px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.chv-slot-body {
+  display: contents;
+}
+.chv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 6px;
+}
+.chv-opt {
+  background: var(--color-bg-thumb);
+  border: 2px solid transparent;
+  padding: 6px 4px 4px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+.chv-opt:hover {
+  border-color: var(--color-border);
+}
+.chv-opt[aria-pressed='true'] {
+  border-color: var(--color-accent-bright);
+  background: var(--color-active-bg);
+}
+.chv-opt span {
+  font-size: 15px;
+  line-height: 1.1;
+  text-align: center;
+  min-height: 2.3em;
+  display: flex;
+  align-items: center;
+}
+.chv-opt-none canvas {
+  opacity: 0.45;
+}
+.chv-grid.chv-eye-shapes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  overflow: visible;
+  margin: 0;
+  padding: 0;
+}
+.chv-eye-shapes .chv-opt {
+  flex: 0 0 auto;
+  padding: 8px 8px 4px;
+}
+.chv-eye-shapes canvas {
+  background: none;
+}
+.chv-colors {
+  display: grid;
+  gap: 8px;
+}
+.chv-colors + .chv-colors {
+  border-top: 2px dashed var(--color-border);
+  padding-top: 12px;
+}
+.chv-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.chv-sw {
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--color-bg-dark);
+  box-shadow: var(--shadow-pixel);
+  padding: 0;
+}
+.chv-sw[aria-pressed='true'] {
+  outline: 2px solid var(--color-text-on-accent);
+  outline-offset: 1px;
+}
+.chv-sw-text {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--color-bg-thumb) 0 4px,
+    var(--color-panel) 4px 8px
+  );
+  font-size: 14px;
+  width: auto;
+  padding: 0 6px;
+}
+.chv-wheel {
+  border-radius: 50%;
+  background: conic-gradient(
+    hsl(0 90% 55%),
+    hsl(60 90% 55%),
+    hsl(120 90% 50%),
+    hsl(180 90% 50%),
+    hsl(240 90% 60%),
+    hsl(300 90% 55%),
+    hsl(360 90% 55%)
+  );
+}
+.chv-choice-label {
+  font-size: 15px;
+  color: var(--color-text-muted-solid);
+  margin-right: 4px;
+}
+
+/* the picker: the square (--sq wide) and the hue bar; the hex line and contrast slider under the square, as wide */
+.chv-hsbc {
+  display: grid;
+  grid-template-columns: var(--sq, minmax(0, 1fr)) 20px;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--color-bg-dark);
+  border: 2px solid var(--color-border);
+}
+.chv-pick {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+}
+.chv-pick-sq {
+  aspect-ratio: 1 / 1;
+}
+.chv-pick-sq,
+.chv-pick-hue {
+  position: relative;
+  border: 2px solid var(--color-border);
+  cursor: crosshair;
+  touch-action: none;
+  outline: none;
+}
+.chv-pick-sq:focus-visible,
+.chv-pick-hue:focus-visible {
+  border-color: var(--color-accent-bright);
+}
+.chv-root .chv-pick-sq canvas,
+.chv-root .chv-pick-hue canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: auto;
+}
+.chv-pick-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border: 2px solid var(--color-text-solid);
+  box-shadow:
+    0 0 0 1px var(--color-bg-dark),
+    inset 0 0 0 1px var(--color-bg-dark);
+  pointer-events: none;
+}
+.chv-pick-hue {
+  cursor: ns-resize;
+}
+.chv-pick-mark {
+  position: absolute;
+  left: -5px;
+  right: -5px;
+  height: 6px;
+  margin-top: -3px;
+  border: 2px solid var(--color-text-solid);
+  box-shadow: 0 0 0 1px var(--color-bg-dark);
+  pointer-events: none;
+}
+.chv-pick-read {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 15px;
+}
+.chv-pick-hex {
+  width: 9ch;
+  padding: 2px 6px;
+  background: var(--color-bg-dark);
+  border: 2px solid var(--color-border);
+  font-variant-numeric: tabular-nums;
+}
+.chv-pick-hex:focus {
+  border-color: var(--color-accent-bright);
+  outline: none;
+}
+.chv-pick-read .chv-check {
+  margin-left: auto;
+}
+.chv-pick-chip {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--color-border);
+  flex: none;
+}
+.chv-c-lab {
+  grid-column: 1;
+  grid-row: 3;
+  font-size: 15px;
+  color: var(--color-text-muted-solid);
+}
+.chv-c-out {
+  grid-column: 1;
+  grid-row: 3;
+  justify-self: end;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.chv-c-in {
+  grid-column: 1;
+  grid-row: 4;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  background: transparent;
+  margin: 0;
+  cursor: pointer;
+}
+.chv-c-in::-webkit-slider-runnable-track {
+  height: 8px;
+  border: 2px solid var(--color-border);
+  background: linear-gradient(
+    90deg,
+    var(--color-accent) var(--fill, 50%),
+    var(--color-panel) var(--fill, 50%)
+  );
+}
+.chv-c-in::-moz-range-track {
+  height: 4px;
+  border: 2px solid var(--color-border);
+  background: linear-gradient(
+    90deg,
+    var(--color-accent) var(--fill, 50%),
+    var(--color-panel) var(--fill, 50%)
+  );
+}
+.chv-c-in::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 16px;
+  margin-top: -6px;
+  background: var(--color-text-solid);
+  border: 2px solid var(--color-bg-dark);
+  border-radius: 0;
+}
+.chv-c-in::-moz-range-thumb {
+  width: 8px;
+  height: 14px;
+  background: var(--color-text-solid);
+  border: 2px solid var(--color-bg-dark);
+  border-radius: 0;
+}
+
+/* ── Pixel editor ────────────────────────────────────────── */
+/* the body row takes the rest of the editor's height: its box sizes the canvas */
+.chv-editor {
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  align-content: start;
+}
+.chv-ed-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.chv-ed-head h2 {
+  color: var(--color-text-solid);
+}
+.chv-ed-frame {
+  font-size: 15px;
+  color: var(--color-text-muted-solid);
+}
+.chv-ed-frame b {
+  color: var(--color-text-solid);
+  font-weight: 400;
+}
+.chv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.chv-chip {
+  background: var(--color-bg-dark);
+  border: 2px solid var(--color-border);
+  padding: 2px 8px;
+  font-size: 15px;
+  position: relative;
+}
+.chv-chip[aria-pressed='true'] {
+  background: var(--color-active-bg);
+  border-color: var(--color-accent-bright);
+}
+.chv-chip-edited::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 4px;
+  height: 4px;
+  background: var(--color-warning);
+}
+.chv-ed-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+.chv-ed-canvas-wrap {
+  flex: none;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+/* the frame, and over it the canvas that takes the pointer and draws the hover box */
+.chv-ed-stack {
+  position: relative;
+}
+.chv-ed-canvas {
+  outline: 2px solid var(--color-border);
+}
+.chv-root .chv-ed-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  touch-action: none;
+  cursor: crosshair;
+}
+.chv-ed-nav {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 15px;
+  color: var(--color-text-muted-solid);
+}
+.chv-ed-tools {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.chv-toolrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chv-tool {
+  background: var(--color-bg-dark);
+  border: 2px solid var(--color-border);
+  padding: 3px 9px;
+  font-size: 15px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.chv-tool kbd {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10px;
+  color: var(--color-text-muted-solid);
+  border: 1px solid var(--color-border);
+  padding: 0 3px;
+}
+.chv-tool[aria-pressed='true'] {
+  background: var(--color-accent);
+  border-color: var(--color-accent-bright);
+  color: var(--color-text-on-accent);
+}
+.chv-tool[aria-pressed='true'] kbd {
+  color: var(--color-text-on-accent);
+  border-color: var(--color-text-on-accent);
+}
+.chv-tool:disabled {
+  opacity: var(--btn-disabled-opacity);
+}
+.chv-note {
+  font-size: 15px;
+  color: var(--color-text-muted-solid);
+  margin: 0;
+  max-width: 62ch;
+}
+.chv-ed-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chv-ed-palette .chv-sw,
+.chv-ed-current .chv-sw {
+  width: 22px;
+  height: 22px;
+}
+.chv-ed-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  color: var(--color-text-muted-solid);
+}
+.chv-ed-current .chv-sw {
+  box-shadow: none;
+}
+.chv-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chv-custom input {
+  width: 34px;
+  height: 28px;
+  padding: 0;
+  border: 2px solid var(--color-border);
+  background: var(--color-bg-dark);
+}
+.chv-ed-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 15px;
+}
+.chv-ed-item {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 2px solid var(--color-border);
+}
+.chv-ed-item h3 {
+  margin: 0;
+  font-size: 15px;
+  text-transform: uppercase;
+  color: var(--color-text-muted-solid);
+}
+.chv-ed-item-new {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chv-ed-item-new input {
+  flex: 1 1 120px;
+  min-width: 0;
+  background: var(--color-bg-dark);
+  border: 2px solid var(--color-border);
+  padding: 3px 8px;
+  font-size: 15px;
+}
+
+/* ── Roster ──────────────────────────────────────────────── */
+.chv-roster {
+  padding: 12px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+}
+.chv-rail {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  align-content: start;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 0 2px 2px 0;
+}
+.chv-card {
+  min-width: 0;
+  background: var(--color-bg-thumb);
+  border: 2px solid transparent;
+  padding: 5px 4px 4px;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  position: relative;
+}
+.chv-card[aria-current='true'] {
+  border-color: var(--color-accent-bright);
+  background: var(--color-active-bg);
+}
+.chv-card-pick {
+  background: none;
+  border: 0;
+  padding: 0;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.chv-card-file {
+  font-size: 14px;
+  color: var(--color-text-muted-solid);
+}
+.chv-card input {
+  width: 100%;
+  background: var(--color-bg-dark);
+  border: 1px solid var(--color-border);
+  font-size: 15px;
+  padding: 1px 4px;
+  text-align: center;
+}
+.chv-card-x {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: transparent;
+  border: 0;
+  padding: 4px;
+  display: flex;
+}
+.chv-card-x:hover {
+  color: var(--color-danger);
+}
+.chv-card-add {
+  border: 2px dashed var(--color-border);
+  background: transparent;
+  align-content: center;
+  min-height: 120px;
+  padding: 8px;
+  text-align: center;
+  font-size: 15px;
+}
+.chv-card-add:hover {
+  border-color: var(--color-accent-bright);
+}
+.chv-roster-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.chv-roster-zip {
+  grid-column: 1 / -1;
+}
+.chv-roster-actions .chv-btn {
+  padding: 4px;
+  font-size: 15px;
+  white-space: nowrap;
+}
+.chv-status {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2;
+  max-width: 420px;
+  margin: 0;
+  background: var(--color-bg-dark);
+  border: 2px solid var(--color-border);
+  box-shadow: var(--shadow-pixel);
+  padding: 8px 12px;
+  font-size: 16px;
+}
+.chv-status-ok {
+  color: var(--color-status-success);
+}
+.chv-status-err {
+  color: var(--color-warning);
+}
+
+/* ── Desktop: a modal of three panes, as tall as the preview column, centred ── */
+.chv-desk {
+  display: grid;
+  place-items: center;
+  /* centred in the space above the bottom toolbar (10px off the edge, 61px tall) */
+  padding: 24px 24px calc(71px + 24px);
+}
+.chv-backdrop {
+  position: absolute;
+  inset: 0;
+}
+.chv-panel {
+  position: relative;
+  width: min(100%, 1640px);
+  max-height: 100%;
+  display: grid;
+  grid-template-columns: var(--roster-w, 224px) auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  grid-template-areas:
+    'head head head'
+    'roster stage wardrobe'
+    'foot foot foot';
+  gap: 12px;
+}
+.chv-head {
+  grid-area: head;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+/* Save sits under the panes at the right, mirroring the header above them */
+.chv-foot {
+  grid-area: foot;
+  display: flex;
+  justify-content: flex-end;
+}
+.chv-save.chv-btn {
+  min-width: 136px;
+  padding: 8px 18px;
+  font-size: 24px;
+  gap: 10px;
+}
+.chv-hist {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+/* the stage column sizes the row; the roster and the wardrobe scroll inside that height */
+.chv-desk .chv-roster,
+.chv-desk .chv-wardrobe {
+  contain: size;
+  min-height: 0;
+}
+.chv-desk .chv-roster {
+  grid-area: roster;
+}
+.chv-desk .chv-stage {
+  grid-area: stage;
+  overflow-y: auto;
+  min-height: 0;
+}
+/* the stage is as wide as its preview and sheet; the bar wraps to that width instead of widening it */
+.chv-desk .chv-stage-top {
+  width: 0;
+  min-width: 100%;
+}
+/* tabs down the left edge of the wardrobe, the chosen tab's options and colours beside them */
+.chv-desk .chv-wardrobe {
+  grid-area: wardrobe;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+.chv-desk .chv-tabs {
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 10px;
+  border-bottom: 0;
+  border-right: 2px solid var(--color-border);
+}
+.chv-desk .chv-tabs button {
+  flex: none;
+  width: var(--tab-w, 112px);
+}
+.chv-desk .chv-slot,
+.chv-desk .chv-editor {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.chv-desk .chv-editor {
+  grid-column: 1 / -1;
+}
+.chv-desk .chv-hsbc {
+  --sq: 152px;
+  padding: 8px 10px;
+  justify-content: start;
+}
+.chv-desk .chv-pick {
+  height: 152px;
+  grid-template-rows: minmax(0, 1fr);
+}
+.chv-desk .chv-pick-sq {
+  aspect-ratio: auto;
+}
+@media (max-width: 1199px) {
+  .chv-panel {
+    --roster-w: 112px;
+  }
+  .chv-roster-actions {
+    grid-template-columns: 1fr;
+  }
+}

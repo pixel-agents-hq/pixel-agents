@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { useCallback, useRef } from 'react';
 
 import { MobileAgentBar } from '../components/MobileAgentBar.js';
@@ -6,11 +6,17 @@ import { MobileKeyBar } from '../components/MobileKeyBar.js';
 import { MobileTerminalPage } from '../components/MobileTerminalPage.js';
 import type { TerminalInputHandle } from '../components/TerminalPane.js';
 import { Button } from '../components/ui/Button.js';
-import { MOBILE_PASTE_PROMPT } from '../constants.js';
+import { PixelIcon } from '../components/ui/PixelIcon.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import type { TerminalDrawerController } from '../hooks/useTerminalDrawer.js';
-import { readClipboardText } from '../terminal/clipboard.js';
-import { TRACK_TRANSITION, trackTransform, useEdgeSwipe } from './useEdgeSwipe.js';
+import type { SwipePanel } from './useEdgeSwipe.js';
+import {
+  refPanel,
+  TRACK_TRANSITION,
+  trackPanel,
+  trackTransform,
+  useEdgeSwipe,
+} from './useEdgeSwipe.js';
 import type { MobileShellController } from './useMobileShell.js';
 
 interface MobileShellProps {
@@ -29,8 +35,16 @@ interface MobileShellProps {
   onAddDirectory: () => void;
   onEditDirectory: (directory: Directory) => void;
   onCloseAgent: (agentId: number) => void;
+  /** Persist a dragged card order; absent in a read-only office. */
+  onReorder?: (order: number[]) => void;
+  /** Opens the Characters view; absent in a read-only office, which hides the
+   *  roster arrow beside the + card. */
+  onOpenCharacters?: () => void;
   /** The software keyboard is up (useKeyboardViewport). */
   keyboardOpen: boolean;
+  /** The menu (MobileMenu, mounted by App), pulled in from the office's left
+   *  edge; absent where there is no menu. */
+  menuSwipe?: RefObject<SwipePanel | null>;
 }
 
 /**
@@ -53,26 +67,30 @@ export function MobileShell({
   onAddDirectory,
   onEditDirectory,
   onCloseAgent,
+  onReorder,
+  onOpenCharacters,
   keyboardOpen,
+  menuSwipe,
 }: MobileShellProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  // In the office the right edge pulls the terminal and the left edge the
+  // menu; in the terminal the left edge pulls the office back.
   useEdgeSwipe(
     shellRef,
-    trackRef,
-    shell.view === 'terminal' ? 'office' : terminalAvailable ? 'terminal' : null,
-    shell.toggleView,
+    shell.view === 'terminal'
+      ? { left: trackPanel(trackRef, shellRef, 'terminal', shell.toggleView) }
+      : {
+          left: menuSwipe && refPanel(menuSwipe),
+          right: terminalAvailable
+            ? trackPanel(trackRef, shellRef, 'office', shell.toggleView)
+            : undefined,
+        },
   );
 
   const inputRef = useRef<TerminalInputHandle>(null);
   const handleKey = useCallback((sequence: string) => inputRef.current?.send(sequence), []);
-  const handlePaste = useCallback(() => {
-    // A no-op when the user dismisses Safari's paste-permission callout (or
-    // the plain-http prompt) or the clipboard is empty.
-    void readClipboardText(MOBILE_PASTE_PROMPT).then((text) => {
-      if (text) inputRef.current?.paste(text);
-    });
-  }, []);
+  const lineCols = useCallback(() => inputRef.current?.cols() ?? 0, []);
 
   return (
     <>
@@ -106,13 +124,16 @@ export function MobileShell({
         {/* View toggle — pinned outside the track so it never slides. */}
         {terminalAvailable && (
           <div className="absolute mobile-safe-top right-8 z-40">
+            {/* Square, like the menu button opposite it: same size, inset
+                and border, the icon centred. */}
             <Button
-              size="sm"
+              size="icon_lg"
               className="border-border! shadow-pixel"
               onClick={shell.toggleView}
               title={shell.view === 'office' ? 'Show terminal' : 'Show office'}
+              aria-label={shell.view === 'office' ? 'Show terminal' : 'Show office'}
             >
-              {shell.view === 'office' ? '>_' : 'Office'}
+              <PixelIcon name={shell.view === 'office' ? 'terminal' : 'office'} />
             </Button>
           </div>
         )}
@@ -126,10 +147,14 @@ export function MobileShell({
         activeAgentId={shell.view === 'terminal' ? drawer.activeAgentId : null}
         onSelectAgent={shell.selectCard}
         onCloseAgent={onCloseAgent}
+        onReorder={onReorder}
         onLaunchDirectory={shell.launch}
         directories={directories}
         onAddDirectory={onAddDirectory}
         onEditDirectory={onEditDirectory}
+        // On both pages: the roster's strip slides up over the terminal's
+        // bottom rows only while it is open.
+        onOpenCharacters={onOpenCharacters}
         canLaunch={terminalAvailable}
         launchUnavailableReason={terminalUnavailableReason}
         getAppearance={drawer.getAppearance}
@@ -139,7 +164,7 @@ export function MobileShell({
       {/* Accessory keys for the TUI, only while the software keyboard is up —
           the last flex child, so it sits directly above the keyboard. */}
       {shell.view === 'terminal' && keyboardOpen && (
-        <MobileKeyBar onKey={handleKey} onPaste={handlePaste} />
+        <MobileKeyBar onKey={handleKey} lineCols={lineCols} />
       )}
     </>
   );

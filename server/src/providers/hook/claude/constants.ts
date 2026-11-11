@@ -9,6 +9,13 @@
 /** Output filename after esbuild compiles claude-hook.ts to CJS (source is .ts, output is .js) */
 export const CLAUDE_HOOK_SCRIPT_NAME = 'claude-hook.js';
 
+/** Output filename of the status line bridge script (claude-statusline.ts):
+ *  runs the user's own status line and reports Claude Code's rate limits. */
+export const CLAUDE_STATUSLINE_SCRIPT_NAME = 'claude-statusline.js';
+
+/** Flag before the base64url-encoded command the bridge wraps. */
+export const STATUSLINE_WRAP_FLAG = '--wrap';
+
 /** The script name we shipped before the rename to claude-hook.js. Still
  *  recognized as ours so a very old install can be migrated or removed. */
 export const LEGACY_HOOK_SCRIPT_NAME = 'pixel-agents-hook.js';
@@ -85,3 +92,11 @@ export const CLAUDE_SMALL_CONTEXT_WINDOW = 200_000;
  *  guessing small for a large model pins every gauge in the red, while the
  *  reverse is a quiet under-read that the runtime's widening still corrects. */
 export const CLAUDE_SMALL_CONTEXT_MODEL_PATTERN = /haiku|claude-[123]|-4-[01]\b/i;
+
+/** Tools that spawn a sub-agent (the provider's subagentToolNames). */
+export const CLAUDE_SUBAGENT_TOOLS: ReadonlySet<string> = new Set(['Task', 'Agent']);
+
+/** Bytes read from each end of a transcript looking for its title. */
+export const CONVERSATION_TITLE_SCAN_BYTES = 256 * 1024;
+/** A title longer than this is cut, with an ellipsis. */
+export const CONVERSATION_TITLE_MAX_CHARS = 120;

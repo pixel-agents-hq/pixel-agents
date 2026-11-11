@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
+import { CharactersView } from './characters/ui/CharactersView.js';
 import { AgentCardBar } from './components/AgentCardBar.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
@@ -9,26 +10,35 @@ import { DebugView } from './components/DebugView.js';
 import { DirectoryModal } from './components/DirectoryModal.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
+import { LoadingScene } from './components/LoadingScene.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TerminalDrawer } from './components/TerminalDrawer.js';
+import { TerminalHideRibbon } from './components/TerminalHideRibbon.js';
 import { Tooltip } from './components/Tooltip.js';
-import { Button } from './components/ui/Button.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
-import { ZoomControls } from './components/ZoomControls.js';
-import { OFFICE_CANVAS_TEST_ID } from './constants.js';
+import { MobileZoomLevel, ZoomControls } from './components/ZoomControls.js';
+import { CONVERSATION_SIDEBAR_WIDTH_PX, OFFICE_CANVAS_TEST_ID } from './constants.js';
+import type { ConversationSearchScope } from './conversations/ConversationList.js';
+import { ConversationSearch } from './conversations/ConversationSearch.js';
+import { ConversationSidebar } from './conversations/ConversationSidebar.js';
+import { useConversationSidebar } from './conversations/useConversationSidebar.js';
 import { useDirectoryEditor } from './hooks/useDirectoryEditor.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
-import type { Directory } from './hooks/useExtensionMessages.js';
 import { useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useIntroTour } from './hooks/useIntroTour.js';
 import { useIsMobile } from './hooks/useIsMobile.js';
 import { useKeyboardViewport } from './hooks/useKeyboardViewport.js';
+import { useLaunchActions } from './hooks/useLaunchActions.js';
+import { popClass, usePresence } from './hooks/usePresence.js';
 import { useTerminalDrawer } from './hooks/useTerminalDrawer.js';
+import { MobileMenu, MobileMenuButton } from './mobile/MobileMenu.js';
 import { MobileShell } from './mobile/MobileShell.js';
+import { useMobileMenu } from './mobile/useMobileMenu.js';
 import { useMobileShell } from './mobile/useMobileShell.js';
+import { MusicPlayer } from './music/MusicPlayer.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -43,6 +53,8 @@ import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
+import { UsageBars } from './usage/UsageBars.js';
+import { useUsageBridge } from './usage/useUsageBridge.js';
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
@@ -84,7 +96,6 @@ function App() {
     selectedAgent,
     agentTools,
     agentStatuses,
-    agentAwaitingInput,
     agentSeenActivity,
     subagentTools,
     subagentCharacters,
@@ -122,7 +133,10 @@ function App() {
     terminalAvailable,
     terminalUnavailableReason,
     terminalAgentIds,
+    cardAgents,
+    saveCardOrder,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
+  const usage = useUsageBridge();
 
   // Show migration notice once layout reset is detected
   const [migrationNoticeDismissed, setMigrationNoticeDismissed] = useState(false);
@@ -130,6 +144,18 @@ function App() {
 
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  // The Layout editor's panel, kept on screen while it rolls shut.
+  const editorPanel = usePresence(editor.isEditMode);
+  const sidebar = useConversationSidebar(terminalAvailable, officeReadOnly);
+  const { hasSidebar } = sidebar;
+  // The phone menu (recent conversations + Settings).
+  const menu = useMobileMenu();
+  const [isCharactersOpen, setIsCharactersOpen] = useState(false);
+  const openCharacters = useCallback(() => {
+    setIsSettingsOpen(false);
+    setIsCharactersOpen(true);
+  }, []);
+  const closeCharacters = useCallback(() => setIsCharactersOpen(false), []);
   const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
   const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
@@ -159,13 +185,13 @@ function App() {
     getOfficeState,
     agentTools,
     agentStatuses,
-    agentAwaitingInput,
     agentSeenActivity,
+    besidePx: hasSidebar && sidebar.open ? CONVERSATION_SIDEBAR_WIDTH_PX : 0,
   });
 
-  const launchIntoDirectory = useCallback((directory: Directory) => {
-    transport.send({ type: 'launchAgent', directoryPath: directory.path });
-  }, []);
+  const { launch: launchIntoDirectory, resume: resumeAndFocus } = useLaunchActions(
+    terminalDrawer.expectLaunch,
+  );
   const mobileShell = useMobileShell({
     getOfficeState,
     terminalAgentIds,
@@ -173,6 +199,24 @@ function App() {
     focusedAgentId,
     launchAgent: launchIntoDirectory,
   });
+
+  // A launched or resumed agent comes in focused: once its terminal opens (the
+  // pane and the active card already switch to it), select its character so
+  // the office follows it and its card is tinted, and on the phone slide over
+  // to it. Both are async — the server announces agentCreated, then
+  // terminalSessionOpened — so the character exists by the time the drawer
+  // reports the new pane. Only our own launches and resumes: the office is the
+  // app's main screen, so a reload that re-announces live sessions must land
+  // on the office.
+  const { lastLaunched } = terminalDrawer;
+  const { showTerminal: showMobileTerminal } = mobileShell;
+  useEffect(() => {
+    if (!lastLaunched) return;
+    getOfficeState().selectAndFollow(lastLaunched.agentId);
+    if (isMobile) showMobileTerminal();
+    // Keyed on the launch alone: a later breakpoint change must not slide.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastLaunched]);
 
   const currentMajorMinor = toMajorMinor(extensionVersion);
 
@@ -317,7 +361,8 @@ function App() {
 
   const [editorTickForKeyboard, setEditorTickForKeyboard] = useState(0);
   useEditorKeyboard(
-    editor.isEditMode,
+    // the Characters view has its own undo and shortcuts
+    editor.isEditMode && !isCharactersOpen,
     editorState,
     editor.handleDeleteSelected,
     editor.handleRotateSelected,
@@ -333,7 +378,6 @@ function App() {
   }, []);
 
   const { reveal: revealTerminal } = terminalDrawer;
-  const { showTerminal: showMobileTerminal } = mobileShell;
   const handleClick = useCallback(
     (agentId: number) => {
       // If clicked agent is a sub-agent, focus the parent's terminal instead
@@ -356,14 +400,39 @@ function App() {
     [terminalAgentIds, isMobile, revealTerminal, showMobileTerminal],
   );
 
-  // Card click when there is no terminal pane to switch (VS Code, or a
-  // watch-only standalone session): ask the host to raise the agent's own
+  // Desktop card click. A card with a terminal pane is its tab: show that
+  // pane and select + follow the character. Without one (VS Code, or a
+  // watch-only standalone session) ask the host to raise the agent's own
   // terminal — VS Code shows the editor terminal, standalone has nothing to
   // show — and select its character so the office follows the click.
-  const handleCardSelect = useCallback((agentId: number) => {
-    transport.send({ type: 'focusAgent', id: agentId });
-    getOfficeState().selectAndFollow(agentId);
-  }, []);
+  const { select: selectTerminal } = terminalDrawer;
+  const handleCardSelect = useCallback(
+    (agentId: number) => {
+      if (terminalAgentIds.includes(agentId)) {
+        selectTerminal(agentId);
+        return;
+      }
+      transport.send({ type: 'focusAgent', id: agentId });
+      getOfficeState().selectAndFollow(agentId);
+    },
+    [terminalAgentIds, selectTerminal],
+  );
+
+  // A running conversation pressed in the desktop sidebar: its agent, as its
+  // card would show it (its terminal pane, or focus without one). The phone's
+  // menu takes mobileShell.openAgent.
+  // The conversation search: open (and where it looks) or null.
+  const [conversationSearch, setConversationSearch] = useState<ConversationSearchScope | null>(
+    null,
+  );
+
+  const openAgentFromSidebar = useCallback(
+    (agentId: number) => {
+      getOfficeState().selectAndFollow(agentId);
+      handleCardSelect(agentId);
+    },
+    [handleCardSelect],
+  );
 
   const officeState = getOfficeState();
 
@@ -460,7 +529,7 @@ function App() {
     })();
 
   if (!layoutReady) {
-    return <div className="w-full h-full flex items-center justify-center ">Loading...</div>;
+    return <LoadingScene />;
   }
 
   // The office region is shared by both shells: desktop mounts it as the
@@ -496,7 +565,24 @@ function App() {
         <>
           {/* Mobile: pinch replaces the zoom buttons, and the toolbar's
                 jobs move to the card bar (+) and the floating Settings button. */}
-          {!isMobile && <ZoomControls zoom={editor.zoom} onZoomChange={editor.handleZoomChange} />}
+          {isMobile ? (
+            <MobileZoomLevel zoom={editor.zoom} />
+          ) : (
+            <ZoomControls
+              zoom={editor.zoom}
+              onZoomChange={editor.handleZoomChange}
+              sidebar={hasSidebar ? { open: sidebar.open, onToggle: sidebar.toggle } : undefined}
+            />
+          )}
+
+          {/* The provider's plan usage, top-left (Settings → Usage Bars). */}
+          {usage.status?.installed && (
+            <UsageBars
+              limits={usage.limits}
+              providerName={usage.status.providerName}
+              mobile={isMobile}
+            />
+          )}
 
           {/* Vignette overlay */}
           <div
@@ -517,7 +603,7 @@ function App() {
             </div>
           )}
 
-          {editor.isEditMode &&
+          {editorPanel.mounted &&
             (() => {
               const selUid = editorState.selectedFurnitureUid;
               const selColor = selUid
@@ -525,6 +611,7 @@ function App() {
                 : null;
               return (
                 <EditorToolbar
+                  className={popClass(editorPanel.closing)}
                   activeTool={editorState.activeTool}
                   selectedTileType={editorState.selectedTileType}
                   selectedFurnitureType={editorState.placingType}
@@ -568,18 +655,24 @@ function App() {
               );
             })()}
 
-          <ToolOverlay
-            officeState={officeState}
-            agents={agents}
-            agentTools={agentTools}
-            subagentTools={subagentTools}
-            subagentCharacters={subagentCharacters}
-            containerRef={containerRef}
-            zoom={editor.zoom}
-            panRef={editor.panRef}
-            onCloseAgent={handleCloseAgent}
-            alwaysShowOverlay={alwaysShowOverlay}
-          />
+          {/* The office's own layer: the characters' labels and bubbles stack
+              among themselves (OVERLAY_*_Z_INDEX) inside this box, which sits
+              at z 0 — so every piece of UI over the office (zoom buttons,
+              toolbar, cards, editor panels) always draws above them. */}
+          <div className="absolute inset-0 z-0 pointer-events-none">
+            <ToolOverlay
+              officeState={officeState}
+              agents={agents}
+              agentTools={agentTools}
+              subagentTools={subagentTools}
+              subagentCharacters={subagentCharacters}
+              containerRef={containerRef}
+              zoom={editor.zoom}
+              panRef={editor.panRef}
+              onCloseAgent={handleCloseAgent}
+              alwaysShowOverlay={alwaysShowOverlay}
+            />
+          </div>
         </>
       ) : (
         <DebugView
@@ -636,28 +729,30 @@ function App() {
           onToggleEditMode={editor.handleToggleEditMode}
           isSettingsOpen={isSettingsOpen}
           onToggleSettings={() => setIsSettingsOpen((v) => !v)}
+          // Where there is a conversation sidebar, Settings lives only at its
+          // foot (shut, it is one click away), never also in the toolbar.
+          showSettings={!hasSidebar}
+          isCharactersOpen={isCharactersOpen}
+          onOpenCharacters={openCharacters}
           directories={directories}
           onAddDirectory={directoryEditor.add}
           onEditDirectory={directoryEditor.edit}
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
+          onLaunch={launchIntoDirectory}
         />
       )}
 
-      {/* Mobile: Settings floats top-left (the layout editor stays desktop-
-            only — its tools are drag/hover-driven). */}
+      {/* Mobile: the menu button floats top-left; the menu holds the recent
+            conversations and Settings (the layout editor stays desktop-only —
+            its tools are drag/hover-driven). The roster opens from the arrow
+            on the + card (MobileAgentBar). */}
       {isMobile && !isDebugMode && !officeReadOnly && (
-        <div className="absolute mobile-safe-top left-8 z-20">
-          <Button
-            size="sm"
-            variant={isSettingsOpen ? 'active' : 'default'}
-            className="border-border! shadow-pixel"
-            onClick={() => setIsSettingsOpen((v) => !v)}
-          >
-            Settings
-          </Button>
-        </div>
+        <MobileMenuButton active={menu.open} onClick={menu.show} />
       )}
+
+      {/* The office radio: bottom-right, centred on a phone (the version label sits above it). */}
+      {!isDebugMode && <MusicPlayer mobile={isMobile} />}
 
       <VersionIndicator
         currentVersion={extensionVersion}
@@ -681,6 +776,7 @@ function App() {
           onClose={handleIntroClose}
           escapeSuppressed={
             isSettingsOpen ||
+            isCharactersOpen ||
             isChangelogOpen ||
             isHooksInfoOpen ||
             showMigrationNotice ||
@@ -708,7 +804,7 @@ function App() {
           office={officeRegion}
           shell={mobileShell}
           drawer={terminalDrawer}
-          agentIds={agents}
+          agentIds={cardAgents}
           terminalAgentIds={terminalAgentIds}
           focusedAgentId={focusedAgentId}
           terminalAvailable={terminalAvailable}
@@ -717,46 +813,63 @@ function App() {
           onAddDirectory={directoryEditor.add}
           onEditDirectory={directoryEditor.edit}
           onCloseAgent={handleCloseAgent}
+          onReorder={officeReadOnly ? undefined : saveCardOrder}
+          onOpenCharacters={officeReadOnly ? undefined : openCharacters}
           keyboardOpen={keyboard.keyboardOpen}
+          menuSwipe={officeReadOnly ? undefined : menu.swipe}
         />
       ) : (
         <>
+          {hasSidebar && (
+            <ConversationSidebar
+              open={sidebar.open}
+              onResume={resumeAndFocus}
+              onOpenAgent={openAgentFromSidebar}
+              statusFor={terminalDrawer.statusFor}
+              isSettingsOpen={isSettingsOpen}
+              onToggleSettings={() => setIsSettingsOpen((v) => !v)}
+              onSearch={setConversationSearch}
+            />
+          )}
+
           {officeRegion}
+
+          {/* The same cards, in the same order, as the phone's bar: every
+              main agent, external sessions included. A card with a terminal
+              pane is its tab (standalone); any other raises the agent's
+              editor terminal where there is one (VS Code) and selects its
+              character. */}
+          {!(isDebugMode && !terminalAvailable) && (
+            <AgentCardBar
+              agentIds={cardAgents}
+              activeAgentId={terminalAvailable ? terminalDrawer.shownAgentId : null}
+              focusedAgentId={focusedAgentId}
+              getAppearance={terminalDrawer.getAppearance}
+              statusFor={terminalDrawer.statusFor}
+              onSelect={handleCardSelect}
+              onClose={handleCloseAgent}
+              onReorder={officeReadOnly ? undefined : saveCardOrder}
+              trailing={
+                terminalAvailable && terminalAgentIds.length > 0 ? (
+                  <TerminalHideRibbon shown={terminalDrawer.isOpen} onHide={terminalDrawer.close} />
+                ) : undefined
+              }
+            />
+          )}
 
           {/* Standalone with a terminal: terminalAvailable is only ever true when
               the server reports a working PTY to a tokened session, which VS
               Code's surface never does. In flow as a flex sibling so the office
-              region reflows beside it instead of being overlaid.
-
-              Otherwise (VS Code, or a watch-only standalone session) the card
-              bar stands alone with every agent in the office, external sessions
-              included — the at-a-glance "who needs attention" strip, with a
-              click raising the agent's editor terminal where there is one. */}
-          {terminalAvailable ? (
+              region reflows beside it instead of being overlaid. */}
+          {terminalAvailable && (
             <TerminalDrawer
               agentIds={terminalAgentIds}
               shownAgentId={terminalDrawer.shownAgentId}
-              onSelectAgent={terminalDrawer.select}
-              onCloseAgent={handleCloseAgent}
               isOpen={terminalDrawer.isOpen}
-              onClosePanel={terminalDrawer.close}
               widthPx={terminalDrawer.widthPx}
               onResizeStart={terminalDrawer.onResizeStart}
-              getAppearance={terminalDrawer.getAppearance}
-              statusFor={terminalDrawer.statusFor}
               onStatusChange={terminalDrawer.onStatusChange}
             />
-          ) : (
-            !isDebugMode && (
-              <AgentCardBar
-                agentIds={agents}
-                focusedAgentId={focusedAgentId}
-                getAppearance={terminalDrawer.getAppearance}
-                statusFor={terminalDrawer.statusFor}
-                onSelect={handleCardSelect}
-                onClose={handleCloseAgent}
-              />
-            )
           )}
         </>
       )}
@@ -815,6 +928,45 @@ function App() {
         onClose={() => setIsChangelogOpen(false)}
         currentVersion={extensionVersion}
       />
+
+      {isMobile && !officeReadOnly && (
+        <MobileMenu
+          open={menu.open}
+          onOpen={menu.show}
+          onClose={menu.close}
+          swipeRef={menu.swipe}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          showConversations={terminalAvailable}
+          onResume={resumeAndFocus}
+          onOpenAgent={mobileShell.openAgent}
+          statusFor={terminalDrawer.statusFor}
+          onSearch={setConversationSearch}
+        />
+      )}
+
+      {/* Every conversation, searched (the sidebar's search field, "See all"). */}
+      <ConversationSearch
+        scope={conversationSearch}
+        onClose={() => setConversationSearch(null)}
+        onResume={(sessionId, directoryPath) => {
+          resumeAndFocus(sessionId, directoryPath);
+          if (isMobile) menu.close();
+        }}
+        onOpenAgent={(agentId) => {
+          if (isMobile) {
+            mobileShell.openAgent(agentId);
+            menu.close();
+          } else {
+            openAgentFromSidebar(agentId);
+          }
+        }}
+        statusFor={terminalDrawer.statusFor}
+        roomy={isMobile}
+      />
+
+      {isCharactersOpen && !officeReadOnly && (
+        <CharactersView phone={isMobile} onClose={closeCharacters} />
+      )}
 
       <SettingsModal
         isOpen={isSettingsOpen}

@@ -13,8 +13,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import type { HookProvider } from '../../core/src/provider.js';
+import { isPersistedSpawnChild, restoredAgentInit } from './agentPersistence.js';
 import { createAgentState } from './agentState.js';
 import type { AgentStateStore } from './agentStateStore.js';
+import { pausedSpawnFate } from './backgroundSpawns.js';
+import { PAUSED_SPAWN_CHECK_INTERVAL_MS } from './constants.js';
 import { DismissalTracker } from './dismissalTracker.js';
 import {
   adoptExternalSessionFromHook,
@@ -42,6 +45,7 @@ import { SessionRouter } from './sessionRouter.js';
 import { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
 import {
+  endBackgroundSpawn,
   setBackgroundAgentCompletedCallback,
   setBackgroundAgentDetectedCallback,
   setHookProvider,
@@ -73,6 +77,7 @@ export class AgentRuntime {
   readonly activeAgentId = { current: null as number | null };
   private externalScanTimer: ReturnType<typeof setInterval> | null = null;
   private staleCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private pausedSpawnTimer: ReturnType<typeof setInterval> | null = null;
 
   // Configuration refs (mutable, shared with scanners)
   readonly watchAllSessions = { current: false };
@@ -87,7 +92,7 @@ export class AgentRuntime {
 
   constructor(
     private readonly store: AgentStateStore,
-    provider: HookProvider,
+    private readonly provider: HookProvider,
   ) {
     // Wire module-level dependencies
     setDismissalTracker(this.dismissalTracker);
@@ -107,6 +112,8 @@ export class AgentRuntime {
     // -> teammate character, unnamed -> shadow-watched sub-agent), remove when
     // the completion queue-operation lands on the lead.
     setBackgroundAgentDetectedCallback((leadId) => {
+      // The new spawn has to survive a restart, so its completion still matches.
+      this.store.persist();
       scanForBackgroundAgentFiles(
         leadId,
         this.store,
@@ -129,6 +136,10 @@ export class AgentRuntime {
       // Unnamed spawns live in the shadow store; the webview sub-character is
       // cleared by the lead-side queue-op subagentClear, not by this call.
       this.subagentWatch.removeBySpawn(leadId, toolUseId);
+      // Save at once, so the saved list stops naming the finished spawn. (A
+      // notice written while no server was running is caught on restore
+      // instead, by stillRunningSpawns reading the transcript.)
+      this.store.persist();
     });
     // A resumed lead that spawns again belongs to a freshly minted implicit
     // team; its previous team's teammates are defunct. Promoted anonymous
@@ -309,6 +320,18 @@ export class AgentRuntime {
     const agent = this.store.get(id);
     if (!agent) return;
 
+    this.stopWatching(id);
+
+    // Notify adapter before deleting from store
+    this.lifecycleCallbacks.onAgentRemoved?.(id, agent);
+
+    // Remove from store (fires agentRemoved event) and persist
+    this.store.delete(id);
+    this.store.persist();
+  }
+
+  /** Stop an agent's watchers and timers, leaving it in the store. */
+  private stopWatching(id: number): void {
     // Stop JSONL poll timer
     const jpTimer = this.jsonlPollTimers.get(id);
     if (jpTimer) {
@@ -328,13 +351,6 @@ export class AgentRuntime {
     // Cancel timers
     cancelWaitingTimer(id, this.waitingTimers);
     cancelPermissionTimer(id, this.permissionTimers);
-
-    // Notify adapter before deleting from store
-    this.lifecycleCallbacks.onAgentRemoved?.(id, agent);
-
-    // Remove from store (fires agentRemoved event) and persist
-    this.store.delete(id);
-    this.store.persist();
   }
 
   /** Remove a single teammate agent. */
@@ -462,6 +478,41 @@ export class AgentRuntime {
       this.knownJsonlFiles,
       this.hooksEnabled,
     );
+    // Hooks or not: no hook says when a paused background agent is gone.
+    this.pausedSpawnTimer = setInterval(
+      () => this.endQuietPausedSpawns(),
+      PAUSED_SPAWN_CHECK_INTERVAL_MS,
+    );
+  }
+
+  /**
+   * Judge every lead's paused background spawns (an interim notice was their
+   * last word) by their own transcripts: forget the pause of one that wrote
+   * again, end one that stayed quiet too long (pausedSpawnFate).
+   */
+  endQuietPausedSpawns(now = Date.now()): void {
+    for (const [leadId, lead] of this.store) {
+      let sidecars: ReturnType<NonNullable<HookProvider['team']>['discoverTeammates']> | undefined;
+      for (const [toolId, spawn] of lead.backgroundSpawns) {
+        if (spawn.pausedAt === undefined) continue;
+        sidecars ??=
+          lead.sessionId && lead.projectDir
+            ? (this.provider.team?.discoverTeammates(lead.projectDir, lead.sessionId) ?? [])
+            : [];
+        const sidecar = sidecars.find(
+          (e) => (spawn.taskId && e.taskId === spawn.taskId) || e.toolUseId === toolId,
+        );
+        let writtenAt: number | undefined;
+        try {
+          if (sidecar) writtenAt = fs.statSync(sidecar.jsonlPath).mtimeMs;
+        } catch {
+          // Gone: as quiet as it gets.
+        }
+        const fate = pausedSpawnFate(spawn.pausedAt, writtenAt, now);
+        if (fate === 'resumed') spawn.pausedAt = undefined;
+        if (fate === 'ended') endBackgroundSpawn(leadId, lead, this.store, toolId);
+      }
+    }
   }
 
   // ── Restore persisted external agents (standalone) ──
@@ -482,11 +533,7 @@ export class AgentRuntime {
 
     for (const p of persisted) {
       if (!p.isExternal) continue;
-      // Background-spawn children (a leadAgentId but no teamName) are derived
-      // state: the 1s scan re-materializes them from sidecars while their spawn
-      // is live. Restoring them directly would resurrect immortal characters
-      // (also skips stale entries written by older builds that persisted them).
-      if (p.leadAgentId !== undefined && !p.teamName) continue;
+      if (isPersistedSpawnChild(p)) continue;
       try {
         if (!fs.existsSync(p.jsonlFile)) continue;
       } catch {
@@ -498,24 +545,7 @@ export class AgentRuntime {
         continue;
       }
 
-      const agent = createAgentState({
-        id: p.id,
-        sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
-        isExternal: true,
-        projectDir: p.projectDir,
-        jsonlFile: p.jsonlFile,
-        // Live spawn ids survive the restart so the 1s scan can re-adopt the
-        // spawns' transcripts and the completion queue-op still matches.
-        backgroundAgentToolIds: new Set(p.backgroundAgentToolIds ?? []),
-        directoryName: p.directoryName ?? p.folderName,
-        teamName: p.teamName,
-        agentName: p.agentName,
-        isTeamLead: p.isTeamLead,
-        leadAgentId: p.leadAgentId,
-        teamUsesTmux: p.teamUsesTmux,
-        palette: p.palette,
-        hueShift: p.hueShift,
-      });
+      const agent = createAgentState({ ...restoredAgentInit(p), isExternal: true });
 
       assignPaletteIfNeeded(agent, this.store);
       this.store.set(p.id, agent);
@@ -554,8 +584,21 @@ export class AgentRuntime {
 
   // ── Cleanup ──
 
-  /** Clean up all scanners, timers, and agents. Called on shutdown. */
+  /** Clean up all scanners, timers, and agents. */
   dispose(): void {
+    this.stop();
+    for (const id of [...this.store.keys()]) {
+      this.removeAgent(id);
+    }
+  }
+
+  /**
+   * Stop every scanner, watcher and timer, leaving the agents (and the saved
+   * list) as they are: what a server stopping for good does, so the next one
+   * restores whoever is still running. Agents whose processes end with the
+   * server were already closed by their own exits.
+   */
+  stop(): void {
     this.hookEventHandler.dispose();
     this.subagentWatch.dispose();
 
@@ -571,9 +614,11 @@ export class AgentRuntime {
       clearInterval(this.staleCheckTimer);
       this.staleCheckTimer = null;
     }
-
-    for (const id of [...this.store.keys()]) {
-      this.removeAgent(id);
+    if (this.pausedSpawnTimer) {
+      clearInterval(this.pausedSpawnTimer);
+      this.pausedSpawnTimer = null;
     }
+
+    for (const id of this.store.keys()) this.stopWatching(id);
   }
 }

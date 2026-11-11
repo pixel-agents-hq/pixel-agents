@@ -9,11 +9,12 @@
  * directly stated as "window.open was never called".
  */
 
+import { Terminal } from '@xterm/headless';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TERMINAL_URL_PATTERN } from '../src/constants.js';
 import type { TerminalBufferLike } from '../src/terminal/terminalLinks.js';
-import { terminalLinkOpener, urlAtCell } from '../src/terminal/terminalLinks.js';
+import { terminalLinkOpener, urlAtCell, urlsOnLine } from '../src/terminal/terminalLinks.js';
 
 const open = vi.fn();
 const openTerminalLink = terminalLinkOpener(open);
@@ -54,9 +55,11 @@ describe('terminalLinkOpener', () => {
 });
 
 /** A fake xterm buffer: one string per row, each char one cell; `wide` marks a
- *  cell followed by a width-0 trailer, as xterm stores a CJK character. */
+ *  cell followed by a width-0 trailer, as xterm stores a CJK character. With
+ *  `width`, every row is padded with blank cells to it, as xterm's rows are. */
 function bufferOf(
   rows: Array<{ text: string; wrapped?: boolean; wide?: number[] }>,
+  width = 0,
 ): TerminalBufferLike {
   return {
     getLine: (y) => {
@@ -67,6 +70,7 @@ function bufferOf(
         if (row.wide?.includes(i)) cells.push({ chars: ch, width: 2 }, { chars: '', width: 0 });
         else cells.push({ chars: ch, width: 1 });
       });
+      while (cells.length < width) cells.push({ chars: '', width: 1 });
       return {
         isWrapped: row.wrapped ?? false,
         length: cells.length,
@@ -79,20 +83,24 @@ function bufferOf(
   };
 }
 
+const COLS = 80;
+const tapAt = (buffer: TerminalBufferLike, row: number, col: number) =>
+  urlAtCell(buffer, row, col, COLS);
+
 describe('urlAtCell', () => {
   const url = 'https://github.com/pixel-agents-hq/pixel-agents/pull/347';
 
   it('finds the URL under the tapped cell, and nothing beside it', () => {
     const buffer = bufferOf([{ text: `see ${url} now` }]);
-    expect(urlAtCell(buffer, 0, 4)).toBe(url);
-    expect(urlAtCell(buffer, 0, 4 + url.length - 1)).toBe(url);
-    expect(urlAtCell(buffer, 0, 1)).toBeNull();
-    expect(urlAtCell(buffer, 0, 4 + url.length + 1)).toBeNull();
+    expect(tapAt(buffer, 0, 4)).toBe(url);
+    expect(tapAt(buffer, 0, 4 + url.length - 1)).toBe(url);
+    expect(tapAt(buffer, 0, 1)).toBeNull();
+    expect(tapAt(buffer, 0, 4 + url.length + 1)).toBeNull();
   });
 
   it('drops trailing punctuation, as the click path does', () => {
     const buffer = bufferOf([{ text: `(${url}).` }]);
-    expect(urlAtCell(buffer, 0, 5)).toBe(url);
+    expect(tapAt(buffer, 0, 5)).toBe(url);
   });
 
   it('joins soft-wrapped rows, so either half of a wrapped URL opens it', () => {
@@ -100,26 +108,117 @@ describe('urlAtCell', () => {
       { text: `go ${url.slice(0, 20)}` },
       { text: `${url.slice(20)} ok`, wrapped: true },
     ]);
-    expect(urlAtCell(buffer, 0, 5)).toBe(url);
-    expect(urlAtCell(buffer, 1, 2)).toBe(url);
+    expect(tapAt(buffer, 0, 5)).toBe(url);
+    expect(tapAt(buffer, 1, 2)).toBe(url);
+  });
+
+  it('keeps the space a soft-wrapped row ends on', () => {
+    // 15 columns: the space after the URL lands in the last column, and xterm
+    // wraps the next word onto a row of its own.
+    const width = 15;
+    const buffer = bufferOf([{ text: 'go https://a.b ' }, { text: 'c', wrapped: true }], width);
+    expect(urlAtCell(buffer, 0, 5, width)).toBe('https://a.b');
+    expect(urlAtCell(buffer, 1, 0, width)).toBeNull();
+    expect(urlsOnLine(buffer, 0, width)).toEqual([
+      { url: 'https://a.b', start: { row: 0, col: 3 }, end: { row: 0, col: 13 } },
+    ]);
   });
 
   it('keeps cell positions right after a wide character', () => {
     const buffer = bufferOf([{ text: `中 ${url}`, wide: [0] }]);
     // Cells: 中, trailer, space, then the URL from cell 3.
-    expect(urlAtCell(buffer, 0, 3)).toBe(url);
-    expect(urlAtCell(buffer, 0, 2)).toBeNull();
+    expect(tapAt(buffer, 0, 3)).toBe(url);
+    expect(tapAt(buffer, 0, 2)).toBeNull();
   });
 
   it('only matches http(s) URLs', () => {
-    expect(urlAtCell(bufferOf([{ text: 'javascript:alert(1)' }]), 0, 3)).toBeNull();
+    expect(tapAt(bufferOf([{ text: 'javascript:alert(1)' }]), 0, 3)).toBeNull();
+  });
+
+  // Claude Code breaks a token longer than its row with a real newline and
+  // carries on after its block's indent — no isWrapped for xterm to see.
+  const NARROW = 30;
+  const broken = (rows: string[]) => bufferOf(rows.map((text) => ({ text })));
+
+  it('follows a URL Claude Code broke across rows, from any of them', () => {
+    // '⎿  ' + 27 chars = 30 (full), then 5-space continuation rows.
+    const first = `⎿  ${url.slice(0, 27)}`;
+    const second = `     ${url.slice(27, 52)}`;
+    const third = `     ${url.slice(52)}`;
+    expect(first.length).toBe(NARROW);
+    expect(second.length).toBe(NARROW);
+    const buffer = broken([first, second, third, '', 'next']);
+    for (const [row, col] of [
+      [0, 5],
+      [1, 10],
+      [2, 6],
+    ]) {
+      expect(urlAtCell(buffer, row, col, NARROW)).toBe(url);
+    }
+    // The indent is not part of the link.
+    expect(urlAtCell(buffer, 1, 2, NARROW)).toBeNull();
+    expect(urlsOnLine(buffer, 1, NARROW)).toEqual([
+      { url, start: { row: 0, col: 3 }, end: { row: 2, col: 5 + url.length - 53 } },
+    ]);
+  });
+
+  it('keeps rows apart that only happen to touch', () => {
+    // A row that ends short, or a short word that would have fit, is no break.
+    const short = broken([`  ${url.slice(0, 20)}`, `  ${url.slice(20)}`]);
+    expect(urlAtCell(short, 0, 4, NARROW)).toBe(url.slice(0, 20));
+    const word = 'see the docs at https://a.io x';
+    expect(word.length).toBe(NARROW);
+    const fits = broken([word, '  then more']);
+    expect(urlAtCell(fits, 0, 20, NARROW)).toBe('https://a.io');
+  });
+});
+
+describe('a real xterm buffer', () => {
+  const W = 20;
+  const url = 'https://example.com/long/path';
+
+  /** The buffer xterm builds for `text` written on a W-column screen. */
+  async function screenOf(text: string): Promise<{ term: Terminal; buffer: TerminalBufferLike }> {
+    const term = new Terminal({ cols: W, rows: 4, allowProposedApi: true });
+    await new Promise<void>((resolve) => term.write(text, resolve));
+    return { term, buffer: term.buffer.active };
+  }
+
+  // A cell holding more than one UTF-16 code unit: an emoji (a surrogate pair) and a
+  // decomposed e + combining accent. The ASCII prefix is the control.
+  for (const prefix of ['\u{1F600} ', 'e\u0301 ', 'x ']) {
+    it(`keeps a wrapped URL whole after ${JSON.stringify(prefix)}`, async () => {
+      const { term, buffer } = await screenOf(prefix + url);
+      try {
+        expect(term.buffer.active.getLine(1)!.isWrapped).toBe(true);
+        expect(urlsOnLine(buffer, 0, W)).toEqual([
+          { url, start: { row: 0, col: 2 }, end: { row: 1, col: 10 } },
+        ]);
+        expect(urlAtCell(buffer, 1, 3, W)).toBe(url);
+      } finally {
+        term.dispose();
+      }
+    });
+  }
+
+  it('keeps a wrapped URL whole after a wide character', async () => {
+    const { term, buffer } = await screenOf('\u4E2D ' + url);
+    try {
+      expect(term.buffer.active.getLine(1)!.isWrapped).toBe(true);
+      expect(urlsOnLine(buffer, 0, W)).toEqual([
+        { url, start: { row: 0, col: 3 }, end: { row: 1, col: 11 } },
+      ]);
+      expect(urlAtCell(buffer, 1, 3, W)).toBe(url);
+    } finally {
+      term.dispose();
+    }
   });
 });
 
 describe('TERMINAL_URL_PATTERN', () => {
-  it('survives @xterm/addon-web-links rebuilding it with a g flag appended', () => {
-    // The addon does `new RegExp(re.source, (re.flags || '') + 'g')` -- a
-    // pattern that already carried `g` would throw on the duplicate flag.
+  it('is not global, so a copy with a g flag appended still builds', () => {
+    // A shared global regex would carry lastIndex between calls; callers
+    // build their own global copy instead.
     expect(TERMINAL_URL_PATTERN.global).toBe(false);
     const rebuilt = new RegExp(
       TERMINAL_URL_PATTERN.source,

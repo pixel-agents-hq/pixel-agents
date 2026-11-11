@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { CONTEXT_SEED_TAIL_BYTES, DEFAULT_MAX_CONTEXT_TOKENS } from '../src/constants.js';
 import {
+  applyReportedContext,
   extractContextTokens,
   seedContextUsage,
   updateContextUsage,
@@ -29,7 +30,7 @@ function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
     activeToolNames: new Map(),
     activeSubagentToolIds: new Map(),
     activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
+    backgroundSpawns: new Map(),
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
@@ -69,12 +70,12 @@ function assistantRecord(
 }
 
 describe('extractContextTokens', () => {
-  it('counts cached prompt tokens, which dominate a real turn', () => {
+  it('counts cached prompt tokens, which dominate a real turn, and not the output', () => {
     expect(
       extractContextTokens(
         assistantRecord({ input: 2, cacheCreation: 501, cacheRead: 443_937, output: 240 }),
       ),
-    ).toBe(444_680);
+    ).toBe(444_440);
   });
 
   it('reports nothing for records without usage', () => {
@@ -155,7 +156,7 @@ describe('updateContextUsage', () => {
       {
         type: 'agentContextUsage',
         id: 1,
-        contextTokens: 50_302,
+        contextTokens: 50_002,
         maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
       },
     ]);
@@ -199,7 +200,7 @@ describe('updateContextUsage', () => {
       claudeProvider,
     );
 
-    expect(agent.contextTokens).toBe(33_604);
+    expect(agent.contextTokens).toBe(33_378);
     expect(agent.maxContextTokens).toBe(1_000_000);
   });
 
@@ -334,5 +335,61 @@ describe('seedContextUsage', () => {
 
     expect(agent.contextTokens).toBe(12_345);
     expect(messages).toHaveLength(0);
+  });
+});
+
+describe('applyReportedContext', () => {
+  it("takes the CLI's own share and window, and keeps the window for later estimates", () => {
+    const agents = new AgentStateStore();
+    const agent = createTestAgent({ sessionId: 'sess-1' });
+    agents.set(1, agent);
+    const messages: Record<string, unknown>[] = [];
+    agents.on('broadcast', (msg) => messages.push(msg as Record<string, unknown>));
+
+    expect(
+      applyReportedContext(agents, {
+        sessionId: 'sess-1',
+        usedPercentage: 8,
+        windowTokens: 1_000_000,
+      }),
+    ).toBe(true);
+    expect(messages).toEqual([
+      { type: 'agentContextUsage', id: 1, contextTokens: 80_000, maxContextTokens: 1_000_000 },
+    ]);
+
+    // a later transcript turn of an unknown model keeps the reported window
+    updateContextUsage(1, agent, agents, assistantRecord({ cacheRead: 90_000 }));
+    expect(agent.maxContextTokens).toBe(1_000_000);
+  });
+
+  it('sends a real 0 the office has not heard yet (a fresh or cleared session)', () => {
+    const agents = new AgentStateStore();
+    agents.set(1, createTestAgent({ sessionId: 'sess-1' }));
+    const messages: Record<string, unknown>[] = [];
+    agents.on('broadcast', (msg) => messages.push(msg as Record<string, unknown>));
+
+    const report = {
+      sessionId: 'sess-1',
+      usedPercentage: 0,
+      windowTokens: DEFAULT_MAX_CONTEXT_TOKENS,
+    };
+    applyReportedContext(agents, report);
+    applyReportedContext(agents, report);
+    expect(messages).toEqual([
+      {
+        type: 'agentContextUsage',
+        id: 1,
+        contextTokens: 0,
+        maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
+      },
+    ]);
+  });
+
+  it('ignores a session no agent runs', () => {
+    const agents = new AgentStateStore();
+    agents.set(1, createTestAgent({ sessionId: 'sess-1' }));
+    expect(
+      applyReportedContext(agents, { sessionId: 'other', usedPercentage: 8, windowTokens: 1 }),
+    ).toBe(false);
   });
 });

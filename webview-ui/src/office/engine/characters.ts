@@ -1,5 +1,7 @@
 import {
   DEFAULT_MAX_CONTEXT_TOKENS,
+  HELPER_FOLLOW_RADIUS_TILES,
+  HELPER_STAND_UP_DELAY_SEC,
   SEAT_REST_MAX_SEC,
   SEAT_REST_MIN_SEC,
   TYPE_FRAME_DURATION_SEC,
@@ -15,6 +17,7 @@ import type { CharacterSprites } from '../sprites/spriteData.js';
 import { isReadingToolName } from '../toolUtils.js';
 import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../types.js';
 import { CharacterState, Direction, TILE_SIZE } from '../types.js';
+import { startBlink } from './blink.js';
 
 /** Whether a tool should show the reading animation (vs typing). Taxonomy comes
  *  from the active HookProvider via the `providerCapabilities` message. */
@@ -51,7 +54,7 @@ export function createCharacter(
   palette: number,
   seatId: string | null,
   seat: Seat | null,
-  hueShift = 0,
+  repeat = 0,
 ): Character {
   const col = seat ? seat.seatCol : 1;
   const row = seat ? seat.seatRow : 1;
@@ -68,7 +71,7 @@ export function createCharacter(
     moveProgress: 0,
     currentTool: null,
     palette,
-    hueShift,
+    repeat,
     frame: 0,
     frameTimer: 0,
     wanderTimer: 0,
@@ -80,10 +83,12 @@ export function createCharacter(
     bubbleTimer: 0,
     seatTimer: 0,
     isSubagent: false,
+    helperIdleSec: 0,
     parentAgentId: null,
     matrixEffect: null,
     matrixEffectTimer: 0,
     matrixEffectSeeds: [],
+    ...startBlink(),
     contextTokens: 0,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   };
@@ -248,7 +253,7 @@ export function updateCharacter(
               if (ch.seatTimer < 0) {
                 ch.seatTimer = 0;
               } else {
-                ch.seatTimer = randomRange(SEAT_REST_MIN_SEC, SEAT_REST_MAX_SEC);
+                restInChair(ch);
               }
               ch.wanderCount = 0;
               ch.wanderLimit = randomInt(
@@ -268,27 +273,7 @@ export function updateCharacter(
         break;
       }
 
-      // Move toward next tile in path
-      const nextTile = ch.path[0];
-      ch.dir = directionBetween(ch.tileCol, ch.tileRow, nextTile.col, nextTile.row);
-
-      ch.moveProgress += (WALK_SPEED_PX_PER_SEC / TILE_SIZE) * dt;
-
-      const fromCenter = tileCenter(ch.tileCol, ch.tileRow);
-      const toCenter = tileCenter(nextTile.col, nextTile.row);
-      const t = Math.min(ch.moveProgress, 1);
-      ch.x = fromCenter.x + (toCenter.x - fromCenter.x) * t;
-      ch.y = fromCenter.y + (toCenter.y - fromCenter.y) * t;
-
-      if (ch.moveProgress >= 1) {
-        // Arrived at next tile
-        ch.tileCol = nextTile.col;
-        ch.tileRow = nextTile.row;
-        ch.x = toCenter.x;
-        ch.y = toCenter.y;
-        ch.path.shift();
-        ch.moveProgress = 0;
-      }
+      stepAlongPath(ch, dt);
 
       // If became active while wandering, repath to seat
       if (ch.isActive && ch.seatId) {
@@ -316,10 +301,133 @@ export function updateCharacter(
   }
 }
 
+/** Move along `ch.path` for one frame; on reaching a tile, make it the character's tile. */
+function stepAlongPath(ch: Character, dt: number): void {
+  const nextTile = ch.path[0];
+  ch.dir = directionBetween(ch.tileCol, ch.tileRow, nextTile.col, nextTile.row);
+
+  ch.moveProgress += (WALK_SPEED_PX_PER_SEC / TILE_SIZE) * dt;
+
+  const fromCenter = tileCenter(ch.tileCol, ch.tileRow);
+  const toCenter = tileCenter(nextTile.col, nextTile.row);
+  const t = Math.min(ch.moveProgress, 1);
+  ch.x = fromCenter.x + (toCenter.x - fromCenter.x) * t;
+  ch.y = fromCenter.y + (toCenter.y - fromCenter.y) * t;
+
+  if (ch.moveProgress >= 1) {
+    ch.tileCol = nextTile.col;
+    ch.tileRow = nextTile.row;
+    ch.x = toCenter.x;
+    ch.y = toCenter.y;
+    ch.path.shift();
+    ch.moveProgress = 0;
+  }
+}
+
+type Tile = { col: number; row: number };
+
+/** Tiles between two tiles, counting diagonals as one step. */
+function tileDistance(a: Tile, b: Tile): number {
+  return Math.max(Math.abs(a.col - b.col), Math.abs(a.row - b.row));
+}
+
+/** Within range of home (the lead's seat), and not on home itself. */
+function atHome(at: Tile, home: Tile): boolean {
+  const d = tileDistance(at, home);
+  return d > 0 && d <= HELPER_FOLLOW_RADIUS_TILES;
+}
+
+/**
+ * A helper (sub-agent) for one frame. It has no chair and never wanders: it
+ * stays around `home` — its lead's seat, or the lead itself when the lead has
+ * no seat — walks back when home moves, and settles there facing the way its
+ * lead does (`facing`): sitting while it works (in the air: there is no chair
+ * under it), standing while it waits. `pickSpot` names a free tile near home.
+ */
+export function updateHelper(
+  ch: Character,
+  dt: number,
+  home: Tile | null,
+  facing: Direction | null,
+  pickSpot: () => Tile | null,
+  tileMap: TileTypeVal[][],
+  blockedTiles: Set<string>,
+): void {
+  ch.frameTimer += dt;
+  ch.helperIdleSec = ch.isActive ? 0 : ch.helperIdleSec + dt;
+
+  if (ch.state === CharacterState.WALK && ch.path.length > 0) {
+    if (ch.frameTimer >= WALK_FRAME_DURATION_SEC) {
+      ch.frameTimer -= WALK_FRAME_DURATION_SEC;
+      ch.frame = (ch.frame + 1) % 4;
+    }
+    stepAlongPath(ch, dt);
+    const end = ch.path[ch.path.length - 1];
+    // Mid-tile, or still headed home: keep walking. Otherwise (the path is
+    // done, or home moved away from where it ends) decide again.
+    if (ch.moveProgress > 0 || (end && (!home || atHome(end, home)))) return;
+    ch.path = [];
+  }
+
+  if (home && !atHome({ col: ch.tileCol, row: ch.tileRow }, home)) {
+    const spot = pickSpot();
+    const path = spot
+      ? findPath(ch.tileCol, ch.tileRow, spot.col, spot.row, tileMap, blockedTiles)
+      : [];
+    if (path.length > 0) {
+      ch.path = path;
+      ch.moveProgress = 0;
+      if (ch.state !== CharacterState.WALK) {
+        ch.state = CharacterState.WALK;
+        ch.frame = 0;
+        ch.frameTimer = 0;
+      }
+      return;
+    }
+    // No way to get closer: stay where we are.
+  }
+
+  if (ch.state === CharacterState.WALK || wantsState(ch) !== ch.state) {
+    settle(ch, facing);
+    return;
+  }
+  // Settled: turn with the lead (a reseated lead faces a new way).
+  if (facing !== null) ch.dir = facing;
+  if (ch.state === CharacterState.TYPE && ch.frameTimer >= TYPE_FRAME_DURATION_SEC) {
+    ch.frameTimer -= TYPE_FRAME_DURATION_SEC;
+    ch.frame = (ch.frame + 1) % 2;
+  }
+}
+
+/** Sitting while working, standing while waiting. The gap between two tool
+ *  calls is not waiting: standing up and sitting back down every few seconds
+ *  swaps the seated sprite for the standing one and back, so a helper stands
+ *  only once it has been idle for HELPER_STAND_UP_DELAY_SEC. */
+function wantsState(ch: Character): CharacterState {
+  const working = ch.isActive || ch.helperIdleSec < HELPER_STAND_UP_DELAY_SEC;
+  return working ? CharacterState.TYPE : CharacterState.IDLE;
+}
+
+/** Stop on the current tile, facing the lead's way, in the pose the helper's work calls for. */
+function settle(ch: Character, facing: Direction | null): void {
+  const center = tileCenter(ch.tileCol, ch.tileRow);
+  ch.x = center.x;
+  ch.y = center.y;
+  ch.path = [];
+  ch.moveProgress = 0;
+  if (facing !== null) ch.dir = facing;
+  ch.state = wantsState(ch);
+  ch.frame = 0;
+  ch.frameTimer = 0;
+}
+
 /** Get the correct sprite frame for a character's current state and direction */
 export function getCharacterSprite(ch: Character, sprites: CharacterSprites): SpriteData {
   switch (ch.state) {
     case CharacterState.TYPE:
+      // Resting in its chair (a turn over, or back from wandering). Helpers have no
+      // chair: they stand once idle, and keep typing through the gaps between tools.
+      if (!ch.isActive && !ch.isSubagent) return sprites.seated[ch.dir];
       if (isReadingTool(ch.currentTool)) {
         return sprites.reading[ch.dir][ch.frame % 2];
       }
@@ -331,6 +439,11 @@ export function getCharacterSprite(ch: Character, sprites: CharacterSprites): Sp
     default:
       return sprites.walk[ch.dir][1];
   }
+}
+
+/** Sit out a usual rest in the chair before standing up to wander. */
+export function restInChair(ch: Character): void {
+  ch.seatTimer = randomRange(SEAT_REST_MIN_SEC, SEAT_REST_MAX_SEC);
 }
 
 function randomRange(min: number, max: number): number {

@@ -12,9 +12,9 @@
  * so the picked color matches the painted carpet exactly. ColorValue is emitted
  * with `colorize: true` and `c: 0`.
  *
- * Drag is captured at the document level via useEffect-managed listeners so the
- * marker keeps tracking when the cursor exits the picker bounds, matching
- * production color pickers (Photoshop, Figma).
+ * Drags use the shared PickArea (pointer capture), so the marker keeps tracking
+ * when the cursor exits the picker bounds, matching production color pickers
+ * (Photoshop, Figma).
  */
 
 import type { CSSProperties } from 'react';
@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   VISUAL_COLOR_PICKER_COMPACT_WIDTH_PX,
+  VISUAL_COLOR_PICKER_HEX_INSET_PX,
   VISUAL_COLOR_PICKER_HUE_GRADIENT,
   VISUAL_COLOR_PICKER_HUE_WIDTH_PX,
   VISUAL_COLOR_PICKER_MARKER_BORDER,
@@ -31,29 +32,15 @@ import {
   VISUAL_COLOR_PICKER_SV_SIZE_PX,
   VISUAL_COLOR_PICKER_SWATCH_PX,
 } from '../constants.js';
+import { hslToRgb } from '../office/colorize.js';
+import { PickArea } from './ui/PickArea.js';
+import { paintPickCanvas } from './ui/pickCanvas.js';
+import { PixelInputText } from './ui/PixelInputText.js';
 import type { ColorValue } from './ui/types.js';
 
 interface VisualColorPickerProps {
   value: ColorValue;
   onChange: (color: ColorValue) => void;
-}
-
-/** Convert HSL (h: 0-360, s: 0-1, l: 0-1) to an RGB tuple (0-255 each). */
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const hp = h / 60;
-  const x = c * (1 - Math.abs((hp % 2) - 1));
-  let r1: number;
-  let g1: number;
-  let b1: number;
-  if (hp < 1) [r1, g1, b1] = [c, x, 0];
-  else if (hp < 2) [r1, g1, b1] = [x, c, 0];
-  else if (hp < 3) [r1, g1, b1] = [0, c, x];
-  else if (hp < 4) [r1, g1, b1] = [0, x, c];
-  else if (hp < 5) [r1, g1, b1] = [x, 0, c];
-  else [r1, g1, b1] = [c, 0, x];
-  const m = l - c / 2;
-  return [Math.round((r1 + m) * 255), Math.round((g1 + m) * 255), Math.round((b1 + m) * 255)];
 }
 
 /** Carpet lightness from `b` (brightness), matching flatColorizeSprite. */
@@ -96,10 +83,6 @@ function hexToColorValue(hex: string): ColorValue | null {
   };
 }
 
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n));
-}
-
 export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
   const svSize = VISUAL_COLOR_PICKER_SV_SIZE_PX;
   const hueWidth = VISUAL_COLOR_PICKER_HUE_WIDTH_PX;
@@ -107,10 +90,7 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const hueRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const draggingSvRef = useRef(false);
-  const draggingHueRef = useRef(false);
 
   const [inputHex, setInputHex] = useState(() => colorValueToHex(value));
   const [expanded, setExpanded] = useState(false);
@@ -125,87 +105,26 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
   // Paint the saturation × brightness square for the current hue.
   useEffect(() => {
     if (!expanded) return;
-    const canvas = svCanvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!ctx) return;
-    const img = ctx.createImageData(svSize, svSize);
-    const data = img.data;
-    for (let y = 0; y < svSize; y++) {
-      const b = 100 - (y / (svSize - 1)) * 200;
-      const l = lightnessFromB(b);
-      for (let x = 0; x < svSize; x++) {
-        const sat = (x / (svSize - 1)) * 100;
-        const [r, g, bl] = hslToRgb(value.h, sat / 100, l);
-        const i = (y * svSize + x) * 4;
-        data[i] = r;
-        data[i + 1] = g;
-        data[i + 2] = bl;
-        data[i + 3] = 255;
-      }
-    }
-    ctx.putImageData(img, 0, 0);
+    paintPickCanvas(svCanvasRef.current, (fx, fy) =>
+      hslToRgb(value.h, fx, lightnessFromB(100 - fy * 200)),
+    );
   }, [value.h, expanded, svSize]);
 
   const pickFromSv = useCallback(
-    (clientX: number, clientY: number) => {
-      const canvas = svCanvasRef.current;
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const x = clamp((clientX - rect.left) / rect.width, 0, 1);
-      const y = clamp((clientY - rect.top) / rect.height, 0, 1);
-      const s = Math.round(x * 100);
-      const b = Math.round(100 - y * 200);
+    (fx: number, fy: number) => {
+      const s = Math.round(fx * 100);
+      const b = Math.round(100 - fy * 200);
       onChange({ h: value.h, s, b, c: value.c, colorize: true });
     },
     [onChange, value.h, value.c],
   );
 
   const pickFromHue = useCallback(
-    (clientY: number) => {
-      const el = hueRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const y = clamp((clientY - rect.top) / rect.height, 0, 1);
-      onChange({ h: Math.round(y * 360), s: value.s, b: value.b, c: value.c, colorize: true });
+    (_fx: number, fy: number) => {
+      onChange({ h: Math.round(fy * 360), s: value.s, b: value.b, c: value.c, colorize: true });
     },
     [onChange, value.s, value.b, value.c],
   );
-
-  const onSvMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      draggingSvRef.current = true;
-      pickFromSv(e.clientX, e.clientY);
-    },
-    [pickFromSv],
-  );
-
-  const onHueMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      draggingHueRef.current = true;
-      pickFromHue(e.clientY);
-    },
-    [pickFromHue],
-  );
-
-  // Document-level drag tracking so the cursor can leave the picker bounds.
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (draggingSvRef.current) pickFromSv(e.clientX, e.clientY);
-      else if (draggingHueRef.current) pickFromHue(e.clientY);
-    };
-    const onUp = () => {
-      draggingSvRef.current = false;
-      draggingHueRef.current = false;
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-    return () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    };
-  }, [pickFromSv, pickFromHue]);
 
   // Close the popup on an outside click.
   useEffect(() => {
@@ -272,41 +191,49 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
             flexShrink: 0,
           }}
         />
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputHex}
-          onChange={(e) => handleHexChange(e.target.value)}
-          onClick={(e) => {
-            e.stopPropagation();
-            setExpanded(true);
-          }}
-          className="flex-1 min-w-0 bg-bg text-text border-2 border-border px-2 py-0.5 font-mono text-[12px]"
-          spellCheck={false}
-          maxLength={7}
-        />
+        <PixelInputText
+          text={inputHex.toUpperCase()}
+          insetPx={VISUAL_COLOR_PICKER_HEX_INSET_PX}
+          className="flex-1 min-w-0"
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputHex}
+            onChange={(e) => handleHexChange(e.target.value)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(true);
+            }}
+            className="flex-1 min-w-0 bg-bg text-text border-2 border-border px-2 py-0.5 font-mono text-[12px]"
+            spellCheck={false}
+            maxLength={7}
+          />
+        </PixelInputText>
       </div>
 
       {/* Expanded: popup to the right of the trigger, bottom-aligned. */}
       {expanded && (
         <div
-          className="absolute z-20 flex flex-col gap-4 py-4 px-6 bg-bg-dark border-2 border-border"
+          className="fade-in absolute z-20 flex flex-col gap-4 py-4 px-6 bg-bg-dark border-2 border-border"
           style={{ left: '100%', bottom: 0, marginLeft: VISUAL_COLOR_PICKER_POPUP_GAP_PX }}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex flex-row gap-8 items-start">
-            <div className="relative" style={{ width: svSize, height: svSize }}>
+            <PickArea
+              className="relative"
+              style={{ width: svSize, height: svSize }}
+              onPick={pickFromSv}
+            >
               <canvas
                 ref={svCanvasRef}
                 width={svSize}
                 height={svSize}
                 style={{ width: svSize, height: svSize, cursor: 'crosshair' }}
-                onMouseDown={onSvMouseDown}
               />
               <div style={svMarkerStyle} />
-            </div>
-            <div
-              ref={hueRef}
+            </PickArea>
+            <PickArea
               className="relative"
               style={{
                 width: hueWidth,
@@ -314,10 +241,10 @@ export function VisualColorPicker({ value, onChange }: VisualColorPickerProps) {
                 backgroundImage: VISUAL_COLOR_PICKER_HUE_GRADIENT,
                 cursor: 'crosshair',
               }}
-              onMouseDown={onHueMouseDown}
+              onPick={pickFromHue}
             >
               <div style={hueMarkerStyle} />
-            </div>
+            </PickArea>
           </div>
         </div>
       )}

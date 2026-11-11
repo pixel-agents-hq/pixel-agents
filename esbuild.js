@@ -41,10 +41,11 @@ function copyAssets() {
 function buildHooks() {
   const hookEntry = (provider, file) =>
     path.join(__dirname, 'server', 'src', 'providers', 'hook', provider, 'hooks', file);
-  // One entry per provider that installs a hook script. Each bundles to its own
-  // self-contained CJS file, so one provider's script never depends on another's.
+  // Hook scripts and the Claude status line bridge (Settings → Usage Bars).
+  // Each bundles to its own self-contained CJS file.
   const entries = [
     hookEntry('claude', 'claude-hook.ts'),
+    hookEntry('claude', 'claude-statusline.ts'),
     hookEntry('codex', 'codex-hook.ts'),
   ].filter((p) => fs.existsSync(p));
   if (entries.length === 0) return;
@@ -113,6 +114,7 @@ async function main() {
     copyAssets();
     buildHooks();
     await buildCli();
+    await buildPtyHost();
     await buildUninstall();
   }
 }
@@ -161,6 +163,26 @@ async function buildCli() {
   if (!production) {
     console.log('[build] CLI bundled: dist/cli.mjs');
   }
+}
+
+/**
+ * Bundle the PTY host (`pixel-agents --pty-host`). Development only: it is
+ * deliberately left out of package.json's `files`, so the published office
+ * always keeps its terminals in process.
+ */
+async function buildPtyHost() {
+  await esbuild.build({
+    entryPoints: ['server/src/terminal/ptyHostMain.ts'],
+    bundle: true,
+    format: 'cjs',
+    minify: production,
+    sourcemap: !production,
+    platform: 'node',
+    outfile: 'dist/pty-host.js',
+    external: ['@lydell/node-pty', 'node-pty'],
+    define: versionDefine,
+    logLevel: 'silent',
+  });
 }
 
 main().catch((e) => {

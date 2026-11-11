@@ -22,6 +22,7 @@ import { addAgentForDirectory } from '../../../helpers/internal-agent';
 import { buildSeedConfig, buildSeedLayout } from '../../../helpers/layout-seed';
 import {
   addDirectory,
+  directoryPencil,
   getDirectoryAreas,
   getDirectoryModal,
   getPixelAgentsFrame,
@@ -316,11 +317,7 @@ test.describe('Areas (multi-root)', () => {
         await addDirectory(frame, { name: GAMMA_NAME, path: target, areas: ['Engineering'] });
 
         narrator.step(`renaming "${GAMMA_NAME}" to "Gamma Renamed" through its pencil`);
-        await (
-          await openLaunchDrawer(frame)
-        )
-          .getByRole('button', { name: `Edit ${GAMMA_NAME}` })
-          .click();
+        await (await directoryPencil(frame, await openLaunchDrawer(frame), GAMMA_NAME)).click();
         const modal = getDirectoryModal(frame);
         await expect(modal).toBeVisible();
         // Re-opening shows the assignment it was saved with still ticked.

@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import { expect, test } from '../../fixtures/standalone';
 import { arrangeNextClaudeInvocation, claudeScenario } from '../../helpers/mock-claude';
@@ -135,6 +135,22 @@ async function longPress(page: Page, x: number, y: number, ms: number) {
   await fire('touchend', false);
 }
 
+/** A real one-finger press held for `ms` on the middle of `target`, through
+ *  CDP so the page also gets the pointer events a finger produces (the
+ *  TouchEvent-only `longPress` above has none). */
+async function heldTouch(page: Page, target: Locator, ms: number) {
+  // A trial tap waits for the target to stop moving (the roster slides in).
+  await target.tap({ trial: true });
+  const box = await target.boundingBox();
+  if (!box) throw new Error('nothing to press');
+  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  await page.waitForTimeout(ms);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
+
 /** Launch a mock-claude session from the + card and wait for its terminal. */
 async function launchTerminal(
   page: Page,
@@ -185,14 +201,16 @@ test.describe('Standalone / mobile shell', () => {
       timeout: 15_000,
     });
 
+    // The roster's arrow is there on the terminal page too.
+    await expect(page.getByRole('button', { name: 'Roster', exact: true })).toBeVisible();
+
     // The toggle goes back to the office…
     await page.getByTitle('Show office', { exact: true }).tap();
     await expectView(page, 'office');
 
     // …where a card tap is two-step: the first focuses the character, a
-    // repeat tap on the focused agent opens its terminal.
-    await card.tap();
-    await expectView(page, 'office');
+    // repeat tap on the focused agent opens its terminal. A launched agent
+    // comes in focused, so its card's first tap already opens it.
     await card.tap();
     await expectView(page, 'terminal');
 
@@ -200,9 +218,61 @@ test.describe('Standalone / mobile shell', () => {
     await swipe(page, 4, PHONE.width * 0.8, PHONE.height / 2);
     await expectView(page, 'office');
 
+    // In the office the left edge pulls the menu open. (A short pull settling
+    // back is the reducer's tests' job: this synthetic swipe is instant, so
+    // any length reads as a flick.)
+    const menu = page.getByTestId('mobile-menu');
+    await expect(menu).not.toBeInViewport();
+    await swipe(page, 4, PHONE.width * 0.8, PHONE.height / 2);
+    await expect(menu).toBeInViewport({ ratio: 1 });
+    await expectView(page, 'office');
+    // A leftward swipe across it, from the middle, pushes it back out.
+    await swipe(page, PHONE.width * 0.6, 10, PHONE.height / 2);
+    await expect(menu).not.toBeInViewport();
+    await expectView(page, 'office');
+
     // And from the right edge, leftwards: to the terminal again.
     await swipe(page, PHONE.width - 4, PHONE.width * 0.2, PHONE.height / 2);
     await expectView(page, 'terminal');
+  });
+
+  test('the menu lists a finished conversation over Settings; a tap resumes it and slides to its terminal @area:mobile', async ({
+    page,
+    standalone,
+  }) => {
+    // A short session: titled, then the process ends and its agent leaves.
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('mobile titled conversation')
+        .at(200)
+        .appendJsonl({ type: 'ai-title', aiTitle: 'Phone bug hunt' })
+        .holdOpenFor(2_000)
+        .build(),
+    );
+    await launchFromCard(page, standalone.workspaceDir);
+    const card = page.getByTitle('Agent 1', { exact: true });
+    await expect(card).toBeVisible({ timeout: 15_000 });
+    await expect(card).toHaveCount(0, { timeout: 15_000 });
+    const showOffice = page.getByTitle('Show office', { exact: true });
+    if (await showOffice.isVisible()) await showOffice.tap();
+    await expectView(page, 'office');
+
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('mobile resumed conversation').holdOpenFor(60_000).build(),
+    );
+    await page.getByRole('button', { name: 'Menu', exact: true }).tap();
+    const panel = page.getByTestId('mobile-menu');
+    // Settings sits at the menu's foot.
+    await expect(panel.getByRole('button', { name: 'Settings', exact: true })).toBeVisible();
+    const row = panel.getByTestId('conversation-row').filter({ hasText: 'Phone bug hunt' });
+    await expect(row).toBeVisible();
+    await row.tap();
+
+    // The panel closes, the agent is back, and the shell slides to its terminal.
+    await expect(page.getByTitle('Agent 2', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expectView(page, 'terminal');
+    await expect(row).not.toBeInViewport();
   });
 
   test('tapping a URL in the terminal opens it; a sideways drag from it does not @area:mobile', async ({
@@ -292,7 +362,10 @@ test.describe('Standalone / mobile shell', () => {
     const terminal = await launchTerminal(page, standalone, 'mobile clipboard');
     await terminal.tap();
     const word = 'pixelcopyword';
+    // Enter moves the cursor (the input area, where a hold offers Paste)
+    // to the next row, leaving the word on a row of plain output.
     await page.keyboard.type(word);
+    await page.keyboard.press('Enter');
     await expect(page.locator('.xterm-rows', { hasText: word })).toBeVisible({ timeout: 10_000 });
     // The word's exact on-screen box, from a DOM Range over its characters.
     const at = await page.evaluate((word) => {
@@ -305,7 +378,7 @@ test.describe('Standalone / mobile shell', () => {
         range.setStart(n, i);
         range.setEnd(n, i + word.length);
         const r = range.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, h: r.height };
       }
       throw new Error('word not on screen');
     }, word);
@@ -330,13 +403,13 @@ test.describe('Standalone / mobile shell', () => {
       word,
     );
 
-    // Paste: with no clipboard to read, the key asks for the text instead.
-    await terminal.tap(); // the pill took focus; the input gets it back
-    await page.setViewportSize({ width: PHONE.width, height: 500 }); // keyboard up
-    const pasteKey = page.getByRole('button', { name: 'paste', exact: true });
-    await expect(pasteKey).toBeVisible();
+    // Paste: a hold on the input area (the cursor's row, under the word)
+    // offers it; with no clipboard to read, it asks for the text instead.
+    await longPress(page, at.x, at.y + at.h, 900);
+    await expect(pill.getByRole('button')).toHaveText(['Paste']);
     page.once('dialog', (d) => void d.accept('pastedviaprompt'));
-    await pasteKey.tap();
+    await pill.getByRole('button', { name: 'Paste', exact: true }).tap();
+    await expect(pill).toHaveCount(0);
     await expect(terminal).toContainText('pastedviaprompt', { timeout: 10_000 });
     expect(errors).toEqual([]);
   });
@@ -351,11 +424,11 @@ test.describe('Standalone / mobile shell', () => {
     const title = page.getByText('Instant Detection is ON', { exact: true });
     await expect(title).toBeVisible();
     const gotIt = page.getByRole('button', { name: 'Got it', exact: true });
-    // The modal header's close button (the tooltip has an x of its own).
+    // The modal header's close button (the tooltip has a close button of its own).
     const close = page
       .locator('div', { has: title })
       .last()
-      .getByRole('button', { name: 'x', exact: true });
+      .getByRole('button', { name: 'Close', exact: true });
     for (const el of [title, gotIt, close]) {
       const box = await el.boundingBox();
       if (!box) throw new Error('modal part has no box');
@@ -427,13 +500,13 @@ test.describe('Standalone / mobile shell', () => {
     const terminal = await launchTerminal(page, standalone, 'mobile trackpad');
     await terminal.tap();
     await page.setViewportSize({ width: PHONE.width, height: 500 }); // keyboard up
-    const pad = page.getByRole('button', { name: '✜', exact: true });
+    const pad = page.getByRole('button', { name: 'Arrow keys', exact: true });
     await expect(pad).toBeVisible();
     const padBox = await pad.boundingBox();
     if (!padBox) throw new Error('trackpad key has no box');
 
     // A resting finger on the key bar lands FIRST (touches[0]); the pad
-    // finger then slides 3 trackpad steps right.
+    // finger then slides 3 left/right steps (8 px each) right.
     const arrows = await page.evaluate(
       ({ x, y }) => {
         const pad = document.elementFromPoint(x, y);
@@ -456,13 +529,168 @@ test.describe('Standalone / mobile shell', () => {
         const before = input.length;
         fire(bar, 'touchstart', [rest], [rest]);
         fire(pad, 'touchstart', [rest, at(0)], [at(0)]);
-        for (const dx of [16, 32, 48, 52]) fire(pad, 'touchmove', [rest, at(dx)], [at(dx)]);
-        fire(pad, 'touchend', [rest], [at(52)]);
+        for (const dx of [8, 16, 24, 26]) fire(pad, 'touchmove', [rest, at(dx)], [at(dx)]);
+        fire(pad, 'touchend', [rest], [at(26)]);
         fire(bar, 'touchend', [], [rest]);
         return input.slice(before).filter((d) => d === '\x1b[C').length;
       },
       { x: padBox.x + padBox.width / 2, y: padBox.y + padBox.height / 2 },
     );
     expect(arrows).toBe(3);
+  });
+
+  test('a trackpad drag from the pad to either screen edge sweeps a full line @area:mobile', async ({
+    page,
+    standalone,
+  }) => {
+    await page.addInitScript(() => {
+      const sent: string[] = [];
+      (window as unknown as { __ptyInput: string[] }).__ptyInput = sent;
+      const send = WebSocket.prototype.send;
+      WebSocket.prototype.send = function (data) {
+        if (typeof data === 'string' && data.includes('"input"')) {
+          const frame = JSON.parse(data) as { type?: string; data?: string };
+          if (frame.type === 'input' && frame.data) sent.push(frame.data);
+        }
+        send.call(this, data);
+      };
+    });
+    await page.reload();
+    const terminal = await launchTerminal(page, standalone, 'mobile trackpad sweep');
+    await terminal.tap();
+    await page.setViewportSize({ width: PHONE.width, height: 500 }); // keyboard up
+    const pad = page.getByRole('button', { name: 'Arrow keys', exact: true });
+    await expect(pad).toBeVisible();
+    const padBox = await pad.boundingBox();
+    if (!padBox) throw new Error('trackpad key has no box');
+
+    // One press per side, sliding from the pad's centre to the screen edge.
+    const sweep = (toEdge: number) =>
+      page.evaluate(
+        ({ x, y, toEdge }) => {
+          const pad = document.elementFromPoint(x, y);
+          if (!pad) throw new Error('no trackpad key');
+          const at = (px: number) =>
+            new Touch({ identifier: 3, target: pad, clientX: px, clientY: y });
+          const fire = (type: string, touch: Touch, down: boolean) =>
+            pad.dispatchEvent(
+              new TouchEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                touches: down ? [touch] : [],
+                changedTouches: [touch],
+              }),
+            );
+          const input = (window as unknown as { __ptyInput: string[] }).__ptyInput;
+          const before = input.length;
+          fire('touchstart', at(x), true);
+          for (let i = 1; i <= 20; i++) fire('touchmove', at(x + ((toEdge - x) * i) / 20), true);
+          fire('touchend', at(toEdge), false);
+          return input.slice(before);
+        },
+        { x: padBox.x + padBox.width / 2, y: padBox.y + padBox.height / 2, toEdge },
+      );
+    const right = (await sweep(PHONE.width)).filter((d) => d === '\x1b[C').length;
+    const left = (await sweep(0)).filter((d) => d === '\x1b[D').length;
+
+    // Both edges are a full line away, and the outer stretch accelerates:
+    // far more than the linear pace (one column per 8 px) would send.
+    expect(left).toBe(right);
+    expect(right).toBeGreaterThan(Math.ceil(PHONE.width / 2 / 8) + 5);
+  });
+
+  test('the arrow on the + card toggles the roster: a tap launches as that character, a hold edits it @area:mobile', async ({
+    page,
+    standalone,
+  }) => {
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('mobile roster launch').holdOpenFor(60_000).build(),
+    );
+    const characters = page.getByRole('button', { name: 'Roster', exact: true });
+    const roster = page.getByTestId('character-picker');
+    const cards = roster.getByRole('button', { name: /^Launch as / });
+
+    // The arrow sits right of the + card, as tall as it: + square, the
+    // arrow a narrower tab.
+    const button = await characters.boundingBox();
+    const plus = await page.getByTitle('Launch agent', { exact: true }).boundingBox();
+    expect(button && plus && Math.abs(button.x - (plus.x + plus.width)) < 1).toBe(true);
+    expect(button && plus && Math.abs(button.y - plus.y) < 1).toBe(true);
+    expect(plus && Math.abs(plus.width - plus.height) < 1).toBe(true);
+    expect(button && plus && button.width < plus.width).toBe(true);
+
+    // It opens the roster only (not the Characters view): a strip across the
+    // whole screen right above the card bar, ending in + New. The arrow
+    // stays, turned, to close it.
+    await characters.tap();
+    await expect(roster).toHaveAttribute('aria-hidden', 'false');
+    await expect(characters).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.chv-root')).toHaveCount(0);
+    await expect(roster.getByRole('button').first()).toHaveText(/New/);
+    // A touch screen scrolls it with the finger: no scrollbar.
+    await expect(roster.locator('> div')).toHaveCSS('scrollbar-width', 'none');
+    // Polled: the strip slides up into place.
+    await expect
+      .poll(async () => {
+        const strip = await roster.boundingBox();
+        return (
+          strip && { width: Math.round(strip.width), bottom: Math.round(strip.y + strip.height) }
+        );
+      })
+      .toEqual({ width: PHONE.width, bottom: Math.round((button?.y ?? 0) - 8) });
+
+    // The arrow closes it again, and reopens it.
+    await characters.tap();
+    await expect(roster).toHaveAttribute('aria-hidden', 'true');
+    await expect(characters).toHaveAttribute('aria-expanded', 'false');
+    await characters.tap();
+    await expect(roster).toHaveAttribute('aria-hidden', 'false');
+
+    // A tap picks the character and hands over to the Directory list…
+    const picked = cards.nth(2);
+    const name = ((await picked.getAttribute('aria-label')) ?? '').replace('Launch as ', '');
+    await picked.tap();
+    await expect(roster).toHaveAttribute('aria-hidden', 'true');
+    await expect(characters).toBeVisible();
+    const drawer = page.getByTestId('launch-drawer');
+    await expect(drawer).toContainText(`Launch ${name} in`);
+
+    // …and the agent launched there wears exactly that character.
+    await drawer
+      .getByRole('button', { name: path.basename(standalone.workspaceDir), exact: true })
+      .tap();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (window.__pixelAgentsTestHooks?.getCharacters?.() ?? [])
+            .filter((ch) => ch.id > 0 && !ch.isGreeter)
+            .map(({ palette, repeat }) => ({ palette, repeat })),
+        ),
+      )
+      .toEqual([{ palette: 2, repeat: 0 }]);
+
+    // Holding a card opens the Characters view on that character instead.
+    await page.getByTitle('Show office', { exact: true }).tap();
+    await characters.tap();
+    // The last-used character now comes first, the rest in cast order: 2, 0, 1, …
+    await expect(cards.first()).toHaveAttribute('aria-label', `Launch as ${name}`);
+    // The server keeps that order, so a desktop office lists it the same way.
+    const desktopContext = await page.context().browser()!.newContext();
+    const desktop = await desktopContext.newPage();
+    await desktop.goto(page.url());
+    await desktop.getByRole('button', { name: 'Roster', exact: true }).click();
+    await expect(
+      desktop
+        .getByTestId('character-picker')
+        .getByRole('button', { name: /^Launch as / })
+        .first(),
+    ).toHaveAttribute('aria-label', `Launch as ${name}`);
+    await desktopContext.close();
+    await heldTouch(page, cards.nth(1), 900);
+    await expect(page.locator('.chv-root')).toBeVisible();
+    await expect(roster).toHaveAttribute('aria-hidden', 'true');
+    await expect(page.locator('.chv-mcard[aria-current="true"]')).toHaveCount(1);
+    await expect(page.locator('.chv-mcard').nth(0)).toHaveAttribute('aria-current', 'true');
   });
 });

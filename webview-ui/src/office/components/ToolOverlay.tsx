@@ -1,29 +1,26 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
+import { PixelIcon } from '../../components/ui/PixelIcon.js';
 import {
   BUBBLE_FADE_DURATION_SEC,
   BUBBLE_SITTING_OFFSET_PX,
   BUBBLE_VERTICAL_OFFSET_PX,
   CHARACTER_SITTING_OFFSET_PX,
-  CONTEXT_CRITICAL_THRESHOLD,
-  CONTEXT_DANGER_THRESHOLD,
-  CONTEXT_GAUGE_BG,
-  CONTEXT_GAUGE_COLOR_CRITICAL,
-  CONTEXT_GAUGE_COLOR_DANGER,
-  CONTEXT_GAUGE_COLOR_OK,
-  CONTEXT_GAUGE_COLOR_WARN,
+  CONTEXT_GAUGE_GAP_PX,
   CONTEXT_GAUGE_HEIGHT_PX,
   CONTEXT_GAUGE_WIDTH_PX,
-  CONTEXT_WARN_THRESHOLD,
   OVERLAY_BUBBLE_Z_INDEX,
   OVERLAY_LABEL_SELECTED_Z_INDEX,
   OVERLAY_LABEL_Z_INDEX,
   TEAM_LEAD_COLOR,
   TEAM_ROLE_COLOR,
+  TOOL_OVERLAY_GAP_PX,
   TOOL_OVERLAY_VERTICAL_OFFSET,
 } from '../../constants.js';
 import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
+import { ContextBar } from '../ContextBar.js';
+import { contextLeft } from '../contextGauge.js';
 import type { OfficeState } from '../engine/officeState.js';
 import { overlayProjection } from '../projection.js';
 import { getCachedSprite } from '../sprites/spriteCache.js';
@@ -80,13 +77,6 @@ function getActivityText(
   }
 
   return 'Idle';
-}
-
-function getFuelColor(ratio: number): string {
-  if (ratio >= CONTEXT_CRITICAL_THRESHOLD) return CONTEXT_GAUGE_COLOR_CRITICAL;
-  if (ratio >= CONTEXT_DANGER_THRESHOLD) return CONTEXT_GAUGE_COLOR_DANGER;
-  if (ratio >= CONTEXT_WARN_THRESHOLD) return CONTEXT_GAUGE_COLOR_WARN;
-  return CONTEXT_GAUGE_COLOR_OK;
 }
 
 /** A speech-bubble sprite blitted into a DOM canvas. Bubbles live in the DOM
@@ -147,6 +137,11 @@ export function ToolOverlay({
 
   const selectedId = officeState.selectedAgentId;
   const hoveredId = officeState.hoveredAgentId;
+  // Hovering a sub-agent swaps its lead's label for its own (they'd overlap).
+  const hoveredSubParentId =
+    hoveredId !== null
+      ? subagentCharacters.find((s) => s.id === hoveredId)?.parentAgentId
+      : undefined;
 
   // All character IDs
   const allIds = [...agents, ...subagentCharacters.map((s) => s.id)];
@@ -167,6 +162,8 @@ export function ToolOverlay({
         // canvas renderer used. The idle "Waiting for input" state speaks
         // through its label, not a bubble.
         let bubbleNode = null;
+        // Screen y of the bubble's top edge, when one shows: the label stacks above it.
+        let bubbleTop: number | null = null;
         if (ch.bubbleType && !(ch.bubbleType === 'waiting' && ch.waitingAwaitingInput)) {
           const cachedBubble = getCachedSprite(
             ch.bubbleType === 'permission' ? BUBBLE_PERMISSION_SPRITE : BUBBLE_WAITING_SPRITE,
@@ -177,6 +174,9 @@ export function ToolOverlay({
             ch.bubbleType === 'waiting' && ch.bubbleTimer < BUBBLE_FADE_DURATION_SEC
               ? ch.bubbleTimer / BUBBLE_FADE_DURATION_SEC
               : 1;
+          bubbleTop =
+            project.toScreenY(ch.y + bubbleSittingOff - BUBBLE_VERTICAL_OFFSET_PX) -
+            (cachedBubble.height + zoom) / dpr;
           bubbleNode = (
             <div
               className="absolute -translate-x-1/2 pointer-events-none"
@@ -185,9 +185,7 @@ export function ToolOverlay({
                 // Bubble bottom sits one sprite pixel above the character's
                 // anchor: project the anchor, then lift by the bubble's own
                 // device-pixel height plus one zoomed pixel, in CSS px.
-                top:
-                  project.toScreenY(ch.y + bubbleSittingOff - BUBBLE_VERTICAL_OFFSET_PX) -
-                  (cachedBubble.height + zoom) / dpr,
+                top: bubbleTop,
                 opacity: alpha,
                 zIndex: OVERLAY_BUBBLE_Z_INDEX,
               }}
@@ -203,10 +201,12 @@ export function ToolOverlay({
           return bubbleNode && <Fragment key={id}>{bubbleNode}</Fragment>;
         }
 
-        // Position above character
+        // Position above character: the sprite's top edge (the tallest hair
+        // reaches it), or the bubble's when one shows over the head.
         const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
         const screenX = project.toScreenX(ch.x);
         const screenY = project.toScreenY(ch.y + sittingOffset - TOOL_OVERLAY_VERTICAL_OFFSET);
+        const labelBottom = Math.min(screenY, bubbleTop ?? screenY) - TOOL_OVERLAY_GAP_PX;
 
         // A "Done" agent (finished turn: waiting bubble without awaitingInput)
         // shows ONLY its floating green checkmark bubble, never the label panel
@@ -214,8 +214,13 @@ export function ToolOverlay({
         // so overlay counts stay stable and hover/select can still bring the
         // panel back. When always-show is off, the early return above already
         // keeps the panel hidden for idle agents.
+        // Likewise for a label that gives way: a sub-agent's shows only while
+        // hovered or selected, even with always-show on (the lead's label
+        // already names the subtask), and a hovered sub-agent's lead hides
+        // its own so the sub's isn't covered.
         const isDone = ch.bubbleType === 'waiting' && !ch.waitingAwaitingInput;
-        if (isDone && !isSelected && !isHovered) {
+        const givesWay = (isSub && !isSelected && !isHovered) || id === hoveredSubParentId;
+        if ((isDone && !isSelected && !isHovered) || givesWay) {
           return (
             <Fragment key={id}>
               {bubbleNode}
@@ -275,24 +280,28 @@ export function ToolOverlay({
 
         // Team info
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
-        const hasExtraLines = !!(ch.directoryName || teamRoleLabel);
 
         // Context gauge. Every agent gets one — lead, teammate, adopted,
-        // headless — as soon as it has taken a turn. Sub-agents never do: they
-        // have no session of their own, so contextTokens stays 0.
+        // headless — as soon as the server reports its context (a cleared
+        // session's 0 included: a full gauge). Sub-agents never do: they have
+        // no session of their own, so nothing is ever reported for them.
+        // Drawn as a health bar: full when the context is empty, draining as
+        // it fills (the colour still warns by the share used).
         const contextRatio = ch.contextTokens / ch.maxContextTokens;
-        const showContextGauge = !isSub && ch.contextTokens > 0;
+        const showContextGauge = !isSub && ch.contextReported === true;
 
         return (
           <Fragment key={id}>
             {bubbleNode}
             <div
-              className="absolute flex flex-col items-center -translate-x-1/2"
+              // The label grows upward from labelBottom, so extra lines and the
+              // context gauge never reach down over the head.
+              className="absolute flex flex-col items-center -translate-x-1/2 -translate-y-full"
               style={{
                 left: screenX,
-                top: screenY - (hasExtraLines ? 34 : 28),
+                top: labelBottom,
                 pointerEvents: isSelected ? 'auto' : 'none',
-                opacity: alwaysShowOverlay && !isSelected && !isHovered ? (isSub ? 0.5 : 0.75) : 1,
+                opacity: alwaysShowOverlay && !isSelected && !isHovered ? 0.75 : 1,
                 zIndex: isSelected ? OVERLAY_LABEL_SELECTED_Z_INDEX : OVERLAY_LABEL_Z_INDEX,
               }}
               data-testid="agent-overlay"
@@ -342,32 +351,24 @@ export function ToolOverlay({
                       onCloseAgent(id);
                     }}
                     title="Close agent"
-                    className="ml-2 shrink-0 leading-none"
+                    className="ml-2 shrink-0"
                   >
-                    ×
+                    {/* The panel's padding favours the text (pb > pt) and the × fills
+                        rows 1–5 of its grid: 3px lower centres it on the label line. */}
+                    <PixelIcon name="close" className="translate-y-3" />
                   </Button>
                 )}
               </div>
               {showContextGauge && (
-                <div
-                  style={{
-                    width: CONTEXT_GAUGE_WIDTH_PX,
-                    height: CONTEXT_GAUGE_HEIGHT_PX,
-                    background: CONTEXT_GAUGE_BG,
-                    marginTop: 2,
-                  }}
-                  title={`${Math.round(contextRatio * 100)}% context used (${(ch.contextTokens / 1000).toFixed(0)}k of ${(ch.maxContextTokens / 1000).toFixed(0)}k tokens)`}
-                  data-testid="context-gauge"
-                  data-context-pct={Math.round(contextRatio * 100)}
-                >
-                  <div
-                    style={{
-                      width: `${Math.min(contextRatio * 100, 100)}%`,
-                      height: '100%',
-                      background: getFuelColor(contextRatio),
-                    }}
-                  />
-                </div>
+                <ContextBar
+                  used={contextRatio}
+                  width={CONTEXT_GAUGE_WIDTH_PX}
+                  height={CONTEXT_GAUGE_HEIGHT_PX}
+                  style={{ marginTop: CONTEXT_GAUGE_GAP_PX }}
+                  title={`${Math.round(contextLeft(contextRatio) * 100)}% context left (${(ch.contextTokens / 1000).toFixed(0)}k of ${(ch.maxContextTokens / 1000).toFixed(0)}k tokens used)`}
+                  testId="context-gauge"
+                  pct={Math.round(contextRatio * 100)}
+                />
               )}
             </div>
           </Fragment>

@@ -10,20 +10,26 @@ interface TerminalPaneStackProps {
   agentIds: number[];
   /** The pane to show (already resolved by useTerminalDrawer). */
   shownAgentId: number | null;
-  onStatusChange: (agentId: number, status: TerminalConnectionStatus) => void;
+  onStatusChange: (agentId: number, status: TerminalConnectionStatus | null) => void;
   /** Positions each pane's wrapper inside the stack (the shells inset differently). */
   paneClassName: string;
   fontSizePx?: number;
   autoFocus?: boolean;
-  /** Input into whichever pane is showing — how the mobile key bar types and
-   *  pastes. Resolved at call time, so it follows tab switches. */
+  /** Keep every agent's pane mounted, the hidden ones too (desktop): a
+   *  switch shows a pane that is already live. Off (the phone), only the
+   *  shown pane exists — each hidden xterm holds its scrollback and parses
+   *  all of its agent's output, which a phone's memory can't afford, and a
+   *  pane that mounts gets its screen and scrollback back from the server's
+   *  replay anyway. */
+  keepHidden: boolean;
+  /** Input into whichever pane is showing — how the mobile key bar types.
+   *  Resolved at call time, so it follows tab switches. */
   inputRef?: Ref<TerminalInputHandle>;
 }
 
 /**
- * Every agent's TerminalPane, all mounted, only the shown one visible —
- * buffers and sockets survive tab switches, and unmounting would drop the
- * scrollback and force a reconnect. Shared by the desktop drawer and the
+ * The agents' TerminalPanes, only the shown one visible: all of them mounted
+ * (`keepHidden`) or just the shown one. Shared by the desktop drawer and the
  * mobile terminal page.
  */
 export function TerminalPaneStack({
@@ -33,6 +39,7 @@ export function TerminalPaneStack({
   paneClassName,
   fontSizePx,
   autoFocus,
+  keepHidden,
   inputRef,
 }: TerminalPaneStackProps) {
   const inputs = useRef(new Map<number, TerminalInputHandle>());
@@ -45,9 +52,8 @@ export function TerminalPaneStack({
       send: (data) => {
         if (shownRef.current !== null) inputs.current.get(shownRef.current)?.send(data);
       },
-      paste: (data) => {
-        if (shownRef.current !== null) inputs.current.get(shownRef.current)?.paste(data);
-      },
+      cols: () =>
+        shownRef.current !== null ? (inputs.current.get(shownRef.current)?.cols() ?? 0) : 0,
     }),
     [],
   );
@@ -57,7 +63,8 @@ export function TerminalPaneStack({
     else inputs.current.delete(agentId);
   };
 
-  return agentIds.map((agentId) => (
+  const mounted = keepHidden ? agentIds : agentIds.filter((id) => id === shownAgentId);
+  return mounted.map((agentId) => (
     // Inactive wrappers must not hit-test: they are full-size transparent
     // overlays stacked in DOM order, so a later agent's empty wrapper would
     // otherwise swallow every tap or click (focus, text selection) meant for

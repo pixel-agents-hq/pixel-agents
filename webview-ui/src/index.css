@@ -1,9 +1,4 @@
 @import 'tailwindcss';
-/* Material Symbols Sharp, weight 700 (the single-weight package keeps the
-   FILL/GRAD/opsz axes variable). Imported into the base layer: the package's
-   own rules are unlayered and would otherwise outrank every Tailwind utility
-   (its font-size: 24px silently beat text-[...] sizing). */
-@import '@material-symbols/font-700/sharp.css' layer(base);
 
 @font-face {
   font-family: 'FS Pixel Sans';
@@ -22,9 +17,17 @@
   --color-accent: #6030ff;
   --color-accent-bright: #746fff;
 
+  /* Raised panels (the Characters view's panes) and their hovered items */
+  --color-panel: #252538;
+  --color-panel-hover: #33334a;
+
   /* Text */
   --color-text: rgba(255, 255, 255, 0.9);
   --color-text-muted: rgba(255, 255, 255, 0.5);
+  /* Opaque text for the Characters view, which draws over varied panes */
+  --color-text-solid: #e6e6ee;
+  --color-text-muted-solid: #8a8aa6;
+  --color-text-on-accent: #ffffff;
 
   /* Buttons */
   --color-btn-bg: rgb(53, 52, 69);
@@ -39,11 +42,27 @@
   /* Status */
   --color-status-permission: #cca700;
   --color-status-active: #3794ff;
+  /* The 5-hour usage bar at half or less (blue → this purple → red). */
+  --color-usage-five-hour-warn: #9a4ce8;
   --color-status-success: #89d185;
   --color-status-error: var(--color-danger);
 
+  /* The character preview's room: checkered floor, wall and its seams, figure shadows */
+  --color-preview-floor: #3a3550;
+  --color-preview-floor-alt: #34304a;
+  --color-preview-wall: #2b2942;
+  --color-preview-wall-seam: #25233a;
+  --color-figure-shadow: rgba(10, 10, 20, 0.45);
+
   /* Shadow */
-  --shadow-pixel: 2px 2px 0px #0a0a14;
+  --color-shadow: #0a0a14;
+  --shadow-pixel: 2px 2px 0px var(--color-shadow);
+  /* A pressed button: half the offset, as if pushed into its shadow */
+  --shadow-pixel-pressed: 1px 1px 0px var(--color-shadow);
+  /* A 4px ledge of shadow under (or above) a full-width bar: the phone preview's
+     floor edge and the phone dock's top edge */
+  --shadow-ledge-down: 0 4px 0 var(--color-shadow);
+  --shadow-ledge-up: 0 -4px 0 var(--color-shadow);
 
   /* Non-utility values */
   --vignette: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
@@ -330,16 +349,55 @@
     scrollbar-color: var(--color-border) var(--color-bg-dark);
   }
 
-  /* Material Symbols defaults for this project: Sharp style (imported in
-     main.tsx at weight 700), FILL 1, GRAD 0, opsz 24. The package CSS pins
-     font-size to 24px; 1em instead, so an icon tracks the text beside it. */
-  .material-symbols-sharp {
-    font-variation-settings:
-      'FILL' 1,
-      'GRAD' 0,
-      'opsz' 24;
-    font-size: 1em;
-    line-height: 1;
+  /* A list that must not shift when it starts to overflow (the conversation
+     list): the scrollbar is always there (overflow: scroll — WebKit ignores
+     scrollbar-gutter under a styled ::-webkit-scrollbar), its track
+     transparent, so only the slim square thumb shows, and only when there is
+     something to scroll. */
+  .quiet-scrollbar {
+    overflow-x: hidden;
+    overflow-y: scroll;
+  }
+  .quiet-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  /* The same slim bar, sideways (the desktop roster). Overflow is left to
+     the element, which may flip itself to put the bar on top. */
+  .quiet-scrollbar-x::-webkit-scrollbar {
+    height: 6px;
+  }
+  .quiet-scrollbar::-webkit-scrollbar-track,
+  .quiet-scrollbar-x::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .quiet-scrollbar::-webkit-scrollbar-thumb,
+  .quiet-scrollbar-x::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 0;
+  }
+  .quiet-scrollbar::-webkit-scrollbar-thumb:hover,
+  .quiet-scrollbar-x::-webkit-scrollbar-thumb:hover {
+    background: var(--color-accent);
+  }
+  /* Firefox only: in Chrome these would override the 6px ::-webkit-scrollbar. */
+  @supports not selector(::-webkit-scrollbar) {
+    .quiet-scrollbar,
+    .quiet-scrollbar-x {
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-border) transparent;
+    }
+  }
+
+  /* No scrollbar where the finger scrolls (touch screens), whatever the
+     width: a narrow desktop window keeps its .pixel-scrollbar, a phone has
+     nothing to drag it with. After .pixel-scrollbar so it wins. */
+  @media (pointer: coarse) {
+    .touch-no-scrollbar {
+      scrollbar-width: none;
+    }
+    .touch-no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
   }
 }
 
@@ -351,4 +409,288 @@
   50% {
     opacity: 0.3;
   }
+}
+
+/* A toggled button's icon: squashes, overshoots, settles (the sidebar toggle). */
+@keyframes pixel-pop {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(0.7);
+  }
+  65% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.pixel-pop {
+  animation: pixel-pop 280ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pixel-pop {
+    animation: none;
+  }
+}
+
+/* ── Menu juice ───────────────────────────────────────────────
+   Toolbar menus pop up out of their button like a game's: the panel unrolls
+   upward (a clip reveal, so no pixel is ever scaled), overshoots its spot and
+   settles; its rows then slide in one after another. Closing rolls it back
+   down into the button, quickly. The clip leaves 6px around the box so the
+   hard shadow shows. Close durations = MENU_POP_OUT_MS (constants.ts).
+   Openings fill backwards only: once played they leave no clip or transform
+   behind (a lingering clip hid the launch drawer's pencil, which hangs off
+   its right edge). */
+@keyframes menu-pop-in {
+  0% {
+    clip-path: inset(100% -6px -6px -6px);
+    transform: translateY(10px);
+  }
+  55% {
+    clip-path: inset(-6px -6px -6px -6px);
+    transform: translateY(-5px);
+  }
+  78% {
+    transform: translateY(2px);
+  }
+  100% {
+    clip-path: inset(-6px -6px -6px -6px);
+    transform: translateY(0);
+  }
+}
+@keyframes menu-pop-out {
+  0% {
+    clip-path: inset(-6px -6px -6px -6px);
+    transform: translateY(0);
+  }
+  100% {
+    clip-path: inset(100% -6px -6px -6px);
+    transform: translateY(8px);
+  }
+}
+@keyframes menu-item-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  65% {
+    opacity: 1;
+    transform: translateX(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+/* A modal: drops in from a little above, lands with a bounce. */
+@keyframes modal-pop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(6px);
+  }
+  80% {
+    transform: translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes modal-pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes backdrop-out {
+  to {
+    opacity: 0;
+  }
+}
+.menu-pop-in {
+  animation: menu-pop-in 280ms cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+}
+.menu-pop-out {
+  animation: menu-pop-out 130ms cubic-bezier(0.5, 0, 0.9, 0.4) both;
+  pointer-events: none;
+}
+.modal-pop-in {
+  animation: modal-pop-in 320ms cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+}
+.modal-pop-out {
+  animation: modal-pop-out 130ms ease-in both;
+  pointer-events: none;
+}
+.backdrop-in {
+  animation: backdrop-in 200ms ease-out backwards;
+}
+.backdrop-out {
+  animation: backdrop-out 130ms ease-in both;
+  pointer-events: none;
+}
+/* Rows of an opening menu, one after another (.menu-item: a single row
+   outside the staggered list, first in line). */
+.menu-item,
+.menu-stagger-up > * {
+  animation: menu-item-in 220ms ease-out backwards;
+  animation-delay: 60ms;
+}
+/* .menu-stagger-up: the same cascade from the last row up, for a menu that
+   unrolls upward out of its button (the nearest row lands first). Its
+   .menu-item, above the list, comes in last. */
+.menu-item-last {
+  animation-delay: 300ms;
+}
+.menu-stagger-up > :nth-last-child(1) {
+  animation-delay: 90ms;
+}
+.menu-stagger-up > :nth-last-child(2) {
+  animation-delay: 115ms;
+}
+.menu-stagger-up > :nth-last-child(3) {
+  animation-delay: 140ms;
+}
+.menu-stagger-up > :nth-last-child(4) {
+  animation-delay: 165ms;
+}
+.menu-stagger-up > :nth-last-child(5) {
+  animation-delay: 190ms;
+}
+.menu-stagger-up > :nth-last-child(6) {
+  animation-delay: 215ms;
+}
+.menu-stagger-up > :nth-last-child(7) {
+  animation-delay: 240ms;
+}
+.menu-stagger-up > :nth-last-child(8) {
+  animation-delay: 265ms;
+}
+.menu-stagger-up > :nth-last-child(n + 9) {
+  animation-delay: 290ms;
+}
+/* Quieter: what opens inside a menu (the Layout editor's tab panels, the
+   colour sliders and picker, the roster's cards) just fades in, its items one
+   after another, with no snap. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+.fade-in,
+.fade-stagger > * {
+  animation: fade-in 220ms ease-out backwards;
+}
+.fade-stagger > :nth-child(1) {
+  animation-delay: 0ms;
+}
+.fade-stagger > :nth-child(2) {
+  animation-delay: 40ms;
+}
+.fade-stagger > :nth-child(3) {
+  animation-delay: 80ms;
+}
+.fade-stagger > :nth-child(4) {
+  animation-delay: 120ms;
+}
+.fade-stagger > :nth-child(5) {
+  animation-delay: 160ms;
+}
+.fade-stagger > :nth-child(6) {
+  animation-delay: 200ms;
+}
+.fade-stagger > :nth-child(7) {
+  animation-delay: 240ms;
+}
+.fade-stagger > :nth-child(8) {
+  animation-delay: 280ms;
+}
+.fade-stagger > :nth-child(9) {
+  animation-delay: 320ms;
+}
+.fade-stagger > :nth-child(10) {
+  animation-delay: 360ms;
+}
+.fade-stagger > :nth-child(n + 11) {
+  animation-delay: 400ms;
+}
+/* Toolbar buttons press down into their shadow. */
+.press-juice {
+  transition: transform 60ms ease-out;
+}
+.press-juice:active:not(:disabled) {
+  transform: translateY(2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-pop-in,
+  .menu-pop-out,
+  .fade-in,
+  .fade-stagger > *,
+  .modal-pop-in,
+  .modal-pop-out,
+  .backdrop-in,
+  .backdrop-out,
+  .menu-item,
+  .menu-stagger-up > * {
+    animation: none;
+  }
+  .press-juice:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* The usage bars' heartbeat: a lub-dub, drawn by showing the bigger heart
+   frame twice per period over the resting one (whole pixels, never a scale).
+   The period is set inline, proportional to the weekly plan left. */
+@keyframes usage-heart-beat {
+  0% {
+    visibility: visible;
+  }
+  12% {
+    visibility: hidden;
+  }
+  24% {
+    visibility: visible;
+  }
+  34% {
+    visibility: hidden;
+  }
+  100% {
+    visibility: hidden;
+  }
+}
+
+/* PixelInputText: the field's own text hides behind the pixel-font copy
+   until the field is focused for editing. */
+.pixel-veil:not(:focus-within) input {
+  color: transparent;
+}
+.pixel-veil:focus-within .pixel-veil-text {
+  display: none;
+}
+
+/* PixelText over the office (its `shadow`): one hard dark shadow under the
+   words and the same under the pixel-font glyphs. */
+.pixel-text-shadow {
+  text-shadow: 1px 1px 0 var(--color-bg-dark);
+}
+.pixel-text-shadow svg {
+  filter: drop-shadow(1px 1px 0 var(--color-bg-dark));
+}
+
+.usage-heart-beat {
+  animation-name: usage-heart-beat;
+  animation-timing-function: step-end;
+  animation-iteration-count: infinite;
 }

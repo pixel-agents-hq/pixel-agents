@@ -28,14 +28,26 @@ export interface PersistedAgent {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
-  /** Live background-spawn tool ids on a lead. Persisted so the spawns'
-   *  transcripts are re-adopted after a reload; the spawned children
-   *  themselves are derived state and never persisted. */
+  /** A lead's live background spawns: the tool id each runs under, plus the
+   *  agent (task) id the CLI gave it when known. Persisted so the spawns'
+   *  transcripts are re-adopted after a reload and their completion still
+   *  matches (an agent revived by SendMessage is tied to its transcript only
+   *  by the task id); the spawned children themselves are derived state and
+   *  never persisted. */
+  backgroundSpawns?: { toolId: string; taskId?: string }[];
+  /** Pre-`backgroundSpawns` form (tool ids only), written by releases up to
+   *  v1.5.x. Read on restore; never written. */
   backgroundAgentToolIds?: string[];
   /** Preferred character palette (0-5). Persisted so colors stay stable
    *  across server restarts; assignPaletteIfNeeded is a no-op on restore. */
   palette?: number;
-  /** Hue shift in degrees (0-360). Persisted alongside palette. */
+  /** Which copy of its character the agent is (core paletteUtils Look): 0 or
+   *  absent = the character as drawn, n = its nth repeat. Persisted alongside palette. */
+  repeat?: number;
+  /** Older forms of `repeat`, in degrees: `clothesHue` (a clothes colour) and,
+   *  up to v1.5.x, `hueShift` (a whole-sprite hue shift). Read on restore as
+   *  "a repeat" (non-zero = 1); never written. */
+  clothesHue?: number;
   hueShift?: number;
 }
 
@@ -45,7 +57,7 @@ export interface PersistedAgent {
  */
 export interface AgentMeta {
   palette: number;
-  hueShift: number;
+  repeat: number;
   seatId: string | null;
 }
 

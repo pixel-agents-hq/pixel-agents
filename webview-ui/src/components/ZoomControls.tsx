@@ -8,115 +8,147 @@ import {
   ZOOM_MIN,
 } from '../constants.js';
 import { Button } from './ui/Button.js';
+import { PixelIcon } from './ui/PixelIcon.js';
+import { PixelText } from './ui/PixelText.js';
 
 interface ZoomControlsProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
+  /** The conversation sidebar's toggle, above the zoom buttons (only where there is a sidebar). */
+  sidebar?: { open: boolean; onToggle: () => void };
 }
 
-export function ZoomControls({ zoom, onZoomChange }: ZoomControlsProps) {
-  const [showLevel, setShowLevel] = useState(false);
-  const [fadeOut, setFadeOut] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+/**
+ * The zoom level for a moment after it changes (shown, then faded out).
+ * `visible` = drawn at all, `fading` = on its way out.
+ */
+function useZoomFlash(zoom: number): { visible: boolean; fading: boolean } {
+  const [visible, setVisible] = useState(false);
+  const [fading, setFading] = useState(false);
   const prevZoomRef = useRef(zoom);
 
-  const minDisabled = zoom <= ZOOM_MIN;
-  const maxDisabled = zoom >= ZOOM_MAX;
-
-  // Show zoom level briefly when zoom changes
   useEffect(() => {
     if (zoom === prevZoomRef.current) return;
     prevZoomRef.current = zoom;
-
-    // Clear existing timers
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
-
-    setShowLevel(true);
-    setFadeOut(false);
-
-    // Start fade after delay
-    fadeTimerRef.current = setTimeout(() => {
-      setFadeOut(true);
-    }, ZOOM_LEVEL_FADE_DELAY_MS);
-
-    // Hide completely after delay
-    timerRef.current = setTimeout(() => {
-      setShowLevel(false);
-      setFadeOut(false);
+    setVisible(true);
+    setFading(false);
+    const fade = setTimeout(() => setFading(true), ZOOM_LEVEL_FADE_DELAY_MS);
+    const hide = setTimeout(() => {
+      setVisible(false);
+      setFading(false);
     }, ZOOM_LEVEL_HIDE_DELAY_MS);
-
     return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-      if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+      clearTimeout(fade);
+      clearTimeout(hide);
     };
   }, [zoom]);
 
+  return { visible, fading };
+}
+
+/** "3x" in the pixel font, no panel behind it (a hard shadow keeps it
+ *  readable over the office). */
+function ZoomLevelText({
+  zoom,
+  shown,
+  className,
+}: {
+  zoom: number;
+  shown: boolean;
+  className: string;
+}) {
+  return (
+    <div
+      data-testid="zoom-level"
+      aria-hidden={!shown}
+      className={`absolute z-20 select-none pointer-events-none ${className}`}
+      style={{
+        opacity: shown ? 1 : 0,
+        transition: `opacity ${ZOOM_LEVEL_FADE_DURATION_SEC}s ease-out`,
+      }}
+    >
+      <PixelText text={`${zoom}x`} scale={3} shadow className="text-text" />
+    </div>
+  );
+}
+
+/** The phone's zoom level (pinch zooms there; no buttons), for a moment after
+ *  each change: inline with the top bar, just left of the terminal toggle
+ *  (40 px square, 8 px in from the right) and centred on it. */
+export function MobileZoomLevel({ zoom }: { zoom: number }) {
+  const flash = useZoomFlash(zoom);
+  if (!flash.visible) return null;
+  return (
+    <ZoomLevelText
+      zoom={zoom}
+      shown={!flash.fading}
+      className="mobile-safe-top right-60 h-40 flex items-center"
+    />
+  );
+}
+
+export function ZoomControls({ zoom, onZoomChange, sidebar }: ZoomControlsProps) {
+  const flash = useZoomFlash(zoom);
+  const [hovered, setHovered] = useState(false);
+  // Bumped per toggle: remounts the icon so its pop plays (never on first paint).
+  const [toggles, setToggles] = useState(0);
+
+  const minDisabled = zoom <= ZOOM_MIN;
+  const maxDisabled = zoom >= ZOOM_MAX;
+  const levelShown = hovered || (flash.visible && !flash.fading);
+
   return (
     <>
-      {/* Zoom level indicator at top-center */}
-      {showLevel && (
-        <div
-          className="absolute top-10 left-1/2 -translate-x-1/2 z-10 pixel-panel pb-4 px-16 text-lg select-none pointer-events-none"
-          style={{
-            opacity: fadeOut ? 0 : 1,
-            transition: `opacity ${ZOOM_LEVEL_FADE_DURATION_SEC}s ease-out`,
-          }}
-        >
-          {zoom}x
-        </div>
-      )}
-
       {/* Vertically stacked round buttons — top-left */}
       <div className="absolute top-8 left-8 z-10 flex flex-col gap-4">
-        <Button
-          size="icon_lg"
-          onClick={() => onZoomChange(zoom + 1)}
-          disabled={maxDisabled}
-          className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
-          title="Zoom in (Ctrl+Scroll)"
+        {sidebar && (
+          <Button
+            size="icon_lg"
+            variant={sidebar.open ? 'active' : 'default'}
+            onClick={() => {
+              setToggles((n) => n + 1);
+              sidebar.onToggle();
+            }}
+            aria-pressed={sidebar.open}
+            className="border-border! shadow-pixel mb-4"
+            title={sidebar.open ? 'Hide conversations' : 'Show conversations'}
+          >
+            <span key={toggles} className={`flex ${toggles > 0 ? 'pixel-pop' : ''}`}>
+              <PixelIcon name={sidebar.open ? 'sidebar' : 'sidebarShut'} />
+            </span>
+          </Button>
+        )}
+        {/* + and -, with the level right of them, centred between the two:
+            shown while either is hovered and for a moment after a change. */}
+        <div
+          className="relative flex flex-col gap-4"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
         >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <line
-              x1="9"
-              y1="3"
-              x2="9"
-              y2="15"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-            <line
-              x1="3"
-              y1="9"
-              x2="15"
-              y2="9"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </Button>
-        <Button
-          size="icon_lg"
-          onClick={() => onZoomChange(zoom - 1)}
-          disabled={minDisabled}
-          className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
-          title="Zoom out (Ctrl+Scroll)"
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <line
-              x1="3"
-              y1="9"
-              x2="15"
-              y2="9"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </Button>
+          <Button
+            size="icon_lg"
+            onClick={() => onZoomChange(zoom + 1)}
+            disabled={maxDisabled}
+            className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
+            title="Zoom in (Ctrl+Scroll)"
+          >
+            <PixelIcon name="zoomIn" />
+          </Button>
+          <Button
+            size="icon_lg"
+            onClick={() => onZoomChange(zoom - 1)}
+            disabled={minDisabled}
+            className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
+            title="Zoom out (Ctrl+Scroll)"
+          >
+            <PixelIcon name="zoomOut" />
+          </Button>
+          <ZoomLevelText
+            zoom={zoom}
+            shown={levelShown}
+            className="left-full top-1/2 -translate-y-1/2 ml-12"
+          />
+        </div>
       </div>
     </>
   );

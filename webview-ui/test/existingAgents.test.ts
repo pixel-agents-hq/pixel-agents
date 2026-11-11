@@ -30,7 +30,7 @@ import { reconcileExistingAgents } from '../src/office/engine/existingAgents.js'
 interface AddAgentCall {
   id: number;
   palette?: number;
-  hueShift?: number;
+  repeat?: number;
   seatId?: string;
   skipSpawnEffect?: boolean;
   directoryName?: string;
@@ -38,22 +38,35 @@ interface AddAgentCall {
 
 /** A fake office that records addAgent calls, mirroring how officeCanvasCursor
  *  tests inject closures instead of constructing a real OfficeState. */
-function fakeOffice(
-  existing: number[] = [],
-): ExistingAgentsOffice & { calls: AddAgentCall[]; headless: number[] } {
+function fakeOffice(existing: number[] = []): ExistingAgentsOffice & {
+  calls: AddAgentCall[];
+  headless: number[];
+  synced: Array<{ id: number } & ExistingAgentMeta>;
+  rested: number[];
+} {
   const ids = new Set(existing);
   const calls: AddAgentCall[] = [];
   const headless: number[] = [];
+  const synced: Array<{ id: number } & ExistingAgentMeta> = [];
+  const rested: number[] = [];
   return {
     calls,
     headless,
+    synced,
+    rested,
     characters: { has: (id: number) => ids.has(id) },
-    addAgent: (id, palette, hueShift, seatId, skipSpawnEffect, directoryName) => {
+    addAgent: (id, palette, repeat, seatId, skipSpawnEffect, directoryName) => {
       ids.add(id);
-      calls.push({ id, palette, hueShift, seatId, skipSpawnEffect, directoryName });
+      calls.push({ id, palette, repeat, seatId, skipSpawnEffect, directoryName });
     },
     setHeadless: (id, isHeadless) => {
       if (isHeadless) headless.push(id);
+    },
+    syncAgent: (id, palette, repeat, seatId) => {
+      synced.push({ id, palette, repeat, seatId });
+    },
+    restAgent: (id) => {
+      rested.push(id);
     },
   };
 }
@@ -64,7 +77,7 @@ test('layout ready: adds restored agents immediately with their seat metadata', 
   const os = fakeOffice();
   const pending: PendingAgent[] = [];
   const meta: Record<number, ExistingAgentMeta> = {
-    5: { palette: 2, hueShift: 90, seatId: 'seat-a' },
+    5: { palette: 2, repeat: 90, seatId: 'seat-a' },
   };
   const directoryNames: Record<number, string> = { 5: 'alpha' };
 
@@ -77,12 +90,14 @@ test('layout ready: adds restored agents immediately with their seat metadata', 
     {
       id: 5,
       palette: 2,
-      hueShift: 90,
+      repeat: 90,
       seatId: 'seat-a',
       skipSpawnEffect: true,
       directoryName: 'alpha',
     },
   ]);
+  // the snapshot doesn't say who is working: the replay does, so it starts at rest
+  assert.deepEqual(os.rested, [5]);
 });
 
 // ── layout not ready → buffer (preserved original behavior) ─────
@@ -91,7 +106,7 @@ test('layout not ready: buffers restored agents for the later layoutLoaded flush
   const os = fakeOffice();
   const pending: PendingAgent[] = [];
   const meta: Record<number, ExistingAgentMeta> = {
-    5: { palette: 2, hueShift: 90, seatId: 'seat-a' },
+    5: { palette: 2, repeat: 90, seatId: 'seat-a' },
   };
   const directoryNames: Record<number, string> = { 5: 'alpha' };
 
@@ -103,7 +118,7 @@ test('layout not ready: buffers restored agents for the later layoutLoaded flush
     {
       id: 5,
       palette: 2,
-      hueShift: 90,
+      repeat: 90,
       seatId: 'seat-a',
       directoryName: 'alpha',
       isHeadless: false,
@@ -122,6 +137,20 @@ test('layout ready: skips an agent that already exists and reports nothing added
   assert.equal(addedDirectly, false);
   assert.equal(os.calls.length, 0);
   assert.equal(pending.length, 0);
+});
+
+test('layout ready: an agent the office already shows takes the server look and seat', () => {
+  // A reconnecting browser keeps its characters. Their looks and seats may be
+  // stale; saving them back used to reshuffle the office for everyone.
+  const os = fakeOffice([5]);
+  const pending: PendingAgent[] = [];
+  const meta: Record<number, ExistingAgentMeta> = {
+    5: { palette: 2, repeat: 0, seatId: 'seat-a' },
+  };
+
+  reconcileExistingAgents(os, [5], meta, {}, true, pending);
+
+  assert.deepEqual(os.synced, [{ id: 5, palette: 2, repeat: 0, seatId: 'seat-a' }]);
 });
 
 test('layout ready: a mixed roster adds only the missing agent', () => {
@@ -177,7 +206,7 @@ test('layout ready: agent with no metadata is still added with undefined fields'
     {
       id: 7,
       palette: undefined,
-      hueShift: undefined,
+      repeat: undefined,
       seatId: undefined,
       skipSpawnEffect: true,
       directoryName: undefined,

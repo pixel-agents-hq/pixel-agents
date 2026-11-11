@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.js';
 import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import {
@@ -11,8 +12,9 @@ import {
   handleClientMessage,
 } from '../src/clientMessageHandler.js';
 import { getHooksEnabled, readConfig, setHooksEnabled } from '../src/configPersistence.js';
-import { TERMINAL_REQUIRES_TOKEN_REASON } from '../src/constants.js';
+import { MAX_CHARACTER_REPEAT, TERMINAL_REQUIRES_TOKEN_REASON } from '../src/constants.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
+import { getPaletteCount, setExternalCharacterCount } from '../src/paletteAssigner.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import { CLAUDE_HOOK_EVENTS } from '../src/providers/hook/claude/constants.js';
 import type { IPty, PtyModule } from '../src/terminal/ptyModule.js';
@@ -40,7 +42,7 @@ function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
     activeToolNames: new Map(),
     activeSubagentToolIds: new Map(),
     activeSubagentToolNames: new Map(),
-    backgroundAgentToolIds: new Set(),
+    backgroundSpawns: new Map(),
     isWaiting: false,
     permissionSent: false,
     hadToolsInTurn: false,
@@ -379,7 +381,7 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
       // centralized-color rule just for this cache literal.
       /* eslint-disable pixel-agents/no-inline-colors */
       const cache: AssetCache = {
-        characters: null,
+        characters: { characters: [] },
         pets: null,
         floorTiles: [[['#000000']]],
         wallTiles: [[[['#aabbcc']]]],
@@ -403,7 +405,7 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
 
     it('skips carpetTilesLoaded when the cache has no carpet sprites', () => {
       const cache: AssetCache = {
-        characters: null,
+        characters: { characters: [] },
         pets: null,
         floorTiles: null,
         wallTiles: null,
@@ -463,99 +465,95 @@ describe('clientMessageHandler: saveAgentSeats palette sync', () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
-  it('syncs in-range palette/hueShift onto the matching AgentState', () => {
+  it('fills in the look of an agent that has none', () => {
     store.set(1, createTestAgent({ id: 1 }));
-    store.set(2, createTestAgent({ id: 2, palette: 0, hueShift: 0 }));
 
     handleClientMessage(
-      {
-        type: 'saveAgentSeats',
-        seats: {
-          '1': { palette: 4, hueShift: 120, seatId: 'seat-a' },
-          '2': { palette: 2, hueShift: 60, seatId: 'seat-b' },
-        },
-      },
+      { type: 'saveAgentSeats', seats: { '1': { palette: 4, repeat: 120, seatId: 'seat-a' } } },
       (m) => sent.push(m),
       ctx,
     );
 
     expect(store.get(1)?.palette).toBe(4);
-    expect(store.get(1)?.hueShift).toBe(120);
-    expect(store.get(2)?.palette).toBe(2);
-    expect(store.get(2)?.hueShift).toBe(60);
+    expect(store.get(1)?.repeat).toBe(120);
   });
 
-  it('drops an out-of-range palette and keeps the existing value', () => {
-    store.set(1, createTestAgent({ id: 1, palette: 1, hueShift: 10 }));
+  it('never replaces a look the server already gave the agent', () => {
+    // A browser that reconnects keeps the looks it had before and saves them
+    // back; they must not overwrite what the server assigned meanwhile.
+    store.set(2, createTestAgent({ id: 2, palette: 0, repeat: 0 }));
 
     handleClientMessage(
-      {
-        type: 'saveAgentSeats',
-        seats: { '1': { palette: 99, hueShift: 50, seatId: null } },
-      },
+      { type: 'saveAgentSeats', seats: { '2': { palette: 2, repeat: 60, seatId: 'seat-b' } } },
       (m) => sent.push(m),
       ctx,
     );
 
-    expect(store.get(1)?.palette).toBe(1);
-    // hueShift 50 is in range → still synced.
-    expect(store.get(1)?.hueShift).toBe(50);
+    expect(store.get(2)?.palette).toBe(0);
+    expect(store.get(2)?.repeat).toBe(0);
   });
 
-  it('drops a negative hue shift and keeps the existing value', () => {
-    store.set(1, createTestAgent({ id: 1, palette: 0, hueShift: 30 }));
+  it('drops an out-of-range palette', () => {
+    store.set(1, createTestAgent({ id: 1 }));
 
     handleClientMessage(
-      {
-        type: 'saveAgentSeats',
-        seats: { '1': { palette: 2, hueShift: -5, seatId: null } },
-      },
+      { type: 'saveAgentSeats', seats: { '1': { palette: 99, repeat: 50, seatId: null } } },
       (m) => sent.push(m),
       ctx,
     );
 
-    // palette 2 is in range → synced.
+    expect(store.get(1)?.palette).toBeUndefined();
+    // repeat 50 is in range → still filled.
+    expect(store.get(1)?.repeat).toBe(50);
+  });
+
+  it('drops a negative repeat', () => {
+    store.set(1, createTestAgent({ id: 1 }));
+
+    handleClientMessage(
+      { type: 'saveAgentSeats', seats: { '1': { palette: 2, repeat: -5, seatId: null } } },
+      (m) => sent.push(m),
+      ctx,
+    );
+
     expect(store.get(1)?.palette).toBe(2);
-    expect(store.get(1)?.hueShift).toBe(30);
+    expect(store.get(1)?.repeat).toBeUndefined();
   });
 
-  it('drops a non-integer palette and keeps the existing value', () => {
-    store.set(1, createTestAgent({ id: 1, palette: 5, hueShift: 0 }));
+  it('drops a non-integer palette', () => {
+    store.set(1, createTestAgent({ id: 1 }));
 
     handleClientMessage(
-      {
-        type: 'saveAgentSeats',
-        seats: { '1': { palette: 2.5, hueShift: 90, seatId: null } },
-      },
+      { type: 'saveAgentSeats', seats: { '1': { palette: 2.5, repeat: 90, seatId: null } } },
       (m) => sent.push(m),
       ctx,
     );
 
-    expect(store.get(1)?.palette).toBe(5);
-    expect(store.get(1)?.hueShift).toBe(90);
+    expect(store.get(1)?.palette).toBeUndefined();
+    expect(store.get(1)?.repeat).toBe(90);
   });
 
-  it('accepts the upper hue boundary (360) and lower palette boundary (0)', () => {
+  it('accepts the upper repeat boundary and lower palette boundary (0)', () => {
     store.set(1, createTestAgent({ id: 1 }));
 
     handleClientMessage(
       {
         type: 'saveAgentSeats',
-        seats: { '1': { palette: 0, hueShift: 360, seatId: null } },
+        seats: { '1': { palette: 0, repeat: MAX_CHARACTER_REPEAT, seatId: null } },
       },
       (m) => sent.push(m),
       ctx,
     );
 
     expect(store.get(1)?.palette).toBe(0);
-    expect(store.get(1)?.hueShift).toBe(360);
+    expect(store.get(1)?.repeat).toBe(MAX_CHARACTER_REPEAT);
   });
 
   it('silently skips seat entries for unknown agent ids', () => {
     handleClientMessage(
       {
         type: 'saveAgentSeats',
-        seats: { '999': { palette: 3, hueShift: 100, seatId: null } },
+        seats: { '999': { palette: 3, repeat: 100, seatId: null } },
       },
       (m) => sent.push(m),
       ctx,
@@ -564,52 +562,256 @@ describe('clientMessageHandler: saveAgentSeats palette sync', () => {
     expect(store.get(999)).toBeUndefined();
   });
 
-  it('accepts palette 7 when the cache has 8 character sprites', () => {
-    // The guard reads ctx.cache?.characters?.characters.length instead
-    // of hardcoding PALETTE_COUNT. With 8 sprites, palette 7 is valid.
-    const cache: AssetCache = {
-      characters: {
-        characters: [
-          { down: [[[]]], up: [[[]]], right: [[[]]] },
-          { down: [[[]]], up: [[[]]], right: [[[]]] },
-          { down: [[[]]], up: [[[]]], right: [[[]]] },
-          { down: [[[]]], up: [[[]]], right: [[[]]] },
-          { down: [[[]]], up: [[[]]], right: [[[]]] },
-          { down: [[[]]], up: [[[]]], right: [[[]]] },
-          { down: [[[]]], up: [[[]]], right: [[[]]] },
-          { down: [[[]]], up: [[[]]], right: [[[]]] },
-        ],
-      },
-      pets: null,
-      floorTiles: null,
-      wallTiles: null,
-      carpetTiles: null,
-      furniture: null,
-      defaultLayout: null,
-    };
-    ctx = freshCtx(cache);
+  it('accepts palette 7 when 6 profiles and 2 external sprites make 8 palettes', () => {
+    // The guard reads the palette count (character profiles + external
+    // char_N.png sprites) instead of hardcoding 6. With 8, palette 7 is valid.
+    setExternalCharacterCount(2);
     store.set(1, createTestAgent({ id: 1 }));
 
     handleClientMessage(
       {
         type: 'saveAgentSeats',
-        seats: { '1': { palette: 7, hueShift: 90, seatId: null } },
+        seats: { '1': { palette: 7, repeat: 90, seatId: null } },
       },
       (m) => sent.push(m),
       ctx,
     );
 
     expect(store.get(1)?.palette).toBe(7);
-    // palette 8 is still out of range for 8 sprites → dropped.
+    // palette 8 is still out of range for 8 palettes → dropped.
     handleClientMessage(
       {
         type: 'saveAgentSeats',
-        seats: { '1': { palette: 8, hueShift: 90, seatId: null } },
+        seats: { '1': { palette: 8, repeat: 90, seatId: null } },
       },
       (m) => sent.push(m),
       ctx,
     );
     expect(store.get(1)?.palette).toBe(7);
+    setExternalCharacterCount(0);
+  });
+});
+
+describe('clientMessageHandler: character profiles', () => {
+  let tempHome: string;
+  let originalHome: string | undefined;
+  let store: AgentStateStore;
+  let sent: Array<Record<string, unknown>>;
+  let broadcasts: Array<Record<string, unknown>>;
+
+  const profilesFile = () => path.join(tempHome, '.pixel-agents', 'characters.json');
+  const ctx = (): ClientMessageContext => ({ store, cache: null, privileged: true });
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cmh-profiles-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
+    store = new AgentStateStore();
+    store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
+    sent = [];
+    broadcasts = [];
+    store.on('broadcast', (message) => broadcasts.push(message));
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    store.dispose();
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it('webviewReady sends the six default profiles when none are saved', () => {
+    handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx());
+    const loaded = sent.find((m) => m.type === 'characterProfilesLoaded');
+    expect(loaded?.profiles).toEqual(DEFAULT_CHARACTER_PROFILES);
+    // profiles come before any character sprites
+    const order = sent.map((m) => m.type);
+    expect(order.indexOf('characterProfilesLoaded')).toBeLessThan(order.indexOf('layoutLoaded'));
+  });
+
+  it('saveCharacterProfiles persists, broadcasts with its saveId and moves the palette count', () => {
+    const profiles = [
+      { id: 'a', name: 'A', body: 'flat', v: 35 },
+      { id: 'b', name: 'B', body: 'bust', hair: 'bob', v: 35 },
+      { id: 'c', name: 'C', body: 'flat', v: 35 },
+    ];
+    handleClientMessage(
+      { type: 'saveCharacterProfiles', profiles, saveId: 's1' },
+      (m) => sent.push(m),
+      ctx(),
+    );
+
+    expect(JSON.parse(fs.readFileSync(profilesFile(), 'utf-8'))).toEqual(profiles);
+    expect(broadcasts).toContainEqual({
+      type: 'characterProfilesLoaded',
+      profiles,
+      items: [],
+      saveId: 's1',
+    });
+    // the answer is the broadcast; the sender gets no second, private copy
+    expect(sent.filter((m) => m.type === 'characterProfilesLoaded')).toEqual([]);
+    expect(getPaletteCount()).toBe(3);
+
+    // the next client gets the saved list, with no saveId (it answers no save)
+    sent = [];
+    handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), ctx());
+    expect(sent.find((m) => m.type === 'characterProfilesLoaded')).toEqual({
+      type: 'characterProfilesLoaded',
+      profiles,
+      items: [],
+    });
+  });
+
+  it('a valid current-format save round-trips byte-identically into the broadcast', () => {
+    /* eslint-disable pixel-agents/no-inline-colors -- pixel edits are hex data, not UI colours */
+    const profiles = [
+      ...DEFAULT_CHARACTER_PROFILES,
+      {
+        id: 'edited',
+        name: 'Edited',
+        body: 'bust',
+        eyeShape: 'lidded',
+        eyeRows: 'both',
+        hair: 'bob',
+        top: 'tshirt',
+        colors: {
+          skin: { h: 0, s: 0, b: 0, c: 0, palette: 'Tan' },
+          hair: { h: 210.5, s: -12, b: 4, c: 0, colorize: true },
+        },
+        edits: {
+          'top:tshirt': { cells: { '0': { '17': '#a1B2c3', '18': null } } },
+          'body:bust': { cells: { '20': { '511': '#000000' } } },
+        },
+        futureField: { kept: [1, 2] },
+        v: 35,
+      },
+    ];
+    /* eslint-enable pixel-agents/no-inline-colors */
+    const sentJson = JSON.stringify(profiles);
+    handleClientMessage(
+      { type: 'saveCharacterProfiles', profiles: JSON.parse(sentJson), saveId: 'rt' },
+      (m) => sent.push(m),
+      ctx(),
+    );
+    const echo = broadcasts.find((m) => m.type === 'characterProfilesLoaded');
+    expect(echo?.saveId).toBe('rt');
+    expect(JSON.stringify(echo?.profiles)).toBe(sentJson);
+    expect(JSON.stringify(JSON.parse(fs.readFileSync(profilesFile(), 'utf-8')))).toBe(sentJson);
+  });
+
+  it("saves the wardrobe artifact's v30 profiles migrated (renamed bodies, eye shapes and parts)", () => {
+    const profiles = [
+      {
+        body: 'light_female',
+        eyeShape: 'light_male',
+        hair: 'layer_21',
+        edits: {
+          'body:light_female': { rev: 1, cells: {} },
+          'lashes:light_male': { rev: 1, cells: {} },
+          'lashes:closed': { rev: 1, cells: {} },
+          'hair:layer_21': { rev: 1, cells: {} },
+        },
+        v: 30,
+      },
+    ];
+    const migrated = [
+      {
+        id: 'char-0',
+        body: 'bust',
+        eyeShape: 'plain',
+        hair: 'mop',
+        edits: {
+          'body:bust': { cells: {} },
+          'lashes:plain': { cells: {} },
+          'lashes:closed': { cells: {} },
+          'hair:mop': { cells: {} },
+        },
+        v: 35,
+      },
+    ];
+    handleClientMessage(
+      { type: 'saveCharacterProfiles', profiles, saveId: 'v30' },
+      (m) => sent.push(m),
+      ctx(),
+    );
+    expect(JSON.parse(fs.readFileSync(profilesFile(), 'utf-8'))).toEqual(migrated);
+    // the broadcast is what was persisted, not what was sent
+    expect(broadcasts).toContainEqual({
+      type: 'characterProfilesLoaded',
+      profiles: migrated,
+      items: [],
+      saveId: 'v30',
+    });
+  });
+
+  it('answers a refused save to the sender alone, with the saved list and its saveId', () => {
+    const saved = [{ id: 'kept', name: 'Kept', body: 'flat', v: 35 }];
+    handleClientMessage(
+      { type: 'saveCharacterProfiles', profiles: saved, saveId: 'ok' },
+      (m) => sent.push(m),
+      ctx(),
+    );
+    broadcasts = [];
+    const refused = [
+      [],
+      [{ name: 'no body' }],
+      'nope',
+      [{ body: 'flat', colors: [] }],
+      [{ body: 'flat', colors: { hair: 'red' } }],
+      [{ body: 'flat', edits: { 'top:x': { rev: 1, cells: { '0': null } } } }],
+    ];
+    refused.forEach((profiles, i) => {
+      handleClientMessage(
+        { type: 'saveCharacterProfiles', profiles, saveId: `bad${i}` },
+        (m) => sent.push(m),
+        ctx(),
+      );
+    });
+    expect(JSON.parse(fs.readFileSync(profilesFile(), 'utf-8'))).toEqual(saved);
+    expect(broadcasts.filter((m) => m.type === 'characterProfilesLoaded')).toEqual([]);
+    expect(sent.filter((m) => m.type === 'characterProfilesLoaded')).toEqual(
+      refused.map((_, i) => ({
+        type: 'characterProfilesLoaded',
+        profiles: saved,
+        items: [],
+        saveId: `bad${i}`,
+      })),
+    );
+  });
+
+  it('answers a save whose write fails with the defaults still in effect', () => {
+    // A directory where the file should be: the rename fails.
+    fs.mkdirSync(profilesFile(), { recursive: true });
+    handleClientMessage(
+      { type: 'saveCharacterProfiles', profiles: [{ body: 'flat' }], saveId: 'w' },
+      (m) => sent.push(m),
+      ctx(),
+    );
+    expect(broadcasts.filter((m) => m.type === 'characterProfilesLoaded')).toEqual([]);
+    expect(sent.find((m) => m.type === 'characterProfilesLoaded')).toEqual({
+      type: 'characterProfilesLoaded',
+      profiles: DEFAULT_CHARACTER_PROFILES,
+      items: [],
+      saveId: 'w',
+    });
+  });
+
+  it('an untokened client cannot save profiles', () => {
+    const profiles = [{ body: 'flat' }];
+    handleClientMessage(
+      { type: 'saveCharacterProfiles', profiles, saveId: 'x' },
+      (m) => sent.push(m),
+      { store, cache: null, privileged: false },
+    );
+    expect(fs.existsSync(profilesFile())).toBe(false);
+    expect(broadcasts.filter((m) => m.type === 'characterProfilesLoaded')).toEqual([]);
+    // refused like any other save: the sender is told the list still in effect
+    expect(sent).toContainEqual({
+      type: 'characterProfilesLoaded',
+      profiles: DEFAULT_CHARACTER_PROFILES,
+      items: [],
+      saveId: 'x',
+    });
   });
 });
 
@@ -676,7 +878,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
       activeToolNames: new Map(),
       activeSubagentToolIds: new Map(),
       activeSubagentToolNames: new Map(),
-      backgroundAgentToolIds: new Set(),
+      backgroundSpawns: new Map(),
       isWaiting: false,
       permissionSent: false,
       hadToolsInTurn: false,
@@ -758,7 +960,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
   it('webviewReady tells an untokened client the terminal is unavailable, and why', () => {
     const { manager } = workingPtyManager();
     store.set(1, makeAgent(1));
-    manager.create({ agentId: 1, command: 'claude', args: [], cwd: tempHome });
+    manager.create({ agentId: 1, command: 'claude', args: [], cwd: tempHome, env: {} });
 
     dispatch({ type: 'webviewReady' }, ctx({ ptyManager: manager, privileged: false }));
 
@@ -787,7 +989,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     const { manager } = workingPtyManager();
     store.set(1, makeAgent(1));
     store.set(2, makeAgent(2));
-    manager.create({ agentId: 1, command: 'claude', args: [], cwd: tempHome });
+    manager.create({ agentId: 1, command: 'claude', args: [], cwd: tempHome, env: {} });
 
     dispatch({ type: 'webviewReady' }, ctx({ ptyManager: manager }));
 
@@ -808,6 +1010,28 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     const id = [...store][0][0];
     expect(manager.has(id)).toBe(true);
     expect(broadcasts).toContainEqual({ type: 'terminalSessionOpened', agentId: id });
+  });
+
+  it('launchAgent with a roster pick moves it to the front of the roster', () => {
+    const { manager } = workingPtyManager();
+
+    dispatch({ type: 'launchAgent', palette: 2 }, ctx({ runtime, ptyManager: manager }));
+
+    expect(store.size).toBe(1);
+    expect(readConfig().recentCharacters).toEqual([2]);
+    expect(broadcasts).toContainEqual(expect.objectContaining({ type: 'recentCharactersLoaded' }));
+  });
+
+  it('launchAgent records no recency when the launch fails', () => {
+    // No agent wears the pick, so it must not jump to the front of every
+    // office's roster.
+    const manager = PtySessionManager.disabled('Terminal disabled with --no-terminal.');
+
+    dispatch({ type: 'launchAgent', palette: 2 }, ctx({ runtime, ptyManager: manager }));
+
+    expect(store.size).toBe(0);
+    expect(readConfig().recentCharacters ?? []).toEqual([]);
+    expect(broadcasts.filter((m) => m.type === 'recentCharactersLoaded')).toEqual([]);
   });
 
   it('launchAgent is ignored from an untokened client', () => {
@@ -1101,7 +1325,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
       const id = [...store][0][0];
       // Labelled with the Directory's NAME, not the launch path's basename:
       // that is what the user called it, and what its Area mapping is keyed by
-      // (directoryNameForLaunch in server/src/directories.ts).
+      // (directoryAt in server/src/directories.ts).
       expect(store.get(id)?.directoryName).toBe('Side Project');
     } finally {
       fs.rmSync(target, { recursive: true, force: true });
@@ -1129,7 +1353,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
   it('closeAgent kills the PTY and removes the agent', () => {
     const { manager, spawned } = workingPtyManager();
     store.set(5, makeAgent(5));
-    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome });
+    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome, env: {} });
 
     dispatch({ type: 'closeAgent', id: 5 }, ctx({ runtime, ptyManager: manager }));
 
@@ -1141,7 +1365,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
   it('closeAgent from an untokened client leaves a PTY-backed agent running', () => {
     const { manager, spawned } = workingPtyManager();
     store.set(5, makeAgent(5));
-    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome });
+    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome, env: {} });
 
     dispatch(
       { type: 'closeAgent', id: 5 },
@@ -1157,7 +1381,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     const { manager } = workingPtyManager();
     store.set(5, { ...makeAgent(5), isTeamLead: true });
     store.set(6, { ...makeAgent(6), leadAgentId: 5, agentName: 'review-helper' });
-    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome });
+    manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome, env: {} });
 
     dispatch({ type: 'closeAgent', id: 5 }, ctx({ runtime, ptyManager: manager }));
 
@@ -1251,6 +1475,7 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
       { type: 'saveAreaMappings', mappings: { Lab: ['project'] } },
       { type: 'setShowAreas', enabled: true },
       { type: 'setBypassPermissions', enabled: true },
+      { type: 'saveCardOrder', order: [2, 1] },
       { type: 'saveDirectory', name: 'Project', path: directory },
       { type: 'removeDirectory', path: directory },
       { type: 'requestDirectorySuggestions' },
@@ -1264,6 +1489,7 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
     const replyTypes = new Set(sent.map((m) => m.type));
     expect([...replyTypes].sort()).toEqual([
       'areaMappingsLoaded',
+      'cardOrderLoaded',
       'externalAssetDirectoriesUpdated',
       'settingsLoaded',
     ]);
@@ -1314,5 +1540,120 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
       privileged: true,
     });
     expect(sent[0]).toEqual({ type: 'officeAccess', readOnly: false });
+  });
+});
+
+/**
+ * The agent cards' order is the server's, so the desktop office and the phone
+ * show the same cards in the same order.
+ */
+describe('clientMessageHandler: card order', () => {
+  let tempHome: string;
+  let originalHome: string | undefined;
+  let store: AgentStateStore;
+  let sent: Array<Record<string, unknown>>;
+  let broadcasts: Array<Record<string, unknown>>;
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cmh-cardorder-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
+    store = new AgentStateStore();
+    store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
+    store.on('broadcast', (m) => broadcasts.push(m as Record<string, unknown>));
+    for (const id of [1, 2, 3]) store.set(id, createTestAgent({ id }));
+    sent = [];
+    broadcasts = [];
+  });
+
+  afterEach(() => {
+    process.env.HOME = originalHome;
+    store.dispose();
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  const tokened = (): ClientMessageContext => ({ store, cache: null, privileged: true });
+
+  it('saves a reorder and tells every open office', () => {
+    handleClientMessage(
+      { type: 'saveCardOrder', order: [3, 1, 2] },
+      (m) => sent.push(m),
+      tokened(),
+    );
+
+    expect(broadcasts).toEqual([{ type: 'cardOrderLoaded', order: [3, 1, 2] }]);
+    expect(store.getAdapter()!.loadCardOrder!()).toEqual([3, 1, 2]);
+  });
+
+  it('keeps only agents that exist, each once', () => {
+    handleClientMessage(
+      { type: 'saveCardOrder', order: [3, 99, 3, -1, 1.5, 'x', 1] },
+      (m) => sent.push(m),
+      tokened(),
+    );
+
+    expect(store.getAdapter()!.loadCardOrder!()).toEqual([3, 1]);
+  });
+
+  it('ignores a payload that is not an order', () => {
+    handleClientMessage({ type: 'saveCardOrder', order: 'nope' }, (m) => sent.push(m), tokened());
+
+    expect(broadcasts).toEqual([]);
+    expect(store.getAdapter()!.loadCardOrder!()).toEqual([]);
+  });
+
+  it('sends the order on connect, before the agents', () => {
+    store.getAdapter()!.saveCardOrder!([2, 1]);
+
+    handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), tokened());
+
+    const types = sent.map((m) => m.type);
+    expect(sent).toContainEqual({ type: 'cardOrderLoaded', order: [2, 1] });
+    expect(types.indexOf('cardOrderLoaded')).toBeLessThan(types.indexOf('existingAgents'));
+  });
+
+  it('answers a read-only reorder with the real order', () => {
+    store.getAdapter()!.saveCardOrder!([2, 1]);
+
+    handleClientMessage({ type: 'saveCardOrder', order: [1, 2] }, (m) => sent.push(m), {
+      store,
+      cache: null,
+      privileged: false,
+    });
+
+    expect(sent).toEqual([{ type: 'cardOrderLoaded', order: [2, 1] }]);
+    expect(broadcasts).toEqual([]);
+    expect(store.getAdapter()!.loadCardOrder!()).toEqual([2, 1]);
+  });
+});
+
+describe('clientMessageHandler: roster recency', () => {
+  let tempHome: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cmh-recent-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
+  });
+
+  afterEach(() => {
+    process.env.HOME = originalHome;
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it('sends the roster recency on connect', () => {
+    const store = new AgentStateStore();
+    store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
+    const sent: Array<Record<string, unknown>> = [];
+
+    handleClientMessage({ type: 'webviewReady' }, (m) => sent.push(m), {
+      store,
+      cache: null,
+      privileged: true,
+    });
+
+    expect(sent).toContainEqual({ type: 'recentCharactersLoaded', recent: [] });
+    store.dispose();
   });
 });

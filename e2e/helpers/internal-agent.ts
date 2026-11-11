@@ -66,7 +66,7 @@ export async function spawnInternalAgentAndWait(
   // second spawn in the same test could read a stale log and return the first
   // agent's identity.
   const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
-  narrate.step('clicking "+ Agent" — a terminal launches the mock claude');
+  narrate.step('clicking "+" (New agent) — a terminal launches the mock claude');
   await clickAddAgent(frame);
 
   await expect
@@ -116,7 +116,7 @@ export async function spawnInternalAgentAndWaitForInvocation(
   // second spawn in the same test could read a stale log and return the first
   // agent's identity.
   const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
-  narrate.step('clicking "+ Agent" — a terminal launches the mock claude');
+  narrate.step('clicking "+" (New agent) — a terminal launches the mock claude');
   await clickAddAgent(frame);
 
   await expect
@@ -145,7 +145,7 @@ export async function spawnInternalAgentAndWaitForInvocation(
 
 /**
  * Spawn an agent bound to a specific DIRECTORY in a multi-root window.
- * The plain "+ Agent" click opens the Directory picker (BottomToolbar.tsx); we click
+ * The plain "+" (New agent) click opens the Directory picker (BottomToolbar.tsx); we click
  * the named Directory entry, which sends `launchAgent { directoryPath }` so the agent
  * gets `directoryName = <folder basename>` (adapters/vscode/agentManager.ts). Then
  * we wait for the spawn exactly like spawnInternalAgentAndWait. The seated
@@ -159,8 +159,8 @@ export async function addAgentForDirectory(
   mockLogFile: string,
 ): Promise<InternalAgentSpawn> {
   const launchesBefore = countInvocations(readInvocationLog(mockLogFile));
-  narrate.step(`clicking "+ Agent" and picking the "${directoryName}" folder`);
-  await frame.locator('button', { hasText: '+ Agent' }).click();
+  narrate.step(`clicking "+" (New agent) and picking the "${directoryName}" folder`);
+  await frame.locator('button[aria-label="New agent"]').click();
   // The folder-picker entries are <button> DropdownItems; scope to the button
   // role so we don't collide with the same folder name shown as a <span> in an
   // Area card's mapped-folders list (when the folder is already area-mapped).

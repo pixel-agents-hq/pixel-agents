@@ -2,7 +2,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import type { TeamProvider } from '../../../../../core/src/teamProvider.js';
+import type { SpawnNotice, TeamProvider } from '../../../../../core/src/teamProvider.js';
+import { CLAUDE_SUBAGENT_TOOLS } from './constants.js';
 
 /**
  * Claude Code implementation of the TeamProvider interface.
@@ -56,22 +57,85 @@ function teammateDir(projectDir: string, leadSessionId: string): string {
  *  line is the ONLY lead-side evidence of the (implicit) team. */
 const AGENT_ID_RESULT_PATTERN = /agent_id:\s*([^\s@]+)@(\S+)/;
 
-/** Flatten a tool_result content value (string or content-block array) to text. */
-function toolResultText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((item) =>
-        typeof item === 'object' &&
-        item !== null &&
-        typeof (item as { text?: unknown }).text === 'string'
-          ? (item as { text: string }).text
-          : '',
-      )
-      .join('\n');
-  }
-  return '';
+/** The text parts of a tool_result content value (string or content-block array). */
+function toolResultTexts(content: unknown): string[] {
+  if (typeof content === 'string') return [content];
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((item) =>
+    typeof item === 'object' &&
+    item !== null &&
+    typeof (item as { text?: unknown }).text === 'string'
+      ? [(item as { text: string }).text]
+      : [],
+  );
 }
+
+/** Flatten a tool_result content value to one text. */
+function toolResultText(content: unknown): string {
+  return toolResultTexts(content).join('\n');
+}
+
+/** The first capture of `pattern` in any of the texts. */
+function firstMatch(texts: string[], pattern: RegExp): string | undefined {
+  for (const text of texts) {
+    const match = pattern.exec(text);
+    if (match) return match[1];
+  }
+  return undefined;
+}
+
+/** How an async (background) spawn's tool_result begins; it then names the
+ *  agent: "agentId: <id>". */
+const ASYNC_LAUNCH_PREFIX = 'Async agent launched successfully.';
+const ASYNC_LAUNCH_AGENT_ID = /\bagentId: ([A-Za-z0-9_-]+)/;
+/** SendMessage to a STOPPED agent revives it, and its result says which:
+ *  `{"success":true,"message":"Resuming agent impl-07","resumedAgentId":"ad19…"}`.
+ *  Messages to running agents carry no resumedAgentId. */
+const REVIVE_TOOL = 'SendMessage';
+const RESUMED_AGENT_ID = /"resumedAgentId"\s*:\s*"([A-Za-z0-9_-]+)"/;
+
+/** A background agent that stops with background work of its own still
+ *  running (a background Bash, a Monitor) gets a completion-shaped notice
+ *  while it lives (Claude Code 2.1.309), with the same <status> as its final
+ *  one: `<summary>Agent "…" is waiting on its own background work</summary>`
+ *  and a note that "the result below may be interim". Only these tell the
+ *  two apart. */
+const INTERIM_NOTICE_SUMMARY = /<summary>[^<]*is waiting on its own background work\s*<\/summary>/;
+const INTERIM_NOTICE_NOTE = /<note>[^<]*\bmay be interim\b[^<]*<\/note>/;
+
+/** Background agents' completion notices arrive as an `enqueue`
+ *  queue-operation on the lead's transcript, its string content one or more
+ *  `<task-notification>`s naming the agent by `<tool-use-id>` (the spawn's),
+ *  `<task-id>` (the agent's) or both. A crash notice lists several task ids. */
+function readSpawnNotices(
+  record: Record<string, unknown>,
+): { notices: SpawnNotice[]; at?: number } | null {
+  if (record.type !== 'queue-operation' || record.operation !== 'enqueue') return null;
+  if (typeof record.content !== 'string') return null;
+  const notices = record.content
+    .split('<task-notification>')
+    .map((notice) => ({
+      toolIds: [...notice.matchAll(/<tool-use-id>(.*?)<\/tool-use-id>/g)].map((m) => m[1]),
+      taskIds: [...notice.matchAll(/<task-id>(.*?)<\/task-id>/g)].map((m) => m[1]),
+      interim: INTERIM_NOTICE_SUMMARY.test(notice) || INTERIM_NOTICE_NOTE.test(notice),
+    }))
+    .filter((notice) => notice.toolIds.length > 0 || notice.taskIds.length > 0);
+  const at = typeof record.timestamp === 'string' ? Date.parse(record.timestamp) : NaN;
+  return Number.isNaN(at) ? { notices } : { notices, at };
+}
+
+/** The tool_use ids a record's tool_result blocks answer. */
+function toolResultIds(record: Record<string, unknown>): string[] {
+  const message = record.message as { content?: unknown } | undefined;
+  if (!Array.isArray(message?.content)) return [];
+  return message.content.flatMap((block: unknown) => {
+    const b = block as { type?: unknown; tool_use_id?: unknown } | null;
+    return b?.type === 'tool_result' && typeof b.tool_use_id === 'string' ? [b.tool_use_id] : [];
+  });
+}
+
+/** Claude names a sidecar-backed spawn's transcript after its agent id. */
+const AGENT_TRANSCRIPT_NAME = /^agent-([A-Za-z0-9_-]+)\.jsonl$/;
 
 /**
  * Read the first few records of a transcript and return its team tags.
@@ -164,12 +228,38 @@ export const claudeTeamProvider: TeamProvider = {
     return { teammateName: match[1], teamName: match[2] };
   },
 
+  extractBackgroundAgentFromToolResult(toolName, resultContent) {
+    const texts = toolResultTexts(resultContent);
+    if (CLAUDE_SUBAGENT_TOOLS.has(toolName)) {
+      if (!texts.some((text) => text.startsWith(ASYNC_LAUNCH_PREFIX))) return null;
+      return { taskId: firstMatch(texts, ASYNC_LAUNCH_AGENT_ID) };
+    }
+    if (toolName === REVIVE_TOOL) {
+      const taskId = firstMatch(texts, RESUMED_AGENT_ID);
+      return taskId ? { taskId } : null;
+    }
+    return null;
+  },
+
+  readSpawnNotices,
+
+  toolResultIds,
+
+  namesTeammate(_toolName, input) {
+    // A named spawn is a Teammate-to-be, unless it explicitly runs in the
+    // foreground: then it is in-turn work whatever its name, a Sub-agent.
+    return (
+      typeof input.name === 'string' && input.name.length > 0 && input.run_in_background !== false
+    );
+  },
+
   discoverTeammates(projectDir, leadSessionId, teamName) {
     const result: Array<{
       jsonlPath: string;
       teammateName: string;
       sessionId?: string;
       toolUseId?: string;
+      taskId?: string;
       description?: string;
       name?: string;
     }> = [];
@@ -191,6 +281,7 @@ export const claudeTeamProvider: TeamProvider = {
           jsonlPath,
           teammateName: meta.agentType,
           toolUseId: meta.toolUseId,
+          taskId: AGENT_TRANSCRIPT_NAME.exec(entry)?.[1],
           description: meta.description,
           name: meta.name,
         });

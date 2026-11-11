@@ -1,7 +1,6 @@
 import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './assetLoader.js';
 import {
   loadCarpetTiles,
-  loadCharacterSprites,
   loadDefaultLayout,
   loadExternalCharacterSprites,
   loadExternalPetSprites,
@@ -9,22 +8,22 @@ import {
   loadFurnitureAssets,
   loadPetSprites,
   loadWallTiles,
-  mergeCharacterSprites,
   mergeLoadedAssets,
   mergePetSprites,
 } from './assetLoader.js';
 import type { AssetCache } from './clientMessageHandler.js';
-import { setPaletteCount } from './paletteAssigner.js';
+import { setExternalCharacterCount } from './paletteAssigner.js';
 
 /**
  * Shared asset-loading helpers used by BOTH the VS Code adapter and the
  * standalone server, so external asset directories behave identically across
  * surfaces (no copy-paste of the load+merge loops).
  *
- * Asymmetry preserved deliberately: the bundled root uses the canonical loaders
- * (`loadCharacterSprites`/`loadPetSprites`), while external directories use the
- * flexible scanners (`loadExternalCharacterSprites`/`loadExternalPetSprites`).
- * Furniture uses `loadFurnitureAssets` for both. Callers pass `externalDirs`
+ * Asymmetry preserved deliberately: the bundled root uses the canonical loader
+ * (`loadPetSprites`), while external directories use the flexible scanners
+ * (`loadExternalCharacterSprites`/`loadExternalPetSprites`). Furniture uses
+ * `loadFurnitureAssets` for both. Characters have no bundled sprites: the built-in
+ * cast is the character profiles, which the webview draws. Callers pass `externalDirs`
  * (read from config) so these helpers stay pure and reusable.
  */
 export async function loadAllFurniture(
@@ -41,23 +40,22 @@ export async function loadAllFurniture(
   return assets;
 }
 
-export async function loadAllCharacters(
-  assetsRoot: string,
+/**
+ * Character sprites from external asset directories (char_N.png), worn by palettes past
+ * the character profiles. Always a list (possibly empty), so the handshake always says.
+ */
+export async function loadExternalCharacters(
   externalDirs: string[],
-): Promise<LoadedCharacterSprites | null> {
-  let chars = await loadCharacterSprites(assetsRoot);
-  for (const extraDir of externalDirs) {
-    const extra = await loadExternalCharacterSprites(extraDir);
-    if (extra) {
-      chars = chars ? mergeCharacterSprites(chars, extra) : extra;
-    }
-  }
+): Promise<LoadedCharacterSprites> {
+  const loaded = await Promise.all(externalDirs.map(loadExternalCharacterSprites));
+  const chars: LoadedCharacterSprites = {
+    characters: loaded.flatMap((extra) => extra?.characters ?? []),
+  };
   // Sync the server-side palette count so assignPaletteIfNeeded and the
-  // saveAgentSeats guard use the dynamic ceiling (external dirs can add
-  // char_N.png past the bundled 6). Centralizing here means every entry
-  // point -- standalone startup, standalone reload, VS Code startup,
+  // saveAgentSeats guard use the dynamic ceiling. Centralizing here means every
+  // entry point -- standalone startup, standalone reload, VS Code startup,
   // VS Code reload -- sees the same count without four scattered calls.
-  if (chars) setPaletteCount(chars.characters.length);
+  setExternalCharacterCount(chars.characters.length);
   return chars;
 }
 
@@ -87,7 +85,7 @@ export async function buildAssetCache(
   externalDirs: string[],
 ): Promise<AssetCache> {
   return {
-    characters: await loadAllCharacters(distRoot, externalDirs),
+    characters: await loadExternalCharacters(externalDirs),
     pets: await loadAllPets(distRoot, externalDirs),
     floorTiles: await loadFloorTiles(distRoot).then((t) => t?.sprites ?? null),
     wallTiles: await loadWallTiles(distRoot).then((t) => t?.sets ?? null),

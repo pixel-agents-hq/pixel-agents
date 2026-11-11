@@ -8,10 +8,10 @@
 /** @public */
 export {
   CONFIG_FILE_NAME,
-  LAYOUT_FILE_DIR,
+  JSON_FILE_POLL_INTERVAL_MS,
   LAYOUT_FILE_NAME,
-  LAYOUT_FILE_POLL_INTERVAL_MS,
   LAYOUT_REVISION_KEY,
+  PIXEL_AGENTS_DIR,
 } from '../../server/src/constants.js';
 
 // ── Settings Persistence (VS Code globalState keys) ─────────

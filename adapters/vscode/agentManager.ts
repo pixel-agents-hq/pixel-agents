@@ -4,11 +4,18 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { PersistedAgent } from '../../core/src/schemas.js';
 import { resendAgentActivity } from '../../server/src/agentActivityResend.js';
+import {
+  isPersistedSpawnChild,
+  restoredAgentInit,
+  toPersistedAgent,
+} from '../../server/src/agentPersistence.js';
 import { createAgentState } from '../../server/src/agentState.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
-import { directoryNameForLaunch } from '../../server/src/directories.js';
+import { clearContextUsage } from '../../server/src/contextUsage.js';
+import { directoryAt } from '../../server/src/directories.js';
 import {
   ensureProjectScan,
   readNewLines,
@@ -19,8 +26,8 @@ import { loadLayout } from '../../server/src/layoutPersistence.js';
 import { assignPaletteIfNeeded } from '../../server/src/paletteAssigner.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
+import { sessionMarkersUnset } from '../../server/src/terminal/terminalEnv.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
-import type { PersistedAgent } from '../../server/src/types.js';
 import { workspaceDirectories } from './hostDirectories.js';
 
 export function getProjectDirPath(cwd?: string): string {
@@ -37,6 +44,19 @@ export function getProjectDirPath(cwd?: string): string {
   return projectDir;
 }
 
+/** What a launch asks for, beyond the runtime it registers with. */
+export interface LaunchTerminalOptions {
+  /** The Directory to launch into; absent = the first workspace folder, else home. */
+  directoryPath?: string;
+  /** The host's persisted permission posture (never a per-launch choice). */
+  bypassPermissions?: boolean;
+  /** Keep the panel on Pixel Agents instead of showing the terminal. */
+  suppressShow?: boolean;
+  /** The character picked from the roster (a palette index); absent = the
+   *  launch Directory's default characters, else a random pick. */
+  palette?: number;
+}
+
 export async function launchNewTerminal(
   nextAgentIdRef: { current: number },
   nextTerminalIndexRef: { current: number },
@@ -50,9 +70,7 @@ export async function launchNewTerminal(
   jsonlPollTimers: Map<number, ReturnType<typeof setInterval>>,
   projectScanTimerRef: { current: ReturnType<typeof setInterval> | null },
   persistAgents: () => void,
-  directoryPath?: string,
-  bypassPermissions?: boolean,
-  suppressShow?: boolean,
+  { directoryPath, bypassPermissions, suppressShow, palette }: LaunchTerminalOptions = {},
 ): Promise<void> {
   const folders = vscode.workspace.workspaceFolders;
   // Use home directory as fallback cwd when no workspace is open (common on Linux/macOS).
@@ -64,6 +82,10 @@ export async function launchNewTerminal(
   const terminal = vscode.window.createTerminal({
     name: `${CLAUDE_TERMINAL_NAME_PREFIX} #${idx}`,
     cwd,
+    // A VS Code started from inside a CLI session lends that session's markers
+    // to every terminal: unset them (null = unset), or the agent runs as a
+    // child of that session (Claude Code then saves no transcript).
+    env: sessionMarkersUnset(claudeProvider, process.env),
   });
   // When suppressShow is set (auto-spawn + autoShowPanel), keep the panel view
   // on Pixel Agents instead of switching to Terminal. Claude Code still runs
@@ -99,8 +121,9 @@ export async function launchNewTerminal(
   // workspace folder (longest path wins for nested folders), and nothing at all
   // in a single-root window, where an origin label would say what the whole
   // office already says.
-  const chosenDirectoryName =
-    directoryPath === undefined ? undefined : directoryNameForLaunch(cwd, workspaceDirectories());
+  const chosenDirectory =
+    directoryPath === undefined ? undefined : directoryAt(cwd, workspaceDirectories());
+  const chosenDirectoryName = chosenDirectory?.name;
   const owningFolder = (folders ?? [])
     .filter((f) => cwd === f.uri.fsPath || cwd.startsWith(f.uri.fsPath + path.sep))
     .sort((a, b) => b.uri.fsPath.length - a.uri.fsPath.length)[0];
@@ -117,8 +140,11 @@ export async function launchNewTerminal(
     directoryName,
   });
 
-  assignPaletteIfNeeded(agent, agents);
+  // Only a launch the office aimed at a Directory wears its defaults.
+  assignPaletteIfNeeded(agent, agents, { picked: palette, directory: chosenDirectory });
   agents.set(id, agent);
+  // A fresh session starts with an empty context: a full gauge from the spawn on.
+  clearContextUsage(id, agents);
   activeAgentIdRef.current = id;
   persistAgents();
   console.log(`[Pixel Agents] Terminal: Agent ${id} - created for terminal ${terminal.name}`);
@@ -272,25 +298,8 @@ export function removeAgent(
 export function persistAgents(agents: AgentStateStore, adapter: StateAdapter): void {
   const persisted: PersistedAgent[] = [];
   for (const agent of agents.values()) {
-    // Background-spawn children are derived state — never persisted (the 1s
-    // scan re-materializes them from sidecars after a restore).
-    if (agent.spawnToolUseId) continue;
-    persisted.push({
-      id: agent.id,
-      sessionId: agent.sessionId,
-      terminalName: agent.terminalRef?.name ?? '',
-      isExternal: agent.isExternal || undefined,
-      jsonlFile: agent.jsonlFile,
-      projectDir: agent.projectDir,
-      directoryName: agent.directoryName,
-      teamName: agent.teamName,
-      agentName: agent.agentName,
-      isTeamLead: agent.isTeamLead,
-      leadAgentId: agent.leadAgentId,
-      teamUsesTmux: agent.teamUsesTmux,
-      backgroundAgentToolIds:
-        agent.backgroundAgentToolIds.size > 0 ? [...agent.backgroundAgentToolIds] : undefined,
-    });
+    const p = toPersistedAgent(agent);
+    if (p) persisted.push(p);
   }
   adapter.saveAgents(persisted);
 }
@@ -332,10 +341,7 @@ export function restoreAgents(
       continue;
     }
 
-    // Background-spawn children (a leadAgentId but no teamName) are derived
-    // state re-materialized by the 1s scan — never restored directly (also
-    // skips stale entries written by older builds that persisted them).
-    if (p.leadAgentId !== undefined && !p.teamName) continue;
+    if (isPersistedSpawnChild(p)) continue;
 
     let terminal: vscode.Terminal | undefined;
     const isExternal = p.isExternal ?? false;
@@ -354,25 +360,9 @@ export function restoreAgents(
     }
 
     const agent = createAgentState({
-      id: p.id,
-      sessionId: p.sessionId || path.basename(p.jsonlFile, '.jsonl'),
+      ...restoredAgentInit(p),
       terminalRef: terminal,
       isExternal,
-      projectDir: p.projectDir,
-      jsonlFile: p.jsonlFile,
-      // Live spawn ids survive the reload so the 1s scan can re-adopt the
-      // spawns' transcripts and the completion queue-op still matches.
-      backgroundAgentToolIds: new Set(p.backgroundAgentToolIds ?? []),
-      directoryName: p.directoryName ?? p.folderName,
-      teamName: p.teamName,
-      agentName: p.agentName,
-      // A named agent is a teammate; never restore it as a lead (guards against
-      // state persisted before linkTeammates stopped promoting teammates).
-      isTeamLead: p.agentName ? undefined : p.isTeamLead,
-      leadAgentId: p.leadAgentId,
-      teamUsesTmux: p.teamUsesTmux,
-      palette: p.palette,
-      hueShift: p.hueShift,
     });
 
     assignPaletteIfNeeded(agent, store);

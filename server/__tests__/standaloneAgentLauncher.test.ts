@@ -11,6 +11,7 @@ import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import type { IPty, PtyModule, PtySpawnOptions } from '../src/terminal/ptyModule.js';
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from '../src/terminal/standaloneAgentLauncher.js';
+import { sessionMarkersUnset } from '../src/terminal/terminalEnv.js';
 
 /**
  * launchStandaloneAgent is the standalone counterpart of the VS Code adapter's
@@ -104,6 +105,43 @@ describe('launchStandaloneAgent', () => {
 
   // ── Successful launch ────────────────────────────────────────
 
+  it('resumes a past session: same id, --resume, its transcript read from the end, its old seat asked for', () => {
+    const harness = workingPtyManager();
+    const sessionId = '0b8a701c-400d-41ea-801f-40de5e070a8d';
+    const transcript = path.join(projectDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(transcript, '{"type":"user"}\n{"type":"assistant"}\n');
+
+    const id = launch(harness, {
+      directoryPath: tempDir,
+      palette: 3,
+      resume: { sessionId, transcript, seatId: 'chair-7' },
+    });
+
+    const agent = store.get(id!);
+    expect(agent?.sessionId).toBe(sessionId);
+    expect(agent?.jsonlFile).toBe(transcript);
+    expect(agent?.fileOffset).toBe(fs.statSync(transcript).size);
+    expect(agent?.seatId).toBe('chair-7');
+    expect(agent?.palette).toBe(3);
+    expect(harness.spawnArgs[0].args).toEqual(['--resume', sessionId]);
+  });
+
+  it('a fresh launch reports an empty context (a full gauge) at once; a resume does not', () => {
+    const harness = workingPtyManager();
+    const id = launch(harness, { directoryPath: tempDir });
+    expect(broadcasts).toContainEqual(
+      expect.objectContaining({ type: 'agentContextUsage', id, contextTokens: 0 }),
+    );
+    expect(store.get(id!)?.contextReported).toBe(true);
+
+    broadcasts.length = 0;
+    const sessionId = '0b8a701c-400d-41ea-801f-40de5e070a8d';
+    const transcript = path.join(projectDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(transcript, '{"type":"user"}\n');
+    launch(harness, { directoryPath: tempDir, resume: { sessionId, transcript } });
+    expect(broadcasts.some((m) => m.type === 'agentContextUsage')).toBe(false);
+  });
+
   it('spawns the provider launch command in a PTY and registers the agent', () => {
     const harness = workingPtyManager();
     const cwd = path.join(tempDir, 'workspace');
@@ -122,7 +160,7 @@ describe('launchStandaloneAgent', () => {
     // agentCreated broadcast carries it and a reload restores the same look
     // without the webview having to persist a client-side pick.
     expect(agent?.palette).toBeTypeOf('number');
-    expect(agent?.hueShift).toBeTypeOf('number');
+    expect(agent?.repeat).toBeTypeOf('number');
 
     // The real claude launch command, spawned in the requested cwd.
 
@@ -138,6 +176,70 @@ describe('launchStandaloneAgent', () => {
 
     // The UI learns a terminal exists so the drawer opens a tab.
     expect(broadcasts).toContainEqual({ type: 'terminalSessionOpened', agentId: 1 });
+  });
+
+  it("never hands a launched agent the office's own CLI session markers", () => {
+    // A server started from inside a Claude Code session inherits that
+    // session's markers; passed on, the agent's CLI believes it is a child
+    // session and saves no transcript (which the office reads).
+    const markers = {
+      CLAUDECODE: '1',
+      CLAUDE_PID: '123',
+      CLAUDE_EFFORT: 'high',
+      CLAUDE_CODE_ENTRYPOINT: 'cli',
+      CLAUDE_CODE_EXECPATH: '/x/claude',
+      CLAUDE_CODE_CHILD_SESSION: '1',
+      CLAUDE_CODE_SESSION_ID: 'abc',
+      CLAUDE_CODE_SESSION_ATTENDED: '1',
+      CLAUDE_CODE_MESSAGING_SOCKET: '/tmp/s',
+      CLAUDE_CODE_MESSAGING_TOKEN: 't',
+    };
+    const kept = {
+      ANTHROPIC_MODEL: 'opus',
+      CLAUDE_CODE_USE_BEDROCK: '1',
+      PIXEL_TEST_KEPT: 'yes',
+    };
+    for (const [key, value] of Object.entries({ ...markers, ...kept })) vi.stubEnv(key, value);
+    try {
+      const harness = workingPtyManager();
+      launch(harness);
+      const env = harness.spawnArgs[0].options.env as Record<string, string>;
+      for (const key of Object.keys(markers)) expect(env[key], key).toBeUndefined();
+      for (const [key, value] of Object.entries(kept)) expect(env[key], key).toBe(value);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('VS Code unsets the same markers in the terminals it creates', () => {
+    expect(
+      sessionMarkersUnset(claudeProvider, {
+        CLAUDECODE: '1',
+        CLAUDE_CODE_SESSION_ID: 'abc',
+        ANTHROPIC_API_KEY: 'k',
+        PATH: '/bin',
+      }),
+    ).toEqual({ CLAUDECODE: null, CLAUDE_CODE_SESSION_ID: null });
+  });
+
+  it('wears the character picked from the roster even when it is taken, the copy in red clothes', () => {
+    const harness = workingPtyManager();
+
+    launch(harness, { palette: 2 });
+    launch(harness, { palette: 2 });
+
+    expect(store.get(1)).toMatchObject({ palette: 2, repeat: 0 });
+    expect(store.get(2)).toMatchObject({ palette: 2, repeat: 1 });
+  });
+
+  it('ignores a picked character that is not in the roster', () => {
+    const harness = workingPtyManager();
+
+    launch(harness, { palette: 999 });
+
+    const palette = store.get(1)?.palette;
+    expect(palette).toBeTypeOf('number');
+    expect(palette).not.toBe(999);
   });
 
   it('passes bypassPermissions through to the launch command', () => {

@@ -14,7 +14,7 @@
 /** Per-agent seat metadata carried by the existingAgents message. */
 export interface ExistingAgentMeta {
   palette?: number;
-  hueShift?: number;
+  repeat?: number;
   seatId?: string;
 }
 
@@ -22,7 +22,7 @@ export interface ExistingAgentMeta {
 export interface PendingAgent {
   id: number;
   palette?: number;
-  hueShift?: number;
+  repeat?: number;
   seatId?: string;
   directoryName?: string;
   isHeadless?: boolean;
@@ -34,19 +34,35 @@ export interface ExistingAgentsOffice {
   addAgent: (
     id: number,
     preferredPalette?: number,
-    preferredHueShift?: number,
+    preferredRepeat?: number,
     preferredSeatId?: string,
     skipSpawnEffect?: boolean,
     directoryName?: string,
   ) => void;
   setHeadless: (id: number, headless: boolean) => void;
+  /** Start an agent at rest: not working, resting in its chair if it has one. */
+  restAgent: (id: number) => void;
+  /** Give an agent the office already shows the server's look and seat. */
+  syncAgent: (id: number, palette?: number, repeat?: number, seatId?: string) => void;
+}
+
+/**
+ * Put a restored agent in the office, at once and at rest. The snapshot doesn't say who
+ * is working: the replay that follows it does (a running tool makes its agent active), so
+ * an agent starts out idle, resting in its chair, instead of typing at a turn long over.
+ */
+export function restoreAgent(os: ExistingAgentsOffice, p: PendingAgent): void {
+  os.addAgent(p.id, p.palette, p.repeat, p.seatId, true, p.directoryName);
+  if (p.isHeadless) os.setHeadless(p.id, true);
+  os.restAgent(p.id);
 }
 
 /**
  * Reconcile an `existingAgents` payload into the office. When the layout is
  * already built, agents are added immediately (skipping the matrix spawn effect,
  * as restored agents do) unless they already exist; otherwise they are pushed
- * onto `pending` to be flushed by the next `layoutLoaded`. Returns true if any
+ * onto `pending` to be flushed by the next `layoutLoaded`. An agent the office
+ * already shows takes the snapshot's look and seat. Returns true if any
  * agent was added directly, so the caller can persist seat assignments.
  */
 export function reconcileExistingAgents(
@@ -64,20 +80,35 @@ export function reconcileExistingAgents(
     const p: PendingAgent = {
       id,
       palette: m?.palette,
-      hueShift: m?.hueShift,
+      repeat: m?.repeat,
       seatId: m?.seatId,
       directoryName: directoryNames[id],
       isHeadless: headlessAgents[id] === true,
     };
     if (layoutReady) {
       if (!os.characters.has(p.id)) {
-        os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.directoryName);
-        if (p.isHeadless) os.setHeadless(p.id, true);
+        restoreAgent(os, p);
         addedDirectly = true;
+      } else {
+        // Already shown (a reconnect): the snapshot is the truth. Keeping the
+        // office's own look and seat and saving them back reshuffled the
+        // office for every other viewer.
+        os.syncAgent(p.id, p.palette, p.repeat, p.seatId);
       }
     } else {
       pending.push(p);
     }
   }
   return addedDirectly;
+}
+
+/**
+ * Agents the office shows that a resync snapshot no longer lists. The snapshot
+ * is the server's whole truth, so these were closed while the client was
+ * disconnected and their agentClosed never arrived. Sub-agents (negative ids)
+ * are not agents of the snapshot and never count.
+ */
+export function staleAgentIds(shown: Iterable<number>, incoming: number[]): number[] {
+  const live = new Set(incoming);
+  return [...shown].filter((id) => id > 0 && !live.has(id));
 }

@@ -1,13 +1,13 @@
 import { TERMINAL_SEL_HANDLE_KNOB_PX, TERMINAL_SEL_HANDLE_WIDTH_PX } from '../constants.js';
 import type { TerminalCopyMode } from './flowCopy.js';
-import type { CellGrid, CellRange, HandleEnd, PixelPos } from './selectionMath.js';
-import { copyPillPosition, handlePositions } from './selectionMath.js';
+import type { CellGrid, CellPos, CellRange, HandleEnd, PixelPos } from './selectionMath.js';
+import { cellRange, copyPillPosition, handlePositions } from './selectionMath.js';
 import type { TouchHit } from './touchGesture.js';
 
 /**
  * The chrome of the terminal's touch text selection, laid over the pane's
  * host: a floating copy pill — "Copy" (verbatim) and "Copy as text" (soft
- * wraps re-flowed) — and iOS-style selection handles — a
+ * wraps re-flowed), or "Paste" after a long press in the input area — and iOS-style selection handles — a
  * knob-and-bar lollipop at each end of the selection, knob above the start
  * and below the end, each draggable to move that end. Square knob and hard
  * edges to match the pixel design language; same grammar as the native
@@ -23,6 +23,8 @@ const COPY_ACTIONS: ReadonlyArray<readonly [string, TerminalCopyMode]> = [
 
 export interface SelectionOverlay {
   showPill(range: CellRange): void;
+  /** The Paste pill, in the copy pill's slot over `cell`. */
+  showPastePill(cell: CellPos): void;
   hidePill(): void;
   /** Show the handles (creating them if needed) and position them. */
   showHandles(range: CellRange): void;
@@ -41,6 +43,8 @@ export function createSelectionOverlay(
     hasSelection: () => boolean;
     /** One of the pill's buttons was clicked. */
     onCopy: (mode: TerminalCopyMode) => void;
+    /** The Paste pill was clicked. */
+    onPaste: () => void;
   },
 ): SelectionOverlay {
   let pill: HTMLDivElement | null = null;
@@ -76,23 +80,37 @@ export function createSelectionOverlay(
     return el;
   };
 
+  const openPill = (range: CellRange, actions: ReadonlyArray<readonly [string, () => void]>) => {
+    hidePill();
+    pill = document.createElement('div');
+    pill.className = 'terminal-copy-pill';
+    for (const [label, run] of actions) {
+      const button = document.createElement('button');
+      button.textContent = label;
+      // A press must not take focus from the terminal: that would drop the
+      // software keyboard the user is typing with.
+      button.addEventListener('mousedown', (e) => e.preventDefault());
+      button.addEventListener('click', run);
+      pill.appendChild(button);
+    }
+    host.appendChild(pill);
+    // Placed once it has a width: its center keeps half of it clear of
+    // the pane's edges.
+    const halfWidth = Math.ceil(pill.offsetWidth / 2);
+    place(pill, copyPillPosition(range, opts.grid(), halfWidth));
+  };
+
   return {
     showPill(range) {
       hidePill();
       if (!opts.hasSelection()) return;
-      pill = document.createElement('div');
-      pill.className = 'terminal-copy-pill';
-      for (const [label, mode] of COPY_ACTIONS) {
-        const button = document.createElement('button');
-        button.textContent = label;
-        button.addEventListener('click', () => opts.onCopy(mode));
-        pill.appendChild(button);
-      }
-      host.appendChild(pill);
-      // Placed once it has a width: its center keeps half of it clear of
-      // the pane's edges.
-      const halfWidth = Math.ceil(pill.offsetWidth / 2);
-      place(pill, copyPillPosition(range, opts.grid(), halfWidth));
+      openPill(
+        range,
+        COPY_ACTIONS.map(([label, mode]) => [label, () => opts.onCopy(mode)] as const),
+      );
+    },
+    showPastePill(cell) {
+      openPill(cellRange(cell), [['Paste', opts.onPaste]]);
     },
     hidePill,
     showHandles(range) {

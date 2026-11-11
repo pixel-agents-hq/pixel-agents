@@ -167,7 +167,15 @@ export interface OfficeLayout {
   areaTiles?: Array<string | null>;
 }
 
-export interface Character {
+/** A blink clock (office/engine/blink.ts drives it). */
+export interface Blinker {
+  /** Seconds until the eyes next shut. */
+  blinkIn: number;
+  /** Seconds the eyes stay shut (0 = open). */
+  blinkShut: number;
+}
+
+export interface Character extends Blinker {
   id: number;
   state: CharacterState;
   dir: Direction;
@@ -186,8 +194,9 @@ export interface Character {
   currentTool: string | null;
   /** Palette index (0-5) */
   palette: number;
-  /** Hue shift in degrees (0 = no shift, ≥45 for repeated palettes) */
-  hueShift: number;
+  /** Which copy of its character this is (0 = the first, n = its nth repeat,
+   *  drawn in the nth repeat clothes colour; characters/repeatClothes.ts) */
+  repeat: number;
   /** Animation frame index */
   frame: number;
   /** Time accumulator for animation */
@@ -215,6 +224,8 @@ export interface Character {
   seatTimer: number;
   /** Whether this character represents a sub-agent (spawned by Task tool) */
   isSubagent: boolean;
+  /** A helper's time since its last tool call ended (0 while working). */
+  helperIdleSec: number;
   /** Parent agent ID if this is a sub-agent, null otherwise */
   parentAgentId: number | null;
   /** Active matrix spawn/despawn effect, or null */
@@ -254,6 +265,9 @@ export interface Character {
   contextTokens: number;
   /** Window `contextTokens` is measured against. */
   maxContextTokens: number;
+  /** True once the server reported the context: from then on 0 is a real
+   *  reading (a cleared session, a full gauge), not "no turn yet". */
+  contextReported?: boolean;
 }
 
 export const PetState = { IDLE: 'idle', WALK: 'walk', FOLLOW: 'follow' } as const;
