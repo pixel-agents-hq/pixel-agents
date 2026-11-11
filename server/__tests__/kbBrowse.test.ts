@@ -166,11 +166,17 @@ describe('happy paths', () => {
     });
     expect((await single(read('guide.md', target))).content).toBe('guide');
 
-    // 換根目錄之後立刻生效：沒有快取。
+    // 沒有快取：根目錄下新增的檔案立刻出現在下一次請求。
+    writeFile(path.join(root, '.note'), 'new.md', 'new');
+    expect((await single(list(target))).files).toEqual([
+      { path: 'guide.md', size: 5 },
+      { path: 'new.md', size: 3 },
+    ]);
+    // 有內容之後根目錄鎖定，不能再換。
     const other = path.join(home, 'ws-other');
-    writeFile(path.join(other, '.note'), 'new.md', 'new');
-    expect(setWorkspaceRoot({ workspaceId: id, rootPath: other }, [])).toEqual({ ok: true });
-    expect((await single(list(target))).files).toEqual([{ path: 'new.md', size: 3 }]);
+    expect(setWorkspaceRoot({ workspaceId: id, rootPath: other }, [])).toMatchObject({
+      ok: false,
+    });
   });
 });
 

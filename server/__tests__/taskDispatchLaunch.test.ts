@@ -24,13 +24,20 @@ const MCP_CONFIG = JSON.stringify({
 
 let h: DispatchHarness;
 let ws: { id: string; dir: string };
+let inheritedPort: string | undefined;
 
 beforeEach(() => {
+  // 在 Pixel Agents 啟動的 agent 內執行測試時，這個變數會從父行程繼承而來。
+  inheritedPort = process.env[TASK_DISPATCH_PORT_ENV_NAME];
+  delete process.env[TASK_DISPATCH_PORT_ENV_NAME];
   h = new DispatchHarness();
   ws = h.workspace('alpha');
 });
 
-afterEach(() => h.dispose());
+afterEach(() => {
+  h.dispose();
+  if (inheritedPort !== undefined) process.env[TASK_DISPATCH_PORT_ENV_NAME] = inheritedPort;
+});
 
 describe('launcher: the task-dispatch switch', () => {
   it('a non-default Workspace launch gets a capability and the port in env, the shim in argv', () => {
