@@ -51,10 +51,14 @@ import { claudeProvider, hookProviders } from '../../src/providers/index.js';
 import { PixelAgentsServer } from '../../src/server.js';
 import { ptyAgentTerminals } from '../../src/terminal/agentTerminals.js';
 import { type ForegroundProbe, PcShells } from '../../src/terminal/pcShells.js';
+import { type PtyHost,startPtyHost } from '../../src/terminal/ptyHost.js';
 import { PtySessionManager } from '../../src/terminal/ptySessionManager.js';
+import { RemotePtySessions } from '../../src/terminal/remotePtySessions.js';
+import { reattachTerminalAgents } from '../../src/terminal/standaloneAgentLauncher.js';
 import { closeStandaloneAgent } from '../../src/terminal/standaloneClose.js';
 import { launchForOffice } from '../../src/terminal/standaloneLaunches.js';
 import { standaloneTutorialSurface } from '../../src/terminal/standaloneTutorial.js';
+import type { TerminalSessions } from '../../src/terminal/terminalSessions.js';
 import { holdWorktreesOf } from '../../src/worktreeLeave.js';
 
 export type Json = Record<string, any>;
@@ -271,6 +275,9 @@ export interface StandaloneOfficeOptions {
   noTerminal?: boolean;
   /** What the PC shells' × sees running (default: the real `ps` probe). */
   foreground?: ForegroundProbe;
+  /** The terminals live in a PTY host (`--pty-host`, real PTYs, its socket in
+   *  the test's HOME) that outlives `restart()`; the test ends it. */
+  ptyHost?: boolean;
 }
 
 export interface Launched {
@@ -287,7 +294,10 @@ export interface StandaloneOffice extends AgentSide {
   readonly workspace: string;
   readonly store: AgentStateStore;
   readonly runtime: AgentRuntime;
+  /** The in-process terminals (throws under `ptyHost`: use `terminals`). */
   readonly ptyManager: PtySessionManager;
+  /** The terminals, in process or the PTY host's client. */
+  readonly terminals: TerminalSessions;
   /** The PC shells, composed as cli.ts composes them over the test's layout and catalogue. */
   readonly pcShells: PcShells;
   readonly office: OfficeOperations;
@@ -300,6 +310,13 @@ export interface StandaloneOffice extends AgentSide {
   readonly socket: WebSocket;
   readonly received: Json[];
 
+  /**
+   * Stop the server as cli.ts's shutdown does (in process: its terminals
+   * killed; with the PTY host: disconnected, the terminals left running), run
+   * `meanwhile`, then start a new one on the same HOME as cli.ts starts it
+   * (agents and PC shells reattached) and connect a first office to it.
+   */
+  restart(meanwhile?: () => Promise<void> | void): Promise<void>;
   /** Another office on /ws, handshake done (privileged unless told not). */
   connectOffice(opts?: { privileged?: boolean }): Promise<{ socket: WebSocket; received: Json[] }>;
   /** A message from the first office (or the given socket). */
@@ -351,7 +368,8 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
 
   let store: AgentStateStore;
   let runtime: AgentRuntime;
-  let ptyManager: PtySessionManager;
+  let ptyManager: TerminalSessions;
+  let ptyHost: PtyHost | null = null;
   let pcShells: PcShells;
   let officeMcp: OfficeMcpFeature;
   let server: PixelAgentsServer;
@@ -391,6 +409,12 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       return runtime;
     },
     get ptyManager() {
+      if (!(ptyManager instanceof PtySessionManager)) {
+        throw new Error('ptyManager is the in-process manager: use terminals under ptyHost');
+      }
+      return ptyManager;
+    },
+    get terminals() {
       return ptyManager;
     },
     get pcShells() {
@@ -418,6 +442,11 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       return received;
     },
 
+    async restart(meanwhile) {
+      await stop();
+      await meanwhile?.();
+      await boot();
+    },
     async connectOffice({ privileged = true } = {}) {
       const ws = new WebSocket(`ws://127.0.0.1:${port}/ws${privileged ? `?token=${token}` : ''}`);
       sockets.push(ws);
@@ -513,7 +542,10 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
     },
   };
 
-  beforeEach(async () => {
+  const ptyHostSocket = () => path.join(dirs.home(), 'h.sock');
+
+  /** The office composed as cli.ts composes it, and a first office connected. */
+  async function boot(): Promise<void> {
     clients = [];
     sockets = [];
     const workspace = dirs.workspace();
@@ -528,7 +560,11 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
     unhold = options.holdWorktrees ? holdWorktreesOf(store) : undefined;
     ptyManager = options.noTerminal
       ? PtySessionManager.disabled('Terminal disabled with --no-terminal.')
-      : new PtySessionManager();
+      : options.ptyHost
+        ? await RemotePtySessions.connect({ socketPath: ptyHostSocket() })
+        : new PtySessionManager();
+    // Agents whose terminals outlived the last server, as cli.ts brings them back.
+    reattachTerminalAgents({ store, runtime, ptyManager, provider: claudeProvider });
     const counts = options.assets;
     const terminals = ptyAgentTerminals(ptyManager);
     // Composed as cli.ts composes it, over the test's layout, catalogue and assets.
@@ -603,9 +639,11 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       catalog,
       areaMappings: () => readConfig().standalone.areaMappings,
       directories: () => listDirectoryLocations(directories),
+      state: adapter,
       providers: hookProviders,
       ...(options.foreground ? { foreground: options.foreground } : {}),
     });
+    pcShells.restore();
     server = new PixelAgentsServer();
     const config = await server.start({
       store,
@@ -628,18 +666,33 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
         'the grant',
       );
     }
-  });
+  }
 
-  afterEach(async () => {
+  /** The office stopped as cli.ts's shutdown stops it. */
+  async function stop(): Promise<void> {
     for (const client of clients.splice(0)) await client.close().catch(() => {});
     for (const ws of sockets.splice(0)) ws.close();
     await ptyManager.shutdown();
     profilesWatcher.dispose();
     officeMcp.dispose();
     unhold?.();
-    runtime.dispose();
+    // With the PTY host the saved agents stay for the next server (cli.ts).
+    if (options.ptyHost) runtime.stop();
+    else runtime.dispose();
     server.stop();
     store.dispose();
+  }
+
+  beforeEach(async () => {
+    if (options.ptyHost) ptyHost = await startPtyHost({ socketPath: ptyHostSocket() });
+    await boot();
+  });
+
+  afterEach(async () => {
+    await stop();
+    // The PTY host and every terminal still in it.
+    await ptyHost?.close();
+    ptyHost = null;
   });
 
   return h;

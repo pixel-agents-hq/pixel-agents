@@ -16,6 +16,7 @@ import { beforeAll, describe, test } from 'vitest';
 
 import type { FurnitureInteractive } from '../../core/src/furniture/interactive.js';
 import type { PcShell } from '../../core/src/messages.js';
+import { cardOrderOf } from '../src/components/cardBar.js';
 import { OfficeState } from '../src/office/engine/officeState.js';
 import type { LoadedAssetData } from '../src/office/layout/furnitureCatalog.js';
 import { buildDynamicCatalog } from '../src/office/layout/furnitureCatalog.js';
@@ -152,5 +153,61 @@ describe('a PC with a live PC shell', () => {
     const os = office();
     os.setPcShells([{ ...SHELL, uid: 'gone' }]);
     assert.equal(lit(os), false);
+  });
+});
+
+describe('PC shells across a reconnect and layout changes', () => {
+  const OTHER: PcShell = { id: SHELL.id + 1, uid: 'kiosk2', furnitureType: 'KIOSK_FRONT_OFF' };
+  const twoKiosks = (): OfficeLayout => ({
+    version: 1,
+    cols: 10,
+    rows: 10,
+    tiles: new Array(100).fill(TileType.FLOOR_1),
+    furniture: [...ROOM, { uid: 'kiosk2', type: 'KIOSK_FRONT_OFF', col: 6, row: 3 }],
+  });
+  const litCount = (os: OfficeState): number => os.furniture.filter((f) => f.sprite === ON).length;
+
+  test("a reconnect's snapshot is the whole truth: a shell that ended meanwhile loses its card and light", () => {
+    const os = new OfficeState(twoKiosks());
+    os.addAgent(1, 0, 0, 'chair', true);
+    // Resting in its chair: its PC is lit by a shell alone.
+    os.setAgentActive(1, false);
+    os.setPcShells([SHELL, OTHER]);
+    const saved = [OTHER.id, 1, SHELL.id];
+    assert.deepEqual(cardOrderOf(saved, [1], new Set(), [SHELL.id, OTHER.id]), saved);
+
+    // SHELL ended while the office was away; the snapshot lists OTHER alone.
+    const snapshot = [OTHER];
+    os.setPcShells(snapshot);
+    assert.equal(os.pcShellOf('kiosk'), null);
+    assert.equal(litCount(os), 1);
+    assert.equal(os.pcShellOf('kiosk2')?.id, OTHER.id);
+    assert.deepEqual(
+      cardOrderOf(
+        saved,
+        [1],
+        new Set(),
+        snapshot.map((s) => s.id),
+      ),
+      [OTHER.id, 1],
+    );
+  });
+
+  test('a shell whose PC left the layout keeps its card and lights nothing; its PC back, lit again', () => {
+    const os = new OfficeState(twoKiosks());
+    os.setPcShells([SHELL, OTHER]);
+    const withoutKiosk = {
+      ...twoKiosks(),
+      furniture: twoKiosks().furniture.filter((f) => f.uid !== 'kiosk'),
+    };
+    os.rebuildFromLayout(withoutKiosk);
+    // Still the office's shell (its card stays), but no piece to light.
+    assert.equal(os.pcShellOf('kiosk')?.id, SHELL.id);
+    // Only the other shell's PC.
+    assert.equal(litCount(os), 1);
+    assert.deepEqual(cardOrderOf([], [], new Set(), [SHELL.id, OTHER.id]), [SHELL.id, OTHER.id]);
+    // An undo puts the piece back: lit again.
+    os.rebuildFromLayout(twoKiosks());
+    assert.equal(litCount(os), 2);
   });
 });

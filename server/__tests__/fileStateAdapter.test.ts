@@ -170,4 +170,26 @@ describe('FileStateAdapter', () => {
     expect(adapter.loadSeats()).toEqual({ '1': { palette: 3 } });
     expect(adapter.loadAgents()).toHaveLength(1);
   });
+
+  it('keeps PC shells beside the agents, and reads back only well-formed ones', () => {
+    const adapter = new FileStateAdapter({ namespace: 'standalone' });
+    const shell = {
+      id: 1_000_000_001,
+      uid: 'pc',
+      furnitureType: 'PC_FRONT_OFF',
+      directoryName: 'proj',
+      cwd: '/p',
+    };
+    adapter.saveAgents([{ id: 1, terminalName: 'x', jsonlFile: '/x.jsonl', projectDir: '/tmp' }]);
+    adapter.savePcShells([shell]);
+    expect(adapter.loadPcShells()).toEqual([shell]);
+    expect(adapter.loadAgents()).toHaveLength(1);
+
+    // A hand-edited file: an agent's id, missing fields, a repeat, junk.
+    const file = path.join(tempHome, '.pixel-agents', 'standalone-state.json');
+    const state = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    state.pcShells = [shell, { ...shell, id: 7 }, { id: 1_000_000_002, uid: 'pc' }, shell, 'x'];
+    fs.writeFileSync(file, JSON.stringify(state));
+    expect(adapter.loadPcShells()).toEqual([shell]);
+  });
 });

@@ -10,16 +10,24 @@
  * PcShells is the one owner of the live shells: open (a piece's live shell, or
  * a new one in the single Directory of its Area, else the home folder), close
  * (an idle one at once; one running a command only once confirmed), the
- * shell's own exit, and the list every office is told of (`pcShellsLoaded`).
+ * shell's own exit, the list every office is told of (`pcShellsLoaded`), and
+ * the saved list beside the agents (`restore` brings back the shells whose
+ * terminals outlived the last server — only the PTY host keeps them).
+ *
+ * A shell outlives what it was opened from: its piece leaving the layout or its
+ * Directory being removed ends nothing (it keeps its card, and the name and
+ * furniture it was announced with); only its terminal ending does.
  */
 
 import { execFile } from 'child_process';
 import * as os from 'os';
 
+import type { StateAdapter } from '../../../core/src/adapter.js';
 import { PC_SHELL_ID_BASE } from '../../../core/src/constants.js';
 import type { CatalogSource } from '../../../core/src/layout/index.js';
 import { layoutFromJson } from '../../../core/src/layout/index.js';
-import type { PcShell, PcShellsLoaded } from '../../../core/src/messages.js';
+import type { PcShellsLoaded } from '../../../core/src/messages.js';
+import { isPcShellId, type PersistedPcShell } from '../../../core/src/pcShells.js';
 import type { HookProvider } from '../../../core/src/provider.js';
 import {
   PC_SHELL_FALLBACK,
@@ -29,19 +37,18 @@ import {
 import { catalogOf } from '../mcp/seatPlace.js';
 import { pcShellPiece, type PlaceDirectory, soleDirectory } from '../pcShellPlace.js';
 import { inheritedEnv, terminalEnv } from './terminalEnv.js';
-import type { TerminalSessions } from './terminalSessions.js';
+import type { TerminalSession, TerminalSessions } from './terminalSessions.js';
 
-/** A live shell as the server keeps it: what offices are told, and its folder. */
-export interface PcShellRecord extends PcShell {
-  /** The folder it started in. */
-  cwd: string;
-}
+/** A live shell as the server keeps (and saves) it: what offices are told, and its folder. */
+export type PcShellRecord = PersistedPcShell;
 
 /** What is running in a shell, for the ×: null = idle (only the shell itself). */
 export type ForegroundProbe = (shellPid: number) => Promise<{ command?: string } | null>;
 
 export interface PcShellsDeps {
   ptyManager: TerminalSessions;
+  /** Where the live shells are saved beside the agents (the surface's StateAdapter). */
+  state: Pick<StateAdapter, 'loadPcShells' | 'savePcShells'>;
   /** Tell every open office (the store's broadcast). */
   broadcast: (message: PcShellsLoaded) => void;
   /** The layout as stored (layout.json, else the default one). */
@@ -156,14 +163,8 @@ export class PcShells {
       cwd,
       ...(directory ? { directoryName: directory.name } : {}),
     };
-    this.shells.set(id, record);
-    // `exit` in the shell (or its process ending any other way) ends it as
-    // the card's × does.
-    session.onExit((exit) => {
-      console.log(`[Pixel Agents] PC shell ${id} - exited (code ${exit.exitCode})`);
-      this.forget(id);
-    });
-    this.announce();
+    this.admit(record, session);
+    this.changed();
     const pid = session.pid !== null ? ` (pid ${session.pid})` : '';
     console.log(
       `[Pixel Agents] PC shell ${id} - ${shell.command} for piece ${uid}${pid} in ${cwd}`,
@@ -190,12 +191,60 @@ export class PcShells {
     return { closed: true };
   }
 
-  private forget(id: number): void {
-    if (!this.shells.delete(id)) return;
-    this.announce();
+  /**
+   * Bring back the shells whose terminals outlived the last server (only the
+   * PTY host keeps them; in process there are none), under their own ids and
+   * with what they were announced with. Saved shells with no terminal (ended
+   * with the last server, or while none ran) are dropped. Runs before the
+   * server accepts connections, so the first office's snapshot lists them.
+   */
+  restore(): number[] {
+    const saved = new Map((this.deps.state.loadPcShells?.() ?? []).map((s) => [s.id, s]));
+    const restored: number[] = [];
+    for (const session of this.deps.ptyManager.survivors()) {
+      const id = session.agentId;
+      if (!isPcShellId(id)) continue;
+      // Never hand a new shell an id a live terminal still holds (creating a
+      // terminal under it would kill that one).
+      if (id >= this.nextId) this.nextId = id + 1;
+      if (this.shells.has(id)) continue;
+      const record = saved.get(id);
+      if (!record) {
+        console.warn(
+          `[Pixel Agents] PC shell ${id} - running in the PTY host with no saved record; left out of the office.`,
+        );
+        continue;
+      }
+      this.admit(record, session);
+      restored.push(id);
+      console.log(`[Pixel Agents] PC shell ${id} - reattached (pid ${session.pid})`);
+    }
+    for (const id of saved.keys()) {
+      if (!this.shells.has(id)) console.log(`[Pixel Agents] PC shell ${id} - ended; dropped`);
+    }
+    this.changed();
+    return restored;
   }
 
-  private announce(): void {
+  /** A live shell joins: kept, and ended when its terminal ends (`exit` in
+   *  it, or its process ending any other way), as the card's × ends it. */
+  private admit(record: PcShellRecord, session: TerminalSession): void {
+    const { id } = record;
+    this.shells.set(id, record);
+    session.onExit((exit) => {
+      console.log(`[Pixel Agents] PC shell ${id} - exited (code ${exit.exitCode})`);
+      this.forget(id);
+    });
+  }
+
+  private forget(id: number): void {
+    if (!this.shells.delete(id)) return;
+    this.changed();
+  }
+
+  /** The list changed: saved, and every office told. */
+  private changed(): void {
+    this.deps.state.savePcShells?.(this.records());
     this.deps.broadcast(this.message());
   }
 }

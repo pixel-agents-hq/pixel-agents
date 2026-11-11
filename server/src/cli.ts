@@ -503,6 +503,7 @@ async function main(): Promise<void> {
     // (never an agent: the MCP above never sees one).
     const pcShells = new PcShells({
       ptyManager,
+      state: adapter,
       broadcast: (message) => store.broadcast({ ...message }),
       layout: () => readLayoutFromFile() ?? assetCache.defaultLayout,
       catalog: () => assetCache.furniture?.catalog ?? [],
@@ -510,6 +511,12 @@ async function main(): Promise<void> {
       directories: () => listDirectoryLocations([hostDirectory()]),
       providers: hookProviders,
     });
+    // Shells whose terminals outlived the last server (--pty-host): back
+    // before any browser connects; the saved ones with no terminal are dropped.
+    const reattachedShells = pcShells.restore();
+    if (reattachedShells.length > 0) {
+      console.log(`[Pixel Agents] Reattached ${reattachedShells.length} running PC shell(s)`);
+    }
 
     const config = await server.start({
       store,
@@ -633,7 +640,7 @@ async function main(): Promise<void> {
       // sweep does it unhurried); git work already under way finishes first.
       await stopRetiring(WORKTREE_SHUTDOWN_WAIT_MS);
       // In process: kill child terminals and wait for them (each exit closes
-      // its agent): exiting now would cancel the SIGKILL escalation and leave
+      // its agent or PC shell, so no saved shell outlives them): exiting now would cancel the SIGKILL escalation and leave
       // a child that ignores SIGHUP orphaned on a dead server. With the PTY
       // host: just disconnect; the agents keep running.
       await ptyManager.shutdown();

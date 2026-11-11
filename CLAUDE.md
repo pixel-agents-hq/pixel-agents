@@ -490,7 +490,7 @@ Per-agent runtime data: provider reference, session key, transcript-fallback fie
 ~/.pixel-agents/
   config.json              { vscode, standalone, externalAssetDirectories, hooksConsent, hooksEnabled (both per-provider), directories, recentCharacters, officeMcpConsent (granted|declined, absent = unanswered), officeMcpReadOnly }
   vscode-state.json        { agents, seats, cardOrder }
-  standalone-state.json    { agents, seats, cardOrder }  (an agent in a Worktree keeps `worktree: { name, path, branch }`, one launched with a Nickname `nickname`; an older save's `homeWorktree` is ignored — the registry's `sessionIds` say which Worktrees a session holds)
+  standalone-state.json    { agents, seats, cardOrder, pcShells }  (`pcShells`: the live PC shells `{ id, uid, furnitureType, directoryName?, cwd }`, reattached under their ids after a restart where the PTY host kept their terminals, dropped at restore where none did; an agent in a Worktree keeps `worktree: { name, path, branch }`, one launched with a Nickname `nickname`; an older save's `homeWorktree` is ignored — the registry's `sessionIds` say which Worktrees a session holds)
   layout.json              OfficeLayout (shared across surfaces)
   characters.json          CharacterProfile[] (shared across surfaces; absent = the six defaults)
   wardrobe-items.json      WardrobeItem[]: custom items saved from the pixel editor (absent = none)
