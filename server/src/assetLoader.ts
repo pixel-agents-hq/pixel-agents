@@ -30,6 +30,7 @@ import type {
   PetManifest,
   PetSpriteFrames,
 } from '../../core/src/assets/types.js';
+import { withInteractive } from '../../core/src/furniture/interactive.js';
 export type { CharacterDirectionSprites } from '../../core/src/assets/types.js';
 export type { PetManifest, PetSpriteFrames } from '../../core/src/assets/types.js';
 
@@ -136,6 +137,7 @@ export async function loadFurnitureAssets(workspaceRoot: string): Promise<Loaded
           };
           assets = flattenManifest(rootGroup, inherited);
         }
+        assets = withInteractive(manifest.interactive, assets, dir.name);
 
         // Load PNGs for each asset
         for (const asset of assets) {

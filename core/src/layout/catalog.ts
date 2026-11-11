@@ -8,6 +8,8 @@
  * one from the furniture-catalog it already loads.
  */
 
+import type { FurnitureInteractive } from '../furniture/interactive.js';
+
 export type FurnitureCategory =
   'desks' | 'chairs' | 'storage' | 'decor' | 'electronics' | 'wall' | 'misc';
 
@@ -30,6 +32,8 @@ export interface CatalogSource {
   rotationScheme?: string;
   animationGroup?: string;
   frame?: number;
+  /** The furniture's validated `interactive` block (furniture/interactive.ts), on every asset of it. */
+  interactive?: FurnitureInteractive;
 }
 
 /** One furniture type as the layout rules see it. */
@@ -50,6 +54,8 @@ export interface CatalogItem {
   canPlaceOnWalls?: boolean;
   /** Whether this is a side-oriented asset that produces a mirrored "left" variant */
   mirrorSide?: boolean;
+  /** How the furniture takes part in the office (furniture/interactive.ts); absent = plain furniture. */
+  interactive?: FurnitureInteractive;
 }
 
 // ── Rotation groups ──────────────────────────────────────────────
@@ -78,6 +84,9 @@ export interface FurnitureCatalog<E extends CatalogItem = CatalogItem> {
   readonly stateGroups: ReadonlyMap<string, string>;
   /** Off asset → on asset. */
   readonly offToOn: ReadonlyMap<string, string>;
+  /** Any asset with a declared state → its furniture's variants in the same orientation,
+   *  by state (an animated state by its first frame). */
+  readonly stateVariants: ReadonlyMap<string, ReadonlyMap<string, string>>;
   /** Animation group ID → its asset IDs by frame index. */
   readonly animationGroups: ReadonlyMap<string, readonly string[]>;
 }
@@ -101,6 +110,7 @@ export function emptyFurnitureCatalog<E extends CatalogItem = CatalogItem>(): Fu
     rotationGroups: new Map(),
     stateGroups: new Map(),
     offToOn: new Map(),
+    stateVariants: new Map(),
     animationGroups: new Map(),
   };
 }
@@ -119,6 +129,7 @@ export function catalogItemOf(asset: CatalogSource): CatalogItem {
     ...(asset.backgroundTiles ? { backgroundTiles: asset.backgroundTiles } : {}),
     ...(asset.canPlaceOnWalls ? { canPlaceOnWalls: true } : {}),
     ...(asset.mirrorSide ? { mirrorSide: true } : {}),
+    ...(asset.interactive ? { interactive: asset.interactive } : {}),
   };
 }
 
@@ -250,6 +261,12 @@ export function createFurnitureCatalog<E extends CatalogItem>(
       sm.set(asset.state, asset.id);
     }
   }
+  const stateVariants = new Map<string, ReadonlyMap<string, string>>();
+  for (const asset of assets) {
+    if (!asset.groupId || !asset.state) continue;
+    const sm = stateMap.get(`${asset.groupId}|${asset.orientation || ''}`);
+    if (sm) stateVariants.set(asset.id, sm);
+  }
   for (const sm of stateMap.values()) {
     const onId = sm.get('on');
     const offId = sm.get('off');
@@ -341,7 +358,16 @@ export function createFurnitureCatalog<E extends CatalogItem>(
     .filter((c): c is FurnitureCategory => !!c)
     .sort();
 
-  return { entries, visible, categories, rotationGroups, stateGroups, offToOn, animationGroups };
+  return {
+    entries,
+    visible,
+    categories,
+    rotationGroups,
+    stateGroups,
+    offToOn,
+    stateVariants,
+    animationGroups,
+  };
 }
 
 /** A furniture type's entry (any variant), or undefined for an unknown type. */
@@ -390,9 +416,17 @@ export function toggledType(catalog: FurnitureCatalog, currentType: string): str
   return catalog.stateGroups.get(currentType) ?? null;
 }
 
-/** Returns the "on" variant if this type has one, otherwise returns the type unchanged. */
-export function onStateType(catalog: FurnitureCatalog, currentType: string): string {
-  return catalog.offToOn.get(currentType) ?? currentType;
+/**
+ * The variant of a type's furniture showing `state` in the same orientation (an
+ * animated state by its first frame), or null when the furniture has no art for
+ * that state there: the piece then shows its usual sprite.
+ */
+export function stateVariantOf(
+  catalog: FurnitureCatalog,
+  type: string,
+  state: string,
+): string | null {
+  return catalog.stateVariants.get(type)?.get(state) ?? null;
 }
 
 /** Returns true if the given furniture type is part of a rotation group. */

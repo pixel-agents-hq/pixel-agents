@@ -1,3 +1,4 @@
+import { type PieceFacts, pieceView } from '../../../../core/src/furniture/pieceRules.js';
 import { spotBeside } from '../../../../core/src/layout/visitSpot.js';
 import type { AgentWorktree, LayoutBuildout } from '../../../../core/src/messages.js';
 import { chooseLook } from '../../../../core/src/paletteUtils.js';
@@ -17,7 +18,11 @@ import {
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
 import { contextUsedShare } from '../contextGauge.js';
-import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
+import {
+  getAnimationFrames,
+  getCatalogEntry,
+  getStateVariant,
+} from '../layout/furnitureCatalog.js';
 import {
   createDefaultLayout,
   getBlockedTiles,
@@ -63,8 +68,8 @@ function takesSeat(ch: Character): boolean {
 
 type Tile = { col: number; row: number };
 
-function sameSet<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
-  return a.size === b.size && [...a].every((x) => b.has(x));
+function sameMap<K, V>(a: ReadonlyMap<K, V>, b: ReadonlyMap<K, V>): boolean {
+  return a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
 }
 
 /** Score by steps from `from` (Manhattan distance). */
@@ -87,10 +92,11 @@ export class OfficeState {
   layout: OfficeLayout;
   tileMap: TileTypeVal[][];
   seats: Map<string, Seat>;
-  /** Seat uid → the uid of the PC that seat works at (workstations.ts). */
+  /** Seat uid → the uid of the workstation that seat works at (workstations.ts). */
   seatWorkstations: Map<string, string> = new Map();
-  /** The PCs lit in the current furniture instances. */
-  private litPcs: ReadonlySet<string> = new Set();
+  /** Piece uid → the declared state it shows in the current furniture instances
+   *  (its state rules under pieceFacts); pieces showing their usual sprite are absent. */
+  private shownStates: ReadonlyMap<string, string> = new Map();
   blockedTiles: Set<string>;
   furniture: FurnitureInstance[];
   walkableTiles: Array<{ col: number; row: number }>;
@@ -1097,43 +1103,76 @@ export class OfficeState {
   }
 
   /**
-   * The PCs whose seat has an agent working at it: active, sitting in that
-   * seat and typing. Walking to the seat, resting there between turns, or
-   * standing beside it does not count.
+   * Piece uid → the agent working at it: active, sitting in the piece's
+   * workstation seat and typing. Walking to the seat, resting there between
+   * turns, or standing beside it does not count.
    */
-  private litWorkstations(): Set<string> {
-    const lit = new Set<string>();
+  private agentsAtWork(): Map<string, Character> {
+    const atWork = new Map<string, Character>();
     for (const ch of this.characters.values()) {
       if (!ch.isActive || !ch.seatId || ch.state !== CharacterState.TYPE || ch.matrixEffect) {
         continue;
       }
       const seat = this.seats.get(ch.seatId);
       if (!seat || ch.tileCol !== seat.seatCol || ch.tileRow !== seat.seatRow) continue;
-      const pc = this.seatWorkstations.get(ch.seatId);
-      if (pc) lit.add(pc);
+      const piece = this.seatWorkstations.get(ch.seatId);
+      if (piece) atWork.set(piece, ch);
     }
-    return lit;
+    return atWork;
   }
 
-  /** Rebuild furniture instances with auto-state applied (a working agent's PC turns ON) */
-  private rebuildFurnitureInstances(lit = this.litWorkstations()): void {
-    this.litPcs = lit;
+  /**
+   * What the office knows about a piece, for core's pieceView (furniture/pieceRules.ts):
+   * the agent working at it, named as its activity label names it. No panel is in use yet.
+   */
+  pieceFacts(
+    uid: string,
+    readOnly = false,
+    atWork: ReadonlyMap<string, Character> = this.agentsAtWork(),
+  ): PieceFacts {
+    const ch = atWork.get(uid);
+    return {
+      agentAtWork: ch
+        ? { id: ch.id, name: [ch.directoryName, ch.nickname].filter(Boolean).join(' · ') }
+        : null,
+      panelInUse: null,
+      readOnly,
+    };
+  }
+
+  /** Each piece whose state rules hold a declared state now: piece uid → that state. */
+  private piecesShowingStates(): Map<string, string> {
+    const shown = new Map<string, string>();
+    const atWork = this.agentsAtWork();
+    for (const item of this.shownLayout().furniture) {
+      const interactive = getCatalogEntry(item.type)?.interactive;
+      if (!interactive?.states) continue;
+      const { state } = pieceView(interactive, this.pieceFacts(item.uid, false, atWork));
+      if (state) shown.set(item.uid, state);
+    }
+    return shown;
+  }
+
+  /** Rebuild furniture instances, each piece in the state its rules say (a piece
+   *  with no art for that state keeps its usual sprite), animated states on the
+   *  current frame. */
+  private rebuildFurnitureInstances(shown = this.piecesShowingStates()): void {
+    this.shownStates = shown;
     const placed = this.shownLayout().furniture;
-    if (lit.size === 0) {
+    if (shown.size === 0) {
       this.furniture = layoutToFurnitureInstances(placed);
       return;
     }
 
-    // Build modified furniture list with auto-state and animation applied
     const animFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
     const modifiedFurniture: PlacedFurniture[] = placed.map((item) => {
-      if (!lit.has(item.uid)) return item;
-      let onType = getOnStateType(item.type);
-      if (onType === item.type) return item;
-      // Check if the on-state type has animation frames
-      const frames = getAnimationFrames(onType);
-      if (frames && frames.length > 1) onType = frames[animFrame % frames.length];
-      return { ...item, type: onType };
+      const state = shown.get(item.uid);
+      if (!state) return item;
+      let type = getStateVariant(item.type, state);
+      if (!type || type === item.type) return item;
+      const frames = getAnimationFrames(type);
+      if (frames && frames.length > 1) type = frames[animFrame % frames.length];
+      return { ...item, type };
     });
 
     this.furniture = layoutToFurnitureInstances(modifiedFurniture);
@@ -1424,9 +1463,10 @@ export class OfficeState {
       this.characters.delete(id);
     }
 
-    // A PC turns on when its agent sits down to work, not when the turn starts.
-    const lit = this.litWorkstations();
-    if (!sameSet(lit, this.litPcs)) this.rebuildFurnitureInstances(lit);
+    // A piece's state follows its facts as they change: a PC turns on when its agent
+    // sits down to work, not when the turn starts.
+    const shown = this.piecesShowingStates();
+    if (!sameMap(shown, this.shownStates)) this.rebuildFurnitureInstances(shown);
 
     // ── Pet FSM ────────────────────────────────────────────────
     for (const pet of this.pets) {

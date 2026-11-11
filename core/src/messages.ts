@@ -342,6 +342,35 @@ export interface FurnitureAssetMessage {
   rotationScheme?: string;
   animationGroup?: string;
   frame?: number;
+  interactive?: FurnitureInteractive;
+}
+
+export interface FurnitureInteractive {
+  agentUse?: FurnitureAgentUse;
+  label?: FurnitureLabelSpec;
+  panel?: FurniturePanel;
+  states?: FurnitureStateRule[];
+}
+
+export type FurnitureAgentUse = 'workstation';
+
+export interface FurnitureLabelSpec {
+  name: string;
+  lines?: FurnitureLabelLine[];
+}
+
+export interface FurnitureLabelLine {
+  when: FurnitureCondition[];
+  text: string;
+}
+
+export type FurnitureCondition = 'agentWorking' | 'panelInUse' | 'free';
+
+export type FurniturePanel = 'terminal';
+
+export interface FurnitureStateRule {
+  state: string;
+  when: FurnitureCondition[];
 }
 
 export interface CharacterProfilesLoaded {

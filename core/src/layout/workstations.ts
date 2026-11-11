@@ -1,23 +1,28 @@
 /**
- * Workstations: which seat works at which PC.
+ * Workstations: which seat works at which workstation.
  *
- * Every electronics item belongs to at most one seat and every seat to at most
- * one item. A seat can only own an item when it faces a desk (the tile right in
- * front of it is a desk tile), the item stands on that desk within reach, and
- * the item's screen faces the seat (a back-facing chair works at a front-facing
- * PC, a side chair at a side PC). Contested items go to the closest seat.
+ * A workstation is a piece whose furniture declares the `workstation` agent use
+ * (furniture/interactive.ts; the PC does); no category or furniture is named
+ * here. Every workstation belongs to at most one seat and every seat to at most
+ * one workstation. A seat can only own one when it faces a desk (the tile right
+ * in front of it is a desk tile), the workstation stands on that desk within
+ * reach, and its screen faces the seat (a back-facing chair works at a
+ * front-facing PC, a side chair at a side PC). Contested ones go to the closest
+ * seat.
  *
- * The seat picker uses this to prefer seats with a PC, and the renderer to turn
- * on only the PC of a seat whose agent is working there. DOM-free.
+ * The seat picker uses this to prefer seats with a workstation, and the office
+ * to know which agent works at which piece (the `agentWorking` condition of its
+ * state rules). DOM-free.
  */
 
+import type { FurnitureInteractive } from '../furniture/interactive.js';
 import { AUTO_ON_FACING_DEPTH, AUTO_ON_SIDE_DEPTH } from './constants.js';
 import type { PlacedFurniture, Seat } from './types.js';
 import { Direction } from './types.js';
 
 export interface WorkstationCatalogEntry {
-  category?: string;
   isDesk?: boolean;
+  interactive?: FurnitureInteractive;
   footprintW: number;
   footprintH: number;
   orientation?: string;
@@ -67,14 +72,14 @@ function reachableTiles(seat: WorkstationSeat): Map<string, number> {
   return out;
 }
 
-/** Map of seat uid → the uid of the electronics item that seat works at. */
+/** Map of seat uid → the uid of the workstation that seat works at. */
 export function pairWorkstations(
   seats: Map<string, WorkstationSeat>,
   furniture: PlacedFurniture[],
   lookup: (type: string) => WorkstationCatalogEntry | undefined,
 ): Map<string, string> {
   const deskTiles = new Set<string>();
-  const electronics: Array<{ item: PlacedFurniture; entry: WorkstationCatalogEntry }> = [];
+  const workstations: Array<{ item: PlacedFurniture; entry: WorkstationCatalogEntry }> = [];
   for (const item of furniture) {
     const entry = lookup(item.type);
     if (!entry) continue;
@@ -85,7 +90,7 @@ export function pairWorkstations(
         }
       }
     }
-    if (entry.category === 'electronics') electronics.push({ item, entry });
+    if (entry.interactive?.agentUse === 'workstation') workstations.push({ item, entry });
   }
 
   const candidates: Array<{ seatUid: string; itemUid: string; score: number }> = [];
@@ -93,7 +98,7 @@ export function pairWorkstations(
     const { dCol, dRow } = facingOffset(seat.facingDir);
     if (!deskTiles.has(key(seat.seatCol + dCol, seat.seatRow + dRow))) continue;
     const reach = reachableTiles(seat);
-    for (const { item, entry } of electronics) {
+    for (const { item, entry } of workstations) {
       const wanted = entry.orientation ? SEAT_FACING_FOR_ITEM[entry.orientation] : undefined;
       if (wanted !== undefined && wanted !== seat.facingDir) continue;
       let best = Infinity;

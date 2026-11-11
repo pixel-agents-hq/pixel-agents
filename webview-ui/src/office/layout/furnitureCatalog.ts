@@ -17,9 +17,9 @@ import {
   type FurnitureCatalog,
   type FurnitureCategory,
   isRotatableType,
-  onStateType,
   orientationInGroup,
   rotatedType,
+  stateVariantOf,
   toggledType,
 } from '../../../../core/src/layout/catalog.js';
 import type { FurnitureCatalogEntry, SpriteData } from '../types.js';
@@ -94,9 +94,9 @@ export function getToggledType(currentType: string): string | null {
   return toggledType(catalog, currentType);
 }
 
-/** Returns the "on" variant if this type has one, otherwise returns the type unchanged. */
-export function getOnStateType(currentType: string): string {
-  return onStateType(catalog, currentType);
+/** The type's variant showing `state` (core's stateVariantOf), or null when it has no art for it. */
+export function getStateVariant(type: string, state: string): string | null {
+  return stateVariantOf(catalog, type, state);
 }
 
 /** Returns true if the given furniture type is part of a rotation group. */

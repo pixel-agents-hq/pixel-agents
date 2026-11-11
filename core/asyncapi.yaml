@@ -2981,3 +2981,91 @@ components:
           type: string
         frame:
           type: integer
+        interactive:
+          $ref: '#/components/schemas/FurnitureInteractive'
+
+    FurnitureInteractive:
+      description: |
+        How a furniture takes part in the office (CONTEXT.md → Interactive furniture), as
+        its manifest's `interactive` block declares it, validated where the manifest was
+        read (core/src/furniture/interactive.ts) and carried on every asset of that
+        furniture. Every part is optional; a block that failed validation is never sent
+        (the furniture is plain furniture). A condition list holds when ANY of its
+        conditions does.
+      type: object
+      additionalProperties: false
+      properties:
+        agentUse:
+          $ref: '#/components/schemas/FurnitureAgentUse'
+        label:
+          $ref: '#/components/schemas/FurnitureLabelSpec'
+        panel:
+          $ref: '#/components/schemas/FurniturePanel'
+        states:
+          type: array
+          description: |
+            Which declared state a piece shows under which condition, the first rule
+            whose condition holds winning; no rule holding = its usual sprite.
+          items:
+            $ref: '#/components/schemas/FurnitureStateRule'
+
+    FurnitureAgentUse:
+      description: |
+        How agents use a furniture: `workstation` = agents work here (a seat facing it
+        pairs with it, and its agent at work is the `agentWorking` condition).
+      type: string
+      enum: [workstation]
+
+    FurniturePanel:
+      description: The panel the office provides that a piece opens (CONTEXT.md → Panel).
+      type: string
+      enum: [terminal]
+
+    FurnitureCondition:
+      description: |
+        A fact the office holds about a piece: `agentWorking` = an agent is working at
+        it; `panelInUse` = its panel is in use (a PC: a live PC shell); `free` = neither.
+      type: string
+      enum: [agentWorking, panelInUse, free]
+
+    FurnitureLabelSpec:
+      description: |
+        A Furniture label: its name, then every line whose condition holds, in order.
+        A line's text may name `{agent}` (the agent working at it; only in a line shown
+        on `agentWorking` alone) or `{panel}` (what its panel holds, a PC shell's
+        Directory; only in a line shown on `panelInUse` alone).
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/FurnitureLabelLine'
+
+    FurnitureLabelLine:
+      type: object
+      additionalProperties: false
+      required: [when, text]
+      properties:
+        when:
+          type: array
+          items:
+            $ref: '#/components/schemas/FurnitureCondition'
+        text:
+          type: string
+
+    FurnitureStateRule:
+      type: object
+      additionalProperties: false
+      required: [state, when]
+      properties:
+        state:
+          type: string
+          description: One of the furniture's declared states (its manifest's `state` values).
+        when:
+          type: array
+          items:
+            $ref: '#/components/schemas/FurnitureCondition'
