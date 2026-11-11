@@ -17,6 +17,11 @@ import type { EventFlowStep } from '../components/EventFlow';
 import { FormField } from '../components/FormField';
 import { agentDisplayName, selectAllAgents } from '../features/agents/agentSelectors';
 import { canCreateAgent, normalizeAgentPath } from '../features/agentCreation/createAgentForm';
+import {
+  AGENT_CREATED_NOTICE,
+  AGENT_CREATION_TIMEOUT_NOTICE,
+  noticeState,
+} from '../features/agentCreation/creationNotice';
 import { agentCreationRequested } from '../features/agentCreation/createAgentSaga';
 import { useAwaitCreation } from '../features/agentCreation/useAwaitCreation';
 import { selectVisibleWorkspaces } from '../features/workspaces/workspaceSelectors';
@@ -99,7 +104,10 @@ export function AddAgentPage() {
   const willBecomeCurator = becomeCurator && !curatorLocked;
 
   const workspaceAgentIds = agents.filter((a) => a.workspaceId === workspaceId).map((a) => a.id);
-  const onCreated = useCallback(() => void navigate(`/w/${workspaceId}`), [navigate, workspaceId]);
+  const onCreated = useCallback(
+    () => void navigate(`/w/${workspaceId}`, { state: noticeState(AGENT_CREATED_NOTICE) }),
+    [navigate, workspaceId],
+  );
   const launch = useAwaitCreation(workspaceAgentIds, onCreated);
 
   const chooseWorkspace = (id: string) => {
@@ -324,6 +332,12 @@ export function AddAgentPage() {
             </Box>
           }
         />
+
+        {launch.timedOut && (
+          <Typography role="status" sx={{ fontSize: 11, color: 'warning.main', mb: 1.5 }}>
+            {AGENT_CREATION_TIMEOUT_NOTICE}
+          </Typography>
+        )}
 
         <EventFlow steps={flowSteps} />
 

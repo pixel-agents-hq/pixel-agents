@@ -16,6 +16,7 @@ export function useAwaitCreation<Key extends string | number>(
   const rejection = useAppSelector((state) => state.connection.rejection);
   const [knownIds, setKnownIds] = useState<Set<Key> | null>(null);
   const [seenRejection, setSeenRejection] = useState(rejection);
+  const [timedOut, setTimedOut] = useState(false);
 
   if (rejection !== seenRejection) {
     setSeenRejection(rejection);
@@ -30,14 +31,20 @@ export function useAwaitCreation<Key extends string | number>(
 
   useEffect(() => {
     if (!knownIds) return;
-    const timer = setTimeout(() => setKnownIds(null), LAUNCH_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      setKnownIds(null);
+      setTimedOut(true);
+    }, LAUNCH_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [knownIds]);
 
   return {
     pending: knownIds !== null,
+    /** 等到逾時都沒有結果（既沒有新項目，也沒有被拒絕）；下一次送出時清除 */
+    timedOut,
     begin: () => {
       dispatch(rejectionDismissed());
+      setTimedOut(false);
       setKnownIds(new Set(currentIds));
     },
   };
