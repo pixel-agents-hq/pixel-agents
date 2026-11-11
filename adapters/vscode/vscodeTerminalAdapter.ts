@@ -24,7 +24,13 @@ export class VscodeTerminalAdapter implements ITerminalAdapter {
 
   openTerminal(options: { name: string; cwd: string }): TerminalHandle {
     // No shellPath: VS Code's own default profile, as the user's own "New Terminal".
-    return vscode.window.createTerminal({ name: options.name, cwd: options.cwd });
+    // Transient: left out of VS Code's persistent sessions, so a window reload
+    // never brings back a terminal the office (memory only) has forgotten.
+    return vscode.window.createTerminal({
+      name: options.name,
+      cwd: options.cwd,
+      isTransient: true,
+    });
   }
 
   showTerminal(terminal: TerminalHandle): void {

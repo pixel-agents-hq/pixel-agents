@@ -16,6 +16,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 interface FakeTerminal {
   name: string;
   cwd: string;
+  /** Left out of VS Code's persistent sessions (not brought back on reload). */
+  isTransient?: boolean;
   shown: number;
   disposed: boolean;
   show(): void;
@@ -34,10 +36,15 @@ function closeInVsCode(terminal: FakeTerminal): void {
 
 vi.mock('vscode', () => ({
   window: {
-    createTerminal: (options: { name: string; cwd: string }): FakeTerminal => {
+    createTerminal: (options: {
+      name: string;
+      cwd: string;
+      isTransient?: boolean;
+    }): FakeTerminal => {
       const terminal: FakeTerminal = {
         name: options.name,
         cwd: options.cwd,
+        isTransient: options.isTransient,
         shown: 0,
         disposed: false,
         show() {
@@ -158,6 +165,11 @@ describe('PC shells in a VS Code office (vscode-free composition, fake terminals
     ]);
     expect(shells.has(id)).toBe(true);
     expect(shells.message()).toEqual({ type: 'pcShellsLoaded', shells: announced() });
+  });
+
+  it('opens a transient terminal: a window reload never brings back a shell the office forgot', () => {
+    open(FRONT_PC);
+    expect(terminals[0].isTransient).toBe(true);
   });
 
   it('opens in the first workspace folder when the Area has no Directory', () => {

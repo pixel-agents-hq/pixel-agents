@@ -14,7 +14,7 @@ export interface ITerminalAdapter {
   activeTerminal(): TerminalHandle | undefined;
   allTerminals(): TerminalHandle[];
   /** Open an ordinary terminal (the user's own shell) named `name` in `cwd`:
-   *  a PC shell's. */
+   *  a PC shell's. Transient: never restored by the editor after a reload. */
   openTerminal(options: { name: string; cwd: string }): TerminalHandle;
   /** Bring `terminal` to the front. */
   showTerminal(terminal: TerminalHandle): void;
