@@ -15,19 +15,26 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { DEFAULT_WORKSPACE_ID } from '../../../core/src/constants.js';
 import type { HookProvider } from '../../../core/src/provider.js';
 import type { AgentRuntime } from '../agentRuntime.js';
 import { createAgentState } from '../agentState.js';
 import type { AgentStateStore } from '../agentStateStore.js';
 import type { CapabilityRegistry } from '../capabilities.js';
 import { withoutCapabilityEnv, workspaceKey } from '../capabilities.js';
-import { CAPABILITY_ENV_NAME, JSONL_POLL_INTERVAL_MS } from '../constants.js';
+import {
+  CAPABILITY_ENV_NAME,
+  JSONL_POLL_INTERVAL_MS,
+  TASK_DISPATCH_PORT_ENV_NAME,
+} from '../constants.js';
 import { directoryNameForLaunch } from '../directories.js';
 import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import { isValidRoleId } from '../roles.js';
 import { removeRoleSnapshot } from '../roleStorage.js';
+import type { TaskDispatchLaunch } from '../taskDispatch/launchConfig.js';
+import { taskDispatchMcpConfig } from '../taskDispatch/launchConfig.js';
 import type { AgentState } from '../types.js';
 import { workspaceIdForDirectory, workspacePermissionRoles } from '../workspaces.js';
 import type { PermissionRoles } from '../writeGuard/permissionRoles.js';
@@ -48,7 +55,21 @@ export interface LaunchStandaloneAgentDeps {
   isKbEnabled?: (workspaceId: string) => boolean;
   /** Where capabilities are issued and verified. Absent: none is issued. */
   capabilities?: CapabilityRegistry;
+  /**
+   * THE task-dispatch switch (one dep, for rollback). Present together with
+   * `capabilities`: a launch into a NON-default Workspace is issued a
+   * capability, gets PIXEL_AGENTS_PORT in its env and the stdio shim through
+   * `--mcp-config`. Absent: exactly the launch as before. The default
+   * Workspace never gets any of it.
+   */
+  taskDispatch?: TaskDispatchLaunch;
 }
+
+/** The provider's launch options plus task dispatch's `--mcp-config` JSON
+ *  (the Claude provider reads it; see ClaudeLaunchOptions). */
+type LaunchCommandOptions = NonNullable<
+  Parameters<NonNullable<HookProvider['buildLaunchCommand']>>[2]
+> & { mcpConfig?: string };
 
 export interface LaunchStandaloneAgentOptions {
   /** Path of the Directory to launch into. Defaults to the server's cwd, which
@@ -115,17 +136,32 @@ export function launchStandaloneAgent(
   const { existing } = options;
   const sessionId = existing?.sessionId ?? crypto.randomUUID();
 
+  // Computed once and shared by the capability and the agent, so the two can
+  // never disagree about where the agent was launched. From the Directory the
+  // launch names, never from the server cwd: a launch with no directoryPath
+  // (or one no Workspace owns) belongs to the default.
+  const workspaceId = workspaceIdForDirectory(options.directoryPath);
+  const workspace = workspaceKey(workspaceId);
+  // Task dispatch: only with the switch AND a registry, and never into the
+  // default Workspace.
+  const dispatchLaunch =
+    deps.taskDispatch !== undefined &&
+    deps.capabilities !== undefined &&
+    workspace !== DEFAULT_WORKSPACE_ID
+      ? deps.taskDispatch
+      : undefined;
+  const mcpConfig = dispatchLaunch ? taskDispatchMcpConfig(dispatchLaunch.shimPath) : undefined;
+
   // Without a Role the options object is exactly the pre-Role one, so the
-  // command is byte-for-byte what it always was.
-  const launch = provider.buildLaunchCommand?.(
-    sessionId,
-    cwd,
-    role
-      ? { bypassPermissions: options.bypassPermissions, appendSystemPromptFile: role.snapshotPath }
-      : existing
-        ? { bypassPermissions: options.bypassPermissions, resume: existing.resume }
-        : { bypassPermissions: options.bypassPermissions },
-  );
+  // command is byte-for-byte what it always was (and without task dispatch it
+  // carries no mcpConfig key at all).
+  const launchOptions: LaunchCommandOptions = role
+    ? { bypassPermissions: options.bypassPermissions, appendSystemPromptFile: role.snapshotPath }
+    : existing
+      ? { bypassPermissions: options.bypassPermissions, resume: existing.resume }
+      : { bypassPermissions: options.bypassPermissions };
+  if (mcpConfig !== undefined) launchOptions.mcpConfig = mcpConfig;
+  const launch = provider.buildLaunchCommand?.(sessionId, cwd, launchOptions);
   if (!launch) {
     console.error('[Pixel Agents] Terminal: provider.buildLaunchCommand is not implemented');
     releaseRoleSnapshot();
@@ -148,11 +184,6 @@ export function launchStandaloneAgent(
   }
   const projectDir = dirs[0];
 
-  // Computed once and shared by the capability and the agent, so the two can
-  // never disagree about where the agent was launched. From the Directory the
-  // launch names, never from the server cwd: a launch with no directoryPath
-  // (or one no Workspace owns) belongs to the default.
-  const workspaceId = workspaceIdForDirectory(options.directoryPath);
   // KB rule ownership (writeGuard/kbState.ts): recorded once here, never taken
   // from a hook payload's cwd. Undefined only when the Directory cannot be
   // resolved, in which case the PTY spawn below fails as well.
@@ -162,17 +193,31 @@ export function launchStandaloneAgent(
     options.permissionRoles,
     workspacePermissionRoles(workspaceId),
   );
-  // Only a caller that injected both the registry and isKbEnabled can get a
-  // capability; the default is a launch exactly as before.
+  // A provider that ignored mcpConfig gets no capability through it: the
+  // shim must really be in the command before a token goes into the env.
+  const dispatchArmed = mcpConfig !== undefined && launch.args.includes(mcpConfig);
+  if (mcpConfig !== undefined && !dispatchArmed) {
+    console.warn('[Pixel Agents] Terminal: provider ignored the task-dispatch MCP config');
+  }
+  // Only a caller that injected the registry and either the task-dispatch
+  // switch (non-default Workspace, shim in the command) or isKbEnabled can get
+  // a capability; the default is a launch exactly as before.
   const capabilities =
-    deps.isKbEnabled?.(workspaceKey(workspaceId)) === true ? deps.capabilities : undefined;
+    dispatchArmed || deps.isKbEnabled?.(workspace) === true ? deps.capabilities : undefined;
 
   const id = existing?.id ?? store.nextAgentId.current++;
 
   const grant = capabilities?.issue({ agentId: id, sessionId, workspaceId });
-  // Layered last, so nothing the provider returns can replace it.
+  // Layered last, so nothing the provider returns can replace them. The port
+  // is the launching server's own (non-secret); the token is the secret.
   const env = grant
-    ? { ...withoutCapabilityEnv(launch.env ?? {}), [CAPABILITY_ENV_NAME]: grant.token }
+    ? {
+        ...withoutCapabilityEnv(launch.env ?? {}),
+        ...(dispatchArmed && dispatchLaunch
+          ? { [TASK_DISPATCH_PORT_ENV_NAME]: String(dispatchLaunch.port) }
+          : {}),
+        [CAPABILITY_ENV_NAME]: grant.token,
+      }
     : launch.env;
 
   let session;
@@ -211,6 +256,7 @@ export function launchStandaloneAgent(
       role,
       directoryRealPath,
       permissionRoles,
+      launchedWithBypass: options.bypassPermissions === true,
       existing: existing !== undefined,
     });
   } catch (err) {
@@ -283,6 +329,8 @@ function registerLaunchedAgent(
     role: LaunchStandaloneAgentOptions['role'];
     directoryRealPath: string | undefined;
     permissionRoles: PermissionRoles;
+    /** The bypassPermissions option given to buildLaunchCommand, as recorded. */
+    launchedWithBypass: boolean;
     /** The agent's record already exists (it was stopped): update it in place. */
     existing: boolean;
   },
@@ -297,6 +345,7 @@ function registerLaunchedAgent(
     role,
     directoryRealPath,
     permissionRoles,
+    launchedWithBypass,
     existing,
   } = launched;
 
@@ -333,6 +382,10 @@ function registerLaunchedAgent(
     directoryRealPath,
     // Runtime only: the R/E/D snapshot the write guard reads (never persisted).
     permissionRoles,
+    // Runtime only (task dispatch): this PTY session's bypass posture and the
+    // turns it has completed so far.
+    launchedWithBypass,
+    turnsCompletedThisSession: 0,
   });
 
   // Server-side, like every other creation path: the palette rides the
@@ -358,7 +411,8 @@ function startRecord(
   launched: Parameters<typeof registerLaunchedAgent>[1],
 ): AgentState {
   const { store, runtime } = deps;
-  const { id, sessionId, projectDir, directoryRealPath, permissionRoles } = launched;
+  const { id, sessionId, projectDir, directoryRealPath, permissionRoles, launchedWithBypass } =
+    launched;
   const agent = store.get(id);
   if (!agent) throw new Error(`Agent ${id} has no record to start`);
 
@@ -370,6 +424,10 @@ function startRecord(
   agent.jsonlFile = expectedFile;
   agent.directoryRealPath = directoryRealPath;
   agent.permissionRoles = permissionRoles;
+  // A new PTY session: its own bypass posture, and no turn completed in it yet
+  // (a resumed record's isWaiting/permissionSent are left over from before).
+  agent.launchedWithBypass = launchedWithBypass;
+  agent.turnsCompletedThisSession = 0;
 
   runtime.activeAgentId.current = id;
   runtime.registerAgent(sessionId, id);

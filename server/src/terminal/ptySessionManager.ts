@@ -42,6 +42,14 @@ export interface PtyExit {
   signal?: number;
 }
 
+/** Terminal modes the headless mirror has parsed (read-only view). */
+export interface TerminalModes {
+  /** DECSET 2004: the program asked for pasted text to be bracketed. */
+  bracketedPaste: boolean;
+  /** The alternate screen buffer is active (a full-screen program). */
+  alternateScreen: boolean;
+}
+
 type DataListener = (chunk: string) => void;
 type ExitListener = (exit: PtyExit) => void;
 
@@ -127,6 +135,29 @@ export class PtySession {
         resolve(this.serializeAddon.serialize());
       });
     });
+  }
+
+  /**
+   * Run `callback` once every chunk received before this call has been parsed
+   * by the mirror (the same empty-write flush snapshot() relies on). Inside the
+   * callback, terminalModes() reflects all of that output. The callback runs
+   * synchronously from the mirror's write queue: whatever it does without an
+   * await happens before any later chunk is parsed.
+   */
+  afterParsed(callback: () => void): void {
+    this.mirror.write('', callback);
+  }
+
+  /**
+   * The mirror's current input modes, read-only. Only as fresh as the chunks
+   * parsed so far: call it inside afterParsed() for the state after a given
+   * point in the stream.
+   */
+  terminalModes(): TerminalModes {
+    return {
+      bracketedPaste: this.mirror.modes.bracketedPasteMode,
+      alternateScreen: this.mirror.buffer.active.type === 'alternate',
+    };
   }
 
   onData(listener: DataListener): () => void {
