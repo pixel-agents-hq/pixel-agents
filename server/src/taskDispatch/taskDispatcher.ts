@@ -135,7 +135,7 @@ function parseArguments(args: unknown): ParsedArguments | null {
 
 /** Null caller roles allow everything, so may target anyone (null included);
  *  a restricted caller may only target a subset of its own roles. */
-export function rolesWithin(caller: PermissionRoles, target: PermissionRoles): boolean {
+function rolesWithin(caller: PermissionRoles, target: PermissionRoles): boolean {
   if (caller === null) return true;
   if (target === null) return false;
   return target.every((role) => caller.includes(role));

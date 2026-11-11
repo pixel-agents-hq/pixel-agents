@@ -52,7 +52,7 @@ const HOME_WORD: BashWord = {
 
 /** cd、pushd、popd（可前置 builtin、command）的效果；不是目錄變動時回 undefined。
  *  指令名稱比對去引號、去跳脫後的文字（`\cd`、`'cd'` 都是 cd）。 */
-export function cdEffectOf(words: readonly BashWord[]): CdEffect | undefined {
+function cdEffectOf(words: readonly BashWord[]): CdEffect | undefined {
   let i = 0;
   while (words[i] && !words[i].expansion && ['builtin', 'command'].includes(words[i].text)) {
     i++;
@@ -82,7 +82,7 @@ function parseSubstitutions(
 }
 
 /** 讀一個重導向（i 指向重導向 token），回傳下一個位置。 */
-export function readRedirect(tokens: BashToken[], i: number, command: SimpleCommand): number {
+function readRedirect(tokens: BashToken[], i: number, command: SimpleCommand): number {
   const token = tokens[i] as Extract<BashToken, { kind: 'redirect' }>;
   if (token.redirect === 'heredoc') {
     command.redirects.push({ kind: 'heredoc', body: token.heredocBody ?? '' });

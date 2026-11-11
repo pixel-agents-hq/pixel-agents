@@ -28,7 +28,7 @@ import type { GuardRequest } from './protocol.js';
 const ALLOW: RuleVerdict = { verdict: 'allow' };
 
 /** 指令可解析時回分析結果；指令沒送或超過上限時回 null（無法分類、目標無法判斷）。 */
-export function analyzeRequestCommand(
+function analyzeRequestCommand(
   request: GuardRequest,
   platform: NodeJS.Platform = process.platform,
 ): BashAnalysis | null {

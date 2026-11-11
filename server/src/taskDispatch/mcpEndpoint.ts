@@ -77,7 +77,7 @@ function toolText(text: string, isError: boolean): Record<string, unknown> {
 }
 
 /** The success text: says only that the task was written, never "accepted". */
-export function dispatchSuccessText(result: Extract<DispatchResult, { ok: true }>): string {
+function dispatchSuccessText(result: Extract<DispatchResult, { ok: true }>): string {
   const name = result.displayName ?? `Agent ${result.targetAgentId}`;
   const directory = result.directoryName ?? '';
   return `Task written to terminal of ${JSON.stringify(name)} (agent ${result.targetAgentId}, directory ${JSON.stringify(directory)}).`;

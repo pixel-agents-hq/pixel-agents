@@ -64,7 +64,7 @@ export type RoleStorageUnsafeError = StorageUnsafeError;
 /** Thrown when trust.json exists but cannot be trusted (unreadable or malformed). */
 export class RoleTrustUnreadableError extends Error {}
 
-export function rolesStorageDir(): string {
+function rolesStorageDir(): string {
   return path.join(os.homedir(), LAYOUT_FILE_DIR, ROLES_STORAGE_DIR_NAME);
 }
 

@@ -224,7 +224,7 @@ export async function launchNewTerminal(
   jsonlPollTimers.set(id, pollTimer);
 }
 
-export function removeAgent(
+function removeAgent(
   agentId: number,
   store: AgentStateStore,
   fileWatchers: Map<number, fs.FSWatcher>,

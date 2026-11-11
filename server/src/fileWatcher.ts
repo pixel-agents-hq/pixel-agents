@@ -922,7 +922,7 @@ export function scanForBackgroundAgentFiles(
  * This is the authoritative source of truth for Agent Teams membership.
  * Returns the IDs of teammates that should be removed.
  */
-export function scanTeamConfigsForRemovals(agents: AgentStateStore): number[] {
+function scanTeamConfigsForRemovals(agents: AgentStateStore): number[] {
   const toRemove: number[] = [];
   if (!teamProvider) return toRemove;
   // Group teammates by their teamName for efficient config lookups
@@ -957,7 +957,7 @@ export function scanTeamConfigsForRemovals(agents: AgentStateStore): number[] {
  * Scan all tracked project dirs for teammate JSONL files.
  * Called periodically as a fallback when hooks are disabled.
  */
-export function scanAllTeammateFiles(
+function scanAllTeammateFiles(
   nextAgentIdRef: { current: number },
   agents: AgentStateStore,
   fileWatchers: Map<number, fs.FSWatcher>,

@@ -25,7 +25,7 @@ const OPERATION_ORDER: readonly GuardOperation[] = ['read', 'edit', 'delete'];
 /** 只有 fd 編號或 `-`：`2>&1`、`>&-` 是複製檔案描述子，不是檔案。 */
 const FD_DUP = /^(\d+|-)$/;
 /** 重導向只有運算子沒有指令時，拒絕訊息用的指令片段。 */
-export const REDIRECT_FRAGMENT = '>';
+const REDIRECT_FRAGMENT = '>';
 
 export interface AnalyzeOptions {
   /** 指令名稱的大小寫語意（darwin、win32 不分大小寫）；預設目前平台。 */

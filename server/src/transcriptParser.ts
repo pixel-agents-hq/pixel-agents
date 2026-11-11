@@ -87,7 +87,7 @@ export function setTeamSwitchCallback(
 
 /** Format a tool status line. Delegates to the active HookProvider's formatToolStatus.
  *  Invariant: a provider is registered before any transcript lines are parsed. */
-export function formatToolStatus(toolName: string, input: Record<string, unknown>): string {
+function formatToolStatus(toolName: string, input: Record<string, unknown>): string {
   return hookProvider?.formatToolStatus(toolName, input) ?? `Using ${toolName}`;
 }
 

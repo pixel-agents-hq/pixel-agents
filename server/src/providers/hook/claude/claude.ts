@@ -26,7 +26,7 @@ import {
 
 // ── formatToolStatus: moved from src/transcriptParser.ts ──
 
-export function formatToolStatus(toolName: string, input?: unknown): string {
+function formatToolStatus(toolName: string, input?: unknown): string {
   const inp = (input ?? {}) as Record<string, unknown>;
   const base = (p: unknown) => (typeof p === 'string' ? path.basename(p) : '');
   switch (toolName) {

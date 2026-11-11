@@ -46,7 +46,7 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 /** 驗證清單內容；格式不對、版本不同或擁有者不一致都回 null（視同沒有清單）。 */
-export function parseGuardList(value: unknown, owner: GuardListOwner): GuardList | null {
+function parseGuardList(value: unknown, owner: GuardListOwner): GuardList | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   if (record.version !== WRITE_GUARD_LIST_VERSION) return null;

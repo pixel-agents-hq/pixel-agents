@@ -73,7 +73,7 @@ export function lnTargets(args: readonly BashWord[]): BashTarget[] {
   return copyLikeTargets(args, { withValue });
 }
 
-export const RSYNC_WITH_VALUE: readonly string[] = [
+const RSYNC_WITH_VALUE: readonly string[] = [
   '-e',
   '--rsh',
   '-f',

@@ -452,7 +452,7 @@ export function saveWorkspace(msg: Record<string, unknown>): WorkspaceMutationRe
 
 /** Delete a Workspace. Its Directories fall back to the default simply by no
  *  longer being listed anywhere. */
-export function removeWorkspace(msg: Record<string, unknown>): WorkspaceMutationResult {
+function removeWorkspace(msg: Record<string, unknown>): WorkspaceMutationResult {
   if (typeof msg.id !== 'string' || msg.id.length === 0) {
     return reject('Invalid Workspace id.');
   }
@@ -557,7 +557,7 @@ export function setWorkspaceRoot(
  * Only distinct R, E and D are accepted; an empty array is valid and turns all
  * three off. Agents already running keep the roles they launched with.
  */
-export function setWorkspacePermissionRoles(msg: Record<string, unknown>): WorkspaceMutationResult {
+function setWorkspacePermissionRoles(msg: Record<string, unknown>): WorkspaceMutationResult {
   const { workspaceId } = msg;
   if (
     typeof workspaceId !== 'string' ||

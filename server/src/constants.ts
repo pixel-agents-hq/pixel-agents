@@ -561,7 +561,7 @@ export interface WriteGuardDenyTemplate {
   suggestion: string;
 }
 /** P3 的固定範本（權限角色、Bash 目標無法判斷）。併入 WRITE_GUARD_DENY_TEMPLATES（F16）。 */
-export const WRITE_GUARD_ROLE_DENY_TEMPLATES: Readonly<Record<string, WriteGuardDenyTemplate>> = {
+const WRITE_GUARD_ROLE_DENY_TEMPLATES: Readonly<Record<string, WriteGuardDenyTemplate>> = {
   [WRITE_GUARD_RULE_ROLE_READ]: {
     reason:
       "This tool call reads files, and this agent's permission roles do not include Read (R).",

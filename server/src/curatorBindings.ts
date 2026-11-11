@@ -118,7 +118,7 @@ function parseBindingEntry(item: unknown): CuratorBinding | null {
  * 檔案內容 -> 綁定清單；整體結構不對回 null（整份不採信）。
  * 逐筆驗證：不合格的丟棄；同一個 workspaceId 出現多次時全部丟棄（無法判斷哪筆才對）。
  */
-export function parseCuratorBindingsFile(raw: unknown): {
+function parseCuratorBindingsFile(raw: unknown): {
   bindings: CuratorBinding[];
   dropped: number;
 } | null {

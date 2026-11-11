@@ -26,7 +26,7 @@ import type { BashTarget, BashWord } from './bashTypes.js';
 import { isWrapper, unwrap, wrapperBareRead } from './bashWrappers.js';
 
 /** 讀取類指令（決定 4 的清單，加上 cd 等不寫檔的導覽與查詢指令）。 */
-export const BASH_READ_COMMANDS: ReadonlySet<string> = new Set([
+const BASH_READ_COMMANDS: ReadonlySet<string> = new Set([
   'ls',
   'cat',
   'head',

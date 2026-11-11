@@ -27,7 +27,7 @@ function currentUid(): number | null {
 }
 
 /** lstat-based: a real directory (never a symlink), owned by us, mode exactly 0700. */
-export function isPrivateDirectory(stats: fs.Stats): boolean {
+function isPrivateDirectory(stats: fs.Stats): boolean {
   const uid = currentUid();
   return (
     uid !== null &&

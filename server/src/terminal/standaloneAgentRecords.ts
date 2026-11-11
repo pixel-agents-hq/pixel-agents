@@ -21,7 +21,7 @@ import type { PermissionRoles } from '../writeGuard/permissionRoles.js';
 import type { LaunchStandaloneAgentDeps } from './standaloneAgentLauncher.js';
 import { launchStandaloneAgent } from './standaloneAgentLauncher.js';
 
-export const AGENT_NAME_MAX_LENGTH = 64;
+const AGENT_NAME_MAX_LENGTH = 64;
 
 export interface CreateStoppedAgentOptions {
   directoryPath: string;

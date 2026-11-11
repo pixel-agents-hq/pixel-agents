@@ -95,7 +95,7 @@ const LOGGABLE_ID = /^[A-Za-z0-9_-]{1,100}$/;
 
 /** target 的執行期驗證：只接受兩種形狀之一、不接受多餘欄位；回傳重新建立的物件
  *  （回覆中回傳的是這個，絕不是用戶端送來的原物件）。 */
-export function parseKbTarget(value: unknown): KbTarget | null {
+function parseKbTarget(value: unknown): KbTarget | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const keys = Object.keys(record);
@@ -121,7 +121,7 @@ export function parseKbTarget(value: unknown): KbTarget | null {
 }
 
 /** 一個可瀏覽的路徑段（列舉與讀取共用同一條規則，列出來的名稱才讀得回去）。 */
-export function isBrowsableName(name: string): boolean {
+function isBrowsableName(name: string): boolean {
   if (name.length === 0 || name.startsWith('.')) return false; // 含 `.`、`..`、隱藏檔
   if (name.includes('/') || name.includes('\\') || name.includes('\0')) return false;
   if (Buffer.byteLength(name, 'utf8') > KB_BROWSE_SEGMENT_MAX_BYTES) return false;
@@ -134,7 +134,7 @@ export function isBrowsableName(name: string): boolean {
 }
 
 /** 副檔名允許清單（小寫、完全比對）。 */
-export function hasAllowedExtension(name: string): boolean {
+function hasAllowedExtension(name: string): boolean {
   return KB_BROWSE_ALLOWED_EXTENSIONS.includes(path.posix.extname(name));
 }
 
