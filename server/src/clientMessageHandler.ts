@@ -41,13 +41,13 @@ import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import type { OfficeMcpFeature } from './mcp/composeOfficeMcp.js';
 import { getPaletteCount } from './paletteAssigner.js';
+import { handlePcShellMessage, type PcShellRegistry, type PcShellView } from './pcShells.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
 import { recentCharactersMessage } from './recentCharacters.js';
 import { parseUploadDirectory, resolveUploadDirectory } from './terminal/fileUploads.js';
-import type { PcShells } from './terminal/pcShells.js';
 import { closeStandaloneAgent } from './terminal/standaloneClose.js';
 import {
   KEY_BYPASS_PERMISSIONS,
@@ -118,10 +118,13 @@ export interface ClientMessageContext {
   /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
    *  mode, where the editor owns terminal lifecycle. */
   ptyManager?: TerminalSessions;
-  /** The PC shells (standalone): a PC's plain login shell, opened and closed
-   *  by privileged offices only (the gate above every message), announced to
-   *  every office. Absent = this host opens none (VS Code embedded mode). */
-  pcShells?: PcShells;
+  /** The surface's PC shells as every office sees them: the list in each
+   *  connect's snapshot, and their ids in the card order. Both surfaces. */
+  pcShells?: PcShellView;
+  /** The PC shells opened and closed over /ws, by privileged offices only (the
+   *  gate above every message). Standalone only: VS Code's are opened by its
+   *  own webview, never by its embedded server's /ws clients. */
+  pcShellControl?: PcShellRegistry;
   /** The Pixel Office MCP, on a server that offers it: launches and resumes
    *  get its per-agent config; its consent and settings messages, the editing
    *  lock and the editor's "Undo <agent>'s edit" are answered. Absent = no MCP,
@@ -342,35 +345,12 @@ export function handleClientMessage(
       break;
     }
 
-    case 'openPcShell': {
-      // A PC's shell: privileged (past the gate above) and only where this
-      // office runs terminals (PcShells.open refuses otherwise).
-      if (!ctx.pcShells || typeof msg.uid !== 'string') break;
-      const opened = ctx.pcShells.open(
-        msg.uid,
-        typeof msg.directory === 'string' ? msg.directory : undefined,
-      );
-      send(
-        opened.ok
-          ? { type: 'pcShellReady', id: opened.id }
-          : { type: 'pcShellRejected', uid: msg.uid, reason: opened.reason },
-      );
+    case 'openPcShell':
+    case 'closePcShell':
+      // A PC's shell: privileged (past the gate above), and only where this
+      // office opens them over /ws (the registry refuses without terminals).
+      if (ctx.pcShellControl) handlePcShellMessage(ctx.pcShellControl, msg, (m) => send({ ...m }));
       break;
-    }
-
-    case 'closePcShell': {
-      if (!ctx.pcShells || typeof msg.id !== 'number') break;
-      const id = msg.id;
-      void ctx.pcShells
-        .close(id, msg.confirmed === true)
-        .then((outcome) => {
-          if (!outcome.closed && outcome.question) {
-            send({ type: 'pcShellCloseQuestion', id, ...outcome.question });
-          }
-        })
-        .catch((err: unknown) => console.error('[Pixel Agents] PC shell: close failed:', err));
-      break;
-    }
 
     case 'requestWorktrees':
       void handleRequestWorktrees(store, msg, send);

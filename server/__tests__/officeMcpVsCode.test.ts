@@ -424,9 +424,13 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
     const mcp = createVscodeOfficeMcp({
       store,
       sendText: () => {},
-      defaultLayout: () => null,
+      places: {
+        layout: () => null,
+        catalog: () => [],
+        directories: () => [],
+        readAreaMappings: () => ({}),
+      },
       assets: () => null,
-      directories: () => [],
       characterRefsChanged: () => {},
       ...(tutorial ? { tutorial } : {}),
     });

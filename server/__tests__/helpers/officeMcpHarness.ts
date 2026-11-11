@@ -47,11 +47,12 @@ import { screenTokenGuard } from '../../src/mcp/messaging.js';
 import type { AgentMcpAccess } from '../../src/mcp/officeMcp.js';
 import type { AgentLaunch, OfficeOperations } from '../../src/mcp/officeOperations.js';
 import type { OfficeTool } from '../../src/mcp/tool.js';
+import type { OfficePlaceFacts } from '../../src/officeFacts.js';
 import { claudeProvider, hookProviders } from '../../src/providers/index.js';
 import { PixelAgentsServer } from '../../src/server.js';
 import { ptyAgentTerminals } from '../../src/terminal/agentTerminals.js';
-import { type ForegroundProbe, PcShells } from '../../src/terminal/pcShells.js';
-import { type PtyHost,startPtyHost } from '../../src/terminal/ptyHost.js';
+import { type ForegroundProbe, StandalonePcShells } from '../../src/terminal/pcShells.js';
+import { type PtyHost, startPtyHost } from '../../src/terminal/ptyHost.js';
 import { PtySessionManager } from '../../src/terminal/ptySessionManager.js';
 import { RemotePtySessions } from '../../src/terminal/remotePtySessions.js';
 import { reattachTerminalAgents } from '../../src/terminal/standaloneAgentLauncher.js';
@@ -299,7 +300,7 @@ export interface StandaloneOffice extends AgentSide {
   /** The terminals, in process or the PTY host's client. */
   readonly terminals: TerminalSessions;
   /** The PC shells, composed as cli.ts composes them over the test's layout and catalogue. */
-  readonly pcShells: PcShells;
+  readonly pcShells: StandalonePcShells;
   readonly office: OfficeOperations;
   readonly officeMcp: OfficeMcpFeature;
   readonly server: PixelAgentsServer;
@@ -370,7 +371,7 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
   let runtime: AgentRuntime;
   let ptyManager: TerminalSessions;
   let ptyHost: PtyHost | null = null;
-  let pcShells: PcShells;
+  let pcShells: StandalonePcShells;
   let officeMcp: OfficeMcpFeature;
   let server: PixelAgentsServer;
   let unhold: (() => void) | undefined;
@@ -568,19 +569,23 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
     const counts = options.assets;
     const terminals = ptyAgentTerminals(ptyManager);
     // Composed as cli.ts composes it, over the test's layout, catalogue and assets.
+    // The office's layout and places, read alike by the MCP and the PC shells.
+    // As cli.ts: the host's folder and the user's own (config.json).
+    const places: OfficePlaceFacts = {
+      layout: layout === 'file' ? () => readLayoutFromFile() : (layout ?? (() => null)),
+      catalog,
+      directories: () => listDirectoryLocations(directories),
+      readAreaMappings: () => readConfig().standalone.areaMappings,
+    };
     officeMcp = composeOfficeMcp({
       facts: {
+        ...places,
         store,
         provider: options.provider ?? claudeProvider,
-        layout: layout === 'file' ? () => readLayoutFromFile() : (layout ?? (() => null)),
         writeLayout: writeLayoutToFile,
-        catalog,
         assets: counts ?? (() => ({ floorPatterns: 0, wallSets: 0, carpets: 0, pets: [] })),
-        // As cli.ts: the host's folder and the user's own (config.json).
-        directories: () => listDirectoryLocations(directories),
         userDirectories: userDirectoryDefaults,
         seats: () => adapter.loadSeats(),
-        readAreaMappings: () => readConfig().standalone.areaMappings,
         writeAreaMappings: (mappings) => {
           const cfg = readConfig();
           cfg.standalone.areaMappings = mappings;
@@ -632,14 +637,12 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       store.broadcast(message);
       officeMcp.charactersChanged();
     }, store);
-    pcShells = new PcShells({
+    pcShells = new StandalonePcShells({
       ptyManager,
+      saves: adapter,
+      facts: places,
+      directories: places.directories,
       broadcast: (message) => store.broadcast({ ...message }),
-      layout: layout === 'file' ? () => readLayoutFromFile() : (layout ?? (() => null)),
-      catalog,
-      areaMappings: () => readConfig().standalone.areaMappings,
-      directories: () => listDirectoryLocations(directories),
-      state: adapter,
       providers: hookProviders,
       ...(options.foreground ? { foreground: options.foreground } : {}),
     });
@@ -651,6 +654,7 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       embedded: false,
       ptyManager,
       pcShells,
+      pcShellControl: pcShells,
       officeMcp,
     });
     if (options.forwardHooks) {
@@ -775,9 +779,13 @@ export function useVscodeOffice(options: VscodeOfficeOptions): VscodeOffice {
     mcp = createVscodeOfficeMcp({
       store,
       sendText: options.sendText,
-      defaultLayout: () => null,
+      places: {
+        layout: () => null,
+        catalog: () => [],
+        directories: () => [{ name: 'proj', path: workspace }],
+        readAreaMappings: () => readConfig().vscode.areaMappings ?? {},
+      },
       assets: () => null,
-      directories: () => [{ name: 'proj', path: workspace }],
       characterRefsChanged: () => {},
     });
     server = new PixelAgentsServer();

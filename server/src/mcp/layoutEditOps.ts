@@ -53,6 +53,7 @@ import {
   wallSetOf,
 } from '../../../core/src/layout/index.js';
 import type { ColorValue } from '../../../core/src/schemas.js';
+import type { AreaMappings } from '../officeFacts.js';
 import { findArea, MAX_FLOOR_PATTERN } from './layoutView.js';
 
 // ── Input ────────────────────────────────────────────────────
@@ -222,7 +223,7 @@ export type LayoutOp = z.infer<typeof layoutOpSchema>;
 // ── Applying ─────────────────────────────────────────────────
 
 /** Directory name → the Area labels it maps to (config `areaMappings`). */
-export type AreaMappings = Record<string, string[]>;
+export type { AreaMappings };
 
 /** What a batch starts from. */
 export interface LayoutEditStart {

@@ -103,6 +103,7 @@ export class FileStateAdapter implements StateAdapter {
     this.patchState({ cardOrder: order });
   }
 
+  /** The live PC shells (standalone: terminal/pcShells.ts PcShellSaves). */
   loadPcShells(): PersistedPcShell[] {
     return this.readState().pcShells;
   }

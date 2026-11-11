@@ -23,9 +23,9 @@ import {
 } from './constants.js';
 import { applyReportedContext } from './contextUsage.js';
 import type { OfficeMcpFeature } from './mcp/composeOfficeMcp.js';
+import type { PcShellRegistry, PcShellView } from './pcShells.js';
 import { hookProviderById } from './providers/index.js';
 import { startUploadSweeps } from './terminal/fileUploads.js';
-import type { PcShells } from './terminal/pcShells.js';
 import { registerTerminalRoutes } from './terminal/terminalRoutes.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
 import type { AgentState } from './types.js';
@@ -69,8 +69,10 @@ export interface HttpServerOptions {
   /** PTY terminals for standalone-launched agents. Absent = terminal feature off
    *  (VS Code embedded mode, where the editor owns terminals). */
   ptyManager?: TerminalSessions;
-  /** The PC shells (standalone): their messages are handled, their list sent on connect. */
-  pcShells?: PcShells;
+  /** The PC shells: their list sent on connect, their ids kept in the card order (both surfaces). */
+  pcShells?: PcShellView;
+  /** The PC shells opened and closed over /ws (standalone only). */
+  pcShellControl?: PcShellRegistry;
   /** The package root holding dist/hooks/ (standalone), from which the Usage
    *  Bars toggle installs the status line bridge script. */
   packageRoot?: string;
@@ -314,6 +316,7 @@ function registerWebSocketRoute(
           privileged,
           ptyManager: options.ptyManager,
           pcShells: options.pcShells,
+          pcShellControl: options.pcShellControl,
           officeMcp: options.officeMcp,
           client: socket,
         });

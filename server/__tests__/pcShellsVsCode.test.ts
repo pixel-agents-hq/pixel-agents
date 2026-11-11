@@ -63,12 +63,17 @@ vi.mock('vscode', () => ({
   },
 }));
 
+import { WebSocket } from 'ws';
+
 import { VscodePcShells } from '../../adapters/vscode/vscodePcShells.js';
 import { VscodeTerminalAdapter } from '../../adapters/vscode/vscodeTerminalAdapter.js';
 import { PC_SHELL_ID_BASE } from '../../core/src/constants.js';
 import type { CatalogSource } from '../../core/src/layout/index.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
-import { type Json, loadBundledAssets, seededLayout } from './helpers/officeMcpHarness.js';
+import { FileStateAdapter } from '../src/fileStateAdapter.js';
+import { handlePcShellMessage } from '../src/pcShells.js';
+import { PixelAgentsServer } from '../src/server.js';
+import { type Json, loadBundledAssets, seededLayout, waitFor } from './helpers/officeMcpHarness.js';
 import { A_DESK, FRONT_PC, OTHER_PC } from './helpers/pcShellDriver.js';
 
 let catalog: readonly CatalogSource[] = [];
@@ -107,9 +112,11 @@ describe('PC shells in a VS Code office (vscode-free composition, fake terminals
     shells = new VscodePcShells({
       terminals: new VscodeTerminalAdapter(),
       broadcast: (m) => store.broadcast({ ...m }),
-      layout: () => layout,
-      catalog: () => catalog,
-      areaMappings: () => areaMappings,
+      facts: {
+        layout: () => layout,
+        catalog: () => catalog,
+        readAreaMappings: () => areaMappings,
+      },
       directories: () => [...workspaceFolders, ...userDirs],
       workspaceFolders: () => workspaceFolders,
     });
@@ -123,7 +130,7 @@ describe('PC shells in a VS Code office (vscode-free composition, fake terminals
 
   /** What the webview sends, as the provider hands it over; whether it was this module's. */
   const send = (message: Json): boolean =>
-    shells.handleMessage(message, (m) => replies.push(m as Json));
+    handlePcShellMessage(shells, message, (m) => replies.push(m as Json));
   /** The newest list every office was told of. */
   const announced = (): Json[] | null => {
     const last = broadcasts.filter((m) => m.type === 'pcShellsLoaded').at(-1);
@@ -251,6 +258,51 @@ describe('PC shells in a VS Code office (vscode-free composition, fake terminals
     expect(send({ type: 'launchAgent' })).toBe(false);
     expect(terminals).toHaveLength(0);
     expect(replies).toEqual([]);
+  });
+
+  it("the embedded server's /ws offices get the shells on connect and keep their cards in the order, but cannot open one", async () => {
+    store.setAdapter(new FileStateAdapter({ namespace: 'vscode' }));
+    const id = open(FRONT_PC).id as number;
+    // As the provider composes its embedded server: the shells' list, no control.
+    const server = new PixelAgentsServer();
+    const config = await server.start({ store, embedded: true, pcShells: shells });
+    try {
+      const received: Json[] = [];
+      const ws = new WebSocket(`ws://127.0.0.1:${config.port}/ws`, {
+        headers: { Authorization: `Bearer ${config.token}` },
+      });
+      ws.on('message', (raw) => received.push(JSON.parse(String(raw)) as Json));
+      await new Promise<void>((resolve, reject) => {
+        ws.once('open', () => resolve());
+        ws.once('error', reject);
+      });
+      ws.send(JSON.stringify({ type: 'webviewReady' }));
+      // The connect snapshot lists the window's shell (a reconnect is a resync).
+      await waitFor(
+        () => received.find((m) => m.type === 'pcShellsLoaded'),
+        'the shells in the snapshot',
+      );
+      expect(received.find((m) => m.type === 'pcShellsLoaded')!.shells).toEqual(announced());
+
+      // A reorder keeps the shell's card.
+      ws.send(JSON.stringify({ type: 'saveCardOrder', order: [id] }));
+      await waitFor(
+        () => broadcasts.find((m) => m.type === 'cardOrderLoaded'),
+        'the reorder broadcast',
+      );
+      expect(broadcasts.find((m) => m.type === 'cardOrderLoaded')!.order).toEqual([id]);
+
+      // Only the window's own webview opens a shell: a /ws office is not answered.
+      ws.send(JSON.stringify({ type: 'openPcShell', uid: OTHER_PC }));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(received.some((m) => m.type === 'pcShellReady' || m.type === 'pcShellRejected')).toBe(
+        false,
+      );
+      expect(terminals).toHaveLength(1);
+      ws.close();
+    } finally {
+      server.stop();
+    }
   });
 
   it('stops following VS Code once disposed', () => {

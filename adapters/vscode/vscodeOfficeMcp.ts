@@ -22,10 +22,11 @@ import type { TerminalHandle } from '../../core/src/terminalAdapter.js';
 import type { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
 import { userDirectoryDefaults } from '../../server/src/directories.js';
-import { readLayoutFromFile, writeLayoutToFile } from '../../server/src/layoutPersistence.js';
+import { writeLayoutToFile } from '../../server/src/layoutPersistence.js';
 import { composeOfficeMcp, type OfficeMcpFeature } from '../../server/src/mcp/composeOfficeMcp.js';
 import { turnGuard } from '../../server/src/mcp/messaging.js';
 import type { AssetCounts } from '../../server/src/mcp/officeFacts.js';
+import type { OfficePlaceFacts } from '../../server/src/officeFacts.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { screenlessAgentTerminals } from '../../server/src/terminal/agentTerminals.js';
 import type { TutorialSurface } from '../../server/src/tutorial/tutorial.js';
@@ -39,12 +40,11 @@ export interface VscodeOfficeMcpDeps {
   store: AgentStateStore;
   /** Types into a terminal (the terminal adapter's sendText). */
   sendText(terminal: TerminalHandle, text: string): void;
-  /** The bundled default layout, for an office that saved none. */
-  defaultLayout(): Record<string, unknown> | null;
+  /** The window's layout, catalogue, Directories (workspace folders and the
+   *  user's) and Area mappings: its one OfficePlaceFacts, the PC shells' too. */
+  places: OfficePlaceFacts;
   /** The loaded assets, or null before they are. */
   assets(): VscodeOfficeAssets | null;
-  /** This window's Directories (workspace folders and the user's). */
-  directories(): ReadonlyArray<{ name: string; path: string }>;
   /** Re-send the Directories and the roster's recency (an agent's Character edit moved them). */
   characterRefsChanged(): void;
   /** How this window launches the tutorial's Guide and ends it. */
@@ -59,11 +59,10 @@ export function createVscodeOfficeMcp(deps: VscodeOfficeMcpDeps): OfficeMcpFeatu
   );
   return composeOfficeMcp({
     facts: {
+      ...deps.places,
       store,
       provider: claudeProvider,
-      layout: () => readLayoutFromFile() ?? deps.defaultLayout(),
       writeLayout: writeLayoutToFile,
-      catalog: () => deps.assets()?.catalog ?? [],
       assets: () => {
         const assets = deps.assets();
         return {
@@ -73,10 +72,8 @@ export function createVscodeOfficeMcp(deps: VscodeOfficeMcpDeps): OfficeMcpFeatu
           pets: assets?.pets ?? [],
         };
       },
-      directories: () => deps.directories(),
       userDirectories: userDirectoryDefaults,
       seats: () => store.getAdapter()?.loadSeats() ?? {},
-      readAreaMappings: () => readConfig().vscode.areaMappings ?? {},
       writeAreaMappings: (mappings) => {
         const cfg = readConfig();
         cfg.vscode.areaMappings = mappings;

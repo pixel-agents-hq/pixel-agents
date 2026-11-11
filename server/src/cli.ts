@@ -46,6 +46,7 @@ import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import { composeOfficeMcp, type OfficeMcpFeature } from './mcp/composeOfficeMcp.js';
 import { screenTokenGuard } from './mcp/messaging.js';
+import type { OfficePlaceFacts } from './officeFacts.js';
 import {
   claudeProvider,
   copyHookScript,
@@ -54,7 +55,7 @@ import {
 } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 import { ptyAgentTerminals } from './terminal/agentTerminals.js';
-import { PcShells } from './terminal/pcShells.js';
+import { StandalonePcShells } from './terminal/pcShells.js';
 import {
   defaultPtyHostSocket,
   ptyHostLogFile,
@@ -441,24 +442,28 @@ async function main(): Promise<void> {
 
     // The Pixel Office MCP: served at /mcp, its tools acting on this office;
     // agents launched (or resumed) here get it once the user consents.
+    // The office's layout and places, read alike by the MCP and the PC shells.
+    const places: OfficePlaceFacts = {
+      layout: () => readLayoutFromFile() ?? assetCache.defaultLayout,
+      catalog: () => assetCache.furniture?.catalog ?? [],
+      directories: () => listDirectoryLocations([hostDirectory()]),
+      readAreaMappings: () => readConfig().standalone.areaMappings,
+    };
     const terminals = ptyAgentTerminals(ptyManager);
     const officeMcp = composeOfficeMcp({
       facts: {
+        ...places,
         store,
         provider: claudeProvider,
-        layout: () => readLayoutFromFile() ?? assetCache.defaultLayout,
         writeLayout: writeLayoutToFile,
-        catalog: () => assetCache.furniture?.catalog ?? [],
         assets: () => ({
           floorPatterns: assetCache.floorTiles?.length ?? 0,
           wallSets: assetCache.wallTiles?.length ?? 0,
           carpets: assetCache.carpetTiles?.length ?? 0,
           pets: assetCache.pets?.manifests ?? [],
         }),
-        directories: () => listDirectoryLocations([hostDirectory()]),
         userDirectories: userDirectoryDefaults,
         seats: () => adapter.loadSeats(),
-        readAreaMappings: () => readConfig().standalone.areaMappings,
         writeAreaMappings: (mappings) => {
           const cfg = readConfig();
           cfg.standalone.areaMappings = mappings;
@@ -501,14 +506,12 @@ async function main(): Promise<void> {
 
     // PC shells: a PC's plain login shell, on the agents' terminal sessions
     // (never an agent: the MCP above never sees one).
-    const pcShells = new PcShells({
+    const pcShells = new StandalonePcShells({
       ptyManager,
-      state: adapter,
+      saves: adapter,
+      facts: places,
+      directories: places.directories,
       broadcast: (message) => store.broadcast({ ...message }),
-      layout: () => readLayoutFromFile() ?? assetCache.defaultLayout,
-      catalog: () => assetCache.furniture?.catalog ?? [],
-      areaMappings: () => readConfig().standalone.areaMappings,
-      directories: () => listDirectoryLocations([hostDirectory()]),
       providers: hookProviders,
     });
     // Shells whose terminals outlived the last server (--pty-host): back
@@ -530,6 +533,7 @@ async function main(): Promise<void> {
       onReloadAssets,
       ptyManager,
       pcShells,
+      pcShellControl: pcShells,
       packageRoot,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,

@@ -8,7 +8,6 @@
  */
 
 import {
-  type CatalogSource,
   type FurnitureCatalog,
   layoutFromJson,
   type OfficeLayout,
@@ -17,32 +16,26 @@ import {
 } from '../../../core/src/layout/index.js';
 import type { HookProvider } from '../../../core/src/provider.js';
 import type { AgentStateStore } from '../agentStateStore.js';
+import { catalogOf, type OfficePlaceFacts } from '../officeFacts.js';
 import type { AreaMappings } from './layoutEditOps.js';
 import type { OfficeAssets } from './officeOperations.js';
-import { catalogOf, type SeatPlace, seatsOf } from './seatPlace.js';
+import { type SeatPlace, seatsOf } from './seatPlace.js';
 
 /** How many floor patterns, wall sets and carpets are loaded, and the pets (by petType). */
 export type AssetCounts = Omit<OfficeAssets, 'catalog'>;
 
-/** What a surface's office is made of, as the MCP reads and writes it. */
-export interface OfficeFacts {
+/** What a surface's office is made of, as the MCP reads and writes it: the
+ *  surface's one OfficePlaceFacts (../officeFacts.ts), and what only the MCP needs. */
+export interface OfficeFacts extends OfficePlaceFacts {
   store: AgentStateStore;
   provider: HookProvider;
-  /** The saved layout (or the default one), as JSON. */
-  layout(): Record<string, unknown> | null;
   /** Save a layout (the office's layout persistence: atomic, watchers marked). */
   writeLayout(layout: Record<string, unknown>): void;
-  /** The furniture catalogue data (empty before it is loaded). */
-  catalog(): readonly CatalogSource[];
   assets(): AssetCounts;
-  /** This host's Directories (name → path). */
-  directories(): ReadonlyArray<{ name: string; path: string }>;
   /** The user's own Directories (config.json), with their default characters (palette indices). */
   userDirectories(): ReadonlyArray<{ name: string; path: string; characters: readonly number[] }>;
   /** The seats the office saved (agent id → seat id). */
   seats(): Record<string, { seatId?: string }>;
-  /** Directory name → the Area labels it is mapped to (the office's areaMappings). */
-  readAreaMappings(): AreaMappings;
   writeAreaMappings(mappings: AreaMappings): void;
   /** The Directories' default characters or the roster's recency changed (an agent's
    *  Character edit): re-send them to every office, as a Characters-view save does. */

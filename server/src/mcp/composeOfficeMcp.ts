@@ -22,6 +22,7 @@ import {
   setDirectoryCharacters,
   writeUserDirectories,
 } from '../directories.js';
+import { catalogOf } from '../officeFacts.js';
 import type { AgentTerminals } from '../terminal/agentTerminals.js';
 import { writeOnboardingPlugin } from '../tutorial/onboardingPlugin.js';
 import { Tutorial, type TutorialSurface } from '../tutorial/tutorial.js';
@@ -43,7 +44,6 @@ import { type OfficeFacts, officeSnapshot } from './officeFacts.js';
 import { type AgentMcpAccess, OfficeMcp } from './officeMcp.js';
 import { handleOfficeMcpMessage } from './officeMcpMessages.js';
 import type { AgentLaunch, AgentLaunchOutcome, OfficeOperations } from './officeOperations.js';
-import { catalogOf } from './seatPlace.js';
 import type { OfficeTool } from './tool.js';
 import { createVisitOps } from './visitsOps.js';
 

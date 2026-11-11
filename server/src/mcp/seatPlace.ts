@@ -5,8 +5,6 @@
  */
 
 import {
-  type CatalogSource,
-  createFurnitureCatalog,
   type FurnitureCatalog,
   layoutToSeats,
   type OfficeLayout,
@@ -16,19 +14,6 @@ export interface SeatPlace {
   tile: { col: number; row: number };
   /** The label of the Area holding the tile, or null. */
   area: string | null;
-}
-
-const catalogs = new WeakMap<readonly CatalogSource[], FurnitureCatalog | null>();
-
-/** The catalogue built from catalogue data, once per data array. */
-export function catalogOf(data: readonly CatalogSource[]): FurnitureCatalog | null {
-  if (data.length === 0) return null;
-  let catalog = catalogs.get(data);
-  if (catalog === undefined) {
-    catalog = createFurnitureCatalog(data);
-    catalogs.set(data, catalog);
-  }
-  return catalog;
 }
 
 /** Every seat of the layout, by seat id. */

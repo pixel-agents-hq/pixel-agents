@@ -10,7 +10,6 @@
  * interface -- it's already host-agnostic (plain fs I/O in layoutPersistence.ts).
  */
 
-import type { PersistedPcShell } from './pcShells.js';
 import type { PersistedAgent } from './schemas.js';
 
 export interface StateAdapter {
@@ -27,11 +26,6 @@ export interface StateAdapter {
    *  keeps creation order and drops reorders. */
   loadCardOrder?(): number[];
   saveCardOrder?(order: number[]): void;
-
-  /** The live PC shells, so a restart can bring back the ones whose terminals
-   *  outlived it (the PTY host). An adapter without these saves none. */
-  loadPcShells?(): PersistedPcShell[];
-  savePcShells?(shells: PersistedPcShell[]): void;
 
   // ── User-level settings (shared file, namespaced per adapter) ─────
 

@@ -63,8 +63,10 @@ import {
   writeLayoutToFile,
 } from '../../server/src/layoutPersistence.js';
 import type { OfficeMcpFeature } from '../../server/src/mcp/composeOfficeMcp.js';
+import type { OfficePlaceFacts } from '../../server/src/officeFacts.js';
 import { getPaletteCount } from '../../server/src/paletteAssigner.js';
 import { PathSet } from '../../server/src/pathKey.js';
+import { handlePcShellMessage } from '../../server/src/pcShells.js';
 import type { ConsentEffects } from '../../server/src/providers/hook/consentExecutor.js';
 import { applyConsentChoice } from '../../server/src/providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from '../../server/src/providers/hook/consentGate.js';
@@ -211,22 +213,26 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     const terminalAdapter = new VscodeTerminalAdapter();
     setTerminalAdapter(terminalAdapter);
-    this.pcShells = new VscodePcShells({
-      terminals: terminalAdapter,
-      // Through the store: the panel and the embedded server's /ws clients alike.
-      broadcast: (m) => this.store.broadcast({ ...m }),
+    // The window's layout and places, read alike by the MCP and the PC shells.
+    const places: OfficePlaceFacts = {
       layout: () => readLayoutFromFile() ?? this.defaultLayout,
       catalog: () => this.officeAssets?.catalog ?? [],
-      areaMappings: () => readConfig().vscode.areaMappings ?? {},
       directories: () => listDirectoryLocations(this.hostDirectories()),
+      readAreaMappings: () => readConfig().vscode.areaMappings ?? {},
+    };
+    this.pcShells = new VscodePcShells({
+      terminals: terminalAdapter,
+      facts: places,
+      directories: places.directories,
+      // Through the store: the panel and the embedded server's /ws clients alike.
+      broadcast: (m) => this.store.broadcast({ ...m }),
       workspaceFolders: () => workspaceDirectories(),
     });
     this.mcp = createVscodeOfficeMcp({
       store: this.store,
       sendText: (terminal, text) => terminalAdapter.sendText(terminal, text),
-      defaultLayout: () => this.defaultLayout,
+      places,
       assets: () => this.officeAssets,
-      directories: () => listDirectoryLocations(this.hostDirectories()),
       characterRefsChanged: () => {
         this.sendDirectories();
         this.sendOrBuffer(recentCharactersMessage());
@@ -401,6 +407,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         store: this.store,
         embedded: true,
         officeMcp: this.mcp,
+        // Its /ws clients get the shells in their snapshot and keep their
+        // cards in the order; only this window's webview opens one.
+        pcShells: this.pcShells,
       })
       .then((config) => {
         // Server always starts regardless of hooks-enabled state.
@@ -615,7 +624,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         return;
       }
       // PC shells: open, close, and a shell's card pressed (focusAgent with its id).
-      if (this.pcShells.handleMessage(message, (m) => this.sendOrBuffer({ ...m }))) return;
+      if (handlePcShellMessage(this.pcShells, message, (m) => this.sendOrBuffer({ ...m }))) return;
       if (message.type === 'launchAgent') {
         const picked = rosterPick(message.palette, getPaletteCount());
         // Every launch comes from a drawer row and carries its Directory's
