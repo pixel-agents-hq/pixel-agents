@@ -322,6 +322,20 @@ function App() {
     onChoice: handleConsentChoice,
     onClose: handleIntroClose,
   } = useIntroTour({ consentRequest, hooksInstalled, hooksStatusSeq, dismissConsentRequest });
+  // An office still on its Intro is new here whatever version it last opened
+  // on: nothing is announced to it as an update, and the version it meets the
+  // Intro on is recorded as seen, so the notice doesn't follow the Intro either.
+  const introUnfinished = intro !== null || consentRequest !== null;
+  useEffect(() => {
+    if (
+      introUnfinished &&
+      currentMajorMinor &&
+      lastSeenVersion !== '' &&
+      lastSeenVersion !== currentMajorMinor &&
+      !officeReadOnly
+    )
+      transport.send({ type: 'setLastSeenVersion', version: currentMajorMinor });
+  }, [introUnfinished, currentMajorMinor, lastSeenVersion, officeReadOnly]);
   // The Intro's Pixel Office MCP step (after the hooks one, or alone for an
   // office that finished the Intro before it existed) and its Settings rows.
   const officeMcp = useOfficeMcp();
@@ -821,7 +835,7 @@ function App() {
       <VersionIndicator
         currentVersion={extensionVersion}
         lastSeenVersion={lastSeenVersion}
-        hideUpdateNotice={officeReadOnly}
+        hideUpdateNotice={officeReadOnly || introUnfinished}
         onDismiss={handleWhatsNewDismiss}
         onOpenChangelog={handleOpenChangelog}
       />
