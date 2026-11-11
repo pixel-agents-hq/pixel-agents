@@ -286,7 +286,7 @@ function backToPreview(
 }
 
 /** Whether this client may show the Role picker at all: only the standalone
- *  browser, and only as a privileged (non read-only) session. */
-export function rolePickerAvailable(isBrowserRuntime: boolean, officeReadOnly: boolean): boolean {
-  return isBrowserRuntime && !officeReadOnly;
+ *  browser. */
+export function rolePickerAvailable(isBrowserRuntime: boolean): boolean {
+  return isBrowserRuntime;
 }

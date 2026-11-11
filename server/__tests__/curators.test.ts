@@ -195,24 +195,6 @@ describe('Workspace curators', () => {
     }
   });
 
-  // ── Access ──────────────────────────────────────────────────
-
-  it('drops a read-only client silently, changing nothing', () => {
-    const ws = h.workspace('alpha');
-    const { id } = h.launch({ kb: true, directoryPath: ws.dir });
-    const readOnly = h.ctx({ privileged: false });
-
-    expect(
-      h.send({ type: 'setWorkspaceCurator', workspaceId: ws.id, agentId: id }, readOnly),
-    ).toEqual([]);
-    expect(h.curators.list()).toEqual([]);
-
-    expect(set(ws.id, id)).toEqual([]);
-    expect(h.send({ type: 'unsetWorkspaceCurator', workspaceId: ws.id }, readOnly)).toEqual([]);
-    expect(h.curators.curatorOf(ws.id)).toBe(id);
-    expect(h.curatorBroadcasts()).toHaveLength(1);
-  });
-
   it('answers unavailable without a terminal manager, runtime or curator table', () => {
     const ws = h.workspace('alpha');
     const { id } = h.launch({ kb: true, directoryPath: ws.dir });
@@ -232,7 +214,12 @@ describe('Workspace curators', () => {
       const loaded = h
         .send({ type: 'webviewReady' }, context)
         .find((m) => m.type === 'curatorsLoaded');
-      expect(loaded).toEqual({ type: 'curatorsLoaded', available: false, curators: [] });
+      expect(loaded).toEqual({
+        type: 'curatorsLoaded',
+        available: false,
+        curators: [],
+        bindings: [],
+      });
     }
     expect(h.curatorBroadcasts()).toEqual([]);
   });
@@ -241,7 +228,12 @@ describe('Workspace curators', () => {
     const loaded = h
       .send({ type: 'webviewReady' }, h.ctx({ isKbEnabled: undefined, capabilities: undefined }))
       .find((m) => m.type === 'curatorsLoaded');
-    expect(loaded).toEqual({ type: 'curatorsLoaded', available: true, curators: [] });
+    expect(loaded).toEqual({
+      type: 'curatorsLoaded',
+      available: true,
+      curators: [],
+      bindings: [],
+    });
   });
 
   it('sends curatorsLoaded to the connecting client only, with the current curators', () => {
@@ -255,18 +247,13 @@ describe('Workspace curators', () => {
       type: 'curatorsLoaded',
       available: true,
       curators: [{ workspaceId: ws.id, agentId: id }],
+      bindings: [],
     });
     // After the Workspace list, before any agent names one.
     const order = replies.map((m) => m.type);
     expect(order.indexOf('curatorsLoaded')).toBeGreaterThan(order.indexOf('workspacesLoaded'));
     expect(order.indexOf('curatorsLoaded')).toBeLessThan(order.indexOf('existingAgents'));
     expect(h.broadcasts.some((m) => m.type === 'curatorsLoaded')).toBe(false);
-
-    // A read-only office is told too (it hides the controls itself).
-    const readOnly = h
-      .send({ type: 'webviewReady' }, h.ctx({ privileged: false }))
-      .find((m) => m.type === 'curatorsLoaded');
-    expect(readOnly).toEqual(loaded);
   });
 
   it('removing a Workspace clears its curator record', () => {

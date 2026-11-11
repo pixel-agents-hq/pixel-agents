@@ -143,26 +143,6 @@ describe('parseArgs', () => {
       port: 3100,
     });
   });
-
-  // 12. --allowed-host is repeatable and validated; --rotate-token is a switch
-  it('collects repeated --allowed-host values', () => {
-    expect(parseArgs([]).allowedHosts).toEqual([]);
-    expect(
-      parseArgs(['--allowed-host', 'mac.tailnet.ts.net', '--allowed-host', 'other.example'])
-        .allowedHosts,
-    ).toEqual(['mac.tailnet.ts.net', 'other.example']);
-  });
-
-  it('rejects a missing, malformed or wildcard --allowed-host', () => {
-    expect(() => parseArgs(['--allowed-host'])).toThrow(/Missing value/);
-    expect(() => parseArgs(['--allowed-host', 'evil@127.0.0.1'])).toThrow(CliArgsError);
-    expect(() => parseArgs(['--allowed-host', '0.0.0.0'])).toThrow(CliArgsError);
-  });
-
-  it('parses --rotate-token', () => {
-    expect(parseArgs([]).rotateToken).toBe(false);
-    expect(parseArgs(['--rotate-token']).rotateToken).toBe(true);
-  });
 });
 
 // The TTY consent prompt is gone: first-run consent is asked in the app, as
@@ -257,26 +237,22 @@ describe('dist/cli.js entry-point guard', () => {
     return new URL(match[1]);
   }
 
-  /** The token the server actually minted, read from its own discovery file —
-   *  an independent witness, so a printed token that drifts from it fails. */
+  /** The hook token the server minted, read from its own discovery file. */
   function mintedToken(tmpHome: string): string {
     const raw = fs.readFileSync(path.join(tmpHome, '.pixel-agents', 'server.json'), 'utf-8');
     return (JSON.parse(raw) as { token: string }).token;
   }
 
-  // The printed URL is the ONLY channel by which a real browser obtains the
-  // token, and the token is the whole privilege gate (httpServer.ts
-  // standaloneTokenValid). A bare URL, or one carrying the wrong token, ships a
-  // silently read-only session: the office renders, and the hooks toggle is
-  // refused with no way for the operator to find out why. Nothing else in this
-  // repo reads the CLI's stdout, so nothing else can catch that.
-  itBuilt('prints a URL carrying the token the server actually minted', async () => {
+  // The printed URL carries no token: the browser needs none, and the hook
+  // token in server.json is for the hook script alone.
+  itBuilt('prints a bare URL that does not carry the hook token', async () => {
     const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-url-'));
     await runCliServer(tmpHome, async ({ output, port }) => {
       await waitForCondition(() => URL_LINE.test(output()));
       const url = printedUrl(output());
 
-      expect(url.searchParams.get('token')).toBe(mintedToken(tmpHome));
+      expect(url.search).toBe('');
+      expect(output()).not.toContain(mintedToken(tmpHome));
       expect(url.port).toBe(port.toString());
       // And it is browsable as printed — the SPA, not a 404 or a dead host.
       const response = await fetch(url);
@@ -302,8 +278,6 @@ describe('dist/cli.js entry-point guard', () => {
 
         expect(url.hostname).not.toBe('0.0.0.0');
         expect(['127.0.0.1', 'localhost', '[::1]', '::1']).toContain(url.hostname);
-        // The wildcard bind must not cost the operator the token either.
-        expect(url.searchParams.get('token')).toBe(mintedToken(tmpHome));
         expect((await fetch(url)).status).toBe(200);
       },
       '0.0.0.0',

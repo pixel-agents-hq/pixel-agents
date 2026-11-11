@@ -5,8 +5,7 @@
 //
 // The host is the authority. `curatorsLoaded.available` says whether this host
 // supports curators at all; it is false (or never sent) in the VS Code panel
-// and in any embedded host, and a read-only office never shows the controls
-// either. A standalone host appoints any PTY agent of the Workspace (no
+// and in any embedded host. A standalone host appoints any PTY agent of the Workspace (no
 // capability needed); an external or restored agent is answered `not_eligible`.
 
 import type {
@@ -80,9 +79,9 @@ export function noteCuratorRequest(state: CuratorState, agentId: number): Curato
   return { ...state, pendingAgentId: agentId, rejection: null };
 }
 
-/** Controls appear only on a host that supports curators, for a privileged office. */
-export function curatorControlsVisible(state: CuratorState, readOnly: boolean): boolean {
-  return state.available && !readOnly;
+/** Controls appear only on a host that supports curators. */
+export function curatorControlsVisible(state: CuratorState): boolean {
+  return state.available;
 }
 
 /** Whether this agent is the curator of the Workspace it belongs to. */
@@ -101,11 +100,10 @@ export type CuratorCardAction =
  */
 export function curatorCardAction(
   state: CuratorState,
-  readOnly: boolean,
   agentId: number,
   workspaceId: string,
 ): CuratorCardAction {
-  if (!curatorControlsVisible(state, readOnly)) return { kind: 'none' };
+  if (!curatorControlsVisible(state)) return { kind: 'none' };
   const current = state.byWorkspace[workspaceId];
   if (current === agentId) {
     return { kind: 'dismiss', message: { type: 'unsetWorkspaceCurator', workspaceId } };

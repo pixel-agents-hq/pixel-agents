@@ -189,9 +189,6 @@ interface ExtensionMessageState {
   selectWorkspace: (workspaceId: string) => void;
   /** Last refused saveWorkspace/removeWorkspace. */
   workspaceRejection: WorkspaceRejection | null;
-  /** A read-only office (standalone without the server token): every change it
-   *  sends is refused, so the UI hides the controls that would send one. */
-  officeReadOnly: boolean;
   /** Role display name per agent id (agents launched with a Role only). */
   agentRoleNames: AgentRoleNames;
   /** Workspace curators as the host reported them (standalone only; stays
@@ -282,8 +279,6 @@ export function useExtensionMessages(
       updateWorkspaceView(selectWorkspace(workspaceViewRef.current, workspaceId)),
     [updateWorkspaceView],
   );
-  // Never sent under VS Code, so it stays false there.
-  const [officeReadOnly, setOfficeReadOnly] = useState(false);
   const [agentRoleNames, setAgentRoleNames] = useState<AgentRoleNames>({});
   const [curators, setCurators] = useState<CuratorState>(INITIAL_CURATORS);
   const requestCurator = useCallback((agentId: number, message: ClientMessage) => {
@@ -355,11 +350,6 @@ export function useExtensionMessages(
           readingTools: msg.readingTools,
           subagentToolNames: msg.subagentToolNames,
         });
-        return;
-      }
-
-      if (msg.type === 'officeAccess') {
-        setOfficeReadOnly(msg.readOnly === true);
         return;
       }
 
@@ -1036,7 +1026,6 @@ export function useExtensionMessages(
     workspaceView,
     selectWorkspace: handleSelectWorkspace,
     workspaceRejection,
-    officeReadOnly,
     agentRoleNames,
     curators,
     requestCurator,

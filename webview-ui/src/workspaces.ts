@@ -169,15 +169,9 @@ export function shouldShowWorkspaceSwitcher(input: {
   return input.isBrowserRuntime && input.workspaces !== null;
 }
 
-/** A read-only office is refused every workspace write, so it gets no control
- *  that would send one. */
-export function canCreateWorkspace(readOnly: boolean): boolean {
-  return !readOnly;
-}
-
 /** Edit and delete live in one modal; the default Workspace has neither. */
-export function canEditWorkspace(readOnly: boolean, workspaceId: string): boolean {
-  return !readOnly && workspaceId !== DEFAULT_WORKSPACE_ID;
+export function canEditWorkspace(workspaceId: string): boolean {
+  return workspaceId !== DEFAULT_WORKSPACE_ID;
 }
 
 /** What a tab's badge says about an agent: it is blocked on a permission, or it

@@ -106,6 +106,14 @@ export class GuardStatusReporter {
     for (const [id] of this.deps.store) send(this.messageFor(id));
   }
 
+  /**
+   * 寫入規則對此 Agent 是否生效（與 agentGuardStatus 的 active 同一個判準：hook 鏈完整
+   * 且已收過此 session 的裁決請求）。只讀記憶體（快取的鏈檢查），任務派送用。
+   */
+  isGuardActive(id: number): boolean {
+    return this.statusFor(id).active;
+  }
+
   private messageFor(id: number): Record<string, unknown> {
     const agent = this.deps.store.get(id);
     const roles: PermissionRoles = agent?.permissionRoles ?? null;

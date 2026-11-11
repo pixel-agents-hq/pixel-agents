@@ -550,7 +550,6 @@ describe('workspace assignment', () => {
         store,
         runtime,
         cache: null,
-        privileged: true,
       });
     }
 

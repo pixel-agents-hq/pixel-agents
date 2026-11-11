@@ -55,7 +55,7 @@ describe('workspaces', () => {
   const readWorkspacesFile = (): unknown => JSON.parse(fs.readFileSync(workspacesFile(), 'utf-8'));
 
   function ctx(overrides: Partial<ClientMessageContext> = {}): ClientMessageContext {
-    return { store, runtime, cache: null, ptyManager, privileged: true, ...overrides };
+    return { store, runtime, cache: null, ptyManager, ...overrides };
   }
 
   function dispatch(msg: Message, context: ClientMessageContext = ctx()): void {
@@ -543,29 +543,6 @@ describe('workspaces', () => {
       expect(store.get(agentId)?.workspaceId).toBe(workspaceA);
       expect(broadcasts.filter((m) => m.type === 'agentWorkspaceChanged')).toEqual([]);
       expect(launchInto(alpha) && [...store.values()].at(-1)?.workspaceId).toBe(workspaceB);
-    });
-  });
-
-  describe('read-only clients (acceptance 7)', () => {
-    it('refuse saveWorkspace and removeWorkspace and re-send the real workspacesLoaded', () => {
-      saveWorkspace('Work', [alpha]);
-      const workspaceId = onlyCustomId();
-      const before = fs.readFileSync(workspacesFile(), 'utf-8');
-      broadcasts = [];
-      sent = [];
-      const readOnly = ctx({ privileged: false });
-
-      dispatch({ type: 'saveWorkspace', name: 'Evil', directoryPaths: [beta] }, readOnly);
-      dispatch({ type: 'removeWorkspace', id: workspaceId }, readOnly);
-
-      expect(fs.readFileSync(workspacesFile(), 'utf-8')).toBe(before);
-      expect(broadcasts).toEqual([]);
-      const resent = sent.filter((m) => m.type === 'workspacesLoaded');
-      expect(resent).toHaveLength(2);
-      expect(resent[0]).toEqual({
-        type: 'workspacesLoaded',
-        workspaces: JSON.parse(before).workspaces,
-      });
     });
   });
 });

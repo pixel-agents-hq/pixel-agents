@@ -14,8 +14,7 @@ import {
  * target is `javascript:`, `file:` or an OS protocol handler. xterm's built-in
  * OSC 8 activator opens any scheme into a same-origin popup after a generic
  * confirm(), so only http(s) is opened here, straight into a new tab with no
- * opener and no referrer (the page URL carries the server token). Anything
- * else is ignored.
+ * opener and no referrer. Anything else is ignored.
  *
  * Takes `open` (window.open in the app) so this stays DOM-free for the Node
  * test runner.

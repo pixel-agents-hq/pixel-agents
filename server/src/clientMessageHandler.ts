@@ -14,7 +14,7 @@ import {
   setHooksEnabled,
   writeConfig,
 } from './configPersistence.js';
-import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT, TERMINAL_REQUIRES_TOKEN_REASON } from './constants.js';
+import { HUE_SHIFT_MAX_DEG, PALETTE_COUNT, WORKSPACE_ID_MAX_LENGTH } from './constants.js';
 import {
   curatorsAvailable,
   curatorsLoadedMessage,
@@ -28,17 +28,27 @@ import {
 } from './directories.js';
 import { collectDirectorySuggestions } from './directorySuggestions.js';
 import { hostDirectory } from './hostDirectory.js';
+import { handleKbBrowseMessage, type KbBrowseSlots } from './kbBrowse.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
 import { handleRoleClientMessage, type RoleMessageDeps } from './roleClientMessages.js';
+import type { TaskDispatchLaunch } from './taskDispatch/launchConfig.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
+import type { LaunchStandaloneAgentDeps } from './terminal/standaloneAgentLauncher.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
+import {
+  createStoppedAgent,
+  createWorkspaceAgent,
+  normalizeAgentName,
+  startStoppedAgent,
+} from './terminal/standaloneAgentRecords.js';
 import {
   handleWorkspaceClientMessage,
   listWorkspaces,
+  type WorkspaceMessageDeps,
   workspacesLoadedMessage,
 } from './workspaces.js';
 import type { GuardStatusReporter } from './writeGuard/guardStatusReporter.js';
@@ -78,15 +88,6 @@ export interface ClientMessageContext {
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
   /** Reload assets after an external-asset-directory change. Needs the dist root, known only to cli.ts. */
   onReloadAssets?: ReloadAssetsSideEffect;
-  /**
-   * Whether this client may change ANYTHING. An unprivileged client is
-   * read-only: it may load and watch the office (`webviewReady`) and every
-   * other message is refused at the top of handleClientMessage. Decided
-   * per-connection by the transport (wsAuth.standaloneHandshakeVerdict, or the
-   * embedded Bearer token); defaults to false so a caller that forgets to pass
-   * it gets the safe answer.
-   */
-  privileged?: boolean;
   /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
    *  mode, where the editor owns terminal lifecycle. */
   ptyManager?: PtySessionManager;
@@ -102,6 +103,12 @@ export interface ClientMessageContext {
    *  no agent could ever be a curator, so the office offers no curator
    *  controls (curatorsLoaded.available stays false). */
   isKbEnabled?: (workspaceId: string) => boolean;
+  /** Task dispatch's launcher switch (standalone only): handed to every launch.
+   *  Absent: no launch carries the dispatch shim or a capability for it. */
+  taskDispatch?: TaskDispatchLaunch;
+  /** 這個連線的 KB 瀏覽額度（每個 /ws 連線各一份，見 kbBrowse.ts）。缺少時
+   *  listKbFiles／readKbFile 一律以 unavailable 拒絕。 */
+  kbBrowse?: KbBrowseSlots;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -112,7 +119,9 @@ const KEY_GHOST_HEADLESS_AGENTS = 'pixel-agents.ghostHeadlessAgents';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
-const KEY_BYPASS_PERMISSIONS = 'pixel-agents.bypassPermissions';
+/** The host-wide skip-permissions posture every launch reads. Exported for
+ *  task dispatch, which refuses while it is on. */
+export const KEY_BYPASS_PERMISSIONS = 'pixel-agents.bypassPermissions';
 const KEY_SHOW_HOST_DIRECTORIES = 'pixel-agents.showHostDirectories';
 
 /**
@@ -171,6 +180,24 @@ function rolesAvailableFor(ctx: ClientMessageContext): boolean {
 }
 
 /** The Role handlers' view of this connection. Replies go to the sender only. */
+/** What starting an agent's process needs, from the connection's own context. */
+function launchDepsFor(
+  ctx: ClientMessageContext,
+  store: AgentStateStore,
+  runtime: AgentRuntime,
+  ptyManager: PtySessionManager,
+): LaunchStandaloneAgentDeps {
+  return {
+    store,
+    runtime,
+    ptyManager,
+    provider: claudeProvider,
+    capabilities: ctx.capabilities,
+    isKbEnabled: ctx.isKbEnabled,
+    taskDispatch: ctx.taskDispatch,
+  };
+}
+
 function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
   return {
     reply: send,
@@ -180,7 +207,7 @@ function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
     available: rolesAvailableFor(ctx),
     launch: ({ directoryPath, roleName, roleId, snapshotPath, permissionRoles }) => {
       if (!ctx.runtime || !ctx.ptyManager) return null;
-      return launchStandaloneAgent(
+      const id = launchStandaloneAgent(
         {
           store: ctx.store,
           runtime: ctx.runtime,
@@ -188,6 +215,7 @@ function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
           provider: claudeProvider,
           capabilities: ctx.capabilities,
           isKbEnabled: ctx.isKbEnabled,
+          taskDispatch: ctx.taskDispatch,
         },
         {
           directoryPath,
@@ -199,7 +227,62 @@ function roleDepsFor(ctx: ClientMessageContext, send: WsSend): RoleMessageDeps {
           permissionRoles,
         },
       );
+      // 第 2 個操作者啟動處理器：Role 啟動（launchAgent 帶 roleId）。
+      restoreCuratorAfterOperatorLaunch(ctx, id, directoryPath);
+      return id;
     },
+  };
+}
+
+/**
+ * KB Writer 自動恢復的唯一入口（curators.restoreFromBinding）。只由四個 /ws
+ * 啟動處理器在啟動成功之後明確呼叫：launchAgent、Role 啟動、createAgent 帶 start、
+ * startAgent。此時 agentCreated 與 terminalSessionOpened 都已送出，所以用戶端不會
+ * 先收到一個未知 agent 的 workspaceCuratorChanged。store 事件、launchStandaloneAgent
+ * 本身、task dispatch 與開機恢復都不經過這裡。
+ */
+function restoreCuratorAfterOperatorLaunch(
+  ctx: ClientMessageContext,
+  agentId: number | null,
+  launchDirectory: string | undefined,
+): void {
+  if (agentId === null) return;
+  ctx.curators?.restoreFromBinding(agentId, launchDirectory);
+}
+
+/** 移除一個 Workspace 的 KB Writer 綁定（Workspace 被刪除）；寫入失敗只記錄。 */
+function removeCuratorBinding(ctx: ClientMessageContext, workspaceId: string): void {
+  void ctx.curators?.bindings?.remove(workspaceId);
+}
+
+/** saveWorkspace 之後：綁定的 Directory 確定不再屬於該 Workspace 就刪除綁定。 */
+function pruneCuratorBinding(ctx: ClientMessageContext, workspaceId: string): void {
+  void ctx.curators?.bindings?.pruneIfNotMember(workspaceId);
+}
+
+/**
+ * Workspace 訊息的依賴（這條連線的視角）。saveWorkspace 訊息與 createAgent 加入／回復
+ * Directory 都用這一份，因此儲存後的副作用（onWorkspaceSaved、廣播）只有一套。
+ */
+function workspaceMessageDepsFor(ctx: ClientMessageContext, send: WsSend): WorkspaceMessageDeps {
+  const { store } = ctx;
+  return {
+    broadcast: (message) => store.broadcast(message),
+    reply: send,
+    personalKbDirectories: () => personalKbDirectoriesFor(ctx),
+    onWorkspaceRemoved: (workspaceId) => {
+      for (const [id, agent] of [...store]) {
+        if (agent.workspaceId === workspaceId) {
+          store.setAgentWorkspace(id, DEFAULT_WORKSPACE_ID);
+        }
+      }
+      // Moving its agents already cleared their curator record (the curator
+      // table follows agentWorkspaceChanged); the record goes too, whoever holds it.
+      ctx.curators?.clearWorkspace(workspaceId);
+      // KB Writer 綁定也一併移除。
+      removeCuratorBinding(ctx, workspaceId);
+    },
+    onWorkspaceSaved: (workspaceId) => pruneCuratorBinding(ctx, workspaceId),
   };
 }
 
@@ -218,14 +301,6 @@ export function handleClientMessage(
   const { store, runtime, cache } = ctx;
   const adapter = store.getAdapter();
 
-  // Tokenless is read-only. Refused HERE, once, rather than per message, so a
-  // message type added later is privileged by default instead of open until
-  // someone remembers to gate it.
-  if (!ctx.privileged && msg.type !== 'webviewReady') {
-    refuseReadOnly(msg, send, ctx);
-    return;
-  }
-
   switch (msg.type) {
     case 'webviewReady':
       handleWebviewReady(send, ctx);
@@ -240,8 +315,7 @@ export function handleClientMessage(
         break;
       }
       // Standalone can launch: the agent runs in a server-side PTY streamed to
-      // the browser drawer (a shell running as the operator -- privileged, like
-      // every message past the read-only gate above).
+      // the browser drawer (a shell running as the operator).
       if (!runtime || !ctx.ptyManager) break;
       // P3 permission-role override: validated before anything starts; an
       // invalid one launches nothing (never falls back to the Workspace default).
@@ -255,7 +329,8 @@ export function handleClientMessage(
       // field: the client sends only where to launch. Every launch comes from a
       // drawer row and carries its Directory's path; no directoryPath falls
       // back to the server cwd (launchStandaloneAgent's own default).
-      launchStandaloneAgent(
+      const directoryPath = msg.directoryPath as string | undefined;
+      const id = launchStandaloneAgent(
         {
           store,
           runtime,
@@ -263,13 +338,91 @@ export function handleClientMessage(
           provider: claudeProvider,
           capabilities: ctx.capabilities,
           isKbEnabled: ctx.isKbEnabled,
+          taskDispatch: ctx.taskDispatch,
         },
         {
-          directoryPath: msg.directoryPath as string | undefined,
+          directoryPath,
           bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
           ...(permissionRoles !== undefined ? { permissionRoles } : {}),
         },
       );
+      // 第 1 個操作者啟動處理器：launchAgent（不帶 roleId）。
+      restoreCuratorAfterOperatorLaunch(ctx, id, directoryPath);
+      break;
+    }
+
+    case 'createAgent': {
+      // A record with no process: standalone only. Starting it is a separate
+      // step (or `start`).
+      const ptyManager = ctx.ptyManager;
+      if (!runtime || !ptyManager) break;
+      if (typeof msg.directoryPath !== 'string' || msg.directoryPath === '') break;
+      const permissionRoles =
+        msg.permissionRoles === undefined ? undefined : parsePermissionRoles(msg.permissionRoles);
+      if (msg.permissionRoles !== undefined && permissionRoles === undefined) {
+        console.warn('[Pixel Agents] Terminal: not creating -- invalid permissionRoles');
+        break;
+      }
+      if (
+        msg.workspaceId !== undefined &&
+        (typeof msg.workspaceId !== 'string' ||
+          msg.workspaceId.length === 0 ||
+          msg.workspaceId.length > WORKSPACE_ID_MAX_LENGTH)
+      ) {
+        console.warn('[Pixel Agents] Terminal: not creating -- invalid workspaceId');
+        break;
+      }
+      // 帶 workspaceId：自由路徑，必要時建立目錄並加入該 Workspace（見 createWorkspaceAgent）；
+      // 紀錄存的是 realpath 後的路徑。不帶：與以前完全相同，路徑必須已存在。
+      let created: { id: number; directoryPath: string } | null;
+      if (typeof msg.workspaceId === 'string') {
+        created = createWorkspaceAgent(
+          {
+            store,
+            provider: claudeProvider,
+            workspaceEffects: workspaceMessageDepsFor(ctx, send),
+          },
+          {
+            directoryPath: msg.directoryPath,
+            workspaceId: msg.workspaceId,
+            name: normalizeAgentName(msg.name),
+            ...(permissionRoles !== undefined ? { permissionRoles } : {}),
+          },
+        );
+      } else {
+        const id = createStoppedAgent(
+          { store, provider: claudeProvider },
+          {
+            directoryPath: msg.directoryPath,
+            name: normalizeAgentName(msg.name),
+            ...(permissionRoles !== undefined ? { permissionRoles } : {}),
+          },
+        );
+        created = id === null ? null : { id, directoryPath: msg.directoryPath };
+      }
+      if (created !== null && msg.start === true) {
+        const started = startStoppedAgent(
+          launchDepsFor(ctx, store, runtime, ptyManager),
+          created.id,
+          { bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false },
+        );
+        // 第 3 個操作者啟動處理器：createAgent 帶 start。
+        if (started) restoreCuratorAfterOperatorLaunch(ctx, created.id, created.directoryPath);
+      }
+      break;
+    }
+
+    case 'startAgent': {
+      const ptyManager = ctx.ptyManager;
+      if (!runtime || !ptyManager) break;
+      const id = msg.id as number;
+      // 啟動後 launchDirectory 會被清掉，先取下來給比對規則用。
+      const launchDirectory = store.get(id)?.launchDirectory;
+      const started = startStoppedAgent(launchDepsFor(ctx, store, runtime, ptyManager), id, {
+        bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
+      });
+      // 第 4 個操作者啟動處理器：startAgent。
+      if (started) restoreCuratorAfterOperatorLaunch(ctx, id, launchDirectory);
       break;
     }
 
@@ -482,21 +635,7 @@ export function handleClientMessage(
       // Same shape as the Directory messages: success rebroadcasts the list to
       // every office, a rejection answers only the sender. Deleting a Workspace
       // sends its agents back to the default first, one agentWorkspaceChanged each.
-      handleWorkspaceClientMessage(msg, {
-        broadcast: (message) => store.broadcast(message),
-        reply: send,
-        personalKbDirectories: () => personalKbDirectoriesFor(ctx),
-        onWorkspaceRemoved: (workspaceId) => {
-          for (const [id, agent] of [...store]) {
-            if (agent.workspaceId === workspaceId) {
-              store.setAgentWorkspace(id, DEFAULT_WORKSPACE_ID);
-            }
-          }
-          // Moving its agents already cleared their curator record (the curator
-          // table follows agentWorkspaceChanged); the record goes too, whoever holds it.
-          ctx.curators?.clearWorkspace(workspaceId);
-        },
-      });
+      handleWorkspaceClientMessage(msg, workspaceMessageDepsFor(ctx, send));
       break;
 
     case 'setWorkspaceCurator':
@@ -516,6 +655,12 @@ export function handleClientMessage(
       // Point-to-point only: a preview carries the Role's content and must
       // never go through store.broadcast.
       void handleRoleClientMessage(msg, roleDepsFor(ctx, send));
+      break;
+
+    case 'listKbFiles':
+    case 'readKbFile':
+      // 只回給發問者：kbFileRead 帶著檔案內容，絕不能經過 store.broadcast。
+      void handleKbBrowseMessage(msg, { reply: send, store, slots: ctx.kbBrowse });
       break;
 
     default:
@@ -610,11 +755,6 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const { store, runtime, cache } = ctx;
   const adapter = store.getAdapter();
 
-  // 0. Access, first: a read-only office hides every control that would send
-  // a change (all refused by refuseReadOnly), so it must know before it draws
-  // them.
-  send({ type: 'officeAccess', readOnly: ctx.privileged !== true });
-
   // 1. Provider capabilities (must arrive before any agent messages)
   send({
     type: 'providerCapabilities',
@@ -626,18 +766,11 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // and the drawer), so it must land before the client can act on agents.
   // Absent ptyManager = VS Code embedded mode, which owns its own terminals and
   // must not be told the standalone terminal is unavailable.
-  // Availability is per CONNECTION, not per server: an untokened client is told
-  // the terminal is unavailable (with the reason) because launchAgent and the
-  // terminal socket would refuse it anyway -- better a disabled button that
-  // says why than one that silently does nothing.
   if (ctx.ptyManager) {
-    const privileged = ctx.privileged === true;
     send({
       type: 'terminalAvailability',
-      available: privileged && ctx.ptyManager.isAvailable(),
-      reason:
-        ctx.ptyManager.unavailableReason() ??
-        (privileged ? undefined : TERMINAL_REQUIRES_TOKEN_REASON),
+      available: ctx.ptyManager.isAvailable(),
+      reason: ctx.ptyManager.unavailableReason() ?? undefined,
     });
   }
 
@@ -711,7 +844,6 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
             installed,
             hooksEnabled: getHooksEnabled(provider.id),
             consentAnswered: getHooksConsent(provider.id) !== 'unanswered',
-            privileged: ctx.privileged === true,
           },
           provider,
         );
@@ -743,8 +875,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // names one (existingAgents), so the client can place every agent on arrival.
   send(workspacesLoadedMessage());
 
-  // 4e. Curators, to this client only. `available` is the host's answer, not
-  // this connection's: a read-only office hides the controls itself.
+  // 4e. Curators, to this client only.
   // No longer gated on isKbEnabled (P2): curator eligibility does not need a capability.
   send(curatorsLoadedMessage(curatorsAvailable(ctx), ctx.curators));
 
@@ -766,6 +897,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   const workspaceIds: Record<number, string> = {};
   // Only agents launched with a Role, and only its display name.
   const roleNames: Record<number, string> = {};
+  // Only agents created with a display name, and only agents with no process yet.
+  const names: Record<number, string> = {};
+  const stoppedAgents: Record<number, boolean> = {};
   const persistedSeats = adapter?.loadSeats() ?? {};
   const agentMeta: Record<number, { palette?: number; hueShift?: number; seatId?: string }> = {};
   for (const [id, agent] of store) {
@@ -782,6 +916,12 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     if (agent.roleName) {
       roleNames[id] = agent.roleName;
     }
+    if (agent.displayName) {
+      names[id] = agent.displayName;
+    }
+    if (agent.stopped) {
+      stoppedAgents[id] = true;
+    }
     const persisted = persistedSeats[String(id)];
     agentMeta[id] = {
       palette: agent.palette,
@@ -797,6 +937,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     externalAgents,
     workspaceIds,
     roleNames,
+    names,
+    stoppedAgents,
   });
 
   // 6b. Write-guard status for every existing agent, AFTER existingAgents.
@@ -815,9 +957,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // 9. Re-announce live terminals AFTER existingAgents, so a browser that
   // reloaded (or a second tab) rebuilds its drawer tabs. The PTY outlives the
   // socket, so these sessions are still attachable and their scrollback replays
-  // on connect. Privileged connections only: an untokened client was told the
-  // terminal is unavailable and could not attach anyway.
-  if (ctx.ptyManager && ctx.privileged) {
+  // on connect.
+  if (ctx.ptyManager) {
     for (const id of agentIds) {
       if (ctx.ptyManager.has(id)) {
         send({ type: 'terminalSessionOpened', agentId: id });
@@ -826,11 +967,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   }
 }
 
-/**
- * The settingsLoaded snapshot: sent on connect, and re-sent to a read-only
- * client whose setting change was refused (refuseReadOnly), so its optimistic
- * toggle snaps back to the truth.
- */
+/** The settingsLoaded snapshot sent on connect. */
 function settingsSnapshot(adapter: StateAdapter | undefined) {
   return {
     type: 'settingsLoaded',
@@ -850,63 +987,4 @@ function settingsSnapshot(adapter: StateAdapter | undefined) {
     bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
     showHostDirectories: adapter?.getSetting(KEY_SHOW_HOST_DIRECTORIES, false) ?? false,
   } as const;
-}
-
-/** Message types already reported as refused, so a read-only client that keeps
- *  sending (seat saves, layout saves) logs once per type, not per message. */
-const reportedRefusals = new Set<string>();
-
-/**
- * Drop a message from a read-only (unprivileged) client. Where the UI changes
- * optimistically before the server answers, the refused client is re-sent the
- * real state so the control snaps back instead of showing a change that was
- * never made -- the same "answer with the truth" rule as a failed hooks install.
- */
-function refuseReadOnly(
-  msg: Record<string, unknown>,
-  send: WsSend,
-  ctx: ClientMessageContext,
-): void {
-  const type = String(msg.type);
-  if (!reportedRefusals.has(type)) {
-    reportedRefusals.add(type);
-    console.warn(
-      `[Pixel Agents] Ignoring ${type} from a read-only client. Changes need the tokened URL the CLI printed (at localhost or an --allowed-host name).`,
-    );
-  }
-  switch (msg.type) {
-    case 'setHooksEnabled': {
-      const provider = hookProviderById(msg.providerId);
-      if (!provider) return;
-      void provider
-        .areHooksInstalled()
-        .then((installed) => send({ type: 'hooksStatus', providerId: provider.id, installed }));
-      return;
-    }
-    case 'setSoundEnabled':
-    case 'setAlwaysShowLabels':
-    case 'setGhostHeadlessAgents':
-    case 'setWatchAllSessions':
-    case 'setShowAreas':
-    case 'setBypassPermissions':
-    case 'setShowHostDirectories':
-      send(settingsSnapshot(ctx.store.getAdapter()));
-      return;
-    case 'addExternalAssetDirectory':
-    case 'removeExternalAssetDirectory':
-      send({
-        type: 'externalAssetDirectoriesUpdated',
-        dirs: readConfig().externalAssetDirectories,
-      });
-      return;
-    case 'saveAreaMappings':
-      send({ type: 'areaMappingsLoaded', mappings: readConfig().standalone.areaMappings ?? {} });
-      return;
-    case 'saveWorkspace':
-    case 'removeWorkspace':
-    case 'setWorkspaceRoot':
-    case 'setWorkspacePermissionRoles':
-      send(workspacesLoadedMessage());
-      return;
-  }
 }

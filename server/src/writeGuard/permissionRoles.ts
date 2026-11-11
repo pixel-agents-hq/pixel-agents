@@ -24,7 +24,7 @@ export type PermissionRole = (typeof PERMISSION_ROLES)[number];
 /** 角色設定的值：集合（依 R、E、D 順序），或 null（沒設角色，全開）。 */
 export type PermissionRoles = readonly PermissionRole[] | null;
 
-export const ROLE_OF_OPERATION: Readonly<Record<GuardOperation, PermissionRole>> = {
+const ROLE_OF_OPERATION: Readonly<Record<GuardOperation, PermissionRole>> = {
   read: 'R',
   edit: 'E',
   delete: 'D',

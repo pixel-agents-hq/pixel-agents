@@ -1,6 +1,6 @@
 /**
  * The one way terminal code writes and reads the system clipboard, on secure
- * AND plain-http origins. A phone opening a tokened LAN `http://` URL is not
+ * AND plain-http origins. A phone opening a LAN `http://` URL is not
  * a secure context: `navigator.clipboard` is undefined there, so touching it
  * unguarded throws.
  */

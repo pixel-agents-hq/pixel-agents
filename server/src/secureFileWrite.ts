@@ -20,7 +20,7 @@ import * as fs from 'fs';
 import { ROLES_STORAGE_FILE_MODE } from './constants.js';
 
 /** The staging name for `filePath`: same directory (so rename is atomic), unguessable. */
-export function secureTmpPathFor(filePath: string): string {
+function secureTmpPathFor(filePath: string): string {
   return `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
 }
 

@@ -21,7 +21,7 @@ export const PROBE_SERVER: ServerConfig = {
   startedAt: 0,
   servesSpa: true,
   protocol: 1,
-  standalone: { terminal: true, host: '127.0.0.1', allowedHosts: [] },
+  standalone: { terminal: true, host: '127.0.0.1' },
 };
 
 export class BashGuardProbe {

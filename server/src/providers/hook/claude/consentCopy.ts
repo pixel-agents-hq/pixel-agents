@@ -20,7 +20,7 @@ import { CLAUDE_HOOK_EVENTS, SETTINGS_BACKUP_SUFFIX } from './constants.js';
 const SETTINGS_FILE = '~/.claude/settings.json';
 
 /** WHY we ask + WHAT we write. */
-export const CONSENT_FACT_WHAT =
+const CONSENT_FACT_WHAT =
   `To bring your agents to life in real time, Pixel Agents adds hooks for ` +
   `${CLAUDE_HOOK_EVENTS.length} Claude Code events to ${SETTINGS_FILE}. ` +
   `Note that your existing settings are kept, and a one-time backup is saved as settings.json${SETTINGS_BACKUP_SUFFIX}.`;
@@ -33,13 +33,13 @@ export const CONSENT_FACT_WHAT =
  *  (server/src/httpServer.ts). So it states the default and names the one
  *  thing that changes it, rather than making a promise the software can be
  *  asked to break. */
-export const CONSENT_FACT_DATA =
+const CONSENT_FACT_DATA =
   'Claude Code will send those events - including tool names and tool inputs - to a Pixel Agents ' +
   'server on this machine. Everything stays local - the server listens only on 127.0.0.1 - unless ' +
   'you explicitly start it with --host to expose it on your network.';
 
 /** HOW to undo it. */
-export const CONSENT_FACT_REVERSIBLE =
+const CONSENT_FACT_REVERSIBLE =
   'You can remove the hooks at any time from Settings → Instant Detection (Hooks).';
 
 /** Headline for the first-run gate — the only population that is asked. A user

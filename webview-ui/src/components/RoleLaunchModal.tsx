@@ -95,9 +95,9 @@ function ErrorLine({ text }: { text: string }) {
 
 /**
  * The Role file as plain text. The content is a React text node and nothing
- * else: no markdown, no HTML, no links -- this page holds the server token, and
- * a Role file is untrusted input. The host already replaced invisible
- * characters with `<U+XXXX>` markers; they are shown as they come.
+ * else: no markdown, no HTML, no links -- a Role file is untrusted input. The
+ * host already replaced invisible characters with `<U+XXXX>` markers; they are
+ * shown as they come.
  */
 export function RolePreviewText({ preview }: { preview: RolePreview }) {
   const lines = previewLineCount(preview.content);

@@ -5,34 +5,27 @@
  * process. It is arbitrary code execution and is the most sensitive surface in
  * this codebase.
  *
- * The route requires privilege. WebSocket connections are exempt from
- * CORS, so any page the user visits can open ws://127.0.0.1:<port>/terminal/1
- * -- the same-origin policy stops the browser from READING a cross-origin HTTP
- * response, but never stops the socket from connecting; scanning localhost
- * ports from a web page is a known, practical attack. Privilege is decided by
- * the SAME predicate as the /ws control socket (wsAuth.standaloneHandshakeVerdict:
- * the `?token=` the CLI printed, under an allowed Host), so there is exactly one
- * privilege gate to audit; the request logger redacts the token. A same-origin
- * check sits on top. See docs/design/standalone-terminal.md ("Security model").
+ * WebSocket connections are exempt from CORS, so any page the user visits can
+ * open ws://127.0.0.1:<port>/terminal/1 -- the same-origin policy stops the
+ * browser from READING a cross-origin HTTP response, but never stops the
+ * socket from connecting. The route therefore applies the SAME same-origin
+ * check as the /ws control socket (wsAuth.isAllowedWebSocketOrigin) before
+ * anything touches a process.
  */
 
 import type { FastifyInstance } from 'fastify';
 
 import { TERMINAL_WS_PREFIX } from '../../../core/src/constants.js';
 import { encodeTerminalFrame, parseClientFrame } from '../../../core/src/terminalFrames.js';
-import {
-  WS_CLOSE_FORBIDDEN_ORIGIN,
-  WS_CLOSE_NO_SESSION,
-  WS_CLOSE_UNAUTHORIZED,
-} from '../constants.js';
-import { isAllowedWebSocketOrigin, standaloneHandshakeVerdict } from '../wsAuth.js';
+import { WS_CLOSE_FORBIDDEN_ORIGIN, WS_CLOSE_NO_SESSION } from '../constants.js';
+import { isAllowedWebSocketOrigin } from '../wsAuth.js';
+import type { OperatorInputTracker } from './operatorInput.js';
 import type { PtySessionManager } from './ptySessionManager.js';
 
 export interface TerminalRoutesOptions {
-  token: string;
-  /** Host names a privileged handshake may arrive under (wsAuth.privilegedHostnames). */
-  allowedHostnames: ReadonlySet<string>;
   ptyManager?: PtySessionManager;
+  /** Records each operator input frame (task dispatch's quiet-period rule). */
+  operatorInput?: OperatorInputTracker;
 }
 
 /** Minimal structural view of the socket, so tests don't need a real WebSocket. */
@@ -64,21 +57,8 @@ export function registerTerminalRoutes(app: FastifyInstance, options: TerminalRo
       },
     },
     (socket: TerminalSocket, request) => {
-      // ── Auth (before anything else touches a process) ──
-      const verdict = standaloneHandshakeVerdict(
-        request.url,
-        request.headers.host,
-        options.token,
-        options.allowedHostnames,
-      );
-      if (verdict === 'bad-token') {
-        socket.close(WS_CLOSE_UNAUTHORIZED, 'unauthorized');
-        return;
-      }
-      if (
-        verdict === 'untrusted-host' ||
-        !isAllowedWebSocketOrigin(request.headers.origin, request.headers.host)
-      ) {
+      // ── Origin (before anything else touches a process) ──
+      if (!isAllowedWebSocketOrigin(request.headers.origin, request.headers.host)) {
         socket.close(WS_CLOSE_FORBIDDEN_ORIGIN, 'forbidden origin');
         return;
       }
@@ -130,6 +110,9 @@ export function registerTerminalRoutes(app: FastifyInstance, options: TerminalRo
         const frame = parseClientFrame(raw.toString());
         if (!frame) return; // Malformed/unknown frames are ignored, never thrown on.
         if (frame.type === 'input') {
+          // Recorded before the write: a dispatch evaluated after this frame
+          // reached the PTY must see it.
+          options.operatorInput?.record(agentId);
           session.write(frame.data);
         } else {
           session.resize(frame.cols, frame.rows);

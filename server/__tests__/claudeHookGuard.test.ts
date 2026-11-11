@@ -46,9 +46,7 @@ function writeRegistry(pid: number, port: number, token: string, standalone: boo
       startedAt: Date.now(),
       servesSpa: standalone,
       protocol: 1,
-      ...(standalone
-        ? { standalone: { terminal: true, host: '127.0.0.1', allowedHosts: [] } }
-        : {}),
+      ...(standalone ? { standalone: { terminal: true, host: '127.0.0.1' } } : {}),
     }),
   );
 }

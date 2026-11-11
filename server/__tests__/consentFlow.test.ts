@@ -81,7 +81,7 @@ describe('clientMessageHandler: hooks consent flow', () => {
     store = new AgentStateStore();
     store.setAdapter(new FileStateAdapter({ namespace: 'standalone' }));
     sent = [];
-    ctx = { store, cache: null, privileged: true };
+    ctx = { store, cache: null };
   });
 
   afterEach(() => {
@@ -99,7 +99,7 @@ describe('clientMessageHandler: hooks consent flow', () => {
   describe('hooksConsentRequest on webviewReady', () => {
     // The request carries the provider's exact disclosure so the dialog cannot
     // render weaker terms than the ones consentCopy.test.ts pins.
-    it('asks a privileged connection, carrying the provider disclosure verbatim', async () => {
+    it('asks the connection, carrying the provider disclosure verbatim', async () => {
       await connect();
 
       const request = sent.find((m) => m.type === 'hooksConsentRequest');
@@ -114,15 +114,6 @@ describe('clientMessageHandler: hooks consent flow', () => {
       // ahead of the status it depends on could be closed by its own handshake.
       const types = sent.map((m) => m.type);
       expect(types.indexOf('hooksStatus')).toBeLessThan(types.indexOf('hooksConsentRequest'));
-    });
-
-    // A spectator's answer would be ignored (below), so showing it the dialog
-    // would be a lie.
-    it('never asks an unprivileged connection', async () => {
-      ctx.privileged = false;
-      await connect();
-
-      expect(sent.find((m) => m.type === 'hooksConsentRequest')).toBeUndefined();
     });
 
     it('never asks once consent is recorded', async () => {
@@ -280,26 +271,6 @@ describe('clientMessageHandler: hooks consent flow', () => {
         expect(configJsonExists()).toBe(false);
       },
     );
-
-    // The answer is only ever solicited from privileged connections; one
-    // arriving without the token is a crafted message, not a user decision.
-    it('ignores every choice from an unprivileged client', async () => {
-      ctx.privileged = false;
-      let sideEffectRan = false;
-      ctx.onSetHooksEnabled = () => {
-        sideEffectRan = true;
-      };
-
-      for (const choice of ['install', 'never', 'notNow']) {
-        answer(choice);
-      }
-      await settle();
-
-      expect(sideEffectRan).toBe(false);
-      expect(settingsJsonExists()).toBe(false);
-      expect(getHooksConsent('claude')).toBe('unanswered');
-      expect(configJsonExists()).toBe(false);
-    });
   });
 
   // ── hooksConsentResponse revisions: Back from the Intro's closing step ───

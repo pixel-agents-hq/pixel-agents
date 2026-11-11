@@ -229,7 +229,7 @@ describe('broadcast timing and dedup', () => {
 });
 
 describe('handshake', () => {
-  it('sends every existing agent its status after existingAgents, read-only clients included', () => {
+  it('sends every existing agent its status after existingAgents', () => {
     const first = h.launch().id!;
     h.store.set(
       9,
@@ -241,23 +241,18 @@ describe('handshake', () => {
         isExternal: true,
       }),
     );
-    for (const privileged of [true, false]) {
-      const replies = h.send(
-        { type: 'webviewReady' },
-        h.ctx({ privileged, guardStatus: reporter }),
-      );
-      const types = replies.map((m) => m.type);
-      const existingAt = types.indexOf('existingAgents');
-      const guardAt = replies.flatMap((m, i) => (m.type === 'agentGuardStatus' ? [i] : []));
-      expect(existingAt).toBeGreaterThanOrEqual(0);
-      expect(guardAt).toHaveLength(2);
-      expect(Math.min(...guardAt)).toBeGreaterThan(existingAt);
-      const byId = new Map(
-        replies.filter((m) => m.type === 'agentGuardStatus').map((m) => [m.id, m]),
-      );
-      expect(byId.get(9)).toMatchObject({ active: false, reasons: ['not_standalone_agent'] });
-      expect(byId.get(first)).toMatchObject({ active: false });
-    }
+    const replies = h.send({ type: 'webviewReady' }, h.ctx({ guardStatus: reporter }));
+    const types = replies.map((m) => m.type);
+    const existingAt = types.indexOf('existingAgents');
+    const guardAt = replies.flatMap((m, i) => (m.type === 'agentGuardStatus' ? [i] : []));
+    expect(existingAt).toBeGreaterThanOrEqual(0);
+    expect(guardAt).toHaveLength(2);
+    expect(Math.min(...guardAt)).toBeGreaterThan(existingAt);
+    const byId = new Map(
+      replies.filter((m) => m.type === 'agentGuardStatus').map((m) => [m.id, m]),
+    );
+    expect(byId.get(9)).toMatchObject({ active: false, reasons: ['not_standalone_agent'] });
+    expect(byId.get(first)).toMatchObject({ active: false });
   });
 
   it('sends no agentGuardStatus when the host has no reporter (VS Code embedded)', () => {

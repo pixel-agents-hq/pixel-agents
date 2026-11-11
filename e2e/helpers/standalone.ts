@@ -253,17 +253,8 @@ const PRINTED_URL_PATTERN = /Pixel Agents server running at (\S+)\s/;
 
 /**
  * Wait for the URL line the CLI prints on its own stdout, and hand back exactly
- * that string.
- *
- * That printed line is the ONLY channel by which a real operator's browser
- * obtains the server token — the token is what makes the session privileged
- * enough to approve a hook install (the SPA forwards it on the /ws handshake,
- * server/src/httpServer.ts standaloneTokenValid). Reading the token out of
- * `~/.pixel-agents/server.json` and synthesizing an equivalent URL, which this
- * fixture used to do, is the fixture handing ITSELF a capability no browser can
- * reach: the whole standalone suite then stays green over a CLI that prints a
- * bare, wrong-tokened, or unbrowsable URL, and every real user lands in a
- * read-only session whose hooks toggle is silently refused.
+ * that string, so the suite opens what an operator would paste (and fails over
+ * a CLI that prints an unbrowsable URL).
  */
 async function waitForPrintedUrl(readOutput: () => string): Promise<string> {
   const deadline = Date.now() + 20_000;
@@ -297,7 +288,7 @@ export async function launchStandalone(
   fs.mkdirSync(tmpHome, { recursive: true });
   fs.mkdirSync(workspaceDir, { recursive: true });
   // Consent baseline, mirroring the VS Code launch helper: without it the CLI
-  // asks over the tokened /ws handshake and the in-app dialog covers the
+  // asks over the /ws handshake and the in-app dialog covers the
   // office in every spec. Only when the file does not exist yet — a shared
   // HOME (multi-server) was already seeded by the surface that owns it.
   const configPath = path.join(tmpHome, '.pixel-agents', 'config.json');
@@ -350,9 +341,8 @@ export async function launchStandalone(
     });
     await installMessageRecorder(page);
     await waitForHttpOk(`${hostUrl}/api/health`);
-    // The hook-endpoint Bearer token is a different channel and legitimately
-    // read from the registry — that is where the real hook script reads it too.
-    // The BROWSER's capability may only come from the printed URL below.
+    // The hook-endpoint Bearer token is read from the registry — that is where
+    // the real hook script reads it too. The browser opens the printed URL.
     const hookServerConfig = await waitForHookServer(tmpHome);
     await openStandalonePage(page, await waitForPrintedUrl(() => hostStdout));
     await drainRecordedMessages(page);

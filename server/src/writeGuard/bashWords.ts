@@ -18,7 +18,7 @@ const ASSIGNMENT_PREFIX = /^[A-Za-z_][A-Za-z0-9_]*\+?=/;
 const NAME_CHAR = /[A-Za-z0-9_]/;
 const SPECIAL_PARAM = /[0-9@*#?$!-]/;
 
-export function isWordBreak(ch: string): boolean {
+function isWordBreak(ch: string): boolean {
   return WORD_BREAK.has(ch);
 }
 
@@ -150,7 +150,7 @@ export function readDollar(src: string, i: number, inDouble: boolean, lex: LexNe
 }
 
 /** 雙引號字串（i 指向開頭的 `"`）。 */
-export function readDoubleQuoted(src: string, i: number, lex: LexNested): Piece {
+function readDoubleQuoted(src: string, i: number, lex: LexNested): Piece {
   let j = i + 1;
   let text = '';
   let expansion = false;

@@ -225,7 +225,8 @@ export async function listRoles(rolesDirectory: RolesDirectory): Promise<ListedR
 export const decodeRoleContent = decodeSafeText;
 export { escapeInvisibleCharacters, sha256Hex };
 
-function sameInode(a: fs.Stats, b: { dev: number; ino: number }): boolean {
+/** Whether `a` is the very inode `b` names (dev and ino). Shared with kbBrowse.ts. */
+export function sameInode(a: fs.Stats, b: { dev: number; ino: number }): boolean {
   return a.dev === b.dev && a.ino === b.ino;
 }
 

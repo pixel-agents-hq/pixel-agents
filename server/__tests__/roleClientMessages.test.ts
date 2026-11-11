@@ -72,7 +72,7 @@ describe('Role client messages', () => {
   const snapshotFiles = () => (fs.existsSync(snapshotsDir()) ? fs.readdirSync(snapshotsDir()) : []);
 
   function ctx(overrides: Partial<ClientMessageContext> = {}): ClientMessageContext {
-    return { store, cache: null, privileged: true, runtime, ptyManager: manager, ...overrides };
+    return { store, cache: null, runtime, ptyManager: manager, ...overrides };
   }
 
   function rolesDir(base = repo): string {
@@ -687,23 +687,6 @@ describe('Role client messages', () => {
 
   // ── Access, platform and storage ────────────────────────────
 
-  it('drops every Role message from a read-only client without replying, launching or writing', async () => {
-    writeRole('frontend.md', '# fe\n');
-    const readOnly = ctx({ privileged: false });
-    for (const msg of [
-      { type: 'requestRoles', directoryPath: repo },
-      { type: 'requestRolePreview', directoryPath: repo, roleId: 'frontend.md' },
-      { type: 'confirmRole', directoryPath: repo, roleId: 'frontend.md', sha256: sha256('# fe\n') },
-      { type: 'launchAgent', directoryPath: repo, roleId: 'frontend.md' },
-    ]) {
-      handleClientMessage(msg, (m) => sent.push(m), readOnly);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(sent).toEqual([]);
-    expect(fs.existsSync(path.join(tempHome, '.pixel-agents', 'roles'))).toBe(false);
-    expectNothingLaunched();
-  });
-
   it('answers unavailable in embedded mode (no ptyManager), with the terminal off, and on win32', async () => {
     writeRole('frontend.md', '# fe\n');
     const messages = [
@@ -847,7 +830,6 @@ describe('Role client messages', () => {
         store: store2,
         runtime: runtime2,
         cache: null,
-        privileged: true,
         ptyManager: manager,
       });
       expect(buildSpy).not.toHaveBeenCalled();

@@ -21,8 +21,6 @@ export interface StandaloneAccess {
   terminal: boolean;
   /** Bind address. */
   host: string;
-  /** Normalized, sorted `--allowed-host` names. */
-  allowedHosts: string[];
 }
 
 /** Complete per-server discovery record stored in the multi-server registry. */
@@ -45,22 +43,11 @@ export function sameStandaloneAccess(
   wanted: StandaloneAccess | undefined,
 ): boolean {
   if (running === undefined || wanted === undefined) return running === wanted;
-  return (
-    running.terminal === wanted.terminal &&
-    running.host === wanted.host &&
-    running.allowedHosts.length === wanted.allowedHosts.length &&
-    running.allowedHosts.every((h, i) => h === wanted.allowedHosts[i])
-  );
+  return running.terminal === wanted.terminal && running.host === wanted.host;
 }
 
 function isStandaloneAccess(value: unknown): value is StandaloneAccess {
-  return (
-    isRecord(value) &&
-    typeof value.terminal === 'boolean' &&
-    typeof value.host === 'string' &&
-    Array.isArray(value.allowedHosts) &&
-    value.allowedHosts.every((h) => typeof h === 'string')
-  );
+  return isRecord(value) && typeof value.terminal === 'boolean' && typeof value.host === 'string';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

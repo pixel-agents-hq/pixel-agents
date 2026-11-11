@@ -39,6 +39,12 @@ export interface PersistedAgent {
   hueShift?: number;
   /** Workspace the agent belongs to. Absent means the default Workspace. */
   workspaceId?: string;
+  /** Stopped records (created, not yet started): display name, Directory to run
+   *  in, and the permission roles to apply when it starts. */
+  displayName?: string;
+  stopped?: boolean;
+  launchDirectory?: string;
+  permissionRoles?: readonly ('R' | 'E' | 'D')[] | null;
 }
 
 /** Agent seat assignment with visual identity

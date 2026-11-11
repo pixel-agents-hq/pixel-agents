@@ -473,6 +473,7 @@ describe('capabilities', () => {
         type: 'curatorsLoaded',
         available: true,
         curators: [],
+        bindings: [],
       });
       store.dispose();
     });

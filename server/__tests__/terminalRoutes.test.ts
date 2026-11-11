@@ -1,9 +1,9 @@
 /**
- * Terminal endpoint auth.
+ * Terminal endpoint.
  *
  * `/terminal/:agentId` is arbitrary code execution -- these tests pin the
- * property that it is unreachable without the auth token, from a real WebSocket
- * client against a real server. See docs/design/standalone-terminal.md.
+ * same-origin check and the attach-only behaviour, from a real WebSocket client
+ * against a real server.
  */
 
 import * as fs from 'fs';
@@ -16,11 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // must set an Origin header, which the built-in client cannot do.
 import { WebSocket } from 'ws';
 
-import {
-  WS_CLOSE_FORBIDDEN_ORIGIN,
-  WS_CLOSE_NO_SESSION,
-  WS_CLOSE_UNAUTHORIZED,
-} from '../src/constants.js';
+import { WS_CLOSE_FORBIDDEN_ORIGIN, WS_CLOSE_NO_SESSION } from '../src/constants.js';
 import type { IPty, PtyModule } from '../src/terminal/ptyModule.js';
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
 
@@ -80,29 +76,17 @@ interface Attempt {
   opened: boolean;
 }
 
-/** The terminal socket url, carrying the token the way the SPA does: in the
- *  handshake query, exactly like /ws (wsAuth.standaloneTokenValid). */
-function terminalUrl(port: number, agentId: number, token?: string): string {
-  const base = `ws://127.0.0.1:${String(port)}/terminal/${String(agentId)}`;
-  return token === undefined ? base : `${base}?token=${encodeURIComponent(token)}`;
+function terminalUrl(port: number, agentId: number): string {
+  return `ws://127.0.0.1:${String(port)}/terminal/${String(agentId)}`;
 }
 
 /** Connect and resolve how the server responded (opened, or closed with a code). */
-function attach(
-  port: number,
-  agentId: number,
-  token?: string,
-  origin?: string,
-  host?: string,
-): Promise<Attempt> {
+function attach(port: number, agentId: number, origin?: string): Promise<Attempt> {
   const headers: Record<string, string> = {};
   if (origin) headers.origin = origin;
-  // `ws` derives Host from the URL; an explicit header overrides it, which is
-  // exactly what a DNS-rebound browser does (Host = the attacker's domain).
-  if (host) headers.host = host;
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(
-      terminalUrl(port, agentId, token),
+      terminalUrl(port, agentId),
       Object.keys(headers).length > 0 ? { headers } : undefined,
     );
     let opened = false;
@@ -118,11 +102,10 @@ function attach(
   });
 }
 
-describe('terminal WebSocket auth', () => {
+describe('terminal WebSocket', () => {
   let server: InstanceType<typeof PixelAgentsServer>;
   let ptyManager: PtySessionManager;
   let port: number;
-  let token: string;
 
   beforeEach(async () => {
     tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-terminal-test-'));
@@ -135,7 +118,6 @@ describe('terminal WebSocket auth', () => {
       ptyManager,
     });
     port = config.port;
-    token = config.token;
     ptyManager.create({ agentId: 1, command: 'claude', args: [], cwd: tmpBase });
   });
 
@@ -149,8 +131,8 @@ describe('terminal WebSocket auth', () => {
     }
   });
 
-  it('accepts a connection carrying the valid token', async () => {
-    const ws = new WebSocket(terminalUrl(port, 1, token));
+  it('accepts a same-origin connection', async () => {
+    const ws = new WebSocket(terminalUrl(port, 1));
     await new Promise<void>((resolve, reject) => {
       ws.on('open', () => resolve());
       ws.on('error', reject);
@@ -159,70 +141,15 @@ describe('terminal WebSocket auth', () => {
     ws.close();
   });
 
-  it('rejects a connection with no token', async () => {
-    // The attack: any web page can open a WebSocket to localhost (WS is exempt
-    // from CORS). Without the token this would hand out a shell.
-    const result = await attach(port, 1);
-    expect(result.code).toBe(WS_CLOSE_UNAUTHORIZED);
-  });
-
-  it('rejects a connection with a wrong token', async () => {
-    const result = await attach(port, 1, 'not-the-token');
-    expect(result.code).toBe(WS_CLOSE_UNAUTHORIZED);
-  });
-
-  it('rejects a token of the same length as the real one', async () => {
-    const sameLength = 'x'.repeat(token.length);
-    const result = await attach(port, 1, sameLength);
-    expect(result.code).toBe(WS_CLOSE_UNAUTHORIZED);
-  });
-
-  it('rejects a valid token sent from a foreign origin', async () => {
-    const result = await attach(port, 1, token, 'http://evil.com');
+  it('rejects a connection from a foreign origin', async () => {
+    // Any web page can open a WebSocket to localhost (WS is exempt from CORS).
+    const result = await attach(port, 1, 'http://evil.com');
     expect(result.code).toBe(WS_CLOSE_FORBIDDEN_ORIGIN);
   });
 
-  it('rejects a DNS-rebound attach (valid token, attacker Host + Origin)', async () => {
-    // The real rebinding shape: the victim's browser reaches 127.0.0.1 but sends
-    // BOTH Host: evil.com and Origin: http://evil.com (both derived from the
-    // rebound URL). origin === host, so the same-origin check alone would pass;
-    // the Host allowlist (wsAuth.standaloneHandshakeVerdict) is what rejects it.
-    const result = await attach(port, 1, token, 'http://evil.com', 'evil.com');
-    // As with the other rejections, the WS upgrade completes and the handler
-    // then closes with the app code -- the close code is the signal, and no
-    // scrollback/live output is ever sent before it (verified end-to-end).
-    expect(result.code).toBe(WS_CLOSE_FORBIDDEN_ORIGIN);
-  });
-
-  it('accepts a reverse-proxy attach once its Host is passed as --allowed-host', async () => {
-    // Before --allowed-host this was refused on a loopback bind, and the only
-    // escape was binding 0.0.0.0 -- exposing the port to the LAN.
-    const proxy = 'my-mac.tailnet.ts.net';
-    const refused = await attach(port, 1, token, `https://${proxy}`, proxy);
-    expect(refused.code).toBe(WS_CLOSE_FORBIDDEN_ORIGIN);
-
-    server.stop();
-    server = new PixelAgentsServer();
-    const config = await server.start({
-      store: new AgentStateStore(),
-      embedded: false,
-      ptyManager,
-      allowedHosts: [proxy],
-    });
-    const ws = new WebSocket(terminalUrl(config.port, 1, config.token), {
-      headers: { origin: `https://${proxy}`, host: proxy },
-    });
-    await new Promise<void>((resolve, reject) => {
-      ws.on('open', () => resolve());
-      ws.on('close', (code: number) => reject(new Error(`closed with ${String(code)}`)));
-      ws.on('error', reject);
-    });
-    ws.close();
-  });
-
-  it('rejects attaching to an agent with no terminal, even with a valid token', async () => {
+  it('rejects attaching to an agent with no terminal', async () => {
     // The route can only attach to PTYs this server spawned; it can never start one.
-    const result = await attach(port, 999, token);
+    const result = await attach(port, 999);
     expect(result.code).toBe(WS_CLOSE_NO_SESSION);
   });
 
@@ -232,7 +159,7 @@ describe('terminal WebSocket auth', () => {
     // post-attach output may flow as live output frames.
     lastPty.emit('before-attach\r\n');
 
-    const ws = new WebSocket(terminalUrl(port, 1, token));
+    const ws = new WebSocket(terminalUrl(port, 1));
     const frames: Array<Record<string, unknown>> = [];
     const secondFrame = new Promise<void>((resolve, reject) => {
       ws.on('message', (raw: Buffer | string) => {

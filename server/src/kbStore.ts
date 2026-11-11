@@ -134,7 +134,7 @@ export interface KbSettings {
 }
 
 /** Missing settings mean the safe values: KB off, operator confirmation on. */
-export const KB_SAFE_SETTINGS: Readonly<KbSettings> = { kbEnabled: false, operatorConfirm: true };
+const KB_SAFE_SETTINGS: Readonly<KbSettings> = { kbEnabled: false, operatorConfirm: true };
 
 const SETTINGS_KEYS: readonly string[] = ['version', 'kbEnabled', 'operatorConfirm'];
 const SETTINGS_PATCH_KEYS: readonly string[] = ['kbEnabled', 'operatorConfirm'];
@@ -272,7 +272,7 @@ function parseIndexEntry(raw: unknown): KbIndexEntry | null {
 /** The index in `raw`, or null for anything malformed: a wrong shape, a non-UUID
  *  id or blob, a duplicate id, blob reference or titleKey, or a size, count or
  *  total over the limits. */
-export function parseIndex(raw: unknown): KbIndex | null {
+function parseIndex(raw: unknown): KbIndex | null {
   if (!isPlainObject(raw) || Object.keys(raw).length !== INDEX_KEYS.length) return null;
   if (!hasOnlyKeys(raw, INDEX_KEYS)) return null;
   if (raw.version !== KB_FILE_FORMAT_VERSION) return null;

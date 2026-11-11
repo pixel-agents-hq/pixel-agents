@@ -56,9 +56,11 @@ import {
   WORKSPACE_ID_MAX_LENGTH,
   WORKSPACE_NAME_MAX_LENGTH,
   WORKSPACE_ROOT_INVALID_ID_REASON,
+  WORKSPACE_ROOT_LOCKED_REASON,
   WORKSPACE_ROOT_NOT_ABSOLUTE_REASON,
   WORKSPACE_ROOT_NOT_DIRECTORY_REASON,
   WORKSPACE_ROOT_OVERLAP_REASON,
+  WORKSPACE_ROOT_WORKSPACE_OVERLAP_REASON,
   WORKSPACE_WRITE_FAILED_REASON,
   WORKSPACES_DIR_MODE,
   WORKSPACES_FILE_MODE,
@@ -66,8 +68,12 @@ import {
   WORKSPACES_FILE_UNREADABLE_REASON,
 } from './constants.js';
 import { normalizeDirectoryPath } from './directories.js';
-import { workspaceKbOverlapsPersonal } from './writeGuard/kbOverlap.js';
-import { pathNormalizer } from './writeGuard/pathNormalization.js';
+import { personalKbZone } from './writeGuard/kbIdentity.js';
+import {
+  workspaceKbOverlapsPersonal,
+  workspaceKbOverlapsWorkspaces,
+} from './writeGuard/kbOverlap.js';
+import { type PathNormalizer, pathNormalizer, samePath } from './writeGuard/pathNormalization.js';
 import type { PermissionRoles } from './writeGuard/permissionRoles.js';
 import { parsePermissionRoles } from './writeGuard/permissionRoles.js';
 
@@ -243,6 +249,37 @@ export function settleWorkspaceFromCwd(
   store.setAgentWorkspace(agentId, workspaceIdForCwd(cwd));
 }
 
+/** 一個 Directory 是否屬於某個 Workspace（以 realpath 比對）。 */
+export type DirectoryMembership = 'member' | 'not-member' | 'unknown';
+
+/**
+ * `realDirectory`（已 realpath 的路徑）是否是 `workspace` 的 Directory 之一。
+ * workspace.directoryPaths 是使用者輸入的字串（可能經過 symlink、帶 `~`），所以每一筆
+ * 先 realpath 再以 samePath 比對（darwin／win32 折疊大小寫）。三態：
+ * - 'member'：有一筆解析後與它相同；
+ * - 'not-member'：每一筆都解析成功，且沒有一筆相同；
+ * - 'unknown'：沒有一筆相同，但至少一筆 realpath 失敗（無法斷定不是它）。
+ * 自動恢復 KB Writer 只認 'member'；刪除綁定只認 'not-member'（'unknown' 保留）。
+ */
+export function workspaceContainsDirectory(
+  workspace: Workspace,
+  realDirectory: string,
+  normalizer: PathNormalizer = pathNormalizer,
+): DirectoryMembership {
+  let unresolved = false;
+  for (const entry of workspace.directoryPaths) {
+    let real: string;
+    try {
+      real = fs.realpathSync(normalizeDirectoryPath(entry));
+    } catch {
+      unresolved = true;
+      continue;
+    }
+    if (samePath(normalizer, real, realDirectory)) return 'member';
+  }
+  return unresolved ? 'unknown' : 'not-member';
+}
+
 /**
  * Canonicalize a workspaceId carried by an agent: the default's id and any id
  * naming no known Workspace become undefined, so an agent is never filed under
@@ -384,6 +421,19 @@ export function saveWorkspace(msg: Record<string, unknown>): WorkspaceMutationRe
     }
   }
 
+  const previouslyOwned = new Set((editing?.directoryPaths ?? []).map(normalizeDirectoryPath));
+  const workspaceRoots = list.workspaces
+    .map((w) => w.rootPath)
+    .filter((root): root is string => root !== undefined);
+  for (const dirPath of input.directoryPaths) {
+    if (previouslyOwned.has(normalizeDirectoryPath(dirPath))) continue;
+    if (
+      workspaceRoots.some((root) => workspaceKbOverlapsPersonal(pathNormalizer, root, [dirPath]))
+    ) {
+      return reject(WORKSPACE_ROOT_OVERLAP_REASON);
+    }
+  }
+
   const saved: Workspace = {
     id: editing?.id ?? crypto.randomUUID(),
     name: input.name,
@@ -402,7 +452,7 @@ export function saveWorkspace(msg: Record<string, unknown>): WorkspaceMutationRe
 
 /** Delete a Workspace. Its Directories fall back to the default simply by no
  *  longer being listed anywhere. */
-export function removeWorkspace(msg: Record<string, unknown>): WorkspaceMutationResult {
+function removeWorkspace(msg: Record<string, unknown>): WorkspaceMutationResult {
   if (typeof msg.id !== 'string' || msg.id.length === 0) {
     return reject('Invalid Workspace id.');
   }
@@ -418,6 +468,15 @@ export function removeWorkspace(msg: Record<string, unknown>): WorkspaceMutation
     return reject(WORKSPACE_WRITE_FAILED_REASON);
   }
   return { ok: true };
+}
+
+/** `<root>/.note/` is missing or holds nothing; any other read failure counts as content. */
+function kbFolderIsEmpty(root: string): boolean {
+  try {
+    return fs.readdirSync(personalKbZone(root)).length === 0;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
+  }
 }
 
 /**
@@ -466,6 +525,21 @@ export function setWorkspaceRoot(
   if (!list.writable) return reject(WORKSPACES_FILE_UNREADABLE_REASON);
   const target = list.workspaces.find((w) => w.id === workspaceId);
   if (!target) return reject(WORKSPACE_ROOT_INVALID_ID_REASON);
+  if (
+    target.rootPath !== undefined &&
+    target.rootPath !== realRoot &&
+    !kbFolderIsEmpty(target.rootPath)
+  ) {
+    return reject(WORKSPACE_ROOT_LOCKED_REASON);
+  }
+  if (realRoot !== undefined) {
+    const otherRoots = list.workspaces
+      .filter((w) => w.id !== target.id && w.rootPath !== undefined)
+      .map((w) => w.rootPath as string);
+    if (workspaceKbOverlapsWorkspaces(pathNormalizer, realRoot, otherRoots)) {
+      return reject(WORKSPACE_ROOT_WORKSPACE_OVERLAP_REASON);
+    }
+  }
   const updated: Workspace = {
     id: target.id,
     name: target.name,
@@ -483,7 +557,7 @@ export function setWorkspaceRoot(
  * Only distinct R, E and D are accepted; an empty array is valid and turns all
  * three off. Agents already running keep the roles they launched with.
  */
-export function setWorkspacePermissionRoles(msg: Record<string, unknown>): WorkspaceMutationResult {
+function setWorkspacePermissionRoles(msg: Record<string, unknown>): WorkspaceMutationResult {
   const { workspaceId } = msg;
   if (
     typeof workspaceId !== 'string' ||
@@ -533,10 +607,113 @@ export interface WorkspaceMessageDeps {
   reply: (message: Record<string, unknown>) => void;
   /** A Workspace was deleted: file its agents under the default. */
   onWorkspaceRemoved: (workspaceId: string) => void;
+  /** saveWorkspace 成功（新增或編輯）之後、廣播之前呼叫，帶著存下的 Workspace id；
+   *  KB Writer 綁定據此檢查它的 Directory 是否還屬於該 Workspace。 */
+  onWorkspaceSaved?: (workspaceId: string) => void;
   /** Every Directory a personal KB can live in (registered Directories, every
    *  Workspace's Directories, running agents' Directories), for the overlap
    *  check of setWorkspaceRoot. Absent: only the Workspaces' own Directories. */
   personalKbDirectories?: () => string[];
+}
+
+/** 一次 Workspace 儲存成功之後要做的事（saveWorkspace 訊息與 createAgent 共用）。 */
+export type WorkspaceSaveEffects = Pick<WorkspaceMessageDeps, 'broadcast' | 'onWorkspaceSaved'>;
+
+/**
+ * saveWorkspace 的唯一執行路徑：寫入，成功後呼叫 onWorkspaceSaved，再把清單廣播
+ * 給每個 office。saveWorkspace 訊息處理器與 createAgent（新增／回復一個 Directory）
+ * 都走這裡，兩者的副作用因此不會分歧。失敗時不廣播，原因交給呼叫端回覆。
+ */
+export function saveWorkspaceAndAnnounce(
+  msg: Record<string, unknown>,
+  effects: WorkspaceSaveEffects,
+): WorkspaceMutationResult & { id?: string } {
+  const result = saveWorkspace(msg);
+  if (!result.ok) return result;
+  if (result.id !== undefined) effects.onWorkspaceSaved?.(result.id);
+  effects.broadcast(workspacesLoadedMessage());
+  return result;
+}
+
+/** createAgent 對一個 Directory 的歸屬判定：可用（是否需要加入），或拒絕原因。 */
+export type DirectoryClaim = { ok: true; add: boolean } | { ok: false; reason: string };
+
+/**
+ * 判定已 realpath 的 `realDirectory` 能否作為 `workspaceId` 的 Directory（以 realpath
+ * 比對，見 workspaceContainsDirectory）：
+ * - 預設 Workspace 或不存在的 Workspace：拒絕；
+ * - 其他任一 Workspace 回答 'member' 或 'unknown'：拒絕；
+ * - 目標 Workspace 已包含它：可用、不加入；但它的登記字串必須讓
+ *   workspaceIdForDirectory 推得回這個 Workspace（Agent 的歸屬是由 Directory 推導的），
+ *   否則拒絕；
+ * - 其他情況：可用、需要加入。
+ * 只讀，不寫任何東西。
+ */
+export function claimDirectoryForWorkspace(
+  workspaceId: string,
+  realDirectory: string,
+): DirectoryClaim {
+  if (workspaceId === DEFAULT_WORKSPACE_ID) {
+    return reject('The default Workspace cannot take a new Directory.');
+  }
+  const workspaces = listWorkspaces();
+  const target = workspaces.find((w) => w.id === workspaceId);
+  if (!target) return reject('That Workspace no longer exists.');
+  for (const other of workspaces) {
+    if (other.id === workspaceId) continue;
+    if (workspaceContainsDirectory(other, realDirectory) !== 'not-member') {
+      return reject('That Directory belongs to another Workspace (or cannot be checked).');
+    }
+  }
+  if (workspaceContainsDirectory(target, realDirectory) === 'member') {
+    if (workspaceIdForDirectory(realDirectory) !== workspaceId) {
+      return reject('That Directory is listed in the Workspace under another path.');
+    }
+    return { ok: true, add: false };
+  }
+  return { ok: true, add: true };
+}
+
+/**
+ * 把 `directoryPath` 加到 Workspace 目前（伺服器端重新讀取）的 Directory 清單末尾，
+ * 經 saveWorkspaceAndAnnounce 寫入並廣播。絕不採用用戶端送來的清單。
+ */
+export function addWorkspaceDirectory(
+  workspaceId: string,
+  directoryPath: string,
+  effects: WorkspaceSaveEffects,
+): WorkspaceMutationResult {
+  const target = listWorkspaces().find((w) => w.id === workspaceId);
+  if (!target || target.id === DEFAULT_WORKSPACE_ID) {
+    return reject('That Workspace no longer exists.');
+  }
+  return saveWorkspaceAndAnnounce(
+    { id: target.id, name: target.name, directoryPaths: [...target.directoryPaths, directoryPath] },
+    effects,
+  );
+}
+
+/**
+ * 回復 addWorkspaceDirectory：從 Workspace 目前的清單只移除字面上等於
+ * `directoryPath` 的那一筆，經 saveWorkspaceAndAnnounce 寫入並再次廣播。
+ */
+export function removeWorkspaceDirectory(
+  workspaceId: string,
+  directoryPath: string,
+  effects: WorkspaceSaveEffects,
+): WorkspaceMutationResult {
+  const target = listWorkspaces().find((w) => w.id === workspaceId);
+  if (!target || target.id === DEFAULT_WORKSPACE_ID) {
+    return reject('That Workspace no longer exists.');
+  }
+  return saveWorkspaceAndAnnounce(
+    {
+      id: target.id,
+      name: target.name,
+      directoryPaths: target.directoryPaths.filter((entry) => entry !== directoryPath),
+    },
+    effects,
+  );
 }
 
 /**
@@ -551,12 +728,10 @@ export function handleWorkspaceClientMessage(
 ): boolean {
   switch (msg.type) {
     case 'saveWorkspace': {
-      const result = saveWorkspace(msg);
+      const result = saveWorkspaceAndAnnounce(msg, deps);
       if (!result.ok) {
         deps.reply({ type: 'workspaceRejected', reason: result.reason });
-        return true;
       }
-      deps.broadcast(workspacesLoadedMessage());
       return true;
     }
 

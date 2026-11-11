@@ -26,7 +26,6 @@ import {
   applyAgentWorkspaceChanged,
   applyExistingAgents,
   applyWorkspacesLoaded,
-  canCreateWorkspace,
   canEditWorkspace,
   computeWorkspaceBadges,
   DEFAULT_WORKSPACE_ID,
@@ -267,13 +266,10 @@ describe('badges (acceptance 6)', () => {
   });
 });
 
-describe('read-only office (acceptance 13, frontend half)', () => {
-  test('hides + and edit/delete; a writable office shows them for non-default only', () => {
-    assert.equal(canCreateWorkspace(true), false);
-    assert.equal(canEditWorkspace(true, 'beta'), false);
-    assert.equal(canCreateWorkspace(false), true);
-    assert.equal(canEditWorkspace(false, 'beta'), true);
-    assert.equal(canEditWorkspace(false, DEFAULT_WORKSPACE_ID), false);
+describe('workspace edit control', () => {
+  test('shows edit/delete for non-default Workspaces only', () => {
+    assert.equal(canEditWorkspace('beta'), true);
+    assert.equal(canEditWorkspace(DEFAULT_WORKSPACE_ID), false);
   });
 });
 

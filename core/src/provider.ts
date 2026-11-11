@@ -135,7 +135,7 @@ export interface HookProvider {
   buildLaunchCommand?(
     sessionId: string,
     cwd: string,
-    opts?: { bypassPermissions?: boolean; appendSystemPromptFile?: string },
+    opts?: { bypassPermissions?: boolean; appendSystemPromptFile?: string; resume?: boolean },
   ): {
     command: string;
     args: string[];

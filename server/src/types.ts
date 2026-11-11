@@ -48,9 +48,32 @@ export interface AgentState {
   /** Effective permission roles (P3, R/E/D as a set) snapshotted when a
    *  standalone PTY agent launched: the launch override, else the Workspace
    *  default, else null (no roles: everything allowed, as before P3). Changing
-   *  the Workspace default later never touches it. Runtime-only, never persisted
-   *  (PTY agents are never restored); undefined on every other agent = null. */
+   *  the Workspace default later never touches it. Persisted only on a stopped
+   *  record (it has to survive until `startAgent`); a running PTY agent is never
+   *  restored, so its snapshot is never written. Undefined on every other agent
+   *  = null. */
   permissionRoles?: PermissionRoles;
+  /** Whether this standalone PTY session was launched with
+   *  `--dangerously-skip-permissions` (the bypassPermissions option the launcher
+   *  passed to buildLaunchCommand). Set on every PTY launch, new or a started
+   *  record. Runtime-only: never persisted, never broadcast. Undefined on every
+   *  other agent; task dispatch treats undefined as "launched with bypass". */
+  launchedWithBypass?: boolean;
+  /** Turns completed (turn end that set isWaiting) since THIS PTY session
+   *  started: reset to 0 on every PTY launch, new or a started record, so a
+   *  resumed record's stale isWaiting cannot count before a new turn ends.
+   *  Runtime-only: never persisted, never broadcast. */
+  turnsCompletedThisSession?: number;
+  /** Display name given when the agent was created (`createAgent`). Persisted
+   *  with the record; absent means the agent is labelled by its Directory. */
+  displayName?: string;
+  /** True for a record that exists with no process yet: created without
+   *  `start`, or restored after a restart. Persisted, so it survives a restart;
+   *  cleared when `startAgent` spawns the process. */
+  stopped?: boolean;
+  /** Path of the Directory a standalone agent runs in -- what `startAgent`
+   *  spawns into. Persisted only while stopped. */
+  launchDirectory?: string;
   /** Timestamp of last JSONL data received (ms since epoch) */
   lastDataAt: number;
   /** Total JSONL lines processed for this agent */
@@ -150,4 +173,12 @@ export interface PersistedAgent {
   hueShift?: number;
   /** Workspace the agent belongs to. Absent means the default Workspace. */
   workspaceId?: string;
+
+  // -- Stopped records (created, not yet started) --
+  displayName?: string;
+  /** True for a record with no process yet; only such records are restored as
+   *  startable agents (a running PTY agent never is). */
+  stopped?: boolean;
+  launchDirectory?: string;
+  permissionRoles?: readonly ('R' | 'E' | 'D')[] | null;
 }

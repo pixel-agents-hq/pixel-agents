@@ -18,7 +18,6 @@ describe('hooksConsentRequest — when to ask', () => {
     installed: false,
     hooksEnabled: true,
     consentAnswered: false,
-    privileged: true,
   };
 
   it('asks the one population with nothing of ours installed', () => {
@@ -43,16 +42,8 @@ describe('hooksConsentRequest — when to ask', () => {
     ['our hooks are already installed', { installed: true }],
     ['the ask was already answered', { consentAnswered: true }],
     ['the user turned hooks off', { hooksEnabled: false }],
-    ['the client could not act on an answer', { privileged: false }],
   ])('does not ask when %s', (_why, override) => {
     expect(hooksConsentRequest({ ...askable, ...override }, claudeProvider)).toBeNull();
-  });
-
-  // An untokened standalone spectator's hooksConsentResponse is dropped by the
-  // handler, so showing it the dialog would be asking a question whose answer
-  // is discarded. The privilege check gates the ASK, not just the response.
-  it('never asks an unprivileged client, even when everything else lines up', () => {
-    expect(hooksConsentRequest({ ...askable, privileged: false }, claudeProvider)).toBeNull();
   });
 });
 

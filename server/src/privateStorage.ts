@@ -11,7 +11,7 @@
 
 import * as fs from 'fs';
 
-import { ROLES_STORAGE_DIR_MODE } from './constants.js';
+import { ROLES_STORAGE_DIR_MODE, ROLES_STORAGE_FILE_MODE } from './constants.js';
 
 /** Thrown when a storage directory exists but is not private to the operator. */
 export class StorageUnsafeError extends Error {}
@@ -27,7 +27,7 @@ function currentUid(): number | null {
 }
 
 /** lstat-based: a real directory (never a symlink), owned by us, mode exactly 0700. */
-export function isPrivateDirectory(stats: fs.Stats): boolean {
+function isPrivateDirectory(stats: fs.Stats): boolean {
   const uid = currentUid();
   return (
     uid !== null &&
@@ -35,6 +35,18 @@ export function isPrivateDirectory(stats: fs.Stats): boolean {
     !stats.isSymbolicLink() &&
     stats.uid === uid &&
     (stats.mode & 0o777) === ROLES_STORAGE_DIR_MODE
+  );
+}
+
+/** fstat-based (the handle was opened with O_NOFOLLOW): a regular file owned by
+ *  us, mode exactly 0600. Same no-uid rule as directories: fails on Windows. */
+export function isPrivateFile(stats: fs.Stats): boolean {
+  const uid = currentUid();
+  return (
+    uid !== null &&
+    stats.isFile() &&
+    stats.uid === uid &&
+    (stats.mode & 0o777) === ROLES_STORAGE_FILE_MODE
   );
 }
 

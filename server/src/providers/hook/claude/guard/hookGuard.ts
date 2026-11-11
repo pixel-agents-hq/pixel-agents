@@ -349,7 +349,7 @@ export async function runGuardedDelivery(
 // ── 正式環境的 deps ────────────────────────────────────────
 
 /** 向一台伺服器要裁決。所有失敗都歸類，不丟例外。 */
-export function httpRequestVerdict(
+function httpRequestVerdict(
   server: ServerConfig,
   body: string,
   deadlineAt: number,

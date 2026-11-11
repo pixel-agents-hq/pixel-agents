@@ -87,7 +87,7 @@ afterEach(() => {
 });
 
 describe('agentGuardStatus over /ws', () => {
-  it('standalone: a read-only client gets the status after existingAgents', async () => {
+  it('standalone: a client gets the status after existingAgents', async () => {
     const config = await server.start({
       embedded: false,
       store,
@@ -96,7 +96,6 @@ describe('agentGuardStatus over /ws', () => {
     });
     const messages = await handshake(config.port, {});
     const types = messages.map((m) => m.type);
-    expect(messages.find((m) => m.type === 'officeAccess')).toMatchObject({ readOnly: true });
     const status = messages.find((m) => m.type === 'agentGuardStatus');
     expect(status).toEqual({
       type: 'agentGuardStatus',

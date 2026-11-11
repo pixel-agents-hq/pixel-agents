@@ -60,6 +60,26 @@ function buildHooks() {
     banner: { js: '#!/usr/bin/env node' },
   });
   console.log('✓ Built hooks/ → dist/hooks/');
+  buildTaskDispatchShim();
+}
+
+/**
+ * Bundle the task-dispatch stdio MCP shim to dist/hooks/pixel-agents-mcp.js.
+ * Claude Code starts it as `node <path>` (from the launcher's --mcp-config),
+ * so it needs no shebang. Self-contained CJS: Node builtins only.
+ */
+function buildTaskDispatchShim() {
+  const entry = path.join(__dirname, 'server', 'src', 'taskDispatch', 'mcpShim.ts');
+  if (!fs.existsSync(entry)) return;
+  require('esbuild').buildSync({
+    entryPoints: [entry],
+    bundle: true,
+    platform: 'node',
+    target: 'node18',
+    format: 'cjs',
+    outfile: path.join(__dirname, 'dist', 'hooks', 'pixel-agents-mcp.js'),
+  });
+  console.log('✓ Built task-dispatch MCP shim → dist/hooks/pixel-agents-mcp.js');
 }
 
 /**

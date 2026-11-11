@@ -47,7 +47,7 @@ import {
   setHookProvider,
   setTeamSwitchCallback,
 } from './transcriptParser.js';
-import type { AgentState } from './types.js';
+import type { AgentState, PersistedAgent } from './types.js';
 import { settleWorkspaceFromCwd } from './workspaces.js';
 
 /** Callbacks that adapters register for platform-specific behavior. */
@@ -504,6 +504,13 @@ export class AgentRuntime {
     let maxId = 0;
 
     for (const p of persisted) {
+      // A stopped record has no transcript or process to look for: it comes back
+      // as it was, ready for `startAgent`. A running PTY agent never does.
+      if (p.stopped) {
+        this.restoreStoppedAgent(p);
+        if (p.id > maxId) maxId = p.id;
+        continue;
+      }
       if (!p.isExternal) continue;
       // Background-spawn children (a leadAgentId but no teamName) are derived
       // state: the 1s scan re-materializes them from sidecars while their spawn
@@ -580,6 +587,29 @@ export class AgentRuntime {
     }
 
     this.store.persist();
+  }
+
+  private restoreStoppedAgent(p: PersistedAgent): void {
+    if (this.store.has(p.id)) return;
+    if (!p.sessionId || !p.launchDirectory) return;
+    const agent = createAgentState({
+      id: p.id,
+      sessionId: p.sessionId,
+      isExternal: false,
+      projectDir: p.projectDir,
+      jsonlFile: p.jsonlFile,
+      directoryName: p.directoryName ?? p.folderName,
+      workspaceId: p.workspaceId,
+      displayName: p.displayName,
+      stopped: true,
+      launchDirectory: p.launchDirectory,
+      permissionRoles: p.permissionRoles,
+      palette: p.palette,
+      hueShift: p.hueShift,
+    });
+    assignPaletteIfNeeded(agent, this.store);
+    this.store.set(p.id, agent);
+    console.log(`[Pixel Agents] Restored stopped agent ${p.id} (${p.directoryName ?? 'no name'})`);
   }
 
   // ── Cleanup ──

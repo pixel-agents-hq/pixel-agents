@@ -77,15 +77,6 @@ describe('setWorkspacePermissionRoles (acceptance 11)', () => {
     expect(setRoles(['R'], 'nope')).toMatchObject([{ type: 'workspaceRejected' }]);
   });
 
-  it('a read-only client is refused and snapped back with workspacesLoaded', () => {
-    const replies = h.send(
-      { type: 'setWorkspacePermissionRoles', workspaceId: ws.id, roles: ['R'] },
-      h.ctx({ privileged: false }),
-    );
-    expect(replies.map((m) => m.type)).toEqual(['workspacesLoaded']);
-    expect(rolesOf(ws.id)).toBeUndefined();
-  });
-
   it('saveWorkspace and setWorkspaceRoot keep the default roles', () => {
     setRoles(['R', 'D']);
     expect(saveWorkspace({ id: ws.id, name: 'renamed', directoryPaths: [ws.dir] }).ok).toBe(true);

@@ -32,3 +32,15 @@ export function workspaceKbOverlapsPersonal(
     );
   });
 }
+
+/**
+ * 以 `root` 為根目錄的工作空間 KB 區，是否與任何一個「其他工作空間根目錄」的 KB 區
+ * 相等或互相包含。otherRoots 為其他工作空間已存下的根目錄。
+ */
+export function workspaceKbOverlapsWorkspaces(
+  normalizer: PathNormalizer,
+  root: string,
+  otherRoots: readonly string[],
+): boolean {
+  return workspaceKbOverlapsPersonal(normalizer, root, otherRoots);
+}
