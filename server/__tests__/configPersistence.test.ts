@@ -201,20 +201,12 @@ describe('configPersistence: areas', () => {
       recordHooksDecline('other');
       setHooksEnabled('claude', false); // a persisted "off" must not survive uninstall,
       setHooksEnabled('other', false); // or the next install never prompts
-      const cfg = readConfig();
-      cfg.vscode.hooksInfoShown = true;
-      cfg.standalone.hooksInfoShown = true;
-      writeConfig(cfg);
-
       resetHooksConfig();
 
       expect(getHooksConsent('claude')).toBe('unanswered');
       expect(getHooksConsent('other')).toBe('unanswered');
       expect(getHooksEnabled('claude')).toBe(true);
       expect(getHooksEnabled('other')).toBe(true);
-      const reset = readConfig();
-      expect(reset.vscode.hooksInfoShown).toBe(false);
-      expect(reset.standalone.hooksInfoShown).toBe(false);
     });
   });
 

@@ -34,13 +34,20 @@ export interface ConsentGateState {
  */
 export function hooksConsentRequest(
   state: ConsentGateState,
-  provider: Pick<HookProvider, 'id' | 'consentDisclosure'>,
+  provider: Pick<HookProvider, 'id' | 'consentDisclosure' | 'isCliInstalled'>,
 ): HooksConsentRequest | null {
   if (state.installed || state.consentAnswered || !state.hooksEnabled || !state.privileged) {
     return null;
   }
-  const { headline, disclosure } = provider.consentDisclosure();
-  return { type: 'hooksConsentRequest', providerId: provider.id, headline, disclosure };
+  const { headline, summary, disclosure } = provider.consentDisclosure();
+  return {
+    type: 'hooksConsentRequest',
+    providerId: provider.id,
+    headline,
+    summary,
+    disclosure,
+    cliInstalled: provider.isCliInstalled?.() ?? true,
+  };
 }
 
 /** What the server should DO about an answer. The Intro lets the user walk BACK from the closing step and re-answer,

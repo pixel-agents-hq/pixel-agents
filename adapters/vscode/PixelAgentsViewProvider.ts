@@ -76,6 +76,7 @@ import {
 } from '../../server/src/providers/index.js';
 import { recentCharactersMessage, recordCharacterUse } from '../../server/src/recentCharacters.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
+import { TUTORIAL_PERMISSION_MODE } from '../../server/src/tutorial/tutorialCopy.js';
 import { applyUsageBridgeChoice, usageSnapshotMessages } from '../../server/src/usageLimits.js';
 import {
   invalidateAttributionDirectories,
@@ -98,7 +99,6 @@ import {
   GLOBAL_KEY_ALWAYS_SHOW_LABELS,
   GLOBAL_KEY_BYPASS_PERMISSIONS,
   GLOBAL_KEY_GHOST_HEADLESS_AGENTS,
-  GLOBAL_KEY_HOOKS_INFO_SHOWN,
   GLOBAL_KEY_LAST_SEEN_VERSION,
   GLOBAL_KEY_SHOW_AREAS,
   GLOBAL_KEY_SHOW_HOST_DIRECTORIES,
@@ -219,6 +219,28 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.sendDirectories();
         this.sendOrBuffer(recentCharactersMessage());
       },
+      tutorial: {
+        // The Guide launches into the first workspace folder (else home), like a
+        // drawer launch with no Directory.
+        where: () => ({ ok: true, directoryName: workspaceDirectories()[0]?.name ?? null }),
+        launch: async (request) => {
+          const first = workspaceDirectories()[0];
+          const id = await this.launchTerminal({
+            directory: first ? launchDirectoryFor(first.path) : undefined,
+            palette: rosterPick(request.palette, getPaletteCount()),
+            // Claude Code's own prompts, whatever the skip-permissions setting:
+            // the tutorial's ask promises them.
+            bypassPermissions: false,
+            permissionMode: TUTORIAL_PERMISSION_MODE,
+            firstMessage: request.firstMessage,
+            nickname: request.nickname,
+            preapprovedMcpTools: request.preapprovedTools,
+            pluginDir: request.pluginDir,
+          });
+          return { ok: true, id };
+        },
+        close: (id) => this.endAgent(id),
+      },
     });
 
     // Sessions in a Directory's worktrees (ours or Claude's own) belong to
@@ -264,6 +286,19 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.runtime = new AgentRuntime(this.store, claudeProvider);
 
     this.initServer();
+  }
+
+  /** End an agent as its card's × does: its terminal disposed, or, with no
+   *  terminal of ours, dismissed so the external scanner doesn't re-adopt it. */
+  private endAgent(id: number): void {
+    const agent = this.store.get(id);
+    if (!agent) return;
+    if (agent.terminalRef) {
+      agent.terminalRef.dispose();
+    } else {
+      this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
+      this.runtime.removeAgent(id);
+    }
   }
 
   /** Start an agent's terminal and register it for hook routing; its id. */
@@ -627,18 +662,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
       } else if (message.type === 'closeAgent') {
         // A Worktree agent with uncommitted files is asked about first.
-        this.worktrees.closeAgent(message, (id) => {
-          const agent = this.store.get(id);
-          if (!agent) return;
-          if (agent.terminalRef) {
-            agent.terminalRef.dispose();
-          } else {
-            // External agent -- remove from tracking and dismiss the file
-            // so the external scanner doesn't re-adopt it
-            this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
-            this.runtime.removeAgent(id);
-          }
-        });
+        this.worktrees.closeAgent(message, (id) => this.endAgent(id));
       } else if (message.type === 'requestWorktreeOptions') {
         this.worktrees.requestOptions(message, launchDirectoryFor(message.directoryPath));
       } else if (message.type === 'requestWorktrees' || message.type === 'decideWorktree') {
@@ -703,8 +727,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         if (provider) {
           void applyConsentChoice(provider.id, message.choice, this.consentEffects(provider));
         }
-      } else if (message.type === 'setHooksInfoShown') {
-        this.adapter.setSetting(GLOBAL_KEY_HOOKS_INFO_SHOWN, true);
       } else if (message.type === 'setShowAreas') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_SHOW_AREAS, enabled);
@@ -827,9 +849,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         this.runtime.watchAllSessions.current = watchAllSessions;
         // settingsLoaded.hooksEnabled stays a single boolean carrying the
         // CLAUDE provider's preference until the Settings UI grows a
-        // per-provider list — its sole webview reader is the hooks tooltip.
+        // per-provider list.
         const hooksEnabled = getHooksEnabled(claudeProvider.id);
-        const hooksInfoShown = this.adapter.getSetting<boolean>(GLOBAL_KEY_HOOKS_INFO_SHOWN, false);
         const showAreas = this.adapter.getSetting<boolean>(GLOBAL_KEY_SHOW_AREAS, false);
         const bypassPermissions = this.adapter.getSetting<boolean>(
           GLOBAL_KEY_BYPASS_PERMISSIONS,
@@ -849,7 +870,6 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           alwaysShowLabels,
           ghostHeadlessAgents,
           hooksEnabled,
-          hooksInfoShown,
           externalAssetDirectories: config.externalAssetDirectories,
           showAreas,
           bypassPermissions,

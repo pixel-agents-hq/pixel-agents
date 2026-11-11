@@ -12,6 +12,7 @@ import {
   BASH_COMMAND_DISPLAY_MAX_LENGTH,
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
 } from '../../../constants.js';
+import { executableOnPath } from '../../../executableOnPath.js';
 import {
   areHooksInstalled as installerAreHooksInstalled,
   installHooks as installerInstallHooks,
@@ -19,7 +20,7 @@ import {
 } from './claudeHookInstaller.js';
 import { claudeTeamProvider } from './claudeTeamProvider.js';
 import { claudeUsageBridge } from './claudeUsageBridge.js';
-import { CONSENT_DISCLOSURE, CONSENT_INSTALL_HEADLINE } from './consentCopy.js';
+import { CONSENT_DISCLOSURE, CONSENT_INSTALL_HEADLINE, CONSENT_SUMMARY } from './consentCopy.js';
 import {
   CLAUDE_LARGE_CONTEXT_WINDOW,
   CLAUDE_SMALL_CONTEXT_MODEL_PATTERN,
@@ -147,6 +148,8 @@ function buildLaunchCommand(
     model?: string;
     permissionMode?: string;
     prompt?: string;
+    preapprovedMcpTools?: { server: string; tools: readonly string[] };
+    pluginDirs?: readonly string[];
   },
 ): { command: string; args: string[]; env?: Record<string, string> } {
   // A resumed session keeps its id and appends to its old transcript.
@@ -157,6 +160,18 @@ function buildLaunchCommand(
   // Added to whatever MCP servers the user configured, never replacing them
   // (no --strict-mcp-config): the file names only the Pixel Office MCP.
   if (opts?.mcpConfig) args.push('--mcp-config', opts.mcpConfig);
+  // Loaded for this session only (`--plugin-dir`, one path per flag).
+  for (const dir of opts?.pluginDirs ?? []) args.push('--plugin-dir', dir);
+  // Claude names an MCP tool mcp__<server>__<tool>; the flag takes one value
+  // per tool (its documented form), last before `--` so nothing else is read
+  // as a tool.
+  const preapproved = opts?.preapprovedMcpTools;
+  if (preapproved && preapproved.tools.length > 0) {
+    args.push(
+      '--allowedTools',
+      ...preapproved.tools.map((tool) => `mcp__${preapproved.server}__${tool}`),
+    );
+  }
   // The starting prompt last, after `--`: --mcp-config takes several values
   // and would swallow it, and a prompt starting with `-` would read as a flag.
   if (opts?.prompt) args.push('--', opts.prompt);
@@ -371,8 +386,17 @@ function areHooksInstalled(): Promise<boolean> {
 /** This provider's first-run consent terms. The strings live in
  *  consentCopy.ts (Claude-specific facts: the event count, the settings
  *  path); the shared consent gate ships them verbatim to the Intro. */
-function consentDisclosure(): { headline: string; disclosure: string } {
-  return { headline: CONSENT_INSTALL_HEADLINE, disclosure: CONSENT_DISCLOSURE };
+function consentDisclosure(): { headline: string; summary: string; disclosure: string } {
+  return {
+    headline: CONSENT_INSTALL_HEADLINE,
+    summary: CONSENT_SUMMARY,
+    disclosure: CONSENT_DISCLOSURE,
+  };
+}
+
+/** Whether `claude` resolves on PATH, as the office's launches spawn it. */
+function isCliInstalled(): boolean {
+  return executableOnPath('claude');
 }
 
 // ── Context windows ──
@@ -422,6 +446,7 @@ export const claudeProvider: HookProvider = {
   uninstallHooks,
   areHooksInstalled,
   consentDisclosure,
+  isCliInstalled,
 
   formatToolStatus,
   permissionExemptTools: new Set(['Task', 'Agent', 'AskUserQuestion']),

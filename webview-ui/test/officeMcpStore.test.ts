@@ -19,7 +19,7 @@ import {
   resetOfficeMcpStoreForTests,
 } from '../src/officeMcp/officeMcpStore.js';
 
-const ask = { type: 'officeMcpConsentRequest', headline: 'h', disclosure: 'd' };
+const ask = { type: 'officeMcpConsentRequest', headline: 'h', summary: 's', disclosure: 'd' };
 const status = (consent: string, readOnly = false) => ({
   type: 'officeMcpStatus',
   consent,

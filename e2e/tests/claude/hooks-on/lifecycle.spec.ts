@@ -1643,11 +1643,10 @@ test.describe('Hooks ON / lifecycle', () => {
       initialLayout = fs.readFileSync(layoutPath, 'utf8');
     }
 
-    // Dismiss any first-run tooltips that overlay the top toolbar. The
-    // "Instant Detection Active" tooltip and the "Updated to vN" tooltip
-    // both intercept clicks on the Undo/Redo/Save row. We dismiss them via
-    // their close buttons (the X) before entering edit mode.
-    for (const tooltipText of ['Instant Detection Active', 'Updated to v']) {
+    // Dismiss the first-run "Updated to vN" tooltip, which can intercept
+    // clicks on the Undo/Redo/Save row, via its close button (the X) before
+    // entering edit mode.
+    for (const tooltipText of ['Updated to v']) {
       const tooltip = frame.locator('div', { hasText: tooltipText }).first();
       if (await tooltip.isVisible().catch(() => false)) {
         const closeBtn = tooltip.locator('button', { hasText: 'x' }).first();

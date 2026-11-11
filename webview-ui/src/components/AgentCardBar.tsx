@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { TERMINAL_SIDEBAR_WIDTH_PX } from '../constants.js';
+import { CARD_BAR_TOP_PX, TERMINAL_SIDEBAR_WIDTH_PX } from '../constants.js';
 import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCardList } from './AgentCardList.js';
 
@@ -53,8 +53,12 @@ export function AgentCardBar({
     <AgentCardList
       agentIds={agentIds}
       axis="y"
-      className="relative z-30 h-full shrink-0 flex flex-col items-center gap-4 pt-4 overflow-y-auto pointer-events-none"
-      style={{ width: TERMINAL_SIDEBAR_WIDTH_PX, marginLeft: -TERMINAL_SIDEBAR_WIDTH_PX }}
+      className="relative z-30 h-full shrink-0 flex flex-col items-center gap-4 overflow-y-auto pointer-events-none"
+      style={{
+        width: TERMINAL_SIDEBAR_WIDTH_PX,
+        marginLeft: -TERMINAL_SIDEBAR_WIDTH_PX,
+        paddingTop: CARD_BAR_TOP_PX,
+      }}
       onReorder={onReorder}
       activeAgentId={activeAgentId}
       focusedAgentId={focusedAgentId}

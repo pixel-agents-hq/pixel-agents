@@ -147,6 +147,7 @@ describe('recordUsageReport', () => {
         providerId: 'claude',
         providerName: 'Claude Code',
         installed: false,
+        summary: claudeProvider.usageBridge!.summary,
         disclosure: claudeProvider.usageBridge!.disclosure,
       },
       usageLimitsMessage('claude'),

@@ -309,6 +309,20 @@ export function updateCharacter(
   }
 }
 
+/** One frame of walking `ch.path`, animated, for a character no FSM drives
+ *  (the greeter); false once there is nothing left to walk. */
+export function walkAlong(ch: Character, dt: number): boolean {
+  if (ch.path.length === 0) return false;
+  ch.state = CharacterState.WALK;
+  ch.frameTimer += dt;
+  if (ch.frameTimer >= WALK_FRAME_DURATION_SEC) {
+    ch.frameTimer -= WALK_FRAME_DURATION_SEC;
+    ch.frame = (ch.frame + 1) % 4;
+  }
+  stepAlongPath(ch, dt);
+  return true;
+}
+
 /** Move along `ch.path` for one frame; on reaching a tile, make it the character's tile. */
 function stepAlongPath(ch: Character, dt: number): void {
   const nextTile = ch.path[0];

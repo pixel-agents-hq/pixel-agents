@@ -38,6 +38,9 @@ import {
   uninstallStatusLineBridge,
 } from './statusLineInstaller.js';
 
+/** The Intro's checkbox line. */
+export const USAGE_BRIDGE_SUMMARY = 'See how much of your weekly and 5-hour Claude limits is left.';
+
 /** Shown before the user confirms the install (Settings → Usage Bars). */
 export const USAGE_BRIDGE_DISCLOSURE = [
   'To show your remaining weekly and 5-hour usage in the top-left corner, Pixel Agents ' +
@@ -84,6 +87,7 @@ export function normalizeClaudeContextReport(raw: unknown): ReportedContext | nu
 }
 
 export const claudeUsageBridge: UsageBridge = {
+  summary: USAGE_BRIDGE_SUMMARY,
   disclosure: USAGE_BRIDGE_DISCLOSURE,
   isInstalled: isStatusLineBridgeInstalled,
   install: installStatusLineBridge,

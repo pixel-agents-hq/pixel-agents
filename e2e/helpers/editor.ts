@@ -69,12 +69,12 @@ export interface PlacedItem {
 export const TILE = { WALL: 0, FLOOR_1: 1, FLOOR_2: 2, VOID: 255 } as const;
 
 /**
- * Dismiss the first-run tooltips ("Instant Detection Active", "Updated to vN")
+ * Dismiss the first-run tooltip ("Updated to vN")
  * that overlay the top toolbar and would otherwise intercept the Layout click.
  * Mirrors the helper inlined in pets.spec.ts.
  */
 export async function dismissFirstRunTooltips(frame: Frame): Promise<void> {
-  for (const tooltipText of ['Instant Detection Active', 'Updated to v']) {
+  for (const tooltipText of ['Updated to v']) {
     const tooltip = frame.locator('div', { hasText: tooltipText }).first();
     if (await tooltip.isVisible().catch(() => false)) {
       const closeBtn = tooltip.locator('button', { hasText: 'x' }).first();

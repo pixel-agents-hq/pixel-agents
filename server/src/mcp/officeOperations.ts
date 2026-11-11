@@ -13,6 +13,7 @@
 import type { FurnitureCatalog, OfficeLayout } from '../../../core/src/layout/index.js';
 import type { MessageKey, TypedInput } from '../terminal/agentTerminals.js';
 import type { LaunchAsks } from '../terminal/launchAsks.js';
+import type { TutorialSkipOutcome, TutorialView } from '../tutorial/tutorial.js';
 
 /** The named keys a Message may press (the office's word for them). */
 export { MESSAGE_KEYS } from '../terminal/agentTerminals.js';
@@ -243,6 +244,13 @@ export interface Closing {
   closeAgent(request: OfficeCloseRequest): Promise<OfficeCloseOutcome>;
 }
 
+/** The tutorial (the Guide's hands-on tour): its progress as the caller sees
+ *  it, and the Guide skipping a quest the user asked it to (tutorial/tutorial.ts). */
+export interface TutorialOps {
+  view(caller: number, opts?: { brief?: boolean }): TutorialView;
+  skip(caller: number, questId: string): TutorialSkipOutcome;
+}
+
 /** Everything the tools may call, by capability: a tool names the ones it uses
  *  (`uses`), and the MCP offers a tool only where its surface supplies them. */
 export interface OfficeCapabilities {
@@ -254,16 +262,18 @@ export interface OfficeCapabilities {
   directories: DirectoryOps;
   launch: Launching;
   close: Closing;
+  tutorial: TutorialOps;
 }
 
 export type Capability = keyof OfficeCapabilities;
 
-/** What a surface's office supplies: every capability but launching and
+/** What a surface's office supplies: every capability (the tutorial's too,
+ *  even where it can't be started: its tool then says none runs) but launching and
  *  closing, which only a surface that can do them has (standalone; VS Code
  *  doesn't list launch_agent / close_agent at all). */
 export type OfficeOperations = Pick<
   OfficeCapabilities,
-  'agents' | 'layout' | 'messaging' | 'visits' | 'characters' | 'directories'
+  'agents' | 'layout' | 'messaging' | 'visits' | 'characters' | 'directories' | 'tutorial'
 > &
   Partial<Pick<OfficeCapabilities, 'launch' | 'close'>>;
 

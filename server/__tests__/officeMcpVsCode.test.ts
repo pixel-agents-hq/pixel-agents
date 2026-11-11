@@ -128,7 +128,12 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
 
   function allow(): void {
     expect(fromWebview({ type: 'officeMcpConsentResponse', choice: 'allow' }).handled).toBe(true);
-    expect(h.broadcasts.at(-1)).toMatchObject({ type: 'officeMcpStatus', consent: 'granted' });
+    expect(lastStatus()).toMatchObject({ consent: 'granted' });
+  }
+
+  /** The newest officeMcpStatus broadcast (a consent answer is followed by the tutorial's status). */
+  function lastStatus(): Message | undefined {
+    return h.broadcasts.filter((m) => m.type === 'officeMcpStatus').at(-1);
   }
 
   /** Launch as the office's + does (agentManager), registered for its hooks. */
@@ -217,6 +222,7 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
       'officeMcpStatus',
       'agentLayoutEditStatus',
       'agentCharacterEditStatus',
+      'tutorialStatus',
       'officeMcpConsentRequest',
     ]);
     expect(asked[0]).toMatchObject({ consent: 'unanswered', readOnly: false });
@@ -232,9 +238,13 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
 
     // Settings' read-only switch, then turning it off: every office hears each.
     expect(fromWebview({ type: 'setOfficeMcpReadOnly', readOnly: true }).handled).toBe(true);
-    expect(h.broadcasts.at(-1)).toMatchObject({ type: 'officeMcpStatus', readOnly: true });
+    expect(lastStatus()).toMatchObject({ readOnly: true });
     expect(fromWebview({ type: 'setOfficeMcpEnabled', enabled: false }).handled).toBe(true);
-    expect(h.broadcasts.at(-1)).toMatchObject({ type: 'officeMcpStatus', consent: 'declined' });
+    expect(lastStatus()).toMatchObject({ consent: 'declined' });
+    // No tutorial without the MCP (this VS Code test office has no tutorial surface either).
+    expect(h.broadcasts.filter((m) => m.type === 'tutorialStatus').at(-1)).toMatchObject({
+      available: false,
+    });
     const declined = await launchTerminal();
     expect(declined.terminal.commands[0]).not.toContain('--mcp-config');
 
@@ -435,6 +445,7 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
         'officeMcpStatus',
         'agentLayoutEditStatus',
         'agentCharacterEditStatus',
+        'tutorialStatus',
         'officeMcpConsentRequest',
       ]);
     } finally {

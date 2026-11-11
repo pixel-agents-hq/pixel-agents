@@ -15,6 +15,7 @@ import { FileStateAdapter } from '../src/fileStateAdapter.js';
 import {
   CONSENT_DISCLOSURE,
   CONSENT_INSTALL_HEADLINE,
+  CONSENT_SUMMARY,
 } from '../src/providers/hook/claude/consentCopy.js';
 import { CLAUDE_HOOK_EVENTS } from '../src/providers/hook/claude/constants.js';
 
@@ -107,7 +108,9 @@ describe('clientMessageHandler: hooks consent flow', () => {
         type: 'hooksConsentRequest',
         providerId: 'claude',
         headline: CONSENT_INSTALL_HEADLINE,
+        summary: CONSENT_SUMMARY,
         disclosure: CONSENT_DISCLOSURE,
+        cliInstalled: expect.any(Boolean),
       });
       // After the truthful install state, never before: the webview treats
       // hooksStatus installed=true as "the ask is moot", so a request sent

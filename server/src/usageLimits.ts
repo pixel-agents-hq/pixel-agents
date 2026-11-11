@@ -38,6 +38,8 @@ export const PRIVILEGED_BROADCAST_TYPES: ReadonlySet<string> = new Set([
   'worktreesLoaded',
   // Who may act on the office through the Pixel Office MCP: the operator's setting.
   'officeMcpStatus',
+  // The tutorial's offer and progress: only an office that may start or skip it.
+  'tutorialStatus',
 ]);
 
 let cache: Record<string, StoredUsage> | null = null;
@@ -139,6 +141,7 @@ export function usageBridgeStatusMessage(
     providerId: provider.id,
     providerName: provider.displayName,
     installed: provider.usageBridge?.isInstalled() ?? false,
+    summary: provider.usageBridge?.summary ?? '',
     disclosure: provider.usageBridge?.disclosure ?? '',
     ...(error ? { error } : {}),
   };

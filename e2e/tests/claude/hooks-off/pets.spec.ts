@@ -45,12 +45,12 @@ type PetWindow = Window & { __pixelAgentsTestHooks?: PetTestHooks };
 const PETS_CAROUSEL = '[data-testid="pets-carousel"]';
 
 /**
- * Dismiss the first-run tooltips ("Instant Detection Active", "Updated to vN")
+ * Dismiss the first-run tooltip ("Updated to vN")
  * that overlay the top toolbar and would otherwise intercept the Layout click.
  * Mirrors the layout-editor smoke test in hooks-on/lifecycle.spec.ts.
  */
 async function dismissFirstRunTooltips(frame: Frame): Promise<void> {
-  for (const tooltipText of ['Instant Detection Active', 'Updated to v']) {
+  for (const tooltipText of ['Updated to v']) {
     const tooltip = frame.locator('div', { hasText: tooltipText }).first();
     if (await tooltip.isVisible().catch(() => false)) {
       const closeBtn = tooltip.locator('button', { hasText: 'x' }).first();

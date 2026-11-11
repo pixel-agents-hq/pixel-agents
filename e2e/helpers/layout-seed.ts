@@ -93,7 +93,6 @@ const DEFAULT_ADAPTER_SETTINGS = {
   lastSeenVersion: '',
   alwaysShowLabels: true,
   watchAllSessions: false,
-  hooksInfoShown: false,
   showAreas: false,
   areaMappings: {} as Record<string, string[]>,
   showHostDirectories: true,

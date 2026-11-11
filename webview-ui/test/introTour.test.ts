@@ -22,8 +22,10 @@ import { INTRO_TOUR_IDLE, reduceIntroTour } from '../src/hooks/introTourState.js
 const REQUEST = {
   type: 'hooksConsentRequest',
   providerId: 'claude',
-  headline: 'One more thing: hooks!',
+  headline: 'Live updates',
+  summary: 'One line.',
   disclosure: 'What is written.\n\nWhat moves.\n\nHow to undo.',
+  cliInstalled: true,
 } as const;
 
 /** Fold a sequence of events over the idle state. */

@@ -46,6 +46,8 @@ export type ServerMessage =
   | HooksConsentRequest
   | OfficeMcpConsentRequest
   | OfficeMcpStatus
+  | TutorialStatus
+  | TutorialRejected
   | UsageBridgeStatus
   | UsageLimits
   | ExternalAssetDirectoriesUpdated
@@ -89,7 +91,9 @@ export type ClientMessage =
   | OfficeMcpConsentResponse
   | SetOfficeMcpEnabled
   | SetOfficeMcpReadOnly
-  | SetHooksInfoShown
+  | StartTutorial
+  | SkipTutorialQuest
+  | QuitTutorial
   | SetWatchAllSessions
   | ExportLayout
   | ImportLayout
@@ -461,7 +465,6 @@ export interface SettingsLoaded {
   alwaysShowLabels: boolean;
   ghostHeadlessAgents: boolean;
   hooksEnabled: boolean;
-  hooksInfoShown: boolean;
   externalAssetDirectories: string[];
   showAreas: boolean;
   bypassPermissions: boolean;
@@ -484,12 +487,15 @@ export interface HooksConsentRequest {
   type: 'hooksConsentRequest';
   providerId: string;
   headline: string;
+  summary: string;
+  cliInstalled: boolean;
   disclosure: string;
 }
 
 export interface OfficeMcpConsentRequest {
   type: 'officeMcpConsentRequest';
   headline: string;
+  summary: string;
   disclosure: string;
 }
 
@@ -503,11 +509,39 @@ export interface OfficeMcpStatus {
 
 export type OfficeMcpConsentState = 'unanswered' | 'granted' | 'declined';
 
+export interface TutorialStatus {
+  type: 'tutorialStatus';
+  available: boolean;
+  unavailableReason?: string;
+  headline: string;
+  disclosure: string;
+  run?: TutorialRun;
+}
+
+export interface TutorialRun {
+  agentId: number;
+  quests: TutorialQuestProgress[];
+  finished: boolean;
+}
+
+export interface TutorialQuestProgress {
+  id: string;
+  state: TutorialQuestState;
+}
+
+export type TutorialQuestState = 'open' | 'done' | 'skipped';
+
+export interface TutorialRejected {
+  type: 'tutorialRejected';
+  reason: string;
+}
+
 export interface UsageBridgeStatus {
   type: 'usageBridgeStatus';
   providerId: string;
   providerName: string;
   installed: boolean;
+  summary: string;
   disclosure: string;
   error?: string;
 }
@@ -815,7 +849,7 @@ export interface OfficeMcpConsentResponse {
   choice: OfficeMcpChoice;
 }
 
-export type OfficeMcpChoice = 'allow' | 'decline';
+export type OfficeMcpChoice = 'allow' | 'notNow' | 'decline';
 
 export interface SetOfficeMcpEnabled {
   type: 'setOfficeMcpEnabled';
@@ -827,8 +861,19 @@ export interface SetOfficeMcpReadOnly {
   readOnly: boolean;
 }
 
-export interface SetHooksInfoShown {
-  type: 'setHooksInfoShown';
+export interface StartTutorial {
+  type: 'startTutorial';
+  palette?: number;
+  seatId?: string;
+}
+
+export interface SkipTutorialQuest {
+  type: 'skipTutorialQuest';
+  questId: string;
+}
+
+export interface QuitTutorial {
+  type: 'quitTutorial';
 }
 
 export interface SetWatchAllSessions {

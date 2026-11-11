@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CONSENT_DISCLOSURE,
+  CONSENT_FACT_DATA,
+  CONSENT_FACT_REVERSIBLE,
+  CONSENT_FACT_WHAT,
   CONSENT_INSTALL_HEADLINE,
 } from '../src/providers/hook/claude/consentCopy.js';
 import {
@@ -59,10 +62,12 @@ describe('consent copy', () => {
     expect(CONSENT_DISCLOSURE).not.toContain('already installed');
   });
 
-  // The disclosure keeps its paragraph breaks: the bubble splits on the blank
-  // lines and renders one <p> per fact. Collapsing it to one run of prose
-  // would be a silent legibility regression.
-  it('is a paragraph-separated block', () => {
-    expect(CONSENT_DISCLOSURE.split('\n\n')).toHaveLength(3);
+  // One short paragraph, the facts in order (what, data, undo): the Intro shows
+  // it beside the Pixel Office MCP's disclosure on a single step.
+  it('is one paragraph, the facts in order', () => {
+    expect(CONSENT_DISCLOSURE).not.toContain('\n');
+    expect(CONSENT_DISCLOSURE).toBe(
+      [CONSENT_FACT_WHAT, CONSENT_FACT_DATA, CONSENT_FACT_REVERSIBLE].join(' '),
+    );
   });
 });

@@ -44,14 +44,12 @@ describe('FileStateAdapter', () => {
     adapter.setSetting('pixel-agents.lastSeenVersion', '1.3');
     adapter.setSetting('pixel-agents.alwaysShowLabels', true);
     adapter.setSetting('pixel-agents.watchAllSessions', true);
-    adapter.setSetting('pixel-agents.hooksInfoShown', true);
     adapter.setSetting('pixel-agents.bypassPermissions', true);
 
     expect(adapter.getSetting('pixel-agents.soundEnabled', true)).toBe(false);
     expect(adapter.getSetting('pixel-agents.lastSeenVersion', '')).toBe('1.3');
     expect(adapter.getSetting('pixel-agents.alwaysShowLabels', false)).toBe(true);
     expect(adapter.getSetting('pixel-agents.watchAllSessions', false)).toBe(true);
-    expect(adapter.getSetting('pixel-agents.hooksInfoShown', false)).toBe(true);
 
     // hooksEnabled is deliberately NOT an adapter key any more: it is
     // per-provider and machine-global, so the adapter ignores it and the

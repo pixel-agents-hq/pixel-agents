@@ -6,6 +6,15 @@ sends its `hooksConsentResponse` the moment it happens (no deferred commit on "L
 Go"), and the server therefore reads every choice as a statement of the state the user
 wants _now_, against everything an earlier answer left behind.
 
+**Amended (the choices step):** the Intro now asks on one step with a box per thing to
+turn on (usage bars, the hooks, the Pixel Office MCP), all off to start, each one line with
+its full terms behind "Read more". Continue sends the boxes' answers at once: the hooks box
+ticked is `install`, left off is `never` (so the Intro does not return on every open; Settings
+turns them on later). The box starting off is what keeps "Read more" honest: nothing is
+written unless the user ticks it. `notNow` is still a valid answer on the wire (and the
+revision rules below still hold for it), but the Intro no longer offers it; the close x
+is the way to answer nothing.
+
 Everything below is keyed by `HookProvider.id`. Consent is per-human per-provider
 (`hooksConsent` / `hooksEnabled` maps at the top level of `config.json`), every
 consent-bearing wire message carries a `providerId` the client only ever echoes, and

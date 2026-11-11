@@ -6,7 +6,7 @@ import { CHARACTER_PROFILE_VERSION, type CharacterProfile } from './characterPro
  */
 const CAST: readonly Omit<CharacterProfile, 'v'>[] = [
   {
-    name: 'Suit',
+    name: 'Byte',
     body: 'flat',
     eyeShape: 'plain',
     under: 'basic',
@@ -21,7 +21,7 @@ const CAST: readonly Omit<CharacterProfile, 'v'>[] = [
     },
   },
   {
-    name: 'Dress',
+    name: 'Nova',
     body: 'bust',
     eyeShape: 'lashes',
     utop: 'basic',
@@ -34,7 +34,7 @@ const CAST: readonly Omit<CharacterProfile, 'v'>[] = [
     },
   },
   {
-    name: 'Spike',
+    name: 'Pip',
     body: 'flat',
     eyeShape: 'plain',
     under: 'basic',
@@ -50,7 +50,7 @@ const CAST: readonly Omit<CharacterProfile, 'v'>[] = [
     },
   },
   {
-    name: 'Aura',
+    name: 'Echo',
     body: 'bust',
     eyeShape: 'plain',
     utop: 'basic',
@@ -66,7 +66,7 @@ const CAST: readonly Omit<CharacterProfile, 'v'>[] = [
     },
   },
   {
-    name: 'Tidy',
+    name: 'Dot',
     body: 'bust',
     eyeShape: 'lashes',
     utop: 'basic',
@@ -82,7 +82,7 @@ const CAST: readonly Omit<CharacterProfile, 'v'>[] = [
     },
   },
   {
-    name: 'Bob',
+    name: 'Volt',
     body: 'flat',
     eyeShape: 'plain',
     under: 'basic',

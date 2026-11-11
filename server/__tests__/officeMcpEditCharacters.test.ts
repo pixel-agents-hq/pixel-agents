@@ -94,8 +94,8 @@ describe('edit_characters (composed server, default roster, two Directories)', (
       {
         directory: 'Client / varys',
         characters: [
-          { id: 'char-2', name: 'Spike', palette: 2 },
-          { id: 'char-0', name: 'Suit', palette: 0 },
+          { id: 'char-2', name: 'Pip', palette: 2 },
+          { id: 'char-0', name: 'Byte', palette: 0 },
           { id, name: 'Naruto', palette: 6 },
         ],
       },
@@ -209,7 +209,7 @@ describe('edit_characters (composed server, default roster, two Directories)', (
       /^op 1 \(update_character\): there is no hair part mohawk/,
     );
     await bad(
-      [NARUTO, { op: 'update_character', character: 'Bob', colors: { hair: { name: 'Plaid' } } }],
+      [NARUTO, { op: 'update_character', character: 'Volt', colors: { hair: { name: 'Plaid' } } }],
       /^op 1 \(update_character\): colour hair has no named colour Plaid: they are .*Yellow/,
     );
     await bad(
@@ -217,11 +217,11 @@ describe('edit_characters (composed server, default roster, two Directories)', (
       /^op 0 \(create_character\): the shoes worn has no colourway Neon: its colourways are .*Black/,
     );
     await bad(
-      [{ op: 'update_character', character: 'Bob', parts: { full: 'dress', top: 'tshirt' } }],
+      [{ op: 'update_character', character: 'Volt', parts: { full: 'dress', top: 'tshirt' } }],
       /full and top take each other off/,
     );
     await bad(
-      [{ op: 'update_character', character: 'Bob', colors: { tie: { name: 'Red' } } }],
+      [{ op: 'update_character', character: 'Volt', colors: { tie: { name: 'Red' } } }],
       /colour tie: nothing this character wears takes it/,
     );
     await bad(
@@ -234,7 +234,7 @@ describe('edit_characters (composed server, default roster, two Directories)', (
     );
     // The host's own Directory carries no defaults.
     await bad(
-      [{ op: 'add_to_directory', character: 'Bob', directory: 'proj' }],
+      [{ op: 'add_to_directory', character: 'Volt', directory: 'proj' }],
       /proj is the host's Directory/,
     );
     await bad([{ op: 'delete_character', character: 'char-0' }], /the Intro's greeter wears/);
@@ -247,24 +247,24 @@ describe('edit_characters (composed server, default roster, two Directories)', (
 
   it("deleting a worn character re-looks its agents; a Directory's defaults follow the delete and the batch's own changes", async () => {
     const { client, id } = await h.launchAgent();
-    // The agent wears Dress (palette 1); another wears Bob (palette 5, moved to 4 by the delete).
+    // The agent wears Nova (palette 1); another wears Volt (palette 5, moved to 4 by the delete).
     h.store.get(id)!.palette = 1;
     h.store.get(id)!.repeat = 0;
     const before = h.received.length;
     const reply = await edit(client, [
       NARUTO,
-      { op: 'delete_character', character: 'Dress' },
-      // Into Other's defaults (Spike, Tidy) at the top; Varys keeps Spike, Suit.
+      { op: 'delete_character', character: 'Nova' },
+      // Into Other's defaults (Pip, Dot) at the top; Varys keeps Pip, Byte.
       { op: 'add_to_directory', character: 'naruto', directory: 'Other', position: 0 },
-      { op: 'remove_from_directory', character: 'Tidy', directory: 'Other' },
+      { op: 'remove_from_directory', character: 'Dot', directory: 'Other' },
     ]);
     expect(reply.isError, reply.text).toBe(false);
-    expect(reply.value!.deleted).toEqual([{ op: 1, id: 'char-1', name: 'Dress' }]);
+    expect(reply.value!.deleted).toEqual([{ op: 1, id: 'char-1', name: 'Nova' }]);
     expect(reply.value!.created[0].palette).toBe(5);
 
     const saved = onDisk()!;
-    expect(saved.map((p) => p.name)).toEqual(['Suit', 'Spike', 'Aura', 'Tidy', 'Bob', 'Naruto']);
-    // Varys was only renumbered (Spike 2 → 1); Other is the batch's: Naruto, Spike.
+    expect(saved.map((p) => p.name)).toEqual(['Byte', 'Pip', 'Echo', 'Dot', 'Volt', 'Naruto']);
+    // Varys was only renumbered (Pip 2 → 1); Other is the batch's: Naruto, Pip.
     expect(defaultsOf('Client / varys')).toEqual([1, 0]);
     expect(defaultsOf('Other')).toEqual([5, 1]);
 
@@ -286,7 +286,7 @@ describe('edit_characters (composed server, default roster, two Directories)', (
     const reply = await edit(client, [
       {
         op: 'update_character',
-        character: 'Bob',
+        character: 'Volt',
         name: 'Robert',
         colors: { hair: { name: 'Blue' } },
       },
@@ -323,7 +323,7 @@ describe('edit_characters (composed server, default roster, two Directories)', (
   it('an office with an unsaved Characters draft blocks edits; saving, discarding or disconnecting lifts it', async () => {
     const { client } = await h.launchAgent();
     const office = await h.connectOffice();
-    const op = [{ op: 'update_character', character: 'Bob', name: 'Bobby' }];
+    const op = [{ op: 'update_character', character: 'Volt', name: 'Bobby' }];
 
     h.send({ type: 'charactersEditing', dirty: true }, office.socket);
     await new Promise((r) => setTimeout(r, 100));
@@ -342,13 +342,13 @@ describe('edit_characters (composed server, default roster, two Directories)', (
     office.socket.close();
     await new Promise((r) => setTimeout(r, 200));
     expect(
-      (await edit(client, [{ op: 'update_character', character: 'Bobby', name: 'Bob' }])).isError,
+      (await edit(client, [{ op: 'update_character', character: 'Bobby', name: 'Volt' }])).isError,
     ).toBe(false);
   });
 
   // ── Undo ────────────────────────────────────────────────────
 
-  const DEFAULT_NAMES = ['Suit', 'Dress', 'Spike', 'Aura', 'Tidy', 'Bob'];
+  const DEFAULT_NAMES = ['Byte', 'Nova', 'Pip', 'Echo', 'Dot', 'Volt'];
   const undo = (client: Parameters<typeof h.callTool>[0]) =>
     h.callTool(client, 'undo_character_edit');
   const lastStatus = (from = 0) =>
@@ -363,7 +363,7 @@ describe('edit_characters (composed server, default roster, two Directories)', (
     await edit(client, [
       NARUTO,
       { op: 'add_to_directory', character: 'naruto', directory: 'Client / varys' },
-      { op: 'update_character', character: 'Bob', name: 'Robert' },
+      { op: 'update_character', character: 'Volt', name: 'Robert' },
     ]);
     const landed = await waitFor(
       () => h.received.slice(before).find((m) => m.type === 'agentCharacterEditStatus'),
@@ -407,8 +407,8 @@ describe('edit_characters (composed server, default roster, two Directories)', (
         {
           directory: 'Client / varys',
           characters: [
-            { id: 'char-2', name: 'Spike', palette: 2 },
-            { id: 'char-0', name: 'Suit', palette: 0 },
+            { id: 'char-2', name: 'Pip', palette: 2 },
+            { id: 'char-0', name: 'Byte', palette: 0 },
           ],
         },
       ],
@@ -435,21 +435,21 @@ describe('edit_characters (composed server, default roster, two Directories)', (
     const configBefore = config().directories;
     await edit(client, [
       NARUTO,
-      { op: 'delete_character', character: 'Dress' },
-      { op: 'update_character', character: 'Bob', colors: { hair: { name: 'Blue' } } },
+      { op: 'delete_character', character: 'Nova' },
+      { op: 'update_character', character: 'Volt', colors: { hair: { name: 'Blue' } } },
       { op: 'add_to_directory', character: 'naruto', directory: 'Other', position: 0 },
-      { op: 'remove_from_directory', character: 'Tidy', directory: 'Other' },
+      { op: 'remove_from_directory', character: 'Dot', directory: 'Other' },
     ]);
     expect(defaultsOf('Client / varys')).toEqual([1, 0]);
-    // An agent wears Bob (palette 4 after the delete).
+    // An agent wears Volt (palette 4 after the delete).
     h.store.get(id)!.palette = 4;
 
     const reply = await undo(client);
     expect(reply.isError, reply.text).toBe(false);
-    // Dress and Bob came back as they were: pictured.
+    // Nova and Volt came back as they were: pictured.
     expect(reply.value!.restored).toEqual([
-      { id: 'char-1', name: 'Dress', palette: 1 },
-      { id: 'char-5', name: 'Bob', palette: 5 },
+      { id: 'char-1', name: 'Nova', palette: 1 },
+      { id: 'char-5', name: 'Volt', palette: 5 },
     ]);
     expect(reply.images).toHaveLength(2);
     const disk = onDisk()!;
@@ -458,13 +458,13 @@ describe('edit_characters (composed server, default roster, two Directories)', (
     expect(diskBefore).toBeNull();
     expect(disk).toEqual(JSON.parse(JSON.stringify(DEFAULT_CHARACTER_PROFILES)));
     expect(config().directories).toEqual(configBefore);
-    // Bob's wearer followed Bob back to palette 5.
+    // Volt's wearer followed Volt back to palette 5.
     expect(h.store.get(id)!.palette).toBe(5);
   });
 
   it('undo goes newest first; it is refused once the roster or a Directory it touched changed since — tool and button alike', async () => {
     const { client } = await h.launchAgent();
-    await edit(client, [{ op: 'update_character', character: 'Bob', name: 'Bobby' }]);
+    await edit(client, [{ op: 'update_character', character: 'Volt', name: 'Bobby' }]);
     await edit(client, [{ op: 'update_character', character: 'Bobby', name: 'Robert' }]);
     expect((await undo(client)).isError).toBe(false);
     expect(onDisk()![5].name).toBe('Bobby');
@@ -476,7 +476,7 @@ describe('edit_characters (composed server, default roster, two Directories)', (
       () => h.received.slice(pressed).find((m) => m.type === 'characterProfilesLoaded'),
       'the undo broadcast',
     );
-    expect(onDisk()![5].name).toBe('Bob');
+    expect(onDisk()![5].name).toBe('Volt');
 
     // An edit, then a person saves the roster over it.
     await edit(client, [NARUTO]);
@@ -514,7 +514,7 @@ describe('edit_characters (composed server, default roster, two Directories)', (
     expect(defaultsOf('Other')).toEqual([3]);
 
     // An edit, then characters.json is rewritten on disk (by hand, or the other surface).
-    await edit(client, [{ op: 'update_character', character: 'Bob', name: 'Bobby' }]);
+    await edit(client, [{ op: 'update_character', character: 'Volt', name: 'Bobby' }]);
     expect(lastStatus()?.agentId).toBeDefined();
     const renamed = onDisk()!;
     renamed[5] = { ...renamed[5], name: 'Roberto' };
@@ -530,7 +530,7 @@ describe('edit_characters (composed server, default roster, two Directories)', (
 
   it('an unsaved Characters draft blocks undo too', async () => {
     const { client } = await h.launchAgent();
-    await edit(client, [{ op: 'update_character', character: 'Bob', name: 'Bobby' }]);
+    await edit(client, [{ op: 'update_character', character: 'Volt', name: 'Bobby' }]);
     const office = await h.connectOffice();
     h.send({ type: 'charactersEditing', dirty: true }, office.socket);
     await new Promise((r) => setTimeout(r, 100));
@@ -711,7 +711,7 @@ describe('the Character edit history (what undo will restore)', () => {
   it('a roster that does not validate is refused as a whole, not blamed on an op', () => {
     const { state, edits } = fakeOffice();
     const outcome = edits.edit(7, [
-      { op: 'update_character', character: 'Bob', name: 'Robert' },
+      { op: 'update_character', character: 'Volt', name: 'Robert' },
       // Past zod (a test reaching the ops directly): a colour the validator refuses.
       { op: 'update_character', character: 5, colors: { skin: { h: NaN, s: 0, b: 0, c: 0 } } },
       { op: 'add_to_directory', character: 5, directory: 'A' },
@@ -723,7 +723,7 @@ describe('the Character edit history (what undo will restore)', () => {
 
   it('an update that changes nothing writes nothing, says so, and leaves nothing to undo', () => {
     const { state, edits } = fakeOffice();
-    const outcome = edits.edit(7, [{ op: 'update_character', character: 'Bob', name: 'Bob' }]);
+    const outcome = edits.edit(7, [{ op: 'update_character', character: 'Volt', name: 'Volt' }]);
     expect(outcome).toEqual({
       ok: true,
       changed: false,
@@ -741,7 +741,7 @@ describe('the Character edit history (what undo will restore)', () => {
   it('re-sends the Directories only when the edit wrote some (the save path re-sends what it renumbered)', () => {
     const { state, edits } = fakeOffice();
     expect(
-      edits.edit(7, [{ op: 'update_character', character: 'Bob', name: 'Robert' }]),
+      edits.edit(7, [{ op: 'update_character', character: 'Volt', name: 'Robert' }]),
     ).toMatchObject({ ok: true, changed: true });
     expect(state.refsChanged).toBe(0);
     expect(
@@ -765,7 +765,7 @@ describe('the Character edit history (what undo will restore)', () => {
       reason: expect.stringMatching(/could not be saved, so the characters were put back/),
     });
     expect(state.roster.map((p) => p.id)).toEqual(startIds);
-    // Dress came back, and so did its place in A's defaults the delete had dropped.
+    // Nova came back, and so did its place in A's defaults the delete had dropped.
     expect(state.directories.map((d) => d.characters)).toEqual([[2, 1], [5]]);
     expect(edits.history()).toHaveLength(0);
     expect(state.broadcasts.filter((m) => m.agentId !== undefined)).toEqual([]);
@@ -791,7 +791,7 @@ describe('the Character edit history (what undo will restore)', () => {
     const after = { roster: state.roster, dirs: state.directories.map((d) => [...d.characters]) };
     expect(edits.statusMessage()).toMatchObject({
       agentId: 7,
-      summary: "created New, deleted Dress, changed A's defaults",
+      summary: "created New, deleted Nova, changed A's defaults",
     });
 
     // The roster save fails: nothing undone, still undoable.

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONSENT_DISCLOSURE,
   CONSENT_INSTALL_HEADLINE,
+  CONSENT_SUMMARY,
 } from '../src/providers/hook/claude/consentCopy.js';
 import { consentActionFor, hooksConsentRequest } from '../src/providers/hook/consentGate.js';
 import { claudeProvider } from '../src/providers/index.js';
@@ -26,7 +27,9 @@ describe('hooksConsentRequest — when to ask', () => {
       type: 'hooksConsentRequest',
       providerId: 'claude',
       headline: CONSENT_INSTALL_HEADLINE,
+      summary: CONSENT_SUMMARY,
       disclosure: CONSENT_DISCLOSURE,
+      cliInstalled: expect.any(Boolean),
     });
   });
 

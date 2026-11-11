@@ -94,8 +94,7 @@ describe('migrateVsCodeState', () => {
     // without ever being told what they add — they get the Intro instead. The
     // provider map keeps its default...
     expect(getHooksEnabled('claude')).toBe(true);
-    expect(adapter.getSetting('pixel-agents.hooksInfoShown', false)).toBe(true);
-    // ...while the stale key is still cleared — left behind it would count as
+    // ...while the stale keys (it and the retired hooksInfoShown) are still cleared — left behind it would count as
     // unmigrated forever and warn on every launch.
     expect(globalStore).toEqual({});
     expect(showWarningMessage).not.toHaveBeenCalled();

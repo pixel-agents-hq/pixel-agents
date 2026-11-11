@@ -88,5 +88,33 @@
     {"uid": "f-1773358458100-4wm2", "type": "COFFEE", "col": 1, "row": 19},
     {"uid": "f-1773358479734-biia", "type": "PLANT_2", "col": 1, "row": 17},
     {"uid": "f-1773358485454-id8j", "type": "SMALL_PAINTING_2", "col": 17, "row": 9}
+  ],
+  "areas": [
+    { "label": "Studio", "color": "#4a90d9" },
+    { "label": "Lounge", "color": "#d98a4a" }
+  ],
+  "areaTiles": [
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+    null, "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", null, "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", null, null,
+    null, "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", null, "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", null, null,
+    null, "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", null, "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", null, null,
+    null, "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", null, "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", null, null,
+    null, "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", null, "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", null, null,
+    null, "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", null, "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", null, null,
+    null, "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", null, "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", null, null,
+    null, "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", null, "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", null, null,
+    null, "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", null, "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", null, null,
+    null, "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", "Studio", null, "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", "Lounge", null, null,
+    null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null
   ]
 }

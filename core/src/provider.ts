@@ -115,6 +115,8 @@ export interface ReportedContext {
  * the body into a ReportedUsage. Install is always an explicit user choice.
  */
 export interface UsageBridge {
+  /** One line on what it shows: the Intro's checkbox text. */
+  readonly summary: string;
   /** What installing writes, what data moves, how to undo it — shown before
    *  the user confirms (paragraphs split on blank lines). */
   readonly disclosure: string;
@@ -199,11 +201,14 @@ export interface HookProvider {
   uninstallHooks(): Promise<void>;
   /** Check if hooks are currently installed. */
   areHooksInstalled(): Promise<boolean>;
-  /** First-run consent copy for THIS provider's hook install: the headline titles the ask, the disclosure is its body
-   *  (what is written, what data moves, how to undo; paragraphs split on blank lines). Required, not optional — a
-   *  provider that installs anything must state its terms, and the gate ships these verbatim so no client copy can
-   *  drift. */
-  consentDisclosure(): { headline: string; disclosure: string };
+  /** First-run consent copy for THIS provider's hook install: the headline labels the ask, the summary is its one line
+   *  beside the Intro's checkbox, the disclosure its full terms behind "Read more" (what is written, what data moves,
+   *  how to undo). Required, not optional — a provider that installs anything must state its terms, and the gate ships
+   *  these verbatim so no client copy can drift. */
+  consentDisclosure(): { headline: string; summary: string; disclosure: string };
+  /** Whether the provider's CLI is installed on this machine (the Intro's "get Claude Code" step shows only when it
+   *  isn't). Absent = assumed installed. */
+  isCliInstalled?(): boolean;
 
   /** Format tool status for display (e.g., "Read" -> "Reading foo.ts") */
   formatToolStatus(toolName: string, input?: unknown): string;
@@ -278,6 +283,13 @@ export interface HookProvider {
       /** The session's first message, passed as the CLI's starting prompt (an
        *  argv entry: never typed into the terminal, never a shell string). */
       prompt?: string;
+      /** Tools of an MCP server this launch may call without a permission
+       *  prompt (the tutorial agent's read-only Pixel Office MCP tools). The
+       *  provider spells them its CLI's way; every other tool still asks. */
+      preapprovedMcpTools?: { server: string; tools: readonly string[] };
+      /** Plugin folders this session alone loads (the tutorial's onboarding
+       *  skill); nothing is installed. */
+      pluginDirs?: readonly string[];
     },
   ): {
     command: string;

@@ -49,6 +49,7 @@ import {
   updateHelper,
   updateVisit,
 } from './characters.js';
+import { GreeterHandoff } from './greeterHandoff.js';
 import { advanceMatrixEffect, startMatrixEffect } from './matrixEffectState.js';
 import { createPet, updatePet } from './petEntity.js';
 import { anchorTile, closestFreeSeat } from './seatPlacement.js';
@@ -178,6 +179,31 @@ export class OfficeState {
       ),
     sendToSeat: (id) => this.sendToSeat(id),
   });
+
+  /** The greeter becoming the tutorial's Guide: its walk to a seat, then the Guide taking its place. */
+  readonly handoff = new GreeterHandoff({
+    greeter: () => this.greeter,
+    freeSeats: () => [...this.seats].flatMap(([uid, seat]) => (seat.assigned ? [] : [uid])),
+    seat: (id) => this.seats.get(id),
+    pathTo: (ch, seat) => {
+      // The greeter holds no seat: unblock the one it walks to for the query.
+      const key = `${seat.seatCol},${seat.seatRow}`;
+      const blocked = this.blockedTiles.delete(key);
+      const path = findPath(
+        ch.tileCol,
+        ch.tileRow,
+        seat.seatCol,
+        seat.seatRow,
+        this.tileMap,
+        this.blockedTiles,
+      );
+      if (blocked) this.blockedTiles.add(key);
+      return path;
+    },
+  });
+  /** The agent that took the greeter's place (handoff), until the Intro closes:
+   *  the bubble stays anchored over it. */
+  private greeterStandInId: number | null = null;
 
   setAreaMappings(mappings: Record<string, string[]>): void {
     this.areaMappings = mappings;
@@ -567,7 +593,7 @@ export class OfficeState {
   }
 
   // ── Greeter ───────────────────────────────────────────────────
-  // The Intro is diegetic: a character (Suit, by id: see greeterPalette) stands near the office's
+  // The Intro is diegetic: a character (Byte, by id: see greeterPalette) stands near the office's
   // bottom-left corner and "speaks" the tour through a DOM bubble
   // (IntroBubble). It is not an agent — see the `greeter` field.
 
@@ -579,6 +605,7 @@ export class OfficeState {
    *  revives it. */
   spawnGreeter(): void {
     this.greeterCameraCancelled = false;
+    this.greeterStandInId = null;
     if (this.greeter) {
       if (this.greeter.matrixEffect === 'despawn') startMatrixEffect(this.greeter, 'spawn');
       return;
@@ -612,8 +639,44 @@ export class OfficeState {
   despawnGreeter(): void {
     this.greeterCameraTarget = null;
     this.greeterCameraCancelled = false;
+    this.greeterStandInId = null;
+    this.handoff.cancel();
     if (!this.greeter || this.greeter.matrixEffect === 'despawn') return;
     startMatrixEffect(this.greeter, 'despawn');
+  }
+
+  /** The tutorial's agent joined where the greeter sat for it (handoff.claim):
+   *  it takes the greeter's place and pose, and the greeter is gone, with no
+   *  effect either way. */
+  replaceGreeterWith(id: number): void {
+    const ch = this.characters.get(id);
+    const greeter = this.greeter;
+    if (!ch || !greeter) return;
+    ch.x = greeter.x;
+    ch.y = greeter.y;
+    ch.tileCol = greeter.tileCol;
+    ch.tileRow = greeter.tileRow;
+    ch.dir = greeter.dir;
+    ch.state = greeter.state;
+    ch.path = greeter.path;
+    ch.moveProgress = greeter.moveProgress;
+    // Seated, it rests in the chair as an agent arriving there would. At rest,
+    // not mid-turn: its first idle status is then no turn ending, which would
+    // stand it up at once; its first turn has it typing where it sits.
+    if (ch.state === CharacterState.TYPE) {
+      ch.isActive = false;
+      restInChair(ch);
+    }
+    this.greeter = null;
+    this.greeterStandInId = id;
+  }
+
+  /** What the Intro's bubble stands over: the greeter, or the agent that took its place. */
+  greeterAnchor(): Character | null {
+    if (this.greeter) return this.greeter;
+    return this.greeterStandInId === null
+      ? null
+      : (this.characters.get(this.greeterStandInId) ?? null);
   }
 
   /** Per-frame update from the bubble overlay; ignored once the user panned. */
@@ -1306,6 +1369,7 @@ export class OfficeState {
     // The greeter materializes and dematerializes like anyone else, but runs
     // no FSM — it stands where it spawned for as long as the ask is up.
     if (this.greeter) tickBlink(this.greeter, dt, false);
+    this.handoff.update(dt);
     if (this.greeter && advanceMatrixEffect(this.greeter, dt) === 'despawned') {
       this.greeter = null;
     }

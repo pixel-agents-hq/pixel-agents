@@ -7,7 +7,6 @@
 
 import {
   type CharacterProfile,
-  GREETER_CHARACTER_ID,
   parseCharacterProfiles,
 } from '../../../core/src/characterProfiles.js';
 import {
@@ -94,9 +93,4 @@ export function parseConfigFile(
 export const characterLabel = (profile: CharacterProfile | undefined, index: number): string =>
   profile?.name || `char_${index}`;
 
-/** The Intro greeter's character (a palette index): the profile whose id is
- *  GREETER_CHARACTER_ID, else the first in the cast. */
-export function greeterPalette(profiles: readonly CharacterProfile[]): number {
-  const index = profiles.findIndex((p) => p.id === GREETER_CHARACTER_ID);
-  return index >= 0 ? index : 0;
-}
+export { greeterPalette } from '../../../core/src/greeterCharacter.js';

@@ -44,6 +44,7 @@ import { handleOfficeMcpMessage } from '../officeMcp/officeMcpStore.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
 import { transport } from '../transport/index.js';
 import { onReconnect } from '../transport/onReconnect.js';
+import { handleTutorialMessage } from '../tutorial/tutorialStore.js';
 import { handleUsageMessage } from '../usage/usageStore.js';
 import { prefersReducedMotion } from './usePresence.js';
 
@@ -182,7 +183,6 @@ interface ExtensionMessageState {
    *  failed install re-reports the `false` already held, so no effect runs. The Intro needs the ARRIVAL to tell a
    *  pending install from a failed one, per provider — A's status is never a verdict on B's install. */
   hooksStatusSeq: Record<string, number>;
-  hooksInfoShown: boolean;
   /** First-run consent ask (hooksConsentRequest). Non-null while the server waits on an answer; carries the provider
    *  and the server's exact disclosure copy, so the consent step renders the terms being approved with no client
    *  duplicate to drift. Cleared on answer/dismissal, and by a matching provider's hooksStatus installed=true. */
@@ -279,7 +279,6 @@ export function useExtensionMessages(
   const [hooksEnabled, setHooksEnabled] = useState(true);
   const [hooksInstalled, setHooksInstalled] = useState<Record<string, boolean>>({});
   const [hooksStatusSeq, setHooksStatusSeq] = useState<Record<string, number>>({});
-  const [hooksInfoShown, setHooksInfoShown] = useState(true);
   // FIFO of pending consent asks, at most one per provider (a re-ask replaces that provider's entry in place). The
   // HEAD is what the Intro renders; answering, dismissing, or mooting it advances to the next provider's ask rather
   // than dropping it — the server sends one request per provider on the same handshake.
@@ -418,6 +417,8 @@ export function useExtensionMessages(
       if (handleUsageMessage(msg)) return;
       // The Pixel Office MCP (officeMcp/officeMcpStore.ts): its settings and Intro step.
       if (handleOfficeMcpMessage(msg)) return;
+      // The tutorial (tutorial/tutorialStore.ts): its offer, its run, a refused start.
+      if (handleTutorialMessage(msg)) return;
       if (handleAgentLayoutEditMessage(msg)) return;
       if (handleAgentCharacterEditMessage(msg)) return;
       // The cast (characters/castMessages.ts): profiles, items, looks, external sprites.
@@ -541,7 +542,18 @@ export function useExtensionMessages(
           const repeat = msg.repeat as number | undefined;
           // A resumed conversation asks for the seat its agent sat in.
           const seatId = msg.seatId as string | undefined;
-          os.addAgent(id, palette, repeat, seatId, undefined, directoryName);
+          // The tutorial's agent, where this office's greeter sat for it, takes
+          // its seat and its place: no spawn effect, one character throughout.
+          const handoffSeat = os.handoff.claim(msg.nickname as string | undefined);
+          os.addAgent(
+            id,
+            palette,
+            repeat,
+            handoffSeat ?? seatId,
+            handoffSeat !== null ? true : undefined,
+            directoryName,
+          );
+          if (handoffSeat !== null) os.replaceGreeterWith(id);
           noteDirectoryName(directoryName);
           const worktree = msg.worktree as AgentWorktree | undefined;
           const ch = os.characters.get(id);
@@ -920,9 +932,6 @@ export function useExtensionMessages(
         if (typeof msg.hooksEnabled === 'boolean') {
           setHooksEnabled(msg.hooksEnabled as boolean);
         }
-        if (typeof msg.hooksInfoShown === 'boolean') {
-          setHooksInfoShown(msg.hooksInfoShown as boolean);
-        }
         if (typeof msg.showAreas === 'boolean') {
           setShowAreas(msg.showAreas as boolean);
         }
@@ -973,7 +982,10 @@ export function useExtensionMessages(
             type: 'hooksConsentRequest',
             providerId: msg.providerId as string,
             headline: msg.headline as string,
+            summary: typeof msg.summary === 'string' ? msg.summary : '',
             disclosure: msg.disclosure as string,
+            // An older server never says: assume installed (no extra step).
+            cliInstalled: msg.cliInstalled !== false,
           };
           setConsentQueue((q) => {
             const i = q.findIndex((r) => r.providerId === request.providerId);
@@ -1102,7 +1114,6 @@ export function useExtensionMessages(
     hooksInstalled,
     hooksStatusSeq,
     setHooksEnabled,
-    hooksInfoShown,
     consentRequest,
     // Called when a tour ends (answer + Let's Go, the X, Escape) with the providerId that tour was ABOUT, removing
     // that entry so the next provider's ask becomes the head. Keyed by id, not a blind shift: an answered ask's own
