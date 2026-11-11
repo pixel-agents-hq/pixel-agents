@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { officeRadio } from '../music/musicEngine.js';
 import { useOfficeRadio } from '../music/useOfficeRadio.js';
 import { isSoundEnabled, setSoundEnabled } from '../notificationSound.js';
+import { useOfficeMcp } from '../officeMcp/useOfficeMcp.js';
 import { isBrowserRuntime } from '../runtime.js';
 import { transport } from '../transport/index.js';
 import { useUsageBridge } from '../usage/useUsageBridge.js';
@@ -88,6 +89,13 @@ export function SettingsModal({
   // has no usage bridge.
   const [confirmUsageBars, setConfirmUsageBars] = useState(false);
   const { status: usageBridge, pending: usagePending, setEnabled: setUsageBars } = useUsageBridge();
+  // The Pixel Office MCP: shown only where the server offers it (its status
+  // arrived). Turning it on confirms with the server's disclosure, as the
+  // Intro step does; off and read-only apply at once to running agents. No
+  // optimistic tick: the rows follow the officeMcpStatus every office gets.
+  const [confirmOfficeMcp, setConfirmOfficeMcp] = useState(false);
+  const officeMcp = useOfficeMcp();
+  const officeMcpOn = officeMcp.status?.consent === 'granted';
 
   return (
     <>
@@ -240,6 +248,27 @@ export function SettingsModal({
             )}
           </>
         )}
+        {officeMcp.status && (
+          <>
+            <Checkbox
+              label="Pixel Office MCP"
+              title="Let agents launched here see and act on the office (the Pixel Agents Office MCP)"
+              checked={officeMcpOn}
+              onChange={() => {
+                if (officeMcpOn) officeMcp.setEnabled(false);
+                else setConfirmOfficeMcp(true);
+              }}
+            />
+            {officeMcpOn && (
+              <Checkbox
+                label="Pixel Office MCP Read-only"
+                title="Agents may list and read the office, but not change it, launch, close or message"
+                checked={officeMcp.status.readOnly}
+                onChange={() => officeMcp.setReadOnly(!officeMcp.status?.readOnly)}
+              />
+            )}
+          </>
+        )}
         <Checkbox
           label="Always Show Labels"
           checked={alwaysShowOverlay}
@@ -280,6 +309,36 @@ export function SettingsModal({
         {uploadDirectory && <UploadDirectoryField stored={uploadDirectory} />}
         <Checkbox label="Debug View" checked={isDebugMode} onChange={onToggleDebugMode} />
       </Modal>
+      {officeMcp.status && (
+        <Modal
+          isOpen={confirmOfficeMcp}
+          onClose={() => setConfirmOfficeMcp(false)}
+          title={officeMcp.status.headline}
+          zIndex={60}
+        >
+          <div className="flex flex-col gap-8 px-10 pb-8 text-sm leading-snug max-w-md">
+            {officeMcp.status.disclosure.split('\n\n').map((paragraph) => (
+              <p key={paragraph} className="m-0">
+                {paragraph}
+              </p>
+            ))}
+            <div className="flex justify-end gap-8 pt-4">
+              <Button variant="ghost" onClick={() => setConfirmOfficeMcp(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="accent"
+                onClick={() => {
+                  setConfirmOfficeMcp(false);
+                  officeMcp.setEnabled(true);
+                }}
+              >
+                Allow
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {usageBridge && (
         <Modal
           isOpen={confirmUsageBars}

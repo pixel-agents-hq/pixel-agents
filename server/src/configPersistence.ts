@@ -92,7 +92,17 @@ export interface PixelAgentsConfig {
    *  Machine-wide like the profiles themselves, so every office's roster
    *  agrees. See recentCharacters.ts. */
   recentCharacters: number[];
+  /** The Pixel Office MCP consent: may agents this office launches use it?
+   *  Absent = unanswered (launches get nothing, the Intro asks). Machine-wide,
+   *  like hooks consent: it is per human, not per surface. */
+  officeMcpConsent?: OfficeMcpConsentAnswer;
+  /** Pixel Office MCP read-only: agents may list and read, nothing else.
+   *  Absent = false. */
+  officeMcpReadOnly?: boolean;
 }
+
+/** A recorded Pixel Office MCP answer (absent = unanswered). */
+export type OfficeMcpConsentAnswer = 'granted' | 'declined';
 
 const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   soundEnabled: true,
@@ -304,6 +314,10 @@ export function readConfig(): PixelAgentsConfig {
       recentCharacters: Array.isArray(parsed.recentCharacters)
         ? parsed.recentCharacters.filter((v): v is number => Number.isInteger(v) && v >= 0)
         : [],
+      ...(parsed.officeMcpConsent === 'granted' || parsed.officeMcpConsent === 'declined'
+        ? { officeMcpConsent: parsed.officeMcpConsent }
+        : {}),
+      ...(parsed.officeMcpReadOnly === true ? { officeMcpReadOnly: true } : {}),
     };
   } catch (err) {
     console.error('[Pixel Agents] Failed to read config file:', err);
@@ -394,6 +408,38 @@ export function clearHooksEnabled(providerId: string): void {
     delete cfg.hooksEnabled[providerId];
     writeConfig(cfg);
   }
+}
+
+// ── Pixel Office MCP consent + read-only ────────────────────
+// docs/adr/0001's rules, simpler: nothing is installed, so an answer is only
+// its record. Each answer is ONE readConfig→writeConfig cycle.
+
+/** The recorded Pixel Office MCP answer, or 'unanswered'. */
+export function getOfficeMcpConsent(): OfficeMcpConsentAnswer | 'unanswered' {
+  return readConfig().officeMcpConsent ?? 'unanswered';
+}
+
+/** Record an answer (the Intro's, or the Settings switch's). Returns whether
+ *  the record now says so. */
+export function setOfficeMcpConsent(answer: OfficeMcpConsentAnswer): boolean {
+  const cfg = readConfig();
+  if (cfg.officeMcpConsent === answer) return true;
+  cfg.officeMcpConsent = answer;
+  return writeConfig(cfg);
+}
+
+/** Whether the Pixel Office MCP is read-only (absent = false). */
+export function getOfficeMcpReadOnly(): boolean {
+  return readConfig().officeMcpReadOnly === true;
+}
+
+/** Turn read-only on or off; off deletes the key (the default). */
+export function setOfficeMcpReadOnly(readOnly: boolean): boolean {
+  const cfg = readConfig();
+  if ((cfg.officeMcpReadOnly === true) === readOnly) return true;
+  if (readOnly) cfg.officeMcpReadOnly = true;
+  else delete cfg.officeMcpReadOnly;
+  return writeConfig(cfg);
 }
 
 /** Called on extension uninstall: return every hooks-related choice to factory state — all providers' consent and

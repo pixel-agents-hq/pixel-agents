@@ -22,6 +22,7 @@ import {
   WS_CLOSE_UNAUTHORIZED,
 } from './constants.js';
 import { applyReportedContext } from './contextUsage.js';
+import type { OfficeMcpFeature } from './mcp/composeOfficeMcp.js';
 import { hookProviderById } from './providers/index.js';
 import { startUploadSweeps } from './terminal/fileUploads.js';
 import { registerTerminalRoutes } from './terminal/terminalRoutes.js';
@@ -74,6 +75,10 @@ export interface HttpServerOptions {
    *  privileged standalone handshake may arrive under -- e.g. a reverse proxy's
    *  public name. See wsAuth.privilegedHostnames. */
   allowedHosts?: readonly string[];
+  /** The Pixel Office MCP: mounted at /mcp when given (its own per-agent
+   *  tokens, never this server's), and handed to the message handler for its
+   *  messages, its part of the handshake and launches. */
+  officeMcp?: OfficeMcpFeature;
 }
 
 /** Result of createHttpServer(). */
@@ -123,6 +128,7 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
   registerHealthRoute(app);
   registerHookRoute(app, options);
   registerUsageRoute(app, options);
+  options.officeMcp?.registerRoutes(app);
   registerWebSocketRoute(app, options, allowedHostnames);
   registerTerminalRoutes(app, {
     token: options.token,
@@ -303,6 +309,7 @@ function registerWebSocketRoute(
           packageRoot: options.packageRoot,
           privileged,
           ptyManager: options.ptyManager,
+          officeMcp: options.officeMcp,
         });
       } catch {
         // Malformed JSON, ignore

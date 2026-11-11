@@ -113,7 +113,7 @@ _Avoid_: part (the code's word, fine there), asset, sprite
 ## First Run
 
 **Intro**:
-The four-step first-run tour the Greeter speaks: welcome, Claude Code, hooks consent, all set. The hooks consent ask is one step of it, not a separate dialog.
+The five-step first-run tour the Greeter speaks: welcome, Claude Code, hooks consent, Pixel Office MCP consent, all set. Each consent ask is one step of it, not a separate dialog; someone who finished the Intro before a step existed is greeted with that step alone.
 _Avoid_: onboarding, tutorial, wizard, consent modal
 
 **Greeter**:
@@ -194,8 +194,8 @@ A blocking tile that visually connects to adjacent walls.
 A decorative layer painted over floor tiles.
 
 **Area**:
-A named region of tiles. Areas exist so directories can be mapped to them.
-_Avoid_: zone, region
+A named, coloured region of tiles. Areas exist so directories can be mapped to them, and they are how people point at a part of the office ("the blue room"). Creating a room means making an Area (usually with floor and walls round it); deleting one removes the Area and its tiles.
+_Avoid_: zone, region, room (what people call an Area; accept it in requests, don't make it a separate thing)
 
 **Area mapping**:
 The assignment of a directory to one or more areas. Many directories may share an area. Agents launched into a directory prefer seats inside any of its areas.
@@ -266,3 +266,7 @@ _Avoid_: connection, socket
 **Protocol**:
 The message contract between the office UI and the runtime, shared by every adapter and defined in a single source of truth.
 _Avoid_: API
+
+**Pixel Office MCP**:
+The office's MCP server, offered to the agents the office launches once the user consents: through it an agent can see the office, edit its layout, visit spots, and launch, close and message other agents. Full name "Pixel Agents Office MCP"; never just "Office MCP", which reads as Microsoft Office.
+_Avoid_: Office MCP, office tools, agent powers

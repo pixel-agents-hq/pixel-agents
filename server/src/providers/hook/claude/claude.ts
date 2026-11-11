@@ -130,11 +130,14 @@ function sessionDirOf(workspacePath: string): string {
 function buildLaunchCommand(
   sessionId: string,
   cwd: string,
-  opts?: { bypassPermissions?: boolean; resume?: boolean },
+  opts?: { bypassPermissions?: boolean; resume?: boolean; mcpConfig?: string },
 ): { command: string; args: string[]; env?: Record<string, string> } {
   // A resumed session keeps its id and appends to its old transcript.
   const args = [opts?.resume ? '--resume' : '--session-id', sessionId];
   if (opts?.bypassPermissions) args.push('--dangerously-skip-permissions');
+  // Added to whatever MCP servers the user configured, never replacing them
+  // (no --strict-mcp-config): the file names only the Pixel Office MCP.
+  if (opts?.mcpConfig) args.push('--mcp-config', opts.mcpConfig);
   return { command: 'claude', args, env: { PWD: cwd } };
 }
 

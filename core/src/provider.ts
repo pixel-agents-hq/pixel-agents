@@ -252,7 +252,14 @@ export interface HookProvider {
   buildLaunchCommand?(
     sessionId: string,
     cwd: string,
-    opts?: { bypassPermissions?: boolean; resume?: boolean },
+    opts?: {
+      bypassPermissions?: boolean;
+      resume?: boolean;
+      /** A file holding the MCP servers this launch gets (the Pixel Office MCP's
+       *  per-agent config). A path, never the config itself: it carries a token,
+       *  and a command line is readable by every process on the machine. */
+      mcpConfig?: string;
+    },
   ): {
     command: string;
     args: string[];

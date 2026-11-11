@@ -27,6 +27,7 @@ export function createAgentState(init: AgentStateInit): AgentState {
     activeSubagentToolNames: new Map(),
     backgroundSpawns: new Map(),
     isWaiting: false,
+    turnStatus: 'waiting for input',
     permissionSent: false,
     hadToolsInTurn: false,
     hookDelivered: false,

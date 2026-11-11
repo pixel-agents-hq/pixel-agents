@@ -48,7 +48,8 @@ export interface LaunchStandaloneOptions {
   /** Reuse an existing workspace. A supplied directory is never removed by
    *  standalone cleanup. */
   workspaceDir?: string;
-  /** Pre-seed a granted Claude hooksConsent entry so the first-run dialog never
+  /** Pre-seed a granted Claude hooksConsent entry (and a declined Pixel Office
+   *  MCP answer) so the first-run dialog never
    *  covers the office (default). The consent specs opt out with `false` —
    *  they are the only ones that want the dialog. Never overwrites a
    *  config.json that already exists (a shared HOME was seeded by its owner). */
@@ -310,7 +311,12 @@ export async function launchStandalone(
     // default overrides `standalone` through seedConfig.
     const seeded = {
       standalone: { showHostDirectories: true },
-      ...((options.seedHooksConsent ?? true) ? { hooksConsent: { claude: 'granted' } } : {}),
+      // The first-run asks answered: hooks granted, the Pixel Office MCP
+      // declined (launches get no --mcp-config). The consent specs opt out
+      // of both with seedHooksConsent: false.
+      ...((options.seedHooksConsent ?? true)
+        ? { hooksConsent: { claude: 'granted' }, officeMcpConsent: 'declined' }
+        : {}),
       ...options.seedConfig,
     };
     fs.mkdirSync(path.dirname(configPath), { recursive: true });

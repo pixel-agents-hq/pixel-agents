@@ -40,6 +40,8 @@ export type ServerMessage =
   | BypassPermissionsUpdated
   | HooksStatus
   | HooksConsentRequest
+  | OfficeMcpConsentRequest
+  | OfficeMcpStatus
   | UsageBridgeStatus
   | UsageLimits
   | ExternalAssetDirectoriesUpdated
@@ -76,6 +78,9 @@ export type ClientMessage =
   | SetHooksEnabled
   | HooksConsentResponse
   | SetUsageBridgeEnabled
+  | OfficeMcpConsentResponse
+  | SetOfficeMcpEnabled
+  | SetOfficeMcpReadOnly
   | SetHooksInfoShown
   | SetWatchAllSessions
   | ExportLayout
@@ -421,6 +426,22 @@ export interface HooksConsentRequest {
   disclosure: string;
 }
 
+export interface OfficeMcpConsentRequest {
+  type: 'officeMcpConsentRequest';
+  headline: string;
+  disclosure: string;
+}
+
+export interface OfficeMcpStatus {
+  type: 'officeMcpStatus';
+  consent: OfficeMcpConsentState;
+  readOnly: boolean;
+  headline: string;
+  disclosure: string;
+}
+
+export type OfficeMcpConsentState = 'unanswered' | 'granted' | 'declined';
+
 export interface UsageBridgeStatus {
   type: 'usageBridgeStatus';
   providerId: string;
@@ -708,6 +729,23 @@ export interface SetUsageBridgeEnabled {
   type: 'setUsageBridgeEnabled';
   providerId: string;
   enabled: boolean;
+}
+
+export interface OfficeMcpConsentResponse {
+  type: 'officeMcpConsentResponse';
+  choice: OfficeMcpChoice;
+}
+
+export type OfficeMcpChoice = 'allow' | 'decline';
+
+export interface SetOfficeMcpEnabled {
+  type: 'setOfficeMcpEnabled';
+  enabled: boolean;
+}
+
+export interface SetOfficeMcpReadOnly {
+  type: 'setOfficeMcpReadOnly';
+  readOnly: boolean;
 }
 
 export interface SetHooksInfoShown {

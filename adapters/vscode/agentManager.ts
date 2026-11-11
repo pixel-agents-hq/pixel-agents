@@ -24,6 +24,7 @@ import {
   startFileWatching,
 } from '../../server/src/fileWatcher.js';
 import { loadLayout } from '../../server/src/layoutPersistence.js';
+import type { AgentMcpAccess } from '../../server/src/mcp/officeMcp.js';
 import { assignPaletteIfNeeded } from '../../server/src/paletteAssigner.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
@@ -45,6 +46,16 @@ export function getProjectDirPath(cwd?: string): string {
   const projectDir = dirs[0];
   console.log(`[Pixel Agents] Terminal: Project dir: ${workspacePath} → ${projectDir}`);
   return projectDir;
+}
+
+/** A word of a command typed into the user's shell: as is when it holds
+ *  only characters no shell treats specially (every word a launch has types
+ *  exactly as before), else double-quoted, which keeps a space inside one
+ *  word in sh, zsh, cmd and PowerShell alike (a `--mcp-config` path under a
+ *  home folder with a space in it). It does not stop `$` expanding: none of
+ *  our words holds one. */
+function shellWord(word: string): string {
+  return /^[\w@%+=:,./\\-]+$/.test(word) ? word : `"${word}"`;
 }
 
 /** What a launch asks for, beyond the runtime it registers with. */
@@ -70,6 +81,9 @@ export interface LaunchTerminalOptions {
   /** The new session's id, when the caller already chose it (a Worktree
    *  records the session it was made for). Absent = a fresh UUID. */
   sessionId?: string;
+  /** The Pixel Office MCP: with the user's consent, the agent is launched
+   *  with `--mcp-config <its own file>` (a token minted for it alone). */
+  mcp?: AgentMcpAccess;
 }
 
 export async function launchNewTerminal(
@@ -93,6 +107,7 @@ export async function launchNewTerminal(
     palette,
     worktree,
     sessionId: chosenSessionId,
+    mcp,
   }: LaunchTerminalOptions = {},
 ): Promise<number> {
   const folders = vscode.workspace.workspaceFolders;
@@ -119,20 +134,28 @@ export async function launchNewTerminal(
   }
 
   const sessionId = chosenSessionId ?? crypto.randomUUID();
-  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
+  // Before the token is minted: nothing between it and the agent joining the
+  // store throws, so a token never outlives a launch that didn't happen.
+  const projectDir = getProjectDirPath(cwd);
+  // The id first: the Pixel Office MCP mints its token for this agent (the
+  // file's path on the command line, never the token).
+  const id = nextAgentIdRef.current++;
+  const mcpConfig = mcp?.configFor(id);
+  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, {
+    bypassPermissions,
+    mcpConfig,
+  });
   if (!launch) {
+    mcp?.revoke(id);
     throw new Error('claudeProvider.buildLaunchCommand is not implemented');
   }
-  terminal.sendText([launch.command, ...launch.args].join(' '));
-
-  const projectDir = getProjectDirPath(cwd);
+  terminal.sendText([launch.command, ...launch.args].map(shellWord).join(' '));
 
   // Pre-register expected JSONL file so project scan won't treat it as a /clear file
   const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
   knownJsonlFiles.add(expectedFile);
 
   // Create agent immediately (before JSONL file exists)
-  const id = nextAgentIdRef.current++;
   // The character's origin label, and the key areaMappings is looked up by.
   //
   // A launch the office aimed at a Directory (the caller resolved it from the

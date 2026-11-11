@@ -57,6 +57,7 @@ import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
 import { overlayProjection } from './office/projection.js';
 import { getPetCount } from './office/sprites/petSpriteData.js';
 import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
+import { useOfficeMcp } from './officeMcp/useOfficeMcp.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
@@ -309,6 +310,15 @@ function App() {
     onChoice: handleConsentChoice,
     onClose: handleIntroClose,
   } = useIntroTour({ consentRequest, hooksInstalled, hooksStatusSeq, dismissConsentRequest });
+  // The Intro's Pixel Office MCP step (after the hooks one, or alone for an
+  // office that finished the Intro before it existed) and its Settings rows.
+  const officeMcp = useOfficeMcp();
+  const dismissOfficeMcpAsk = officeMcp.dismiss;
+  // Every way the tour ends closes both asks it may hold.
+  const handleTourClose = useCallback(() => {
+    handleIntroClose();
+    dismissOfficeMcpAsk();
+  }, [handleIntroClose, dismissOfficeMcpAsk]);
 
   // The Settings surface renders one provider today; its checkbox binds to
   // the Claude row of the per-provider install-state map.
@@ -798,18 +808,22 @@ function App() {
         onOpenChangelog={handleOpenChangelog}
       />
 
-      {intro && (
+      {/* A hooks ask still on its way into `intro` (useIntroTour takes it a
+          render later) holds the MCP step back, so the tour opens on its
+          first step rather than on the MCP step alone. */}
+      {(intro || (officeMcp.ask && !consentRequest)) && (
         <IntroBubble
           officeState={officeState}
-          headline={intro.headline}
-          disclosure={intro.disclosure}
+          hooksAsk={intro}
+          mcpAsk={officeMcp.ask}
+          onMcpChoice={officeMcp.answer}
           containerRef={containerRef}
           zoom={editor.zoom}
           panRef={editor.panRef}
           installFailed={installFailed}
           installPending={installPending}
           onChoice={handleConsentChoice}
-          onClose={handleIntroClose}
+          onClose={handleTourClose}
           escapeSuppressed={
             isSettingsOpen ||
             isCharactersOpen ||

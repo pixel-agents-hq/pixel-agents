@@ -26,6 +26,7 @@ import { JSONL_POLL_INTERVAL_MS } from '../constants.js';
 import { clearContextUsage } from '../contextUsage.js';
 import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor } from '../hostDirectory.js';
+import type { AgentMcpAccess } from '../mcp/officeMcp.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
 import type { AgentState } from '../types.js';
 import { retireWorktreesLeftBy } from '../worktreeLeave.js';
@@ -37,6 +38,8 @@ export interface LaunchStandaloneAgentDeps {
   runtime: AgentRuntime;
   ptyManager: TerminalSessions;
   provider: HookProvider;
+  /** The Pixel Office MCP's per-agent access (absent = agents get no MCP). */
+  mcp?: AgentMcpAccess;
 }
 
 export interface LaunchStandaloneAgentOptions {
@@ -88,11 +91,7 @@ export function launchStandaloneAgent(
   const cwd = options.cwd ?? directory?.path ?? process.cwd();
   const sessionId = options.resume?.sessionId ?? options.sessionId ?? crypto.randomUUID();
 
-  const launch = provider.buildLaunchCommand?.(sessionId, cwd, {
-    bypassPermissions: options.bypassPermissions,
-    resume: options.resume !== undefined,
-  });
-  if (!launch) {
+  if (!provider.buildLaunchCommand) {
     console.error('[Pixel Agents] Terminal: provider.buildLaunchCommand is not implemented');
     return null;
   }
@@ -108,6 +107,16 @@ export function launchStandaloneAgent(
   const projectDir = path.dirname(jsonlFile);
 
   const id = store.nextAgentId.current++;
+
+  // The Pixel Office MCP, when the user consented: a config file holding a
+  // token minted for this agent alone (the path on the command line, never
+  // the token). Launches and resumes alike.
+  const mcpConfig = deps.mcp?.configFor(id);
+  const launch = provider.buildLaunchCommand(sessionId, cwd, {
+    bypassPermissions: options.bypassPermissions,
+    resume: options.resume !== undefined,
+    mcpConfig,
+  });
 
   const agent = createAgentState({
     id,
@@ -158,7 +167,9 @@ export function launchStandaloneAgent(
       rows: options.rows,
     });
   } catch (err) {
-    // Roll the id back so a failed spawn doesn't burn an agent id.
+    // Roll the id back so a failed spawn doesn't burn an agent id, and take
+    // back the token no agent will ever use.
+    deps.mcp?.revoke(id);
     store.nextAgentId.current--;
     console.error(`[Pixel Agents] Terminal: spawn failed: ${String(err)}`);
     return null;

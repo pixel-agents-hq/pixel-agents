@@ -880,6 +880,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
       activeSubagentToolNames: new Map(),
       backgroundSpawns: new Map(),
       isWaiting: false,
+      turnStatus: 'waiting for input',
       permissionSent: false,
       hadToolsInTurn: false,
       lastDataAt: 0,

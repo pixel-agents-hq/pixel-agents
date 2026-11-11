@@ -198,7 +198,7 @@ export function processTranscriptLine(
         agent.isWaiting = false;
         agent.turnActive = true;
         agent.hadToolsInTurn = true;
-        agents.broadcast({ type: 'agentStatus', id: agentId, status: 'active' });
+        agents.setAgentStatus(agentId, { active: true });
         let hasNonExemptTool = false;
         for (const block of blocks) {
           if (block.type === 'tool_use' && block.id) {
@@ -536,13 +536,8 @@ export function processTranscriptLine(
       agent.hadToolsInTurn = false;
       // Skip status post when hooks already handled it
       if (!agent.hookDelivered) {
-        agents.broadcast({
-          type: 'agentStatus',
-          id: agentId,
-          status: 'waiting',
-          // turn_duration = the turn completed, so this is "Done".
-          awaitingInput: false,
-        });
+        // turn_duration = the turn completed, so this is "Done".
+        agents.setAgentStatus(agentId, { active: false, awaitingInput: false });
       }
     } else if (record.type && !agent.seenUnknownRecordTypes.has(record.type)) {
       // Log first occurrence of unrecognized record types to help diagnose issues

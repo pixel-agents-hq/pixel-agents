@@ -108,6 +108,9 @@ export async function launchVSCode(
     vscode: { alwaysShowLabels: true, showHostDirectories: true },
     standalone: { alwaysShowLabels: true, showHostDirectories: true },
     hooksConsent: { claude: 'granted' },
+    // The Pixel Office MCP's first-run ask answered too (launches get no
+    // --mcp-config); its own specs are standalone.
+    officeMcpConsent: 'declined',
   };
   fs.writeFileSync(path.join(paDir, 'config.json'), JSON.stringify(seedConfig, null, 2));
   if (opts.seedLayout !== undefined) {

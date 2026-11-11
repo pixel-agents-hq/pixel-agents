@@ -56,7 +56,7 @@ export function clearAgentActivity(
       });
     }
   }
-  agents.broadcast({ type: 'agentStatus', id: agentId, status: 'active' });
+  agents.setAgentStatus(agentId, { active: true });
 }
 
 export function cancelWaitingTimer(
@@ -84,14 +84,9 @@ export function startWaitingTimer(
       agent.isWaiting = true;
       agent.turnActive = false;
     }
-    agents.broadcast({
-      type: 'agentStatus',
-      id: agentId,
-      status: 'waiting',
-      // Heuristic text-idle timer: the turn ended without a clear idle signal,
-      // so this is "Done", not "Waiting for input".
-      awaitingInput: false,
-    });
+    // Heuristic text-idle timer: the turn ended without a clear idle signal,
+    // so this is "Done", not "Waiting for input".
+    agents.setAgentStatus(agentId, { active: false, awaitingInput: false });
   }, delayMs);
   waitingTimers.set(agentId, timer);
 }

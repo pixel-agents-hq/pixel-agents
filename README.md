@@ -42,6 +42,7 @@ Claude Code is supported today; Codex, Gemini, Cursor, and others are on the roa
 - **Recent conversations** — past sessions listed per Directory, resumed with one click as the character they had
 - **Usage and context bars** — health bars for your plan limits, and one on every agent for the context it has left
 - **Office radio** — procedural 8-bit background music with moods and shareable song codes
+- **Agents that work the office** — with the [Pixel Office MCP](#pixel-office-mcp), agents you launch can see the office, rearrange it, launch helpers and message each other, and you watch them walk over to do it
 
 <p align="center">
   <img src="webview-ui/public/characters.png" alt="Pixel Agents characters" width="600" style="image-rendering: pixelated;">
@@ -134,6 +135,31 @@ Your workspace folders (VS Code) or the directory the CLI started in (standalone
 Open the roster from the arrow beside **+** and press a character's pencil (or **+ New**) to open the **Characters** view. Dress a character from the wardrobe tabs, recolour any piece, and touch up pixels in the editor; a piece you redraw can be saved as a custom item for the rest of the cast. Nothing changes in the office until you press **Save**. Characters export as a PNG or a config file, and the whole roster as a zip.
 
 Picking a character in the roster and then a Directory launches an agent as that character. In a Directory's settings you can also list its default characters, so its agents are recognisable at a glance.
+
+## Pixel Office MCP
+
+The **Pixel Agents Office MCP** (Pixel Office MCP for short) lets the agents you launch from the office see and act on it. An agent can list who else is working and what they are doing, read and rearrange the office, launch a helper into another Directory with a first instruction, read another agent's terminal and message it, and close agents when the work is done. You see it happen in the office: a character walks over to the agent it messages and says the gist in a speech bubble, an agent sent on a visit walks to the spot, and a layout edit builds outward from where the editing agent's character stands.
+
+### Turning it on
+
+- **The Intro asks.** The first-run tour has a step for it, after the hooks step; if you finished the tour before this step existed, the greeter asks this one alone. Unanswered means no: agents launched meanwhile get nothing.
+- **Settings → Pixel Office MCP** turns it on or off at any time. Off takes effect at once, also for agents already running.
+- **Settings → Pixel Office MCP Read-only** lets agents look (list agents, read the layout, the catalogue and terminals) but not change anything, launch, close or message. Also at once.
+
+Ask an agent in plain words — "start an agent in the api repo to review the README", "tell agent 3 the tests pass", "make a room for the docs repo" — and it picks the tools.
+
+### What it never does
+
+- **Nothing is installed.** Nothing is written to your `~/.claude` files. The office adds `--mcp-config <file>` to the agents it launches or resumes, so agents started outside the office (in your own terminal, or adopted by Watch All Sessions) never get it.
+- **Each agent has its own key.** The file, readable only by you under `~/.pixel-agents/mcp/`, holds the server address and a key made for that one agent. It stops working when the agent leaves, when the server stops, or when you turn the feature off — and it is never the server token in your browser's URL. Agents kept alive across a `--pty-host` restart need a resume to get access back.
+- **Claude Code still asks.** Its own MCP permission prompts apply in the agent's terminal, so you can approve risky calls there.
+- **A read-only office stays read-only.** A browser without the token can't reach any of it.
+
+### Tools
+
+| Tool          | What an agent can do                                                                                                                                              |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_agents` | See every agent: id, Directory, Worktree, status, activity, sub-agents, context left, conversation title, team, seat and Area, character, and which one is itself |
 
 ## Where This Is Going
 

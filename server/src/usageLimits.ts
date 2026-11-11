@@ -36,6 +36,8 @@ export const PRIVILEGED_BROADCAST_TYPES: ReadonlySet<string> = new Set([
   'usageBridgeStatus',
   // A Worktree's branch, size and pending decision: the operator's to act on.
   'worktreesLoaded',
+  // Who may act on the office through the Pixel Office MCP: the operator's setting.
+  'officeMcpStatus',
 ]);
 
 let cache: Record<string, StoredUsage> | null = null;

@@ -123,5 +123,6 @@ export function buildSeedConfig(opts: SeedConfigOptions = {}): Record<string, un
     // Same baseline as the launch-level seed: skip the first-run consent prompt
     // so hook installation proceeds at startup (see e2e/helpers/launch.ts).
     hooksConsent: { claude: 'granted' },
+    officeMcpConsent: 'declined',
   };
 }

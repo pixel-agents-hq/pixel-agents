@@ -461,11 +461,7 @@ export class HookEventHandler {
         toolName,
       });
     }
-    this.agents.broadcast({
-      type: 'agentStatus',
-      id: agentId,
-      status: 'active',
-    });
+    this.agents.setAgentStatus(agentId, { active: true });
   }
 
   /**
@@ -790,12 +786,7 @@ export class HookEventHandler {
     agent.permissionSent = false;
     agent.hadToolsInTurn = false;
     agent.currentHookToolId = undefined;
-    this.agents.broadcast({
-      type: 'agentStatus',
-      id: agentId,
-      status: 'waiting',
-      awaitingInput,
-    });
+    this.agents.setAgentStatus(agentId, { active: false, awaitingInput });
   }
 
   /** Clean up timers and maps. Called when the extension disposes. */
