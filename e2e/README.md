@@ -299,7 +299,7 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/standalone/terminal.spec.ts:179` — copies are verbatim; Alt+C copies the selection re-flowed as text (Standalone / terminal)
 - `e2e/standalone/terminal.spec.ts:272` — a URL Claude Code broke across rows opens and copies whole (Standalone / terminal)
 - `e2e/standalone/terminal.spec.ts:365` — a file dropped on the terminal is saved on the host and its path pasted in; one already on the host is not copied (Standalone / terminal)
-- `e2e/standalone/terminal.spec.ts:423` — --no-terminal keeps the office watch-only: launch disabled, hook-driven agents still render (Standalone / terminal disabled)
+- `e2e/standalone/terminal.spec.ts:424` — --no-terminal keeps the office watch-only: launch disabled, hook-driven agents still render (Standalone / terminal disabled)
 - `e2e/standalone/ui.spec.ts:27` — closeAgent despawns the character (Standalone / UI)
 - `e2e/standalone/ui.spec.ts:61` — Debug View renders JSONL diagnostics in standalone (Standalone / UI)
 - `e2e/standalone/ui.spec.ts:95` — adding an external asset directory triggers a live asset reload (Standalone / UI)

@@ -387,10 +387,11 @@ test.describe('Standalone / terminal', () => {
     await pane.dispatchEvent('drop', { dataTransfer: dragged });
     await expect(page.locator('.terminal-drop-target')).toHaveCount(0);
 
-    // Saved in the host's Downloads folder under a name that needs no
-    // quoting, and that path typed into the terminal (the PTY echoes it,
+    // Saved in our own uploads folder (no upload folder is set) under a name
+    // that needs no quoting, and that path typed into the terminal (the PTY echoes it,
     // wrapped wherever the row ends).
-    const saved = path.join(standalone.tmpHome, 'Downloads', 'my-drop.txt');
+    const uploads = path.join(standalone.tmpHome, '.pixel-agents', 'uploads');
+    const saved = path.join(uploads, 'my-drop.txt');
     await expect
       .poll(async () => (await terminal.innerText()).replace(/\s/g, ''), { timeout: 10_000 })
       .toContain(saved.replace(/\s/g, ''));
@@ -398,7 +399,7 @@ test.describe('Standalone / terminal', () => {
 
     // A file that is already on this machine (this page is on localhost, the
     // server's own): the terminal gets the file's own path and no copy lands
-    // in Downloads.
+    // in the uploads folder.
     const desktop = path.join(standalone.tmpHome, 'Desktop');
     fs.mkdirSync(desktop, { recursive: true });
     const original = path.join(desktop, 'already-here.txt');
@@ -413,7 +414,7 @@ test.describe('Standalone / terminal', () => {
     await expect
       .poll(async () => (await terminal.innerText()).replace(/\s/g, ''), { timeout: 10_000 })
       .toContain(original.replace(/\s/g, ''));
-    expect(fs.readdirSync(path.join(standalone.tmpHome, 'Downloads'))).toEqual(['my-drop.txt']);
+    expect(fs.readdirSync(uploads)).toEqual(['my-drop.txt']);
   });
 });
 
