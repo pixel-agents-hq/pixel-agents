@@ -13,6 +13,7 @@ import { selectAgentsInWorkspace } from '../features/agents/agentSelectors';
 import { agentCreationRequested } from '../features/agentCreation/createAgentSaga';
 import { directoryEditRequested } from '../features/workspaces/editDirectorySaga';
 import { directoryForPath, selectWorkspace } from '../features/workspaces/workspaceSelectors';
+import { selectableDirectoryPaths } from '../features/workspaces/workspaceRoot';
 
 interface ActivateAgentDialogProps {
   workspaceId: string;
@@ -93,12 +94,14 @@ export function ActivateAgentDialog({
   const workspace = useAppSelector((state) => selectWorkspace(state, workspaceId));
   const agents = useAppSelector((state) => selectAgentsInWorkspace(state, workspaceId));
   const directories = useAppSelector((state) => state.workspaces.directories);
-  const readOnly = useAppSelector((state) => state.connection.readOnly);
   const terminalAvailable = useAppSelector((state) => state.connection.terminalAvailable);
   const [editingPath, setEditingPath] = useState<string | null>(null);
 
-  const directoryPaths = workspace?.directoryPaths ?? [];
-  const canActivate = !readOnly && terminalAvailable;
+  const directoryPaths = selectableDirectoryPaths(
+    workspace?.directoryPaths ?? [],
+    workspace?.rootPath,
+  );
+  const canActivate = terminalAvailable;
   const occupiedDirectoryNames = new Set(agents.map((agent) => agent.directoryName));
   const hasAgent = (path: string) => {
     const name = directoryForPath(directories, path)?.name;
@@ -146,7 +149,7 @@ export function ActivateAgentDialog({
         )}
         {!canActivate && directoryPaths.length > 0 && (
           <Typography sx={{ fontSize: 11, color: 'warning.main', mb: 1 }}>
-            目前無法啟用：唯讀連線或此主機沒有終端機
+            目前無法啟用：此主機沒有終端機
           </Typography>
         )}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -164,7 +167,8 @@ export function ActivateAgentDialog({
               );
             }
             const occupied = hasAgent(path);
-            const editable = directory?.source === 'user' && !readOnly;
+            // 未登錄的路徑（directory 為 undefined）也可編輯，儲存時會建立登錄；host 來源的目錄唯讀
+            const editable = directory?.source !== 'host';
             return (
               <Box key={path} sx={{ display: 'flex', alignItems: 'stretch', gap: 0.75 }}>
                 <ButtonBase
@@ -200,7 +204,7 @@ export function ActivateAgentDialog({
                 {editable && (
                   <Button
                     variant="outlined"
-                    aria-label={`編輯 ${directory.name}`}
+                    aria-label={`編輯 ${directory?.name ?? path}`}
                     onClick={() => setEditingPath(path)}
                     sx={{ flexShrink: 0, fontSize: 11, px: 1.5 }}
                   >

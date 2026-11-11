@@ -38,7 +38,7 @@ const current = ws('w1', ['/a'], '/root');
 const other = ws('w2', ['/b']);
 const everyone = [ws('default', ['/c']), current, other];
 
-function renderWithStore(ui: ReactNode, workspaces: Workspace[], readOnly = false) {
+function renderWithStore(ui: ReactNode, workspaces: Workspace[]) {
   const initial = workspacesReducer(undefined, { type: 'init' });
   const store = configureStore({
     reducer: {
@@ -48,7 +48,7 @@ function renderWithStore(ui: ReactNode, workspaces: Workspace[], readOnly = fals
       kb: kbReducer,
     },
     preloadedState: {
-      connection: { ...connectionReducer(undefined, { type: 'init' }), readOnly },
+      connection: connectionReducer(undefined, { type: 'init' }),
       workspaces: { ...initial, workspaces, directories },
     },
   });
@@ -104,14 +104,13 @@ describe('dirty 與儲存條件', () => {
     expect(kbViewIsEmpty({ ...view, listError: 'not_found' })).toBe(true);
     expect(kbViewIsEmpty({ ...view, listError: 'unavailable' })).toBeUndefined();
   });
-  it('未變更、唯讀、空名稱、pending、Default 都不可儲存', () => {
+  it('未變更、空名稱、pending、Default 都不可儲存', () => {
     const changed = { ...base, name: 'x' };
-    expect(canSaveSettings(current, changed, false, false)).toBe(true);
-    expect(canSaveSettings(current, base, false, false)).toBe(false);
-    expect(canSaveSettings(current, changed, true, false)).toBe(false);
-    expect(canSaveSettings(current, { ...base, name: '  ' }, false, false)).toBe(false);
-    expect(canSaveSettings(current, changed, false, true)).toBe(false);
-    expect(canSaveSettings(ws('default', []), changed, false, false)).toBe(false);
+    expect(canSaveSettings(current, changed, false)).toBe(true);
+    expect(canSaveSettings(current, base, false)).toBe(false);
+    expect(canSaveSettings(current, { ...base, name: '  ' }, false)).toBe(false);
+    expect(canSaveSettings(current, changed, true)).toBe(false);
+    expect(canSaveSettings(ws('default', []), changed, false)).toBe(false);
   });
   it('移除目錄時 removesDirectories 為真', () => {
     expect(removesDirectories(current, base)).toBe(false);
@@ -142,7 +141,6 @@ describe('WorkspaceSettingsView 標記', () => {
           directories={directories}
           workspaces={everyone}
           draft={draftFromWorkspace(current)}
-          readOnly={false}
           pending={false}
           kbIsEmpty={true}
           onDraftChange={() => {}}
@@ -161,9 +159,8 @@ describe('WorkspaceSettingsView 標記', () => {
     expect(html).toContain('/c');
     expect(html).toContain('Mui-disabled');
   });
-  it('未變更時儲存鈕 disabled，唯讀顯示提示', () => {
+  it('未變更時儲存鈕 disabled', () => {
     expect(render()).toMatch(/<button[^>]*disabled[^>]*>儲存/);
-    expect(render({ readOnly: true })).toContain(WORKSPACE_SETTINGS_TEXT.readOnly);
   });
   it('根目錄欄位：知識庫有內容時鎖住並說明，空的才開放；只有一個儲存鈕', () => {
     const locked = render({ kbIsEmpty: false });

@@ -47,7 +47,6 @@ interface WorkspaceSettingsViewProps {
   directories: Directory[];
   workspaces: Workspace[];
   draft: WorkspaceDraft;
-  readOnly: boolean;
   pending: boolean;
   /** undefined = 知識庫清單還沒回來 */
   kbIsEmpty: boolean | undefined;
@@ -60,7 +59,6 @@ export function WorkspaceSettingsView({
   directories,
   workspaces,
   draft,
-  readOnly,
   pending,
   kbIsEmpty,
   onDraftChange,
@@ -93,11 +91,11 @@ export function WorkspaceSettingsView({
           value={draft.name}
           onChange={(event) => onDraftChange({ ...draft, name: event.target.value })}
           placeholder={WORKSPACE_SETTINGS_TEXT.nameHint}
-          disabled={readOnly || pending}
+          disabled={pending}
         />
       </Box>
 
-      {canEditWorkspaceRoot(workspace.id, readOnly) && (
+      {canEditWorkspaceRoot(workspace.id) && (
         <WorkspaceRootField
           value={draft.rootPath}
           onChange={(rootPath) => onDraftChange({ ...draft, rootPath })}
@@ -124,7 +122,7 @@ export function WorkspaceSettingsView({
           {options.map(({ directory, checked, ownerName }) => (
             <FormControlLabel
               key={directory.path}
-              disabled={readOnly || pending || ownerName !== undefined}
+              disabled={pending || ownerName !== undefined}
               control={
                 <Checkbox
                   size="small"
@@ -163,16 +161,11 @@ export function WorkspaceSettingsView({
       <Box sx={{ px: 3, pb: 3, display: 'flex', gap: 1.5, alignItems: 'center' }}>
         <Button
           variant="contained"
-          disabled={!canSaveSettings(workspace, draft, readOnly, pending)}
+          disabled={!canSaveSettings(workspace, draft, pending)}
           onClick={onSave}
         >
           {WORKSPACE_SETTINGS_TEXT.save}
         </Button>
-        {readOnly && (
-          <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
-            {WORKSPACE_SETTINGS_TEXT.readOnly}
-          </Typography>
-        )}
         {pending && (
           <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
             {WORKSPACE_SETTINGS_TEXT.saving}
@@ -192,7 +185,6 @@ function WorkspaceSettingsForm({ workspace }: { workspace: Workspace }) {
   const dispatch = useAppDispatch();
   const directories = useAppSelector((state) => state.workspaces.directories);
   const workspaces = useAppSelector((state) => state.workspaces.workspaces);
-  const readOnly = useAppSelector((state) => state.connection.readOnly);
   const connected = useAppSelector((state) => state.connection.status === 'connected');
   const agents = useAppSelector((state) => selectAgentsInWorkspace(state, workspace.id));
   const pending = useAppSelector((state) => state.workspaces.pendingSaves.includes(workspace.id));
@@ -206,10 +198,10 @@ function WorkspaceSettingsForm({ workspace }: { workspace: Workspace }) {
 
   // 已設定根目錄時，列出知識庫來判斷是不是空的（空的才能改根目錄）。
   useEffect(() => {
-    if (hasRoot && connected && !readOnly) dispatch(kbListRequested(kbTarget));
+    if (hasRoot && connected) dispatch(kbListRequested(kbTarget));
     // kbTarget 只由 workspace.id 決定
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dispatch, workspace.id, hasRoot, connected, readOnly]);
+  }, [dispatch, workspace.id, hasRoot, connected]);
 
   // 沒有編輯、或編輯結果已與伺服器廣播一致時，直接顯示最新的伺服器資料。
   const draft =
@@ -250,7 +242,6 @@ function WorkspaceSettingsForm({ workspace }: { workspace: Workspace }) {
         directories={directories}
         workspaces={workspaces}
         draft={draft}
-        readOnly={readOnly}
         pending={pending}
         kbIsEmpty={kbViewIsEmpty(kbView)}
         onDraftChange={setEdited}

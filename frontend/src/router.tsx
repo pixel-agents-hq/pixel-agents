@@ -2,25 +2,26 @@ import { createBrowserRouter, Navigate } from 'react-router';
 
 import { HomeRedirect } from './layout/HomeRedirect';
 import { ManagementShell } from './layout/ManagementShell';
-import { RootLayout } from './layout/RootLayout';
 import { WorkspaceShell } from './layout/WorkspaceShell';
 import { AddAgentPage } from './pages/AddAgentPage';
 import { AddWorkspacePage } from './pages/AddWorkspacePage';
 import { AllAgentsPage } from './pages/AllAgentsPage';
 import { AgentDetailLayout } from './pages/agent/AgentDetailLayout';
+import { AgentKbTab } from './pages/agent/AgentKbTab';
 import { AgentRoute } from './pages/agent/AgentRoute';
 import { ClaudeCodeTab } from './pages/agent/ClaudeCodeTab';
-import { FilesChangedTab } from './pages/agent/FilesChangedTab';
 import { RoleActivityTab } from './pages/agent/RoleActivityTab';
 import { SessionLogTab } from './pages/agent/SessionLogTab';
 import { DashboardPage } from './pages/DashboardPage';
 import { KbReviewPage } from './pages/KbReviewPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { WorkspaceSettingsPage } from './pages/WorkspaceSettingsPage';
+import { WorkspaceAgentsTab } from './pages/workspace/WorkspaceAgentsTab';
+import { WorkspaceKbTab } from './pages/workspace/WorkspaceKbTab';
 
 export const router = createBrowserRouter([
   {
     path: '/',
-    element: <RootLayout />,
     children: [
       { index: true, element: <HomeRedirect /> },
       {
@@ -39,7 +40,13 @@ export const router = createBrowserRouter([
         path: 'w/:workspaceId',
         element: <WorkspaceShell />,
         children: [
-          { index: true, element: <DashboardPage /> },
+          {
+            element: <DashboardPage />,
+            children: [
+              { index: true, element: <WorkspaceAgentsTab /> },
+              { path: 'kb', element: <WorkspaceKbTab /> },
+            ],
+          },
           {
             path: 'agents/:agentId',
             element: <AgentRoute />,
@@ -50,7 +57,7 @@ export const router = createBrowserRouter([
                   { index: true, element: <Navigate to="claude" replace /> },
                   { path: 'claude', element: <ClaudeCodeTab /> },
                   { path: 'log', element: <SessionLogTab /> },
-                  { path: 'files', element: <FilesChangedTab /> },
+                  { path: 'kb', element: <AgentKbTab /> },
                   { path: 'roles', element: <RoleActivityTab /> },
                 ],
               },
@@ -62,6 +69,7 @@ export const router = createBrowserRouter([
               },
             ],
           },
+          { path: 'settings', element: <WorkspaceSettingsPage /> },
           {
             path: 'kb-review',
             children: [

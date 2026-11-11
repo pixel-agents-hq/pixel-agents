@@ -6,10 +6,9 @@ import { clientMessageRequested, serverMessageReceived } from '../connection/act
 import { workspaceSaveRequested, workspaceSettingsSaga } from './workspaceSettingsSaga';
 import { saveSettled, saveStarted } from './workspacesSlice';
 
-function start(readOnly = false) {
+function start() {
   const dispatched: unknown[] = [];
   const state = {
-    connection: { readOnly },
     workspaces: {
       workspaces: [{ id: 'ws-1', name: 'old', directoryPaths: ['/a'], rootPath: '/root' }],
     },
@@ -137,14 +136,10 @@ describe('workspaceSettingsSaga', () => {
     task.cancel();
   });
 
-  it('唯讀與 Default 不送出任何訊息', () => {
-    const a = start(true);
-    a.channel.put(request());
-    expect(sentMessages(a.dispatched)).toHaveLength(0);
-    a.task.cancel();
-    const b = start();
-    b.channel.put(request('default'));
-    expect(sentMessages(b.dispatched)).toHaveLength(0);
-    b.task.cancel();
+  it('Default 不送出任何訊息', () => {
+    const { channel, dispatched, task } = start();
+    channel.put(request('default'));
+    expect(sentMessages(dispatched)).toHaveLength(0);
+    task.cancel();
   });
 });

@@ -84,11 +84,9 @@ export function canEditRootPath(workspace: Workspace, kbIsEmpty: boolean | undef
 export function canSaveSettings(
   workspace: Workspace,
   draft: WorkspaceDraft,
-  readOnly: boolean,
   pending: boolean,
 ): boolean {
   return (
-    !readOnly &&
     !pending &&
     workspace.id !== DEFAULT_WORKSPACE_ID &&
     draft.name.trim() !== '' &&

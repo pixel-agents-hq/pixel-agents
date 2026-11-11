@@ -22,6 +22,7 @@ import {
   directoryForPath,
   selectVisibleWorkspaces,
 } from '../features/workspaces/workspaceSelectors';
+import { selectableDirectoryPaths } from '../features/workspaces/workspaceRoot';
 import type { PermissionRole } from '../protocol';
 import { controlBorderColor, roleColors } from '../theme';
 
@@ -82,7 +83,6 @@ export function AddAgentPage() {
   const directories = useAppSelector((state) => state.workspaces.directories);
   const curators = useAppSelector((state) => state.workspaces.curators);
   const curatorsAvailable = useAppSelector((state) => state.workspaces.curatorsAvailable);
-  const readOnly = useAppSelector((state) => state.connection.readOnly);
   const agents = useAppSelector(selectAllAgents);
 
   const initialWorkspaceId = searchParams.get('workspace') ?? workspaces[0]?.id ?? '';
@@ -95,15 +95,17 @@ export function AddAgentPage() {
   const [startNow, setStartNow] = useState(false);
 
   const workspace = workspaces.find((w) => w.id === workspaceId);
-  const directoryPaths = workspace?.directoryPaths ?? [];
+  const directoryPaths = selectableDirectoryPaths(
+    workspace?.directoryPaths ?? [],
+    workspace?.rootPath,
+  );
   const directoryPath =
     chosenPath && directoryPaths.includes(chosenPath) ? chosenPath : directoryPaths[0];
   const existingCuratorId = curators[workspaceId];
   const existingCurator =
     existingCuratorId === undefined ? undefined : agents.find((a) => a.id === existingCuratorId);
   // KB Writer 必須是已經啟用的 Agent，所以沒勾「建立後立即啟用」時不能指定
-  const curatorLocked =
-    !curatorsAvailable || readOnly || existingCuratorId !== undefined || !startNow;
+  const curatorLocked = !curatorsAvailable || existingCuratorId !== undefined || !startNow;
   const willBecomeCurator = becomeCurator && !curatorLocked;
 
   const workspaceAgentIds = agents.filter((a) => a.workspaceId === workspaceId).map((a) => a.id);
@@ -351,7 +353,7 @@ export function AddAgentPage() {
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <Button
             variant="contained"
-            disabled={readOnly || launch.pending || !directoryPath}
+            disabled={launch.pending || !directoryPath}
             onClick={submit}
             sx={{ px: 2.5, py: 1, fontSize: 13 }}
           >
@@ -361,11 +363,6 @@ export function AddAgentPage() {
             Cancel
           </Button>
         </Box>
-        {readOnly && (
-          <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 1.5 }}>
-            目前是唯讀連線，無法啟動 Agent
-          </Typography>
-        )}
       </Box>
     </Box>
   );

@@ -41,8 +41,7 @@ function* waitForRootChange(workspaceId: string, before: string | undefined) {
 
 function* handleSave({ payload }: ReturnType<typeof workspaceSaveRequested>) {
   const { workspaceId, draft } = payload;
-  const readOnly: boolean = yield select((state: RootState) => state.connection.readOnly);
-  if (readOnly || workspaceId === DEFAULT_WORKSPACE_ID) return;
+  if (workspaceId === DEFAULT_WORKSPACE_ID) return;
   const before: ReturnType<typeof selectWorkspace> = yield select((state: RootState) =>
     selectWorkspace(state, workspaceId),
   );

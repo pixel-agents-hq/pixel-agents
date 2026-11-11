@@ -8,17 +8,19 @@ import { Link as RouterLink, Outlet, useLocation, useNavigate, useParams } from 
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { AgentRoleBadges } from '../../components/AgentRoleBadges';
 import { Elapsed } from '../../components/Elapsed';
+import { KbWriterControl } from '../../components/KbWriterControl';
 import { MonoText } from '../../components/MonoText';
 import { StartAgentButton } from '../../components/StartAgentButton';
 import { StatusDot } from '../../components/StatusDot';
 import { agentDisplayName, deriveRunState } from '../../features/agents/agentSelectors';
+import { KB_TAB_LABEL } from '../../constants';
 import { clientMessageRequested } from '../../features/connection/actions';
 import { useRouteAgent } from './useRouteAgent';
 
 const TABS = [
   { path: 'claude', label: 'Claude Code' },
   { path: 'log', label: 'Session Log' },
-  { path: 'files', label: 'Files Changed' },
+  { path: 'kb', label: KB_TAB_LABEL },
   { path: 'roles', label: 'Role Activity' },
 ];
 
@@ -32,7 +34,6 @@ export function AgentDetailLayout() {
   const directoryPath = useAppSelector(
     (state) => state.workspaces.directories.find((d) => d.name === agent.directoryName)?.path,
   );
-  const readOnly = useAppSelector((state) => state.connection.readOnly);
   const runState = deriveRunState(agent);
   const currentTab =
     TABS.find((tab) => location.pathname.endsWith(`/${tab.path}`))?.path ?? 'claude';
@@ -62,14 +63,14 @@ export function AgentDetailLayout() {
         <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{agentDisplayName(agent)}</Typography>
         {directoryPath && <MonoText>{directoryPath}</MonoText>}
         <AgentRoleBadges agent={agent} isCurator={isCurator} />
-        <Box sx={{ ml: 'auto', display: 'flex', gap: 0.75 }}>
+        <Box sx={{ ml: 'auto', display: 'flex', gap: 0.75, alignItems: 'center' }}>
+          <KbWriterControl agent={agent} />
           {runState === 'stopped' && <StartAgentButton agentId={agent.id} />}
           <Button
             size="small"
             variant="outlined"
             color="error"
             onClick={remove}
-            disabled={readOnly}
             sx={{ fontSize: 11 }}
           >
             刪除

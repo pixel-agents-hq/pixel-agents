@@ -373,11 +373,9 @@ describe('roleLaunch reducer', () => {
 });
 
 describe('role picker availability', () => {
-  test('VS Code (not a browser runtime) and read-only clients get no role picker', () => {
-    assert.equal(rolePickerAvailable(false, false), false); // VS Code panel
-    assert.equal(rolePickerAvailable(false, true), false);
-    assert.equal(rolePickerAvailable(true, true), false); // read-only standalone
-    assert.equal(rolePickerAvailable(true, false), true); // privileged standalone
+  test('only the standalone browser gets a role picker', () => {
+    assert.equal(rolePickerAvailable(false), false); // VS Code panel
+    assert.equal(rolePickerAvailable(true), true); // standalone
   });
 
   test('the modal renders nothing while idle', () => {

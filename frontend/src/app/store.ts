@@ -3,6 +3,7 @@ import createSagaMiddleware from 'redux-saga';
 
 import { agentsReducer } from '../features/agents/agentsSlice';
 import { connectionReducer } from '../features/connection/connectionSlice';
+import { kbReducer } from '../features/kb/kbSlice';
 import { workspacesReducer } from '../features/workspaces/workspacesSlice';
 import { rootSaga } from './rootSaga';
 
@@ -13,6 +14,7 @@ export function createAppStore() {
       connection: connectionReducer,
       workspaces: workspacesReducer,
       agents: agentsReducer,
+      kb: kbReducer,
     },
     middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(sagaMiddleware),
   });

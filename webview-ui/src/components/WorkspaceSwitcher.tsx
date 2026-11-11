@@ -9,9 +9,7 @@ interface WorkspaceSwitcherProps {
   activeWorkspaceId: string;
   /** Attention counts per Workspace; the active one has none by construction. */
   badges: Record<string, WorkspaceBadge>;
-  /** Show the `+` tab (false for a read-only office). */
-  canCreate: boolean;
-  /** Show the pencil on the active tab (false for a read-only office). */
+  /** Show the pencil on the active tab. */
   canEdit: (workspaceId: string) => boolean;
   onSelect: (workspaceId: string) => void;
   onCreate: () => void;
@@ -39,7 +37,6 @@ export function WorkspaceSwitcher({
   workspaces,
   activeWorkspaceId,
   badges,
-  canCreate,
   canEdit,
   onSelect,
   onCreate,
@@ -104,20 +101,18 @@ export function WorkspaceSwitcher({
           </div>
         );
       })}
-      {canCreate && (
-        <Button
-          variant="default"
-          size="sm"
-          aria-label="New workspace"
-          title="New workspace"
-          data-testid="workspace-add"
-          className="border-border! shadow-pixel shrink-0 flex items-center justify-center py-4"
-          style={targetStyle}
-          onClick={onCreate}
-        >
-          +
-        </Button>
-      )}
+      <Button
+        variant="default"
+        size="sm"
+        aria-label="New workspace"
+        title="New workspace"
+        data-testid="workspace-add"
+        className="border-border! shadow-pixel shrink-0 flex items-center justify-center py-4"
+        style={targetStyle}
+        onClick={onCreate}
+      >
+        +
+      </Button>
     </div>
   );
 }

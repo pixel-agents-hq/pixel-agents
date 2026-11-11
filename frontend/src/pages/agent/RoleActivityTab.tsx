@@ -1,23 +1,24 @@
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 
+import { useAppSelector } from '../../app/hooks';
+import { GuardStatusPanel } from '../../components/GuardStatusPanel';
 import { RoleBadge } from '../../components/RoleBadge';
-import type { GuardInactiveReason } from '../../protocol';
+import { agentDisplayName } from '../../features/agents/agentSelectors';
+import { buildGuardStatus } from '../../features/agents/guardStatus';
+import { selectWorkspace } from '../../features/workspaces/workspaceSelectors';
 import { useRouteAgent } from './useRouteAgent';
-
-const REASON_LABELS: Record<GuardInactiveReason, string> = {
-  not_standalone_agent: '不是由本主機啟動的 Agent',
-  hooks_not_installed: 'hooks 尚未安裝',
-  pretooluse_hook_missing: '缺少 PreToolUse hook',
-  hook_script_missing: '找不到 hook 腳本',
-  awaiting_first_verdict: '等待第一次判定',
-  no_workspace_root: '工作空間沒有根目錄',
-  no_curator: '工作空間沒有 KB Writer',
-};
 
 export function RoleActivityTab() {
   const agent = useRouteAgent();
   const { guard } = agent;
+  const rootPath = useAppSelector((state) => selectWorkspace(state, agent.workspaceId)?.rootPath);
+  const curatorName = useAppSelector((state) => {
+    const curatorId = state.workspaces.curators[agent.workspaceId];
+    if (curatorId === undefined) return null;
+    const curator = state.agents.byId[curatorId];
+    return curator ? agentDisplayName(curator) : `agent-${curatorId}`;
+  });
 
   if (!guard) {
     return (
@@ -26,6 +27,8 @@ export function RoleActivityTab() {
       </Typography>
     );
   }
+
+  const status = buildGuardStatus(guard, rootPath, curatorName);
 
   return (
     <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 560 }}>
@@ -49,14 +52,7 @@ export function RoleActivityTab() {
         <Typography sx={{ fontSize: 11, color: 'text.disabled', mb: 0.75 }}>
           規則是否生效
         </Typography>
-        <Typography sx={{ fontSize: 12, color: guard.active ? 'success.main' : 'warning.main' }}>
-          {guard.active ? '生效中' : '未生效'}
-        </Typography>
-        {guard.reasons.map((reason) => (
-          <Typography key={reason} sx={{ fontSize: 11, color: 'text.secondary', mt: 0.25 }}>
-            · {REASON_LABELS[reason]}
-          </Typography>
-        ))}
+        <GuardStatusPanel status={status} />
       </Box>
     </Box>
   );

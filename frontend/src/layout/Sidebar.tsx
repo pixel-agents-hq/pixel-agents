@@ -104,7 +104,6 @@ export function Sidebar({ workspaceId }: { workspaceId: string }) {
   const workspaces = useAppSelector(selectVisibleWorkspaces);
   const agents = useAppSelector((state) => selectAgentsInWorkspace(state, workspaceId));
   const curatorsAvailable = useAppSelector((state) => state.workspaces.curatorsAvailable);
-  const readOnly = useAppSelector((state) => state.connection.readOnly);
   const connectionStatus = useAppSelector((state) => state.connection.status);
 
   return (
@@ -161,7 +160,6 @@ export function Sidebar({ workspaceId }: { workspaceId: string }) {
           variant="outlined"
           component={RouterLink}
           to="/workspaces/new"
-          disabled={readOnly}
           sx={{
             justifyContent: 'flex-start',
             borderStyle: 'dashed',
@@ -216,10 +214,7 @@ export function Sidebar({ workspaceId }: { workspaceId: string }) {
       </Box>
 
       <Box sx={{ px: 1.5, py: 1.25, borderTop: 1, borderColor: 'divider' }}>
-        <MonoText>
-          {CONNECTION_LABELS[connectionStatus]}
-          {readOnly && ' · 唯讀'}
-        </MonoText>
+        <MonoText>{CONNECTION_LABELS[connectionStatus]}</MonoText>
       </Box>
     </Box>
   );

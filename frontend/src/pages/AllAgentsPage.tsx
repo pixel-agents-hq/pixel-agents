@@ -11,7 +11,6 @@ import { selectVisibleWorkspaces } from '../features/workspaces/workspaceSelecto
 export function AllAgentsPage() {
   const agents = useAppSelector(selectAllAgents);
   const workspaces = useAppSelector(selectVisibleWorkspaces);
-  const readOnly = useAppSelector((state) => state.connection.readOnly);
 
   return (
     <>
@@ -32,13 +31,7 @@ export function AllAgentsPage() {
             {agents.length} agents · {workspaces.length} workspaces
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          component={RouterLink}
-          to="/agents/new"
-          disabled={readOnly}
-          sx={{ ml: 'auto' }}
-        >
+        <Button variant="contained" component={RouterLink} to="/agents/new" sx={{ ml: 'auto' }}>
           + Agent
         </Button>
       </Box>

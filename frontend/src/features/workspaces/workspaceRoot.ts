@@ -2,9 +2,9 @@ import type { Agent } from '../agents/agentsSlice';
 import { DEFAULT_WORKSPACE_ID } from '../../protocol';
 import type { Workspace } from '../../protocol';
 
-/** Default 是伺服器固定的後備歸屬，不提供根目錄控制；唯讀連線也不顯示。 */
-export function canEditWorkspaceRoot(workspaceId: string, readOnly: boolean): boolean {
-  return !readOnly && workspaceId !== DEFAULT_WORKSPACE_ID;
+/** Default 是伺服器固定的後備歸屬，不提供根目錄控制。 */
+export function canEditWorkspaceRoot(workspaceId: string): boolean {
+  return workspaceId !== DEFAULT_WORKSPACE_ID;
 }
 
 /**

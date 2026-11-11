@@ -6,6 +6,7 @@ import { useCallback, useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router';
 
 import { useAppDispatch, useAppSelector } from '../app/hooks';
+import { ADD_WORKSPACE_TEXT } from '../constants';
 import { EventFlow } from '../components/EventFlow';
 import type { EventFlowStep } from '../components/EventFlow';
 import { FormField } from '../components/FormField';
@@ -14,10 +15,9 @@ import { workspaceCreationRequested } from '../features/workspaces/createWorkspa
 
 const FLOW_STEPS: EventFlowStep[] = [
   { label: 'submit', value: 'form data', tone: 'plain' },
-  { label: 'send', value: 'saveDirectory', detail: '{name, path}', tone: 'send' },
-  { label: 'receive', value: 'directorySaved', detail: 'Directory', tone: 'receive' },
-  { label: 'send', value: 'saveWorkspace', detail: '{name, directoryPaths}', tone: 'send' },
+  { label: 'send', value: 'saveWorkspace', detail: '{name, directoryPaths: []}', tone: 'send' },
   { label: 'receive', value: 'workspacesLoaded', detail: 'Workspace[]', tone: 'receive' },
+  { label: 'send', value: 'setWorkspaceRoot', detail: '{workspaceId, rootPath}', tone: 'send' },
   { label: 'navigate', value: '/w/:id', tone: 'plain' },
 ];
 
@@ -25,7 +25,6 @@ export function AddWorkspacePage() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const workspaces = useAppSelector((state) => state.workspaces.workspaces);
-  const readOnly = useAppSelector((state) => state.connection.readOnly);
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
 
@@ -63,7 +62,7 @@ export function AddWorkspacePage() {
           />
         </FormField>
 
-        <FormField label="Path" hint="專案目錄的絕對路徑">
+        <FormField label={ADD_WORKSPACE_TEXT.rootLabel} hint={ADD_WORKSPACE_TEXT.rootHint}>
           <TextField
             fullWidth
             size="small"
@@ -73,12 +72,16 @@ export function AddWorkspacePage() {
           />
         </FormField>
 
+        <Typography sx={{ fontSize: 11, color: 'text.disabled', mb: 2 }}>
+          {ADD_WORKSPACE_TEXT.rootNote}
+        </Typography>
+
         <EventFlow steps={FLOW_STEPS} />
 
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <Button
             variant="contained"
-            disabled={readOnly || creation.pending || name.trim() === '' || path.trim() === ''}
+            disabled={creation.pending || name.trim() === '' || path.trim() === ''}
             onClick={submit}
             sx={{ px: 2.5, py: 1, fontSize: 13 }}
           >
@@ -88,11 +91,6 @@ export function AddWorkspacePage() {
             Cancel
           </Button>
         </Box>
-        {readOnly && (
-          <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 1.5 }}>
-            目前是唯讀連線，無法建立工作空間
-          </Typography>
-        )}
       </Box>
     </Box>
   );

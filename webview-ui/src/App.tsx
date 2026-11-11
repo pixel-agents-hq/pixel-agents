@@ -57,7 +57,6 @@ import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
 import type { AgentAttention } from './workspaces.js';
 import {
-  canCreateWorkspace,
   canEditWorkspace,
   computeWorkspaceBadges,
   directoriesForWorkspace,
@@ -144,7 +143,6 @@ function App() {
     workspaceView,
     selectWorkspace,
     workspaceRejection,
-    officeReadOnly,
     agentRoleNames,
     curators,
     requestCurator,
@@ -222,15 +220,14 @@ function App() {
     [workspaceView, agents, agentAttention],
   );
   // Every agent card reads the curator state from here (shown only when the
-  // host reports curators available and the office is not read-only).
+  // host reports curators available).
   const agentCurators = useMemo<AgentCuratorsValue>(
     () => ({
       state: curators,
-      readOnly: officeReadOnly,
       workspaceOf: (agentId) => workspaceOfAgent(workspaceView, agentId),
       request: requestCurator,
     }),
-    [curators, officeReadOnly, workspaceView, requestCurator],
+    [curators, workspaceView, requestCurator],
   );
   const showWorkspaceSwitcher = shouldShowWorkspaceSwitcher({
     isBrowserRuntime,
@@ -258,7 +255,6 @@ function App() {
   // Role); everywhere else it is the single launchAgent it always was.
   const mobileShellRef = useRef<MobileShellController | null>(null);
   const roleLaunch = useRoleLaunch({
-    officeReadOnly,
     bypassPermissions,
     onCancel: () => mobileShellRef.current?.cancelPendingLaunch(),
   });
@@ -602,8 +598,7 @@ function App() {
               workspaces={workspaceView.workspaces}
               activeWorkspaceId={workspaceView.activeWorkspaceId}
               badges={workspaceBadges}
-              canCreate={canCreateWorkspace(officeReadOnly)}
-              canEdit={(id) => canEditWorkspace(officeReadOnly, id)}
+              canEdit={canEditWorkspace}
               onSelect={selectWorkspace}
               onCreate={workspaceEditor.create}
               onEdit={workspaceEditor.edit}
@@ -739,15 +734,7 @@ function App() {
         </Tooltip>
       )}
 
-      {officeReadOnly && (
-        <div className="absolute mobile-safe-top left-1/2 -translate-x-1/2 z-10 text-sm text-text-muted pointer-events-none select-none whitespace-nowrap">
-          View only
-        </div>
-      )}
-
-      {/* A read-only office gets no toolbar: launching, layout editing and every
-          setting would be refused by the server anyway. */}
-      {!isMobile && !officeReadOnly && (
+      {!isMobile && (
         <BottomToolbar
           isEditMode={editor.isEditMode}
           onToggleEditMode={editor.handleToggleEditMode}
@@ -777,8 +764,7 @@ function App() {
               workspaces={workspaceView.workspaces}
               activeWorkspaceId={workspaceView.activeWorkspaceId}
               badges={workspaceBadges}
-              canCreate={canCreateWorkspace(officeReadOnly)}
-              canEdit={(id) => canEditWorkspace(officeReadOnly, id)}
+              canEdit={canEditWorkspace}
               onSelect={selectWorkspace}
               onCreate={workspaceEditor.create}
               onEdit={workspaceEditor.edit}
@@ -786,23 +772,20 @@ function App() {
               className="w-full pb-4 pr-4 pointer-events-auto"
             />
           )}
-          {!officeReadOnly && (
-            <Button
-              size="sm"
-              variant={isSettingsOpen ? 'active' : 'default'}
-              className="border-border! shadow-pixel pointer-events-auto"
-              onClick={() => setIsSettingsOpen((v) => !v)}
-            >
-              Settings
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant={isSettingsOpen ? 'active' : 'default'}
+            className="border-border! shadow-pixel pointer-events-auto"
+            onClick={() => setIsSettingsOpen((v) => !v)}
+          >
+            Settings
+          </Button>
         </div>
       )}
 
       <VersionIndicator
         currentVersion={extensionVersion}
         lastSeenVersion={lastSeenVersion}
-        hideUpdateNotice={officeReadOnly}
         onDismiss={handleWhatsNewDismiss}
         onOpenChangelog={handleOpenChangelog}
       />
@@ -865,8 +848,8 @@ function App() {
             {officeRegion}
 
             {/* Standalone with a terminal: terminalAvailable is only ever true when
-              the server reports a working PTY to a tokened session, which VS
-              Code's surface never does. In flow as a flex sibling so the office
+              the server reports a working PTY, which VS Code's surface never
+              does. In flow as a flex sibling so the office
               region reflows beside it instead of being overlaid.
 
               Otherwise (VS Code, or a watch-only standalone session) the card

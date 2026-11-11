@@ -20,10 +20,9 @@ const ws = (id: string, rootPath?: string): Workspace => ({
 });
 
 describe('根目錄控制', () => {
-  it('Default 與唯讀不顯示控制', () => {
-    expect(canEditWorkspaceRoot(DEFAULT_WORKSPACE_ID, false)).toBe(false);
-    expect(canEditWorkspaceRoot('ws-1', true)).toBe(false);
-    expect(canEditWorkspaceRoot('ws-1', false)).toBe(true);
+  it('Default 不顯示控制', () => {
+    expect(canEditWorkspaceRoot(DEFAULT_WORKSPACE_ID)).toBe(false);
+    expect(canEditWorkspaceRoot('ws-1')).toBe(true);
   });
 
   it('只有既有根目錄的變更或清除才需要確認', () => {

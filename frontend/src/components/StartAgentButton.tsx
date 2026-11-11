@@ -11,13 +11,12 @@ interface StartAgentButtonProps {
 /** 為還沒有程序的 Agent 啟動 Claude Code（有對話紀錄就接續）。 */
 export function StartAgentButton({ agentId, size = 'small' }: StartAgentButtonProps) {
   const dispatch = useAppDispatch();
-  const readOnly = useAppSelector((state) => state.connection.readOnly);
   const terminalAvailable = useAppSelector((state) => state.connection.terminalAvailable);
   return (
     <Button
       size={size}
       variant="contained"
-      disabled={readOnly || !terminalAvailable}
+      disabled={!terminalAvailable}
       onClick={() => dispatch(clientMessageRequested({ type: 'startAgent', id: agentId }))}
       sx={{ fontSize: 11, py: '4px', px: '14px' }}
     >

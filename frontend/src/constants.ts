@@ -32,7 +32,6 @@ export const KB_TAB_LABEL = '知識庫';
 export const KB_TREE_MIN_HEIGHT_PX = 320;
 export const KB_TREE_WIDTH_PX = 260;
 export const KB_TEXT = {
-  readOnly: '唯讀連線無法瀏覽知識庫',
   notConnected: '尚未連線，無法瀏覽知識庫',
   noRoot: '尚未設定根目錄',
   loading: '載入中…',
@@ -84,7 +83,6 @@ export const WORKSPACE_SETTINGS_TEXT = {
   save: '儲存',
   saving: '等待伺服器確認…',
   dirty: '有未儲存的變更',
-  readOnly: '目前是唯讀連線，無法修改設定',
   unavailable: '預設工作空間沒有設定頁',
 } as const;
 export const ADD_WORKSPACE_TEXT = {

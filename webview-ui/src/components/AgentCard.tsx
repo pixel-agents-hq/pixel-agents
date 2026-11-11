@@ -103,12 +103,12 @@ export function AgentCard({
 }
 
 /** The curator badge and its one control, plain text only. Renders nothing
- *  where the host has no curators or the office is read-only. */
+ *  where the host has no curators. */
 function AgentCardCurator({ agentId }: { agentId: number }) {
-  const { state, readOnly, workspaceOf, request } = useAgentCurators();
+  const { state, workspaceOf, request } = useAgentCurators();
   const workspaceId = workspaceOf(agentId);
   const curator = isCuratorOf(state, agentId, workspaceId);
-  const action = curatorCardAction(state, readOnly, agentId, workspaceId);
+  const action = curatorCardAction(state, agentId, workspaceId);
   const rejection = action.kind === 'none' ? null : curatorRejectionFor(state, agentId);
   if (!curator && action.kind === 'none') return null;
   return (

@@ -1,18 +1,25 @@
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Tab from '@mui/material/Tab';
+import Tabs from '@mui/material/Tabs';
 import Typography from '@mui/material/Typography';
-import { useState } from 'react';
-import { Link as RouterLink, useParams } from 'react-router';
+import { Link as RouterLink, Outlet, useLocation, useParams } from 'react-router';
 
 import { useAppSelector } from '../app/hooks';
-import { ActivateAgentDialog } from '../components/ActivateAgentDialog';
-import { AgentCard } from '../components/AgentCard';
+import { KbWriterVacancy } from '../components/KbWriterVacancy';
+import { KB_TAB_LABEL, WORKSPACE_SETTINGS_TEXT } from '../constants';
 import {
   agentDisplayName,
   deriveRunState,
   selectAgentsInWorkspace,
 } from '../features/agents/agentSelectors';
+import { DEFAULT_WORKSPACE_ID } from '../protocol';
 import { selectWorkspace } from '../features/workspaces/workspaceSelectors';
+
+const TABS = [
+  { value: 'agents', suffix: '', label: 'Agents' },
+  { value: 'kb', suffix: '/kb', label: KB_TAB_LABEL },
+];
 
 export function DashboardPage() {
   const { workspaceId = '' } = useParams();
@@ -20,8 +27,8 @@ export function DashboardPage() {
   const agents = useAppSelector((state) => selectAgentsInWorkspace(state, workspaceId));
   const curatorId = useAppSelector((state) => state.workspaces.curators[workspaceId]);
   const curatorsAvailable = useAppSelector((state) => state.workspaces.curatorsAvailable);
-  const readOnly = useAppSelector((state) => state.connection.readOnly);
-  const [activating, setActivating] = useState(false);
+  const location = useLocation();
+  const currentTab = location.pathname.endsWith('/kb') ? 'kb' : 'agents';
 
   const running = agents.filter((agent) => deriveRunState(agent) === 'running').length;
   const idle = agents.filter((agent) => deriveRunState(agent) === 'idle').length;
@@ -52,6 +59,11 @@ export function DashboardPage() {
           </Typography>
         </Box>
         <Box sx={{ ml: 'auto', display: 'flex', gap: 1, alignItems: 'center' }}>
+          {workspaceId !== DEFAULT_WORKSPACE_ID && (
+            <Button variant="outlined" component={RouterLink} to={`/w/${workspaceId}/settings`}>
+              {WORKSPACE_SETTINGS_TEXT.open}
+            </Button>
+          )}
           {curatorsAvailable && (
             <Button variant="outlined" component={RouterLink} to={`/w/${workspaceId}/kb-review`}>
               KB Review
@@ -61,61 +73,45 @@ export function DashboardPage() {
             variant="contained"
             component={RouterLink}
             to={`/agents/new?workspace=${workspaceId}`}
-            disabled={readOnly}
           >
             + Agent
           </Button>
         </Box>
       </Box>
 
-      <Box
+      <KbWriterVacancy
+        workspaceId={workspaceId}
+        sx={{ px: 3, py: 1, borderBottom: 1, borderColor: 'divider' }}
+      />
+
+      <Tabs
+        value={currentTab}
         sx={{
-          flex: 1,
-          overflowY: 'auto',
-          p: 3,
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-          gap: 1.5,
-          alignContent: 'start',
+          minHeight: 36,
+          px: 3,
+          bgcolor: 'background.default',
+          borderBottom: 1,
+          borderColor: 'divider',
+          flexShrink: 0,
         }}
       >
-        {agents.map((agent) => (
-          <AgentCard key={agent.id} agent={agent} workspaceId={workspaceId} />
+        {TABS.map((tab) => (
+          <Tab
+            key={tab.value}
+            value={tab.value}
+            label={tab.label}
+            component={RouterLink}
+            to={`/w/${workspaceId}${tab.suffix}`}
+            sx={{ minHeight: 36, py: 0, fontSize: 12 }}
+          />
         ))}
-        {!readOnly && (
-          <Box
-            component="button"
-            type="button"
-            onClick={() => setActivating(true)}
-            sx={{
-              font: 'inherit',
-              cursor: 'pointer',
-              minHeight: 160,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 1,
-              bgcolor: 'background.default',
-              border: '1px dashed',
-              borderColor: 'divider',
-              borderRadius: '6px',
-              textDecoration: 'none',
-              color: 'text.disabled',
-              fontSize: 12,
-            }}
-          >
-            <Box sx={{ fontSize: 20, fontWeight: 300, lineHeight: 1 }}>+</Box>
-            新增 Agent 到 {workspace?.name}
-          </Box>
-        )}
+      </Tabs>
+
+      <Box
+        sx={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}
+      >
+        <Outlet />
       </Box>
-      <ActivateAgentDialog
-        workspaceId={workspaceId}
-        workspaceName={workspace?.name ?? ''}
-        open={activating}
-        onClose={() => setActivating(false)}
-      />
     </>
   );
 }

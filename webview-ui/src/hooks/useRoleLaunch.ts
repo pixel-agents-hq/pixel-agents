@@ -8,7 +8,6 @@ import { transport } from '../transport/index.js';
 import type { Directory } from './useExtensionMessages.js';
 
 interface RoleLaunchInputs {
-  officeReadOnly: boolean;
   bypassPermissions: boolean;
   /** The operator dismissed the flow without launching. */
   onCancel?: () => void;
@@ -16,10 +15,10 @@ interface RoleLaunchInputs {
 
 /**
  * Wires the roleLaunch reducer to React and the transport. Where a Role picker
- * cannot exist (the VS Code panel, a read-only client), `begin` sends the plain
- * launchAgent exactly as before.
+ * cannot exist (the VS Code panel), `begin` sends the plain launchAgent
+ * exactly as before.
  */
-export function useRoleLaunch({ officeReadOnly, bypassPermissions, onCancel }: RoleLaunchInputs) {
+export function useRoleLaunch({ bypassPermissions, onCancel }: RoleLaunchInputs) {
   const [state, setState] = useState<RoleLaunchState>(ROLE_LAUNCH_IDLE);
   const stateRef = useRef<RoleLaunchState>(ROLE_LAUNCH_IDLE);
   const bypassRef = useRef(bypassPermissions);
@@ -35,7 +34,7 @@ export function useRoleLaunch({ officeReadOnly, bypassPermissions, onCancel }: R
   }, []);
 
   useEffect(() => {
-    if (!rolePickerAvailable(isBrowserRuntime, officeReadOnly)) return;
+    if (!rolePickerAvailable(isBrowserRuntime)) return;
     return transport.onMessage((msg: ServerMessage) => {
       switch (msg.type) {
         case 'rolesAvailable':
@@ -51,17 +50,17 @@ export function useRoleLaunch({ officeReadOnly, bypassPermissions, onCancel }: R
           break;
       }
     });
-  }, [dispatch, officeReadOnly]);
+  }, [dispatch]);
 
   const begin = useCallback(
     (directory: Directory) => {
-      if (!rolePickerAvailable(isBrowserRuntime, officeReadOnly)) {
+      if (!rolePickerAvailable(isBrowserRuntime)) {
         transport.send({ type: 'launchAgent', directoryPath: directory.path });
         return;
       }
       dispatch({ type: 'begin', directoryPath: directory.path });
     },
-    [dispatch, officeReadOnly],
+    [dispatch],
   );
 
   const cancel = useCallback(() => {

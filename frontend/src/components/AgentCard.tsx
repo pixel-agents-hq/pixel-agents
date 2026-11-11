@@ -33,8 +33,6 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
   const directoryPath = useAppSelector(
     (state) => state.workspaces.directories.find((d) => d.name === agent.directoryName)?.path,
   );
-  const readOnly = useAppSelector((state) => state.connection.readOnly);
-  const terminalAvailable = useAppSelector((state) => state.connection.terminalAvailable);
   const runState = deriveRunState(agent);
   const { color } = statusColors[runState];
   const tools = foregroundTools(agent).slice(-TOOLS_SHOWN);
@@ -156,20 +154,7 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
           {runState === 'running' ? <Elapsed since={agent.startedAt} /> : '—'}
         </Typography>
         <Box sx={{ ml: 'auto', display: 'flex', gap: '6px' }}>
-          {runState === 'stopped' ? (
-            <StartAgentButton agentId={agent.id} />
-          ) : (
-            <Button
-              size="small"
-              variant="outlined"
-              component={RouterLink}
-              to={`/w/${workspaceId}/agents/${agent.id}/terminal`}
-              disabled={!terminalAvailable}
-              sx={{ fontSize: 11, py: '4px', px: '10px' }}
-            >
-              Terminal
-            </Button>
-          )}
+          {runState === 'stopped' && <StartAgentButton agentId={agent.id} />}
           <Button
             size="small"
             variant="outlined"
@@ -185,7 +170,6 @@ export function AgentCard({ agent, workspaceId }: { agent: Agent; workspaceId: s
             onClose={() => setMenuAnchor(null)}
           >
             <MenuItem
-              disabled={readOnly}
               onClick={() => {
                 setMenuAnchor(null);
                 dispatch(clientMessageRequested({ type: 'closeAgent', id: agent.id }));

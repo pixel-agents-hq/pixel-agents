@@ -75,7 +75,13 @@ describe('editDirectorySaga', () => {
   it('伺服器拒絕時不動工作空間', () => {
     const { channel, dispatched, task } = start();
     channel.put(edit('/p/new'));
-    channel.put(serverMessageReceived({ type: 'directoryRejected', reason: 'not a directory' }));
+    channel.put(
+      serverMessageReceived({
+        type: 'directoryRejected',
+        path: '/p/new',
+        reason: 'not a directory',
+      }),
+    );
     expect(dispatched).not.toContainEqual(
       expect.objectContaining({ payload: expect.objectContaining({ type: 'saveWorkspace' }) }),
     );
