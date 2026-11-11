@@ -91,6 +91,10 @@ export const EditTool = {
   COLOR_PICK: 'color_pick',
   /** Wall eyedropper: takes a wall's set and colour, then paints walls with them. */
   WALL_PICK: 'wall_pick',
+  /** Floor panel's Select: picks touching floor tiles of one pattern and colour, restyled together. */
+  FLOOR_SECTION: 'floor_section',
+  /** Walls panel's Select: picks touching walls of one set and colour, restyled together. */
+  WALL_SECTION: 'wall_section',
 } as const;
 export type EditTool = (typeof EditTool)[keyof typeof EditTool];
 

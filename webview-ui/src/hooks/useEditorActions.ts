@@ -4,6 +4,7 @@ import type { ColorValue } from '../components/ui/types.js';
 import {
   CARPET_DEFAULT_ACCENT_COLOR,
   CARPET_DEFAULT_COLOR,
+  EDIT_OUTLINE_HIDE_MS,
   LAYOUT_SAVE_DEBOUNCE_MS,
   ZOOM_DEFAULT_DPR_FACTOR,
   ZOOM_MAX,
@@ -25,16 +26,23 @@ import {
   paintTile,
   placeNewFurniture,
   removeArea,
-  removeFurniture,
+  removeFurnitureGroup,
   renameArea,
-  rotateFurniture,
-  toggleFurnitureState,
+  rotateFurnitureGroup,
+  toggleFurnitureStates,
   updateAreaColor,
   wallSetOf,
   wallStrokeAdds,
   wallStrokeTile,
 } from '../office/editor/editorActions.js';
 import type { EditorState } from '../office/editor/editorState.js';
+import type { SectionKind, SectionStyle } from '../office/editor/tileSections.js';
+import {
+  restyleSection,
+  sectionAt,
+  sectionKindAt,
+  sectionStyleAt,
+} from '../office/editor/tileSections.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { getRotatedType, getToggledType } from '../office/layout/furnitureCatalog.js';
 import type {
@@ -196,6 +204,77 @@ export function useEditorActions(
     bumpTick,
   );
 
+  /** Whether the Select tool of this kind is out with sections picked. */
+  const sectionsPicked = useCallback(
+    (kind: SectionKind): boolean => {
+      const tool = kind === 'floor' ? EditTool.FLOOR_SECTION : EditTool.WALL_SECTION;
+      return editorState.activeTool === tool && editorState.section?.kind === kind;
+    },
+    [editorState],
+  );
+
+  /** Make the panel's brush the look of a tile (sliders and thumbnails follow). */
+  const takeBrushFrom = useCallback(
+    (layout: OfficeLayout, idx: number) => {
+      const style = sectionStyleAt(layout, idx);
+      if (style?.kind === 'floor') {
+        editorState.selectedTileType = style.tileType;
+        editorState.floorColor = style.color;
+      } else if (style?.kind === 'wall') {
+        editorState.selectedWallSet = style.set;
+        editorState.wallColor = style.color;
+      }
+    },
+    [editorState],
+  );
+
+  /**
+   * The panel's brush changed with sections picked: restyle all of them to it,
+   * live. Every restyle of one pick shares an undo entry.
+   */
+  const restylePickedSections = useCallback(
+    (kind: SectionKind) => {
+      const picked = editorState.section;
+      if (!picked || !sectionsPicked(kind)) return;
+      const style: SectionStyle =
+        kind === 'floor'
+          ? { kind, tileType: editorState.selectedTileType, color: editorState.floorColor }
+          : { kind, set: editorState.selectedWallSet, color: editorState.wallColor };
+      const layout = getOfficeState().getLayout();
+      // Out of the way while the colour changes; back once it settles.
+      editorState.outlineHiddenUntil = performance.now() + EDIT_OUTLINE_HIDE_MS;
+      commitLayout(
+        restyleSection(layout, picked.tiles, style),
+        `section:${editorState.sectionPicks}`,
+      );
+    },
+    [editorState, getOfficeState, commitLayout, sectionsPicked],
+  );
+
+  /**
+   * After undo / redo: the picked tiles are re-found from the tiles clicked,
+   * since the sections may have looked different then. A grid that changed
+   * size drops the pick (its tile numbers mean other tiles now).
+   */
+  const repickSectionsAfter = useCallback(
+    (before: OfficeLayout, after: OfficeLayout) => {
+      const picked = editorState.section;
+      if (!picked) return;
+      const anchors = picked.anchors.filter((a) => sectionKindAt(after, a) === picked.kind);
+      if (before.cols !== after.cols || before.rows !== after.rows || anchors.length === 0) {
+        editorState.section = null;
+        return;
+      }
+      const tiles = new Set<number>();
+      for (const a of anchors) {
+        for (const t of sectionAt(after, a % after.cols, Math.floor(a / after.cols))) tiles.add(t);
+      }
+      editorState.section = { kind: picked.kind, anchors, tiles: [...tiles].sort((x, y) => x - y) };
+      takeBrushFrom(after, anchors[0]);
+    },
+    [editorState, takeBrushFrom],
+  );
+
   const handleToggleEditMode = useCallback(() => {
     setIsEditMode((prev) => {
       const next = !prev;
@@ -218,6 +297,7 @@ export function useEditorActions(
         editorState.clearGhost();
         editorState.clearDrag();
         editorState.endStroke();
+        editorState.section = null;
       }
       return next;
     });
@@ -228,6 +308,7 @@ export function useEditorActions(
     (tool: EditToolType) => {
       const next = editorState.activeTool === tool ? EditTool.SELECT : tool;
       editorState.activeTool = next;
+      editorState.section = null;
       editorState.clearSelection();
       editorState.clearGhost();
       editorState.clearDrag();
@@ -349,34 +430,39 @@ export function useEditorActions(
     (type: TileTypeVal) => {
       editorState.selectedTileType = type;
       setEditorTick((n) => n + 1);
+      restylePickedSections('floor');
     },
-    [editorState],
+    [editorState, restylePickedSections],
   );
 
   const handleFloorColorChange = useCallback(
     (color: ColorValue) => {
       editorState.floorColor = color;
       setEditorTick((n) => n + 1);
+      restylePickedSections('floor');
     },
-    [editorState],
+    [editorState, restylePickedSections],
   );
 
   // The colour new walls are painted in (like the floor's: walls already
-  // standing keep theirs until painted over).
+  // standing keep theirs until painted over) — or, with sections picked, the
+  // colour they all take.
   const handleWallColorChange = useCallback(
     (color: ColorValue) => {
       editorState.wallColor = color;
       setEditorTick((n) => n + 1);
+      restylePickedSections('wall');
     },
-    [editorState],
+    [editorState, restylePickedSections],
   );
 
   const handleWallSetChange = useCallback(
     (setIndex: number) => {
       editorState.selectedWallSet = setIndex;
       setEditorTick((n) => n + 1);
+      restylePickedSections('wall');
     },
-    [editorState],
+    [editorState, restylePickedSections],
   );
 
   const handleFurnitureTypeChange = useCallback(
@@ -399,10 +485,10 @@ export function useEditorActions(
   );
 
   const handleDeleteSelected = useCallback(() => {
-    const uid = editorState.selectedFurnitureUid;
-    if (!uid) return;
+    const uids = editorState.selectedUids;
+    if (uids.length === 0) return;
     const os = getOfficeState();
-    const newLayout = removeFurniture(os.getLayout(), uid);
+    const newLayout = removeFurnitureGroup(os.getLayout(), uids);
     if (newLayout !== os.getLayout()) {
       applyEdit(newLayout);
       editorState.clearSelection();
@@ -426,7 +512,7 @@ export function useEditorActions(
     }
     if (!uid) return;
     const os = getOfficeState();
-    const newLayout = rotateFurniture(os.getLayout(), uid, 'cw');
+    const newLayout = rotateFurnitureGroup(os.getLayout(), editorState.selectedUids, 'cw');
     if (newLayout !== os.getLayout()) {
       applyEdit(newLayout);
     }
@@ -446,7 +532,7 @@ export function useEditorActions(
     }
     if (!uid) return;
     const os = getOfficeState();
-    const newLayout = toggleFurnitureState(os.getLayout(), uid);
+    const newLayout = toggleFurnitureStates(os.getLayout(), editorState.selectedUids);
     if (newLayout !== os.getLayout()) {
       applyEdit(newLayout);
     }
@@ -458,13 +544,15 @@ export function useEditorActions(
     editorState.endStroke(); // the next edit can't extend an entry that's been undone
     const os = getOfficeState();
     // Push current layout to redo stack before restoring
-    editorState.pushRedo(os.getLayout());
+    const before = os.getLayout();
+    editorState.pushRedo(before);
     os.rebuildFromLayout(prev);
+    repickSectionsAfter(before, prev);
     saveLayout(prev);
     editorState.isDirty = true;
     setIsDirty(true);
     setEditorTick((n) => n + 1);
-  }, [getOfficeState, editorState, saveLayout]);
+  }, [getOfficeState, editorState, saveLayout, repickSectionsAfter]);
 
   const handleRedo = useCallback(() => {
     const next = editorState.popRedo();
@@ -472,13 +560,15 @@ export function useEditorActions(
     editorState.endStroke();
     const os = getOfficeState();
     // Push current layout to undo stack before restoring
-    editorState.pushUndo(os.getLayout());
+    const before = os.getLayout();
+    editorState.pushUndo(before);
     os.rebuildFromLayout(next);
+    repickSectionsAfter(before, next);
     saveLayout(next);
     editorState.isDirty = true;
     setIsDirty(true);
     setEditorTick((n) => n + 1);
-  }, [getOfficeState, editorState, saveLayout]);
+  }, [getOfficeState, editorState, saveLayout, repickSectionsAfter]);
 
   const handleReset = useCallback(() => {
     if (!lastSavedLayoutRef.current) return;
@@ -512,14 +602,23 @@ export function useEditorActions(
   /**
    * A furniture drag released at (col,row): validate, commit, and settle the
    * selection in one place — a copy is left selected so R / T / the colour
-   * sliders act on what was just dropped; a move (or a refused drop) leaves
-   * nothing selected.
+   * sliders act on what was just dropped; a moved selection of several items
+   * stays selected; a single moved item (or a refused drop of one) leaves
+   * nothing selected. Dragging a selected item carries the whole selection.
    */
   const handleDrop = useCallback(
     (uid: string, col: number, row: number, opts: { duplicate: boolean }) => {
-      const result = dropFurniture(getOfficeState().getLayout(), uid, col, row, opts);
-      if (result) applyEdit(result.layout);
-      editorState.setSelection(result?.selectedUid ?? null);
+      const companions = editorState.dragCompanions();
+      const result = dropFurniture(getOfficeState().getLayout(), uid, col, row, {
+        ...opts,
+        with: companions,
+      });
+      if (result) {
+        applyEdit(result.layout);
+        editorState.setSelectionGroup(result.selected);
+      } else if (companions.length === 0) {
+        editorState.clearSelection();
+      }
       bumpTick();
     },
     [getOfficeState, editorState, applyEdit, bumpTick],
@@ -691,6 +790,35 @@ export function useEditorActions(
           bumpTick();
           return;
         }
+        case EditTool.FLOOR_SECTION:
+        case EditTool.WALL_SECTION: {
+          // Pick the section under the click (Shift: add it, or drop it when
+          // it's picked already). The brush takes a fresh pick's look, so the
+          // sliders start from the colour it has.
+          const kind = editorState.activeTool === EditTool.FLOOR_SECTION ? 'floor' : 'wall';
+          const idx = row * layout.cols + col;
+          if (sectionKindAt(layout, idx) !== kind) return;
+          const section = sectionAt(layout, col, row);
+          const picked = editorState.section?.kind === kind ? editorState.section : null;
+          if (editorState.sectionAdditive && picked) {
+            if (picked.tiles.includes(idx)) {
+              const drop = new Set(section);
+              const tiles = picked.tiles.filter((t) => !drop.has(t));
+              editorState.section = tiles.length
+                ? { kind, anchors: picked.anchors.filter((a) => !drop.has(a)), tiles }
+                : null;
+            } else {
+              const tiles = [...new Set([...picked.tiles, ...section])].sort((a, b) => a - b);
+              editorState.section = { kind, anchors: [...picked.anchors, idx], tiles };
+            }
+          } else {
+            editorState.section = { kind, anchors: [idx], tiles: section };
+            takeBrushFrom(layout, idx);
+          }
+          editorState.sectionPicks++;
+          bumpTick();
+          return;
+        }
         case EditTool.AREA_PAINT: {
           // The first tile of a drag decides whether the stroke paints (default)
           // or erases (when that tile already had this label). Each tile is its
@@ -728,7 +856,16 @@ export function useEditorActions(
         }
       }
     },
-    [getOfficeState, editorState, applyEdit, applyStrokeEdit, maybeExpand, colorActions, bumpTick],
+    [
+      getOfficeState,
+      editorState,
+      applyEdit,
+      applyStrokeEdit,
+      maybeExpand,
+      colorActions,
+      bumpTick,
+      takeBrushFrom,
+    ],
   );
 
   /**

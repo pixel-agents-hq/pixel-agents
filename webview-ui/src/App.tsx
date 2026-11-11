@@ -621,6 +621,7 @@ function App() {
                   floorColor={editorState.floorColor}
                   wallColor={editorState.wallColor}
                   selectedWallSet={editorState.selectedWallSet}
+                  pickedSectionTiles={editorState.section?.tiles.length ?? 0}
                   onToolChange={editor.handleToolChange}
                   onTileTypeChange={editor.handleTileTypeChange}
                   onFloorColorChange={editor.handleFloorColorChange}

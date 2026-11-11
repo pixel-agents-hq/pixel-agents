@@ -62,6 +62,24 @@ describe('placeSelectionButtons', () => {
   });
 });
 
+describe('placeSelectionButtons for several items', () => {
+  const geometry = { unit: 2, pad: 4, size: 24, shadow: 2, gap: 6 };
+  const box = { col: 4, row: 4, w: 6, h: 3, offsetX: 0, offsetY: 0, zoom: 1, centered: true };
+
+  it('centres the row over the box, above its top', () => {
+    const { delete: del, rotate } = placeSelectionButtons({ ...box, rotatable: true }, geometry);
+    const centre = 7 * TILE_SIZE;
+    expect(rotate!.x).toBe(centre - 27);
+    expect(del.x + 24).toBe(centre + 27);
+    expect(del.y).toBe(4 * TILE_SIZE - 6 - 24);
+  });
+
+  it('centres a lone delete button too', () => {
+    const { delete: del } = placeSelectionButtons({ ...box, rotatable: false }, geometry);
+    expect(del.x + 12).toBe(7 * TILE_SIZE);
+  });
+});
+
 describe('restingBounds', () => {
   it('centres on the whole-pixel square', () => {
     const geometry = { unit: 2, pad: 4, size: 24, shadow: 2, gap: 6 };

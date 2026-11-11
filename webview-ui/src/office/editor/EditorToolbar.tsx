@@ -49,6 +49,8 @@ interface EditorToolbarProps {
   floorColor: ColorValue;
   wallColor: ColorValue;
   selectedWallSet: number;
+  /** Tiles the Floor / Walls Select tool has picked (0 = none). */
+  pickedSectionTiles: number;
   onToolChange: (tool: EditTool) => void;
   onTileTypeChange: (type: TileTypeVal) => void;
   onFloorColorChange: (color: ColorValue) => void;
@@ -102,6 +104,7 @@ export function EditorToolbar({
   floorColor,
   wallColor,
   selectedWallSet,
+  pickedSectionTiles,
   onToolChange,
   onTileTypeChange,
   onFloorColorChange,
@@ -178,8 +181,17 @@ export function EditorToolbar({
 
   const thumbSize = 42; // 2x for items
 
-  const isFloorActive = activeTool === EditTool.TILE_PAINT || activeTool === EditTool.EYEDROPPER;
-  const isWallActive = activeTool === EditTool.WALL_PAINT || activeTool === EditTool.WALL_PICK;
+  const isFloorActive =
+    activeTool === EditTool.TILE_PAINT ||
+    activeTool === EditTool.EYEDROPPER ||
+    activeTool === EditTool.FLOOR_SECTION;
+  const isWallActive =
+    activeTool === EditTool.WALL_PAINT ||
+    activeTool === EditTool.WALL_PICK ||
+    activeTool === EditTool.WALL_SECTION;
+  // The Select tools are for restyling, so their sliders are always out.
+  const isFloorSection = activeTool === EditTool.FLOOR_SECTION;
+  const isWallSection = activeTool === EditTool.WALL_SECTION;
   const isEraseActive = activeTool === EditTool.ERASE;
   const isCarpetActive =
     activeTool === EditTool.CARPET_PAINT || activeTool === EditTool.CARPET_PICK;
@@ -315,13 +327,24 @@ export function EditorToolbar({
               Copy
             </Button>
             <Button
-              variant={showColor ? 'active' : 'ghost'}
+              variant={isFloorSection ? 'active' : 'ghost'}
               size="sm"
-              onClick={() => setShowColor((v) => !v)}
-              title="Adjust floor color"
+              onClick={() => onToolChange(EditTool.FLOOR_SECTION)}
+              title="Select a floor section (touching tiles of one pattern and color) to restyle it all at once"
             >
-              Color
+              Select
             </Button>
+            {!isFloorSection && (
+              <Button
+                variant={showColor ? 'active' : 'ghost'}
+                size="sm"
+                onClick={() => setShowColor((v) => !v)}
+                title="Adjust floor color"
+              >
+                Color
+              </Button>
+            )}
+            {isFloorSection && <SectionHint tiles={pickedSectionTiles} what="floor" />}
           </div>
 
           {/* Floor pattern horizontal carousel — below the color controls */}
@@ -349,7 +372,9 @@ export function EditorToolbar({
           </div>
 
           {/* Color controls (collapsible) — at the top, above the previews. */}
-          {showColor && <TileColorBox value={floorColor} onChange={onFloorColorChange} />}
+          {(showColor || isFloorSection) && (
+            <TileColorBox value={floorColor} onChange={onFloorColorChange} />
+          )}
         </div>
       )}
 
@@ -367,13 +392,24 @@ export function EditorToolbar({
               Copy
             </Button>
             <Button
-              variant={showWallColor ? 'active' : 'ghost'}
+              variant={isWallSection ? 'active' : 'ghost'}
               size="sm"
-              onClick={() => setShowWallColor((v) => !v)}
-              title="Adjust wall color"
+              onClick={() => onToolChange(EditTool.WALL_SECTION)}
+              title="Select a wall section (touching walls of one kind and color) to restyle it all at once"
             >
-              Color
+              Select
             </Button>
+            {!isWallSection && (
+              <Button
+                variant={showWallColor ? 'active' : 'ghost'}
+                size="sm"
+                onClick={() => setShowWallColor((v) => !v)}
+                title="Adjust wall color"
+              >
+                Color
+              </Button>
+            )}
+            {isWallSection && <SectionHint tiles={pickedSectionTiles} what="wall" />}
           </div>
 
           {/* Wall set picker — horizontal carousel, below the color controls */}
@@ -406,7 +442,9 @@ export function EditorToolbar({
           )}
 
           {/* Color controls (collapsible) — at the top, above the previews. */}
-          {showWallColor && <TileColorBox value={wallColor} onChange={onWallColorChange} />}
+          {(showWallColor || isWallSection) && (
+            <TileColorBox value={wallColor} onChange={onWallColorChange} />
+          )}
         </div>
       )}
 
@@ -687,6 +725,12 @@ export function EditorToolbar({
  * via the popup, plus contrast (which matters since colorizeSprite uses each
  * pattern pixel's luminance).
  */
+/** The Select tool's prompt, shown until a section is picked. */
+function SectionHint({ tiles, what }: { tiles: number; what: 'floor' | 'wall' }) {
+  if (tiles > 0) return null;
+  return <span className="text-sm text-text-muted">Click a {what} to select its section</span>;
+}
+
 function TileColorBox({
   value,
   onChange,

@@ -8,6 +8,19 @@ import {
 } from '../../constants.js';
 import type { OfficeLayout, TileType as TileTypeVal } from '../types.js';
 import { EditTool, TileType } from '../types.js';
+import type { SectionKind } from './tileSections.js';
+
+/**
+ * The sections a Select tool has picked: the tiles clicked (`anchors`) and
+ * every tile of their sections, all of one kind. The tiles are fixed at the
+ * pick, so restyling a section into its neighbour's look doesn't swallow the
+ * neighbour; only undo / redo re-derive them from the anchors.
+ */
+export interface SectionSelection {
+  kind: SectionKind;
+  anchors: number[];
+  tiles: number[];
+}
 
 /**
  * A catalog item queued for placement. `color` is what the Copy tool lifted off
@@ -51,6 +64,15 @@ export class EditorState {
   // Selected wall set index (0-based, indexes into loaded wall sets)
   selectedWallSet = 0;
 
+  /** Sections picked by the Floor / Walls Select tool (see SectionSelection). */
+  section: SectionSelection | null = null;
+  /** Counts section picks: each pick's restyles share one undo entry, `section:<n>`. */
+  sectionPicks = 0;
+  /** `performance.now()` until which selection outlines stay hidden (set by each colour edit). */
+  outlineHiddenUntil = 0;
+  /** Shift held on the press that picks a section: add to the picked ones. */
+  sectionAdditive = false;
+
   // Tracks toggle direction during wall drag (true=adding walls, false=removing, null=undecided)
   wallDragAdding: boolean | null = null;
 
@@ -69,7 +91,28 @@ export class EditorState {
   ghostValid = false;
 
   // Selection
+  /**
+   * The selected placed item: the one whose colour the sliders show and that
+   * carries the rotate / delete buttons. Never null while anything is selected.
+   */
   selectedFurnitureUid: string | null = null;
+  /**
+   * A box selection being dragged out from empty floor: its corner tiles
+   * (inclusive, either order). `additive` (Shift at the press) adds what it
+   * catches to the selection instead of replacing it.
+   */
+  marquee: {
+    startCol: number;
+    startRow: number;
+    endCol: number;
+    endRow: number;
+    additive: boolean;
+  } | null = null;
+  /**
+   * More items selected with it (Shift+click or a box). Colour, rotate, on/off, delete
+   * and drag act on all of them; empty for a plain one-item selection.
+   */
+  extraSelectedUids: string[] = [];
 
   // Mouse drag state (tile paint)
   isDragging = false;
@@ -175,8 +218,52 @@ export class EditorState {
    * fresh undo entry.
    */
   setSelection(uid: string | null): void {
-    this.selectedFurnitureUid = uid;
+    this.setSelectionGroup(uid ? [uid] : []);
+  }
+
+  /** Select several items, the first one leading (see selectedFurnitureUid). */
+  setSelectionGroup(uids: readonly string[]): void {
+    this.selectedFurnitureUid = uids[0] ?? null;
+    this.extraSelectedUids = uids.slice(1);
     this.undoSession = null;
+  }
+
+  /** Every selected item, the leading one first. */
+  get selectedUids(): string[] {
+    return this.selectedFurnitureUid ? [this.selectedFurnitureUid, ...this.extraSelectedUids] : [];
+  }
+
+  /**
+   * Select several placed items as a click selects one: the open tool tab
+   * collapses, so the toolbar shows their controls. Empty clears the selection.
+   */
+  selectPlacedGroup(uids: readonly string[]): void {
+    this.setSelectionGroup(uids);
+    if (uids.length === 0) return;
+    this.activeTool = EditTool.SELECT;
+    this.clearGhost();
+  }
+
+  /**
+   * Shift+click on a placed item: add it to the selection, or take it out when
+   * it's already in. Like a plain click it collapses the open tool tab.
+   */
+  toggleFurnitureInSelection(uid: string): void {
+    const uids = this.selectedUids;
+    this.setSelectionGroup(uids.includes(uid) ? uids.filter((u) => u !== uid) : [...uids, uid]);
+    this.activeTool = EditTool.SELECT;
+    this.clearGhost();
+  }
+
+  /**
+   * The selected items a drag of `dragUid` carries along: the rest of the
+   * selection when the dragged item is part of it, none otherwise.
+   */
+  dragCompanions(): string[] {
+    const uids = this.selectedUids;
+    return this.dragUid && uids.includes(this.dragUid)
+      ? uids.filter((u) => u !== this.dragUid)
+      : [];
   }
 
   clearSelection(): void {
@@ -281,6 +368,7 @@ export class EditorState {
   reset(): void {
     this.activeTool = EditTool.SELECT;
     this.selectedFurnitureUid = null;
+    this.extraSelectedUids = [];
     this.ghostCol = -1;
     this.ghostRow = -1;
     this.ghostValid = false;
@@ -299,5 +387,6 @@ export class EditorState {
     this.undoSession = null;
     this.selectedAreaLabel = null;
     this.areaDragErasing = null;
+    this.section = null;
   }
 }

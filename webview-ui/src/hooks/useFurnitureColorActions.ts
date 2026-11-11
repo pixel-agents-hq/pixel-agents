@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
 
 import type { ColorValue } from '../components/ui/types.js';
-import { furnitureAt, setFurnitureColor } from '../office/editor/editorActions.js';
+import { EDIT_OUTLINE_HIDE_MS } from '../constants.js';
+import { furnitureAt, setFurnitureColors } from '../office/editor/editorActions.js';
 import type { EditorState } from '../office/editor/editorState.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import type { OfficeLayout } from '../office/types.js';
@@ -35,14 +36,16 @@ export function useFurnitureColorActions(
   commitLayout: CommitLayout,
   bumpTick: () => void,
 ): FurnitureColorActions {
-  // A slider drag is one undo entry per selected item: every change in the run
-  // shares the `color:<uid>` session.
+  // A slider drag is one undo entry per selection: every change in the run
+  // shares the `color:<uids>` session, and colours every selected item.
   const handleSelectedFurnitureColorChange = useCallback(
     (color: ColorValue | null) => {
-      const uid = editorState.selectedFurnitureUid;
-      if (!uid) return;
+      const uids = editorState.selectedUids;
+      if (uids.length === 0) return;
       const layout = getOfficeState().getLayout();
-      commitLayout(setFurnitureColor(layout, uid, color), `color:${uid}`);
+      // Highlights out of the way while the colour changes; back once it settles.
+      editorState.outlineHiddenUntil = performance.now() + EDIT_OUTLINE_HIDE_MS;
+      commitLayout(setFurnitureColors(layout, uids, color), `color:${uids.join(',')}`);
     },
     [getOfficeState, editorState, commitLayout],
   );
@@ -78,10 +81,10 @@ export function useFurnitureColorActions(
       const hit = furnitureAt(layout, col, row);
       if (hit) {
         const color = hit.color ? { ...hit.color } : null;
-        const uid = editorState.selectedFurnitureUid;
-        if (uid) {
+        const uids = editorState.selectedUids;
+        if (uids.length) {
           // Its own undo entry: an eyedrop never folds into an earlier slider run.
-          commitLayout(setFurnitureColor(layout, uid, color), null);
+          commitLayout(setFurnitureColors(layout, uids, color), null);
         } else {
           editorState.setPaletteColor(color);
         }

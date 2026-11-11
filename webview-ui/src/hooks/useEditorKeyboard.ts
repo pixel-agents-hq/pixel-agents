@@ -53,6 +53,13 @@ export function useEditorKeyboard(
           editorState.activeTool = EditTool.SELECT;
           editorState.areaDragErasing = null;
           editorState.clearGhost();
+        } else if (
+          (editorState.activeTool === EditTool.FLOOR_SECTION ||
+            editorState.activeTool === EditTool.WALL_SECTION) &&
+          editorState.section
+        ) {
+          // First Esc with sections picked: drop the pick, keep the tool.
+          editorState.section = null;
         } else if (editorState.activeTool !== EditTool.SELECT) {
           editorState.activeTool = EditTool.SELECT;
           editorState.clearGhost();

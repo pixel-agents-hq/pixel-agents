@@ -145,6 +145,36 @@ export function furnitureAt(
 }
 
 /**
+ * Every placed item whose footprint (background rows included) touches the
+ * tile box between two corners — inclusive, in either order — in layout order.
+ * What a box selection catches.
+ */
+export function furnitureInBox(
+  layout: OfficeLayout,
+  col0: number,
+  row0: number,
+  col1: number,
+  row1: number,
+): string[] {
+  const left = Math.min(col0, col1);
+  const right = Math.max(col0, col1);
+  const top = Math.min(row0, row1);
+  const bottom = Math.max(row0, row1);
+  return layout.furniture
+    .filter((f) => {
+      const entry = getCatalogEntry(f.type);
+      if (!entry) return false;
+      return (
+        f.col <= right &&
+        f.col + entry.footprintW - 1 >= left &&
+        f.row <= bottom &&
+        f.row + entry.footprintH - 1 >= top
+      );
+    })
+    .map((f) => f.uid);
+}
+
+/**
  * Remove every furniture item whose footprint covers (col, row) — all of them,
  * not just the one {@link furnitureAt} would pick, so an erase stroke clears a
  * desk together with whatever stands on the tile it crosses. Returns new layout
@@ -226,7 +256,10 @@ export function getSurfaceRiders(layout: OfficeLayout, deskUid: string): PlacedF
 
 /** A desk and its riders at their target positions, plus whether they all fit. */
 export interface FurnitureMovePlan {
-  /** The dragged item first, then every surface rider — all at target positions. */
+  /**
+   * The dragged item first, then the items moving with it (`with`), then every
+   * surface rider — all at target positions, each once.
+   */
   items: PlacedFurniture[];
   /** True when every item in the group fits where the plan puts it. */
   valid: boolean;
@@ -247,13 +280,26 @@ export function planFurnitureMove(
   uid: string,
   newCol: number,
   newRow: number,
-  opts: { duplicate?: boolean } = {},
+  opts: { duplicate?: boolean; with?: readonly string[] } = {},
 ): FurnitureMovePlan | null {
   const item = layout.furniture.find((f) => f.uid === uid);
   if (!item) return null;
   const dCol = newCol - item.col;
   const dRow = newRow - item.row;
-  const items = [item, ...getSurfaceRiders(layout, uid)].map((f) => ({
+  // The dragged item and the other selected items it carries, then their
+  // riders: riders after every surface, so they draw on top of it.
+  const carried = (opts.with ?? [])
+    .filter((u) => u !== uid)
+    .flatMap((u) => layout.furniture.find((f) => f.uid === u) ?? []);
+  const bases = [item, ...carried];
+  const group = new Map<string, PlacedFurniture>();
+  for (const f of bases) group.set(f.uid, f);
+  for (const f of bases) {
+    for (const rider of getSurfaceRiders(layout, f.uid)) {
+      if (!group.has(rider.uid)) group.set(rider.uid, rider);
+    }
+  }
+  const items = [...group.values()].map((f) => ({
     ...f,
     col: f.col + dCol,
     row: f.row + dRow,
@@ -291,50 +337,59 @@ export function freshFurnitureUid(taken: Set<string>): string {
 }
 
 /**
- * Copy an item and everything on its surface to a new spot, leaving the
- * originals where they are. Returns the new layout (immutable) plus the copy's
- * uid so the caller can select it, or null when the group doesn't fit.
+ * Copy an item (and the items in `with`) and everything on their surfaces to a
+ * new spot, leaving the originals where they are. Returns the new layout
+ * (immutable) plus the copies of `uid` and `with`, in that order, so the caller
+ * can select them; null when the group doesn't fit.
  */
 export function duplicateFurniture(
   layout: OfficeLayout,
   uid: string,
   newCol: number,
   newRow: number,
-): { layout: OfficeLayout; uid: string } | null {
-  const plan = planFurnitureMove(layout, uid, newCol, newRow, { duplicate: true });
+  withUids: readonly string[] = [],
+): { layout: OfficeLayout; uids: string[] } | null {
+  const plan = planFurnitureMove(layout, uid, newCol, newRow, {
+    duplicate: true,
+    with: withUids,
+  });
   if (!plan || !plan.valid) return null;
   const taken = new Set(layout.furniture.map((f) => f.uid));
-  const copies = plan.items.map((f) => ({
-    ...f,
-    uid: freshFurnitureUid(taken),
-    ...(f.color ? { color: { ...f.color } } : {}),
-  }));
+  const copyOf = new Map<string, string>();
+  const copies = plan.items.map((f) => {
+    const copyUid = freshFurnitureUid(taken);
+    copyOf.set(f.uid, copyUid);
+    return { ...f, uid: copyUid, ...(f.color ? { color: { ...f.color } } : {}) };
+  });
   return {
     layout: { ...layout, furniture: [...layout.furniture, ...copies] },
-    uid: copies[0].uid,
+    uids: [uid, ...withUids].flatMap((u) => copyOf.get(u) ?? []),
   };
 }
 
 /**
- * Commit a drag-drop gesture: move the item (and its riders) to (newCol, newRow),
- * or — with `duplicate` — stamp a copy of the group there. Null when the group
- * doesn't fit, so nothing changes. `selectedUid` is what the drop leaves
- * selected: the copy, so R / T / the colour sliders act on what was just
- * dropped; nothing after a move.
+ * Commit a drag-drop gesture: move the item (with the selected items in
+ * `with`, and everyone's riders) to (newCol, newRow), or — with `duplicate` —
+ * stamp a copy of the group there. Null when the group doesn't fit, so nothing
+ * changes. `selected` is what the drop leaves selected, first item first: the
+ * copies, so R / T / the colour sliders act on what was just dropped; a moved
+ * selection stays selected; a single moved item doesn't.
  */
 export function dropFurniture(
   layout: OfficeLayout,
   uid: string,
   newCol: number,
   newRow: number,
-  opts: { duplicate: boolean },
-): { layout: OfficeLayout; selectedUid: string | null } | null {
+  opts: { duplicate: boolean; with?: readonly string[] },
+): { layout: OfficeLayout; selected: string[] } | null {
+  const withUids = opts.with ?? [];
   if (opts.duplicate) {
-    const copy = duplicateFurniture(layout, uid, newCol, newRow);
-    return copy && { layout: copy.layout, selectedUid: copy.uid };
+    const copy = duplicateFurniture(layout, uid, newCol, newRow, withUids);
+    return copy && { layout: copy.layout, selected: copy.uids };
   }
-  const moved = moveFurniture(layout, uid, newCol, newRow);
-  return moved === layout ? null : { layout: moved, selectedUid: null };
+  const moved = moveFurniture(layout, uid, newCol, newRow, withUids);
+  if (moved === layout) return null;
+  return { layout: moved, selected: withUids.length ? [uid, ...withUids] : [] };
 }
 
 /** Set (or, with null, remove) a placed item's colour. Returns new layout (immutable). */
@@ -386,14 +441,33 @@ export function moveFurniture(
   uid: string,
   newCol: number,
   newRow: number,
+  withUids: readonly string[] = [],
 ): OfficeLayout {
-  const plan = planFurnitureMove(layout, uid, newCol, newRow);
+  const plan = planFurnitureMove(layout, uid, newCol, newRow, { with: withUids });
   if (!plan || !plan.valid) return layout;
   return withFurniture(layout, plan.items);
 }
 
 function clamp(value: number, a: number, b: number): number {
   return Math.min(Math.max(value, Math.min(a, b)), Math.max(a, b));
+}
+
+/**
+ * The type an item takes when it turns a quarter `direction` on screen (see
+ * rotateRiderWithDesk: 'cw' is counter-clockwise on screen), or null when it
+ * can't turn.
+ *
+ * The orientation cycle front → right → back → left means different turns for
+ * different items. A chair's or sofa's orientation is the way it faces (front =
+ * down, right = right), so the cycle turns it counter-clockwise. A screen's
+ * (electronics) orientation is the way its user looks (workstations.ts: a front
+ * PC is used from below, a side PC from its left, so its screen faces left):
+ * the same cycle turns it clockwise, so it steps the other way.
+ */
+function turnedType(type: string, direction: 'cw' | 'ccw'): string | null {
+  const screen = getCatalogEntry(type)?.category === 'electronics';
+  const step = screen ? (direction === 'cw' ? 'ccw' : 'cw') : direction;
+  return getRotatedType(type, step);
 }
 
 /**
@@ -421,7 +495,7 @@ function rotateRiderWithDesk(
 ): PlacedFurniture {
   const from = getCatalogEntry(rider.type);
   if (!from) return rider;
-  const type = getRotatedType(rider.type, direction) ?? rider.type;
+  const type = turnedType(rider.type, direction) ?? rider.type;
   const to = getCatalogEntry(type) ?? from;
 
   const u = (rider.col - desk.col + from.footprintW / 2) / deskFrom.footprintW;
@@ -449,21 +523,131 @@ export function rotateFurniture(
   direction: 'cw' | 'ccw',
 ): OfficeLayout {
   const item = layout.furniture.find((f) => f.uid === uid);
-  if (!item) return layout;
-  const newType = getRotatedType(item.type, direction);
-  if (!newType) return layout;
+  const turn = item && turnWithRiders(layout, item, direction);
+  if (!turn || !turn.turns) return layout;
+  if (!groupFits(layout, turn.unit)) return layout;
+  return withFurniture(layout, turn.unit);
+}
 
-  const rotated: PlacedFurniture = { ...item, type: newType };
+/**
+ * An item turned a quarter, with everything riding on it: the item steps one
+ * orientation, and each rider steps one too while its spot swings round the
+ * item's top (rotateRiderWithDesk). A desk with no turned art of its own (a
+ * one-orientation table) keeps its shape and still turns what's on it, so the
+ * PCs on a table face the new way. `turns` is false when nothing changes
+ * orientation; `to` is the item's footprint after the turn. Null for an
+ * unknown type.
+ */
+function turnWithRiders(
+  layout: OfficeLayout,
+  item: PlacedFurniture,
+  direction: 'cw' | 'ccw',
+): {
+  unit: PlacedFurniture[];
+  to: { footprintW: number; footprintH: number; backgroundTiles?: number };
+  turns: boolean;
+} | null {
   const from = getCatalogEntry(item.type);
-  const to = getCatalogEntry(newType);
-  const riders =
-    from && to
-      ? getSurfaceRiders(layout, uid).map((r) => rotateRiderWithDesk(r, item, from, to, direction))
-      : [];
+  if (!from) return null;
+  const newType = turnedType(item.type, direction);
+  const to = (newType && getCatalogEntry(newType)) || from;
+  const riders = getSurfaceRiders(layout, item.uid).map((r) =>
+    rotateRiderWithDesk(r, item, from, to, direction),
+  );
+  const self = newType && to !== from ? { ...item, type: newType } : item;
+  return { unit: [self, ...riders], to, turns: self !== item || riders.length > 0 };
+}
+// ── Several selected items at once (Shift+click) ─────────────────
 
-  const group = [rotated, ...riders];
-  if (!groupFits(layout, group)) return layout;
-  return withFurniture(layout, group);
+/** Remove every listed item. Returns new layout (immutable). */
+export function removeFurnitureGroup(layout: OfficeLayout, uids: readonly string[]): OfficeLayout {
+  return uids.reduce(removeFurniture, layout);
+}
+
+/** Set (or remove) the colour of every listed item. Returns new layout (immutable). */
+export function setFurnitureColors(
+  layout: OfficeLayout,
+  uids: readonly string[],
+  color: ColorValue | null,
+): OfficeLayout {
+  return uids.reduce((l, uid) => setFurnitureColor(l, uid, color), layout);
+}
+
+/**
+ * A placed item's solid footprint (background rows left out) as a rectangle in
+ * tiles — where it stands, for working out where it stands after a turn.
+ */
+function solidRect(
+  item: PlacedFurniture,
+  entry: { footprintW: number; footprintH: number; backgroundTiles?: number },
+) {
+  const bg = Math.min(entry.backgroundTiles ?? 0, entry.footprintH - 1);
+  return { col: item.col, row: item.row + bg, w: entry.footprintW, h: entry.footprintH - bg };
+}
+
+/**
+ * Turn the listed items a quarter turn together, as one arrangement: each item
+ * turns (as rotateFurniture turns it, riders included) and its spot swings
+ * round the arrangement's centre the same way — so a desk keeps its chair in
+ * front of it and a row of sofas stays a row. Items riding on a listed desk go
+ * with the desk. A single item turns in place. No-op unless every item fits
+ * where the turn puts it.
+ *
+ * The catalog's 'cw' step turns a south-facing item east — counter-clockwise
+ * on screen (see rotateRiderWithDesk) — so positions turn that way too.
+ */
+export function rotateFurnitureGroup(
+  layout: OfficeLayout,
+  uids: readonly string[],
+  direction: 'cw' | 'ccw',
+): OfficeLayout {
+  const carried = new Set(uids.flatMap((u) => getSurfaceRiders(layout, u).map((r) => r.uid)));
+  const bases = uids
+    .filter((u) => !carried.has(u))
+    .flatMap((u) => {
+      const item = layout.furniture.find((f) => f.uid === u);
+      const entry = item && getCatalogEntry(item.type);
+      return item && entry ? [{ item, entry }] : [];
+    });
+  if (bases.length === 0) return layout;
+  if (bases.length === 1) return rotateFurniture(layout, bases[0].item.uid, direction);
+
+  // The arrangement's centre: the middle of the box round its solid footprints.
+  const rects = bases.map(({ item, entry }) => solidRect(item, entry));
+  const left = Math.min(...rects.map((r) => r.col));
+  const right = Math.max(...rects.map((r) => r.col + r.w));
+  const top = Math.min(...rects.map((r) => r.row));
+  const bottom = Math.max(...rects.map((r) => r.row + r.h));
+  const cx = (left + right) / 2;
+  const cy = (top + bottom) / 2;
+
+  const turned: PlacedFurniture[] = [];
+  bases.forEach(({ item }, i) => {
+    const turn = turnWithRiders(layout, item, direction);
+    if (!turn) return;
+    const { unit, to } = turn;
+
+    // Swing the item's centre round the arrangement's, then stand its new
+    // footprint on that spot; its riders shift with it.
+    const rect = rects[i];
+    const dx = rect.col + rect.w / 2 - cx;
+    const dy = rect.row + rect.h / 2 - cy;
+    const [rx, ry] = direction === 'cw' ? [dy, -dx] : [-dy, dx];
+    const target = solidRect({ ...item, col: 0, row: 0 }, to);
+    const col = Math.round(cx + rx - target.w / 2);
+    const row = Math.round(cy + ry - target.h / 2) - target.row;
+    const shiftCol = col - item.col;
+    const shiftRow = row - item.row;
+    for (const f of unit) turned.push({ ...f, col: f.col + shiftCol, row: f.row + shiftRow });
+  });
+
+  if (!groupFits(layout, turned)) return layout;
+  return withFurniture(layout, turned);
+}
+
+/** Toggle the on/off state of every listed item that has one. Returns new layout (immutable). */
+export function toggleFurnitureStates(layout: OfficeLayout, uids: readonly string[]): OfficeLayout {
+  return uids.reduce(toggleFurnitureState, layout);
 }
 
 /** Toggle furniture state (on/off). Returns new layout (immutable). */
