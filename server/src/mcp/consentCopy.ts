@@ -14,5 +14,6 @@ export const OFFICE_MCP_SUMMARY =
 export const OFFICE_MCP_DISCLOSURE =
   'Agents you launch here get the Pixel Agents Office MCP, with a key of their own that ends ' +
   'with them: they can see the office and its agents, edit the layout, launch and close agents, ' +
-  'and read or type into other agents’ terminals. Nothing is written to ~/.claude, and Claude ' +
+  'read or type into other agents’ terminals, and open, read and type into PC shells (plain ' +
+  'terminals on this machine). Nothing is written to ~/.claude, and Claude ' +
   'Code’s permission prompts still apply. Turn it off or make it read-only in Settings.';

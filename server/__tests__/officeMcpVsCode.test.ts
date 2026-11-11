@@ -373,7 +373,7 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
 
   // ── The rest ────────────────────────────────────────────────
 
-  it("offers no launch_agent or close_agent, and revokes an agent's token when it leaves", async () => {
+  it("offers no launch_agent, close_agent or PC shell tools, and revokes an agent's token when it leaves", async () => {
     allow();
     const a = await launch();
 
@@ -385,6 +385,16 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
     expect(offered).toContain('list_characters');
     expect(offered).not.toContain('launch_agent');
     expect(offered).not.toContain('close_agent');
+    // Nor the PC shells: VS Code's terminals can't be read, and its shells are its own.
+    for (const tool of [
+      'list_pc_shells',
+      'open_pc_shell',
+      'read_pc_shell',
+      'type_in_pc_shell',
+      'close_pc_shell',
+    ]) {
+      expect(offered).not.toContain(tool);
+    }
     const launched = await call(a.client, 'launch_agent', { directory: 'proj' });
     expect(launched.isError).toBe(true);
 

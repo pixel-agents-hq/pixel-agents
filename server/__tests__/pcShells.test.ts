@@ -4,7 +4,9 @@
  * socket, real PTYs running a real shell. What an office can observe: the
  * answer to an open, the shells every office is told of (and a new office's
  * snapshot), the shell's output, its end, the close question, refusals — and
- * that the Pixel Office MCP neither lists nor reaches a PC shell.
+ * that an agent's own terminal tools (list_agents, read_agent_terminal,
+ * send_message, close_agent) never reach a PC shell: agents reach shells only
+ * through the MCP's shell tools (officeMcpPcShells.test.ts).
  */
 
 import * as fs from 'fs';
@@ -335,7 +337,7 @@ describe('PC shells', () => {
     expect(loaded.order).toEqual([id]);
   });
 
-  it('the Pixel Office MCP neither lists nor reaches a PC shell', async () => {
+  it("an agent's terminal tools neither list nor reach a PC shell (shells have tools of their own)", async () => {
     const agent = await h.launchAgent();
     const id = (await shells.open(FRONT_PC)).id as number;
     const term = await shells.attach(id);
@@ -361,8 +363,9 @@ describe('PC shells', () => {
     expect(term.text()).not.toContain('pwned');
     expect(h.pcShells.has(id)).toBe(true);
 
-    // By construction too: the MCP's terminal seam cannot address a shell,
-    // whatever a tool forgets to check first.
+    // By construction too: the agents' terminal seam cannot address a shell,
+    // whatever a tool forgets to check first (shells are read and written
+    // through their registry, by the MCP's shell tools).
     const seam = ptyAgentTerminals(h.terminals);
     expect(seam.has(id)).toBe(false);
     expect(await seam.screen(id)).toBeNull();

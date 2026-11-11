@@ -54,6 +54,25 @@ MCP gets one tool that lists the pieces agents can use with their actions, and o
 an action on a piece. Letting each program add its own tools was rejected: the tool list would
 change with the layout, and third-party text would land in every agent's context.
 
+## Agents reach PC shells through the Pixel Office MCP (amended)
+
+A PC shell was first the user's alone: the Pixel Office MCP neither listed, read nor typed into
+one. That was reversed because the owner wants agents to set up terminals he can watch, not only
+background ones hidden from him. So, under the MCP's existing consent and on standalone only
+(where the office can read and write its terminals), agents get five tools of the office's own:
+list the shells and the PCs that open one, open a shell at a PC, read it, type into it (text or
+keys, Ctrl+C and Ctrl+D included) and close it. They drive the same registry an office's clicks
+do, so the user sees the shell as any other: its card, its lit PC, its terminal a click away. The
+changing ones are refused while the MCP is read-only, and the tutorial pre-approves none of them,
+reading included, since a shell's screen can hold secrets. These are not the two generic piece
+tools above: the terminal is a panel the office provides, so its tools belong to the office like
+launch_agent, and their text never comes from a program. The agents' own terminal tools still
+never address a shell.
+
+The accepted cost: an agent running in a restricted permission mode gains a path to run commands
+on the host that Claude Code's per-tool MCP prompt is the only gate on. A shell is a plain login
+shell, not a sandbox, and nothing in the office inspects what is typed into it.
+
 ## State belongs to a source, not to a piece
 
 A **piece** holds settings and points at a **source** that holds the content. Two pieces may show

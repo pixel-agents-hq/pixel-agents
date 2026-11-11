@@ -453,6 +453,17 @@ async function main(): Promise<void> {
       directories: () => listDirectoryLocations([hostDirectory()]),
       readAreaMappings: () => readConfig().standalone.areaMappings,
     };
+    // PC shells: a PC's plain login shell, on the agents' terminal sessions
+    // (never an agent: agents reach them only through the MCP's shell tools).
+    const pcShells = new StandalonePcShells({
+      ptyManager,
+      saves: adapter,
+      facts: places,
+      // The Directories every office is shown: a hidden host one isn't offered.
+      directories: () => listDirectoryLocations(shownHostDirectories(adapter, [hostDirectory()])),
+      broadcast: (message) => store.broadcast({ ...message }),
+      providers: hookProviders,
+    });
     const terminals = ptyAgentTerminals(ptyManager);
     const officeMcp = composeOfficeMcp({
       facts: {
@@ -494,6 +505,8 @@ async function main(): Promise<void> {
         ),
       // close_agent: the card's ×, as this host ends an agent.
       close: (id) => closeStandaloneAgent(ptyManager, runtime, id),
+      // The PC shell tools: this host's shells, read and written through their registry.
+      pcShells,
       // The tutorial: the Guide launched into the start Directory, ended as its card's ×.
       tutorial: standaloneTutorialSurface(
         {
@@ -508,17 +521,6 @@ async function main(): Promise<void> {
     });
     officeMcpFeature = officeMcp;
 
-    // PC shells: a PC's plain login shell, on the agents' terminal sessions
-    // (never an agent: the MCP above never sees one).
-    const pcShells = new StandalonePcShells({
-      ptyManager,
-      saves: adapter,
-      facts: places,
-      // The Directories every office is shown: a hidden host one isn't offered.
-      directories: () => listDirectoryLocations(shownHostDirectories(adapter, [hostDirectory()])),
-      broadcast: (message) => store.broadcast({ ...message }),
-      providers: hookProviders,
-    });
     // Shells whose terminals outlived the last server (--pty-host): back
     // before any browser connects; the saved ones with no terminal are dropped.
     const reattachedShells = pcShells.restore();

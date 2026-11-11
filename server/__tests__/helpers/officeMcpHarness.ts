@@ -581,6 +581,16 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       directories: () => listDirectoryLocations(directories),
       readAreaMappings: () => readConfig().standalone.areaMappings,
     };
+    pcShells = new StandalonePcShells({
+      ptyManager,
+      saves: adapter,
+      facts: places,
+      // As cli.ts: the Directories every office is shown.
+      directories: () => listDirectoryLocations(shownHostDirectories(adapter, directories)),
+      broadcast: (message) => store.broadcast({ ...message }),
+      providers: hookProviders,
+      ...(options.foreground ? { foreground: options.foreground } : {}),
+    });
     officeMcp = composeOfficeMcp({
       facts: {
         ...places,
@@ -620,6 +630,8 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       ...(options.close
         ? { close: (id: number) => closeStandaloneAgent(ptyManager, runtime, id) }
         : {}),
+      // As cli.ts: the PC shell tools over this office's shells.
+      pcShells,
       ...(options.tutorial
         ? {
             tutorial: standaloneTutorialSurface(
@@ -641,16 +653,6 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       store.broadcast(message);
       officeMcp.charactersChanged();
     }, store);
-    pcShells = new StandalonePcShells({
-      ptyManager,
-      saves: adapter,
-      facts: places,
-      // As cli.ts: the Directories every office is shown.
-      directories: () => listDirectoryLocations(shownHostDirectories(adapter, directories)),
-      broadcast: (message) => store.broadcast({ ...message }),
-      providers: hookProviders,
-      ...(options.foreground ? { foreground: options.foreground } : {}),
-    });
     pcShells.restore();
     server = new PixelAgentsServer();
     const config = await server.start({

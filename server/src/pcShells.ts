@@ -11,9 +11,12 @@
  * an integrated terminal (adapters/vscode/vscodePcShells.ts).
  *
  * A shell is NOT an agent: it never enters the agent store, so nothing that
- * enumerates agents (the Pixel Office MCP among them) ever sees it. And it
- * outlives what it was opened from: its piece leaving the layout or its
- * Directory being removed ends nothing; only its terminal ending does.
+ * enumerates agents (list_agents, the agents' terminal tools) ever sees it.
+ * Agents reach shells only through the Pixel Office MCP's own shell tools
+ * (mcp/pcShellOps.ts, standalone only), which drive this registry like an
+ * office does. And a shell outlives what it was opened from: its piece leaving
+ * the layout or its Directory being removed ends nothing; only its terminal
+ * ending does.
  */
 
 import * as os from 'os';
@@ -74,7 +77,23 @@ export interface PcShellRegistryDeps {
   changed?: (records: PersistedPcShell[]) => void;
 }
 
-export type PcShellOpen = { ok: true; id: number } | { ok: false; reason: string };
+export type PcShellOpen =
+  /** `existing`: the piece's live shell, not a new one. */
+  { ok: true; id: number; existing: boolean } | { ok: false; reason: string };
+
+/** A piece of the layout that opens a PC shell, and where a new one may open. */
+export interface PcShellPc {
+  uid: string;
+  /** Its furniture type now. */
+  type: string;
+  /** The Area it stands in, or null. */
+  area: string | null;
+  /** The Directories a new shell there may open in (one: opened there; none or
+   *  several without one named: the surface's fallback). */
+  directories: PlaceDirectory[];
+  /** Its live shell, or null. */
+  shellId: number | null;
+}
 
 export type PcShellClose =
   | { closed: true }
@@ -129,16 +148,10 @@ export class PcShellRegistry implements PcShellView {
     const live = [...this.shells.values()].find((shell) => shell.record.uid === uid);
     if (live) {
       live.terminal.show?.();
-      return { ok: true, id: live.record.id };
+      return { ok: true, id: live.record.id, existing: true };
     }
 
-    const piece = pcShellPiece({
-      layout: layoutFromJson(this.deps.facts.layout()),
-      catalog: catalogOf(this.deps.facts.catalog()),
-      uid,
-      areaMappings: this.deps.facts.readAreaMappings(),
-      directories: this.deps.directories(),
-    });
+    const piece = pcShellPiece({ ...this.places(), uid });
     if (!piece.ok) return piece;
     const chosen = shellDirectory(piece.directories, directory);
     if (!chosen.ok) return chosen;
@@ -158,7 +171,33 @@ export class PcShellRegistry implements PcShellView {
     this.adopt({ id, uid, furnitureType: piece.type, cwd, ...named }, terminal);
     this.announce();
     console.log(`[Pixel Agents] PC shell ${id} - for piece ${uid} in ${cwd}`);
-    return { ok: true, id };
+    return { ok: true, id, existing: false };
+  }
+
+  /**
+   * Every piece of the layout that opens a PC shell (its furniture declares the
+   * `terminal` panel: pcShellPiece decides, naming no furniture), with its Area,
+   * the Directories a new shell there may open in, and its live shell.
+   */
+  pcs(): PcShellPc[] {
+    const places = this.places();
+    const live = new Map(this.records().map((r) => [r.uid, r.id]));
+    return (places.layout?.furniture ?? []).flatMap((f) => {
+      const piece = pcShellPiece({ ...places, uid: f.uid });
+      if (!piece.ok) return [];
+      const { type, area, directories } = piece;
+      return [{ uid: f.uid, type, area, directories, shellId: live.get(f.uid) ?? null }];
+    });
+  }
+
+  /**
+   * What runs in shell `id`, as its × would see it: null = idle, else the
+   * command when the surface can tell. Undefined where the surface can't tell
+   * a command runs at all (its × closes at once).
+   */
+  async running(id: number): Promise<{ command?: string } | null | undefined> {
+    const { busy } = this.deps.backend;
+    return busy ? busy(id) : undefined;
   }
 
   /**
@@ -206,6 +245,16 @@ export class PcShellRegistry implements PcShellView {
   announce(): void {
     this.deps.changed?.(this.records());
     this.deps.broadcast(this.message());
+  }
+
+  /** The layout, catalogue, mappings and Directories a shell's place is read from. */
+  private places() {
+    return {
+      layout: layoutFromJson(this.deps.facts.layout()),
+      catalog: catalogOf(this.deps.facts.catalog()),
+      areaMappings: this.deps.facts.readAreaMappings(),
+      directories: this.deps.directories(),
+    };
   }
 
   private forget(id: number): void {

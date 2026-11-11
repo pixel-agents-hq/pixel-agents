@@ -3,7 +3,7 @@
  * put together, for standalone (cli.ts) and VS Code (adapters/vscode/
  * vscodeOfficeMcp.ts) alike. A surface hands in its office facts and its
  * capabilities — its terminals and delivery guard, and launching / closing
- * where it can — and gets back one feature object, which the shared server
+ * and PC shells where it can — and gets back one feature object, which the shared server
  * code (server.ts, httpServer.ts, clientMessageHandler.ts) and the VS Code
  * provider carry as their single `officeMcp`.
  */
@@ -44,6 +44,7 @@ import { type OfficeFacts, officeSnapshot } from './officeFacts.js';
 import { type AgentMcpAccess, OfficeMcp } from './officeMcp.js';
 import { handleOfficeMcpMessage } from './officeMcpMessages.js';
 import type { AgentLaunch, AgentLaunchOutcome, OfficeOperations } from './officeOperations.js';
+import { createPcShellOps, type McpPcShells } from './pcShellOps.js';
 import type { OfficeTool } from './tool.js';
 import { createVisitOps } from './visitsOps.js';
 
@@ -61,6 +62,9 @@ export interface OfficeMcpSurface {
   /** How it ends an agent closed from close_agent (as its card's × does).
    *  Absent: close_agent isn't offered. */
   close?(id: number): void;
+  /** Its PC shells, where their terminals can be read and written (standalone).
+   *  Absent: the PC shell tools aren't offered. */
+  pcShells?: McpPcShells;
   /** How it launches the tutorial's Guide and ends it. Absent: the
    *  Intro never offers the tutorial here. */
   tutorial?: TutorialSurface;
@@ -227,6 +231,7 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
     // launch_agent's launch gives the agent this MCP, like any other launch.
     ...(launch ? { launch: createLaunching(facts, (request) => launch(request, officeMcp)) } : {}),
     ...(closing ? { close: closing } : {}),
+    ...(surface.pcShells ? { shells: createPcShellOps(surface.pcShells) } : {}),
   };
   const officeMcp = new OfficeMcp({ office, provider: facts.provider, tools: surface.tools });
   // Tokens die with their agents.

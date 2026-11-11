@@ -7,6 +7,11 @@
  * first (`ps`). The live shells are saved beside the agents, and `restore`
  * brings back those whose terminals outlived the last server (only the PTY
  * host keeps them).
+ *
+ * It is also the ONE owner of how a shell's terminal is read and written
+ * (`screen`, `write`): the Pixel Office MCP's shell tools go through it, never
+ * through the agents' terminal seam (agentTerminals.ts `ptyAgentTerminals`,
+ * which refuses shell ids), and only ever reach a live shell of this registry.
  */
 
 import { execFile } from 'child_process';
@@ -21,6 +26,7 @@ import {
 } from '../constants.js';
 import { PcShellRegistry, type PcShellRegistryDeps, type PcShellTerminal } from '../pcShells.js';
 import { inheritedEnv, terminalEnv } from './terminalEnv.js';
+import { readScreen, type TerminalScreen } from './terminalScreen.js';
 import type { TerminalSession, TerminalSessions } from './terminalSessions.js';
 
 /** What is running in a shell, for the ×: null = idle (only the shell itself). */
@@ -32,8 +38,10 @@ export interface PcShellSaves {
   savePcShells(shells: PersistedPcShell[]): void;
 }
 
-export interface StandalonePcShellsDeps
-  extends Pick<PcShellRegistryDeps, 'facts' | 'directories' | 'broadcast'> {
+export interface StandalonePcShellsDeps extends Pick<
+  PcShellRegistryDeps,
+  'facts' | 'directories' | 'broadcast'
+> {
   ptyManager: TerminalSessions;
   saves: PcShellSaves;
   /** The providers whose CLI session markers a shell must not inherit. */
@@ -83,6 +91,26 @@ export class StandalonePcShells extends PcShellRegistry {
         },
       },
     });
+  }
+
+  /** Shell `id`'s visible screen (the server's headless mirror of its PTY),
+   *  or null when it is no live shell of this registry. */
+  async screen(id: number): Promise<TerminalScreen | null> {
+    const session = this.sessionOf(id);
+    return session ? readScreen(session) : null;
+  }
+
+  /** Write bytes to shell `id`'s terminal; throws when it is no live shell. */
+  write(id: number, bytes: string): void {
+    const session = this.sessionOf(id);
+    if (!session) throw new Error(`no PC shell ${id}`);
+    session.write(bytes);
+  }
+
+  /** A live shell's session: never an agent's terminal, whatever the id. */
+  private sessionOf(id: number): TerminalSession | undefined {
+    if (!isPcShellId(id) || !this.has(id)) return undefined;
+    return this.standalone.ptyManager.get(id);
   }
 
   /**
