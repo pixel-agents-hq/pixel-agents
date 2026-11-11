@@ -12,9 +12,11 @@ import { DEFAULT_WORKSPACE_ID } from '../../core/src/constants.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { type ClientMessageContext, handleClientMessage } from '../src/clientMessageHandler.js';
 import {
+  WORKSPACE_ROOT_LOCKED_REASON,
   WORKSPACE_ROOT_NOT_ABSOLUTE_REASON,
   WORKSPACE_ROOT_NOT_DIRECTORY_REASON,
   WORKSPACE_ROOT_OVERLAP_REASON,
+  WORKSPACE_ROOT_WORKSPACE_OVERLAP_REASON,
 } from '../src/constants.js';
 import { listWorkspaces, saveWorkspace, setWorkspaceRoot } from '../src/workspaces.js';
 
@@ -128,6 +130,63 @@ describe('setWorkspaceRoot', () => {
     // 不重疊：<root>/.note 與 <root>/sub/.note 互不包含。
     expect(overlap(home)).toEqual([]);
     expect(rootOf(id)).toBe(home);
+  });
+
+  it('refuses a root whose .note equals or nests with another Workspace root', () => {
+    const first = workspace('alpha');
+    const second = workspace('beta');
+    const root = mkdir('shared');
+    expect(send({ type: 'setWorkspaceRoot', workspaceId: first, rootPath: root })).toEqual([]);
+    const rejected = [
+      { type: 'workspaceRejected', reason: WORKSPACE_ROOT_WORKSPACE_OVERLAP_REASON },
+    ];
+    expect(send({ type: 'setWorkspaceRoot', workspaceId: second, rootPath: root })).toEqual(
+      rejected,
+    );
+    expect(
+      send({
+        type: 'setWorkspaceRoot',
+        workspaceId: second,
+        rootPath: mkdir('shared', '.note', 'inner'),
+      }),
+    ).toEqual(rejected);
+    expect(rootOf(second)).toBeUndefined();
+    // 同一個工作空間重設自己的根目錄不算重疊。
+    expect(send({ type: 'setWorkspaceRoot', workspaceId: first, rootPath: root })).toEqual([]);
+  });
+
+  it('refuses adding a Directory whose personal KB overlaps a Workspace root', () => {
+    const id = workspace('alpha');
+    const root = mkdir('kbroot');
+    send({ type: 'setWorkspaceRoot', workspaceId: id, rootPath: root });
+    const other = workspace('beta');
+    expect(saveWorkspace({ id: other, name: 'beta', directoryPaths: [root] })).toEqual({
+      ok: false,
+      reason: WORKSPACE_ROOT_OVERLAP_REASON,
+    });
+    expect(
+      saveWorkspace({ id: other, name: 'beta', directoryPaths: [mkdir('elsewhere')] }).ok,
+    ).toBe(true);
+  });
+
+  it('locks the root once its .note has content, and frees it while empty', () => {
+    const id = workspace('alpha');
+    const root = mkdir('kb-a');
+    const other = mkdir('kb-b');
+    const set = (rootPath: string | null) =>
+      send({ type: 'setWorkspaceRoot', workspaceId: id, rootPath });
+    expect(set(root)).toEqual([]);
+    // .note 不存在或是空的：可以改、可以清除。
+    expect(set(other)).toEqual([]);
+    mkdir('kb-b', '.note');
+    expect(set(root)).toEqual([]);
+    fs.writeFileSync(path.join(mkdir('kb-a', '.note'), 'a.md'), 'x');
+    const locked = [{ type: 'workspaceRejected', reason: WORKSPACE_ROOT_LOCKED_REASON }];
+    expect(set(other)).toEqual(locked);
+    expect(set(null)).toEqual(locked);
+    expect(rootOf(id)).toBe(root);
+    // 重設成同一個根目錄不算變更。
+    expect(set(root)).toEqual([]);
   });
 
   it('refuses a read-only client and snaps it back with workspacesLoaded', () => {

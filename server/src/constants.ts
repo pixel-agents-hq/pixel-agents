@@ -357,6 +357,83 @@ export const CURATOR_NOT_ELIGIBLE_REASON =
   'That agent cannot be the curator of this Workspace (it is not an agent this office launched in that Workspace).';
 export const CURATOR_UNAVAILABLE_REASON = 'Curators are only available in the standalone office.';
 
+// ── Curator bindings（KB Writer 綁定 (workspaceId, Directory)，重啟後自動恢復） ──
+/** ~/.pixel-agents/ 底下的私有檔（0600）；不放 workspaces.json，也不在線上 Workspace schema 裡。 */
+export const CURATOR_BINDINGS_FILE_NAME = 'curator-bindings.json';
+export const CURATOR_BINDINGS_FILE_VERSION = 1;
+/** 超過這個大小的檔案整份不採信（沒有任何綁定，不自動恢復）。 */
+export const CURATOR_BINDINGS_FILE_MAX_BYTES = 1024 * 1024;
+/** 超過這個筆數的檔案整份不採信。 */
+export const CURATOR_BINDINGS_MAX_ENTRIES = 256;
+/** 指定成功但綁定寫不進磁碟：以 workspaceRejected 只回給操作者。 */
+export const CURATOR_BINDING_SAVE_FAILED_REASON =
+  '已指定 KB Writer，但無法儲存，重啟後不會自動恢復';
+/** 解除成功（記憶體已清除並廣播）但磁碟上的綁定沒刪掉：以 workspaceRejected 只回給操作者。 */
+export const CURATOR_BINDING_REMOVE_FAILED_REASON =
+  '已解除 KB Writer，但無法儲存，重啟後可能自動恢復';
+
+// ── Task dispatch (curator -> agent, MCP `dispatch_task`, standalone only) ──
+/** The /mcp endpoint the stdio shim forwards JSON-RPC to. Standalone only. */
+export const TASK_DISPATCH_MCP_PATH = '/mcp';
+/** Route-level body limit for /mcp: a 4000-character task, JSON-escaped, fits. */
+export const TASK_DISPATCH_MCP_MAX_REQUEST_BYTES = 32_768;
+/** Non-secret env var the launcher sets to the launching server's own port. */
+export const TASK_DISPATCH_PORT_ENV_NAME = 'PIXEL_AGENTS_PORT';
+/** File name of the bundled stdio MCP shim under dist/hooks/. */
+export const TASK_DISPATCH_SHIM_FILE_NAME = 'pixel-agents-mcp.js';
+/** The key the shim is registered under in the `--mcp-config` JSON. */
+export const TASK_DISPATCH_MCP_SERVER_NAME = 'pixel-agents';
+/** The one tool the shim exposes. Never added to any allowed-tools list. */
+export const TASK_DISPATCH_TOOL_NAME = 'dispatch_task';
+/** MCP protocol revisions the endpoint answers `initialize` with (newest first). */
+export const TASK_DISPATCH_MCP_PROTOCOL_VERSIONS: readonly string[] = [
+  '2025-06-18',
+  '2025-03-26',
+  '2024-11-05',
+];
+/** JSON-RPC 2.0 error codes the /mcp endpoint and the shim answer with. */
+export const JSON_RPC_INVALID_REQUEST = -32600;
+export const JSON_RPC_METHOD_NOT_FOUND = -32601;
+export const JSON_RPC_INVALID_PARAMS = -32602;
+export const JSON_RPC_INTERNAL_ERROR = -32603;
+export const JSON_RPC_PARSE_ERROR = -32700;
+/** Maximum task length in UTF-16 code units, after CRLF -> LF normalization. */
+export const TASK_DISPATCH_MAX_TASK_CHARS = 4_000;
+/** No dispatch into a target whose terminal received operator input this recently. */
+export const TASK_DISPATCH_OPERATOR_QUIET_MS = 10_000;
+/** Rate limits: at most N attempts per caller / N writes per target per window. */
+export const TASK_DISPATCH_RATE_WINDOW_MS = 60_000;
+export const TASK_DISPATCH_RATE_MAX_PER_CALLER = 6;
+export const TASK_DISPATCH_RATE_MAX_PER_TARGET = 3;
+/** A dispatch whose mirror flush has not completed by then is refused. */
+export const TASK_DISPATCH_FLUSH_DEADLINE_MS = 2_000;
+/** How long the shim waits for one /mcp answer before replying with an error. */
+export const TASK_DISPATCH_SHIM_TIMEOUT_MS = 10_000;
+/** The shim drops a /mcp answer larger than this (the server's are tiny). */
+export const TASK_DISPATCH_SHIM_MAX_RESPONSE_BYTES = 65_536;
+/** The shim's fixed JSON-RPC error texts: it never echoes a server body or a header. */
+export const TASK_DISPATCH_SHIM_NOT_CONFIGURED_MESSAGE =
+  'Pixel Agents task dispatch is not available in this session';
+export const TASK_DISPATCH_SHIM_UNREACHABLE_MESSAGE = 'Pixel Agents server did not answer';
+export const TASK_DISPATCH_SHIM_REFUSED_MESSAGE = 'Pixel Agents server refused the request';
+export const TASK_DISPATCH_SHIM_PARSE_ERROR_MESSAGE = 'Parse error';
+/** Bracketed-paste markers the server synthesizes around a dispatched task. */
+export const BRACKETED_PASTE_START = '\u001b[200~';
+export const BRACKETED_PASTE_END = '\u001b[201~';
+/** Control-character ranges a dispatched task may not contain (LF excepted). */
+export const LINE_FEED = 0x0a;
+export const C0_CONTROL_MAX = 0x1f;
+export const DEL_CONTROL = 0x7f;
+export const C1_CONTROL_MIN = 0x80;
+export const C1_CONTROL_MAX = 0x9f;
+/** The fixed first line of every dispatched task (the caller's agent id after it). */
+export const TASK_DISPATCH_PREFIX_LABEL = 'Task from Workspace KB Writer';
+/** The ONE answer to every refused dispatch: it never says which rule failed. */
+export const TASK_DISPATCH_DENIED_MESSAGE = 'Task not dispatched.';
+/** Fixed bodies for the /mcp endpoint's HTTP-level refusals. */
+export const TASK_DISPATCH_FORBIDDEN_BODY = 'forbidden';
+export const TASK_DISPATCH_UNAUTHORIZED_BODY = 'unauthorized';
+
 // ── Write guard（阻擋式裁決通道，standalone 限定） ─────────
 /** hook 向伺服器詢問裁決的端點。與 HOOK_API_PREFIX 分開，既有的事件轉發路由不變。 */
 export const WRITE_GUARD_API_PATH = '/api/guard/verdict';
@@ -451,6 +528,26 @@ export const KB_CLAUDE_SETTINGS_FILE_PATTERN = /^settings.*\.json$/i;
 /** F17：Claude Code 使用者層設定目錄名稱（位於 HOME 之下）。 */
 export const KB_CLAUDE_HOME_DIR_NAME = '.claude';
 
+// ── KB 唯讀瀏覽（listKbFiles／readKbFile） ───────────────────
+/** relPath 的字元數上限（與 asyncapi 的 KbRelPath maxLength 一致）。 */
+export const KB_BROWSE_REL_PATH_MAX_LENGTH = 1024;
+/** relPath 的段數上限；列舉也只往下走到這個深度（與 asyncapi 的 KbRelPath 一致）。 */
+export const KB_BROWSE_MAX_DEPTH = 8;
+/** 單一路徑段的 UTF-8 位元組上限（常見檔案系統的檔名上限）。 */
+export const KB_BROWSE_SEGMENT_MAX_BYTES = 255;
+/** 單一 KB 檔案可讀取的大小上限，沿用 KB 條目內容的上限。 */
+export const KB_BROWSE_FILE_MAX_BYTES = KB_ENTRY_CONTENT_MAX_BYTES;
+/** 可列出、可讀取的副檔名（小寫、完全比對）：只有純文字筆記。 */
+export const KB_BROWSE_ALLOWED_EXTENSIONS: readonly string[] = ['.md', '.txt'];
+/** 一次列舉最多回傳的檔案數。 */
+export const KB_BROWSE_LIST_MAX_FILES = 500;
+/** 一次列舉最多檢視的目錄項目總數（所有層合計）。 */
+export const KB_BROWSE_SCAN_MAX_ENTRIES = 5000;
+/** 單一目錄最多檢視的目錄項目數。 */
+export const KB_BROWSE_DIR_MAX_ENTRIES = 1000;
+/** 每個連線同時處理中的 KB 瀏覽請求上限；超過即以 unavailable 拒絕。 */
+export const KB_BROWSE_MAX_IN_FLIGHT = 2;
+
 /** setWorkspaceRoot 的 workspaceRejected 理由（固定字串）。 */
 export const WORKSPACE_ROOT_INVALID_ID_REASON = 'That Workspace no longer exists.';
 export const WORKSPACE_ROOT_NOT_ABSOLUTE_REASON =
@@ -463,6 +560,11 @@ export const PERMISSION_ROLES_INVALID_REASON =
   'Permission roles must be null or a list of distinct roles from R, E and D.';
 export const WORKSPACE_ROOT_OVERLAP_REASON =
   "The Workspace KB (<root>/.note/) would be the same as, or nested with, an agent Directory's personal KB (<Directory>/.note/). Choose another root.";
+
+export const WORKSPACE_ROOT_LOCKED_REASON =
+  'The Workspace KB (<root>/.note/) already has content, so its root can no longer be changed or cleared. Empty the KB folder first.';
+export const WORKSPACE_ROOT_WORKSPACE_OVERLAP_REASON =
+  "The Workspace KB (<root>/.note/) would be the same as, or nested with, another Workspace's KB. Each Workspace needs its own root.";
 
 /**
  * 拒絕訊息的固定範本（F16）：原因、理由、建議三段。只會插入該 Agent 自己送出的

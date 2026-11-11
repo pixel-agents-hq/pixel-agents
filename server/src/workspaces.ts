@@ -56,9 +56,11 @@ import {
   WORKSPACE_ID_MAX_LENGTH,
   WORKSPACE_NAME_MAX_LENGTH,
   WORKSPACE_ROOT_INVALID_ID_REASON,
+  WORKSPACE_ROOT_LOCKED_REASON,
   WORKSPACE_ROOT_NOT_ABSOLUTE_REASON,
   WORKSPACE_ROOT_NOT_DIRECTORY_REASON,
   WORKSPACE_ROOT_OVERLAP_REASON,
+  WORKSPACE_ROOT_WORKSPACE_OVERLAP_REASON,
   WORKSPACE_WRITE_FAILED_REASON,
   WORKSPACES_DIR_MODE,
   WORKSPACES_FILE_MODE,
@@ -66,8 +68,12 @@ import {
   WORKSPACES_FILE_UNREADABLE_REASON,
 } from './constants.js';
 import { normalizeDirectoryPath } from './directories.js';
-import { workspaceKbOverlapsPersonal } from './writeGuard/kbOverlap.js';
-import { pathNormalizer } from './writeGuard/pathNormalization.js';
+import { personalKbZone } from './writeGuard/kbIdentity.js';
+import {
+  workspaceKbOverlapsPersonal,
+  workspaceKbOverlapsWorkspaces,
+} from './writeGuard/kbOverlap.js';
+import { type PathNormalizer, pathNormalizer, samePath } from './writeGuard/pathNormalization.js';
 import type { PermissionRoles } from './writeGuard/permissionRoles.js';
 import { parsePermissionRoles } from './writeGuard/permissionRoles.js';
 
@@ -243,6 +249,37 @@ export function settleWorkspaceFromCwd(
   store.setAgentWorkspace(agentId, workspaceIdForCwd(cwd));
 }
 
+/** 一個 Directory 是否屬於某個 Workspace（以 realpath 比對）。 */
+export type DirectoryMembership = 'member' | 'not-member' | 'unknown';
+
+/**
+ * `realDirectory`（已 realpath 的路徑）是否是 `workspace` 的 Directory 之一。
+ * workspace.directoryPaths 是使用者輸入的字串（可能經過 symlink、帶 `~`），所以每一筆
+ * 先 realpath 再以 samePath 比對（darwin／win32 折疊大小寫）。三態：
+ * - 'member'：有一筆解析後與它相同；
+ * - 'not-member'：每一筆都解析成功，且沒有一筆相同；
+ * - 'unknown'：沒有一筆相同，但至少一筆 realpath 失敗（無法斷定不是它）。
+ * 自動恢復 KB Writer 只認 'member'；刪除綁定只認 'not-member'（'unknown' 保留）。
+ */
+export function workspaceContainsDirectory(
+  workspace: Workspace,
+  realDirectory: string,
+  normalizer: PathNormalizer = pathNormalizer,
+): DirectoryMembership {
+  let unresolved = false;
+  for (const entry of workspace.directoryPaths) {
+    let real: string;
+    try {
+      real = fs.realpathSync(normalizeDirectoryPath(entry));
+    } catch {
+      unresolved = true;
+      continue;
+    }
+    if (samePath(normalizer, real, realDirectory)) return 'member';
+  }
+  return unresolved ? 'unknown' : 'not-member';
+}
+
 /**
  * Canonicalize a workspaceId carried by an agent: the default's id and any id
  * naming no known Workspace become undefined, so an agent is never filed under
@@ -384,6 +421,19 @@ export function saveWorkspace(msg: Record<string, unknown>): WorkspaceMutationRe
     }
   }
 
+  const previouslyOwned = new Set((editing?.directoryPaths ?? []).map(normalizeDirectoryPath));
+  const workspaceRoots = list.workspaces
+    .map((w) => w.rootPath)
+    .filter((root): root is string => root !== undefined);
+  for (const dirPath of input.directoryPaths) {
+    if (previouslyOwned.has(normalizeDirectoryPath(dirPath))) continue;
+    if (
+      workspaceRoots.some((root) => workspaceKbOverlapsPersonal(pathNormalizer, root, [dirPath]))
+    ) {
+      return reject(WORKSPACE_ROOT_OVERLAP_REASON);
+    }
+  }
+
   const saved: Workspace = {
     id: editing?.id ?? crypto.randomUUID(),
     name: input.name,
@@ -418,6 +468,15 @@ export function removeWorkspace(msg: Record<string, unknown>): WorkspaceMutation
     return reject(WORKSPACE_WRITE_FAILED_REASON);
   }
   return { ok: true };
+}
+
+/** `<root>/.note/` is missing or holds nothing; any other read failure counts as content. */
+function kbFolderIsEmpty(root: string): boolean {
+  try {
+    return fs.readdirSync(personalKbZone(root)).length === 0;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
+  }
 }
 
 /**
@@ -466,6 +525,21 @@ export function setWorkspaceRoot(
   if (!list.writable) return reject(WORKSPACES_FILE_UNREADABLE_REASON);
   const target = list.workspaces.find((w) => w.id === workspaceId);
   if (!target) return reject(WORKSPACE_ROOT_INVALID_ID_REASON);
+  if (
+    target.rootPath !== undefined &&
+    target.rootPath !== realRoot &&
+    !kbFolderIsEmpty(target.rootPath)
+  ) {
+    return reject(WORKSPACE_ROOT_LOCKED_REASON);
+  }
+  if (realRoot !== undefined) {
+    const otherRoots = list.workspaces
+      .filter((w) => w.id !== target.id && w.rootPath !== undefined)
+      .map((w) => w.rootPath as string);
+    if (workspaceKbOverlapsWorkspaces(pathNormalizer, realRoot, otherRoots)) {
+      return reject(WORKSPACE_ROOT_WORKSPACE_OVERLAP_REASON);
+    }
+  }
   const updated: Workspace = {
     id: target.id,
     name: target.name,
@@ -533,6 +607,9 @@ export interface WorkspaceMessageDeps {
   reply: (message: Record<string, unknown>) => void;
   /** A Workspace was deleted: file its agents under the default. */
   onWorkspaceRemoved: (workspaceId: string) => void;
+  /** saveWorkspace 成功（新增或編輯）之後、廣播之前呼叫，帶著存下的 Workspace id；
+   *  KB Writer 綁定據此檢查它的 Directory 是否還屬於該 Workspace。 */
+  onWorkspaceSaved?: (workspaceId: string) => void;
   /** Every Directory a personal KB can live in (registered Directories, every
    *  Workspace's Directories, running agents' Directories), for the overlap
    *  check of setWorkspaceRoot. Absent: only the Workspaces' own Directories. */
@@ -556,6 +633,7 @@ export function handleWorkspaceClientMessage(
         deps.reply({ type: 'workspaceRejected', reason: result.reason });
         return true;
       }
+      if (result.id !== undefined) deps.onWorkspaceSaved?.(result.id);
       deps.broadcast(workspacesLoadedMessage());
       return true;
     }
