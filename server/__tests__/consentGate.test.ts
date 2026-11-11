@@ -4,8 +4,9 @@ import {
   CONSENT_DISCLOSURE,
   CONSENT_INSTALL_HEADLINE,
 } from '../src/providers/hook/claude/consentCopy.js';
+import { CONSENT_DISCLOSURE as CODEX_CONSENT_DISCLOSURE } from '../src/providers/hook/codex/consentCopy.js';
 import { consentActionFor, hooksConsentRequest } from '../src/providers/hook/consentGate.js';
-import { claudeProvider } from '../src/providers/index.js';
+import { claudeProvider, codexProvider } from '../src/providers/index.js';
 
 /**
  * consentGate is the ONE place both surfaces decide whether to ask for hooks consent and what an answer means, per
@@ -53,6 +54,44 @@ describe('hooksConsentRequest — when to ask', () => {
   // is discarded. The privilege check gates the ASK, not just the response.
   it('never asks an unprivileged client, even when everything else lines up', () => {
     expect(hooksConsentRequest({ ...askable, privileged: false }, claudeProvider)).toBeNull();
+  });
+
+  // A user without the CLI cannot evaluate an ask to edit its config and would
+  // answer only to dismiss it. Absence retires the ask rather than deferring it,
+  // which is what keeps a second bundled provider from adding a prompt for a
+  // tool the user has never installed.
+  it('does not ask when the provider CLI is not present', () => {
+    expect(hooksConsentRequest({ ...askable, present: false }, claudeProvider)).toBeNull();
+  });
+
+  it('asks when presence is unknown — omitted means present', () => {
+    // A provider that cannot cheaply tell must not lose its ask by default.
+    expect(hooksConsentRequest(askable, claudeProvider)).not.toBeNull();
+    expect(hooksConsentRequest({ ...askable, present: true }, claudeProvider)).not.toBeNull();
+  });
+});
+
+describe('hooksConsentRequest — per provider', () => {
+  const askable = {
+    installed: false,
+    hooksEnabled: true,
+    consentAnswered: false,
+    privileged: true,
+  };
+
+  it('ships the Codex provider its own id and disclosure', () => {
+    const request = hooksConsentRequest(askable, codexProvider);
+    expect(request?.providerId).toBe('codex');
+    expect(request?.disclosure).toBe(CODEX_CONSENT_DISCLOSURE);
+    // The point of a per-provider disclosure: it must name the file THIS
+    // provider writes, not the other one's.
+    expect(request?.disclosure).toContain('~/.codex/hooks.json');
+    expect(request?.disclosure).not.toContain('~/.claude/settings.json');
+  });
+
+  it("states that our Codex hooks never block, since Codex's hooks are allowed to", () => {
+    const request = hooksConsentRequest(askable, codexProvider);
+    expect(request?.disclosure).toMatch(/only watch|never returns a decision/);
   });
 });
 

@@ -681,6 +681,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
             hooksEnabled: getHooksEnabled(provider.id),
             consentAnswered: getHooksConsent(provider.id) !== 'unanswered',
             privileged: ctx.privileged === true,
+            present: provider.isPresent?.() ?? true,
           },
           provider,
         );

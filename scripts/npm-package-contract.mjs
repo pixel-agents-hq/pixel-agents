@@ -20,6 +20,7 @@ export const REQUIRED_PACKAGE_FILES = [
   'dist/cli.js',
   'dist/extension.js',
   'dist/hooks/claude-hook.js',
+  'dist/hooks/codex-hook.js',
   'dist/webview/index.html',
   'icon.png',
   'package.json',

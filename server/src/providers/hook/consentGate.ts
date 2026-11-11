@@ -24,18 +24,24 @@ export interface ConsentGateState {
    *  server token. Showing the dialog to a client whose answer would be
    *  ignored is a lie, so it gates the ASK and not just the response. */
   privileged: boolean;
+  /** Does the provider's CLI look installed for this user (provider.isPresent,
+   *  defaulted to true when the provider cannot tell)? Someone without the tool
+   *  cannot evaluate an ask to edit its config and would answer only to dismiss
+   *  it, so absence retires the ask. Omitted = present. */
+  present?: boolean;
 }
 
 /**
  * The `hooksConsentRequest` for one provider's `webviewReady` handshake, or null when this client must not be asked.
  * Each condition is a reason the ask would be WRONG, not merely redundant: nothing to approve, already answered
- * durably, a preference turned off, or a client whose answer would be dropped. All four are checked in their own
- * right, so a hand-edited config cannot resurrect a retired ask.
+ * durably, a preference turned off, a client whose answer would be dropped, or a CLI that isn't installed. Each is
+ * checked in its own right, so a hand-edited config cannot resurrect a retired ask.
  */
 export function hooksConsentRequest(
   state: ConsentGateState,
   provider: Pick<HookProvider, 'id' | 'consentDisclosure'>,
 ): HooksConsentRequest | null {
+  if (state.present === false) return null;
   if (state.installed || state.consentAnswered || !state.hooksEnabled || !state.privileged) {
     return null;
   }

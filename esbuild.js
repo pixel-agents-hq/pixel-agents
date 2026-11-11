@@ -39,11 +39,15 @@ function copyAssets() {
  * Produces a self-contained CJS file with shebang for Claude Code to execute.
  */
 function buildHooks() {
-  const hooksDir = path.join(__dirname, 'server', 'src', 'providers', 'hook', 'claude', 'hooks');
-  // The hook script, and the status line bridge (Settings → Usage Bars).
-  const entries = ['claude-hook.ts', 'claude-statusline.ts']
-    .map((name) => path.join(hooksDir, name))
-    .filter((entry) => fs.existsSync(entry));
+  const hookEntry = (provider, file) =>
+    path.join(__dirname, 'server', 'src', 'providers', 'hook', provider, 'hooks', file);
+  // Hook scripts and the Claude status line bridge (Settings → Usage Bars).
+  // Each bundles to its own self-contained CJS file.
+  const entries = [
+    hookEntry('claude', 'claude-hook.ts'),
+    hookEntry('claude', 'claude-statusline.ts'),
+    hookEntry('codex', 'codex-hook.ts'),
+  ].filter((p) => fs.existsSync(p));
   if (entries.length === 0) return;
   require('esbuild').buildSync({
     entryPoints: entries,
@@ -52,9 +56,15 @@ function buildHooks() {
     target: 'node18',
     format: 'cjs',
     outdir: path.join(__dirname, 'dist', 'hooks'),
+    // With more than one entry esbuild mirrors the shared source tree into
+    // outdir (dist/hooks/claude/hooks/claude-hook.js). Every consumer — the
+    // installers, the package contracts, an already-installed settings.json
+    // entry — expects them flat, so outbase pins each to its own basename.
+    outbase: path.join(__dirname, 'server', 'src', 'providers', 'hook'),
+    entryNames: '[name]',
     banner: { js: '#!/usr/bin/env node' },
   });
-  console.log('✓ Built hooks/ → dist/hooks/');
+  console.log(`✓ Built ${entries.length} hook script(s) → dist/hooks/`);
 }
 
 /**
