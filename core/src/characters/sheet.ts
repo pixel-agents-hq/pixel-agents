@@ -3,7 +3,7 @@
  * right x 8 frames: walk1-3, type1-2, read1-2, seated), each 16x32 pixels indexed y * 16 + x.
  */
 
-import { currentSheetPixels } from '../../../core/src/assets/characterSheet.js';
+import { currentSheetPixels } from '../assets/characterSheet.js';
 import {
   CHAR_FRAME_H,
   CHAR_FRAME_W,
@@ -11,8 +11,8 @@ import {
   CHAR_SHEET_FRAMES,
   CHARACTER_DIRECTIONS,
   PNG_ALPHA_THRESHOLD,
-} from '../../../core/src/assets/constants.js';
-import { LEGACY_SHEET_W } from '../../../core/src/assets/seatedFrame.js';
+} from '../assets/constants.js';
+import { LEGACY_SHEET_W } from '../assets/seatedFrame.js';
 
 export const SHEET_W = CHAR_FRAME_W * CHAR_FRAMES_PER_ROW;
 export const SHEET_H = CHAR_FRAME_H * CHARACTER_DIRECTIONS.length;

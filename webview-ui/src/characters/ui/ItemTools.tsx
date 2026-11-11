@@ -7,6 +7,8 @@
 
 import { useState } from 'react';
 
+import { decodeSheet, SHEET_H, SHEET_W } from '../../../../core/src/characters/sheet.js';
+import { partLabel } from '../../../../core/src/characters/wardrobe.js';
 import { isItemId, MAX_WARDROBE_ITEMS } from '../../../../core/src/wardrobeItems.js';
 import { castStore, registerItemArt } from '../castStore.js';
 import {
@@ -19,8 +21,6 @@ import {
 } from '../items.js';
 import { decodePng } from '../loadWardrobe.js';
 import { fileBaseName } from '../profiles.js';
-import { decodeSheet, SHEET_H, SHEET_W } from '../sheet.js';
-import { partLabel } from '../wardrobe.js';
 import { ArmedButton } from './ArmedButton.js';
 import { pickFiles, saveFile, sheetPng, sheetPngBase64 } from './files.js';
 import { useStudio } from './studio.js';

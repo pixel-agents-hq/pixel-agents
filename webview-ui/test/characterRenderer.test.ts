@@ -11,21 +11,19 @@ import {
   CHARACTER_PROFILE_VERSION,
   type CharacterProfile,
 } from '../../core/src/characterProfiles.js';
-import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.js';
 import {
   paintPixel,
-  parseConfigFile,
   randomize,
   setPart,
   setUnderwear,
-} from '../src/characters/profiles.js';
-import { CharacterRenderer } from '../src/characters/renderer.js';
+} from '../../core/src/characters/profiles.js';
+import { CharacterRenderer } from '../../core/src/characters/renderer.js';
 import {
   CLOTHES_COLOR_KEYS,
   repeatHueTurn,
   withRepeatClothes,
-} from '../src/characters/repeatClothes.js';
-import { SHEET_H, SHEET_W } from '../src/characters/sheet.js';
+} from '../../core/src/characters/repeatClothes.js';
+import { SHEET_H, SHEET_W } from '../../core/src/characters/sheet.js';
 import {
   EYE_FOLDERS,
   layerOf,
@@ -33,17 +31,22 @@ import {
   type RenderProfile,
   shownArt,
   wornPieces,
-} from '../src/characters/slots.js';
+} from '../../core/src/characters/slots.js';
 import {
   decodeWardrobe,
   parseWardrobeManifest,
   type Rgba,
   type WardrobeManifest,
-} from '../src/characters/wardrobe.js';
-import { REPEAT_CLOTHES_HUES } from '../src/constants.js';
+} from '../../core/src/characters/wardrobe.js';
+import { REPEAT_CLOTHES_HUES } from '../../core/src/constants.js';
+import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.js';
+import { parseConfigFile } from '../src/characters/profiles.js';
 import { CHARACTER_EDITOR_COLORS } from '../src/constants.js';
 
-const art = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/characters/art');
+const art = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../core/src/characters/art',
+);
 /** Every art PNG, keyed as loadWardrobe keys them ('hair/bob'). */
 const files = new Map<string, Rgba>(
   fs

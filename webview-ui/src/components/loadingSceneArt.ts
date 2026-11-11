@@ -12,6 +12,7 @@ import {
   PET_IDLE_FRAMES_VERT,
   PET_WALK_FRAMES_VERT,
 } from '../../../core/src/assets/constants.js';
+import type { Rgba } from '../../../core/src/characters/wardrobe.js';
 import floorUrl from '../../public/assets/floors/floor_6.png?inline';
 import chairBackUrl from '../../public/assets/furniture/CUSHIONED_CHAIR/CUSHIONED_CHAIR_BACK.png?inline';
 import chairFrontUrl from '../../public/assets/furniture/CUSHIONED_CHAIR/CUSHIONED_CHAIR_FRONT.png?inline';
@@ -22,7 +23,6 @@ import pcSideUrl from '../../public/assets/furniture/PC/PC_SIDE.png?inline';
 import tableUrl from '../../public/assets/furniture/TABLE_FRONT/TABLE_FRONT.png?inline';
 import catUrl from '../../public/assets/pets/gitcat/pet.png?inline';
 import { decodePng } from '../characters/loadWardrobe.js';
-import type { Rgba } from '../characters/wardrobe.js';
 import { LOADING_FLOOR_COLOR } from '../constants.js';
 import { colorizeSprite } from '../office/colorize.js';
 import type { SpriteData } from '../office/types.js';

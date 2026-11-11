@@ -349,3 +349,10 @@ export const AGENT_MOVE_RETRY_ATTEMPTS = 10;
  *  its agent to exit; past it the answer is dropped and the Worktree's leave
  *  asks again, so a stale answer never applies to some later leave. */
 export const WORKTREE_CLOSE_CHOICE_TTL_MS = 30_000;
+
+// ── Character art (server/src/characterArt.ts) ──────────────
+/** Screen pixels per sprite pixel in a character preview PNG (whole number, so the
+ *  pixel art stays crisp): a 16x32 frame becomes 64x128. */
+export const CHARACTER_PREVIEW_SCALE = 4;
+/** Where the build puts the wardrobe art, under dist/ (esbuild.js copyWardrobeArt). */
+export const WARDROBE_ART_DIST_DIR = 'assets/wardrobe';

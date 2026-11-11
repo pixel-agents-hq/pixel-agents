@@ -6,11 +6,11 @@
  * pixel edits go over; then it is tinted and stacked in LAYERS order, and the props
  * (reading glasses, unless the eyes read bare, and the paper) go on top.
  *
- * DOM-free: works on RGBA buffers, so it runs in tests as it does in the webview.
+ * DOM-free: works on RGBA buffers, so it runs in tests and on the server as it does in the webview.
  */
 
-import { CHAR_FRAME_H } from '../../../core/src/assets/constants.js';
-import type { CharacterColor, CharacterPixelEdits } from '../../../core/src/characterProfiles.js';
+import { CHAR_FRAME_H } from '../assets/constants.js';
+import type { CharacterColor, CharacterPixelEdits } from '../characterProfiles.js';
 import { DEFAULT_COLORS } from './art/artColors.js';
 import { colorKey, hexLum, hexToRgb, lum, rgbHex, rgbToHsl, tintPixels } from './color.js';
 import { CLOTHES_COLOR_KEYS } from './repeatClothes.js';

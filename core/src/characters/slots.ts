@@ -12,7 +12,7 @@ import {
   type CharacterSlot,
   DEFAULT_EYE_ROWS,
   pixId,
-} from '../../../core/src/characterProfiles.js';
+} from '../characterProfiles.js';
 import { eyeArt, partArt, type Underwear, type Wardrobe } from './wardrobe.js';
 
 /** Profile fields that hold a part id. */
@@ -107,6 +107,11 @@ export const underOf = (key: TabKey | SlotKey): Underwear | undefined =>
 /** The piece the pixel editor opens on from a tab: its underwear while nothing is worn over it. */
 export const tabPiece = (tab: TabDef, p: CharacterProfile): string | null =>
   tab.under && isSlot(tab.key) && !p[tab.key] ? tab.under : tab.piece;
+
+/** Slots that take each other off: wearing one empties the other (profiles.ts setPart). */
+export const EXCLUSIVE_SLOTS: ReadonlyArray<
+  readonly [Exclude<SlotKey, 'body'>, Exclude<SlotKey, 'body'>]
+> = [['full', 'top']];
 
 /** The one underwear style. */
 export const UNDERWEAR = 'basic';

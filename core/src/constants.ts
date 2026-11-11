@@ -21,6 +21,15 @@ export const HOOK_SCRIPTS_DIR = '.pixel-agents/hooks';
 export const BASH_COMMAND_DISPLAY_MAX_LENGTH = 30;
 export const TASK_DESCRIPTION_DISPLAY_MAX_LENGTH = 40;
 
+// ── Characters ───────────────────────────────────────────────
+
+/** A repeated character's clothes colours, in order (characters/repeatClothes.ts):
+ *  the nth repeat wears the nth, as a hue in degrees — red, blue, green, yellow,
+ *  purple, cyan, pink, then orange, lime, indigo, teal, magenta; past the end it cycles. */
+export const REPEAT_CLOTHES_HUES = [0, 220, 120, 55, 275, 185, 320, 28, 90, 245, 160, 340] as const;
+/** Saturation (0-100) a repeat's clothes are colorized at, keeping each piece's shading. */
+export const REPEAT_CLOTHES_SATURATION = 70;
+
 // ── Terminal (standalone embedded terminal) ──────────────────
 // The raw PTY byte stream deliberately lives OUTSIDE the AsyncAPI contract --
 // it is a data plane (unstructured, high-frequency), not a control plane.

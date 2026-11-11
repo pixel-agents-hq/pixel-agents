@@ -5,6 +5,15 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { rgbHex } from '../../../../core/src/characters/color.js';
+import {
+  clearFrameEdits,
+  clearPieceEdits,
+  hasEdits,
+  paintPixel,
+} from '../../../../core/src/characters/profiles.js';
+import { cellAt, FRAME_COUNT, isOpaque } from '../../../../core/src/characters/sheet.js';
+import { layerOf, wornPieces } from '../../../../core/src/characters/slots.js';
 import { Checkbox } from '../../components/ui/Checkbox.js';
 import { PixelIcon } from '../../components/ui/PixelIcon.js';
 import { PixelText } from '../../components/ui/PixelText.js';
@@ -14,11 +23,7 @@ import {
   CHARACTER_PAINT_FALLBACK,
 } from '../../constants.js';
 import { type BoxSize, useBoxSize } from '../../hooks/useBoxSize.js';
-import { rgbHex } from '../color.js';
 import { pieceName } from '../items.js';
-import { clearFrameEdits, clearPieceEdits, hasEdits, paintPixel } from '../profiles.js';
-import { cellAt, FRAME_COUNT, isOpaque } from '../sheet.js';
-import { layerOf, wornPieces } from '../slots.js';
 import { ArmedButton } from './ArmedButton.js';
 import { ItemTools } from './ItemTools.js';
 import {

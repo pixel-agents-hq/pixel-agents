@@ -1,11 +1,17 @@
 import type { ColorValue } from './components/ui/types.js';
 
 // ── Grid & Layout ────────────────────────────────────────────
-export const TILE_SIZE = 16;
-export const DEFAULT_COLS = 20;
-export const DEFAULT_ROWS = 11;
-export const MAX_COLS = 64;
-export const MAX_ROWS = 64;
+// The layout's own constants live in core (the server edits layouts too).
+export {
+  AUTO_ON_FACING_DEPTH,
+  AUTO_ON_SIDE_DEPTH,
+  DEFAULT_COLS,
+  DEFAULT_NEUTRAL_COLOR,
+  DEFAULT_ROWS,
+  MAX_COLS,
+  MAX_ROWS,
+  TILE_SIZE,
+} from '../../core/src/layout/constants.js';
 
 // ── Character Animation ─────────────────────────────────────
 export const WALK_SPEED_PX_PER_SEC = 48;
@@ -140,20 +146,7 @@ export const LAYOUT_EXPORT_FILENAME = 'pixel-agents-layout.json';
 /** MIME type for the exported layout Blob. */
 export const LAYOUT_EXPORT_MIME = 'application/json';
 export const DEFAULT_FLOOR_COLOR: ColorValue = { h: 35, s: 30, b: 15, c: 0 };
-export const DEFAULT_WALL_COLOR: ColorValue = { h: 240, s: 25, b: 0, c: 0 };
-/** Names of the bundled wall sets, by index (wall_N.png); sets past these are "Wall N". */
-export const WALL_SET_LABELS = [
-  'Plain',
-  'Brick',
-  'Wood planks',
-  'Stone',
-  'Wainscot',
-  'Office panel',
-  'Glass partition',
-  'Half panel',
-  'Cubicle',
-];
-export const DEFAULT_NEUTRAL_COLOR: ColorValue = { h: 0, s: 0, b: 0, c: 0 };
+export { DEFAULT_WALL_COLOR, WALL_SET_LABELS } from '../../core/src/layout/constants.js';
 
 // ── Carpets ──────────────────────────────────────────────────
 /** Main (lowest-luminance) color applied to carpets when no per-tile override is set. */
@@ -254,8 +247,6 @@ export const WAITING_BUBBLE_DURATION_SEC = 2.0;
 export const DISMISS_BUBBLE_FAST_FADE_SEC = 0.3;
 export const INACTIVE_SEAT_TIMER_MIN_SEC = 3.0;
 export const INACTIVE_SEAT_TIMER_RANGE_SEC = 2.0;
-export const AUTO_ON_FACING_DEPTH = 3;
-export const AUTO_ON_SIDE_DEPTH = 2;
 export const CHARACTER_HIT_HALF_WIDTH = 8;
 export const CHARACTER_HIT_HEIGHT = 24;
 /** World px from a character's feet to its sprite's top edge (the tallest hair). */
@@ -268,10 +259,6 @@ export const TOOL_OVERLAY_GAP_PX = -2;
 /** Reserved character id for the Intro's greeter. Far outside both real agent
  *  ids (positive) and sub-agent ids (small negatives from -1 down). */
 export const GREETER_ID = -1_000_000_000;
-/** The character the greeter wears, by its permanent profile id: the default
- *  cast's Suit (the first in the cast if no character has that id). An id, not
- *  a name, so renaming the character doesn't change who greets. */
-export const GREETER_CHARACTER_ID = 'char-0';
 /** Stacking order for the Intro's bubble. Deliberately BELOW the modal stack
  *  (ui/Modal defaults to 50, ChangelogModal 51, the migration notice z-100): the
  *  Intro is diegetic furniture over the office, not a modal, so a modal opened
@@ -747,12 +734,6 @@ export const CHARACTER_PAINT_FALLBACK = '#000000';
  *  this many steps. */
 export const CAST_OFFICE_SYNC_MS = 150;
 export const CAST_HISTORY = { mergeMs: 500, limit: 100 } as const;
-/** A repeated character's clothes colours, in order (characters/repeatClothes.ts):
- *  the nth repeat wears the nth, as a hue in degrees — red, blue, green, yellow,
- *  purple, cyan, pink, then orange, lime, indigo, teal, magenta; past the end it cycles. */
-export const REPEAT_CLOTHES_HUES = [0, 220, 120, 55, 275, 185, 320, 28, 90, 245, 160, 340] as const;
-/** Saturation (0-100) a repeat's clothes are colorized at, keeping each piece's shading. */
-export const REPEAT_CLOTHES_SATURATION = 70;
 
 // ── Pixel icons ─────────────────────────────────────────────
 /** Screen pixels per icon pixel (whole number, so the icon stays crisp). */

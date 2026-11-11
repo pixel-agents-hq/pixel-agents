@@ -10,6 +10,11 @@ import {
   type CharacterProfile,
   pixId,
 } from '../../../core/src/characterProfiles.js';
+import { rgbHex } from '../../../core/src/characters/color.js';
+import type { CharacterRenderer } from '../../../core/src/characters/renderer.js';
+import { cellAt, FRAME_COUNT, isOpaque } from '../../../core/src/characters/sheet.js';
+import { editKey, layerOf, shownArt } from '../../../core/src/characters/slots.js';
+import { type PartInfo, partInfo } from '../../../core/src/characters/wardrobe.js';
 import { newLocalId } from '../../../core/src/localId.js';
 import {
   isItemId,
@@ -18,11 +23,6 @@ import {
   type WardrobeItem,
 } from '../../../core/src/wardrobeItems.js';
 import type { CastState } from './cast.js';
-import { rgbHex } from './color.js';
-import type { CharacterRenderer } from './renderer.js';
-import { cellAt, FRAME_COUNT, isOpaque } from './sheet.js';
-import { editKey, layerOf, shownArt } from './slots.js';
-import { type PartInfo, partInfo } from './wardrobe.js';
 
 /** A piece's sheet as this profile wears it, uncoloured (art plus edits); null when not worn. */
 export function pieceSheet(

@@ -35,6 +35,23 @@ function copyAssets() {
 }
 
 /**
+ * Copy the wardrobe art (core/src/characters/art: the PNGs and wardrobe.json, not its .ts)
+ * to dist/assets/wardrobe, where the server draws characters from (server/src/characterArt.ts).
+ * Runs after copyAssets, which replaces dist/assets.
+ */
+function copyWardrobeArt() {
+  const srcDir = path.join(__dirname, 'core', 'src', 'characters', 'art');
+  const dstDir = path.join(__dirname, 'dist', 'assets', 'wardrobe');
+  fs.rmSync(dstDir, { recursive: true, force: true });
+  fs.cpSync(srcDir, dstDir, {
+    recursive: true,
+    filter: (src) =>
+      fs.statSync(src).isDirectory() || src.endsWith('.png') || src.endsWith('wardrobe.json'),
+  });
+  console.log('✓ Copied wardrobe art → dist/assets/wardrobe/');
+}
+
+/**
  * Bundle hook scripts (TypeScript) to dist/hooks via esbuild.
  * Produces a self-contained CJS file with shebang for Claude Code to execute.
  */
@@ -102,6 +119,7 @@ async function main() {
     await ctx.dispose();
     // Copy assets and hooks after build
     copyAssets();
+    copyWardrobeArt();
     buildHooks();
     await buildCli();
     await buildPtyHost();

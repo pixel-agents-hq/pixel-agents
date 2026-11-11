@@ -5,9 +5,9 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { GREETER_CHARACTER_ID } from '../../core/src/characterProfiles.js';
 import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.js';
 import { greeterPalette } from '../src/characters/profiles.js';
-import { GREETER_CHARACTER_ID } from '../src/constants.js';
 
 describe('greeterPalette', () => {
   it("is the default cast's Suit", () => {

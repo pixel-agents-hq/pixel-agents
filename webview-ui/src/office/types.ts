@@ -7,25 +7,19 @@ export {
   TILE_SIZE,
 } from '../constants.js';
 
-export const TileType = {
-  WALL: 0,
-  FLOOR_1: 1,
-  FLOOR_2: 2,
-  FLOOR_3: 3,
-  FLOOR_4: 4,
-  FLOOR_5: 5,
-  FLOOR_6: 6,
-  FLOOR_7: 7,
-  FLOOR_8: 8,
-  FLOOR_9: 9,
-  VOID: 255,
-} as const;
-export type TileType = (typeof TileType)[keyof typeof TileType];
-
-/** Re-export ColorValue for consumers that import color types from office/types */
-export type { ColorValue } from '../components/ui/types.js';
+// The layout model lives in core (the server reads and edits layouts too).
+export type {
+  AreaDefinition,
+  CarpetTile,
+  ColorValue,
+  OfficeLayout,
+  PlacedFurniture,
+  PlacedPet,
+  Seat,
+} from '../../../core/src/layout/types.js';
+export { Direction, TileType } from '../../../core/src/layout/types.js';
+import type { Direction } from '../../../core/src/layout/types.js';
 import type { AgentWorktree } from '../../../core/src/messages.js';
-import type { ColorValue } from '../components/ui/types.js';
 
 export const CharacterState = {
   IDLE: 'idle',
@@ -34,28 +28,8 @@ export const CharacterState = {
 } as const;
 export type CharacterState = (typeof CharacterState)[keyof typeof CharacterState];
 
-export const Direction = {
-  DOWN: 0,
-  LEFT: 1,
-  RIGHT: 2,
-  UP: 3,
-} as const;
-export type Direction = (typeof Direction)[keyof typeof Direction];
-
 /** 2D array of hex color strings: '' = transparent, '#RRGGBB' = opaque, '#RRGGBBAA' = semi-transparent. [row][col] */
 export type SpriteData = string[][];
-
-export interface Seat {
-  /** Chair furniture uid */
-  uid: string;
-  /** Tile col where agent sits */
-  seatCol: number;
-  /** Tile row where agent sits */
-  seatRow: number;
-  /** Direction character faces when sitting (toward adjacent desk) */
-  facingDir: Direction;
-  assigned: boolean;
-}
 
 export interface FurnitureInstance {
   sprite: SpriteData;
@@ -119,67 +93,6 @@ export interface FurnitureCatalogEntry {
   mirrorSide?: boolean;
 }
 
-export interface PlacedFurniture {
-  uid: string;
-  type: string; // asset ID from furniture manifest
-  col: number;
-  row: number;
-  /** Optional color override for furniture */
-  color?: ColorValue;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CARPETS — visual layer between floor and furniture. Walkable, decorative.
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface CarpetTile {
-  /** Variant index into the loaded carpet sprite sets (0 .. getCarpetSetCount()-1). */
-  variant: number;
-  /** Main colorization (lowest-luminance pixels). Defaults to CARPET_DEFAULT_COLOR when omitted. */
-  color?: ColorValue;
-  /** Accent colorization (highest-luminance pixels). Defaults to CARPET_DEFAULT_ACCENT_COLOR when omitted. */
-  accentColor?: ColorValue;
-  /** Stacking order at overlapping junctions. Higher draws on top. Defaults to 0. */
-  order?: number;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AREAS — translucent named overlays for Directory ↔ seat preference.
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface AreaDefinition {
-  /** Stable label used as the FK in `areaTiles` and `OfficeState.areaMappings`. */
-  label: string;
-  /** Hex color (e.g. "#ff6b6b"). RGB only — alpha applied at render time. */
-  color: string;
-}
-
-export interface OfficeLayout {
-  version: 1;
-  cols: number;
-  rows: number;
-  tiles: TileType[];
-  furniture: PlacedFurniture[];
-  /** Per-tile color settings, parallel to tiles array (floors and walls alike). null = no color */
-  tileColors?: Array<ColorValue | null>;
-  /**
-   * Per-tile wall set (index into the loaded wall sets), parallel to tiles.
-   * Only wall tiles carry one; null or absent = set 0, so layouts from before
-   * wall sets keep their walls.
-   */
-  wallSets?: Array<number | null>;
-  /** Bumped when the bundled default layout changes; forces a reset on existing installs */
-  layoutRevision?: number;
-  /** Pets placed in the office. Optional for backward-compat; migrateLayout coerces to []. */
-  pets?: PlacedPet[];
-  /** Per-tile carpet data, parallel to tiles array. null/undefined = no carpet on tile. */
-  carpetTiles?: Array<CarpetTile | null>;
-  /** Area definitions referenced by `areaTiles` labels. Distinct labels required. */
-  areas?: AreaDefinition[];
-  /** Per-tile Area label, parallel to tiles array. null = no area assignment. */
-  areaTiles?: Array<string | null>;
-}
-
 /** A blink clock (office/engine/blink.ts drives it). */
 export interface Blinker {
   /** Seconds until the eyes next shut. */
@@ -208,7 +121,7 @@ export interface Character extends Blinker {
   /** Palette index (0-5) */
   palette: number;
   /** Which copy of its character this is (0 = the first, n = its nth repeat,
-   *  drawn in the nth repeat clothes colour; characters/repeatClothes.ts) */
+   *  drawn in the nth repeat clothes colour; core/src/characters/repeatClothes.ts) */
   repeat: number;
   /** Animation frame index */
   frame: number;
@@ -326,12 +239,4 @@ export interface Pet {
   bubbleType: 'heart' | null;
   /** Countdown timer for the heart bubble (mirrors character waiting bubble). */
   bubbleTimer: number;
-}
-
-/** Persisted record (lives on OfficeLayout). */
-export interface PlacedPet {
-  /** crypto.randomUUID() generated when first toggled on. */
-  id: string;
-  /** Index into the loaded pet sprite array. */
-  petType: number;
 }

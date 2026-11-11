@@ -15,12 +15,8 @@
  * Adding a part = its PNG plus its line in wardrobe.json; the two must match or loading fails.
  */
 
-import {
-  type CharacterColor,
-  EYE_ROWS,
-  type EyeRows,
-} from '../../../core/src/characterProfiles.js';
-import { isRecord } from '../../../core/src/isRecord.js';
+import { type CharacterColor, EYE_ROWS, type EyeRows } from '../characterProfiles.js';
+import { isRecord } from '../isRecord.js';
 import { SHEET_H, SHEET_W } from './sheet.js';
 
 export interface PartInfo {
@@ -125,7 +121,7 @@ export function decodeWardrobe(
     stray.length && `not in wardrobe.json: ${stray.join(', ')}`,
     misfit.length && `not ${SHEET_W}x${SHEET_H}: ${misfit.map(([p]) => p).join(', ')}`,
   ].filter(Boolean);
-  if (problems.length) throw new Error(`[Webview] wardrobe art: ${problems.join('; ')}`);
+  if (problems.length) throw new Error(`[Wardrobe] wardrobe art: ${problems.join('; ')}`);
 
   const w: Wardrobe = { manifest, art: new Map(), neutral: new Set(), swaps: new Map() };
   for (const [path, img] of files) w.art.set(path, img.data);
@@ -169,7 +165,7 @@ function isWardrobeManifest(value: unknown): value is WardrobeManifest {
 /** The manifest (art/wardrobe.json), checked at the boundary: a bad one fails loudly at load. */
 export function parseWardrobeManifest(value: unknown): WardrobeManifest {
   if (!isWardrobeManifest(value))
-    throw new Error('[Webview] wardrobe.json is not a wardrobe manifest');
+    throw new Error('[Wardrobe] wardrobe.json is not a wardrobe manifest');
   return value;
 }
 

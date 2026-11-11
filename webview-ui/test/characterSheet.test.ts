@@ -19,12 +19,16 @@ import {
 import { decodeCharacterPng } from '../../core/src/assets/pngDecoder.js';
 import { LEGACY_SHEET_W, widenLegacySheet } from '../../core/src/assets/seatedFrame.js';
 import type { CharacterDirectionSprites } from '../../core/src/assets/types.js';
+import { CharacterRenderer } from '../../core/src/characters/renderer.js';
+import { decodeSheet, SHEET_H, SHEET_W } from '../../core/src/characters/sheet.js';
+import { EYE_FOLDERS } from '../../core/src/characters/slots.js';
+import {
+  decodeWardrobe,
+  parseWardrobeManifest,
+  type Rgba,
+} from '../../core/src/characters/wardrobe.js';
 import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.js';
 import { sheetToOfficeSprites } from '../src/characters/officeSprites.js';
-import { CharacterRenderer } from '../src/characters/renderer.js';
-import { decodeSheet, SHEET_H, SHEET_W } from '../src/characters/sheet.js';
-import { EYE_FOLDERS } from '../src/characters/slots.js';
-import { decodeWardrobe, parseWardrobeManifest, type Rgba } from '../src/characters/wardrobe.js';
 
 // ── The slicing as it was written before characterSheet.ts (reference copies) ──
 
@@ -83,7 +87,10 @@ function oldDecodeSheet(img: Rgba): Uint8ClampedArray | null {
 
 // ── Fixtures: every bundled art PNG and the six default sheets, plus their 112-wide forms ──
 
-const art = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/characters/art');
+const art = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../core/src/characters/art',
+);
 const files = new Map<string, Rgba>(
   fs
     .readdirSync(art, { recursive: true, encoding: 'utf-8' })

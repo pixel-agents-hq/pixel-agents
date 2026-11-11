@@ -6,8 +6,7 @@
 import { useDeferredValue, useLayoutEffect, useRef } from 'react';
 
 import type { CharacterProfile } from '../../../../core/src/characterProfiles.js';
-import { offeredParts } from '../items.js';
-import { setPart, setUnderwear, tabSummary } from '../profiles.js';
+import { setPart, setUnderwear } from '../../../../core/src/characters/profiles.js';
 import {
   ACCESSORIES,
   colorArt,
@@ -17,7 +16,9 @@ import {
   type SlotKey,
   TABS,
   underOf,
-} from '../slots.js';
+} from '../../../../core/src/characters/slots.js';
+import { offeredParts } from '../items.js';
+import { tabSummary } from '../profiles.js';
 import { ColorPanel } from './ColorPanel.js';
 import type { SpriteView } from './pixelCanvas.js';
 import { PixelEditor } from './PixelEditor.js';

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { rgbHex } from '../src/characters/color.js';
+import { rgbHex } from '../../core/src/characters/color.js';
+import { cellAt, SHEET_H, SHEET_W } from '../../core/src/characters/sheet.js';
 import { editsFromSheet } from '../src/characters/items.js';
-import { cellAt, SHEET_H, SHEET_W } from '../src/characters/sheet.js';
 
 const blank = () => new Uint8ClampedArray(SHEET_W * SHEET_H * 4);
 const paint = (d: Uint8ClampedArray, frame: number, pixel: number, rgb: number[]) =>

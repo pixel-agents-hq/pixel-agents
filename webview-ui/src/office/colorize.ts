@@ -6,6 +6,7 @@
  * - Adjust (default for furniture): shift original pixel HSL values.
  */
 
+import { luminance, rgbToHsl } from '../../../core/src/assets/colorUtils.js';
 import type { ColorValue } from '../components/ui/types.js';
 import type { SpriteData } from './types.js';
 
@@ -128,28 +129,6 @@ function hslToHex(h: number, s: number, l: number): string {
 
 function clamp255(v: number): number {
   return Math.max(0, Math.min(255, v));
-}
-
-/** Perceived luminance of an RGB colour (0-255 each), 0-1. */
-export const luminance = (r: number, g: number, b: number): number =>
-  (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-
-/** Convert RGB (0-255 each) to HSL (h: 0-360, s: 0-1, l: 0-1) */
-export function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-  const rf = r / 255,
-    gf = g / 255,
-    bf = b / 255;
-  const max = Math.max(rf, gf, bf),
-    min = Math.min(rf, gf, bf);
-  const l = (max + min) / 2;
-  if (max === min) return [0, 0, l];
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h: number;
-  if (max === rf) h = ((gf - bf) / d + (gf < bf ? 6 : 0)) * 60;
-  else if (max === gf) h = ((bf - rf) / d + 2) * 60;
-  else h = ((rf - gf) / d + 4) * 60;
-  return [h, s, l];
 }
 
 /**

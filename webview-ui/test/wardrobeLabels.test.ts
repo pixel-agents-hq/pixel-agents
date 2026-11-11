@@ -4,17 +4,20 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.js';
-import { wrapHue } from '../src/characters/color.js';
-import { tabSummary } from '../src/characters/profiles.js';
+import { wrapHue } from '../../core/src/characters/color.js';
 import {
   parseWardrobeManifest,
   partInfo,
   partLabel,
   type Wardrobe,
-} from '../src/characters/wardrobe.js';
+} from '../../core/src/characters/wardrobe.js';
+import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.js';
+import { tabSummary } from '../src/characters/profiles.js';
 
-const art = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/characters/art');
+const art = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../core/src/characters/art',
+);
 const manifest = parseWardrobeManifest(
   JSON.parse(fs.readFileSync(path.join(art, 'wardrobe.json'), 'utf-8')),
 );

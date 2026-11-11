@@ -10,14 +10,14 @@ import { sheetToDirectionSprites } from '../../../core/src/assets/characterSheet
 import { SHEET_FRAMES } from '../../../core/src/assets/seatedFrame.js';
 import type { CharacterDirectionSprites } from '../../../core/src/assets/types.js';
 import type { CharacterProfile } from '../../../core/src/characterProfiles.js';
+import type { CharacterRenderer } from '../../../core/src/characters/renderer.js';
+import { repeatHueTurn, withRepeatClothes } from '../../../core/src/characters/repeatClothes.js';
+import { SHEET_W } from '../../../core/src/characters/sheet.js';
+import { canBlink } from '../../../core/src/characters/slots.js';
 import { CAST_OFFICE_SYNC_MS } from '../constants.js';
 import { adjustSprite } from '../office/colorize.js';
 import { setCharacterTemplates } from '../office/sprites/spriteData.js';
 import type { CastState } from './cast.js';
-import type { CharacterRenderer } from './renderer.js';
-import { repeatHueTurn, withRepeatClothes } from './repeatClothes.js';
-import { SHEET_W } from './sheet.js';
-import { canBlink } from './slots.js';
 
 /** A composed 128x96 character sheet as the office's per-direction frame sprites. */
 export function sheetToOfficeSprites(sheet: Uint8ClampedArray): CharacterDirectionSprites {

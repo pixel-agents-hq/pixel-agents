@@ -4,15 +4,10 @@ import {
   type CharacterProfile,
   MAX_CHARACTER_PROFILES,
 } from '../../../../core/src/characterProfiles.js';
+import { newProfile, randomize } from '../../../../core/src/characters/profiles.js';
 import { isBrowserRuntime } from '../../runtime.js';
 import { castStore } from '../castStore.js';
-import {
-  fileBaseName,
-  newProfile,
-  parseConfigFile,
-  randomize,
-  rosterFileNames,
-} from '../profiles.js';
+import { fileBaseName, parseConfigFile, rosterFileNames } from '../profiles.js';
 import { pickFiles, saveFile, sheetPng, zipFiles } from './files.js';
 import { type Studio, useStudio } from './studio.js';
 

@@ -11,17 +11,28 @@ import {
   DEFAULT_EYE_ROWS,
   EYE_ROWS,
 } from '../../../../core/src/characterProfiles.js';
+import { SWATCHES } from '../../../../core/src/characters/art/artColors.js';
+import {
+  hsl01ToRgb,
+  isAsDrawn,
+  toColorize,
+  wrapHue,
+  ZERO_COLOR,
+} from '../../../../core/src/characters/color.js';
+import { setColor, setPart } from '../../../../core/src/characters/profiles.js';
+import {
+  ACCESSORIES,
+  colorArt,
+  type ColorKey,
+  type ColorPicker,
+} from '../../../../core/src/characters/slots.js';
 import { Checkbox } from '../../components/ui/Checkbox.js';
 import { PickArea } from '../../components/ui/PickArea.js';
 import { paintPickCanvas } from '../../components/ui/pickCanvas.js';
 import { PixelInputText } from '../../components/ui/PixelInputText.js';
 import { PixelText } from '../../components/ui/PixelText.js';
 import { CHARACTER_HEX_INSET_PX } from '../../constants.js';
-import { SWATCHES } from '../art/artColors.js';
-import { hsl01ToRgb, isAsDrawn, toColorize, wrapHue, ZERO_COLOR } from '../color.js';
 import { offeredParts } from '../items.js';
-import { setColor, setPart } from '../profiles.js';
-import { ACCESSORIES, colorArt, type ColorKey, type ColorPicker } from '../slots.js';
 import { useStudio } from './studio.js';
 
 type Channel = 'h' | 's' | 'b' | 'c';
