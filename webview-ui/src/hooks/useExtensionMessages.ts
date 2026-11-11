@@ -38,6 +38,7 @@ import {
 } from '../office/toolUtils.js';
 import type { OfficeLayout, ToolActivity } from '../office/types.js';
 import { setWallSprites } from '../office/wallTiles.js';
+import { handleAgentCharacterEditMessage } from '../officeMcp/agentCharacterEdits.js';
 import { handleAgentLayoutEditMessage } from '../officeMcp/agentLayoutEdits.js';
 import { handleOfficeMcpMessage } from '../officeMcp/officeMcpStore.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
@@ -418,6 +419,7 @@ export function useExtensionMessages(
       // The Pixel Office MCP (officeMcp/officeMcpStore.ts): its settings and Intro step.
       if (handleOfficeMcpMessage(msg)) return;
       if (handleAgentLayoutEditMessage(msg)) return;
+      if (handleAgentCharacterEditMessage(msg)) return;
       // The cast (characters/castMessages.ts): profiles, items, looks, external sprites.
       if (handleCastMessage(msg, os)) return;
 

@@ -9,10 +9,14 @@ import {
   subscribeAgentLayoutEdits,
 } from './agentLayoutEdits.js';
 
-export interface AgentLayoutEditControls extends AgentLayoutEditEntry {
+export interface AgentLayoutEditControls {
+  /** The latest status (what an undo would revert, or why the last one was refused). */
+  entry: AgentLayoutEditEntry;
   /** The editor's "Undo <agent>'s edit": the server undoes it, or answers why not. */
   undo: () => void;
 }
+
+const undo = () => transport.send({ type: 'undoAgentLayoutEdit' });
 
 /**
  * Agents' layout edits in this office (agentLayoutEdits.ts): reports `editing`
@@ -24,5 +28,5 @@ export function useAgentLayoutEdits(editing: boolean): AgentLayoutEditControls {
   const reporter = useMemo(() => createLayoutEditingReporter((m) => transport.send(m)), []);
   useEffect(() => reporter.report(editing), [reporter, editing]);
   useEffect(() => onReconnect(transport, () => reporter.reconnected()), [reporter]);
-  return { ...entry, undo: () => transport.send({ type: 'undoAgentLayoutEdit' }) };
+  return { entry, undo };
 }

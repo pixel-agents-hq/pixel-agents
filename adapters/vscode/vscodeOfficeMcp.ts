@@ -20,6 +20,7 @@ import type { CatalogSource } from '../../core/src/layout/index.js';
 import type { TerminalHandle } from '../../core/src/terminalAdapter.js';
 import type { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
+import { userDirectoryDefaults } from '../../server/src/directories.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../../server/src/layoutPersistence.js';
 import { composeOfficeMcp, type OfficeMcpFeature } from '../../server/src/mcp/composeOfficeMcp.js';
 import { turnGuard } from '../../server/src/mcp/messaging.js';
@@ -42,6 +43,8 @@ export interface VscodeOfficeMcpDeps {
   assets(): VscodeOfficeAssets | null;
   /** This window's Directories (workspace folders and the user's). */
   directories(): ReadonlyArray<{ name: string; path: string }>;
+  /** Re-send the Directories and the roster's recency (an agent's Character edit moved them). */
+  characterRefsChanged(): void;
 }
 
 export function createVscodeOfficeMcp(deps: VscodeOfficeMcpDeps): OfficeMcpFeature {
@@ -67,6 +70,7 @@ export function createVscodeOfficeMcp(deps: VscodeOfficeMcpDeps): OfficeMcpFeatu
         };
       },
       directories: () => deps.directories(),
+      userDirectories: userDirectoryDefaults,
       seats: () => store.getAdapter()?.loadSeats() ?? {},
       readAreaMappings: () => readConfig().vscode.areaMappings ?? {},
       writeAreaMappings: (mappings) => {
@@ -74,6 +78,7 @@ export function createVscodeOfficeMcp(deps: VscodeOfficeMcpDeps): OfficeMcpFeatu
         cfg.vscode.areaMappings = mappings;
         writeConfig(cfg);
       },
+      characterRefsChanged: () => deps.characterRefsChanged(),
     },
     terminals,
     deliveryGuard: turnGuard(store, claudeProvider),

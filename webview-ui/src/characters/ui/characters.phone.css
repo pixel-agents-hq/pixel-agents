@@ -370,3 +370,18 @@
 .chv-phone.chv-mode-tile .chv-save {
   bottom: calc(12px + env(safe-area-inset-bottom, 0px));
 }
+
+/* An agent's Character edit's undo floats at the bottom left, across from Save */
+.chv-phone .chv-agent-undo {
+  position: fixed;
+  left: 12px;
+  bottom: calc(var(--dock-h, 92px) + 12px + env(safe-area-inset-bottom, 0px));
+  z-index: 4;
+  max-width: calc(100% - 24px - 150px);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.chv-phone.chv-mode-tile .chv-agent-undo {
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}

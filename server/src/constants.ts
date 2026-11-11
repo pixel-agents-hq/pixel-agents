@@ -398,6 +398,10 @@ export const NICKNAME_MAX_LENGTH = 32;
 
 /** How many Pixel Office MCP layout edits the server remembers for undo (newest first). */
 export const LAYOUT_UNDO_DEPTH = 10;
+/** How many Pixel Office MCP Character edits the server remembers for undo. */
+export const CHARACTER_UNDO_DEPTH = 10;
+/** How many names a Character edit's summary lists per verb ("created A, B, C and 2 more"). */
+export const CHARACTER_SUMMARY_NAMES = 3;
 
 // ── Close (close_agent) ─────────────────────────────────────
 /** An agent closing itself is ended when its turn ends (the reply has reached
@@ -409,5 +413,13 @@ export const SELF_CLOSE_FALLBACK_MS = 10_000;
 /** Screen pixels per sprite pixel in a character preview PNG (whole number, so the
  *  pixel art stays crisp): a 16x32 frame becomes 64x128. */
 export const CHARACTER_PREVIEW_SCALE = 4;
+/** The most character previews one Pixel Office MCP reply carries (list_characters'
+ *  `preview`); past it the reply says how many it left out. */
+export const CHARACTER_PREVIEW_LIMIT = 6;
+/** The most ops one edit_directories batch takes. */
+export const MAX_DIRECTORY_OPS = 20;
+/** A refusal naming no known character spells out the roster up to this many
+ *  characters; a longer one is left to list_characters. */
+export const CHARACTER_ROSTER_HINT_MAX = 30;
 /** Where the build puts the wardrobe art, under dist/ (esbuild.js copyWardrobeArt). */
 export const WARDROBE_ART_DIST_DIR = 'assets/wardrobe';

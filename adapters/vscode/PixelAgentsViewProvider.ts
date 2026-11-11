@@ -172,8 +172,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   private readonly mcp: OfficeMcpFeature;
   // What the office's assets are, once the handshake loaded them (its tools read them).
   private officeAssets: VscodeOfficeAssets | null = null;
-  // This webview as the editing lock knows it: a fresh one per iframe.
-  private layoutEditingClient: object = {};
+  // This webview as the editing locks (layout, characters) know it: a fresh one per iframe.
+  private editingClient: object = {};
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -185,10 +185,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.worktrees = new VscodeWorktrees(this.store, (m) => this.sendOrBuffer(m));
     // Through the store: the panel hears it there, and so do the embedded
     // server's /ws clients.
-    this.characterProfilesWatcher = watchCharacterProfiles(
-      (m) => this.store.broadcast(m),
-      this.store,
-    );
+    this.characterProfilesWatcher = watchCharacterProfiles((m) => {
+      this.store.broadcast(m);
+      // The roster changed on disk: an agent's Character edit may no longer be undoable.
+      this.mcp.charactersChanged();
+    }, this.store);
     // Workspace folders are this host's Directory contribution, so a folder
     // added to or removed from the workspace changes the union the drawer
     // shows. Registered once here (not per resolveWebviewView) and buffered
@@ -214,6 +215,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       defaultLayout: () => this.defaultLayout,
       assets: () => this.officeAssets,
       directories: () => listDirectoryLocations(this.hostDirectories()),
+      characterRefsChanged: () => {
+        this.sendDirectories();
+        this.sendOrBuffer(recentCharactersMessage());
+      },
     });
 
     // Sessions in a Directory's worktrees (ours or Claude's own) belong to
@@ -548,19 +553,17 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     // sendCurrentAgentStatuses + asset loaders).
     this.isWebviewReady = false;
     this.pendingBroadcasts = [];
-    // The old iframe's editor is gone, and its unsaved changes with it.
-    this.mcp.clientGone(this.layoutEditingClient);
-    this.layoutEditingClient = {};
-    const layoutEditingClient = this.layoutEditingClient;
-    webviewView.onDidDispose(() => this.mcp.clientGone(layoutEditingClient));
+    // The old iframe's editors are gone, and their unsaved changes with them.
+    this.mcp.clientGone(this.editingClient);
+    this.editingClient = {};
+    const editingClient = this.editingClient;
+    webviewView.onDidDispose(() => this.mcp.clientGone(editingClient));
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = getWebviewContent(webviewView.webview, this.extensionUri);
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
-      // The Pixel Office MCP's consent, its switches, the layout editing lock and undo.
-      if (
-        this.mcp.handleMessage(message, layoutEditingClient, (m) => this.sendOrBuffer({ ...m }))
-      ) {
+      // The Pixel Office MCP's consent, its switches, the editing locks and the undos.
+      if (this.mcp.handleMessage(message, editingClient, (m) => this.sendOrBuffer({ ...m }))) {
         return;
       }
       if (message.type === 'launchAgent') {
@@ -661,6 +664,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             send(recentCharactersMessage());
           },
         });
+        // A Save over an agent's Character edit takes away what its undo would restore.
+        this.mcp.charactersChanged();
       } else if (message.type === 'exportFile') {
         await this.exportFile(message.filename, message.dataBase64);
       } else if (message.type === 'saveLayout') {
@@ -718,6 +723,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           suggestions: () =>
             collectDirectorySuggestions(claudeProvider, this.shownHostDirectories()),
         });
+        // A Directory's default characters an agent's Character edit wrote, changed by hand.
+        if (message.type !== 'requestDirectorySuggestions') this.mcp.charactersChanged();
       } else if (message.type === 'setShowHostDirectories') {
         if (typeof message.enabled === 'boolean') {
           this.adapter.setSetting(GLOBAL_KEY_SHOW_HOST_DIRECTORIES, message.enabled);

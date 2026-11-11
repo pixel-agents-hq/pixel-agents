@@ -329,7 +329,16 @@ async function callTool(
   try {
     const result = await tool.run(args as never, ctx);
     if (!result.ok) return errorResult(result.reason);
-    return { content: [{ type: 'text', text: JSON.stringify(result.value, null, 2) }] };
+    return {
+      content: [
+        { type: 'text', text: JSON.stringify(result.value, null, 2) },
+        ...(result.images ?? []).map((image) => ({
+          type: 'image' as const,
+          data: image.data.toString('base64'),
+          mimeType: image.mimeType,
+        })),
+      ],
+    };
   } catch (err) {
     console.error(`[Pixel Agents] Pixel Office MCP: ${tool.name} failed:`, err);
     return errorResult(

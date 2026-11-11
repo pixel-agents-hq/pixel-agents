@@ -32,6 +32,7 @@ import {
 import { type BoxSize, useBoxSize } from '../../hooks/useBoxSize.js';
 import { useDevicePixelRatio } from '../../hooks/useDevicePixelRatio.js';
 import { castStore, useCast } from '../castStore.js';
+import { AgentCharacterUndo } from './AgentCharacterUndo.js';
 import { FRAME_H, useCanvasSnapping } from './pixelCanvas.js';
 import { HistoryButtons, PhoneDock, RosterPane } from './Roster.js';
 import { SaveButton } from './SaveButton.js';
@@ -301,6 +302,7 @@ export function CharactersView({ phone, onClose }: CharactersViewProps) {
             <>
               <Stage scales={scales} />
               <Wardrobe />
+              <AgentCharacterUndo />
               <SaveButton />
               <PhoneDock />
             </>
@@ -309,6 +311,7 @@ export function CharactersView({ phone, onClose }: CharactersViewProps) {
               <div className="chv-backdrop bg-black/50" onClick={requestClose} />
               <div className="chv-panel" ref={desk.panel}>
                 <header className="chv-head">
+                  <AgentCharacterUndo />
                   <div className="chv-hist" role="group" aria-label="History">
                     <HistoryButtons />
                   </div>

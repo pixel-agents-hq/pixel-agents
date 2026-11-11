@@ -125,16 +125,34 @@ export function handleCharacterProfilesClientMessage(
   deps: CharacterProfilesMessageDeps,
 ): void {
   // Unvalidated off the wire: the profiles and items are parsed here.
-  const saved = saveCharacterProfiles(msg.profiles, msg.items);
-  if (!saved) {
+  if (!commitCharacterProfiles(msg.profiles, msg.items, deps, saveIdOf(msg))) {
     deps.reply(refusedSaveAnswer(msg));
-    return;
   }
-  const saveId = saveIdOf(msg);
+}
+
+/**
+ * Save a cast and show it: the ONE path a roster change takes, a Characters-view Save
+ * (handleCharacterProfilesClientMessage) and an agent's Character edit (mcp/
+ * characterEdits.ts) alike. Validates and persists the profiles (and the items, when
+ * given), renumbers what named the characters by index (this process's agents, whose new
+ * looks ride the broadcast, and the machine-wide references — `sharedRefsChanged` when
+ * those moved), and broadcasts `characterProfilesLoaded`: with `saveId` it answers that
+ * save; without one every office takes it as a foreign list. Returns the saved profiles,
+ * or null (nothing written, nothing sent) when the payload is invalid or a write failed.
+ */
+export function commitCharacterProfiles(
+  profiles: unknown,
+  items: unknown,
+  deps: Pick<CharacterProfilesMessageDeps, 'broadcast' | 'store' | 'sharedRefsChanged'>,
+  saveId?: string,
+): CharacterProfile[] | null {
+  const saved = saveCharacterProfiles(profiles, items);
+  if (!saved) return null;
   const looks = saved.remap ? remapAgentLooks(deps.store, saved.remap) : [];
   const sharedChanged = saved.remap ? remapSharedCharacterRefs(saved.remap) : false;
   deps.broadcast(characterProfilesLoadedMessage(saveId, saved.profiles, saved.items, looks));
   if (sharedChanged) deps.sharedRefsChanged();
+  return saved.profiles;
 }
 
 /**

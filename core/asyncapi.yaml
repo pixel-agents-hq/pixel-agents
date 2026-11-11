@@ -109,6 +109,7 @@ components:
         # Layout
         - $ref: '#/components/schemas/LayoutLoaded'
         - $ref: '#/components/schemas/AgentLayoutEditStatus'
+        - $ref: '#/components/schemas/AgentCharacterEditStatus'
         # Assets
         - $ref: '#/components/schemas/FurnitureAssetsLoaded'
         - $ref: '#/components/schemas/CharacterProfilesLoaded'
@@ -164,6 +165,8 @@ components:
         - $ref: '#/components/schemas/LayoutEditing'
         - $ref: '#/components/schemas/UndoAgentLayoutEdit'
         - $ref: '#/components/schemas/SaveCharacterProfiles'
+        - $ref: '#/components/schemas/CharactersEditing'
+        - $ref: '#/components/schemas/UndoAgentCharacterEdit'
         - $ref: '#/components/schemas/SetSoundEnabled'
         - $ref: '#/components/schemas/SetLastSeenVersion'
         - $ref: '#/components/schemas/SetAlwaysShowLabels'
@@ -687,6 +690,33 @@ components:
           type: integer
         agentName:
           type: string
+        refused:
+          type: string
+
+    AgentCharacterEditStatus:
+      description: |
+        What the Characters view's "Undo <agent>'s edit" would revert: the newest
+        Pixel Office MCP Character edit, while the roster and the Directories it
+        touched still hold exactly what it wrote (`agentId` + `agentName`, and
+        `summary`: what it did, in a few words — "created Naruto"); none of them =
+        nothing to undo. Broadcast whenever that changes and sent on connect;
+        `landed` on the broadcast sent as the edit lands (the view's status line
+        names the agent then). Sent to one office alone with `refused` when its
+        `undoAgentCharacterEdit` was refused (the reason).
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: agentCharacterEditStatus
+        agentId:
+          type: integer
+        agentName:
+          type: string
+        summary:
+          type: string
+        landed:
+          type: boolean
         refused:
           type: string
 
@@ -1885,6 +1915,35 @@ components:
       properties:
         type:
           const: undoAgentLayoutEdit
+
+    CharactersEditing:
+      description: |
+        Whether this office's Characters view holds an unsaved draft. While any
+        office reports `dirty`, agents' Character edits (edit_characters) are
+        refused; `false` on save, discard or close, and dropped when the socket
+        closes.
+      type: object
+      additionalProperties: false
+      required: [type, dirty]
+      properties:
+        type:
+          const: charactersEditing
+        dirty:
+          type: boolean
+
+    UndoAgentCharacterEdit:
+      description: |
+        The Characters view's "Undo <agent>'s edit": restore the roster and the
+        Directories' default characters from before the newest Pixel Office MCP
+        Character edit (undo_character_edit's operation). Refused (answered with
+        `agentCharacterEditStatus.refused`) when they changed since or an office
+        holds an unsaved Characters draft.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: undoAgentCharacterEdit
 
     SaveCharacterProfiles:
       description: |

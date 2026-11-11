@@ -19,6 +19,7 @@ import {
   resetAgentLayoutEditsForTests,
   undoButtonLabel,
 } from '../src/officeMcp/agentLayoutEdits.js';
+import { createEditingReporter } from '../src/officeMcp/editingReporter.js';
 
 beforeEach(() => resetAgentLayoutEditsForTests());
 
@@ -61,5 +62,19 @@ test('the editing lock is reported on change only, and re-sent dirty after a rec
     { type: 'layoutEditing', dirty: true },
     { type: 'layoutEditing', dirty: true },
     { type: 'layoutEditing', dirty: false },
+  ]);
+});
+
+test("the Characters view's lock reports as charactersEditing, on change only and after a reconnect", () => {
+  const sent: ClientMessage[] = [];
+  const reporter = createEditingReporter('charactersEditing', (m) => sent.push(m));
+  reporter.report(true);
+  reporter.report(true);
+  reporter.reconnected();
+  reporter.report(false);
+  assert.deepEqual(sent, [
+    { type: 'charactersEditing', dirty: true },
+    { type: 'charactersEditing', dirty: true },
+    { type: 'charactersEditing', dirty: false },
   ]);
 });
