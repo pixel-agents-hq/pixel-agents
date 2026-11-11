@@ -107,6 +107,7 @@ import {
 } from './constants.js';
 import { workspaceDirectories } from './hostDirectories.js';
 import { createVscodeOfficeMcp, type VscodeOfficeAssets } from './vscodeOfficeMcp.js';
+import { VscodePcShells } from './vscodePcShells.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
 import { VscodeWorktrees } from './vscodeWorktrees.js';
 
@@ -173,6 +174,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   private officeAssets: VscodeOfficeAssets | null = null;
   // This webview as the editing locks (layout, characters) know it: a fresh one per iframe.
   private editingClient: object = {};
+  // PC shells: a PC's integrated terminal, tracked until it closes (vscodePcShells.ts).
+  private readonly pcShells: VscodePcShells;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -208,6 +211,16 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     const terminalAdapter = new VscodeTerminalAdapter();
     setTerminalAdapter(terminalAdapter);
+    this.pcShells = new VscodePcShells({
+      terminals: terminalAdapter,
+      // Through the store: the panel and the embedded server's /ws clients alike.
+      broadcast: (m) => this.store.broadcast({ ...m }),
+      layout: () => readLayoutFromFile() ?? this.defaultLayout,
+      catalog: () => this.officeAssets?.catalog ?? [],
+      areaMappings: () => readConfig().vscode.areaMappings ?? {},
+      directories: () => listDirectoryLocations(this.hostDirectories()),
+      workspaceFolders: () => workspaceDirectories(),
+    });
     this.mcp = createVscodeOfficeMcp({
       store: this.store,
       sendText: (terminal, text) => terminalAdapter.sendText(terminal, text),
@@ -601,6 +614,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       if (this.mcp.handleMessage(message, editingClient, (m) => this.sendOrBuffer({ ...m }))) {
         return;
       }
+      // PC shells: open, close, and a shell's card pressed (focusAgent with its id).
+      if (this.pcShells.handleMessage(message, (m) => this.sendOrBuffer({ ...m }))) return;
       if (message.type === 'launchAgent') {
         const picked = rosterPick(message.palette, getPaletteCount());
         // Every launch comes from a drawer row and carries its Directory's
@@ -672,7 +687,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         console.log(`[Pixel Agents] State: saveAgentSeats:`, JSON.stringify(message.seats));
         this.adapter.saveSeats(message.seats);
       } else if (message.type === 'saveCardOrder') {
-        const loaded = saveCardOrder(this.adapter, message.order, (id) => this.store.has(id));
+        const loaded = saveCardOrder(
+          this.adapter,
+          message.order,
+          // Agents' cards and PC shells' cards share the one order.
+          (id) => this.store.has(id) || this.pcShells.has(id),
+        );
         if (loaded) this.sendOrBuffer(loaded);
       } else if (message.type === 'saveCharacterProfiles') {
         // The broadcast goes through the store, so the embedded server's /ws
@@ -1106,6 +1126,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           }
         })();
         sendExistingAgents(this.store, this.adapter, this.webview);
+        // The live PC shells (their cards, their lit PCs).
+        this.webview?.postMessage(this.pcShells.message());
       } else if (message.type === 'requestDiagnostics') {
         // Send connection diagnostics for all agents to the Debug View
         this.webview?.postMessage({
@@ -1346,6 +1368,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
   dispose() {
     this.worktrees.dispose();
+    this.pcShells.dispose();
     this.pixelAgentsServer?.stop();
     this.pixelAgentsServer = null;
     // Every agent's token dies with this window's server (and its config files go).

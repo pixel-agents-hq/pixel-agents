@@ -21,4 +21,21 @@ export class VscodeTerminalAdapter implements ITerminalAdapter {
     // vscode.Terminal. `shouldExecute: false`: the caller writes its own Enter.
     (terminal as vscode.Terminal).sendText(text, false);
   }
+
+  openTerminal(options: { name: string; cwd: string }): TerminalHandle {
+    // No shellPath: VS Code's own default profile, as the user's own "New Terminal".
+    return vscode.window.createTerminal({ name: options.name, cwd: options.cwd });
+  }
+
+  showTerminal(terminal: TerminalHandle): void {
+    (terminal as vscode.Terminal).show();
+  }
+
+  disposeTerminal(terminal: TerminalHandle): void {
+    (terminal as vscode.Terminal).dispose();
+  }
+
+  onTerminalClosed(listener: (terminal: TerminalHandle) => void): { dispose(): void } {
+    return vscode.window.onDidCloseTerminal(listener);
+  }
 }

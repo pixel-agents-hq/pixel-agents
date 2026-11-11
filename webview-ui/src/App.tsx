@@ -517,8 +517,12 @@ function App() {
         selectTerminal(agentId);
         return;
       }
-      // A PC shell's card with no pane here (a read-only office): nothing to raise.
-      if (isPcShellId(agentId)) return;
+      // A PC shell's card with no pane here: VS Code shows its integrated
+      // terminal; a browser office without one (read-only) has nothing to raise.
+      if (isPcShellId(agentId)) {
+        if (!isBrowserRuntime) transport.send({ type: 'focusAgent', id: agentId });
+        return;
+      }
       transport.send({ type: 'focusAgent', id: agentId });
       getOfficeState().selectAndFollow(agentId);
     },
@@ -542,9 +546,10 @@ function App() {
   );
 
   // A PC opens a panel the office provides (the terminal): only where this
-  // office runs terminals and may change things. Elsewhere its label still
-  // shows, with nothing to click (a VS Code surface adds its own way).
-  const canOpenPanels = terminalAvailable && !officeReadOnly;
+  // office runs terminals — its own (standalone) or the editor's (VS Code, an
+  // integrated terminal) — and may change things. Elsewhere its label still
+  // shows, with nothing to click.
+  const canOpenPanels = (terminalAvailable || !isBrowserRuntime) && !officeReadOnly;
   const handlePieceClick = useCallback((click: PieceClick, uid: string) => {
     // A PC's own shell, live or new: the server answers with the one to open.
     // An agent's terminal (`agentTerminal`) is the click-resolution ticket's.

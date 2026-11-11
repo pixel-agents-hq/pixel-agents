@@ -41,3 +41,8 @@ export const CONFIG_KEY_AUTO_SPAWN_AGENT = 'pixel-agents.autoSpawnAgent';
 export const VIEW_ID = 'pixel-agents.panelView';
 export const COMMAND_SHOW_PANEL = 'pixel-agents.showPanel';
 export const COMMAND_EXPORT_DEFAULT_LAYOUT = 'pixel-agents.exportDefaultLayout';
+
+// ── PC shells ───────────────────────────────────────────────
+/** A PC shell's integrated terminal is named `PC · <its Directory or Home>`
+ *  (never the Claude prefix, which the terminal scanner adopts). */
+export const PC_SHELL_TERMINAL_NAME_PREFIX = 'PC';
