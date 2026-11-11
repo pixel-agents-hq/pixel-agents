@@ -1824,9 +1824,10 @@ components:
 
     PcShellsLoaded:
       description: >-
-        Every live PC shell, the whole list: broadcast to every office (read-only
-        ones too: a lit PC is no secret) whenever one opens or ends, and sent in
-        the connect snapshot, so a reconnect is a resync.
+        Every live PC shell, the whole list: broadcast to privileged offices only
+        (a view-only office sees the agents, never the operator's shells)
+        whenever one opens or ends, and sent in their connect snapshot, so a
+        reconnect is a resync.
       type: object
       additionalProperties: false
       required: [type, shells]

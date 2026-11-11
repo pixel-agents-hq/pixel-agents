@@ -904,9 +904,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     nicknames: existingAgentNicknames(store),
   });
 
-  // 6b. The live PC shells, to every office (a read-only one shows the lit
-  // PCs and the cards too; only a privileged one can open their terminals).
-  if (ctx.pcShells) send({ ...ctx.pcShells.message() });
+  // 6b. The live PC shells, privileged offices only: a view-only office sees
+  // the agents, never the operator's shells (no card, no lit PC, no label).
+  if (ctx.pcShells && ctx.privileged) send({ ...ctx.pcShells.message() });
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents
   // into characters once seats are rebuilt.

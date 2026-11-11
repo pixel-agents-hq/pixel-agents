@@ -3,8 +3,9 @@
  * the one source of the "panel in use" fact, so a piece with a live shell shows its
  * "on" state, its Furniture label names the shell's Directory (or Home) and its
  * click opens the shell; a list without it (the shell ended, or a reconnect's
- * snapshot no longer lists it) turns it off. A read-only office sees the lit
- * screen but is offered no click.
+ * snapshot no longer lists it) turns it off. An office that is told of a
+ * shell but may not act (read-only rules) is offered no click; a view-only
+ * office over /ws is never told of shells at all (server/__tests__/pcShells.test.ts).
  *
  *   row 3..4  table (4..6, 3..4), KIOSK_FRONT (5,3) on it
  *   row 5     chair↑ (5,5) faces the kiosk
@@ -197,10 +198,7 @@ describe('PC shells across a reconnect and layout changes', () => {
     assert.equal(os.pieces.shellOf('kiosk')?.id, SHELL.id);
     // Only the other shell's PC.
     assert.equal(litCount(os), 1);
-    assert.deepEqual(cardIds(cardOrderOf([], [], new Set(), [SHELL, OTHER])), [
-      SHELL.id,
-      OTHER.id,
-    ]);
+    assert.deepEqual(cardIds(cardOrderOf([], [], new Set(), [SHELL, OTHER])), [SHELL.id, OTHER.id]);
     // An undo puts the piece back: lit again.
     os.rebuildFromLayout(twoKiosks());
     assert.equal(litCount(os), 2);

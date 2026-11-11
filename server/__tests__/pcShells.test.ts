@@ -207,11 +207,16 @@ describe('PC shells', () => {
     expect(h.ptyManager.size).toBe(0);
   });
 
-  it('tells every office, read-only ones included, and a new office gets them in its snapshot', async () => {
+  it('tells privileged offices only, and a new one gets them in its snapshot', async () => {
     const watcher = await h.connectOffice({ privileged: false });
-    expect(shells.shells(watcher.received)).toEqual([]);
+    const tokened = await h.connectOffice();
     const id = (await shells.open(FRONT_PC)).id;
-    await waitFor(() => shells.shells(watcher.received)?.length === 1, 'the read-only office told');
+    await waitFor(() => shells.shells(tokened.received)?.length === 1, 'the tokened office told');
+    // A view-only office sees agents, never shells: not on the change...
+    expect(watcher.received.some((m) => m.type === 'pcShellsLoaded')).toBe(false);
+    // ...and not in a snapshot taken while one is live.
+    const lateWatcher = await h.connectOffice({ privileged: false });
+    expect(lateWatcher.received.some((m) => m.type === 'pcShellsLoaded')).toBe(false);
 
     const late = await h.connectOffice();
     expect(shells.shells(late.received)).toEqual([
