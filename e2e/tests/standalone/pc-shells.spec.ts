@@ -51,6 +51,7 @@ type HooksWindow = Window & {
   __pixelAgentsTestHooks?: {
     getTileCenter?: (col: number, row: number) => { x: number; y: number } | null;
     getPieceShownState?: (uid: string) => string | null;
+    getFurnitureCount?: () => number;
   };
 };
 
@@ -151,13 +152,67 @@ test.describe('Standalone / PC shells', () => {
     await expect(card).toHaveCount(1);
     expect(await pcState(page)).toBe('on');
 
-    // Stop the command; × on the idle shell ends it at once: card and lit screen go.
+    // Deleting the PC in the layout editor is closing its shell: asked the same
+    // way while the command runs, and Keep Running keeps the PC too.
+    const furniture = () =>
+      page.evaluate(
+        () => (window as HooksWindow).__pixelAgentsTestHooks?.getFurnitureCount?.() ?? -1,
+      );
+    const before = await furniture();
+    const deletePc = async () => {
+      const at = await tilePoint(page, PC_TILE.col, PC_TILE.row);
+      await page.mouse.click(at.x, at.y);
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.keyboard.press('Delete');
+    };
+    await page.getByRole('button', { name: 'Layout', exact: true }).click();
+    await deletePc();
+    await expect(question).toContainText('Deleting this PC');
+    await page.getByRole('button', { name: 'Keep Running' }).click();
+    await expect(question).toHaveCount(0);
+    await expect(card).toHaveCount(1);
+    expect(await furniture()).toBe(before);
+    await page.getByRole('button', { name: 'Layout', exact: true }).click();
+
+    // Stop the command; the × on the PC's label (as on an agent's) ends the idle
+    // shell at once: card and lit screen go.
     await terminal.click();
     await page.keyboard.press('Control+C');
-    await card.getByTitle('Close shell').click();
+    const pcAgain = await tilePoint(page, PC_TILE.col, PC_TILE.row);
+    await page.mouse.move(pcAgain.x, pcAgain.y);
+    await page.getByTestId('furniture-label-close').click();
     await expect(card).toHaveCount(0);
     await expect(question).toHaveCount(0);
     await expect.poll(() => pcState(page)).toBeNull();
+  });
+
+  test('deleting a PC closes its idle shell with no question @area:standalone', async ({
+    page,
+    standalone: _standalone,
+  }) => {
+    const pc = await tilePoint(page, PC_TILE.col, PC_TILE.row);
+    await page.mouse.click(pc.x, pc.y);
+    const selector = page.getByTestId('pc-directory-selector');
+    await selector.getByRole('menuitem', { name: 'Alpha' }).click();
+    const card = page.getByTestId('pc-shell-card');
+    await expect(card).toHaveCount(1);
+    // Two Directories were offered: the card says which.
+    await expect(card.getByTestId('pc-shell-card-name')).toHaveText('Alpha');
+
+    // Deleting the PC with its shell idle: no question, the shell closes, the PC goes.
+    const furniture = () =>
+      page.evaluate(
+        () => (window as HooksWindow).__pixelAgentsTestHooks?.getFurnitureCount?.() ?? -1,
+      );
+    const before = await furniture();
+    await page.getByRole('button', { name: 'Layout', exact: true }).click();
+    const at = await tilePoint(page, PC_TILE.col, PC_TILE.row);
+    await page.mouse.click(at.x, at.y);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press('Delete');
+    await expect(card).toHaveCount(0);
+    await expect(page.getByTestId('pc-shell-close-question')).toHaveCount(0);
+    await expect.poll(furniture).toBe(before - 1);
   });
 
   test.describe('on a phone', () => {

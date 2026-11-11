@@ -103,7 +103,7 @@ Text or named keys one agent types into another agent's terminal: a request, or 
 _Avoid_: prompt (that's what the user types), chat, DM
 
 **Card bar**:
-The row of cards for the office's terminals: one card per running main agent (teammates and sub-agents get none) and one per live PC shell, in one order the user can drag and every open office shares. Pressing a card reaches its agent or shell. A PC shell's card shows the PC and its Directory's name (or "Home"), with no status dot and no context gauge, since a shell is not an agent; its × ends the shell, asking first while a command still runs in it.
+The row of cards for the office's terminals: one card per running main agent (teammates and sub-agents get none) and one per live PC shell, in one order the user can drag and every open office shares. Pressing a card reaches its agent or shell. A PC shell's card shows the PC switched on, and names its Directory only where the PC offered a choice of several, with no status dot and no context gauge, since a shell is not an agent; its × ends the shell, asking first while a command still runs in it.
 _Avoid_: agent list, tabs, roster (that's the characters to launch as)
 
 **Roster**:
@@ -298,7 +298,7 @@ A message from outside Pixel Agents arriving at one piece, at an address that be
 _Avoid_: webhook (the sender's word for it), hook (that's a provider's), notification
 
 **PC shell**:
-The plain terminal on the host that a PC opens for the user, in a Directory of the Area the PC stands in. It has a card in the card bar like an agent's, the PC's screen is on for as long as it lives, and closing its card ends it. A PC with a live shell opens that shell; otherwise a PC an agent works at opens that agent's terminal. Agents are seated elsewhere while a PC's shell lives, where they can be.
+The plain terminal on the host that a PC opens for the user, in a Directory of the Area the PC stands in. It has a card in the card bar like an agent's, the PC's screen is on for as long as it lives, and closing its card ends it, as does the × on the PC's label. Deleting the PC from the layout closes its shell, asking first while a command runs. A view-only office is shown no shells. A PC with a live shell opens that shell; otherwise a PC an agent works at opens that agent's terminal. Agents are seated elsewhere while a PC's shell lives, where they can be.
 _Avoid_: user terminal, console, SSH session
 
 ## Activity Detection

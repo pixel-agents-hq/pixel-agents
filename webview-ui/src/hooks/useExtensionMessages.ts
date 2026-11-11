@@ -215,8 +215,8 @@ interface ExtensionMessageState {
   /** Agent ids with a live server-side PTY, in the order they opened. */
   terminalAgentIds: number[];
   /** The panes this office may attach to, in the order they opened: agents',
-   *  then PC shells' (only where this office runs terminals: a read-only one
-   *  shows their cards, not their panes). */
+   *  then PC shells' (only where this office runs terminals; a read-only one
+   *  is never told of shells). */
   panes: Pane[];
   /** The cards, in the card order every client shares: `agents` minus
    *  Teammates, and the live PC shells; the server's order first, newer after. */
@@ -314,13 +314,25 @@ export function useExtensionMessages(
   // office runs terminals. Not agents: never in `agents` or the office's characters.
   const { shells: pcShells } = usePcShells();
   const cards = useMemo(
-    () => cardOrderOf(cardOrder, agents, teammateIds, pcShells),
-    [cardOrder, agents, teammateIds, pcShells],
+    () =>
+      cardOrderOf(
+        cardOrder,
+        agents,
+        teammateIds,
+        pcShells,
+        // A card names its Directory only where its PC offered a choice.
+        (shell) => getOfficeState().pieces.places(shell.uid).length > 1,
+      ),
+    // The Directories and the Area mappings decide which PCs offer a choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cardOrder, agents, teammateIds, pcShells, directories, areaMappings],
   );
   const panes = useMemo(
     (): Pane[] => [
       ...terminalAgentIds.map((id): Pane => ({ kind: 'agent', id })),
-      ...(terminalAvailable ? pcShells.map((shell): Pane => ({ kind: 'pcShell', id: shell.id })) : []),
+      ...(terminalAvailable
+        ? pcShells.map((shell): Pane => ({ kind: 'pcShell', id: shell.id }))
+        : []),
     ],
     [terminalAvailable, terminalAgentIds, pcShells],
   );

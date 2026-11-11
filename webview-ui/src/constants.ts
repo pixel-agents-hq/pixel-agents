@@ -284,6 +284,12 @@ export const FURNITURE_LABEL_Z_INDEX = 40;
 export const PC_DIRECTORY_SELECTOR_Z_INDEX = 44;
 /** CSS px between a Furniture label's bottom and the top of the piece's sprite. */
 export const FURNITURE_LABEL_GAP_PX = 2;
+/** How the canvas tells the pointer moved onto a piece's Furniture label (still that piece). */
+export const FURNITURE_LABEL_SELECTOR = '[data-testid="furniture-label"]';
+/** The Directory selector stands this far above its PC (a label hugs it; a menu of buttons needs air). */
+export const PC_DIRECTORY_SELECTOR_GAP_PX = 8;
+/** A PC shell's card draws its furniture in this state: a shell means the PC is on. */
+export const PC_SHELL_CARD_STATE = 'on';
 /** How a Furniture label names an agent that has no Nickname, character name or Directory. */
 export const UNNAMED_AGENT_LABEL = 'An agent';
 /** The greeter stands this many tiles in from the office's bottom-left corner

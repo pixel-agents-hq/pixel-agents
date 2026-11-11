@@ -1,5 +1,6 @@
 import type { PcShell } from '../../../core/src/messages.js';
 import { pcShellName } from '../../../core/src/pcShells.js';
+import { PC_SHELL_CARD_STATE } from '../constants.js';
 import type { CardVariant, CloseMode } from './cardBar.js';
 import { CARD_VARIANT, CLOSE_MODE } from './cardStyles.js';
 import { PieceSprite } from './PieceSprite.js';
@@ -8,6 +9,8 @@ import { PixelIcon } from './ui/PixelIcon.js';
 
 interface PcShellCardProps {
   shell: PcShell;
+  /** Say which Directory it is in: only where its PC offered several. */
+  named: boolean;
   variant: CardVariant;
   close?: CloseMode;
   onSelect: (id: number) => void;
@@ -16,12 +19,15 @@ interface PcShellCardProps {
 
 /**
  * A PC shell's card in the card bar, beside the agents' (CONTEXT.md → PC shell):
- * the PC's sprite and its Directory's name (or "Home") in place of a mug shot,
- * and the ×. No status dot and no context gauge: a shell is not an agent. Like
- * an agent's card it is its terminal's tab.
+ * the PC, switched on, standing on the card's foot where an agent's mug shot
+ * is, and the ×. Its Directory's name runs along the top only where the PC
+ * offered a choice (its Area has several Directories); the hover title always
+ * says it. No status dot and no context gauge: a shell is not an agent. Like an
+ * agent's card it is its terminal's tab.
  */
 export function PcShellCard({
   shell,
+  named,
   variant,
   close = 'shown',
   onSelect,
@@ -36,13 +42,15 @@ export function PcShellCard({
       title={`Shell in ${name}`}
     >
       <span className="relative flex shrink-0">
-        <PieceSprite type={shell.furnitureType} />
-        <span
-          data-testid="pc-shell-card-name"
-          className="absolute left-0 right-0 bottom-0 bg-bg text-text text-2xs leading-none px-1 truncate text-center pointer-events-none"
-        >
-          {name}
-        </span>
+        <PieceSprite type={shell.furnitureType} state={PC_SHELL_CARD_STATE} />
+        {named && (
+          <span
+            data-testid="pc-shell-card-name"
+            className="absolute left-0 right-0 top-0 bg-bg text-text text-2xs leading-none px-1 truncate text-center pointer-events-none"
+          >
+            {name}
+          </span>
+        )}
       </span>
       <div className="flex flex-col items-center shrink-0">
         <Button

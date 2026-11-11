@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 import { MUGSHOT_CROP_SIDE_PX, MUGSHOT_RENDER_ZOOM } from '../constants.js';
-import { getCatalogEntry } from '../office/layout/furnitureCatalog.js';
+import { getCatalogEntry, getStateVariant } from '../office/layout/furnitureCatalog.js';
 import { getCachedSprite } from '../office/sprites/spriteCache.js';
 import type { SpriteData } from '../office/types.js';
 
@@ -26,10 +26,12 @@ function opaqueBox(sprite: SpriteData): { x: number; y: number; w: number; h: nu
 /**
  * A piece of furniture's sprite in a card's mug-shot square (the same size as
  * an agent's mug shot): the drawn part of the sprite, centred, whole sprite
- * pixels at MUGSHOT_RENDER_ZOOM, its foot kept when it is taller than the
- * square. Blank for a furniture type the catalogue doesn't hold.
+ * pixels at MUGSHOT_RENDER_ZOOM, standing on the square's foot as a mug shot
+ * does (its foot kept when it is taller than the square). `state` draws the
+ * furniture in that state where it has art for it (a PC with a live shell is
+ * on). Blank for a furniture type the catalogue doesn't hold.
  */
-export function PieceSprite({ type }: { type: string }) {
+export function PieceSprite({ type, state }: { type: string; state?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const zoom = MUGSHOT_RENDER_ZOOM;
   const side = MUGSHOT_CROP_SIDE_PX * zoom;
@@ -39,7 +41,8 @@ export function PieceSprite({ type }: { type: string }) {
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, side, side);
-    const sprite = getCatalogEntry(type)?.sprite;
+    const shown = (state && getStateVariant(type, state)) || type;
+    const sprite = getCatalogEntry(shown)?.sprite;
     const box = sprite ? opaqueBox(sprite) : null;
     if (!sprite || !box) return;
     const w = Math.min(box.w, MUGSHOT_CROP_SIDE_PX);
@@ -47,7 +50,7 @@ export function PieceSprite({ type }: { type: string }) {
     const sx = box.x + Math.floor((box.w - w) / 2);
     const sy = box.y + box.h - h;
     const dx = Math.floor((MUGSHOT_CROP_SIDE_PX - w) / 2);
-    const dy = Math.floor((MUGSHOT_CROP_SIDE_PX - h) / 2);
+    const dy = MUGSHOT_CROP_SIDE_PX - h;
     ctx.drawImage(
       getCachedSprite(sprite, zoom),
       sx * zoom,
@@ -59,7 +62,7 @@ export function PieceSprite({ type }: { type: string }) {
       w * zoom,
       h * zoom,
     );
-  }, [type, side, zoom]);
+  }, [type, state, side, zoom]);
 
   return (
     <canvas

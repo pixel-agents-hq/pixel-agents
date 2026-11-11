@@ -4,6 +4,7 @@ import type { PieceClick } from '../../../../core/src/furniture/pieceRules.js';
 import {
   CAMERA_FOLLOW_LERP,
   CAMERA_FOLLOW_SNAP_THRESHOLD,
+  FURNITURE_LABEL_SELECTOR,
   OFFICE_CANVAS_TEST_ID,
   PAN_MARGIN_FRACTION,
   ZOOM_MAX,
@@ -786,30 +787,36 @@ export function OfficeCanvas({
     [isEditMode, performTap],
   );
 
-  const handleMouseLeave = useCallback(() => {
-    isPanningRef.current = false;
-    editorState.selectionButtonHover = null;
-    editorState.selectionButtonPressed = null;
-    isEraseDraggingRef.current = false;
-    editorState.isDragging = false;
-    editorState.endStroke();
-    editorState.clearDrag();
-    editorState.marquee = null;
-    editorState.ghostCol = -1;
-    editorState.ghostRow = -1;
-    officeState.hoveredAgentId = null;
-    officeState.hoveredTile = null;
-    // A touch-picked piece stays until a tap elsewhere: only a mouse leaves.
-    if (mouseHovers()) officeState.pieces.clearHover();
+  const handleMouseLeave = useCallback(
+    (e?: React.MouseEvent) => {
+      // Onto the hovered piece's own Furniture label (its ×): still that piece.
+      const onto = e?.relatedTarget;
+      const ontoLabel = onto instanceof Element && onto.closest(FURNITURE_LABEL_SELECTOR) !== null;
+      isPanningRef.current = false;
+      editorState.selectionButtonHover = null;
+      editorState.selectionButtonPressed = null;
+      isEraseDraggingRef.current = false;
+      editorState.isDragging = false;
+      editorState.endStroke();
+      editorState.clearDrag();
+      editorState.marquee = null;
+      editorState.ghostCol = -1;
+      editorState.ghostRow = -1;
+      officeState.hoveredAgentId = null;
+      officeState.hoveredTile = null;
+      // A touch-picked piece stays until a tap elsewhere: only a mouse leaves.
+      if (mouseHovers() && !ontoLabel) officeState.pieces.clearHover();
 
-    // Reset cursor in non-edit mode so pointer doesn't get stuck after hovering a pet.
-    if (!isEditMode) {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        canvas.style.cursor = 'default';
+      // Reset cursor in non-edit mode so pointer doesn't get stuck after hovering a pet.
+      if (!isEditMode) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.style.cursor = 'default';
+        }
       }
-    }
-  }, [officeState, editorState, isEditMode]);
+    },
+    [officeState, editorState, isEditMode],
+  );
 
   // The layout editor keeps hover and click on furniture for itself: the one
   // place that says so. Opening it clears the hover before the next frame draws

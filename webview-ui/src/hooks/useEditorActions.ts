@@ -54,6 +54,7 @@ import type {
 } from '../office/types.js';
 import { EditTool } from '../office/types.js';
 import { TileType } from '../office/types.js';
+import { closePcShellsThen } from '../pcShells/pcShellStore.js';
 import { transport } from '../transport/index.js';
 import type { FurnitureColorActions } from './useFurnitureColorActions.js';
 import { useFurnitureColorActions } from './useFurnitureColorActions.js';
@@ -510,11 +511,22 @@ export function useEditorActions(
     const uids = editorState.selectedUids;
     if (uids.length === 0) return;
     const os = getOfficeState();
-    const newLayout = removeFurnitureGroup(os.getLayout(), uids);
-    if (newLayout !== os.getLayout()) {
-      applyEdit(newLayout);
-      editorState.clearSelection();
-    }
+    const remove = () => {
+      const newLayout = removeFurnitureGroup(os.getLayout(), uids);
+      if (newLayout !== os.getLayout()) {
+        applyEdit(newLayout);
+        editorState.clearSelection();
+      }
+    };
+    // Deleting a PC is closing its shell: every live shell of what would go is
+    // closed first (asking, as its × does, while a command runs), then the
+    // pieces go. With none, at once.
+    const kept = new Set(removeFurnitureGroup(os.getLayout(), uids).furniture.map((f) => f.uid));
+    const shells = os
+      .getLayout()
+      .furniture.filter((f) => !kept.has(f.uid))
+      .flatMap((f) => os.pieces.shellOf(f.uid)?.id ?? []);
+    closePcShellsThen(shells, remove);
   }, [getOfficeState, editorState, applyEdit]);
 
   const handleRotateSelected = useCallback(() => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 import { Button } from '../components/ui/Button.js';
-import { FURNITURE_LABEL_GAP_PX, PC_DIRECTORY_SELECTOR_Z_INDEX } from '../constants.js';
+import { PC_DIRECTORY_SELECTOR_GAP_PX, PC_DIRECTORY_SELECTOR_Z_INDEX } from '../constants.js';
 import { useDismiss } from '../hooks/useDismiss.js';
 import { useFrameTick } from '../hooks/useFrameTick.js';
 import type { OfficeState } from '../office/engine/officeState.js';
@@ -70,7 +70,7 @@ export function PcDirectorySelector({
       className="absolute flex flex-col gap-2 p-4 pixel-panel -translate-x-1/2 -translate-y-full pointer-events-auto"
       style={{
         left: project.toScreenX(anchor.x),
-        top: project.toScreenY(anchor.y) - FURNITURE_LABEL_GAP_PX,
+        top: project.toScreenY(anchor.y) - PC_DIRECTORY_SELECTOR_GAP_PX,
         zIndex: PC_DIRECTORY_SELECTOR_Z_INDEX,
       }}
     >

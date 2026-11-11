@@ -2,7 +2,12 @@ import { useRef } from 'react';
 
 import { Button } from '../components/ui/Button.js';
 import { Modal } from '../components/ui/Modal.js';
-import { closePcShell, dismissPcShellQuestion, usePcShells } from './pcShellStore.js';
+import {
+  closePcShell,
+  closingForDelete,
+  dismissPcShellQuestion,
+  usePcShells,
+} from './pcShellStore.js';
 
 /**
  * The one question a PC shell's × asks: a command is still running in it (its
@@ -37,12 +42,14 @@ export function PcShellCloseDialog() {
           ) : (
             'Something may still be running in this shell.'
           )}{' '}
-          Closing the shell stops it.
+          {closingForDelete()
+            ? 'Deleting this PC closes its shell and stops it.'
+            : 'Closing the shell stops it.'}
         </p>
         <div className="flex gap-4 justify-end">
           <Button onClick={dismissPcShellQuestion}>Keep Running</Button>
           <Button variant="accent" onClick={() => closePcShell(shown.id, true)}>
-            Close Shell
+            {closingForDelete() ? 'Close Shell and Delete' : 'Close Shell'}
           </Button>
         </div>
       </div>

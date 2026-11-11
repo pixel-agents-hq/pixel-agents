@@ -103,6 +103,7 @@ export function AgentCardList({
             {card.kind === 'pcShell' ? (
               <PcShellCard
                 shell={card.shell}
+                named={card.named}
                 variant={variant}
                 close={close}
                 onSelect={() => onSelect(card)}

@@ -26,7 +26,13 @@ import { pcShellName } from '../../../../core/src/pcShells.js';
 import { UNNAMED_AGENT_LABEL } from '../../constants.js';
 import { furnitureAt } from '../editor/editorActions.js';
 import { activeCatalog, getCatalogEntry } from '../layout/furnitureCatalog.js';
-import type { Character, FurnitureInstance, OfficeLayout, PlacedFurniture, Seat } from '../types.js';
+import type {
+  Character,
+  FurnitureInstance,
+  OfficeLayout,
+  PlacedFurniture,
+  Seat,
+} from '../types.js';
 import { CharacterState, TILE_SIZE } from '../types.js';
 
 /** Where a pointer on furniture is used: a read-only office offers no click. */
@@ -272,8 +278,9 @@ export class PiecesController {
     return atWork;
   }
 
-  /** The Directories mapped to the Area a piece stands in, by name (none without one). */
-  private places(uid: string): string[] {
+  /** The Directories mapped to the Area a piece stands in, by name (none without one,
+   *  or once the piece left the layout). */
+  places(uid: string): string[] {
     const layout = this.deps.layout();
     const item = layout.furniture.find((f) => f.uid === uid);
     if (!item) return [];
