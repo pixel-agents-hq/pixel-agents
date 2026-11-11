@@ -242,7 +242,7 @@ describe('seating new agents round PCs with a live shell', () => {
     });
     os.setAgentActive(1, true);
     os.update(0.01);
-    assert.equal(os.pieceFacts('kiosk-a').agentAtWork?.id, 1);
+    assert.equal(os.pieceFacts('kiosk-a', false).agentAtWork?.id, 1);
     assert.deepEqual(view(os)?.click, { kind: 'openPanel', panel: 'terminal' });
   });
 });

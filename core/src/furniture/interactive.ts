@@ -64,11 +64,15 @@ export const LABEL_PLACEHOLDERS = {
   panel: 'panelInUse',
 } as const satisfies Record<string, FurnitureCondition>;
 
+export type LabelPlaceholder = keyof typeof LABEL_PLACEHOLDERS;
+
+/** A `{name}` placeholder in a label line: the validator's reading and the label's fill. */
+export const LABEL_PLACEHOLDER = /\{([^{}]*)\}/g;
+
 const BLOCK_KEYS = new Set(['agentUse', 'label', 'panel', 'states']);
 const LABEL_KEYS = new Set(['name', 'lines']);
 const LINE_KEYS = new Set(['when', 'text']);
 const RULE_KEYS = new Set(['state', 'when']);
-const PLACEHOLDER = /\{([^{}]*)\}/g;
 
 export type ParsedInteractive =
   { ok: true; interactive: FurnitureInteractive } | { ok: false; problem: string };
@@ -110,10 +114,10 @@ function labelLine(value: unknown, where: string): FurnitureLabelLine {
   onlyKeys(value, LINE_KEYS, where);
   const when = conditions(value.when, `${where}.when`);
   if (typeof value.text !== 'string') refuse(`${where}.text must be a string`);
-  for (const [, name] of value.text.matchAll(PLACEHOLDER)) {
+  for (const [, name] of value.text.matchAll(LABEL_PLACEHOLDER)) {
     if (!Object.hasOwn(LABEL_PLACEHOLDERS, name))
       refuse(`${where}.text: unknown placeholder {${name}}`);
-    const needs = LABEL_PLACEHOLDERS[name as keyof typeof LABEL_PLACEHOLDERS];
+    const needs = LABEL_PLACEHOLDERS[name as LabelPlaceholder];
     if (when.some((c) => c !== needs)) {
       refuse(`${where}.text: {${name}} needs a line shown on "${needs}" alone`);
     }

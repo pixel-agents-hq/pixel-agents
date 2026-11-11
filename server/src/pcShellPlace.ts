@@ -7,6 +7,7 @@
  */
 
 import { areaDirectories, pieceArea } from '../../core/src/furniture/piecePlaces.js';
+import { opensPanel } from '../../core/src/furniture/pieceRules.js';
 import type { FurnitureCatalog, OfficeLayout } from '../../core/src/layout/index.js';
 import { catalogEntry } from '../../core/src/layout/index.js';
 
@@ -44,7 +45,7 @@ export function pcShellPiece(input: {
   const { layout, catalog, uid } = input;
   const piece = layout?.furniture.find((f) => f.uid === uid);
   if (!layout || !catalog || !piece) return { ok: false, reason: `No piece ${uid} in the layout.` };
-  if (catalogEntry(catalog, piece.type)?.interactive?.panel !== 'terminal') {
+  if (!opensPanel(catalogEntry(catalog, piece.type)?.interactive, 'terminal')) {
     return { ok: false, reason: `Piece ${uid} opens no terminal.` };
   }
   // core's piecePlaces: the office's Directory selector reads the same.

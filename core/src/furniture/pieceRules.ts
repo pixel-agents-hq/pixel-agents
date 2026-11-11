@@ -1,22 +1,28 @@
 /**
- * The ONE rules function over the furniture contract (interactive.ts): for a piece's
+ * The ONE set of rules over the furniture contract (interactive.ts): for a piece's
  * declared block and the facts the office holds about that piece, which state it
- * shows, what its Furniture label says, and whether it offers a click and what the
- * click resolves to. The renderer, the hover, the click and the server all ask it.
+ * shows (pieceState — the renderer, every frame), what its Furniture label says
+ * (pieceLabel) and whether it offers a click and what the click resolves to
+ * (pieceClick); pieceView composes the three for the hover and the click. The
+ * server asks only whether a piece opens a panel (opensPanel: a PC shell's open).
  * It knows no furniture by name: only the block's parts and the facts.
  *
  * Pure: no DOM, no office state.
  */
 
 import type { FurnitureCondition, FurnitureInteractive, FurniturePanel } from './interactive.js';
-import { LABEL_PLACEHOLDERS } from './interactive.js';
+import { LABEL_PLACEHOLDER, type LabelPlaceholder } from './interactive.js';
 
-/** What the office knows about one piece right now. */
-export interface PieceFacts {
+/** Who and what is using a piece right now: all its state and its label read. */
+export interface PieceUse {
   /** The agent working at the piece (sitting at its workstation seat, working), or null. */
   agentAtWork: { id: number; name: string } | null;
   /** The piece's panel is in use (a PC: a live PC shell), naming what it holds, or null. */
   panelInUse: { name: string } | null;
+}
+
+/** What the office knows about one piece right now: its use, and what its click needs. */
+export interface PieceFacts extends PieceUse {
   /**
    * Where a new panel may open, by name (a PC: the Directories mapped to the Area it
    * stands in, piecePlaces.ts). Several = the user chooses; one = there; none = the
@@ -50,9 +56,7 @@ export interface PieceView {
   click: PieceClick | null;
 }
 
-const NOTHING: PieceView = { state: null, label: null, click: null };
-
-function holds(condition: FurnitureCondition, facts: PieceFacts): boolean {
+function holds(condition: FurnitureCondition, facts: PieceUse): boolean {
   switch (condition) {
     case 'agentWorking':
       return facts.agentAtWork !== null;
@@ -63,20 +67,57 @@ function holds(condition: FurnitureCondition, facts: PieceFacts): boolean {
   }
 }
 
-const anyHolds = (when: readonly FurnitureCondition[], facts: PieceFacts): boolean =>
+const anyHolds = (when: readonly FurnitureCondition[], facts: PieceUse): boolean =>
   when.some((c) => holds(c, facts));
 
-function fill(text: string, facts: PieceFacts): string {
-  // The validator only lets a placeholder into a line shown on its own fact, so the
-  // fact is there whenever the line is.
-  return text.replace(/\{(\w+)\}/g, (whole, name: string) => {
-    if (name === 'agent' && facts.agentAtWork) return facts.agentAtWork.name;
-    if (name === 'panel' && facts.panelInUse) return facts.panelInUse.name;
-    return Object.hasOwn(LABEL_PLACEHOLDERS, name) ? '' : whole;
-  });
+function fill(text: string, facts: PieceUse): string {
+  // The validator only lets a known placeholder into a line shown on its own fact,
+  // so the fact is there whenever the line is.
+  const values: Record<LabelPlaceholder, string | undefined> = {
+    agent: facts.agentAtWork?.name,
+    panel: facts.panelInUse?.name,
+  };
+  return text.replace(LABEL_PLACEHOLDER, (_, name: LabelPlaceholder) => values[name] ?? '');
 }
 
-function clickOf(panel: FurniturePanel | undefined, facts: PieceFacts): PieceClick | null {
+/** Whether a piece's furniture opens `panel` (the server: does this piece open a PC shell?). */
+export function opensPanel(
+  interactive: FurnitureInteractive | undefined,
+  panel: FurniturePanel,
+): boolean {
+  return interactive?.panel === panel;
+}
+
+/** The declared state a piece shows under its use, or null for its usual sprite. */
+export function pieceState(
+  interactive: FurnitureInteractive | undefined,
+  use: PieceUse,
+): string | null {
+  return interactive?.states?.find((r) => anyHolds(r.when, use))?.state ?? null;
+}
+
+/**
+ * A piece's Furniture label under its use, or null when the furniture declares none:
+ * its name and, like the state rules, the first line that holds (a label says one
+ * thing, and a manifest that lists its lines in its click's order says what a click
+ * opens), filled in.
+ */
+export function pieceLabel(
+  interactive: FurnitureInteractive | undefined,
+  use: PieceUse,
+): PieceView['label'] {
+  const spec = interactive?.label;
+  if (!spec) return null;
+  const line = spec.lines?.find((l) => anyHolds(l.when, use));
+  return { name: spec.name, line: line ? fill(line.text, use) : null };
+}
+
+/** Where a click on a piece leads under the office's facts, or null when it offers none. */
+export function pieceClick(
+  interactive: FurnitureInteractive | undefined,
+  facts: PieceFacts,
+): PieceClick | null {
+  const panel = interactive?.panel;
   if (!panel || facts.readOnly) return null;
   if (facts.panelInUse) return { kind: 'openPanel', panel };
   // An agent's terminal stands in only for a terminal: another panel opens itself.
@@ -92,15 +133,9 @@ export function pieceView(
   interactive: FurnitureInteractive | undefined,
   facts: PieceFacts,
 ): PieceView {
-  if (!interactive) return NOTHING;
-  const rule = interactive.states?.find((r) => anyHolds(r.when, facts));
-  const spec = interactive.label;
-  // Like the state rules, the first line that holds: a label says one thing, and a
-  // manifest that lists its lines in its click's order says what a click opens.
-  const line = spec?.lines?.find((l) => anyHolds(l.when, facts));
   return {
-    state: rule?.state ?? null,
-    label: spec ? { name: spec.name, line: line ? fill(line.text, facts) : null } : null,
-    click: clickOf(interactive.panel, facts),
+    state: pieceState(interactive, facts),
+    label: pieceLabel(interactive, facts),
+    click: pieceClick(interactive, facts),
   };
 }

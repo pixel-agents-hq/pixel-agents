@@ -106,18 +106,18 @@ describe('furniture declaring the workstation agent use', () => {
     os.addAgent(1, 0, 0, 'chair', true);
     os.setAgentActive(1, true);
     assert.equal(lit(os), true);
-    assert.equal(os.pieceFacts('kiosk').agentAtWork?.id, 1);
-    assert.equal(os.pieceFacts('kiosk-back').agentAtWork, null);
+    assert.equal(os.pieceFacts('kiosk', false).agentAtWork?.id, 1);
+    assert.equal(os.pieceFacts('kiosk-back', false).agentAtWork, null);
     os.setAgentActive(1, false);
     assert.equal(lit(os), false);
-    assert.equal(os.pieceFacts('kiosk').agentAtWork, null);
+    assert.equal(os.pieceFacts('kiosk', false).agentAtWork, null);
   });
 
   test('keeps its usual sprite where it has no art for the state its rule picks', () => {
     const os = office(ROOM);
     os.addAgent(1, 0, 0, 'chair-top', true);
     os.setAgentActive(1, true);
-    assert.equal(os.pieceFacts('kiosk-back').agentAtWork?.id, 1);
+    assert.equal(os.pieceFacts('kiosk-back', false).agentAtWork?.id, 1);
     assert.equal(lit(os), false);
     assert.ok(os.furniture.some((f) => f.sprite === BACK));
   });

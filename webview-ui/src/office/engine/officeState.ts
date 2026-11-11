@@ -3,6 +3,8 @@ import { areaDirectories, pieceArea } from '../../../../core/src/furniture/piece
 import {
   type PieceClick,
   type PieceFacts,
+  pieceState,
+  type PieceUse,
   type PieceView,
   pieceView,
 } from '../../../../core/src/furniture/pieceRules.js';
@@ -1201,19 +1203,17 @@ export class OfficeState {
    * Directories mapped to the Area it stands in (core's piecePlaces, as the server
    * resolves an open).
    */
-  pieceFacts(
-    uid: string,
-    readOnly = false,
-    atWork: ReadonlyMap<string, Character> = this.agentsAtWork(),
-    places: readonly string[] = this.piecePlaces(uid),
-  ): PieceFacts {
+  pieceFacts(uid: string, readOnly: boolean): PieceFacts {
+    return { ...this.pieceUse(uid, this.agentsAtWork()), places: this.piecePlaces(uid), readOnly };
+  }
+
+  /** Who and what is using a piece: the agent working at it, its live PC shell. */
+  private pieceUse(uid: string, atWork: ReadonlyMap<string, Character>): PieceUse {
     const ch = atWork.get(uid);
     const shell = this.pcShellsByPiece.get(uid);
     return {
       agentAtWork: ch ? { id: ch.id, name: this.agentName(ch) } : null,
       panelInUse: shell ? { name: pcShellName(shell) } : null,
-      places,
-      readOnly,
     };
   }
 
@@ -1343,8 +1343,7 @@ export class OfficeState {
     for (const item of this.shownLayout().furniture) {
       const interactive = getCatalogEntry(item.type)?.interactive;
       if (!interactive?.states) continue;
-      // A state rule never reads where a new panel opens: skip working it out.
-      const { state } = pieceView(interactive, this.pieceFacts(item.uid, false, atWork, []));
+      const state = pieceState(interactive, this.pieceUse(item.uid, atWork));
       if (state) shown.set(item.uid, state);
     }
     return shown;
