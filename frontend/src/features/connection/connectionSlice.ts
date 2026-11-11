@@ -7,8 +7,6 @@ type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting';
 
 interface ConnectionState {
   status: ConnectionStatus;
-  /** 預設唯讀，直到伺服器以 officeAccess 明確告知可寫入。 */
-  readOnly: boolean;
   terminalAvailable: boolean;
   terminalUnavailableReason: string | null;
   readingTools: string[];
@@ -17,7 +15,6 @@ interface ConnectionState {
 
 const initialState: ConnectionState = {
   status: 'connecting',
-  readOnly: true,
   terminalAvailable: false,
   terminalUnavailableReason: null,
   readingTools: [],
@@ -38,9 +35,6 @@ const connectionSlice = createSlice({
   extraReducers: (builder) => {
     builder.addCase(serverMessageReceived, (state, { payload: message }) => {
       switch (message.type) {
-        case 'officeAccess':
-          state.readOnly = message.readOnly;
-          break;
         case 'terminalAvailability':
           state.terminalAvailable = message.available;
           state.terminalUnavailableReason = message.reason ?? null;

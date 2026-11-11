@@ -4,7 +4,6 @@ import { useState } from 'react';
 
 import { useAppSelector } from '../../app/hooks';
 import { MonoText } from '../../components/MonoText';
-import { serverToken } from '../connection/serverToken';
 import type { TerminalStatus } from './terminalConnection';
 import { TerminalView } from './TerminalView';
 
@@ -21,11 +20,7 @@ export function TerminalPanel({ agentId }: { agentId: number }) {
   const unavailableReason = useAppSelector((state) => state.connection.terminalUnavailableReason);
   const [status, setStatus] = useState<TerminalStatus>('connecting');
 
-  const blocker = !terminalAvailable
-    ? (unavailableReason ?? '這個主機沒有提供終端機')
-    : serverToken === null
-      ? '本頁沒有 token，無法連線終端機；請用 CLI 印出的網址開啟'
-      : null;
+  const blocker = terminalAvailable ? null : (unavailableReason ?? '這個主機沒有提供終端機');
 
   return (
     <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>

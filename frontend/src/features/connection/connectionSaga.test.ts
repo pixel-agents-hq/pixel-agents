@@ -3,14 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { buildSocketUrl, reconnectDelayMs } from './connectionSaga';
 
 describe('buildSocketUrl', () => {
-  it('https 使用 wss，並把 token 放進查詢字串', () => {
-    expect(buildSocketUrl({ protocol: 'https:', host: 'a.test' }, 'x y')).toBe(
-      'wss://a.test/ws?token=x%20y',
-    );
+  it('https 使用 wss', () => {
+    expect(buildSocketUrl({ protocol: 'https:', host: 'a.test' })).toBe('wss://a.test/ws');
   });
 
-  it('沒有 token 時不加查詢字串', () => {
-    expect(buildSocketUrl({ protocol: 'http:', host: 'localhost:5173' }, null)).toBe(
+  it('http 使用 ws', () => {
+    expect(buildSocketUrl({ protocol: 'http:', host: 'localhost:5173' })).toBe(
       'ws://localhost:5173/ws',
     );
   });

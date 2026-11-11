@@ -6,20 +6,15 @@ import { WS_RECONNECT_DELAYS_MS } from '../../constants';
 import type { ClientMessage, ServerMessage } from '../../protocol';
 import { clientMessageRequested, serverMessageReceived } from './actions';
 import { statusChanged } from './connectionSlice';
-import { serverToken } from './serverToken';
 
 type SocketEvent =
   { kind: 'open' } | { kind: 'message'; message: ServerMessage } | { kind: 'close' };
 
 let activeSocket: WebSocket | null = null;
 
-export function buildSocketUrl(
-  location: Pick<Location, 'protocol' | 'host'>,
-  token: string | null,
-) {
+export function buildSocketUrl(location: Pick<Location, 'protocol' | 'host'>) {
   const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const query = token ? `?token=${encodeURIComponent(token)}` : '';
-  return `${scheme}//${location.host}/ws${query}`;
+  return `${scheme}//${location.host}/ws`;
 }
 
 export function reconnectDelayMs(attempt: number) {
@@ -60,7 +55,7 @@ function* forwardClientMessage(action: ReturnType<typeof clientMessageRequested>
 
 function* runConnection(attempt: number) {
   yield put(statusChanged(attempt === 0 ? 'connecting' : 'reconnecting'));
-  const socket = new WebSocket(buildSocketUrl(window.location, serverToken));
+  const socket = new WebSocket(buildSocketUrl(window.location));
   activeSocket = socket;
   const channel: EventChannel<SocketEvent> = yield call(createSocketChannel, socket);
   let opened = false;

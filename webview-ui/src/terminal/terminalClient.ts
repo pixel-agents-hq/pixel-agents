@@ -12,7 +12,6 @@
 import { TERMINAL_WS_PREFIX } from '../../../core/src/constants.js';
 import { parseServerFrame } from '../../../core/src/terminalFrames.js';
 import { reconnectDelayMs } from '../transport/reconnectBackoff.js';
-import { serverToken } from '../transport/serverToken.js';
 
 export interface TerminalConnectionHandlers {
   onOutput(data: string): void;
@@ -55,24 +54,8 @@ export class TerminalConnection {
     if (this.disposed || this.exited) return;
     this.handlers.onStatusChange(this.attempt === 0 ? 'connecting' : 'reconnecting');
 
-    // The token is the one this page was opened with (transport/serverToken.ts);
-    // the server never hands it out over HTTP. A bare page was already told the
-    // terminal is unavailable, so reaching here without one is a defensive stop,
-    // not something a retry could fix.
-    if (serverToken === null) {
-      console.error(
-        '[Webview] Terminal: this page has no server token (open the URL the CLI printed).',
-      );
-      this.handlers.onStatusChange('closed');
-      return;
-    }
-
-    // The token rides the handshake query exactly as it does on /ws (the
-    // server's request log redacts it), so both sockets pass the same gate.
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${window.location.host}${TERMINAL_WS_PREFIX}/${String(
-      this.agentId,
-    )}?token=${encodeURIComponent(serverToken)}`;
+    const url = `${protocol}//${window.location.host}${TERMINAL_WS_PREFIX}/${String(this.agentId)}`;
     const socket = new WebSocket(url);
     this.socket = socket;
 
@@ -99,9 +82,8 @@ export class TerminalConnection {
 
     socket.onclose = (event: CloseEvent) => {
       if (this.disposed || this.exited) return;
-      // An application close code (bad token, forbidden origin, no such
-      // session) is final: retrying can't fix any of them, and hammering an
-      // auth-rejecting endpoint is pointless.
+      // An application close code (forbidden origin, no such session) is
+      // final: retrying can't fix either of them.
       if (event.code >= 4000 && event.code < 5000) {
         console.error(
           `[Webview] Terminal: agent ${String(this.agentId)} rejected (${String(event.code)}: ${event.reason})`,

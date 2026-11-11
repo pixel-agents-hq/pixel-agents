@@ -1,5 +1,4 @@
 import { reconnectDelayMs } from '../connection/connectionSaga';
-import { serverToken } from '../connection/serverToken';
 import { parseServerFrame, TERMINAL_WS_PREFIX } from '../../protocol';
 
 export type TerminalStatus = 'connecting' | 'connected' | 'reconnecting' | 'closed';
@@ -33,13 +32,9 @@ export class TerminalConnection {
   connect(): void {
     if (this.disposed || this.exited) return;
     this.handlers.onStatusChange(this.attempt === 0 ? 'connecting' : 'reconnecting');
-    if (serverToken === null) {
-      this.handlers.onStatusChange('closed');
-      return;
-    }
 
     const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${scheme}//${window.location.host}${TERMINAL_WS_PREFIX}/${String(this.agentId)}?token=${encodeURIComponent(serverToken)}`;
+    const url = `${scheme}//${window.location.host}${TERMINAL_WS_PREFIX}/${String(this.agentId)}`;
     const socket = new WebSocket(url);
     this.socket = socket;
 
@@ -62,7 +57,7 @@ export class TerminalConnection {
     };
     socket.onclose = (event: CloseEvent) => {
       if (this.disposed || this.exited) return;
-      // 4000 號段是伺服器的應用層拒絕（token 錯誤、來源不允許、沒有這個 session），重試也不會成功
+      // 4000 號段是伺服器的應用層拒絕（來源不允許、沒有這個 session），重試也不會成功
       if (event.code >= 4000 && event.code < 5000) {
         this.handlers.onStatusChange('closed');
         return;
