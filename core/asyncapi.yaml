@@ -166,6 +166,7 @@ components:
         - $ref: '#/components/schemas/SetShowAreas'
         - $ref: '#/components/schemas/SetBypassPermissions'
         - $ref: '#/components/schemas/SetShowHostDirectories'
+        - $ref: '#/components/schemas/SetUploadDirectory'
         - $ref: '#/components/schemas/SaveDirectory'
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/RequestDirectorySuggestions'
@@ -765,6 +766,12 @@ components:
             Persistent per-host choice whether the host's own Directories (VS
             Code's workspace folders, standalone's start directory) are listed
             in `directoriesLoaded`. Off by default.
+        uploadDirectory:
+          type: string
+          description: >-
+            Where files sent to a terminal are saved on the host, as an absolute
+            path: the user's choice, else the server's own uploads folder.
+            Sent by hosts with a terminal (standalone).
 
     BypassPermissionsUpdated:
       description: |
@@ -1583,6 +1590,22 @@ components:
           const: setShowHostDirectories
         enabled:
           type: boolean
+
+    SetUploadDirectory:
+      description: >-
+        Persist where files sent to a terminal are saved on the host. `path` is
+        absolute or starts with `~/`; empty goes back to the default (the
+        server's own uploads folder, which it sweeps). The folder is created when a file first
+        lands in it. Answered to the sender with `settingsLoaded` carrying the
+        directory as it now stands (unchanged when the path was refused).
+      type: object
+      additionalProperties: false
+      required: [type, path]
+      properties:
+        type:
+          const: setUploadDirectory
+        path:
+          type: string
 
     SaveDirectory:
       description: |

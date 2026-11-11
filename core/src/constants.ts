@@ -31,6 +31,19 @@ export const TASK_DESCRIPTION_DISPLAY_MAX_LENGTH = 40;
  *  handshake carries the server token as `?token=`, exactly like `/ws` (see
  *  server/src/wsAuth.ts); the frame shapes are in terminalFrames.ts. */
 export const TERMINAL_WS_PREFIX = '/terminal';
+/** HTTP prefix of a terminal's file upload: `POST <prefix>/:agentId/files?name=`
+ *  with the file as the raw body, gated like the terminal socket (the same
+ *  `?token=`). The file is saved on the server's machine and its path comes
+ *  back, for the office to paste into the terminal. */
+export const TERMINAL_FILES_API_PREFIX = '/api/terminal';
+/** Under a terminal's `files` route: asked first by a browser on the server's
+ *  own machine, `POST …/files/locate` with `{ name, size, lastModified }`
+ *  answers the path of that very file when the server finds it on its disk
+ *  (404 otherwise), so no copy is made of a file that is already there. */
+export const TERMINAL_FILES_LOCATE_SUFFIX = '/locate';
+/** The largest file a terminal upload accepts. The office checks it before
+ *  sending: a server refusing mid-upload reads as a network error in a browser. */
+export const TERMINAL_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
 // ── Transport ────────────────────────────────────────────────
 // Connection-state names for the MessageTransport state machine.

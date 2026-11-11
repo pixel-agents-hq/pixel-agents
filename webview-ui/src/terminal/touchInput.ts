@@ -28,7 +28,7 @@ type TouchTarget = GlobalEventHandlers;
 /**
  * Wire touch input on a terminal pane: scrolling, flick, tap-to-focus /
  * tap-to-open-URL, long-press selection with handles and a copy pill, a
- * Paste pill on a long press in the input area (the
+ * Paste | Attach file pill on a long press in the input area (the
  * gesture itself is the pure reducer in touchGesture.ts). This is the thin
  * DOM half — it owns the listeners, the long-press timer, the flick's
  * animation frames and the selection chrome, turns TouchEvents into reducer
@@ -46,6 +46,9 @@ export function attachTouchInput(
     fallbackRowHeightPx: number;
     /** The Paste pill was tapped: paste the clipboard into the terminal. */
     onPaste: () => void;
+    /** "Attach file" was tapped: pick files to send to the terminal. Called
+     *  inside the tap's click, which the file picker needs. */
+    onAttach: () => void;
   },
 ): () => void {
   let state: TouchGestureState = TOUCH_GESTURE_IDLE;
@@ -94,6 +97,10 @@ export function attachTouchInput(
     onPaste: () => {
       overlay.hidePill();
       opts.onPaste();
+    },
+    onAttach: () => {
+      overlay.hidePill();
+      opts.onAttach();
     },
   });
 

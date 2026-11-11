@@ -1,0 +1,43 @@
+/** Sending files to a terminal: the upload's address and what gets pasted. */
+import { expect, test } from 'vitest';
+
+import {
+  isLoopbackHostname,
+  pathsToPaste,
+  terminalFileLocateUrl,
+  terminalFileUrl,
+  uploadFailureReason,
+} from '../src/terminal/fileUpload.js';
+
+test('the upload carries the file name and the token, both encoded', () => {
+  expect(terminalFileUrl(7, 'my photo&1.jpg', 'tok/en')).toBe(
+    '/api/terminal/7/files?name=my+photo%261.jpg&token=tok%2Fen',
+  );
+});
+
+test('paths are pasted with a space between them and one after', () => {
+  expect(pathsToPaste(['/a/one.png', '/a/two.png'])).toBe('/a/one.png /a/two.png ');
+  expect(pathsToPaste(['/a/one.png'])).toBe('/a/one.png ');
+});
+
+test('nothing is pasted when no file arrived', () => {
+  expect(pathsToPaste([])).toBe('');
+});
+
+test('a refusal is explained in words', () => {
+  expect(uploadFailureReason(413)).toBe('too large');
+  expect(uploadFailureReason(404)).toBe('this terminal is gone');
+  expect(uploadFailureReason(401)).toBe('not allowed from this page');
+  expect(uploadFailureReason(500)).toBe('the server could not save it');
+});
+
+test('only a loopback page shares a disk with the server', () => {
+  expect(isLoopbackHostname('localhost')).toBe(true);
+  expect(isLoopbackHostname('127.0.0.1')).toBe(true);
+  expect(isLoopbackHostname('[::1]')).toBe(true);
+  expect(isLoopbackHostname('mac-mini.example.ts.net')).toBe(false);
+});
+
+test("the lookup is asked under the terminal's files route", () => {
+  expect(terminalFileLocateUrl(7, 'tok')).toBe('/api/terminal/7/files/locate?token=tok');
+});

@@ -151,6 +151,10 @@ interface ExtensionMessageState {
   /** Whether the host lists its own Directories (workspace folders / start directory). */
   showHostDirectories: boolean;
   setShowHostDirectories: (v: boolean) => void;
+  /** Where the host saves files sent to a terminal (null: it never said, so
+   *  it has no such thing). A new object on every answer, so a refused change
+   *  still tells the Settings field to show the folder that stands. */
+  uploadDirectory: { path: string } | null;
   /** A read-only office (standalone without the server token): every change it
    *  sends is refused, so the UI hides the controls that would send one. */
   officeReadOnly: boolean;
@@ -226,6 +230,7 @@ export function useExtensionMessages(
   const [showAreas, setShowAreas] = useState(false);
   const [bypassPermissions, setBypassPermissions] = useState(false);
   const [showHostDirectories, setShowHostDirectories] = useState(false);
+  const [uploadDirectory, setUploadDirectory] = useState<{ path: string } | null>(null);
   // Never sent under VS Code, so it stays false there.
   const [officeReadOnly, setOfficeReadOnly] = useState(false);
   // Terminal control plane (standalone only; the server never sends these in
@@ -821,6 +826,9 @@ export function useExtensionMessages(
         if (typeof msg.showHostDirectories === 'boolean') {
           setShowHostDirectories(msg.showHostDirectories as boolean);
         }
+        if (typeof msg.uploadDirectory === 'string') {
+          setUploadDirectory({ path: msg.uploadDirectory });
+        }
         if (Array.isArray(msg.externalAssetDirectories)) {
           setExternalAssetDirectories(msg.externalAssetDirectories as string[]);
         }
@@ -988,6 +996,7 @@ export function useExtensionMessages(
     setBypassPermissions,
     showHostDirectories,
     setShowHostDirectories,
+    uploadDirectory,
     officeReadOnly,
     terminalAvailable,
     terminalUnavailableReason,

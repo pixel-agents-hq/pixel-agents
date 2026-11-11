@@ -23,6 +23,9 @@ export interface AdapterSettings {
   /** Whether the host's own Directories (VS Code's workspace folders, standalone's
    *  start directory) are listed in the launch drawer. Off by default. */
   showHostDirectories: boolean;
+  /** Where files sent to a terminal are saved (absolute, or `~/…`). Empty =
+   *  the default, our own uploads folder (terminal/fileUploads.ts). */
+  uploadDirectory: string;
 }
 
 /** All keys in AdapterSettings. Used by adapters to map `pixel-agents.foo` → `foo`.
@@ -40,6 +43,7 @@ export const ADAPTER_SETTING_KEYS = [
   'areaMappings',
   'bypassPermissions',
   'showHostDirectories',
+  'uploadDirectory',
 ] as const;
 
 export type AdapterSettingKey = (typeof ADAPTER_SETTING_KEYS)[number];
@@ -97,6 +101,7 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   areaMappings: {},
   bypassPermissions: false,
   showHostDirectories: false,
+  uploadDirectory: '',
 };
 
 function getConfigFilePath(): string {
@@ -230,6 +235,10 @@ function parseAdapterSettings(raw: unknown): AdapterSettings {
       typeof obj.showHostDirectories === 'boolean'
         ? obj.showHostDirectories
         : DEFAULT_ADAPTER_SETTINGS.showHostDirectories,
+    uploadDirectory:
+      typeof obj.uploadDirectory === 'string'
+        ? obj.uploadDirectory
+        : DEFAULT_ADAPTER_SETTINGS.uploadDirectory,
   };
 }
 

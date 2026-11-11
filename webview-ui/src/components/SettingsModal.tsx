@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { officeRadio } from '../music/musicEngine.js';
 import { useOfficeRadio } from '../music/useOfficeRadio.js';
@@ -42,6 +42,9 @@ interface SettingsModalProps {
   /** Whether the launch drawer lists the host's own Directories. */
   showHostDirectories: boolean;
   onToggleShowHostDirectories: () => void;
+  /** Where the host saves files sent to a terminal; null hides the field (no
+   *  terminal here to send files to). */
+  uploadDirectory: { path: string } | null;
   /** Browser-native layout export (standalone only; VS Code uses the host save dialog). */
   onExportLayout: () => void;
   /** Browser-native layout import from a chosen file (standalone only). */
@@ -69,6 +72,7 @@ export function SettingsModal({
   onToggleBypassPermissions,
   showHostDirectories,
   onToggleShowHostDirectories,
+  uploadDirectory,
   onExportLayout,
   onImportLayout,
 }: SettingsModalProps) {
@@ -273,6 +277,7 @@ export function SettingsModal({
           checked={showHostDirectories}
           onChange={onToggleShowHostDirectories}
         />
+        {uploadDirectory && <UploadDirectoryField stored={uploadDirectory} />}
         <Checkbox label="Debug View" checked={isDebugMode} onChange={onToggleDebugMode} />
       </Modal>
       {usageBridge && (
@@ -306,5 +311,53 @@ export function SettingsModal({
         </Modal>
       )}
     </>
+  );
+}
+
+/**
+ * Where files sent to a terminal (dropped on it, or attached from the phone)
+ * are saved on the host. The browser has no directory picker for another
+ * machine's disk, so the path is typed: absolute or under `~`; emptied, it
+ * goes back to Pixel Agents' own folder on the host, where files are deleted
+ * after a week (a folder typed here is never cleaned). The server answers every save
+ * with the folder that now stands, which is what the field then shows — a
+ * refused path snaps back.
+ */
+function UploadDirectoryField({ stored }: { stored: { path: string } }) {
+  const [draft, setDraft] = useState(stored.path);
+  useEffect(() => setDraft(stored.path), [stored]);
+  const save = () => transport.send({ type: 'setUploadDirectory', path: draft.trim() });
+  return (
+    <div className="flex flex-col gap-2 py-4 px-10">
+      <label htmlFor="upload-directory" className="text-xs text-text-muted">
+        Save Sent Files To
+      </label>
+      <div className="flex items-center gap-4">
+        <input
+          id="upload-directory"
+          type="text"
+          value={draft}
+          placeholder="Pixel Agents' own folder"
+          title="Files dropped on a terminal are saved here. Empty = Pixel Agents' own folder, where files are deleted after 7 days. A folder you choose is never cleaned."
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save();
+          }}
+          className="flex-1 min-w-0 text-xs py-2 px-4 bg-bg border-2 border-border rounded-none text-text"
+        />
+        <Button
+          variant="default"
+          size="sm"
+          onClick={save}
+          disabled={draft.trim() === stored.path}
+          className="shrink-0"
+        >
+          Save
+        </Button>
+      </div>
+    </div>
   );
 }

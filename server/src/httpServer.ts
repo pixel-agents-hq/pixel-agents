@@ -12,7 +12,8 @@ import type {
   ReloadAssetsSideEffect,
   SetHooksEnabledSideEffect,
 } from './clientMessageHandler.js';
-import { handleClientMessage } from './clientMessageHandler.js';
+import { handleClientMessage, uploadDirectoryOf } from './clientMessageHandler.js';
+import { readConfig } from './configPersistence.js';
 import {
   HOOK_API_PREFIX,
   MAX_HOOK_BODY_SIZE,
@@ -22,6 +23,7 @@ import {
 } from './constants.js';
 import { applyReportedContext } from './contextUsage.js';
 import { hookProviderById } from './providers/index.js';
+import { startUploadSweeps } from './terminal/fileUploads.js';
 import { registerTerminalRoutes } from './terminal/terminalRoutes.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
 import type { AgentState } from './types.js';
@@ -126,7 +128,13 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     token: options.token,
     allowedHostnames,
     ptyManager: options.ptyManager,
+    uploadDirectory: () => uploadDirectoryOf(options.store.getAdapter()),
+    sourceDirectories: () => readConfig().directories.map((directory) => directory.path),
   });
+  if (options.ptyManager) {
+    const stopUploadSweeps = startUploadSweeps();
+    app.addHook('onClose', () => stopUploadSweeps());
+  }
 
   // ── Listen ──────────────────────────────────────────────────
 

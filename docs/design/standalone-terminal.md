@@ -376,6 +376,18 @@ RemotePtySessions ── Unix socket ──────▶ startPtyHost()
   Alt+C / Option+C with a selection, or the pill's "Copy as text" — because the heuristic
   can't tell a soft wrap from indented structure under a long row (YAML, code). Writes go
   through `terminal/clipboard.ts` (Clipboard API, or a copy event on plain-http origins).
+- Files: a file dropped on a terminal pane (desktop) or picked through the input area
+  pill's "Attach file" (phone) is uploaded with `POST /api/terminal/:agentId/files`
+  (raw body, the terminal socket's token + Host gate, only for an agent with a PTY),
+  saved in the host's upload directory (a setting; by default `~/.pixel-agents/uploads`,
+  our own folder, swept at start, daily and after each upload: files sent more than 7 days
+  ago go, and the oldest once it holds more than 2 GB — a folder the user chose is never
+  swept) and its path pasted into the terminal, as a native terminal does with a
+  dropped file. `server/src/terminal/fileUploads.ts` owns the folder, the name and the
+  per-OS quoting. A browser on the host itself (a loopback hostname) first asks
+  `POST …/files/locate`: the server looks for the file by name, size and modification
+  time straight under the home directory, its Desktop, Downloads and Documents and the
+  upload directory and the user's Directories (`localFile.ts`; no deeper, no disk search) and, when it finds it, the file's own path is pasted with no copy.
 - Distribution: esbuild externals, `package.json` `optionalDependencies` + `files`.
 - Server unit tests: session manager lifecycle, WS auth, message framing.
 

@@ -164,6 +164,38 @@ export const TERMINAL_KILL_GRACE_MS = 2_000;
 /** How long shutdown waits past the SIGKILL escalation for the exits to land. */
 export const TERMINAL_SHUTDOWN_SLACK_MS = 1_000;
 
+// ── Files sent to a terminal (server/src/terminal/fileUploads.ts) ──
+/** Where they land unless the user chose a folder: this folder of our own,
+ *  under ~/.pixel-agents, which the server keeps from growing (sweepUploads). */
+export const UPLOADS_DIRECTORY_NAME = 'uploads';
+/** A file in our own uploads folder is deleted this long after it was sent:
+ *  days, since an agent holds only its path and a conversation resumed the
+ *  next day may read it again. */
+export const UPLOAD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/** Our own uploads folder never holds more than this: past it the oldest
+ *  files go first, whatever their age. */
+export const UPLOADS_MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
+/** How often a running server sweeps its uploads folder (and once at start). */
+export const UPLOAD_SWEEP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+/** The OS's Downloads folder, under the home directory: one of the places a
+ *  sent file's original is looked for. */
+export const DOWNLOADS_DIRECTORY_NAME = 'Downloads';
+/** Linux: the file under the XDG config directory that says where the
+ *  desktop's Downloads folder is (`XDG_DOWNLOAD_DIR`). */
+export const XDG_USER_DIRS_FILE_NAME = 'user-dirs.dirs';
+/** A saved file's name is cut to this many characters (its extension kept). */
+export const UPLOAD_FILE_NAME_MAX_LENGTH = 120;
+/** The name of a file that arrived with none usable. */
+export const UPLOAD_FALLBACK_FILE_NAME = 'file';
+/** Looking for a sent file's original on this machine (terminal/localFile.ts):
+ *  how long the check may take before it is given up. */
+export const LOCAL_FILE_SEARCH_TIMEOUT_MS = 2_000;
+/** A file system and a browser round a modification time differently: this
+ *  far apart still counts as the same moment. */
+export const LOCAL_FILE_MTIME_TOLERANCE_MS = 1_000;
+/** How many numbered names (`photo-2.jpg`, …) are tried for a taken one. */
+export const UPLOAD_NAME_ATTEMPTS = 1000;
+
 // ── PTY host (development only: `pixel-agents --pty-host`) ──
 /** The host exits after this long with no terminal and no server connected. */
 export const PTY_HOST_IDLE_EXIT_MS = 60_000;

@@ -43,6 +43,7 @@ import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
 import { recentCharactersMessage, recordCharacterUse } from './recentCharacters.js';
+import { parseUploadDirectory, resolveUploadDirectory } from './terminal/fileUploads.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
 import { applyUsageBridgeChoice, usageSnapshotMessages } from './usageLimits.js';
@@ -108,6 +109,7 @@ const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
 const KEY_BYPASS_PERMISSIONS = 'pixel-agents.bypassPermissions';
 const KEY_SHOW_HOST_DIRECTORIES = 'pixel-agents.showHostDirectories';
+const KEY_UPLOAD_DIRECTORY = 'pixel-agents.uploadDirectory';
 
 /** The provider whose conversations the sidebar lists and resumes: the first
  *  that names them and can launch (HookProvider.conversationTitle). */
@@ -472,6 +474,15 @@ export function handleClientMessage(
       break;
     }
 
+    case 'setUploadDirectory': {
+      const stored = parseUploadDirectory(msg.path);
+      if (stored !== null && adapter) adapter.setSetting(KEY_UPLOAD_DIRECTORY, stored);
+      // The field shows the folder as it now stands: the new one resolved, the
+      // default after a reset, the old one when the path was refused.
+      send(settingsSnapshot(adapter));
+      break;
+    }
+
     case 'saveDirectory':
     case 'removeDirectory':
     case 'requestDirectorySuggestions':
@@ -798,7 +809,14 @@ function settingsSnapshot(adapter: StateAdapter | undefined) {
     showAreas: adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false,
     bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
     showHostDirectories: adapter?.getSetting(KEY_SHOW_HOST_DIRECTORIES, false) ?? false,
+    uploadDirectory: uploadDirectoryOf(adapter),
   } as const;
+}
+
+/** Where files sent to a terminal are saved on this host, absolute: the
+ *  user's setting, else our own uploads folder (terminal/fileUploads.ts). */
+export function uploadDirectoryOf(adapter: StateAdapter | undefined): string {
+  return resolveUploadDirectory(adapter?.getSetting(KEY_UPLOAD_DIRECTORY, '') ?? '');
 }
 
 /** Message types already reported as refused, so a read-only client that keeps
@@ -839,6 +857,7 @@ function refuseReadOnly(
     case 'setShowAreas':
     case 'setBypassPermissions':
     case 'setShowHostDirectories':
+    case 'setUploadDirectory':
       send(settingsSnapshot(ctx.store.getAdapter()));
       return;
     case 'addExternalAssetDirectory':

@@ -1,4 +1,6 @@
 import type { Page } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
 
 import { expect, test } from '../../fixtures/standalone';
 import { preToolUseBash, sendHookEvent, sessionStartStartup } from '../../helpers/hooks';
@@ -358,6 +360,60 @@ test.describe('Standalone / terminal', () => {
         page.evaluate(() => (window as unknown as { __clip: string[] }).__clip.at(-1) ?? null),
       )
       .toBe(head + tail);
+  });
+
+  test('a file dropped on the terminal is saved on the host and its path pasted in; one already on the host is not copied @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('terminal file drop').holdOpenFor(60_000).build(),
+    );
+    await clickAddAgent(page);
+    const terminal = page.locator('.xterm').first();
+    await expect(terminal).toContainText('mock claude session', { timeout: 15_000 });
+
+    // A file dragged from the desktop: the drag shows the pane as a drop
+    // target, the drop sends the file.
+    const pane = terminal.locator('..');
+    const dragged = await page.evaluateHandle(() => {
+      const data = new DataTransfer();
+      data.items.add(new File(['dropped contents'], 'my drop.txt', { type: 'text/plain' }));
+      return data;
+    });
+    await pane.dispatchEvent('dragover', { dataTransfer: dragged });
+    await expect(page.locator('.terminal-drop-target')).toBeVisible();
+    await pane.dispatchEvent('drop', { dataTransfer: dragged });
+    await expect(page.locator('.terminal-drop-target')).toHaveCount(0);
+
+    // Saved in the host's Downloads folder under a name that needs no
+    // quoting, and that path typed into the terminal (the PTY echoes it,
+    // wrapped wherever the row ends).
+    const saved = path.join(standalone.tmpHome, 'Downloads', 'my-drop.txt');
+    await expect
+      .poll(async () => (await terminal.innerText()).replace(/\s/g, ''), { timeout: 10_000 })
+      .toContain(saved.replace(/\s/g, ''));
+    expect(fs.readFileSync(saved, 'utf-8')).toBe('dropped contents');
+
+    // A file that is already on this machine (this page is on localhost, the
+    // server's own): the terminal gets the file's own path and no copy lands
+    // in Downloads.
+    const desktop = path.join(standalone.tmpHome, 'Desktop');
+    fs.mkdirSync(desktop, { recursive: true });
+    const original = path.join(desktop, 'already-here.txt');
+    fs.writeFileSync(original, 'on this disk');
+    const lastModified = Math.floor(fs.statSync(original).mtimeMs);
+    const local = await page.evaluateHandle((modified) => {
+      const data = new DataTransfer();
+      data.items.add(new File(['on this disk'], 'already-here.txt', { lastModified: modified }));
+      return data;
+    }, lastModified);
+    await pane.dispatchEvent('drop', { dataTransfer: local });
+    await expect
+      .poll(async () => (await terminal.innerText()).replace(/\s/g, ''), { timeout: 10_000 })
+      .toContain(original.replace(/\s/g, ''));
+    expect(fs.readdirSync(path.join(standalone.tmpHome, 'Downloads'))).toEqual(['my-drop.txt']);
   });
 });
 

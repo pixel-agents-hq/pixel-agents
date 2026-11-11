@@ -83,6 +83,7 @@ export type ClientMessage =
   | SetShowAreas
   | SetBypassPermissions
   | SetShowHostDirectories
+  | SetUploadDirectory
   | SaveDirectory
   | RemoveDirectory
   | RequestDirectorySuggestions
@@ -377,6 +378,7 @@ export interface SettingsLoaded {
   showAreas: boolean;
   bypassPermissions: boolean;
   showHostDirectories: boolean;
+  uploadDirectory?: string;
 }
 
 export interface BypassPermissionsUpdated {
@@ -668,6 +670,11 @@ export interface SetBypassPermissions {
 export interface SetShowHostDirectories {
   type: 'setShowHostDirectories';
   enabled: boolean;
+}
+
+export interface SetUploadDirectory {
+  type: 'setUploadDirectory';
+  path: string;
 }
 
 export interface SaveDirectory {

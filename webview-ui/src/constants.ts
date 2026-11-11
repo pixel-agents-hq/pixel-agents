@@ -662,6 +662,8 @@ export const MOBILE_TRACKPAD_NUDGE_MS = 90;
 /** The Paste pill's prompt where script can't read the clipboard (plain-http
  *  origins): the user pastes into the native field instead. */
 export const MOBILE_PASTE_PROMPT = 'Paste into the terminal:';
+/** How long a failed file send stays written over the terminal pane. */
+export const TERMINAL_FILE_STATUS_MS = 5000;
 /** visualViewport.height within this many px of innerHeight = nothing to
  *  clamp (the two disagree by sub-pixel rounding on some devices). */
 export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
