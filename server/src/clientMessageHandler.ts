@@ -34,7 +34,9 @@ import {
   directoryAt,
   handleDirectoryClientMessage,
   type HostDirectoryEntry,
+  KEY_SHOW_HOST_DIRECTORIES,
   listDirectories,
+  shownHostDirectories,
 } from './directories.js';
 import { collectDirectorySuggestions } from './directorySuggestions.js';
 import { hostDirectory } from './hostDirectory.js';
@@ -141,7 +143,6 @@ const KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
 const KEY_GHOST_HEADLESS_AGENTS = 'pixel-agents.ghostHeadlessAgents';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
-const KEY_SHOW_HOST_DIRECTORIES = 'pixel-agents.showHostDirectories';
 const KEY_UPLOAD_DIRECTORY = 'pixel-agents.uploadDirectory';
 
 /** The provider whose conversations the sidebar lists and resumes: the first
@@ -170,9 +171,7 @@ function hostDirectoriesFor(ctx: Pick<ClientMessageContext, 'ptyManager'>): Host
 function shownHostDirectoriesFor(
   ctx: Pick<ClientMessageContext, 'store' | 'ptyManager'>,
 ): HostDirectoryEntry[] {
-  return ctx.store.getAdapter()?.getSetting(KEY_SHOW_HOST_DIRECTORIES, false)
-    ? hostDirectoriesFor(ctx)
-    : [];
+  return shownHostDirectories(ctx.store.getAdapter(), hostDirectoriesFor(ctx));
 }
 
 /**

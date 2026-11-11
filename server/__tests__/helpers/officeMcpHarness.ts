@@ -38,7 +38,11 @@ import {
 import { watchCharacterProfiles } from '../../src/characterProfilesPersistence.js';
 import { sharedCharacterRefsMessages } from '../../src/clientMessageHandler.js';
 import { readConfig, writeConfig } from '../../src/configPersistence.js';
-import { listDirectoryLocations, userDirectoryDefaults } from '../../src/directories.js';
+import {
+  listDirectoryLocations,
+  shownHostDirectories,
+  userDirectoryDefaults,
+} from '../../src/directories.js';
 import { FileStateAdapter } from '../../src/fileStateAdapter.js';
 import type { JsonFileWatcher } from '../../src/jsonFileWatcher.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../../src/layoutPersistence.js';
@@ -641,7 +645,8 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       ptyManager,
       saves: adapter,
       facts: places,
-      directories: places.directories,
+      // As cli.ts: the Directories every office is shown.
+      directories: () => listDirectoryLocations(shownHostDirectories(adapter, directories)),
       broadcast: (message) => store.broadcast({ ...message }),
       providers: hookProviders,
       ...(options.foreground ? { foreground: options.foreground } : {}),

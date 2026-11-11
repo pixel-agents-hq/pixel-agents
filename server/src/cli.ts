@@ -40,7 +40,11 @@ import {
   WORKTREE_SHUTDOWN_WAIT_MS,
   WORKTREE_SWEEP_DELAY_MS,
 } from './constants.js';
-import { listDirectoryLocations, userDirectoryDefaults } from './directories.js';
+import {
+  listDirectoryLocations,
+  shownHostDirectories,
+  userDirectoryDefaults,
+} from './directories.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
@@ -510,7 +514,8 @@ async function main(): Promise<void> {
       ptyManager,
       saves: adapter,
       facts: places,
-      directories: places.directories,
+      // The Directories every office is shown: a hidden host one isn't offered.
+      directories: () => listDirectoryLocations(shownHostDirectories(adapter, [hostDirectory()])),
       broadcast: (message) => store.broadcast({ ...message }),
       providers: hookProviders,
     });

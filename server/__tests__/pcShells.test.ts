@@ -87,6 +87,12 @@ describe('PC shells', () => {
   const shells = pcShellDriver(h);
 
   it("opens the user's login shell in the single Directory of the PC's Area", async () => {
+    // The host's Directory, listed (Settings → Show host Directories).
+    h.send({ type: 'setShowHostDirectories', enabled: true });
+    await waitFor(
+      () => h.received.some((m) => m.type === 'directoriesLoaded' && m.directories.length > 0),
+      'the host Directory listed',
+    );
     mapDirectory('proj', 'Blue room');
     const answer = await shells.open(FRONT_PC);
     expect(answer.type).toBe('pcShellReady');
@@ -107,6 +113,19 @@ describe('PC shells', () => {
     expect(shells.shells()).toEqual([
       { id, uid: FRONT_PC, furnitureType: 'PC_FRONT_OFF', directoryName: 'proj' },
     ]);
+  });
+
+  it('a hidden host Directory is neither offered nor picked, as the office shows it', async () => {
+    // Show host Directories is off by default: the office's selector never
+    // lists the host's folder, so neither does the server.
+    mapDirectory('proj', 'Blue room');
+    const id = (await shells.open(FRONT_PC)).id as number;
+    const term = await shells.attach(id);
+    term.type(WHERE);
+    expect((await term.waitFor(WHERE_RE))[1]).toBe(h.home);
+    term.close();
+    expect(shells.shells()).toEqual([{ id, uid: FRONT_PC, furnitureType: 'PC_FRONT_OFF' }]);
+    expect(await shells.openIn(OTHER_PC, 'proj')).toMatchObject({ type: 'pcShellRejected' });
   });
 
   it('opens in the home folder when the Area has no Directory, or several', async () => {

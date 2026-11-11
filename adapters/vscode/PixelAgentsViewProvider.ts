@@ -223,7 +223,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.pcShells = new VscodePcShells({
       terminals: terminalAdapter,
       facts: places,
-      directories: places.directories,
+      // The Directories the office is shown: a hidden workspace folder isn't
+      // offered (it is still the fallback, as the first workspace folder).
+      directories: () => listDirectoryLocations(this.shownHostDirectories()),
       // Through the store: the panel and the embedded server's /ws clients alike.
       broadcast: (m) => this.store.broadcast({ ...m }),
       workspaceFolders: () => workspaceDirectories(),
