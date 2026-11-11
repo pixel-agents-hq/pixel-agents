@@ -2,6 +2,7 @@
 import { expect, test } from 'vitest';
 
 import {
+  dragCarriesFiles,
   isLoopbackHostname,
   pathsToPaste,
   terminalFileLocateUrl,
@@ -40,4 +41,15 @@ test('only a loopback page shares a disk with the server', () => {
 
 test("the lookup is asked under the terminal's files route", () => {
   expect(terminalFileLocateUrl(7, 'tok')).toBe('/api/terminal/7/files/locate?token=tok');
+});
+
+test('a file drag is told from a text drag, in every browser', () => {
+  expect(dragCarriesFiles(['Files'])).toBe(true);
+  // Firefox lists its own type first.
+  expect(dragCarriesFiles(['application/x-moz-file', 'Files'])).toBe(true);
+  expect(dragCarriesFiles(['application/x-moz-file'])).toBe(true);
+  expect(dragCarriesFiles(['text/plain', 'text/html'])).toBe(false);
+  expect(dragCarriesFiles([])).toBe(false);
+  // A drop that holds files counts whatever its types say.
+  expect(dragCarriesFiles(['text/uri-list'], 1)).toBe(true);
 });

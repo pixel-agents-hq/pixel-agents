@@ -2,6 +2,7 @@ import { TERMINAL_UPLOAD_MAX_BYTES } from '../../../core/src/constants.js';
 import { TERMINAL_FILE_STATUS_MS } from '../constants.js';
 import { serverToken } from '../transport/serverToken.js';
 import {
+  dragCarriesFiles,
   isLoopbackHostname,
   pathsToPaste,
   terminalFileLocateUrl,
@@ -17,7 +18,7 @@ import {
  * side (where it is saved, under what name, how the path is quoted) is
  * server/src/terminal/fileUploads.ts.
  *
- * This is the DOM half: the drop listeners, the hidden file input, the
+ * This is the DOM half: the page's drop listeners, the hidden file input, the
  * upload itself and the status line laid over the pane (the upload's address
  * and wording are fileUpload.ts, DOM-free). Styling lives in index.css
  * (`.terminal-drop-target`, `.terminal-file-status`).
@@ -82,9 +83,97 @@ async function uploadFile(agentId: number, file: File): Promise<string> {
   return answer.text;
 }
 
-/** Whether a drag carries files (and not, say, selected text). */
+/** What a pane does with a file drag: show or hide its frame, take the files. */
+interface DropPane {
+  show(): void;
+  hide(): void;
+  drop(files: readonly File[]): void;
+}
+
+/**
+ * File drags are handled ONCE for the whole page, in the capture phase on
+ * `window`, and routed to the pane under the pointer. Two reasons it is not
+ * a listener per pane:
+ *
+ * - A dropped file the page does not cancel is opened by the browser in
+ *   place of the office. That must never happen, wherever the file lands
+ *   (the card bar, the pane's edge) and whatever sits between the pane and
+ *   the drop: a per-pane bubble listener is skipped by anything that stops
+ *   the event, and Firefox on Windows did open the file.
+ * - The pane is found from the pointer when the event's path does not name
+ *   it, so it does not depend on which node the browser addresses the drag to.
+ */
+const dropPanes = new Map<HTMLElement, DropPane>();
+let shownPane: DropPane | null = null;
+
 function carriesFiles(e: DragEvent): boolean {
-  return e.dataTransfer?.types.includes('Files') === true;
+  return dragCarriesFiles(e.dataTransfer?.types ?? [], e.dataTransfer?.files.length ?? 0);
+}
+
+function paneOf(node: unknown): DropPane | null {
+  for (let el = node instanceof Node ? node : null; el; el = el.parentNode) {
+    const pane = el instanceof HTMLElement ? dropPanes.get(el) : undefined;
+    if (pane) return pane;
+  }
+  return null;
+}
+
+function paneUnder(e: DragEvent): DropPane | null {
+  for (const node of e.composedPath()) {
+    const pane = node instanceof HTMLElement ? dropPanes.get(node) : undefined;
+    if (pane) return pane;
+  }
+  return paneOf(document.elementFromPoint(e.clientX, e.clientY));
+}
+
+function showPane(pane: DropPane | null): void {
+  if (pane === shownPane) return;
+  shownPane?.hide();
+  shownPane = pane;
+  pane?.show();
+}
+
+// dragenter and dragover must both be cancelled for the page to be a drop
+// target at all; off a pane the drop is refused (`none`), never navigated to.
+function onWindowDragOver(e: DragEvent): void {
+  if (!carriesFiles(e)) return;
+  e.preventDefault();
+  const pane = paneUnder(e);
+  if (e.dataTransfer) e.dataTransfer.dropEffect = pane ? 'copy' : 'none';
+  showPane(pane);
+}
+
+function onWindowDragLeave(e: DragEvent): void {
+  // Moving between a pane's own children fires leave/enter pairs; only
+  // leaving the pane counts (no related target = it left the window).
+  if (shownPane !== null && paneOf(e.relatedTarget) !== shownPane) showPane(null);
+}
+
+function onWindowDrop(e: DragEvent): void {
+  if (!carriesFiles(e)) return;
+  e.preventDefault();
+  const pane = paneUnder(e);
+  showPane(null);
+  pane?.drop(Array.from(e.dataTransfer?.files ?? []));
+}
+
+function registerDropPane(host: HTMLElement, pane: DropPane): () => void {
+  if (dropPanes.size === 0) {
+    window.addEventListener('dragenter', onWindowDragOver, true);
+    window.addEventListener('dragover', onWindowDragOver, true);
+    window.addEventListener('dragleave', onWindowDragLeave, true);
+    window.addEventListener('drop', onWindowDrop, true);
+  }
+  dropPanes.set(host, pane);
+  return () => {
+    if (shownPane === pane) showPane(null);
+    dropPanes.delete(host);
+    if (dropPanes.size > 0) return;
+    window.removeEventListener('dragenter', onWindowDragOver, true);
+    window.removeEventListener('dragover', onWindowDragOver, true);
+    window.removeEventListener('dragleave', onWindowDragLeave, true);
+    window.removeEventListener('drop', onWindowDrop, true);
+  };
 }
 
 export function attachFileSending(
@@ -170,28 +259,6 @@ export function attachFileSending(
     dropTarget = null;
   };
 
-  // dragover must be cancelled for the pane to be a drop target at all;
-  // uncancelled, the browser's own answer to a dropped file is to navigate
-  // to it, away from the office.
-  const onDragOver = (e: DragEvent) => {
-    if (!carriesFiles(e)) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-    showDropTarget();
-  };
-  const onDragLeave = (e: DragEvent) => {
-    // Moving between the pane's own children fires leave/enter pairs; only
-    // leaving the pane itself counts.
-    if (e.relatedTarget instanceof Node && host.contains(e.relatedTarget)) return;
-    hideDropTarget();
-  };
-  const onDrop = (e: DragEvent) => {
-    if (!carriesFiles(e)) return;
-    e.preventDefault();
-    hideDropTarget();
-    opts.onDrop();
-    send(Array.from(e.dataTransfer?.files ?? []));
-  };
   const onPicked = () => {
     const files = Array.from(input.files ?? []);
     // Reset so picking the same file again fires change again.
@@ -199,18 +266,21 @@ export function attachFileSending(
     send(files);
   };
 
-  host.addEventListener('dragover', onDragOver);
-  host.addEventListener('dragleave', onDragLeave);
-  host.addEventListener('drop', onDrop);
+  const unregister = registerDropPane(host, {
+    show: showDropTarget,
+    hide: hideDropTarget,
+    drop: (files) => {
+      opts.onDrop();
+      send(files);
+    },
+  });
   input.addEventListener('change', onPicked);
 
   return {
     pickFiles: () => input.click(),
     dispose() {
       disposed = true;
-      host.removeEventListener('dragover', onDragOver);
-      host.removeEventListener('dragleave', onDragLeave);
-      host.removeEventListener('drop', onDrop);
+      unregister();
       input.removeEventListener('change', onPicked);
       input.remove();
       hideDropTarget();
