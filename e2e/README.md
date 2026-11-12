@@ -300,7 +300,7 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/standalone/pc-shells.spec.ts:113` — hover, the Directory selector, a shell that echoes, its card and lit PC, and × (Standalone / PC shells)
 - `e2e/standalone/pc-shells.spec.ts:211` — deleting a PC closes its idle shell with no question (Standalone / PC shells)
 - `e2e/standalone/sign-in.spec.ts:18` — a signed-out Claude Code holds the Intro until a code signs it in (Standalone / sign-in)
-- `e2e/standalone/sign-in.spec.ts:53` — a reload after signing in skips the step (Standalone / sign-in)
+- `e2e/standalone/sign-in.spec.ts:55` — a reload after signing in skips the step (Standalone / sign-in)
 - `e2e/standalone/terminal.spec.ts:47` — browser-launched agent gets a PTY terminal, hooks route to its character, close cleans up (Standalone / terminal)
 - `e2e/standalone/terminal.spec.ts:103` — every tab takes mouse input, and a narrow window keeps the cards and close reachable (Standalone / terminal)
 - `e2e/standalone/terminal.spec.ts:138` — a card dragged on the desktop moves on an open phone too, and stays after a reload (Standalone / terminal)

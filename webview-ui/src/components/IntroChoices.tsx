@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
-import { Button } from './ui/Button.js';
+import { INTRO_DIALOG_MENU_GAP_PX } from '../constants.js';
+import { IntroOption, IntroOptions, IntroPanel } from './IntroOptions.js';
 import { Checkbox } from './ui/Checkbox.js';
 
 export type IntroChoiceId = 'usage' | 'hooks' | 'mcp';
@@ -30,8 +31,8 @@ interface IntroChoicesProps {
 
 /**
  * The Intro's choices step: what to turn on (usage bars, live updates through
- * hooks, the Pixel Office MCP), one box each, all off to start, each with one
- * line and its full terms behind "Read more". Continue applies the boxes as
+ * hooks, the Pixel Office MCP), one card each in a row, all off to start, each
+ * with one line and its full terms behind "Read more" (shown under the row). Continue applies the boxes as
  * they stand (IntroDialog sends the answers; the greeter says they can be
  * changed later in Settings); with every box off it first
  * says what that costs.
@@ -49,77 +50,93 @@ export function IntroChoices({
   const [warning, setWarning] = useState(false);
   const allOff = options.every((o) => !values[o.id]);
 
+  const opened = options.find((o) => o.id === open);
+
   return (
     <>
-      {options.map((option) => (
-        <div key={option.id} className="mb-10" data-testid={`intro-choice-${option.id}`}>
-          <Checkbox
-            variant="inline"
-            checked={values[option.id]}
-            onChange={() => {
-              setWarning(false);
-              onToggle(option.id);
-            }}
-            label={<span className="text-base text-accent-bright">{option.label}</span>}
-          />
-          <p className="text-sm m-0 mt-2 pl-24">
-            {option.summary}{' '}
-            <button
-              type="button"
-              aria-expanded={open === option.id}
-              className="p-0 bg-transparent border-0 text-sm text-accent hover:text-accent-bright cursor-pointer underline"
-              onClick={() => setOpen(open === option.id ? null : option.id)}
-            >
-              {open === option.id ? 'Show less' : 'Read more'}
-            </button>
-          </p>
-          {open === option.id &&
-            option.disclosure.split('\n\n').map((paragraph, i) => (
-              <p key={i} className="text-sm m-0 mt-4 pl-24 text-text-muted">
-                {paragraph}
-              </p>
-            ))}
-          {option.error && !pending && (
-            <p className="text-sm m-0 mt-4 pl-24 text-status-error">{option.error}</p>
-          )}
-        </div>
-      ))}
+      {/* One card per choice, side by side (they wrap where the office is narrow). */}
+      <div
+        className="flex flex-wrap items-stretch w-full"
+        style={{ gap: INTRO_DIALOG_MENU_GAP_PX }}
+      >
+        {options.map((option) => (
+          <IntroPanel
+            key={option.id}
+            className="flex-1 basis-0 min-w-[150px]"
+            data-testid={`intro-choice-${option.id}`}
+          >
+            <Checkbox
+              variant="inline"
+              className="text-left"
+              checked={values[option.id]}
+              onChange={() => {
+                setWarning(false);
+                onToggle(option.id);
+              }}
+              label={<span className="text-base text-accent-bright">{option.label}</span>}
+            />
+            <p className="text-sm m-0 mt-4">
+              {option.summary}{' '}
+              <button
+                type="button"
+                aria-expanded={open === option.id}
+                className="p-0 bg-transparent border-0 text-sm text-accent hover:text-accent-bright cursor-pointer underline"
+                onClick={() => setOpen(open === option.id ? null : option.id)}
+              >
+                {open === option.id ? 'Show less' : 'Read more'}
+              </button>
+            </p>
+            {option.error && !pending && (
+              <p className="text-sm m-0 mt-4 text-status-error">{option.error}</p>
+            )}
+          </IntroPanel>
+        ))}
+      </div>
 
-      {warning && (
-        <p className="text-sm m-0 mb-8 text-warning" data-testid="intro-choices-warning">
-          With everything off, your agents only show up after a delay and the office can&apos;t give
-          you its tour. Sure?
-        </p>
+      {/* The opened card's full terms, the dialog's width. */}
+      {opened && (
+        <IntroPanel wide data-testid="intro-choice-terms">
+          <p className="text-sm m-0 text-accent-bright">{opened.label}</p>
+          {opened.disclosure.split('\n\n').map((paragraph, i) => (
+            <p key={i} className="text-sm m-0 mt-4 text-text-muted">
+              {paragraph}
+            </p>
+          ))}
+        </IntroPanel>
       )}
 
-      <div className="flex items-center justify-between gap-6 mt-4 flex-wrap">
-        {onBack ? (
-          <Button variant="ghost" size="sm" disabled={pending} onClick={onBack}>
-            Back
-          </Button>
-        ) : (
-          <span />
-        )}
+      {warning && (
+        <IntroPanel>
+          <p className="text-sm m-0 text-warning" data-testid="intro-choices-warning">
+            With everything off, your agents only show up after a delay and the office can&apos;t
+            give you its tour. Sure?
+          </p>
+        </IntroPanel>
+      )}
+
+      <IntroOptions>
         {warning ? (
-          <div className="flex items-center justify-end gap-6 flex-wrap">
-            <Button variant="default" size="sm" onClick={() => setWarning(false)}>
-              Choose Again
-            </Button>
-            <Button variant="accent" size="sm" onClick={onContinue}>
+          <>
+            <IntroOption kind="primary" onClick={onContinue}>
               Continue Anyway
-            </Button>
-          </div>
+            </IntroOption>
+            <IntroOption onClick={() => setWarning(false)}>Choose Again</IntroOption>
+          </>
         ) : (
-          <Button
-            variant={pending ? 'disabled' : 'accent'}
-            size="sm"
+          <IntroOption
+            kind="primary"
             disabled={pending}
             onClick={() => (warnAllOff && allOff ? setWarning(true) : onContinue())}
           >
             {pending ? 'Setting up...' : 'Continue'}
-          </Button>
+          </IntroOption>
         )}
-      </div>
+        {onBack && (
+          <IntroOption kind="back" disabled={pending} onClick={onBack}>
+            Back
+          </IntroOption>
+        )}
+      </IntroOptions>
     </>
   );
 }

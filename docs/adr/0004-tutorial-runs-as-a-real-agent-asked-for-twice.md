@@ -4,7 +4,7 @@ The Intro's closing step offers an optional, game-like tutorial. On yes, the gre
 free seat and sits, and the **Guide** is launched there as a real Claude Code agent that gives the tour as
 a conversation in its terminal, through the Pixel Office MCP. That one yes
 spends the user's plan and gives an AI session reach into their office, so it is asked for on
-its own, apart from the consent step, in the server's words ("Want Byte to show you around?":
+its own, apart from the consent step, in the server's words ("Want me to show you around?":
 a real session, the plan, auto mode, how to stop it), right on the closing step beside Let's Go.
 It was first a separate step after an offer; one step with the terms in full proved enough and
 kept the Intro short. Nothing launches before `startTutorial`, and only an office's privileged

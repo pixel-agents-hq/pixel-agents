@@ -24,14 +24,14 @@ test.describe('Standalone / sign-in', () => {
     await expect(dialog).toContainText('Welcome to Pixel Agents!');
 
     // The sign-in step, not the choices.
-    expect(await readIntro(dialog)).toContain('Sign in to Claude Code');
+    expect(await readIntro(dialog)).toContain("isn't signed in to Claude Code");
     await expect(dialog.getByTestId('intro-sign-in')).toBeVisible();
     await expect(dialog.getByText('Pick what to turn on')).toHaveCount(0);
     await expect(dialog.getByRole('button', { name: 'Continue' })).toHaveCount(0);
 
     // One button starts it; the page it names is linked beside the code field.
     await dialog.getByRole('button', { name: 'Sign In' }).click();
-    const link = dialog.getByRole('link', { name: 'Open the sign-in page' });
+    const link = dialog.getByRole('link', { name: 'Open Sign-In Page' });
     await expect(link).toHaveAttribute('href', 'https://claude.example/mock-sign-in');
 
     // A code the CLI refuses says why and leaves the step where it was.
@@ -40,13 +40,15 @@ test.describe('Standalone / sign-in', () => {
     await expect(dialog.getByTestId('intro-sign-in-error')).toContainText(
       "That code wasn't accepted.",
     );
-    await expect(dialog).toContainText('Sign in to Claude Code');
+    await expect(dialog).toContainText("isn't signed in to Claude Code");
 
-    // The right one signs it in, and the tour moves on by itself.
+    // The right one signs it in: the greeter says so, and reading on reaches the choices.
     await readIntro(dialog);
     await dialog.getByRole('button', { name: 'Sign In' }).click();
     await dialog.getByLabel('Sign-in code').fill('mock-code');
     await dialog.getByRole('button', { name: 'Finish' }).click();
+    await expect(dialog).toContainText('Claude Code is signed in. On we go!');
+    await readIntro(dialog);
     await expect(dialog.getByText('Pick what to turn on')).toBeVisible({ timeout: 15_000 });
   });
 
@@ -60,11 +62,13 @@ test.describe('Standalone / sign-in', () => {
     await dialog.getByRole('button', { name: 'Sign In' }).click();
     await dialog.getByLabel('Sign-in code').fill('mock-code');
     await dialog.getByRole('button', { name: 'Finish' }).click();
+    await expect(dialog).toContainText('Claude Code is signed in. On we go!');
+    await readIntro(dialog);
     await expect(dialog.getByText('Pick what to turn on')).toBeVisible({ timeout: 15_000 });
 
     await page.reload();
     await expect(dialog).toBeVisible({ timeout: 30_000 });
     await advanceIntroToChoices(dialog);
-    await expect(dialog.getByText('Sign in to Claude Code')).toHaveCount(0);
+    await expect(dialog.getByText("isn't signed in to Claude Code")).toHaveCount(0);
   });
 });

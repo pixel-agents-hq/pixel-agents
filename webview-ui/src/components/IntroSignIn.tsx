@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { CliSignInControls } from '../signIn/useCliSignIn.js';
+import { IntroOption, IntroOptionLink, IntroOptions, IntroPanel } from './IntroOptions.js';
 import { type Say, useSay } from './introSpeech.js';
 import { Button } from './ui/Button.js';
 
@@ -9,13 +10,9 @@ interface IntroSignInProps {
   /** What the greeter says for the state the sign-in is in. */
   say: Say;
   onBack?: () => void;
-  /** Signed in: on to the next step. */
+  /** Signed in without a sign-in of this step's: on to the next step. */
   onContinue: () => void;
 }
-
-const LINK_CLASS = 'text-accent-bright hover:text-accent no-underline';
-const TEXT_BUTTON_CLASS =
-  'p-0 bg-transparent border-0 text-sm text-accent hover:text-accent-bright cursor-pointer underline';
 
 /**
  * The Intro's sign-in step: Claude Code has no login on this machine, and the
@@ -24,7 +21,8 @@ const TEXT_BUTTON_CLASS =
  * the user authorizes; anywhere else this opens the page in a new tab and the
  * user pastes back the code it ends on. The server reports each turn
  * (cliSignInStatus); nothing here decides that the CLI is signed in. The
- * greeter speaks the state (`say`); this is the step's menu.
+ * greeter speaks the state (`say`); this is the step's menu: the options, and
+ * over them the code bar while a sign-in waits for its code.
  */
 export function IntroSignIn({ signIn, say, onBack, onContinue }: IntroSignInProps) {
   const { status, pending, onHost, check, start, submitCode } = signIn;
@@ -46,11 +44,13 @@ export function IntroSignIn({ signIn, say, onBack, onContinue }: IntroSignInProp
     tab.current = null;
   }, [url]);
 
-  // The sign-in started here ended signed in: on with the tour, once.
+  // Signed in by a sign-in started here: the greeter says so and the user
+  // reads on (IntroDialog shows no menu then). Signed in any other way (Check
+  // Again found a login made in a terminal): on with the tour, once, unsaid.
   const signedIn = status?.signedIn === true;
   const movedOn = useRef(false);
   useEffect(() => {
-    if (!signedIn || !started || movedOn.current) return;
+    if (!signedIn || started || movedOn.current) return;
     movedOn.current = true;
     onContinue();
   }, [signedIn, started, onContinue]);
@@ -77,119 +77,92 @@ export function IntroSignIn({ signIn, say, onBack, onContinue }: IntroSignInProp
     status === undefined
       ? ['Checking whether Claude Code is signed in...']
       : signedIn
-        ? ['Claude Code is signed in. On we go!']
+        ? started
+          ? ['Claude Code is signed in. On we go!']
+          : []
         : url
           ? [
               status.openedOnHost
                 ? "I opened Claude's sign-in page in your browser. Press Authorize there and I'll take it from here."
-                : "Press Authorize on Claude's sign-in page, then paste the code it gives you here.",
+                : "Press authorize on Claude's sign-in page, then paste the code it gives you here.",
             ]
           : [
-              "Sign in to Claude Code first: your agents work on your Claude account, and this computer isn't signed in yet.",
-              "Sign in and I'll show you the rest.",
+              "It seems this computer isn't signed in to Claude Code yet. Sign in and I'll show you the rest!",
             ],
   );
   return (
-    <div data-testid="intro-sign-in" data-signed-in={signedIn}>
+    <>
       {status === undefined || signedIn ? null : url ? (
-        <>
-          <p className="text-sm m-0 mb-8 text-text-muted">
-            {status.openedOnHost ? 'No page? ' : 'Lost the page? '}
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={LINK_CLASS}
-              data-testid="intro-sign-in-link"
-            >
-              Open the sign-in page
-            </a>
-            {status.openedOnHost ? ' and paste the code it gives you:' : '.'}
-          </p>
-          <div className="flex items-center gap-6 mb-8">
-            <input
-              type="text"
-              value={code}
-              aria-label="Sign-in code"
-              placeholder="Paste the code"
-              autoComplete="off"
-              spellCheck={false}
-              data-testid="intro-sign-in-code"
-              onChange={(e) => setCode(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submit();
-              }}
-              className="flex-1 min-w-0 text-sm py-2 px-4 bg-bg border-2 border-border rounded-none text-text"
-            />
-            <Button
-              variant={pending || !code.trim() ? 'disabled' : 'accent'}
-              size="sm"
-              disabled={pending || !code.trim()}
-              onClick={submit}
-            >
-              {pending ? 'Checking...' : 'Finish'}
-            </Button>
-          </div>
-        </>
+        // The code bar: the dialog's width, the field and the button that goes on.
+        <IntroPanel wide className="flex items-center gap-6">
+          <input
+            type="text"
+            value={code}
+            aria-label="Sign-in code"
+            placeholder="Paste the code from the sign-in page"
+            autoComplete="off"
+            spellCheck={false}
+            data-testid="intro-sign-in-code"
+            onChange={(e) => setCode(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submit();
+            }}
+            className="flex-1 min-w-0 text-sm py-2 px-4 bg-bg-dark border-2 border-border rounded-none text-text"
+          />
+          <Button
+            variant={pending || !code.trim() ? 'disabled' : 'accent'}
+            size="sm"
+            disabled={pending || !code.trim()}
+            onClick={submit}
+          >
+            {pending ? 'Checking...' : 'Finish'}
+          </Button>
+        </IntroPanel>
       ) : (
-        <>
-          {status.error && !pending && (
-            <p className="text-sm m-0 mb-8 text-status-error" data-testid="intro-sign-in-error">
+        status.error &&
+        !pending && (
+          <IntroPanel>
+            <p className="text-sm m-0 text-status-error" data-testid="intro-sign-in-error">
               {status.error}
             </p>
-          )}
-          <p className="text-sm m-0 mb-8 text-text-muted">
-            No subscription?{' '}
-            <button
-              type="button"
-              className={TEXT_BUTTON_CLASS}
-              disabled={pending}
-              onClick={() => begin('api')}
-            >
-              Use an API account
-            </button>
-            . Signed in from a terminal?{' '}
-            <button type="button" className={TEXT_BUTTON_CLASS} disabled={pending} onClick={check}>
-              Check again
-            </button>
-            .
-          </p>
-        </>
+          </IntroPanel>
+        )
       )}
 
-      <div className="flex items-center justify-between gap-6 mt-4 flex-wrap">
-        {onBack ? (
-          <Button variant="ghost" size="sm" onClick={onBack}>
+      <IntroOptions data-testid="intro-sign-in" data-signed-in={signedIn}>
+        {url ? (
+          <>
+            <IntroOptionLink href={url} data-testid="intro-sign-in-link">
+              Open Sign-In Page
+            </IntroOptionLink>
+            <IntroOption disabled={pending} onClick={() => begin('subscription')}>
+              Start Over
+            </IntroOption>
+          </>
+        ) : (
+          <>
+            <IntroOption
+              kind="primary"
+              disabled={status === undefined || starting}
+              data-testid="intro-sign-in-start"
+              onClick={() => begin('subscription')}
+            >
+              {starting ? 'Starting...' : 'Sign In'}
+            </IntroOption>
+            <IntroOption disabled={status === undefined || pending} onClick={() => begin('api')}>
+              Use API Account
+            </IntroOption>
+            <IntroOption disabled={status === undefined || pending} onClick={check}>
+              Check Again
+            </IntroOption>
+          </>
+        )}
+        {onBack && (
+          <IntroOption kind="back" onClick={onBack}>
             Back
-          </Button>
-        ) : (
-          <span />
+          </IntroOption>
         )}
-        {signedIn ? (
-          <Button variant="accent" size="sm" onClick={onContinue}>
-            Continue
-          </Button>
-        ) : url ? (
-          <Button
-            variant="default"
-            size="sm"
-            disabled={pending}
-            onClick={() => begin('subscription')}
-          >
-            Start Over
-          </Button>
-        ) : (
-          <Button
-            variant={status === undefined || starting ? 'disabled' : 'accent'}
-            size="sm"
-            disabled={status === undefined || starting}
-            data-testid="intro-sign-in-start"
-            onClick={() => begin('subscription')}
-          >
-            {starting ? 'Starting...' : 'Sign In'}
-          </Button>
-        )}
-      </div>
-    </div>
+      </IntroOptions>
+    </>
   );
 }

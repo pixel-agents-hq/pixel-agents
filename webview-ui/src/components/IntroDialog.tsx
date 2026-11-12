@@ -29,6 +29,7 @@ import { useUsageBridge } from '../usage/useUsageBridge.js';
 import { DiscordIcon } from './ChangelogModal.js';
 import { type IntroChoiceId, type IntroChoiceOption, IntroChoices } from './IntroChoices.js';
 import { dialogLetterBudget, dialogMessages, introCameraTarget } from './introDialogRules.js';
+import { IntroOption, IntroOptionLink, IntroOptions, IntroPanel } from './IntroOptions.js';
 import { IntroSignIn } from './IntroSignIn.js';
 import { Button } from './ui/Button.js';
 
@@ -128,8 +129,10 @@ const CHOICE_LABELS: Record<IntroChoiceId, string> = {
  * office's foot, typed out letter by letter, one short message at a time
  * (introDialogRules.ts cuts them to the box's width). A press on the box, its
  * arrow, Enter or Space finishes the typing, then shows the next message. A
- * step's controls (its boxes, the sign-in, the buttons) are its menu: a
- * second box above the dialog, shown once the step's last message is out.
+ * step's controls are its menu, above the dialog and shown once the step's
+ * last message is out: its options stacked in one box at the right edge
+ * (IntroOptions), and over them whatever else it shows (the choices' cards
+ * in a row, the sign-in's code bar).
  * The menus that know what to say (IntroSignIn, TutorialAsk) hand their lines
  * up through `say`. Mounting spawns the greeter; EVERY close path — the X,
  * Escape, Let's Go, or a hooksStatus that moots an unanswered ask — unmounts
@@ -379,8 +382,7 @@ export function IntroDialog({
         ]
       : step === 'claudeCode'
         ? [
-            "First, get Claude Code: the office brings your Claude Code sessions to life, but I couldn't find it on this computer.",
-            'Install it with this command, then press Continue.',
+            "We currently only support Claude Code, and I couldn't find it installed on this computer. Install it with this command, then press Continue.",
           ]
         : step === 'choices'
           ? ['Pick what to turn on. You can change any of these later in Settings.']
@@ -388,8 +390,8 @@ export function IntroDialog({
             ? [
                 ...(installFailed
                   ? [
-                      "Hooks couldn't be installed: something went wrong writing to your Claude Code settings.",
-                      'The office will watch your sessions the slower way instead. Everything still works, and you can retry any time from Settings.',
+                      "I'm sorry, for some reason hooks couldn't be installed.",
+                      'The office will watch your sessions the slower way instead. Everything still works, and you can retry any time from Settings!',
                     ]
                   : ["You're all set!"]),
                 ...(offerTutorial
@@ -438,7 +440,10 @@ export function IntroDialog({
   }, [typing, letters, text, greeterReady]);
 
   const back = (): void => {
-    const to = steps[Math.max(0, stepIndex - 1)];
+    // A sign-in step that has nothing left to ask is passed over.
+    const before = stepIndex - 1;
+    const skip = steps[before] === 'signIn' && signIn.status?.signedIn === true ? 1 : 0;
+    const to = steps[Math.max(0, before - skip)];
     setBackTo(to);
     setStep(to);
   };
@@ -447,8 +452,9 @@ export function IntroDialog({
   };
 
   // Every step but the welcome ends on a menu; the welcome's last message
-  // goes on to the next step.
-  const hasMenu = step !== 'welcome';
+  // goes on to the next step, and so does the sign-in's once it is signed in
+  // ("On we go!").
+  const hasMenu = step !== 'welcome' && !(step === 'signIn' && signIn.status?.signedIn === true);
   const menuShown = hasMenu && messages.length > 0 && page === last && !typing;
   const canAdvance = typing || page < last || !hasMenu;
   const advance = (): void => {
@@ -484,6 +490,15 @@ export function IntroDialog({
 
   if (!greeterReady || boxWidth === 0) return null;
 
+  const discord = (
+    <IntroOptionLink href={DISCORD_INVITE_URL}>
+      <span className="inline-flex items-center gap-8 align-middle">
+        <DiscordIcon />
+        Join our Discord
+      </span>
+    </IntroOptionLink>
+  );
+
   return (
     <div
       ref={stackRef}
@@ -502,121 +517,101 @@ export function IntroDialog({
     >
       {/* The step's menu: mounted with the step (the sign-in asks the server,
           the tutorial's ask follows its run) and shown once the greeter has
-          said the step's last message. */}
-      {hasMenu && (
-        <div
-          hidden={!menuShown}
-          data-testid="intro-menu"
-          className="intro-dialog-box max-w-full min-h-0 overflow-y-auto py-8 px-12 leading-[1.4]"
-        >
-          {step === 'claudeCode' && (
-            <>
-              <div className="text-sm bg-btn-bg border-2 border-border py-4 px-8 mb-8 select-all">
-                {CLAUDE_CODE_INSTALL_COMMAND}
-              </div>
-              <p className="text-sm m-0 mb-8">
-                For more info, visit{' '}
-                <a
-                  href={CLAUDE_CODE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-accent-bright hover:text-accent no-underline"
-                >
-                  claude.com/claude-code
-                </a>
-              </p>
-              <div className="flex items-center justify-between gap-6 mt-10 flex-wrap">
-                {stepIndex === 0 ? (
-                  <span />
-                ) : (
-                  <Button variant="ghost" size="sm" onClick={back}>
-                    Back
-                  </Button>
-                )}
-                <Button
-                  variant={awaitingSignIn ? 'disabled' : 'default'}
-                  size="sm"
-                  disabled={awaitingSignIn}
-                  onClick={leaveInstallStep}
-                >
-                  Continue
-                </Button>
-              </div>
-            </>
-          )}
+          said the step's last message. Its options are a stack at the right
+          edge (IntroOptions); the rest are panels above it. */}
+      {step !== 'welcome' && (
+        <div hidden={!menuShown} data-testid="intro-menu" className="self-stretch min-h-0">
+          <div className="intro-menu" style={{ gap: INTRO_DIALOG_MENU_GAP_PX }}>
+            {step === 'claudeCode' && (
+              <>
+                <IntroPanel>
+                  <div className="text-sm bg-btn-bg border-2 border-border py-4 px-8 mb-8 select-all">
+                    {CLAUDE_CODE_INSTALL_COMMAND}
+                  </div>
+                  <p className="text-sm m-0">
+                    For more info, visit{' '}
+                    <a
+                      href={CLAUDE_CODE_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent-bright hover:text-accent no-underline"
+                    >
+                      claude.com/claude-code
+                    </a>
+                  </p>
+                </IntroPanel>
+                <IntroOptions>
+                  <IntroOption kind="primary" disabled={awaitingSignIn} onClick={leaveInstallStep}>
+                    Continue
+                  </IntroOption>
+                  {stepIndex > 0 && (
+                    <IntroOption kind="back" onClick={back}>
+                      Back
+                    </IntroOption>
+                  )}
+                </IntroOptions>
+              </>
+            )}
 
-          {step === 'signIn' && (
-            <IntroSignIn
-              signIn={signIn}
-              say={say}
-              onBack={stepIndex > 0 ? back : undefined}
-              onContinue={forward}
-            />
-          )}
+            {step === 'signIn' && (
+              <IntroSignIn
+                signIn={signIn}
+                say={say}
+                onBack={stepIndex > 0 ? back : undefined}
+                onContinue={forward}
+              />
+            )}
 
-          {step === 'choices' && (
-            <IntroChoices
-              options={options}
-              values={choices}
-              onToggle={(id) => setChoices((c) => ({ ...c, [id]: !c[id] }))}
-              pending={applying}
-              warnAllOff={hooksAsk !== null}
-              onBack={stepIndex > 0 ? back : undefined}
-              onContinue={applyChoices}
-            />
-          )}
+            {step === 'choices' && (
+              <IntroChoices
+                options={options}
+                values={choices}
+                onToggle={(id) => setChoices((c) => ({ ...c, [id]: !c[id] }))}
+                pending={applying}
+                warnAllOff={hooksAsk !== null}
+                onBack={stepIndex > 0 ? back : undefined}
+                onContinue={applyChoices}
+              />
+            )}
 
-          {step === 'closing' && (
-            <>
-              <p className="text-base m-0 mb-10">
-                <a
-                  href={DISCORD_INVITE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-8 text-accent-bright hover:text-accent no-underline"
-                >
-                  <DiscordIcon />
-                  Join our Discord!
-                </a>
-              </p>
-              {/* The tutorial's ask closes the Intro's last step, with its own buttons. */}
-              {offerTutorial && tutorial.status ? (
+            {/* The tutorial's ask closes the Intro's last step, with its own options. */}
+            {step === 'closing' &&
+              (offerTutorial && tutorial.status ? (
                 <TutorialAsk
                   status={tutorial.status}
                   rejected={tutorial.rejected}
                   embedded
                   say={say}
+                  moreOptions={discord}
                   onBack={back}
                   onClose={onClose}
                   onStart={startTutorial}
                 />
               ) : (
-                <div className="flex items-center justify-between gap-6 mt-10 flex-wrap">
-                  {stepIndex === 0 ? (
-                    <span />
-                  ) : (
-                    <Button variant="ghost" size="sm" onClick={back}>
+                <IntroOptions>
+                  <IntroOption kind="primary" onClick={onClose}>
+                    Let&apos;s Go
+                  </IntroOption>
+                  {discord}
+                  {stepIndex > 0 && (
+                    <IntroOption kind="back" onClick={back}>
                       Back
-                    </Button>
+                    </IntroOption>
                   )}
-                  <Button variant="accent" size="sm" onClick={onClose}>
-                    Let's Go
-                  </Button>
-                </div>
-              )}
-            </>
-          )}
+                </IntroOptions>
+              ))}
 
-          {step === 'tutorial' && tutorial.status && (
-            <TutorialAsk
-              status={tutorial.status}
-              rejected={tutorial.rejected}
-              embedded={false}
-              say={say}
-              onClose={onClose}
-              onStart={startTutorial}
-            />
-          )}
+            {step === 'tutorial' && tutorial.status && (
+              <TutorialAsk
+                status={tutorial.status}
+                rejected={tutorial.rejected}
+                embedded={false}
+                say={say}
+                onClose={onClose}
+                onStart={startTutorial}
+              />
+            )}
+          </div>
         </div>
       )}
 

@@ -55,7 +55,7 @@ test.describe('Standalone / Tutorial', () => {
     await introToClosing(dialog);
     // The closing step's ask says plainly what yes does, and nothing has launched yet.
     const said = await readIntro(dialog);
-    expect(said).toContain('Want Byte to show you around?');
+    expect(said).toContain('Want me to show you around?');
     expect(said).toContain('real Claude Code session');
     expect(said).toContain('Claude plan');
     await expect(dialog.getByTestId('tutorial-offer')).toBeVisible();

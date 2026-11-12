@@ -26,18 +26,18 @@ export { TUTORIAL_NICKNAME } from '../../../core/src/tutorial/quests.js';
 /** The Guide's name when its character has none (the default cast's). */
 export const GUIDE_FALLBACK_NAME = 'Byte';
 
-/** The ask's title, named after the Guide. */
-export function tutorialHeadline(name: string): string {
-  return `Want ${name} to show you around?`;
+/** The ask's title, in the greeter's own words (it is the one asking). */
+export function tutorialHeadline(): string {
+  return 'Want me to show you around?';
 }
 
 /** The ask's body: one short paragraph (it shares the Intro's last step). */
-export function tutorialDisclosure(name: string, directoryName: string | null): string {
+export function tutorialDisclosure(directoryName: string | null): string {
   const where = directoryName ? ` in ${directoryName}` : '';
   return (
-    `${name} takes a desk and guides you from a real Claude Code session${where}, using your ` +
+    `I'll take a desk and guide you from a real Claude Code session${where}, using your ` +
     'Claude plan, in auto mode: Claude Code still asks before anything risky. Four first steps ' +
-    `wait in a checklist; skip any, or quit to close ${name}'s session.`
+    'wait in a checklist; skip any, or quit to close my session.'
   );
 }
 

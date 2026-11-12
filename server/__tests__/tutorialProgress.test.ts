@@ -153,15 +153,13 @@ describe("the Guide's words", () => {
     );
   });
   it("go by the character's name, never a fixed one", () => {
-    for (const text of [
-      tutorialDisclosure('Zed', 'app'),
-      tutorialBrief('Zed'),
-      tutorialSkillDescription('Zed'),
-    ]) {
+    for (const text of [tutorialBrief('Zed'), tutorialSkillDescription('Zed')]) {
       expect(text).toContain('Zed');
       expect(text).not.toMatch(/\b(Suit|Byte)\b/);
     }
-    expect(tutorialDisclosure('Zed', 'app')).toContain(' in app');
+    // The ask is the greeter speaking for itself: no name at all.
+    expect(tutorialDisclosure('app')).not.toMatch(/\b(Suit|Byte)\b/);
+    expect(tutorialDisclosure('app')).toContain(' in app');
   });
 });
 

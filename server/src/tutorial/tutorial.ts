@@ -119,8 +119,6 @@ export class Tutorial {
   private baseline: TutorialFacts | null = null;
   /** The running Guide's name (its character's, read at start). */
   private name = '';
-  /** The Guide's name the last offer gave. */
-  private offeredName = '';
   private readonly detach: () => void;
 
   constructor(private readonly deps: TutorialDeps) {
@@ -149,15 +147,14 @@ export class Tutorial {
 
   statusMessage(): TutorialStatus {
     const where = this.deps.surface?.where();
-    this.offeredName = this.deps.guideName();
     const reason = this.unavailableReason(where);
     const run = this.progress;
     return {
       type: 'tutorialStatus',
       available: reason === null,
       ...(reason !== null ? { unavailableReason: reason } : {}),
-      headline: tutorialHeadline(this.deps.guideName()),
-      disclosure: tutorialDisclosure(this.deps.guideName(), where?.ok ? where.directoryName : null),
+      headline: tutorialHeadline(),
+      disclosure: tutorialDisclosure(where?.ok ? where.directoryName : null),
       ...(run
         ? {
             run: {
@@ -338,12 +335,6 @@ export class Tutorial {
 
   /** A broadcast the offer or the quests may hang on. */
   private heard(message: Record<string, unknown>): void {
-    // The offer names the greeter's character: a renamed one is re-offered.
-    if (message.type === 'characterProfilesLoaded' && !this.progress) {
-      const name = this.deps.guideName();
-      if (name !== this.offeredName) this.broadcastStatus();
-      return;
-    }
     if (!this.progress || !this.baseline) return;
     if (message.type === 'layoutLoaded') {
       // An agent's edit or an undo moved the layout: not the user's change.

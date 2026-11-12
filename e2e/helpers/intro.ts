@@ -11,7 +11,8 @@ import { expect } from '@playwright/test';
  * standalone browser page.
  *
  * The greeter speaks in a dialog box, one short message at a time; a step's
- * controls are its menu, shown once its last message is out. `readIntro`
+ * controls are its menu (a stack of options, with any cards or fields over
+ * it), shown once its last message is out. `readIntro`
  * presses through the messages to the menu, as a user would.
  */
 
@@ -62,7 +63,7 @@ export async function readIntro(dialog: Locator, timeoutMs = 30_000): Promise<st
 
 /**
  * Walk the Intro from its opening step to the choices step's menu, past the
- * "First, get Claude Code" step when the server found no CLI (so it may or
+ * get-Claude-Code step when the server found no CLI (so it may or
  * may not come).
  */
 export async function advanceIntroToChoices(dialog: Locator): Promise<void> {
@@ -95,7 +96,7 @@ export async function chooseInIntro(dialog: Locator, picks: IntroPicks = {}): Pr
   }
   await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
   const anyway = dialog.getByRole('button', { name: 'Continue Anyway' });
-  const closing = dialog.getByText(/You're all set!|Hooks couldn't be installed/);
+  const closing = dialog.getByText(/You're all set!|hooks couldn't be installed/);
   await expect(anyway.or(closing)).toBeVisible({ timeout: 15_000 });
   if (await anyway.isVisible()) await anyway.click();
   await expect(closing).toBeVisible({ timeout: 15_000 });
@@ -107,7 +108,7 @@ export async function chooseInIntro(dialog: Locator, picks: IntroPicks = {}): Pr
  * is answered with `picks` (default: everything off) on the way.
  */
 export async function finishIntro(dialog: Locator, picks: IntroPicks = {}): Promise<void> {
-  const closing = dialog.getByText(/You're all set!|Hooks couldn't be installed/);
+  const closing = dialog.getByText(/You're all set!|hooks couldn't be installed/);
   const choices = dialog.getByText('Pick what to turn on');
   await expect(closing.or(choices)).toBeVisible();
   if (await choices.isVisible()) await chooseInIntro(dialog, picks);

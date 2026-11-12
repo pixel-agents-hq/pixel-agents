@@ -1,8 +1,8 @@
-import { useEffect, useReducer, useRef } from 'react';
+import { type ReactNode, useEffect, useReducer, useRef } from 'react';
 
 import type { TutorialStatus } from '../../../core/src/messages.js';
+import { IntroOption, IntroOptions, IntroPanel } from '../components/IntroOptions.js';
 import { type Say, useSay } from '../components/introSpeech.js';
-import { Button } from '../components/ui/Button.js';
 import { reduceTutorialOffer, TUTORIAL_OFFER_START } from './tutorialOffer.js';
 
 interface TutorialAskProps {
@@ -14,6 +14,8 @@ interface TutorialAskProps {
   embedded: boolean;
   /** What the greeter says: the headline, then the server's copy. */
   say: Say;
+  /** Options of the step's own, listed after the ask's (the Intro's Discord link). */
+  moreOptions?: ReactNode;
   /** Back to the Intro's previous step; absent when there is none. */
   onBack?: () => void;
   /** Every way out: Let's Go / Not Now, Close, and a started run. */
@@ -33,6 +35,7 @@ export function TutorialAsk({
   rejected,
   embedded,
   say,
+  moreOptions,
   onBack,
   onClose,
   onStart,
@@ -61,7 +64,7 @@ export function TutorialAsk({
   useSay(
     say,
     failed
-      ? ["The tour couldn't start."]
+      ? ["Sorry, I can't show you around just now! Try Settings → Play the Tutorial later."]
       : blocked
         ? [status.headline]
         : [status.headline, status.disclosure],
@@ -70,58 +73,44 @@ export function TutorialAsk({
   return (
     <>
       {blocked ? (
-        <p className="text-sm m-0 mb-8" data-testid="tutorial-unavailable">
-          {status.unavailableReason ?? "The tutorial can't start here right now."}
-        </p>
+        <IntroPanel>
+          <p className="text-sm m-0" data-testid="tutorial-unavailable">
+            {status.unavailableReason ?? "The tutorial can't start here right now."}
+          </p>
+        </IntroPanel>
       ) : failed ? (
-        <p className="text-sm m-0 mb-8 text-status-error">{state.reason}</p>
+        <IntroPanel>
+          <p className="text-sm m-0 text-status-error">{state.reason}</p>
+        </IntroPanel>
       ) : null}
 
-      <div
-        className="flex items-center justify-between gap-6 mt-4 flex-wrap"
-        data-testid={blocked || failed ? undefined : 'tutorial-offer'}
-      >
-        {onBack && !starting ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={failed ? () => dispatch({ kind: 'retry' }) : onBack}
-          >
-            Back
-          </Button>
+      <IntroOptions data-testid={blocked || failed ? undefined : 'tutorial-offer'}>
+        {blocked || failed ? (
+          <IntroOption onClick={onClose}>Close</IntroOption>
         ) : (
-          <span />
+          <>
+            <IntroOption
+              kind="primary"
+              disabled={starting}
+              onClick={() => {
+                dispatch({ kind: 'confirm' });
+                onStart();
+              }}
+            >
+              {starting ? 'Taking a Seat...' : 'Show Me Around'}
+            </IntroOption>
+            <IntroOption disabled={starting} onClick={onClose}>
+              {embedded ? "Let's Go" : 'Not Now'}
+            </IntroOption>
+          </>
         )}
-        <div className="flex items-center justify-end gap-6 flex-wrap">
-          {blocked || failed ? (
-            <Button variant="default" size="sm" onClick={onClose}>
-              Close
-            </Button>
-          ) : (
-            <>
-              <Button
-                variant={starting ? 'disabled' : 'default'}
-                size="sm"
-                disabled={starting}
-                onClick={onClose}
-              >
-                {embedded ? "Let's Go" : 'Not Now'}
-              </Button>
-              <Button
-                variant={starting ? 'disabled' : 'accent'}
-                size="sm"
-                disabled={starting}
-                onClick={() => {
-                  dispatch({ kind: 'confirm' });
-                  onStart();
-                }}
-              >
-                {starting ? 'Taking a Seat...' : 'Show Me Around'}
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
+        {moreOptions}
+        {onBack && !starting && (
+          <IntroOption kind="back" onClick={failed ? () => dispatch({ kind: 'retry' }) : onBack}>
+            Back
+          </IntroOption>
+        )}
+      </IntroOptions>
     </>
   );
 }

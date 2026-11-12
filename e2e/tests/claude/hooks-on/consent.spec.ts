@@ -264,7 +264,7 @@ test.describe('Hooks consent gate', () => {
 
     const dialog = await openConsentDialog(frame);
     // The x is on every step — here, mid-tour, past the welcome.
-    expect(await readIntro(dialog)).toMatch(/Pick what to turn on|First, get Claude Code/);
+    expect(await readIntro(dialog)).toMatch(/Pick what to turn on|only support Claude Code/);
 
     narrator.step('aborting the tour with the x — no choice made');
     await dialog.getByRole('button', { name: 'Close' }).click();
@@ -344,7 +344,7 @@ test.describe('Hooks consent gate', () => {
       // The installer refuses to rewrite a shape it cannot read, so nothing of
       // ours reaches the file — and the closing step says so rather than
       // claiming success.
-      await expect(dialog).toContainText("Hooks couldn't be installed", { timeout: 15_000 });
+      await expect(dialog).toContainText("hooks couldn't be installed", { timeout: 15_000 });
       await expect(dialog).not.toContainText("You're all set!");
       expect(ourHookEvents(tmpHome)).toEqual([]);
       narrator.check('the closing step reports the failure instead of congratulating');
