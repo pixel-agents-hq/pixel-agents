@@ -69,6 +69,9 @@ export class PiecesController {
   private readonly hoverListeners = new Set<() => void>();
   /** Piece uid → its live PC shell, as the server announced them (pcShellsLoaded). */
   private shellsByPiece: ReadonlyMap<string, PcShell> = new Map();
+  /** The pieces whose panel is in use, as every office is told (panelsInUse): all a
+   *  view-only office knows of the shells. */
+  private busyPieces: ReadonlySet<string> = new Set();
   /** The Directories' names, in the host's order (directoriesLoaded). */
   private directoryNames: readonly string[] = [];
   /** The name of the character at a palette (the cast). */
@@ -117,6 +120,15 @@ export class PiecesController {
    */
   setPcShells(shells: readonly PcShell[]): void {
     this.shellsByPiece = new Map(shells.map((shell) => [shell.uid, shell]));
+    this.deps.shellsChanged();
+  }
+
+  /**
+   * The pieces whose panel is in use (panelsInUse, the server's whole list): what an
+   * office that isn't sent the shells shows — the PC on, its label "Busy".
+   */
+  setPanelsInUse(uids: readonly string[]): void {
+    this.busyPieces = new Set(uids);
     this.deps.shellsChanged();
   }
 
@@ -293,7 +305,11 @@ export class PiecesController {
     const shell = this.shellsByPiece.get(uid);
     return {
       agentAtWork: ch ? { id: ch.id, name: this.agentName(ch) } : null,
-      panelInUse: shell ? { name: pcShellName(shell) } : null,
+      panelInUse: shell
+        ? { name: pcShellName(shell) }
+        : this.busyPieces.has(uid)
+          ? { name: null }
+          : null,
     };
   }
 

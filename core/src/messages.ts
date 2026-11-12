@@ -68,6 +68,7 @@ export type ServerMessage =
   | TerminalSessionOpened
   | TerminalSessionClosed
   | PcShellsLoaded
+  | PanelsInUse
   | PcShellReady
   | PcShellCloseQuestion
   | PcShellRejected
@@ -776,6 +777,11 @@ export interface PcShell {
   uid: string;
   furnitureType: string;
   directoryName?: string;
+}
+
+export interface PanelsInUse {
+  type: 'panelsInUse';
+  uids: string[];
 }
 
 export interface PcShellReady {

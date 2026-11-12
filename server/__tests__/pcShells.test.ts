@@ -209,15 +209,20 @@ describe('PC shells', () => {
     expect(h.ptyManager.size).toBe(0);
   });
 
-  it('tells privileged offices only, and a new one gets them in its snapshot', async () => {
+  it('tells privileged offices the shells and view-only ones only which PC is in use, snapshots included', async () => {
     const watcher = await h.connectOffice({ privileged: false });
     const tokened = await h.connectOffice();
     const id = (await shells.open(FRONT_PC)).id;
     await waitFor(() => shells.shells(tokened.received)?.length === 1, 'the tokened office told');
-    // A view-only office sees agents, never shells: not on the change...
+    // A view-only office is told which PC is in use, never the shell: on the change...
+    const inUse = (received: typeof watcher.received) =>
+      received.filter((m) => m.type === 'panelsInUse').at(-1)?.uids;
+    await waitFor(() => inUse(watcher.received)?.length === 1, 'the view-only office told');
+    expect(inUse(watcher.received)).toEqual([FRONT_PC]);
     expect(watcher.received.some((m) => m.type === 'pcShellsLoaded')).toBe(false);
-    // ...and not in a snapshot taken while one is live.
+    // ...and in a snapshot taken while one is live.
     const lateWatcher = await h.connectOffice({ privileged: false });
+    expect(inUse(lateWatcher.received)).toEqual([FRONT_PC]);
     expect(lateWatcher.received.some((m) => m.type === 'pcShellsLoaded')).toBe(false);
 
     const late = await h.connectOffice();

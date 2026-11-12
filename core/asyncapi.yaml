@@ -155,6 +155,7 @@ components:
         - $ref: '#/components/schemas/TerminalSessionClosed'
         # PC shells (a PC's plain login shell on the host: not an agent)
         - $ref: '#/components/schemas/PcShellsLoaded'
+        - $ref: '#/components/schemas/PanelsInUse'
         - $ref: '#/components/schemas/PcShellReady'
         - $ref: '#/components/schemas/PcShellCloseQuestion'
         - $ref: '#/components/schemas/PcShellRejected'
@@ -1825,7 +1826,7 @@ components:
     PcShellsLoaded:
       description: >-
         Every live PC shell, the whole list: broadcast to privileged offices only
-        (a view-only office sees the agents, never the operator's shells)
+        (a view-only office sees the agents, never the operator's shells: it is told only which pieces are in use, `panelsInUse`)
         whenever one opens or ends, and sent in their connect snapshot, so a
         reconnect is a resync.
       type: object
@@ -1838,6 +1839,24 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PcShell'
+
+    PanelsInUse:
+      description: >-
+        The pieces whose panel is in use (a PC with a live PC shell), by uid and
+        nothing else: broadcast to every office beside `pcShellsLoaded` and sent
+        in every connect snapshot. A view-only office, which is never sent the
+        shells, shows those pieces in their "panel in use" state and labels them
+        "Busy", without learning what the panel holds.
+      type: object
+      additionalProperties: false
+      required: [type, uids]
+      properties:
+        type:
+          const: panelsInUse
+        uids:
+          type: array
+          items:
+            type: string
 
     PcShellReady:
       description: >-

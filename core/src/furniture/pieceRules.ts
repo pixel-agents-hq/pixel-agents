@@ -17,8 +17,12 @@ import { LABEL_PLACEHOLDER, type LabelPlaceholder } from './interactive.js';
 export interface PieceUse {
   /** The agent working at the piece (sitting at its workstation seat, working), or null. */
   agentAtWork: { id: number; name: string } | null;
-  /** The piece's panel is in use (a PC: a live PC shell), naming what it holds, or null. */
-  panelInUse: { name: string } | null;
+  /**
+   * The piece's panel is in use (a PC: a live PC shell), naming what it holds, or
+   * null. A null `name` = in use, but this office is not told by what (a view-only
+   * office): its label reads PANEL_IN_USE_UNNAMED.
+   */
+  panelInUse: { name: string | null } | null;
 }
 
 /** What the office knows about one piece right now: its use, and what its click needs. */
@@ -56,6 +60,9 @@ export interface PieceView {
   click: PieceClick | null;
 }
 
+/** What a label says of a panel in use that this office is not told the holder of. */
+export const PANEL_IN_USE_UNNAMED = 'Busy';
+
 function holds(condition: FurnitureCondition, facts: PieceUse): boolean {
   switch (condition) {
     case 'agentWorking':
@@ -75,7 +82,7 @@ function fill(text: string, facts: PieceUse): string {
   // so the fact is there whenever the line is.
   const values: Record<LabelPlaceholder, string | undefined> = {
     agent: facts.agentAtWork?.name,
-    panel: facts.panelInUse?.name,
+    panel: facts.panelInUse?.name ?? undefined,
   };
   return text.replace(LABEL_PLACEHOLDER, (_, name: LabelPlaceholder) => values[name] ?? '');
 }
@@ -100,7 +107,8 @@ export function pieceState(
  * A piece's Furniture label under its use, or null when the furniture declares none:
  * its name and, like the state rules, the first line that holds (a label says one
  * thing, and a manifest that lists its lines in its click's order says what a click
- * opens), filled in.
+ * opens), filled in — or "Busy" for a line naming a panel's holder this office is
+ * not told.
  */
 export function pieceLabel(
   interactive: FurnitureInteractive | undefined,
@@ -109,7 +117,10 @@ export function pieceLabel(
   const spec = interactive?.label;
   if (!spec) return null;
   const line = spec.lines?.find((l) => anyHolds(l.when, use));
-  return { name: spec.name, line: line ? fill(line.text, use) : null };
+  if (!line) return { name: spec.name, line: null };
+  // A line that names what the panel holds, in an office that isn't told: "Busy".
+  const unnamed = use.panelInUse?.name === null && line.text.includes('{panel}');
+  return { name: spec.name, line: unnamed ? PANEL_IN_USE_UNNAMED : fill(line.text, use) };
 }
 
 /** Where a click on a piece leads under the office's facts, or null when it offers none. */

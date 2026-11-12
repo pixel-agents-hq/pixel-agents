@@ -1,6 +1,6 @@
 import type { PcShell } from '../../../core/src/messages.js';
 import { pcShellName } from '../../../core/src/pcShells.js';
-import { PC_SHELL_CARD_STATE } from '../constants.js';
+import { MUGSHOT_CROP_SIDE_PX, MUGSHOT_RENDER_ZOOM, PC_SHELL_CARD_STATE } from '../constants.js';
 import type { CardVariant, CloseMode } from './cardBar.js';
 import { CARD_VARIANT, CLOSE_MODE } from './cardStyles.js';
 import { PieceSprite } from './PieceSprite.js';
@@ -19,10 +19,11 @@ interface PcShellCardProps {
 
 /**
  * A PC shell's card in the card bar, beside the agents' (CONTEXT.md → PC shell):
- * the PC, switched on, standing on the card's foot where an agent's mug shot
- * is, and the ×. Its Directory's name runs along the top only where the PC
- * offered a choice (its Area has several Directories); the hover title always
- * says it. No status dot and no context gauge: a shell is not an agent. Like an
+ * the PC, switched on, where an agent's mug shot is — its top (the screen)
+ * against the card's top, or right under its Directory's name, which runs along
+ * the top only where the PC offered a choice (its Area has several
+ * Directories); the hover title always says it. The PC's foot is what the card
+ * cuts off. No status dot and no context gauge: a shell is not an agent. Like an
  * agent's card it is its terminal's tab.
  */
 export function PcShellCard({
@@ -34,6 +35,7 @@ export function PcShellCard({
   onClose,
 }: PcShellCardProps) {
   const name = pcShellName(shell);
+  const side = MUGSHOT_CROP_SIDE_PX * MUGSHOT_RENDER_ZOOM;
   return (
     <div
       data-testid="pc-shell-card"
@@ -41,16 +43,19 @@ export function PcShellCard({
       onClick={() => onSelect(shell.id)}
       title={`Shell in ${name}`}
     >
-      <span className="relative flex shrink-0">
-        <PieceSprite type={shell.furnitureType} state={PC_SHELL_CARD_STATE} />
+      <span
+        className="flex flex-col shrink-0 overflow-hidden"
+        style={{ width: side, height: side }}
+      >
         {named && (
           <span
             data-testid="pc-shell-card-name"
-            className="absolute left-0 right-0 top-0 bg-bg text-text text-2xs leading-none px-1 truncate text-center pointer-events-none"
+            className="shrink-0 bg-bg text-text text-2xs leading-none px-1 truncate text-center pointer-events-none"
           >
             {name}
           </span>
         )}
+        <PieceSprite type={shell.furnitureType} state={PC_SHELL_CARD_STATE} />
       </span>
       <div className="flex flex-col items-center shrink-0">
         <Button

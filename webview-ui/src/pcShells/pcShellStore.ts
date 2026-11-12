@@ -51,6 +51,10 @@ export function handlePcShellMessage(
     advanceClosing();
     return true;
   }
+  if (msg.type === 'panelsInUse') {
+    if (Array.isArray(msg.uids)) os.pieces.setPanelsInUse(msg.uids as string[]);
+    return true;
+  }
   if (msg.type === 'pcShellReady') {
     if (typeof msg.id !== 'number') return true;
     update({ ...entry, ready: { id: msg.id, seq: (entry.ready?.seq ?? 0) + 1 } });

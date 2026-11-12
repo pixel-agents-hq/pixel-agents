@@ -905,8 +905,12 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   });
 
   // 6b. The live PC shells, privileged offices only: a view-only office sees
-  // the agents, never the operator's shells (no card, no lit PC, no label).
-  if (ctx.pcShells && ctx.privileged) send({ ...ctx.pcShells.message() });
+  // the agents, never the operator's shells (no card, no Directory). Every
+  // office is told which pieces are in use: the PC lit, its label "Busy".
+  if (ctx.pcShells) {
+    if (ctx.privileged) send({ ...ctx.pcShells.message() });
+    send({ ...ctx.pcShells.inUseMessage() });
+  }
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents
   // into characters once seats are rebuilt.

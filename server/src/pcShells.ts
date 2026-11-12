@@ -24,6 +24,7 @@ import * as os from 'os';
 import { PC_SHELL_ID_BASE } from '../../core/src/constants.js';
 import { layoutFromJson } from '../../core/src/layout/index.js';
 import type {
+  PanelsInUse,
   PcShellCloseQuestion,
   PcShellReady,
   PcShellRejected,
@@ -38,6 +39,8 @@ export interface PcShellView {
   has(id: number): boolean;
   /** What every office is told: the whole list, oldest first, no folders. */
   message(): PcShellsLoaded;
+  /** What a view-only office is told instead: which pieces are in use, no more. */
+  inUseMessage(): PanelsInUse;
 }
 
 /** A shell's terminal as the registry drives it. */
@@ -72,7 +75,7 @@ export interface PcShellRegistryDeps {
    *  the office's selector nor picked here. */
   directories: () => readonly PlaceDirectory[];
   /** Tell every open office (the store's broadcast). */
-  broadcast: (message: PcShellsLoaded) => void;
+  broadcast: (message: PcShellsLoaded | PanelsInUse) => void;
   /** The list changed (standalone saves it beside the agents). */
   changed?: (records: PersistedPcShell[]) => void;
 }
@@ -132,6 +135,10 @@ export class PcShellRegistry implements PcShellView {
         ...(directoryName !== undefined ? { directoryName } : {}),
       })),
     };
+  }
+
+  inUseMessage(): PanelsInUse {
+    return { type: 'panelsInUse', uids: [...new Set(this.records().map((r) => r.uid))] };
   }
 
   /**
@@ -245,6 +252,7 @@ export class PcShellRegistry implements PcShellView {
   announce(): void {
     this.deps.changed?.(this.records());
     this.deps.broadcast(this.message());
+    this.deps.broadcast(this.inUseMessage());
   }
 
   /** The layout, catalogue, mappings and Directories a shell's place is read from. */

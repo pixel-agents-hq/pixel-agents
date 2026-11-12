@@ -115,6 +115,18 @@ describe('a PC with a live PC shell', () => {
     assert.equal(os.pieces.shellOf('kiosk')?.id, SHELL.id);
   });
 
+  test('in a view-only office, told only that it is in use: lit, "Busy", no click', () => {
+    const os = office();
+    os.pieces.setPanelsInUse(['kiosk']);
+    assert.equal(lit(os), true);
+    assert.deepEqual(view(os, true)?.label?.line, 'Busy');
+    assert.equal(view(os, true)?.click, null);
+    assert.equal(os.pieces.shellOf('kiosk'), null);
+    os.pieces.setPanelsInUse([]);
+    assert.equal(lit(os), false);
+    assert.deepEqual(view(os, true)?.label?.line, 'Free');
+  });
+
   test('names a shell in the home folder Home', () => {
     const os = office();
     os.pieces.setPcShells([{ id: SHELL.id, uid: 'kiosk', furnitureType: 'KIOSK_FRONT_OFF' }]);
