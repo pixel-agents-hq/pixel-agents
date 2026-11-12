@@ -4,6 +4,7 @@ import { serverToken } from '../transport/serverToken.js';
 import {
   dragCarriesFiles,
   isLoopbackHostname,
+  pasteCarriesFiles,
   pathsToPaste,
   terminalFileLocateUrl,
   terminalFileUrl,
@@ -11,14 +12,15 @@ import {
 } from './fileUpload.js';
 
 /**
- * Sending files to an agent's terminal: a file dropped on the pane (desktop)
- * or picked from the device (the phone's "Attach file") is uploaded to the
+ * Sending files to an agent's terminal: a file dropped on the pane or pasted
+ * into it (desktop: a copied screenshot, files copied in the file manager),
+ * or picked from the device (the phone's "Attach file"), is uploaded to the
  * machine the agent runs on, and the path it was saved under is pasted into
  * the terminal -- what dropping a file on a native terminal types. The server
  * side (where it is saved, under what name, how the path is quoted) is
  * server/src/terminal/fileUploads.ts.
  *
- * This is the DOM half: the page's drop listeners, the hidden file input, the
+ * This is the DOM half: the page's drop listeners, the pane's paste listener, the hidden file input, the
  * upload itself and the status line laid over the pane (the upload's address
  * and wording are fileUpload.ts, DOM-free). Styling lives in index.css
  * (`.terminal-drop-target`, `.terminal-file-status`).
@@ -276,12 +278,26 @@ export function attachFileSending(
   });
   input.addEventListener('change', onPicked);
 
+  // A paste of files (Ctrl+V / Cmd+V with a screenshot or copied files on the
+  // clipboard) is sent like a drop. Caught on its way down to xterm's
+  // textarea, which would otherwise paste the clipboard's text, if any (a
+  // copied file's name); a paste of text is left to it.
+  const onPaste = (e: ClipboardEvent) => {
+    const data = e.clipboardData;
+    if (!data || !pasteCarriesFiles(data.types, data.files.length)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    send(Array.from(data.files));
+  };
+  host.addEventListener('paste', onPaste, true);
+
   return {
     pickFiles: () => input.click(),
     dispose() {
       disposed = true;
       unregister();
       input.removeEventListener('change', onPicked);
+      host.removeEventListener('paste', onPaste, true);
       input.remove();
       hideDropTarget();
       hideStatus();

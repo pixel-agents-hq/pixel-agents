@@ -416,6 +416,48 @@ test.describe('Standalone / terminal', () => {
       .toContain(original.replace(/\s/g, ''));
     expect(fs.readdirSync(uploads)).toEqual(['my-drop.txt']);
   });
+
+  test('a screenshot pasted into the terminal is saved on the host and its path pasted in; pasted text stays text @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    await arrangeNextClaudeInvocation(
+      standalone.tmpHome,
+      claudeScenario('terminal file paste').holdOpenFor(60_000).build(),
+    );
+    await clickAddAgent(page);
+    const terminal = page.locator('.xterm').first();
+    await expect(terminal).toContainText('mock claude session', { timeout: 15_000 });
+    const input = terminal.locator('textarea');
+
+    // What Ctrl+V raises with a copied screenshot on the clipboard: a paste
+    // holding one file and no text.
+    // (Built in the page: Playwright's dispatchEvent gives a paste no clipboard.)
+    await input.evaluate((el) => {
+      const data = new DataTransfer();
+      data.items.add(new File(['png bytes'], 'image.png', { type: 'image/png' }));
+      el.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+    });
+    const uploads = path.join(standalone.tmpHome, '.pixel-agents', 'uploads');
+    const saved = path.join(uploads, 'image.png');
+    await expect
+      .poll(async () => (await terminal.innerText()).replace(/\s/g, ''), { timeout: 10_000 })
+      .toContain(saved.replace(/\s/g, ''));
+    expect(fs.readFileSync(saved, 'utf-8')).toBe('png bytes');
+
+    // A paste of text is still the terminal's own: typed in, nothing saved.
+    await input.evaluate((el) => {
+      const data = new DataTransfer();
+      data.setData('text/plain', 'just-some-words');
+      el.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+    });
+    await expect(terminal).toContainText('just-some-words', { timeout: 10_000 });
+    expect(fs.readdirSync(uploads)).toEqual(['image.png']);
+  });
 });
 
 test.describe('Standalone / terminal disabled', () => {

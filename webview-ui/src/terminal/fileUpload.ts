@@ -1,7 +1,7 @@
 /**
  * Sending files to a terminal, the DOM-free part: where an upload goes, how
  * a refusal reads, and what is pasted once the files arrived. The DOM half
- * (drop, picker, status line) is fileSending.ts.
+ * (drop, paste, picker, status line) is fileSending.ts.
  */
 import {
   TERMINAL_FILES_API_PREFIX,
@@ -16,6 +16,20 @@ const FILE_DRAG_TYPES = ['Files', 'application/x-moz-file'];
  *  (all a browser tells before the drop), or by the files a drop holds. */
 export function dragCarriesFiles(types: ArrayLike<string>, fileCount = 0): boolean {
   return fileCount > 0 || Array.from(types).some((type) => FILE_DRAG_TYPES.includes(type));
+}
+
+/**
+ * Whether a paste is one of files (a copied screenshot, files copied in the
+ * file manager) and not of text. The clipboard often holds both: a file
+ * copied in Finder also carries its name as text, an image copied off a web
+ * page its markup, and those are files; text copied from a document or a
+ * spreadsheet carries plain text AND markup beside a picture of itself, and
+ * that is the text the user meant.
+ */
+export function pasteCarriesFiles(types: ArrayLike<string>, fileCount: number): boolean {
+  if (fileCount === 0) return false;
+  const kinds = Array.from(types);
+  return !(kinds.includes('text/plain') && kinds.includes('text/html'));
 }
 
 /** Whether a page's hostname is this machine's loopback: the browser and the

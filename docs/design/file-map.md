@@ -209,8 +209,8 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
       selectionMath.ts               Word expansion, range ordering, handle clamping (pure)
       selectionOverlay.ts            Copy pill (Copy | Copy as text), Paste pill + selection handles (DOM; styled in index.css)
       inputArea.ts                   The TUI's input area: cursor row out to the prompt box's rules (pure)
-      fileSending.ts                 Files to the terminal: drop on the pane (desktop), the pill's "Attach file" picker (phone), the upload, the status line over the pane (DOM)
-      fileUpload.ts                  Its DOM-free part: the upload's address, a refusal's wording, what gets pasted
+      fileSending.ts                 Files to the terminal: drop on the pane or a paste of files into it (desktop), the pill's "Attach file" picker (phone), the upload, the status line over the pane (DOM)
+      fileUpload.ts                  Its DOM-free part: whether a drag or a paste carries files, the upload's address, a refusal's wording, what gets pasted
       clipboard.ts                   The one clipboard write/read: Clipboard API on secure origins; plain http falls back to a copy event (write) / a native prompt (paste)
       flowCopy.ts                    terminalCopyText: verbatim by default; opt-in re-flow of Claude Code's soft wraps (pure)
       clipboardKeys.ts               Clipboard chords (Ctrl+C/Ctrl+Shift+C copy, Alt+C copy as text, Ctrl+V paste) + OSC 52 decode (pure)

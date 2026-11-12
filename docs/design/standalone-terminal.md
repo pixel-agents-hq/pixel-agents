@@ -392,7 +392,10 @@ RemotePtySessions ── Unix socket ──────▶ startPtyHost()
   Alt+C / Option+C with a selection, or the pill's "Copy as text" — because the heuristic
   can't tell a soft wrap from indented structure under a long row (YAML, code). Writes go
   through `terminal/clipboard.ts` (Clipboard API, or a copy event on plain-http origins).
-- Files: a file dropped on a terminal pane (desktop) or picked through the input area
+- Files: a file dropped on a terminal pane or pasted into it (desktop: Ctrl+V / Cmd+V with a
+  copied screenshot or files copied in the file manager on the clipboard; a paste is one of
+  files unless the clipboard also holds a document's text, plain and marked up,
+  `pasteCarriesFiles`) or picked through the input area
   pill's "Attach file" (phone) is uploaded with `POST /api/terminal/:agentId/files`
   (raw body, the terminal socket's token + Host gate, only for an agent with a PTY),
   saved in the host's upload directory (a setting; by default `~/.pixel-agents/uploads`,
