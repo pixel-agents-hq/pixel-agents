@@ -26,6 +26,15 @@
          and iOS probe those without a <link>, and the standalone server's SPA
          fallback would otherwise answer the probe with index.html, leaving a
          stale cached icon in place forever. Bump ?v= on every icon change. -->
+    <!-- The pixel font, fetched beside the script instead of after it has drawn
+         its first text (a preloaded font must be `crossorigin`, even same-origin). -->
+    <link
+      rel="preload"
+      href="/fonts/FSPixelSansUnicode-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <title>Pixel Agents</title>
   </head>
   <body>
