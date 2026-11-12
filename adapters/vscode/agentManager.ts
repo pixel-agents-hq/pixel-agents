@@ -91,6 +91,8 @@ export interface LaunchTerminalOptions {
   firstMessage?: string;
   nickname?: string;
   permissionMode?: string;
+  /** The model the CLI runs (the Guide's). */
+  model?: string;
   preapprovedMcpTools?: readonly string[];
   /** A plugin folder this session alone loads (the tutorial's onboarding skill). */
   pluginDir?: string;
@@ -121,6 +123,7 @@ export async function launchNewTerminal(
     firstMessage,
     nickname,
     permissionMode,
+    model,
     preapprovedMcpTools,
     pluginDir,
   }: LaunchTerminalOptions = {},
@@ -160,6 +163,7 @@ export async function launchNewTerminal(
     bypassPermissions,
     mcpConfig,
     permissionMode,
+    model,
     prompt: firstMessage,
     preapprovedMcpTools:
       mcpConfig && preapprovedMcpTools

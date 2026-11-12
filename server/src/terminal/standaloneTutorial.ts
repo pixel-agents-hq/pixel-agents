@@ -7,7 +7,7 @@
  */
 
 import type { TutorialSurface } from '../tutorial/tutorial.js';
-import { TUTORIAL_PERMISSION_MODE } from '../tutorial/tutorialCopy.js';
+import { TUTORIAL_MODEL, TUTORIAL_PERMISSION_MODE } from '../tutorial/tutorialCopy.js';
 import {
   launchIntoDirectory,
   type StandaloneLaunchDeps,
@@ -36,6 +36,7 @@ export function standaloneTutorialSurface(
             nickname: request.nickname,
             firstMessage: request.firstMessage,
             permissionMode: TUTORIAL_PERMISSION_MODE,
+            model: TUTORIAL_MODEL,
             seatId: request.seatId,
           },
           preapprovedMcpTools: request.preapprovedTools,

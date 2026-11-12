@@ -107,6 +107,7 @@ describe('the tutorial (composed server, the Guide in a PTY)', () => {
     const args = start.args;
     expect(args).toContain('--mcp-config');
     expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
+    expect(args[args.indexOf('--model') + 1]).toBe('opus');
     expect(args).not.toContain('--dangerously-skip-permissions');
     const tools = args.indexOf('--allowedTools');
     expect(args.slice(tools + 1, tools + 6)).toEqual([

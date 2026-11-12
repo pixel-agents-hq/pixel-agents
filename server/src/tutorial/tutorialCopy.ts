@@ -24,6 +24,9 @@ export const GUIDE_FALLBACK_NAME = 'Byte';
  *  skip-permissions setting: Claude Code's auto mode, which lets safe actions
  *  through and still asks for risky ones (the ask says so). */
 export const TUTORIAL_PERMISSION_MODE = 'auto';
+/** The model the Guide always runs, whatever the user's default model: the
+ *  CLI's alias for its newest Opus. */
+export const TUTORIAL_MODEL = 'opus';
 
 /** The ask's title, named after the Guide. */
 export function tutorialHeadline(name: string): string {
