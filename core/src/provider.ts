@@ -143,11 +143,18 @@ export interface UsageBridge {
 
 /** A provider's sign-in, as the office drives it: read whether the CLI is signed in, and run one sign-in at a time. */
 export interface CliSignIn {
-  /** Whether the CLI is signed in on this machine, asked of the CLI itself. False when it cannot say. */
-  status(): Promise<boolean>;
+  /** Whether the CLI is signed in on this machine, asked of the CLI itself (`signedIn` false when it cannot say).
+   *  `planLimits` false = the account signed in has no plan limits to report (a pay-per-use API account), so the
+   *  usage bars have nothing to show; absent = it has, or the CLI does not say. */
+  status(): Promise<CliSignInState>;
   /** Start a sign-in. `openBrowser` lets the CLI open a browser on this machine, where signing in finishes with no
    *  code; without it nothing is opened here and the office opens `url` wherever it is shown. */
   begin(options: { openBrowser: boolean; account: 'subscription' | 'api' }): CliSignInAttempt;
+}
+
+export interface CliSignInState {
+  signedIn: boolean;
+  planLimits?: boolean;
 }
 
 /** One sign-in under way. */

@@ -25,6 +25,7 @@ export function handleSignInMessage(msg: { type?: unknown; [key: string]: unknow
       type: 'cliSignInStatus',
       providerId: msg.providerId,
       signedIn: msg.signedIn,
+      ...(msg.planLimits === false ? { planLimits: false } : {}),
       ...(msg.cliMissing === true ? { cliMissing: true } : {}),
       ...(typeof msg.signInUrl === 'string' && isWebAddress(msg.signInUrl)
         ? { signInUrl: msg.signInUrl, openedOnHost: msg.openedOnHost === true }

@@ -580,6 +580,7 @@ export interface CliSignInStatus {
   type: 'cliSignInStatus';
   providerId: string;
   signedIn: boolean;
+  planLimits?: boolean;
   cliMissing?: boolean;
   signInUrl?: string;
   openedOnHost?: boolean;

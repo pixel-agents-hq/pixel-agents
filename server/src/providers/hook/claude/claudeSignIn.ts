@@ -18,7 +18,11 @@
 import { type ChildProcess, execFile, spawn } from 'child_process';
 import * as fs from 'fs';
 
-import type { CliSignIn, CliSignInAttempt } from '../../../../../core/src/provider.js';
+import type {
+  CliSignIn,
+  CliSignInAttempt,
+  CliSignInState,
+} from '../../../../../core/src/provider.js';
 import { CLI_SIGN_IN_STATUS_TIMEOUT_MS } from '../../../constants.js';
 import { isInheritedClaudeSessionEnv } from './sessionEnv.js';
 
@@ -68,18 +72,32 @@ const realCli: ClaudeCli = {
     spawn('claude', args, { env, stdio: ['pipe', 'pipe', 'pipe'], shell: viaShell }),
 };
 
-/** What `claude auth status` printed → signed in or not. Anything unreadable is "not". */
-export function signedInFromStatus(output: string): boolean {
+/** The ways of signing in that come with a plan (`authMethod`): a claude.ai login, or a long-lived token of one. */
+const PLAN_AUTH_METHODS: ReadonlySet<unknown> = new Set(['claude.ai', 'oauth_token']);
+
+/**
+ * What `claude auth status` printed → signed in or not (anything unreadable
+ * is "not"), and whether the account has plan limits. Only a login that
+ * plainly has none says so: one the CLI names as neither a claude.ai login
+ * nor a token of one, and gives no `subscriptionType` for (an API key, a
+ * Console account, a cloud provider's). The status line reports limits to
+ * subscribers alone, so their usage bars would stay empty for good.
+ */
+export function signInStateFromStatus(output: string): CliSignInState {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(output);
-    return (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      (parsed as { loggedIn?: unknown }).loggedIn === true
-    );
+    parsed = JSON.parse(output);
   } catch {
-    return false;
+    return { signedIn: false };
   }
+  if (typeof parsed !== 'object' || parsed === null) return { signedIn: false };
+  const { loggedIn, authMethod, subscriptionType } = parsed as Record<string, unknown>;
+  if (loggedIn !== true) return { signedIn: false };
+  const noPlan =
+    typeof authMethod === 'string' &&
+    !PLAN_AUTH_METHODS.has(authMethod) &&
+    (typeof subscriptionType !== 'string' || subscriptionType === '');
+  return { signedIn: true, ...(noPlan ? { planLimits: false } : {}) };
 }
 
 function noBrowserCommand(): string | undefined {
@@ -88,7 +106,7 @@ function noBrowserCommand(): string | undefined {
 
 export function createClaudeSignIn(cli: ClaudeCli = realCli): CliSignIn {
   return {
-    status: async () => signedInFromStatus(await cli.output(['auth', 'status', '--json'])),
+    status: async () => signInStateFromStatus(await cli.output(['auth', 'status', '--json'])),
 
     begin({ openBrowser, account }): CliSignInAttempt {
       const env = cliEnv();

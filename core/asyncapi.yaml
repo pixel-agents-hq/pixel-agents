@@ -1066,6 +1066,12 @@ components:
           description: The provider this is about (HookProvider.id).
         signedIn:
           type: boolean
+        planLimits:
+          type: boolean
+          description: >-
+            False when the account signed in has no plan limits to report (a
+            pay-per-use API account): the usage bars are neither offered nor
+            shown. Absent = it has, or the CLI does not say.
         cliMissing:
           type: boolean
           description: >-

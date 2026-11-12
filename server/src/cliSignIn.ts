@@ -10,7 +10,7 @@
  */
 
 import type { CliSignInStatus } from '../../core/src/messages.js';
-import type { CliSignInAttempt, HookProvider } from '../../core/src/provider.js';
+import type { CliSignInAttempt, CliSignInState, HookProvider } from '../../core/src/provider.js';
 import { CLI_SIGN_IN_CODE_MAX_LENGTH, CLI_SIGN_IN_TIMEOUT_MS } from './constants.js';
 import { hookProviderById } from './providers/index.js';
 
@@ -90,22 +90,24 @@ export class CliSignIns {
       });
       return;
     }
-    const signedIn = provider.cliSignIn ? await provider.cliSignIn.status() : true;
-    reply(this.statusOf(provider.id, client, signedIn));
+    const state = provider.cliSignIn ? await provider.cliSignIn.status() : { signedIn: true };
+    reply(this.statusOf(provider.id, client, state));
   }
 
   private statusOf(
     providerId: string,
     client: object,
-    signedIn: boolean,
+    state: CliSignInState,
     error?: string,
   ): CliSignInStatus {
+    const { signedIn } = state;
     const live = this.live.get(providerId);
     const page = !signedIn && live?.client === client && live.url !== undefined ? live : undefined;
     return {
       type: 'cliSignInStatus',
       providerId,
       signedIn,
+      ...(signedIn && state.planLimits === false ? { planLimits: false } : {}),
       ...(page ? { signInUrl: page.url, openedOnHost: page.openedOnHost } : {}),
       ...(error !== undefined ? { error } : {}),
     };
@@ -120,7 +122,7 @@ export class CliSignIns {
   ): void {
     const signIn = provider.cliSignIn;
     if (!signIn) {
-      reply(this.statusOf(provider.id, client, true));
+      reply(this.statusOf(provider.id, client, { signedIn: true }));
       return;
     }
     if (isMissing(provider)) {
@@ -152,7 +154,7 @@ export class CliSignIns {
       (url) => {
         if (this.live.get(provider.id) !== live) return;
         live.url = url;
-        reply(this.statusOf(provider.id, client, false));
+        reply(this.statusOf(provider.id, client, { signedIn: false }));
       },
       () => undefined, // Ended before it named a page: `done` says why.
     );
@@ -162,15 +164,15 @@ export class CliSignIns {
       this.live.delete(provider.id);
       clearTimeout(live.timer);
       // The CLI's own word, not the exit code: only a login it reports counts.
-      const signedIn = await signIn.status();
-      const error = signedIn
+      const state = await signIn.status();
+      const error = state.signedIn
         ? undefined
         : timedOut
           ? SIGN_IN_TIMED_OUT
           : outcome.ok
             ? `${provider.displayName} still reports no login. Try again.`
             : outcome.reason;
-      reply(this.statusOf(provider.id, client, signedIn, error));
+      reply(this.statusOf(provider.id, client, state, error));
     });
   }
 
