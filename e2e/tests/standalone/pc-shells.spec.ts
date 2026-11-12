@@ -199,6 +199,9 @@ test.describe('Standalone / PC shells', () => {
     // Two Directories were offered: the card says which.
     await expect(card.getByTestId('pc-shell-card-name')).toHaveText('Alpha');
 
+    // Idle means at its prompt: a shell still starting up counts as running a command.
+    await expect(page.locator('.xterm:visible')).toContainText('$', { timeout: 10_000 });
+
     // Deleting the PC with its shell idle: no question, the shell closes, the PC goes.
     const furniture = () =>
       page.evaluate(
