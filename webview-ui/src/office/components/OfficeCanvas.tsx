@@ -170,7 +170,7 @@ export function OfficeCanvas({
           : undefined;
 
         // Camera: smoothly center on the followed agent, or — while the greeter
-        // is speaking the Intro — on the character+bubble center the IntroBubble
+        // is speaking the Intro — on the point the IntroDialog
         // overlay feeds via greeterCameraTarget. An explicit follow (clicking an
         // agent) outranks the greeter target; a manual pan cancels both. A
         // clicked piece of interactive furniture is centred on the same way.

@@ -1,5 +1,5 @@
 import { expect, test } from '../../fixtures/standalone';
-import { advanceIntroToChoices } from '../../helpers/intro';
+import { advanceIntroToChoices, readIntro } from '../../helpers/intro';
 
 /**
  * The Intro's sign-in step (webview-ui/src/components/IntroSignIn.tsx): a
@@ -22,10 +22,10 @@ test.describe('Standalone / sign-in', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 30_000 });
     await expect(dialog).toContainText('Welcome to Pixel Agents!');
-    await dialog.getByRole('button', { name: 'Continue' }).click();
 
     // The sign-in step, not the choices.
-    await expect(dialog).toContainText('Sign in to Claude Code');
+    expect(await readIntro(dialog)).toContain('Sign in to Claude Code');
+    await expect(dialog.getByTestId('intro-sign-in')).toBeVisible();
     await expect(dialog.getByText('Pick what to turn on')).toHaveCount(0);
     await expect(dialog.getByRole('button', { name: 'Continue' })).toHaveCount(0);
 
@@ -43,6 +43,7 @@ test.describe('Standalone / sign-in', () => {
     await expect(dialog).toContainText('Sign in to Claude Code');
 
     // The right one signs it in, and the tour moves on by itself.
+    await readIntro(dialog);
     await dialog.getByRole('button', { name: 'Sign In' }).click();
     await dialog.getByLabel('Sign-in code').fill('mock-code');
     await dialog.getByRole('button', { name: 'Finish' }).click();
@@ -55,7 +56,7 @@ test.describe('Standalone / sign-in', () => {
   }) => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 30_000 });
-    await dialog.getByRole('button', { name: 'Continue' }).click();
+    await readIntro(dialog);
     await dialog.getByRole('button', { name: 'Sign In' }).click();
     await dialog.getByLabel('Sign-in code').fill('mock-code');
     await dialog.getByRole('button', { name: 'Finish' }).click();

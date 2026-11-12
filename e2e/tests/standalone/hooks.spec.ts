@@ -18,6 +18,7 @@ import {
   chooseInIntro,
   finishIntro,
   introChoice,
+  readIntro,
 } from '../../helpers/intro';
 import { expectContextGauge, expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
 import type { RecordedServerMessage } from '../../helpers/standalone';
@@ -380,6 +381,7 @@ test.describe('Standalone / Pixel Office MCP consent', () => {
     await expect.poll(() => readOfficeMcpConsent(standalone.tmpHome)).toBe('granted');
 
     // Back keeps the boxes: swap them. The MCP declined, the hooks installed.
+    await readIntro(dialog);
     await dialog.getByRole('button', { name: 'Back' }).click();
     await expect(introChoice(dialog, 'mcp')).toHaveAttribute('aria-pressed', 'true');
     await introChoice(dialog, 'mcp').click();

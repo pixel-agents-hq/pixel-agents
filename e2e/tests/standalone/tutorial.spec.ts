@@ -1,7 +1,7 @@
 import type { Locator } from '@playwright/test';
 
 import { expect, test } from '../../fixtures/standalone';
-import { chooseInIntro } from '../../helpers/intro';
+import { chooseInIntro, readIntro } from '../../helpers/intro';
 import { arrangeNextClaudeInvocation, claudeScenario } from '../../helpers/mock-claude';
 
 /**
@@ -54,10 +54,11 @@ test.describe('Standalone / Tutorial', () => {
     const dialog = page.getByRole('dialog');
     await introToClosing(dialog);
     // The closing step's ask says plainly what yes does, and nothing has launched yet.
+    const said = await readIntro(dialog);
+    expect(said).toContain('Want Byte to show you around?');
+    expect(said).toContain('real Claude Code session');
+    expect(said).toContain('Claude plan');
     await expect(dialog.getByTestId('tutorial-offer')).toBeVisible();
-    await expect(dialog).toContainText('Want Byte to show you around?');
-    await expect(dialog).toContainText('real Claude Code session');
-    await expect(dialog).toContainText('Claude plan');
     await expect(page.getByTitle(/Tutorial/)).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Show Me Around' }).click();
 
@@ -119,6 +120,7 @@ test.describe('Standalone / Tutorial', () => {
   }) => {
     const dialog = page.getByRole('dialog');
     await introToClosing(dialog);
+    await readIntro(dialog);
     await expect(dialog.getByTestId('tutorial-offer')).toBeVisible();
     await dialog.getByRole('button', { name: "Let's Go" }).click();
     await expect(dialog).toBeHidden({ timeout: 15_000 });

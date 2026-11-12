@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { CliSignInControls } from '../signIn/useCliSignIn.js';
+import { type Say, useSay } from './introSpeech.js';
 import { Button } from './ui/Button.js';
 
 interface IntroSignInProps {
   signIn: CliSignInControls;
+  /** What the greeter says for the state the sign-in is in. */
+  say: Say;
   onBack?: () => void;
   /** Signed in: on to the next step. */
   onContinue: () => void;
@@ -20,9 +23,10 @@ const TEXT_BUTTON_CLASS =
  * open on the host, the CLI opens the sign-in page itself and finishes when
  * the user authorizes; anywhere else this opens the page in a new tab and the
  * user pastes back the code it ends on. The server reports each turn
- * (cliSignInStatus); nothing here decides that the CLI is signed in.
+ * (cliSignInStatus); nothing here decides that the CLI is signed in. The
+ * greeter speaks the state (`say`); this is the step's menu.
  */
-export function IntroSignIn({ signIn, onBack, onContinue }: IntroSignInProps) {
+export function IntroSignIn({ signIn, say, onBack, onContinue }: IntroSignInProps) {
   const { status, pending, onHost, check, start, submitCode } = signIn;
   const [code, setCode] = useState('');
   // A sign-in was started from this step (its end moves the tour on).
@@ -68,19 +72,27 @@ export function IntroSignIn({ signIn, onBack, onContinue }: IntroSignInProps) {
   };
 
   const starting = started && pending && !url;
+  useSay(
+    say,
+    status === undefined
+      ? ['Checking whether Claude Code is signed in...']
+      : signedIn
+        ? ['Claude Code is signed in. On we go!']
+        : url
+          ? [
+              status.openedOnHost
+                ? "I opened Claude's sign-in page in your browser. Press Authorize there and I'll take it from here."
+                : "Press Authorize on Claude's sign-in page, then paste the code it gives you here.",
+            ]
+          : [
+              "Sign in to Claude Code first: your agents work on your Claude account, and this computer isn't signed in yet.",
+              "Sign in and I'll show you the rest.",
+            ],
+  );
   return (
     <div data-testid="intro-sign-in" data-signed-in={signedIn}>
-      {status === undefined ? (
-        <p className="text-sm m-0 mb-8">Checking whether Claude Code is signed in...</p>
-      ) : signedIn ? (
-        <p className="text-sm m-0 mb-8">Claude Code is signed in. On we go!</p>
-      ) : url ? (
+      {status === undefined || signedIn ? null : url ? (
         <>
-          <p className="text-sm m-0 mb-8">
-            {status.openedOnHost
-              ? "I opened Claude's sign-in page in your browser. Press Authorize there and I'll take it from here."
-              : "Press Authorize on Claude's sign-in page, then paste the code it gives you here."}
-          </p>
           <p className="text-sm m-0 mb-8 text-text-muted">
             {status.openedOnHost ? 'No page? ' : 'Lost the page? '}
             <a
@@ -121,10 +133,6 @@ export function IntroSignIn({ signIn, onBack, onContinue }: IntroSignInProps) {
         </>
       ) : (
         <>
-          <p className="text-sm m-0 mb-8">
-            Your agents work on your Claude account, and Claude Code isn&apos;t signed in on this
-            computer yet. Sign in and I&apos;ll show you the rest.
-          </p>
           {status.error && !pending && (
             <p className="text-sm m-0 mb-8 text-status-error" data-testid="intro-sign-in-error">
               {status.error}
@@ -149,7 +157,7 @@ export function IntroSignIn({ signIn, onBack, onContinue }: IntroSignInProps) {
         </>
       )}
 
-      <div className="flex items-center justify-between gap-6 mt-10 flex-wrap">
+      <div className="flex items-center justify-between gap-6 mt-4 flex-wrap">
         {onBack ? (
           <Button variant="ghost" size="sm" onClick={onBack}>
             Back

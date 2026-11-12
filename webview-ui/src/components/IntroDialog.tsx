@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
   HooksConsentRequest,
@@ -12,9 +12,12 @@ import { greeterPalette } from '../characters/profiles.js';
 import {
   CLAUDE_CODE_INSTALL_COMMAND,
   CLAUDE_CODE_URL,
-  INTRO_BUBBLE_EDGE_MARGIN_PX,
-  INTRO_BUBBLE_MAX_WIDTH_PX,
-  INTRO_BUBBLE_Z_INDEX,
+  INTRO_DIALOG_BOTTOM_PX,
+  INTRO_DIALOG_EDGE_MARGIN_PX,
+  INTRO_DIALOG_MAX_WIDTH_PX,
+  INTRO_DIALOG_MENU_GAP_PX,
+  INTRO_DIALOG_TYPE_MS,
+  INTRO_DIALOG_Z_INDEX,
 } from '../constants.js';
 import type { ConsentChoice } from '../hooks/introTourState.js';
 import type { OfficeState } from '../office/engine/officeState.js';
@@ -23,12 +26,12 @@ import { TutorialAsk } from '../tutorial/TutorialAsk.js';
 import { tutorialOffered } from '../tutorial/tutorialOffer.js';
 import { useUsageBridge } from '../usage/useUsageBridge.js';
 import { DiscordIcon } from './ChangelogModal.js';
-import { computeIntroBubbleGeometry } from './introBubbleGeometry.js';
 import { type IntroChoiceId, type IntroChoiceOption, IntroChoices } from './IntroChoices.js';
+import { dialogLetterBudget, dialogMessages, introCameraTarget } from './introDialogRules.js';
 import { IntroSignIn } from './IntroSignIn.js';
 import { Button } from './ui/Button.js';
 
-interface IntroBubbleProps {
+interface IntroDialogProps {
   officeState: OfficeState;
   /** Server-provided copy for the consent step (hooksConsentRequest). Rendered
    *  verbatim so that step shows the exact terms being approved — the webview
@@ -69,7 +72,7 @@ interface IntroBubbleProps {
    *  returns the next time the office is opened. */
   onClose: () => void;
   /** True while another surface owns Escape — an open Settings/changelog modal
-   *  (stacked ABOVE this bubble) or the layout editor's multi-stage Esc
+   *  (stacked ABOVE this dialog) or the layout editor's multi-stage Esc
    *  ladder. Escape aborts the tour only when the tour is topmost; without
    *  this gate it silently aborted UNDER an open modal. */
   escapeSuppressed: boolean;
@@ -117,26 +120,27 @@ const CHOICE_LABELS: Record<IntroChoiceId, string> = {
  * absolute statement and undoes a landed install when the revision asks for
  * that (consentGate's disable/revert actions).
  *
- * Diegetic: a greeter character (char_0) stands near the office's bottom-left
- * corner and this component is its speech bubble, anchored up-right of its
- * head like ToolOverlay anchors above agents. Mounting spawns the greeter;
- * EVERY close path — the X, Escape, Let's Go, or a hooksStatus that moots an
- * unanswered ask — unmounts this component, and the unmount despawns the
- * greeter, so the two can never disagree. While mounted it feeds
- * officeState.greeterCameraTarget so the camera drifts to center character +
- * bubble together (a manual pan cancels that; see
- * OfficeState.cancelGreeterCamera).
- *
- * All geometry — bubble position, tail, camera target — comes from
- * computeIntroBubbleGeometry, a pure per-frame function of the measured
- * frame; this component only measures and renders.
+ * Diegetic, in the manner of a game's dialog: a greeter character (char_0)
+ * stands near the office's bottom-left corner, the camera centres on it in
+ * what the dialog leaves of the office (a manual pan cancels that; see
+ * OfficeState.cancelGreeterCamera), and its words appear in a box along the
+ * office's foot, typed out letter by letter, one short message at a time
+ * (introDialogRules.ts cuts them to the box's width). A press on the box, its
+ * arrow, Enter or Space finishes the typing, then shows the next message. A
+ * step's controls (its boxes, the sign-in, the buttons) are its menu: a
+ * second box above the dialog, shown once the step's last message is out.
+ * The menus that know what to say (IntroSignIn, TutorialAsk) hand their lines
+ * up through `say`. Mounting spawns the greeter; EVERY close path — the X,
+ * Escape, Let's Go, or a hooksStatus that moots an unanswered ask — unmounts
+ * this component, and the unmount despawns the greeter, so the two can never
+ * disagree.
  *
  * Fail-closed by construction: only the choices step's Continue sends anything. The X and Escape close without sending, so an unanswered ask
  * changes nothing and reappears on the next open. Clicks on the office around
- * the bubble are deliberately inert — the consent step is a decision surface,
+ * the dialog are deliberately inert — the consent step is a decision surface,
  * and a stray click must not read as an answer.
  */
-export function IntroBubble({
+export function IntroDialog({
   officeState,
   hooksAsk,
   mcpAsk,
@@ -150,9 +154,12 @@ export function IntroBubble({
   onClose,
   escapeSuppressed,
   tutorial,
-}: IntroBubbleProps) {
-  const bubbleRef = useRef<HTMLDivElement>(null);
-  const [, setTick] = useState(0);
+}: IntroDialogProps) {
+  const stackRef = useRef<HTMLDivElement>(null);
+  // The office's width (the messages are cut to the box's) and whether the
+  // greeter has finished appearing, both read off the frame tick below.
+  const [officeWidth, setOfficeWidth] = useState(0);
+  const [greeterReady, setGreeterReady] = useState(false);
   const [chosenStep, setStep] = useState<StepId>(
     hooksAsk ? 'welcome' : mcpAsk ? 'choices' : 'tutorial',
   );
@@ -300,32 +307,34 @@ export function IntroBubble({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose, escapeSuppressed]);
 
-  // Per-frame tick (same pattern as ToolOverlay): re-render — the greeter's
-  // matrix effect, a pan, and the camera drift all move the anchor between
-  // renders — and feed the camera target from the same geometry the render
-  // uses, so the drift and the drawn bubble can never disagree. Ignored after
-  // a manual pan (cancelGreeterCamera).
+  // Per-frame tick: feed the camera target (the greeter walks to a seat for
+  // the tutorial, and the dialog grows and shrinks with its menu), ignored
+  // after a manual pan (cancelGreeterCamera).
   useEffect(() => {
     let rafId = 0;
     const tick = () => {
       const ch = officeState.greeterAnchor();
-      const bubble = bubbleRef.current;
       const container = containerRef.current;
-      if (ch && bubble && container && bubble.offsetWidth > 0) {
-        officeState.setGreeterCameraTarget(
-          computeIntroBubbleGeometry({
-            layout: officeState.getLayout(),
-            containerRect: container.getBoundingClientRect(),
-            zoom,
-            pan: panRef.current,
-            dpr: window.devicePixelRatio || 1,
-            greeter: ch,
-            bubbleWidth: bubble.offsetWidth,
-            bubbleHeight: bubble.offsetHeight,
-          }).cameraTarget,
-        );
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        setOfficeWidth(rect.width);
+        if (ch) {
+          const stack = stackRef.current;
+          officeState.setGreeterCameraTarget(
+            introCameraTarget({
+              layout: officeState.getLayout(),
+              containerRect: rect,
+              zoom,
+              pan: panRef.current,
+              dpr: window.devicePixelRatio || 1,
+              greeter: ch,
+              coveredHeight: stack ? stack.offsetHeight + INTRO_DIALOG_BOTTOM_PX : 0,
+            }),
+          );
+        }
       }
-      setTick((n) => n + 1);
+      // Let the materialization effect finish before the greeter "speaks".
+      setGreeterReady(!ch || ch.matrixEffect !== 'spawn');
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
@@ -342,49 +351,13 @@ export function IntroBubble({
     if (!usageFailed) setStep('closing');
   }, [applying, choicesPending, choices.usage, usageBridge]);
 
-  const el = containerRef.current;
-  if (!el) return null;
-
-  // The greeter, or the tutorial's agent that took its place (it sat for the Guide).
-  const greeter = officeState.greeterAnchor();
-  // Let the materialization effect finish before the greeter "speaks".
-  if (greeter && greeter.matrixEffect === 'spawn') return null;
-
-  const rect = el.getBoundingClientRect();
-  const maxWidth = Math.min(
-    INTRO_BUBBLE_MAX_WIDTH_PX,
-    rect.width - 2 * INTRO_BUBBLE_EDGE_MARGIN_PX,
+  // What the step's menu has the greeter say (IntroSignIn, TutorialAsk).
+  const [menuSpeech, setMenuSpeech] = useState<{ step: StepId; lines: readonly string[] } | null>(
+    null,
   );
+  const say = useCallback((lines: readonly string[]) => setMenuSpeech({ step, lines }), [step]);
+  const spoken = menuSpeech?.step === step ? menuSpeech.lines : [];
 
-  // Measurements come from the previous frame's node (the rAF tick re-renders
-  // continuously); until the first measure, stay hidden.
-  const bw = bubbleRef.current?.offsetWidth ?? 0;
-  const bh = bubbleRef.current?.offsetHeight ?? 0;
-  const measured = bw > 0 && bh > 0;
-
-  let wrapperStyle: React.CSSProperties;
-  let tailSquares: Array<{ x: number; y: number; size: number }> = [];
-  if (greeter) {
-    const geometry = computeIntroBubbleGeometry({
-      layout: officeState.getLayout(),
-      containerRect: rect,
-      zoom,
-      pan: panRef.current,
-      dpr: window.devicePixelRatio || 1,
-      greeter,
-      bubbleWidth: bw,
-      bubbleHeight: bh,
-    });
-    wrapperStyle = { left: geometry.left, top: geometry.top };
-    tailSquares = geometry.tailSquares;
-  } else {
-    // Degenerate layout (no walkable tile for the greeter): the tour still must
-    // be walkable, so fall back to a centered panel without the character.
-    wrapperStyle = { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' };
-  }
-
-  const back = (): void => setStep(steps[Math.max(0, stepIndex - 1)]);
-  const forward = (): void => setStep(steps[Math.min(steps.length - 1, stepIndex + 1)]);
   const titles: Record<StepId, string> = {
     welcome: 'Welcome to Pixel Agents!',
     claudeCode: 'First, get Claude Code',
@@ -393,167 +366,163 @@ export function IntroBubble({
     closing: installFailed ? "Hooks couldn't be installed" : "You're all set!",
     tutorial: tutorial.status?.headline ?? '',
   };
+  // The greeter's lines for the step, each cut to the box below.
+  const lines: readonly string[] =
+    step === 'welcome'
+      ? [
+          `Hi, I'm ${greeterName}. Welcome to Pixel Agents!`,
+          'In this office, your AI agents become tiny pixel characters.',
+          "They type at their desks while they work, wander off when they're done, and speak up when they need you.",
+        ]
+      : step === 'claudeCode'
+        ? [
+            "First, get Claude Code: the office brings your Claude Code sessions to life, but I couldn't find it on this computer.",
+            'Install it with this command, then press Continue.',
+          ]
+        : step === 'choices'
+          ? ['Pick what to turn on. You can change any of these later in Settings.']
+          : step === 'closing'
+            ? [
+                ...(installFailed
+                  ? [
+                      "Hooks couldn't be installed: something went wrong writing to your Claude Code settings.",
+                      'The office will watch your sessions the slower way instead. Everything still works, and you can retry any time from Settings.',
+                    ]
+                  : ["You're all set!"]),
+                ...(offerTutorial
+                  ? spoken
+                  : [
+                      'Enjoy your new office! Questions, ideas, or pixel art to show off? Come hang out in our Discord.',
+                    ]),
+              ]
+            : spoken;
+
+  const boxWidth = Math.max(
+    0,
+    Math.min(INTRO_DIALOG_MAX_WIDTH_PX, officeWidth - 2 * INTRO_DIALOG_EDGE_MARGIN_PX),
+  );
+  const messages = dialogMessages(lines, dialogLetterBudget(boxWidth));
+  const last = Math.max(0, messages.length - 1);
+
+  // Which message is up. A step's lines (or the step) changing starts over at
+  // the first; a step arrived at by Back opens on its last, where its menu
+  // is, with nothing typed out again (until the user moves on from there).
+  const speechKey = `${step}\n${lines.join('\n')}`;
+  const [backTo, setBackTo] = useState<StepId | null>(null);
+  const landLast = backTo === step;
+  const [place, setPlace] = useState({ key: '', page: 0 });
+  if (place.key !== speechKey) {
+    setPlace({ key: speechKey, page: landLast ? Number.MAX_SAFE_INTEGER : 0 });
+  }
+  const page = Math.min(place.key === speechKey ? place.page : 0, last);
+  const text = messages[page] ?? '';
+
+  // The message types out, unless the user asked for less motion.
+  const [instant] = useState(
+    () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+  );
+  const [typed, setTyped] = useState({ text: '', letters: 0 });
+  if (typed.text !== text) setTyped({ text, letters: landLast || instant ? text.length : 0 });
+  const letters = typed.text === text ? typed.letters : 0;
+  const typing = letters < text.length;
+  useEffect(() => {
+    if (!typing || !greeterReady) return;
+    const id = setTimeout(
+      () => setTyped((t) => (t.text === text ? { text, letters: t.letters + 1 } : t)),
+      INTRO_DIALOG_TYPE_MS,
+    );
+    return () => clearTimeout(id);
+  }, [typing, letters, text, greeterReady]);
+
+  const back = (): void => {
+    const to = steps[Math.max(0, stepIndex - 1)];
+    setBackTo(to);
+    setStep(to);
+  };
+  const forward = (): void => {
+    setStep(steps[Math.min(steps.length - 1, stepIndex + 1)]);
+  };
+
+  // Every step but the welcome ends on a menu; the welcome's last message
+  // goes on to the next step.
+  const hasMenu = step !== 'welcome';
+  const menuShown = hasMenu && messages.length > 0 && page === last && !typing;
+  const canAdvance = typing || page < last || !hasMenu;
+  const advance = (): void => {
+    setBackTo(null);
+    if (typing) setTyped({ text, letters: text.length });
+    else if (page < last) setPlace({ key: speechKey, page: page + 1 });
+    else if (!hasMenu && !awaitingSignIn) forward();
+  };
+  // Enter and Space advance like a press on the box, unless a control (or a
+  // terminal) has the keyboard, or something is open over the dialog.
+  const advanceRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    advanceRef.current = canAdvance ? advance : null;
+  });
+  useEffect(() => {
+    if (escapeSuppressed) return;
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const target = e.target;
+      if (
+        target instanceof Element &&
+        target.closest('input, textarea, select, button, a, [contenteditable], .xterm')
+      ) {
+        return;
+      }
+      if (!advanceRef.current) return;
+      e.preventDefault();
+      advanceRef.current();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [escapeSuppressed]);
+
+  if (!greeterReady || boxWidth === 0) return null;
 
   return (
     <div
-      className="absolute"
+      ref={stackRef}
+      role="dialog"
+      aria-label={titles[step]}
+      className="absolute flex flex-col items-end"
       style={{
-        ...wrapperStyle,
-        zIndex: INTRO_BUBBLE_Z_INDEX,
-        visibility: measured || !greeter ? undefined : 'hidden',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        bottom: INTRO_DIALOG_BOTTOM_PX,
+        width: boxWidth,
+        maxHeight: `calc(100% - ${INTRO_DIALOG_BOTTOM_PX + INTRO_DIALOG_EDGE_MARGIN_PX}px)`,
+        gap: INTRO_DIALOG_MENU_GAP_PX,
+        zIndex: INTRO_DIALOG_Z_INDEX,
       }}
     >
-      {/* Tail squares render BEFORE the panel so the bubble paints over any
-          overlap when the head sits right under (or behind) the panel. */}
-      {tailSquares.map(({ x, y, size }, i) => (
+      {/* The step's menu: mounted with the step (the sign-in asks the server,
+          the tutorial's ask follows its run) and shown once the greeter has
+          said the step's last message. */}
+      {hasMenu && (
         <div
-          key={i}
-          aria-hidden
-          className="absolute"
-          style={{
-            left: x,
-            top: y,
-            width: size,
-            height: size,
-            background: 'var(--color-bg)',
-            border: '2px solid var(--color-border)',
-          }}
-        />
-      ))}
-      <div
-        ref={bubbleRef}
-        role="dialog"
-        aria-label={titles[step]}
-        className="pixel-panel relative py-10 px-14 leading-[1.4]"
-        style={{ maxWidth }}
-      >
-        {/* Same close control as the Settings/changelog modals (ui/Modal.tsx):
-            ghost icon button, plain lowercase x. */}
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Close"
-          className="absolute top-4 right-4"
-          onClick={onClose}
+          hidden={!menuShown}
+          data-testid="intro-menu"
+          className="intro-dialog-box max-w-full min-h-0 overflow-y-auto py-8 px-12 leading-[1.4]"
         >
-          x
-        </Button>
-
-        {/* Step dots: the tour's "1 of 5", drawn as pixels rather than prose. */}
-        <div className="flex gap-4 mb-8" aria-label={`Step ${stepIndex + 1} of ${steps.length}`}>
-          {steps.map((id) => (
-            <div
-              key={id}
-              aria-hidden
-              className={`w-6 h-6 ${id === step ? 'bg-accent' : 'bg-btn-bg'}`}
-            />
-          ))}
-        </div>
-
-        {step === 'tutorial' && tutorial.status ? (
-          <TutorialAsk
-            status={tutorial.status}
-            rejected={tutorial.rejected}
-            embedded={false}
-            onClose={onClose}
-            onStart={startTutorial}
-          />
-        ) : (
-          <>
-            <div className="text-xl mb-8 text-accent-bright pr-20">{titles[step]}</div>
-
-            {step === 'welcome' && (
+          {step === 'claudeCode' && (
+            <>
+              <div className="text-sm bg-btn-bg border-2 border-border py-4 px-8 mb-8 select-all">
+                {CLAUDE_CODE_INSTALL_COMMAND}
+              </div>
               <p className="text-sm m-0 mb-8">
-                Hi, I&apos;m {greeterName}. In this office, your AI agents become tiny pixel
-                characters: they type at their desks while they work, wander off when they&apos;re
-                done, and speak up when they need you.
-              </p>
-            )}
-
-            {step === 'claudeCode' && (
-              <>
-                <p className="text-sm m-0 mb-8">
-                  The office brings your Claude Code sessions to life, but I couldn&apos;t find
-                  Claude Code on this computer. Install it first:
-                </p>
-                <div className="text-sm bg-btn-bg border-2 border-border py-4 px-8 mb-8 select-all">
-                  {CLAUDE_CODE_INSTALL_COMMAND}
-                </div>
-                <p className="text-sm m-0 mb-8">
-                  For more info, visit{' '}
-                  <a
-                    href={CLAUDE_CODE_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-accent-bright hover:text-accent no-underline"
-                  >
-                    claude.com/claude-code
-                  </a>
-                </p>
-              </>
-            )}
-
-            {step === 'closing' && (
-              <>
-                {hooksAsk && installFailed ? (
-                  <p className="text-sm m-0 mb-8">
-                    Something went wrong writing to your Claude Code settings, so the office will
-                    watch your sessions the slower way instead. No worries, everything still works
-                    and you can retry activating them any time from Settings.
-                  </p>
-                ) : null}
-                {!offerTutorial && (
-                  <p className="text-sm m-0 mb-8">
-                    Enjoy your new office! Questions, ideas, or pixel art to show off? Come hang out
-                    in our Discord.
-                  </p>
-                )}
-                <p
-                  className={`text-base m-0 ${offerTutorial ? 'mb-10' : 'text-center mt-12 mb-12'}`}
+                For more info, visit{' '}
+                <a
+                  href={CLAUDE_CODE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent-bright hover:text-accent no-underline"
                 >
-                  <a
-                    href={DISCORD_INVITE_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-8 text-accent-bright hover:text-accent no-underline"
-                  >
-                    <DiscordIcon />
-                    Join our Discord!
-                  </a>
-                </p>
-              </>
-            )}
-
-            {/* The tutorial's ask closes the Intro's last step, with its own buttons. */}
-            {step === 'closing' && offerTutorial && tutorial.status ? (
-              <TutorialAsk
-                status={tutorial.status}
-                rejected={tutorial.rejected}
-                embedded
-                onBack={back}
-                onClose={onClose}
-                onStart={startTutorial}
-              />
-            ) : step === 'signIn' ? (
-              <IntroSignIn
-                signIn={signIn}
-                onBack={stepIndex > 0 ? back : undefined}
-                onContinue={forward}
-              />
-            ) : step === 'choices' ? (
-              <IntroChoices
-                options={options}
-                values={choices}
-                onToggle={(id) => setChoices((c) => ({ ...c, [id]: !c[id] }))}
-                pending={applying}
-                warnAllOff={hooksAsk !== null}
-                onBack={stepIndex > 0 ? back : undefined}
-                onContinue={applyChoices}
-              />
-            ) : (
+                  claude.com/claude-code
+                </a>
+              </p>
               <div className="flex items-center justify-between gap-6 mt-10 flex-wrap">
-                {/* Left slot: Back everywhere it can go back; a spacer on the opening
-              step keeps the right-side buttons in place. */}
                 {stepIndex === 0 ? (
                   <span />
                 ) : (
@@ -561,24 +530,130 @@ export function IntroBubble({
                     Back
                   </Button>
                 )}
+                <Button
+                  variant={awaitingSignIn ? 'disabled' : 'default'}
+                  size="sm"
+                  disabled={awaitingSignIn}
+                  onClick={leaveInstallStep}
+                >
+                  Continue
+                </Button>
+              </div>
+            </>
+          )}
 
-                {step === 'closing' ? (
+          {step === 'signIn' && (
+            <IntroSignIn
+              signIn={signIn}
+              say={say}
+              onBack={stepIndex > 0 ? back : undefined}
+              onContinue={forward}
+            />
+          )}
+
+          {step === 'choices' && (
+            <IntroChoices
+              options={options}
+              values={choices}
+              onToggle={(id) => setChoices((c) => ({ ...c, [id]: !c[id] }))}
+              pending={applying}
+              warnAllOff={hooksAsk !== null}
+              onBack={stepIndex > 0 ? back : undefined}
+              onContinue={applyChoices}
+            />
+          )}
+
+          {step === 'closing' && (
+            <>
+              <p className="text-base m-0 mb-10">
+                <a
+                  href={DISCORD_INVITE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-8 text-accent-bright hover:text-accent no-underline"
+                >
+                  <DiscordIcon />
+                  Join our Discord!
+                </a>
+              </p>
+              {/* The tutorial's ask closes the Intro's last step, with its own buttons. */}
+              {offerTutorial && tutorial.status ? (
+                <TutorialAsk
+                  status={tutorial.status}
+                  rejected={tutorial.rejected}
+                  embedded
+                  say={say}
+                  onBack={back}
+                  onClose={onClose}
+                  onStart={startTutorial}
+                />
+              ) : (
+                <div className="flex items-center justify-between gap-6 mt-10 flex-wrap">
+                  {stepIndex === 0 ? (
+                    <span />
+                  ) : (
+                    <Button variant="ghost" size="sm" onClick={back}>
+                      Back
+                    </Button>
+                  )}
                   <Button variant="accent" size="sm" onClick={onClose}>
                     Let's Go
                   </Button>
-                ) : (
-                  <Button
-                    variant={awaitingSignIn ? 'disabled' : 'default'}
-                    size="sm"
-                    disabled={awaitingSignIn}
-                    onClick={step === 'claudeCode' ? leaveInstallStep : forward}
-                  >
-                    Continue
-                  </Button>
-                )}
-              </div>
-            )}
-          </>
+                </div>
+              )}
+            </>
+          )}
+
+          {step === 'tutorial' && tutorial.status && (
+            <TutorialAsk
+              status={tutorial.status}
+              rejected={tutorial.rejected}
+              embedded={false}
+              say={say}
+              onClose={onClose}
+              onStart={startTutorial}
+            />
+          )}
+        </div>
+      )}
+
+      {/* The dialog box: the greeter's message, typed out. The untyped rest
+          keeps its space, so the box never grows while a message types. */}
+      <div
+        data-testid="intro-dialog"
+        className={`intro-dialog-box relative w-full shrink-0 py-8 pl-14 pr-30 ${canAdvance ? 'cursor-pointer' : ''}`}
+        onClick={canAdvance ? advance : undefined}
+      >
+        {/* Same close control as the Settings/changelog modals (ui/Modal.tsx):
+            ghost icon button, plain lowercase x. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Close"
+          className="absolute top-2 right-2"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+        >
+          x
+        </Button>
+        <p className="intro-dialog-text m-0" aria-live="polite" aria-label={text}>
+          <span aria-hidden>
+            {text.slice(0, letters)}
+            <span className="invisible">{text.slice(letters)}</span>
+          </span>
+        </p>
+        {canAdvance && (
+          <button
+            type="button"
+            aria-label="Next"
+            className={`intro-dialog-next ${typing ? 'is-typing' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              advance();
+            }}
+          />
         )}
       </div>
     </div>

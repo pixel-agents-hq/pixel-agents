@@ -32,7 +32,8 @@ interface IntroChoicesProps {
  * The Intro's choices step: what to turn on (usage bars, live updates through
  * hooks, the Pixel Office MCP), one box each, all off to start, each with one
  * line and its full terms behind "Read more". Continue applies the boxes as
- * they stand (IntroBubble sends the answers); with every box off it first
+ * they stand (IntroDialog sends the answers; the greeter says they can be
+ * changed later in Settings); with every box off it first
  * says what that costs.
  */
 export function IntroChoices({
@@ -84,18 +85,14 @@ export function IntroChoices({
         </div>
       ))}
 
-      {warning ? (
+      {warning && (
         <p className="text-sm m-0 mb-8 text-warning" data-testid="intro-choices-warning">
           With everything off, your agents only show up after a delay and the office can&apos;t give
           you its tour. Sure?
         </p>
-      ) : (
-        <p className="text-sm m-0 mb-8 text-text-muted">
-          You can change any of these later in Settings.
-        </p>
       )}
 
-      <div className="flex items-center justify-between gap-6 mt-10 flex-wrap">
+      <div className="flex items-center justify-between gap-6 mt-4 flex-wrap">
         {onBack ? (
           <Button variant="ghost" size="sm" disabled={pending} onClick={onBack}>
             Back

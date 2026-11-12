@@ -10,6 +10,7 @@ import {
   chooseInIntro,
   finishIntro,
   introChoice,
+  readIntro,
 } from '../../../helpers/intro';
 import { getSettingChecked, setSettings } from '../../../helpers/webview';
 
@@ -17,7 +18,7 @@ import { getSettingChecked, setSettings } from '../../../helpers/webview';
  * The Intro — the first-run tour — and, inside it, the consent gate for modifying ~/.claude/settings.json.
  * Every other spec seeds a granted Claude consent so hooks flow silently; these opt OUT via `seedConfig`, which is
  * what a real first run looks like. The tour is diegetic: a greeter stands near the office's bottom-left corner and
- * the IntroBubble is its speech bubble, driven by the server's `hooksConsentRequest`, paging welcome → (get Claude Code) →
+ * the IntroDialog is its dialog box, driven by the server's `hooksConsentRequest`, paging welcome → (get Claude Code) →
  * choices → all set. The choices step's Live updates box starts off; Continue sends its answer (ticked = install,
  * left off = never) and moves to the closing step, from which Back allows a genuine change of mind. Both surfaces render this component off the same message (standalone: standalone/hooks.spec.ts).
  * The gate answers a 1-star review — a settings.json replaced with no prompt, backup or disclosure — so these assert
@@ -32,7 +33,7 @@ const NO_CONSENT_CONFIG = {
   officeMcpConsent: 'declined',
 };
 
-/** The in-app Intro. IntroBubble is the only role="dialog" element
+/** The in-app Intro. IntroDialog is the only role="dialog" element
  *  in the webview (the Settings/changelog modals don't carry the role). */
 function consentDialog(frame: Frame): Locator {
   return frame.getByRole('dialog');
@@ -138,10 +139,10 @@ test.describe('Hooks consent gate', () => {
     const dialog = await openConsentDialog(frame);
     await expect(dialog).toContainText('Welcome to Pixel Agents!');
 
-    // Diegetic: the tour is a greeter character's speech bubble, and the camera
-    // shifts so character + bubble are centered — the bubble ends up FULLY on
-    // screen (polled, because the camera lerps there over a few frames). That
-    // is what makes it unmissable without an office-blocking overlay.
+    // Diegetic: a greeter character speaks the tour in a dialog box along the
+    // office's foot, FULLY on screen, and the camera centres the character in
+    // the office left above it. That is what makes it unmissable without an
+    // office-blocking overlay.
     expect(await greeterPresent(frame)).toBe(true);
     await expect
       .poll(
@@ -263,8 +264,7 @@ test.describe('Hooks consent gate', () => {
 
     const dialog = await openConsentDialog(frame);
     // The x is on every step — here, mid-tour, past the welcome.
-    await dialog.getByRole('button', { name: 'Continue' }).click();
-    await expect(dialog).toContainText(/Pick what to turn on|First, get Claude Code/);
+    expect(await readIntro(dialog)).toMatch(/Pick what to turn on|First, get Claude Code/);
 
     narrator.step('aborting the tour with the x — no choice made');
     await dialog.getByRole('button', { name: 'Close' }).click();
@@ -300,6 +300,7 @@ test.describe('Hooks consent gate', () => {
     narrator.check('the install landed');
 
     await expect(dialog).toContainText("You're all set!");
+    await readIntro(dialog);
     await dialog.getByRole('button', { name: 'Back' }).click();
     await expect(introChoice(dialog, 'hooks')).toHaveAttribute('aria-pressed', 'true');
 
@@ -355,6 +356,7 @@ test.describe('Hooks consent gate', () => {
       narrator.check('the unparseable file was left byte-for-byte alone');
 
       narrator.step('walking back and unticking Live updates');
+      await readIntro(dialog);
       await dialog.getByRole('button', { name: 'Back' }).click();
       await introChoice(dialog, 'hooks').click();
       await chooseInIntro(dialog);

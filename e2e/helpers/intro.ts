@@ -3,17 +3,16 @@ import { expect } from '@playwright/test';
 
 /**
  * Drivers for the Intro — the first-run tour the greeter speaks
- * (webview-ui/src/components/IntroBubble.tsx): welcome → get Claude Code
+ * (webview-ui/src/components/IntroDialog.tsx): welcome → get Claude Code
  * (only when the server found no CLI) → choices (a box each for usage bars,
  * live updates and the Pixel Office MCP, where asked; all off to start) → all
  * set (with the tutorial's ask where it can start). Locator-based so the
  * same helpers drive both surfaces: the VS Code webview frame and the
  * standalone browser page.
  *
- * Step content is asserted between clicks rather than clicking "Continue"
- * twice blind: the button keeps its accessible name across steps, so two
- * blind clicks could double-fire on one step and pass over a tour that never
- * advanced.
+ * The greeter speaks in a dialog box, one short message at a time; a step's
+ * controls are its menu, shown once its last message is out. `readIntro`
+ * presses through the messages to the menu, as a user would.
  */
 
 /** What to tick on the choices step (absent = left off). */
@@ -35,18 +34,47 @@ export function introChoice(dialog: Locator, id: keyof IntroPicks): Locator {
 }
 
 /**
- * Walk the Intro from its opening step to the choices step, past the
+ * Read the greeter's messages until a step's menu is up: press the dialog's
+ * arrow (a first press finishes the typing, the next shows the next message;
+ * the welcome's last one goes on to the next step). Does nothing when a menu
+ * is already up. Returns everything that was said on the way, the message
+ * the menu stands over included.
+ */
+export async function readIntro(dialog: Locator, timeoutMs = 30_000): Promise<string> {
+  const menu = dialog.getByTestId('intro-menu');
+  const message = dialog.getByTestId('intro-dialog').locator('p');
+  const next = dialog.getByRole('button', { name: 'Next' });
+  const said: string[] = [];
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const text = (await message.textContent().catch(() => null)) ?? '';
+    if (text !== '' && said.at(-1) !== text) said.push(text);
+    if (await menu.isVisible()) break;
+    if (Date.now() > deadline) {
+      await expect(menu, 'the Intro never reached a menu').toBeVisible({ timeout: 1 });
+    }
+    // The arrow goes as the last message finishes: a press that misses it is retried.
+    if (await next.isVisible()) await next.click({ timeout: 1_000 }).catch(() => undefined);
+    else await dialog.page().waitForTimeout(50);
+  }
+  return said.join(' ');
+}
+
+/**
+ * Walk the Intro from its opening step to the choices step's menu, past the
  * "First, get Claude Code" step when the server found no CLI (so it may or
  * may not come).
  */
 export async function advanceIntroToChoices(dialog: Locator): Promise<void> {
   await expect(dialog).toContainText('Welcome to Pixel Agents!');
-  await dialog.getByRole('button', { name: 'Continue' }).click();
+  await readIntro(dialog);
   const choices = dialog.getByText('Pick what to turn on');
-  const getClaude = dialog.getByText('First, get Claude Code');
-  await expect(choices.or(getClaude)).toBeVisible();
-  if (await getClaude.isVisible()) {
-    await dialog.getByRole('button', { name: 'Continue' }).click();
+  if (!(await choices.isVisible())) {
+    // The install step: its command, then on.
+    await expect(dialog.getByText('npm install -g')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(choices).toBeVisible({ timeout: 15_000 });
+    await readIntro(dialog);
   }
   await expect(choices).toBeVisible();
 }
@@ -57,6 +85,7 @@ export async function advanceIntroToChoices(dialog: Locator): Promise<void> {
  * step still up when something it turned on failed.
  */
 export async function chooseInIntro(dialog: Locator, picks: IntroPicks = {}): Promise<void> {
+  await readIntro(dialog);
   for (const id of ['usage', 'hooks', 'mcp'] as const) {
     if (!picks[id]) continue;
     const box = introChoice(dialog, id);
@@ -78,11 +107,12 @@ export async function chooseInIntro(dialog: Locator, picks: IntroPicks = {}): Pr
  * is answered with `picks` (default: everything off) on the way.
  */
 export async function finishIntro(dialog: Locator, picks: IntroPicks = {}): Promise<void> {
-  const closing = dialog.getByRole('button', { name: "Let's Go" });
+  const closing = dialog.getByText(/You're all set!|Hooks couldn't be installed/);
   const choices = dialog.getByText('Pick what to turn on');
   await expect(closing.or(choices)).toBeVisible();
   if (await choices.isVisible()) await chooseInIntro(dialog, picks);
   await expect(dialog).toContainText("You're all set!");
+  await readIntro(dialog);
   await dialog.getByRole('button', { name: "Let's Go" }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
 }

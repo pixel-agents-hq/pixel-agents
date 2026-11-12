@@ -12,7 +12,7 @@ import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
 import { DirectoryModal } from './components/DirectoryModal.js';
 import { EditActionBar } from './components/EditActionBar.js';
-import { IntroBubble } from './components/IntroBubble.js';
+import { IntroDialog } from './components/IntroDialog.js';
 import { LoadingScene } from './components/LoadingScene.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
 import { NewWorktreeModal } from './components/NewWorktreeModal.js';
@@ -330,7 +330,7 @@ function App() {
 
   // The Intro's wire-facing state machine — which asks survive being mooted,
   // when a hooksStatus is this tour's install verdict — lives in useIntroTour
-  // (pure reducer in introTourState.ts); the App only wires it to the bubble.
+  // (pure reducer in introTourState.ts); the App only wires it to the dialog.
   const {
     intro,
     installFailed,
@@ -914,7 +914,7 @@ function App() {
           render later) holds the MCP step back, so the tour opens on its
           first step rather than on the MCP step alone. */}
       {(intro || (officeMcp.ask && !consentRequest) || tutorialRequested) && (
-        <IntroBubble
+        <IntroDialog
           officeState={officeState}
           hooksAsk={intro}
           mcpAsk={officeMcp.ask}

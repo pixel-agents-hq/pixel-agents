@@ -163,8 +163,8 @@ export class OfficeState {
   greeter: Character | null = null;
 
   /** World-space point the camera drifts to while the greeter is up
-   *  (the bubble overlay recomputes it every frame: the combined center of the
-   *  character and its speech bubble). An explicit cameraFollowId outranks it. */
+   *  (the Intro's dialog recomputes it every frame: the greeter, centred in what the
+   *  dialog leaves of the office). An explicit cameraFollowId outranks it. */
   greeterCameraTarget: { x: number; y: number } | null = null;
   /** Latched by a manual pan during the ask: the user took the camera, so the
    *  overlay's per-frame updates stop re-centering. Reset on spawn/despawn. */
@@ -226,7 +226,7 @@ export class OfficeState {
     },
   });
   /** The agent that took the greeter's place (handoff), until the Intro closes:
-   *  the bubble stays anchored over it. */
+   *  the camera stays on it. */
   private greeterStandInId: number | null = null;
 
   setAreaMappings(mappings: Record<string, string[]>): void {
@@ -639,8 +639,8 @@ export class OfficeState {
 
   // ── Greeter ───────────────────────────────────────────────────
   // The Intro is diegetic: a character (Byte, by id: see greeterPalette) stands near the office's
-  // bottom-left corner and "speaks" the tour through a DOM bubble
-  // (IntroBubble). It is not an agent — see the `greeter` field.
+  // bottom-left corner and "speaks" the tour through a DOM dialog box
+  // (IntroDialog). It is not an agent — see the `greeter` field.
 
   /** Spawn the greeter near the office's bottom-left corner: target tile
    *  GREETER_TILE_MARGIN in from the left and bottom edges, falling
@@ -659,7 +659,7 @@ export class OfficeState {
       GREETER_TILE_MARGIN,
       this.layout.rows - 1 - GREETER_TILE_MARGIN,
     );
-    if (!spawn) return; // no walkable tile — IntroBubble falls back to a fixed panel
+    if (!spawn) return; // no walkable tile — the dialog speaks with no character
     const ch = createCharacter(GREETER_ID, 0, null, null, 0);
     ch.isGreeter = true;
     ch.state = CharacterState.IDLE;
@@ -673,7 +673,7 @@ export class OfficeState {
     this.greeter = ch;
   }
 
-  /** Dress the greeter as a cast character (IntroBubble picks which). */
+  /** Dress the greeter as a cast character (IntroDialog picks which). */
   setGreeterPalette(palette: number): void {
     if (this.greeter) this.greeter.palette = palette;
   }
@@ -716,7 +716,7 @@ export class OfficeState {
     this.greeterStandInId = id;
   }
 
-  /** What the Intro's bubble stands over: the greeter, or the agent that took its place. */
+  /** Who the Intro's camera stays on: the greeter, or the agent that took its place. */
   greeterAnchor(): Character | null {
     if (this.greeter) return this.greeter;
     return this.greeterStandInId === null
@@ -724,7 +724,7 @@ export class OfficeState {
       : (this.characters.get(this.greeterStandInId) ?? null);
   }
 
-  /** Per-frame update from the bubble overlay; ignored once the user panned. */
+  /** Per-frame update from the Intro's dialog; ignored once the user panned. */
   setGreeterCameraTarget(p: { x: number; y: number }): void {
     if (!this.greeterCameraCancelled) this.greeterCameraTarget = p;
   }
