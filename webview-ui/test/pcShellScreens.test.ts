@@ -127,6 +127,24 @@ describe('a PC with a live PC shell', () => {
     assert.deepEqual(view(os, true)?.label?.line, 'Free');
   });
 
+  test('Always Show Labels: the pieces in use are the ones whose labels stay up', () => {
+    const os = office();
+    assert.deepEqual(os.pieces.inUse({ readOnly: false }), []);
+    os.pieces.setPcShells([SHELL, { ...SHELL, id: SHELL.id + 1, uid: 'gone-from-the-layout' }]);
+    const shown = os.pieces.inUse({ readOnly: false });
+    assert.deepEqual(
+      shown.map((p) => [p.uid, p.view.label?.line]),
+      [['kiosk', 'Shell in proj']],
+    );
+    // A view-only office: told only that it is in use.
+    const viewOnly = office();
+    viewOnly.pieces.setPanelsInUse(['kiosk']);
+    assert.deepEqual(
+      viewOnly.pieces.inUse({ readOnly: true }).map((p) => p.view.label?.line),
+      ['Busy'],
+    );
+  });
+
   test('names a shell in the home folder Home', () => {
     const os = office();
     os.pieces.setPcShells([{ id: SHELL.id, uid: 'kiosk', furnitureType: 'KIOSK_FRONT_OFF' }]);

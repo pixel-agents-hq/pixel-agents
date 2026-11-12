@@ -835,6 +835,7 @@ function App() {
               readOnly={!canOpenPanels}
               // The Directory selector stands where the label would.
               hidden={directoryChoice !== null}
+              alwaysShow={alwaysShowOverlay && !editor.isEditMode}
               onCloseShell={canOpenPanels ? closePcShell : undefined}
             />
             {directoryChoice && canOpenPanels && !editor.isEditMode && (

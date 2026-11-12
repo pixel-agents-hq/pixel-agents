@@ -257,7 +257,29 @@ export class PiecesController {
     ctx: PieceContext,
   ): { uid: string; view: PieceView; anchor: { x: number; y: number } } | null {
     const uid = this.hoveredUid;
-    if (uid === null) return null;
+    return uid === null ? null : this.shown(uid, ctx);
+  }
+
+  /**
+   * The pieces whose labels show with nobody hovering them, under Always Show
+   * Labels: every piece whose panel is in use (a PC with a live shell — "Busy" in
+   * an office that isn't sent the shells), as the office shows each now. A shell
+   * whose piece left the layout has no label.
+   */
+  inUse(ctx: PieceContext): { uid: string; view: PieceView; anchor: { x: number; y: number } }[] {
+    const uids = new Set([...this.shellsByPiece.keys(), ...this.busyPieces]);
+    return [...uids].flatMap((uid) => {
+      const piece = this.shown(uid, ctx);
+      return piece?.view.label ? [piece] : [];
+    });
+  }
+
+  /** A piece as the office shows it now and where its label hangs, or null when
+   *  it is gone from the layout or has nothing to show or offer. */
+  private shown(
+    uid: string,
+    ctx: PieceContext,
+  ): { uid: string; view: PieceView; anchor: { x: number; y: number } } | null {
     const view = this.view(uid, ctx);
     const anchor = this.anchor(uid);
     if (!view || !anchor || (!view.label && !view.click)) return null;

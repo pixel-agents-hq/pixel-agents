@@ -284,7 +284,7 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
         OfficeCanvas.tsx             Canvas, resize, DPR, mouse hit-testing, drag-to-move
         useCanvasTouchGestures.ts    Touch pan / pinch zoom / tap on the canvas
         ToolOverlay.tsx              Activity label + speech bubbles (DOM, above the labels) per character
-        FurnitureLabel.tsx           The hovered piece's Furniture label (DOM, via projection.ts; OfficeState.pieces.hovered, re-drawn every frame only while a piece is hovered — pieces.subscribeHover + hooks/useFrameTick.ts); the renderer outlines the piece faintly (FURNITURE_HOVER_OUTLINE_ALPHA)
+        FurnitureLabel.tsx           The Furniture labels (DOM, via projection.ts): the hovered piece's (OfficeState.pieces.hovered, re-drawn every frame while a piece is hovered — pieces.subscribeHover + hooks/useFrameTick.ts) and, under Always Show Labels, every piece's whose panel is in use (pieces.inUse: a PC with a live shell, "Busy" in a view-only office; not in the layout editor); the renderer outlines the piece faintly (FURNITURE_HOVER_OUTLINE_ALPHA)
 
 e2e/                                 Playwright suite (real VS Code + mock-claude scenarios)
   playwright.config.ts
