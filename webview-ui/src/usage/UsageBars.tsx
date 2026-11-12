@@ -117,6 +117,8 @@ export function UsageBars({ limits, providerName, mobile }: UsageBarsProps) {
   }));
   // Reset times: right of each bar on a desktop, below the bars on a phone.
   const showResetBeside = active && !mobile;
+  // Nothing reported yet (no session has replied since Usage Bars went on): nothing to draw.
+  if (bars.length === 0) return null;
 
   return (
     <div

@@ -103,8 +103,8 @@ describe('shownUsageBars', () => {
     expect(shownUsageBars({ fiveHour: window })).toEqual(['fiveHour']);
   });
 
-  it('draws both, empty, before any report says what the plan has', () => {
-    expect(shownUsageBars(undefined)).toEqual(['weekly', 'fiveHour']);
-    expect(shownUsageBars({})).toEqual(['weekly', 'fiveHour']);
+  it('draws none before any report says what the plan has', () => {
+    expect(shownUsageBars(undefined)).toEqual([]);
+    expect(shownUsageBars({})).toEqual([]);
   });
 });
