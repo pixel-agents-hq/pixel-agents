@@ -172,12 +172,17 @@ export function OfficeCanvas({
         // Camera: smoothly center on the followed agent, or — while the greeter
         // is speaking the Intro — on the character+bubble center the IntroBubble
         // overlay feeds via greeterCameraTarget. An explicit follow (clicking an
-        // agent) outranks the greeter target; a manual pan cancels both.
+        // agent) outranks the greeter target; a manual pan cancels both. A
+        // clicked piece of interactive furniture is centred on the same way.
         const followCh =
           officeState.cameraFollowId !== null
             ? officeState.characters.get(officeState.cameraFollowId)
             : undefined;
-        const cameraFocus = followCh ?? officeState.greeterCameraTarget;
+        const followPiece =
+          officeState.cameraPieceUid !== null
+            ? officeState.pieces.center(officeState.cameraPieceUid)
+            : null;
+        const cameraFocus = followCh ?? followPiece ?? officeState.greeterCameraTarget;
         if (cameraFocus) {
           const layout = officeState.getLayout();
           const mapW = layout.cols * TILE_SIZE * zoom;
@@ -684,6 +689,8 @@ export function OfficeCanvas({
     (clientX: number, clientY: number, touch: boolean) => {
       const pos = screenToWorld(clientX, clientY);
       if (!pos) return;
+      // Whatever this tap lands on, the camera lets go of the piece it was on.
+      officeState.cameraPieceUid = null;
 
       // A piece of interactive furniture (never under a character or a pet: they
       // win). On touch the first tap only shows its outline and label; a tap
@@ -696,6 +703,8 @@ export function OfficeCanvas({
         if (piece.click) onPieceClick?.(piece.click, piece.uid);
         officeState.selectedAgentId = null;
         officeState.cameraFollowId = null;
+        // The camera centres on it, as it does on a clicked character.
+        officeState.cameraPieceUid = piece.uid;
         return;
       }
 

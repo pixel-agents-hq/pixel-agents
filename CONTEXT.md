@@ -290,7 +290,7 @@ The interface a piece opens for the user: a terminal, a board, a review screen. 
 _Avoid_: card (that's an agent's), window, dialog
 
 **Furniture label**:
-The small box over a hovered piece naming it and showing whatever the furniture chose to say, with a faint outline round the piece: the furniture's counterpart of an agent's activity label.
+The small box over a hovered piece showing whatever the furniture chose to say (its name only when it has nothing to say), with a faint outline round the piece: the furniture's counterpart of an agent's activity label.
 _Avoid_: card, tooltip
 
 **Push**:

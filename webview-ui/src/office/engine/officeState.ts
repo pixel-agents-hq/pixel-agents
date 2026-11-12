@@ -122,6 +122,10 @@ export class OfficeState {
     return () => this.selectionListeners.delete(listener);
   }
   cameraFollowId: number | null = null;
+  /** The piece of interactive furniture the camera centres on (the last one
+   *  clicked), as it follows a clicked character. A followed character
+   *  outranks it; a manual pan or a click anywhere else lets go of it. */
+  cameraPieceUid: string | null = null;
   hoveredAgentId: number | null = null;
   hoveredTile: { col: number; row: number } | null = null;
   /** Maps "parentId:toolId" → sub-agent character ID (negative) */
@@ -735,6 +739,7 @@ export class OfficeState {
    *  automatic drivers: character follow and the greeter's ask. */
   breakCameraFollow(): void {
     this.cameraFollowId = null;
+    this.cameraPieceUid = null;
     this.cancelGreeterCamera();
   }
 
@@ -744,6 +749,7 @@ export class OfficeState {
     if (!this.characters.has(id)) return;
     this.selectedAgentId = id;
     this.cameraFollowId = id;
+    this.cameraPieceUid = null;
   }
 
   /** The agent that owns `id`'s terminal: a sub-agent's parent, else itself. */

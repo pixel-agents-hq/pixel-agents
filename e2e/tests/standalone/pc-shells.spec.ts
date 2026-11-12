@@ -77,6 +77,23 @@ async function tilePoint(page: Page, col: number, row: number): Promise<{ x: num
   return { x: box.x + local.x, y: box.y + local.y };
 }
 
+/** The same, once the camera has stopped moving: a click on a PC centres the
+ *  camera on it, so the PC is somewhere else on the page a moment later. */
+async function settledTilePoint(
+  page: Page,
+  col: number,
+  row: number,
+): Promise<{ x: number; y: number }> {
+  let last = await tilePoint(page, col, row);
+  for (let i = 0; i < 50; i++) {
+    await page.waitForTimeout(100);
+    const now = await tilePoint(page, col, row);
+    if (now.x === last.x && now.y === last.y) return now;
+    last = now;
+  }
+  throw new Error(`tile (${col},${row}) never stopped moving`);
+}
+
 /** The state the PC's screen is drawn in ("on"), or null for its usual sprite. */
 function pcState(page: Page): Promise<string | null> {
   return page.evaluate(
@@ -97,11 +114,11 @@ test.describe('Standalone / PC shells', () => {
     page,
     standalone: _standalone,
   }) => {
-    // Hover: the Furniture label names the PC and says it is free.
+    // Hover: the Furniture label says the PC is free (its line alone, no name over it).
     const pc = await tilePoint(page, PC_TILE.col, PC_TILE.row);
     await page.mouse.move(pc.x, pc.y);
     await expect(label(page)).toHaveAttribute('data-piece-uid', PC_UID);
-    await expect(page.getByTestId('furniture-label-name')).toHaveText('PC');
+    await expect(page.getByTestId('furniture-label-name')).toHaveCount(0);
     await expect(page.getByTestId('furniture-label-line')).toHaveText('Free');
     expect(await pcState(page)).toBeNull();
 
@@ -109,13 +126,18 @@ test.describe('Standalone / PC shells', () => {
     await page.mouse.click(pc.x, pc.y);
     const selector = page.getByTestId('pc-directory-selector');
     await expect(selector).toBeVisible();
+    // The camera centres on the clicked PC, as it does on a clicked character.
+    await expect
+      .poll(() => page.evaluate(() => window.__pixelAgentsTestHooks?.getCameraPieceUid?.() ?? null))
+      .toBe(PC_UID);
     await expect(selector.getByTestId('pc-directory-option')).toHaveText(['Alpha', 'Beta']);
     await expect(selector).toBeInViewport({ ratio: 1 });
 
     // Escape dismisses it; a second click brings it back.
     await page.keyboard.press('Escape');
     await expect(selector).toHaveCount(0);
-    await page.mouse.click(pc.x, pc.y);
+    const pcCentred = await settledTilePoint(page, PC_TILE.col, PC_TILE.row);
+    await page.mouse.click(pcCentred.x, pcCentred.y);
     await expect(selector).toBeVisible();
 
     // Beta: a shell opens there, in the terminal drawer, and its card joins the bar.
@@ -136,7 +158,7 @@ test.describe('Standalone / PC shells', () => {
 
     // The label now names the shell's Directory (the drawer narrowed the office:
     // the PC is found again).
-    const pcBeside = await tilePoint(page, PC_TILE.col, PC_TILE.row);
+    const pcBeside = await settledTilePoint(page, PC_TILE.col, PC_TILE.row);
     await page.mouse.move(pcBeside.x, pcBeside.y);
     await expect(page.getByTestId('furniture-label-line')).toHaveText('Shell in Beta');
 
@@ -160,7 +182,7 @@ test.describe('Standalone / PC shells', () => {
       );
     const before = await furniture();
     const deletePc = async () => {
-      const at = await tilePoint(page, PC_TILE.col, PC_TILE.row);
+      const at = await settledTilePoint(page, PC_TILE.col, PC_TILE.row);
       await page.mouse.click(at.x, at.y);
       await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
       await page.keyboard.press('Delete');
@@ -178,7 +200,7 @@ test.describe('Standalone / PC shells', () => {
     // shell at once: card and lit screen go.
     await terminal.click();
     await page.keyboard.press('Control+C');
-    const pcAgain = await tilePoint(page, PC_TILE.col, PC_TILE.row);
+    const pcAgain = await settledTilePoint(page, PC_TILE.col, PC_TILE.row);
     await page.mouse.move(pcAgain.x, pcAgain.y);
     await page.getByTestId('furniture-label-close').click();
     await expect(card).toHaveCount(0);
@@ -209,7 +231,7 @@ test.describe('Standalone / PC shells', () => {
       );
     const before = await furniture();
     await page.getByRole('button', { name: 'Layout', exact: true }).click();
-    const at = await tilePoint(page, PC_TILE.col, PC_TILE.row);
+    const at = await settledTilePoint(page, PC_TILE.col, PC_TILE.row);
     await page.mouse.click(at.x, at.y);
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press('Delete');
@@ -240,8 +262,9 @@ test.describe('Standalone / PC shells', () => {
       await expect(label(page)).toHaveAttribute('data-piece-uid', PC_UID);
       await expect(page.getByTestId('pc-directory-selector')).toHaveCount(0);
 
-      // Second tap on the same PC: its click, the selector.
-      await page.touchscreen.tap(pc.x, pc.y);
+      // Second tap on the same PC (the first tap centred the camera on it): its click, the selector.
+      const pcCentred = await settledTilePoint(page, PC_TILE.col, PC_TILE.row);
+      await page.touchscreen.tap(pcCentred.x, pcCentred.y);
       const selector = page.getByTestId('pc-directory-selector');
       await expect(selector).toBeInViewport({ ratio: 1 });
       await selector.getByRole('menuitem', { name: 'Alpha' }).tap();

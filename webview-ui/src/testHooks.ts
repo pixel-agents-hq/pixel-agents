@@ -24,6 +24,8 @@ declare global {
       }>;
       /** The character the camera follows (null = free camera). */
       getCameraFollowId?: () => number | null;
+      /** The piece of furniture the camera centres on (null = none). */
+      getCameraPieceUid?: () => string | null;
       /** Effective "Display headless as ghosts" setting the renderer is using. */
       getGhostHeadlessAgents?: () => boolean;
       // ── Carpet + Areas observability (added for carpet/areas e2e) ──
@@ -174,6 +176,7 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
   hooks.getGhostHeadlessAgents = () => isGhostHeadlessAgentsEnabled();
 
   hooks.getCameraFollowId = () => officeStateRef.current?.cameraFollowId ?? null;
+  hooks.getCameraPieceUid = () => officeStateRef.current?.cameraPieceUid ?? null;
 
   hooks.selectAgent = (id) => {
     const os = officeStateRef.current;

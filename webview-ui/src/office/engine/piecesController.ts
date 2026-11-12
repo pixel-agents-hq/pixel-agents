@@ -303,6 +303,15 @@ export class PiecesController {
     return { x: instance.x + width / 2, y: instance.y };
   }
 
+  /** The middle of a piece's sprite as drawn now, in world pixels: where the camera
+   *  centres on a clicked piece. Null once it is no longer drawn. */
+  center(uid: string): { x: number; y: number } | null {
+    const instance = this.deps.furniture().find((f) => f.uid === uid);
+    if (!instance) return null;
+    const width = instance.sprite[0]?.length ?? TILE_SIZE;
+    return { x: instance.x + width / 2, y: instance.y + instance.sprite.length / 2 };
+  }
+
   /** Each piece whose state rules hold a declared state now: piece uid → that state.
    *  Every frame: only the state is worked out (core's pieceState). */
   showingStates(): Map<string, string> {

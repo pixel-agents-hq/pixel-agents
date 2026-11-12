@@ -25,7 +25,7 @@ interface FurnitureLabelProps {
 
 /**
  * The Furniture labels: the small box over the hovered piece (OfficeState.pieces.hovered)
- * naming it and showing the line its rules pick (core's pieceView), the furniture's
+ * showing the line its rules pick (core's pieceView; its name only where no line holds), the furniture's
  * counterpart of an agent's activity label (ToolOverlay), styled and positioned like
  * it: through the shared world-to-screen projection, re-read every frame so it
  * follows the camera and says what is true now. Under Always Show Labels every
@@ -106,18 +106,21 @@ export function FurnitureLabel({
           >
             <div className="flex items-start border-border px-8 pt-2 pb-4 pixel-panel whitespace-nowrap max-w-2xs overflow-hidden">
               <div className="flex flex-col overflow-hidden">
-                <span
-                  data-testid="furniture-label-name"
-                  className="overflow-hidden text-ellipsis block leading-none text-base"
-                >
-                  {name}
-                </span>
-                {line !== null && (
+                {/* What the piece is doing says enough: its name shows only
+                    where no line holds (a label that declares none). */}
+                {line !== null ? (
                   <span
                     data-testid="furniture-label-line"
                     className="text-2xs leading-none overflow-hidden text-ellipsis block"
                   >
                     {line}
+                  </span>
+                ) : (
+                  <span
+                    data-testid="furniture-label-name"
+                    className="text-2xs leading-none overflow-hidden text-ellipsis block"
+                  >
+                    {name}
                   </span>
                 )}
               </div>
