@@ -6,6 +6,7 @@
  * tutorial's ask promises Claude Code still asks), and ended as its card's ×.
  */
 
+import { directoryAt } from '../directories.js';
 import type { TutorialSurface } from '../tutorial/tutorial.js';
 import { TUTORIAL_MODEL, TUTORIAL_PERMISSION_MODE } from '../tutorial/tutorialCopy.js';
 import {
@@ -24,7 +25,10 @@ export function standaloneTutorialSurface(
     where() {
       const unavailable = terminalUnavailableReason(deps.ptyManager);
       if (unavailable) return { ok: false, reason: unavailable };
-      return { ok: true, directoryName: directory()?.name ?? null };
+      // Named as the office lists it: the user's own name for that folder wins.
+      const start = directory();
+      const listed = start && directoryAt(start.path, deps.hostDirectories);
+      return { ok: true, directoryName: listed?.name ?? start?.name ?? null };
     },
     launch: (request, mcp) =>
       launchIntoDirectory(
