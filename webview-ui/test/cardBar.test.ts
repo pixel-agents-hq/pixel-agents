@@ -40,11 +40,7 @@ describe('cardOrderOf', () => {
     expect(cardOrderOf([], [1, 2], new Set(), [shell])).toEqual([
       { kind: 'agent', id: 1 },
       { kind: 'agent', id: 2 },
-      { kind: 'pcShell', id: shell.id, shell, named: false },
-    ]);
-    // Named only where its PC offered a choice of Directory.
-    expect(cardOrderOf([], [], new Set(), [shell], () => true)).toEqual([
-      { kind: 'pcShell', id: shell.id, shell, named: true },
+      { kind: 'pcShell', id: shell.id, shell },
     ]);
     expect(ids(cardOrderOf([shell.id, 2, 1], [1, 2], new Set(), [shell]))).toEqual([
       shell.id,

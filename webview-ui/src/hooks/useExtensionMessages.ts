@@ -314,18 +314,8 @@ export function useExtensionMessages(
   // office runs terminals. Not agents: never in `agents` or the office's characters.
   const { shells: pcShells } = usePcShells();
   const cards = useMemo(
-    () =>
-      cardOrderOf(
-        cardOrder,
-        agents,
-        teammateIds,
-        pcShells,
-        // A card names its Directory only where its PC offered a choice.
-        (shell) => getOfficeState().pieces.places(shell.uid).length > 1,
-      ),
-    // The Directories and the Area mappings decide which PCs offer a choice.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cardOrder, agents, teammateIds, pcShells, directories, areaMappings],
+    () => cardOrderOf(cardOrder, agents, teammateIds, pcShells),
+    [cardOrder, agents, teammateIds, pcShells],
   );
   const panes = useMemo(
     (): Pane[] => [

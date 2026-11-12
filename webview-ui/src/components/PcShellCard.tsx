@@ -9,8 +9,6 @@ import { PixelIcon } from './ui/PixelIcon.js';
 
 interface PcShellCardProps {
   shell: PcShell;
-  /** Say which Directory it is in: only where its PC offered several. */
-  named: boolean;
   variant: CardVariant;
   close?: CloseMode;
   onSelect: (id: number) => void;
@@ -19,16 +17,14 @@ interface PcShellCardProps {
 
 /**
  * A PC shell's card in the card bar, beside the agents' (CONTEXT.md → PC shell):
- * the PC, switched on, where an agent's mug shot is — its top (the screen)
- * against the card's top, or right under its Directory's name, which runs along
- * the top only where the PC offered a choice (its Area has several
- * Directories); the hover title always says it. The PC's foot is what the card
- * cuts off. No status dot and no context gauge: a shell is not an agent. Like an
+ * where it was opened along the top (its Directory's name, or "Home" for the
+ * home folder), always, and under it the PC, switched on, where an agent's mug
+ * shot is: its top (the screen) right under the name, its foot cut off by the
+ * card. No status dot and no context gauge: a shell is not an agent. Like an
  * agent's card it is its terminal's tab.
  */
 export function PcShellCard({
   shell,
-  named,
   variant,
   close = 'shown',
   onSelect,
@@ -47,14 +43,12 @@ export function PcShellCard({
         className="flex flex-col shrink-0 overflow-hidden"
         style={{ width: side, height: side }}
       >
-        {named && (
-          <span
-            data-testid="pc-shell-card-name"
-            className="shrink-0 bg-bg text-text text-2xs leading-none px-1 truncate text-center pointer-events-none"
-          >
-            {name}
-          </span>
-        )}
+        <span
+          data-testid="pc-shell-card-name"
+          className="shrink-0 bg-bg text-text text-2xs leading-none px-1 truncate text-center pointer-events-none"
+        >
+          {name}
+        </span>
         <PieceSprite type={shell.furnitureType} state={PC_SHELL_CARD_STATE} />
       </span>
       <div className="flex flex-col items-center shrink-0">

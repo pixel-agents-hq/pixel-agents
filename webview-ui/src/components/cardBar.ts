@@ -6,10 +6,7 @@ import type { PcShell } from '../../../core/src/messages.js';
 
 /** A card in the bar, by kind: an agent's, or a PC shell's (its own card,
  *  CONTEXT.md → PC shell). The bars and App switch on `kind`, never on the id. */
-export type Card =
-  | { kind: 'agent'; id: number }
-  /** `named`: the card says which Directory its shell is in (its PC offered a choice). */
-  | { kind: 'pcShell'; id: number; shell: PcShell; named: boolean };
+export type Card = { kind: 'agent'; id: number } | { kind: 'pcShell'; id: number; shell: PcShell };
 
 /** Card highlight tiers: 'focused' = the agent's character is selected in the
  *  office (active background, no border); 'active' = its terminal pane is the
@@ -46,14 +43,12 @@ export function cardOrderOf(
   agents: readonly number[],
   teammateIds: ReadonlySet<number>,
   pcShells: readonly PcShell[],
-  /** Whether a shell's PC offers several Directories: only then is its card named. */
-  hasChoice: (shell: PcShell) => boolean = () => false,
 ): Card[] {
   const shells = new Map(pcShells.map((shell) => [shell.id, shell]));
   const live = [...agents.filter((id) => !teammateIds.has(id)), ...shells.keys()];
   return mergeOrder(saved, live).map((id): Card => {
     const shell = shells.get(id);
-    return shell ? { kind: 'pcShell', id, shell, named: hasChoice(shell) } : { kind: 'agent', id };
+    return shell ? { kind: 'pcShell', id, shell } : { kind: 'agent', id };
   });
 }
 
