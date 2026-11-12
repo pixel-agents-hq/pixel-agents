@@ -297,8 +297,8 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/standalone/multi-server-hooks.spec.ts:31` — extension and standalone both stay hook-driven without cross-contamination (Standalone / multi-server hooks)
 - `e2e/standalone/office-mcp-characters.spec.ts:33` — an agent's create_character joins the open office's roster and the Characters view's undo reverts it (Standalone / Pixel Office MCP characters)
 - `e2e/standalone/office-mcp.spec.ts:70` — an agent launches another with a first message and messages it; the office shows the walk and the gist (Standalone / Pixel Office MCP)
-- `e2e/standalone/pc-shells.spec.ts:96` — hover, the Directory selector, a shell that echoes, its card and lit PC, and × (Standalone / PC shells)
-- `e2e/standalone/pc-shells.spec.ts:189` — deleting a PC closes its idle shell with no question (Standalone / PC shells)
+- `e2e/standalone/pc-shells.spec.ts:113` — hover, the Directory selector, a shell that echoes, its card and lit PC, and × (Standalone / PC shells)
+- `e2e/standalone/pc-shells.spec.ts:211` — deleting a PC closes its idle shell with no question (Standalone / PC shells)
 - `e2e/standalone/terminal.spec.ts:47` — browser-launched agent gets a PTY terminal, hooks route to its character, close cleans up (Standalone / terminal)
 - `e2e/standalone/terminal.spec.ts:103` — every tab takes mouse input, and a narrow window keeps the cards and close reachable (Standalone / terminal)
 - `e2e/standalone/terminal.spec.ts:138` — a card dragged on the desktop moves on an open phone too, and stays after a reload (Standalone / terminal)
@@ -381,7 +381,7 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/standalone/mobile.spec.ts:442` — the trackpad key follows the finger that pressed it, not touches[0] (Standalone / mobile shell)
 - `e2e/standalone/mobile.spec.ts:502` — a trackpad drag from the pad to either screen edge sweeps a full line (Standalone / mobile shell)
 - `e2e/standalone/mobile.spec.ts:562` — the arrow on the + card toggles the roster: a tap launches as that character, a hold edits it (Standalone / mobile shell)
-- `e2e/standalone/pc-shells.spec.ts:229` — the first tap shows the label, the second opens the selector, and the shell slides in (Standalone / PC shells › on a phone)
+- `e2e/standalone/pc-shells.spec.ts:254` — the first tap shows the label, the second opens the selector, and the shell slides in (Standalone / PC shells › on a phone)
 
 ### `@area:pets` (3 tests)
 
