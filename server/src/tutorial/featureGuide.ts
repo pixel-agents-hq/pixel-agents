@@ -73,7 +73,7 @@ export const FEATURE_GUIDE: readonly FeatureGuideTopic[] = [
     id: 'conversations',
     title: 'Recent conversations and resume',
     body:
-      'Standalone lists recent conversations: a sidebar on the left on desktop (the button above the zoom buttons ' +
+      'Standalone lists recent conversations: a sidebar on the left on desktop (shut at first; the button above the zoom buttons ' +
       'opens and shuts it), the menu (top-left button or a swipe from the left edge) on a phone. "Recent" shows the ' +
       'newest five across Directories, then one section per Directory, with its Worktrees at the end. Pressing a past ' +
       'conversation resumes it (claude --resume) wearing the character it had, in its old seat when free; a running ' +

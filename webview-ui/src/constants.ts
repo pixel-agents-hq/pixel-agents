@@ -800,8 +800,8 @@ export const CONVERSATION_SEARCH_DEBOUNCE_MS = 200;
 export const CONVERSATION_SEARCH_PREFETCH_PX = 120;
 /** localStorage key: the Directory paths this viewer expanded in the conversation list. */
 export const CONVERSATION_EXPANDED_KEY = 'pixel-agents.conversationExpandedDirectories';
-/** localStorage key: whether this viewer shut the desktop conversation sidebar. */
-export const CONVERSATION_SIDEBAR_SHUT_KEY = 'pixel-agents.conversationSidebarShut';
+/** localStorage key: whether this viewer opened the desktop conversation sidebar (shut until then). */
+export const CONVERSATION_SIDEBAR_OPEN_KEY = 'pixel-agents.conversationSidebarOpen';
 /** How long a Directory's section takes to unfold or fold in the conversation list. */
 export const CONVERSATION_UNFOLD_MS = 180;
 /** An agent card's height: its mug shot plus 1px padding and 2px border each
