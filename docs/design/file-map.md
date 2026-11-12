@@ -1,0 +1,322 @@
+# File map
+
+Every file with what it owns, in full. `CLAUDE.md` keeps a one-line-per-file version of this tree; update both when a file is added, moved or changes what it owns.
+
+```
+core/                                Protocol + interface definitions (zero runtime side effects)
+  asyncapi.yaml                      AsyncAPI 3.0 contract — single source of truth
+  src/
+    messages.ts                      AUTO-GENERATED discriminated unions (do not edit)
+    schemas.ts                       AgentMeta, SpriteData, FurnitureCatalogEntry
+    provider.ts                      HookProvider, AgentEvent (the integration boundary)
+    teamProvider.ts                  Optional TeamProvider (semantic queries for Lead + Teammates)
+    transport.ts                     MessageTransport interface, TransportState
+    adapter.ts                       StateAdapter, AssetCache, PersistedAgent, AgentSeat
+    terminalAdapter.ts               TerminalAdapter (editor-driven terminal management)
+    normalizeProjectPath.ts
+    constants.ts
+    agentLabel.ts                    agentLabelOf: how an agent is named to people (Nickname, else its character's name, else its Directory), for the server's MCP tags and the office's Furniture label
+    pcShells.ts                      PC shells, pure: isPcShellId (their own id space above PC_SHELL_ID_BASE, the one fact that tells a shell's card, pane and socket from an agent's), pcShellName (its Directory, else `Home`), PersistedPcShell + parsePersistedPcShells (the saved list); isPcShellId is read only at the wire and socket boundaries (ptyAgentTerminals refuses shell ids; the office models cards and panes by kind)
+    isRecord.ts, localId.ts          The one "is this a JSON object" guard; newLocalId (character, item and save ids)
+    layout/                          The layout, shared by the editor and the server (pure, no sprites, no module state; catalogue passed in): types.ts (OfficeLayout, TileType, Direction, Seat…), constants.ts, catalog.ts (createFurnitureCatalog from catalogue data: entries, rotation/state/animation groups), editOps.ts + editOps/{tiles,furniture,areas,grid,pets}.ts (every pure layout edit, one family per file — tiles: floor/wall paint, wall sets, erase; furniture: placement, riders, move/copy/rotate/toggle; areas: carpets + Areas; grid: expand/shrink; pets — re-exported by the editOps.ts barrel), sections.ts, layoutSerializer.ts (tile map, blocked tiles, walkGrid, layoutToSeats, (de)serialize + migrate; layoutFromJson = an already-parsed layout migrated, no string round-trip), tileMap.ts (walkability, BFS), workstations.ts, visitSpot.ts (a Visit's tile checked — visitTileProblem — and the spot beside furniture or a seat, facing it — spotBeside; Facing ↔ Direction); index.ts = the barrel
+    furniture/                       The furniture contract (CONTEXT.md → Interactive Furniture, docs/adr/0005), pure: interactive.ts (a manifest's optional `interactive` block — agentUse `workstation`, a label, panel `terminal`, state rules over the conditions agentWorking / panelInUse / free — and the ONE validator, `withInteractive`, run by every manifest reader: server assetLoader.ts, external asset directories included, and assets/build.ts; a bad block is dropped with a warning, the furniture loads plain), pieceRules.ts (the ONE set of rules, knows no furniture by name: `pieceState(interactive, PieceUse)` the shown state — the renderer's, every frame, over the piece's use alone; `pieceLabel` the label's name + its FIRST line that holds; `pieceClick(interactive, PieceFacts)` — `openPanel` (its live shell) › `agentTerminal` (the agent working at it) › `choosePlace` (several places: the Directory selector) › `newPanel` (one place, or none = the default); `pieceView` composes the three for the hover and the click; `opensPanel` is the server's one question, "does this piece open a terminal?"), piecePlaces.ts (pieceArea + areaDirectories: the Directories mapped to the Area a piece stands in, one reading for the office's click and the server's open)
+    tutorial/quests.ts               TUTORIAL_QUESTS: the tutorial's four quests, in any order (id, title, goal, the Guide's note), one list for server and office; TUTORIAL_NICKNAME `Guide`
+    greeterCharacter.ts              GREETER_CHARACTER_ID + greeterPalette: the character the greeter (and so the Guide) wears, by profile id
+    assets/characterSheet.ts         The ONE reading of the sheet layout: sheetToDirectionSprites, currentSheetPixels (widens a 112-wide sheet); used by decodeCharacterPng and the webview
+    characters/                      The character model, pure (no DOM, no fs), shared by the webview and the server (see "Characters")
+      art/                           Wardrobe: one finished 128×96 PNG per part (<piece>/<id>.png, eyes/<shape>/), wardrobe.json (labels, colourways, palettes), artColors.ts (swatches, default colours); the webview inlines the PNGs, the build copies them to dist/assets/wardrobe for the server
+      slots.ts                       The slot table: LAYERS (one entry per piece), TABS, ACCESSORIES; everything else derived
+      renderer.ts                    CharacterRenderer: profile → 128×96 sheet (pick files, edits, tint, stack) + the colour questions (colorOf, swatchValue, paletteFor)
+      wardrobe.ts, sheet.ts          Art layout + manifest/PNG check (decodeWardrobe, partInfo, withItems); sheet geometry (cellAt, FRAME_COUNT, isOpaque, decodeSheet over currentSheetPixels)
+      color.ts                       The renderer's colour maths (tintPixels, hsl01ToRgb; RGB→HSL and luminance from assets/colorUtils.ts)
+      repeatClothes.ts               A repeat's clothes colour (withRepeatClothes; REPEAT_CLOTHES_HUES in constants.ts), repeatHueTurn for external sprites
+      profiles.ts                    Profile edits: newProfile, setPart, setUnderwear, setColor, pixel edits, randomize
+      preview.ts                     previewPixels: a sheet's standing frames down/up/right side by side, scaled by whole pixels
+
+server/                              Lifecycle runtime + Fastify HTTP/WS server
+  src/
+    providers/hook/claude/           Reference HookProvider — only place that knows Claude specifics
+      claude.ts                      normalizeHookEvent for 11 Claude events, formatToolStatus, file fallback
+      claudeTeamProvider.ts          TeamProvider: reads ~/.claude/teams/<name>/config.json
+      claudeHookInstaller.ts         Consent-gated install/uninstall of our hook entries (abort on non-object hooks or non-array hooks.<Event>; `areHooksInstalled` = ANY of our commands on ANY event)
+      claudeHookEntries.ts           Our hook entries as data, pure: makeHookEntry (the WRITER), hook identity (`/.pixel-agents/hooks/claude-hook.js` suffix anchored at both ends of the command's first token, case-insensitive), hooksHoldOnlyOurs (compared against makeHookEntry; only `command`/`timeout` may differ, they vary across installs)
+      claudeSettingsFile.ts          ~/.claude/settings.json itself, for every writer (hooks, status line): mutateClaudeSettings, the one guarded read-modify-write (abort on unparseable file; one-time .pixel-agents.backup, exclusive-create, no backup ⇒ no write — but skipped when the replaced content is entirely our own output, since backing up our own file masquerades as the user's original: `settingsHoldOnlyOurOutput`, each key checked against its WRITER (`hooks` → hooksHoldOnlyOurs, `statusLine` → isBareOurStatusLine) so a field added to what we write can't silently revive the bug; every write failure THROWS; mode preserved, 0600 on create; re-read verify immediately before rename + retry)
+      bundledScripts.ts              bundledScriptPath / copyBundledScript: the one spelling of ~/.pixel-agents/hooks/<name> and the copy from the package
+      consentCopy.ts                 Claude's first-run consent disclosure text (scope/data/undo), served through consentDisclosure()
+      commandIdentity.ts             firstCommandToken / commandRunsScript: the ONE "does this settings.json command run our script?" parser (hooks + status line)
+      statusLineBridge.ts            The usage bridge's statusLine command: make / recognize / read back the wrapped user command (base64url after --wrap, so no shell metachar leaks); makeBareStatusLine (the WRITER) + isBareOurStatusLine (compared against it)
+      statusLineInstaller.ts         Wrap/unwrap ~/.claude/settings.json statusLine through claudeSettingsFile's mutateClaudeSettings (refuses non-command shapes and hand-edited wraps; a replaced status line is the user's)
+      claudeUsageBridge.ts           Claude's UsageBridge: disclosure, rate_limits → ReportedUsage, install/uninstall
+      worktreeConvention.ts          Claude's WorktreeConvention: `.claude/worktrees`, session dirs `<hash>--claude-worktrees-<name>`, the pid in its lock reason (`claude session <name> (pid N …)`), symlinkDirectories from worktreeSettings.ts
+      worktreeSettings.ts            `worktree.symlinkDirectories`, read (never written) from the user's and the project's Claude settings, unioned
+      skillPackaging.ts              Claude's SkillPackaging: a session-only plugin folder (`.claude-plugin/plugin.json` + `skills/<id>/SKILL.md` with its frontmatter), the skill named `<plugin>:<id>`, run as `/<plugin>:<id>`
+      constants.ts                   Claude hook event names, script path
+      hooks/claude-hook.ts           Hook script (CJS+shebang, bundled to dist/hooks/claude-hook.js)
+      hooks/claude-statusline.ts     Status line bridge (dist/hooks/claude-statusline.js): runs the wrapped user status line untouched, POSTs ONLY rate_limits + session_id + context_window's used_percentage/context_window_size to /api/usage/claude
+      hooks/serverRegistry.ts        Both scripts' route to the servers: live registry entries (else legacy server.json) + best-effort POST
+    mcp/                             The Pixel Office MCP (id `pixel-office`): composeOfficeMcp.ts (the ONE composition, both surfaces → the `officeMcp` feature object), officeMcp.ts (route `/mcp`, tool table, per-agent tokens), tool.ts + tools/ (one file per tool, each naming the capabilities it `uses`), officeOperations.ts (the seam, by capability) + agentsView.ts, layoutOps.ts, messaging.ts, visitsOps.ts, charactersView.ts, directoryOps.ts, lifecycle.ts, pcShellOps.ts (one module per capability), officeFacts.ts (what a surface supplies + the per-call snapshot), seatPlace.ts, layoutView.ts, layoutEditOps.ts, layoutEdits.ts, agentLabel.ts, consentCopy.ts, officeMcpMessages.ts (the officeMcp + layoutEditing / undoAgentLayoutEdit ClientMessages) — see "Pixel Office MCP"
+    tutorial/                        The tutorial (see "Tutorial"): tutorial.ts (Tutorial, the owner composed into the MCP feature: offer, start through the surface's TutorialSurface, quests seen from the office's facts, the Guide's name from its character, quit), tutorialSightings.ts (the quests, pure: the office's facts against the run's start), tutorialProgress.ts (the pure progress reducer), tutorialCopy.ts (the permission step's copy, the Guide's first message = its skill's command, the MCP instructions' fallback, the onboarding skill's text — all named after the Guide's character — the pre-approved tools), onboardingPlugin.ts (has the provider's `skills` packaging write the skill's session-only folder), featureGuide.ts (what Pixel Agents does, served by get_feature_guide)
+    providers/hook/consentExecutor.ts Provider-agnostic consent EXECUTION: applyConsentChoice(providerId, choice, ConsentEffects) runs the six actions in one order for both surfaces, and SERIALIZES answers per process across ALL providers
+    providers/index.ts               Provider registry (claudeProvider + the hookProviders list the consent gate loops over)
+    agentPersistence.ts              What of an agent survives a reload, and what a restored agent starts from (both surfaces)
+    agentMoves.ts                    Following an agent that moves mid-session (EnterWorktree / ExitWorktree): AgentMoves.relocate(agentId, SessionWhereabouts) — the ONE operation every signal funnels into (a hook whose cwd differs from the agent's, the transcript's own move records without hooks, a scanner finding the session's file in another project dir after its old one vanished, the stale check's last look): the marker from the new folder (a Directory's `.claude/worktrees/<name>`, else none; the Directory stays), the transcript followed only to a file that exists once the read one is gone, offset + line buffer kept (same bytes: no replay, gauge kept), a short retry when the signal beats the rename; `agentWorktreeChanged` broadcast; a Worktree of ours moved out of records the agent's session in the registry, so it stays held (worktreeOccupancy.ts); agentForTranscript = the ONE "is this transcript already an agent's?" rule every scanner asks before adopting (its own file, or one named for its session while its own file is gone → followed; a same-named file while its own still exists is adopted as before, never hidden), findMovedTranscript (the stale check's last look)
+    backgroundSpawns.ts              A lead's live background spawns: tool id → task id, their rules (launchSpawn, completionNotice, classifySpawn) and persisted form
+    agentRuntime.ts                  Lifecycle core: timers, scanners, HookEventHandler, SessionRouter, DismissalTracker
+    agentStateStore.ts               EventEmitter-backed single source of truth (typed mutations + events)
+    sessionRouter.ts                 session_id → agent_id mapping, event buffering, pending external sessions
+    dismissalTracker.ts              Unified dismissal state (replaces four legacy globals)
+    hookEventHandler.ts              Dispatches normalized AgentEvent into runtime
+    httpServer.ts                    Fastify: POST /api/hooks/:providerId, GET /api/health, GET /ws, SPA (standalone)
+    clientMessageHandler.ts          Single dispatch point for ClientMessage from webview
+    server.ts                        Top-level composition
+    cli.ts                           npx pixel-agents entry (npm bin)
+    fileStateAdapter.ts              Namespaced ~/.pixel-agents/ persistence
+    configPersistence.ts             { vscode, standalone, externalAssetDirectories, hooksConsent: {providerId: granted|declined}, hooksEnabled: {providerId: boolean} }
+    layoutPersistence.ts             ~/.pixel-agents/layout.json with atomic tmp+rename
+    worktreeGit.ts                   The ONLY code that runs git (`git` at a repo root, `gitIn` inside a Worktree's folder with GIT_CEILING_DIRECTORIES at the worktrees folder so a missing `.git` file never reaches the main checkout; scrubbed GIT_* env; `isOwnCheckout` = --show-toplevel is the folder, checked before every write in one), branchPrefixProblem, isRepo (a `.git` at the Directory — a linked worktree counts), folderState (absent | readable | unreadable: only `absent` is ever "gone"), gitDirOf / branchAt (read `.git` and HEAD, no git process, cached), listLinkedWorktrees (one parse of `git worktree list --porcelain`: isLinkedWorktreeOf, lockedWorktreeOf), lockFolder, makeDirLink
+    worktreeRegistry.ts              The registry ~/.pixel-agents/worktrees.json (the only proof of ownership; types WorktreeEntry/Worktree/WorktreeState…), ownedEntry (registered, at `<directoryPath>/.claude/worktrees/<name>`, resolving there too), updateEntry, refused, the per-repo queue `serialized`, and the holder (`hold`, `heldElsewhere`: an `active` entry another live process — or another host — holds is never retired)
+    worktreeCreate.ts                create (name from worktreeNames.ts, retried on a taken folder/branch; base head|fresh with fallback; local exclude lines written once; rolled back on failure — the one --force besides Discard), fitOut (shared with restore: lock, .worktreeinclude copies of gitignored files, linked symlinkDirectories each ignored by an anchored slash-less `/<path>` exclude line)
+    worktreeInspect.ts               inspect / inspectEntry (uncommitted files — not gitignored ones, not our links; a folder without its `.git` file counts as holding changes; commits of its own by patch-equivalence against the recorded base: merged, `git cherry`, or a whole-branch squash; size), list, unmergedCommits, lastTouchedAt
+    worktreeRetire.ts                The leave rules: retire (clean → folder + branch gone; commits → parked; changes → needsDecision, untouched), retireWith (the leave with the answer the × already got: moot when nothing is uncommitted any more, a refused one falls back to the plain rules), decide ({ choice: 'save' } = commit all with the `Pixel-Agents-Saved: true` trailer, fallback identity, no hooks/signing, then retire; keep; { choice: 'discard', confirmedFiles } = force-remove, refused without the count or with more files now, branch kept when it has commits of its own), markIdle, deleteParkedBranch (parked + folder gone only; commits merged into no other ref need the client's confirmedCommits), lock; every removal proves ownership, re-inspects inside the queue, unlocks, and removes WITHOUT --force except Discard
+    worktreeRestore.ts               restore (a resume's: a kept folder used in place, a removed one rebuilt at its registered path from its registered branch — refused when the branch is gone or anything sits there — fitted out as create does, and a save-commit tip undone by a mixed reset so the changes come back uncommitted; marks it active)
+    worktreeSweep.ts                 sweep (startup: running → locked; `active` with no live agent → the leave rules; `kept` untouched 7 days → needsDecision; a vanished folder → its record dropped by `git worktree remove <path>`, never a prune; a parked branch merged or gone → deleted / dropped; a repo missing from disk skipped)
+    cliWorktrees.ts                  The CLI's own worktrees (linked worktrees under the worktrees folder not in the registry; Claude Code's: `.claude/worktrees/`; none when no provider declares a worktrees convention), read without writing and never retired by the leave rules: listCliWorktrees (where they are, one `git worktree list`), cliWorktreeHoldings (what one holds, read with --no-optional-locks), isCliWorktree, cliName (the CLI's name in refusals); removeCliWorktree is the Worktrees list's Remove (folder + branch, refused while an office agent or a live CLI session — the process its lock names, read by the convention's `lockHolder` — is in it, or when it loses more files/commits than confirmed)
+    worktreeListing.ts               worktreesOf(directoryPath, { details }): the ONE listing of a Directory's Worktrees — ours (registry entry; with details its inspection), then Claude Code's — mapped by worktreesLoaded (worktreeLeave.ts) and the conversations' worktreeLocations (worktreeResume.ts)
+    worktreeOptions.ts               The new-worktree modal's offer (worktreeOptionsFor → `worktreeOptions`: a free generated name, the prefix, local + origin branches newest first — read only, no fetch — and the Directory's base as `defaultBase`), its request handler for both surfaces, and launchWorktreeChoices (a launch's `worktreeName` / `worktreeFrom`, kept only well formed); create takes them as `name` (worktreeNameProblem, refused when taken) and `from` (an origin branch fetched first, else as last fetched)
+    worktreeOccupancy.ts             Who still runs in a Worktree, the ONE answer for every in-process guard: holdsWorktree (the agent runs there — `worktree`, copied onto own-session Teammates — or its session is in the entry's registry `sessionIds`: launched or resumed there, moved out of it, or carried over a /clear by `carrySession`), occupantOf / worktreeInUse (live agents), entriesHeldBy, heldPaths (the sweep's `inUse`, live + saved agents); nothing is kept on the agent
+    worktreeLeave.ts                 The office's side of a Worktree's end: retireWorktreesLeftBy (an agent left — standalone's PTY exit, VS Code's onDidCloseTerminal (the × disposes the terminal, so every way out lands there), a restore finding a saved terminal agent's terminal gone: every `active` Worktree of ours it held through retireWhenUnused, which retires once NO live agent holds it; background, the leave never holds up closing), handleCloseAgent (both surfaces' `closeAgent`, the card's ×: an owned agent leaving a sole-held `active` Worktree of ours with uncommitted files (`uncommittedFileCount`, one `git status`) is NOT closed — its sender gets `agentCloseQuestion`; the answer's `closeAgent` + `worktreeChoice` closes it and is kept by folder for its exit, where retireWhenUnused applies it through worktreeRetire's `retireWith` in one queue turn, so it never shows as needsDecision — unless a discard now finds more files, or the answer is older than WORKTREE_CLOSE_CHOICE_TTL_MS: then the plain leave rules ask after), worktreesLoaded (privileged broadcast) + the connect snapshot, requestWorktrees / decideWorktree handling (also the list's `remove` = retire and `deleteBranch`; one of the CLI's own worktrees takes `remove` alone (removeCliWorktree: its folder and branch), every other action on it is refused); worktreesLoaded lists ours (`owner: pixelAgents`) then the CLI's own (`owner: cli`: Claude Code's), each with `latestSessionId`, and names that CLI (`cliName`, from worktreesCli); sweepWorktrees(store, { savedAgentsHold }) (the surface-agnostic startup tidy-up: live agents and the saved ones the surface keeps hold their Worktrees — standalone its saved external agents, WORKTREE_SWEEP_DELAY_MS after start; VS Code every saved agent, as long after activation, since its terminals are restored only when the office opens), holdWorktreesOf, stopRetiring (shutdown / VS Code deactivate: no retire starts, git work under way finishes)
+    worktreeLaunch.ts                A launch into a new Worktree, three steps each surface runs itself: prepareWorktreeLaunch (refused, making nothing, for a path that is no Directory or a terminal that is unavailable; else create the Worktree — Directory's base + prefix, the provider's symlinkDirectories, a pre-chosen sessionId — and say where to run), the surface's ONE ordinary launch with that `where` (standalone: launchStandaloneAgent; VS Code: launchNewTerminal with `cwd`/`worktree`/`sessionId`) as an agent of its Directory, retireUnlaunched when no terminal started; worktreeRejectedMessage
+    worktreeResume.ts                Worktrees in the conversations: worktreeLocations (each Directory's, ours from the registry + Claude Code's from git) and resumeConversation (a Worktree's conversation resumes in its folder — ours restored first, Claude Code's in place only — refused with worktreeRejected, like a launch)
+    worktreeAttribution.ts           Worktree attribution for the scanners and moved agents: setAttributionDirectories (the host's Directories without the isRepo probe — `listDirectoryLocations` — cached; dropped by invalidateAttributionDirectories on this process's Directory changes, else after ATTRIBUTION_DIRECTORIES_TTL_MS), worktreeAttribution (cwd, else project dir → Directory name + worktree + branch), the family of project dirs (familyHashes computed once per scan tick, isWorktreeFamilyDir, worktreeFamilyDirs, seedWorktreeFamilyDirs)
+    worktreeLocation.ts              The ONE owner of the worktree path shape, and the one shared module that asks the provider for it (`HookProvider.worktrees`, a `WorktreeConvention`: the worktrees folder, how project dirs are named, the lock reader and the symlink setting; Claude's is `.claude/worktrees` and `<hash>--claude-worktrees-<name>`, in `providers/hook/claude/worktreeConvention.ts`): worktreesCli (the ONE choice of provider — the first bundled one declaring a convention — for the folder, the naming, the lock, the symlinks and the CLI's name; worktrees.json entries don't record their folder, so a change of convention leaves them unowned), symlinkDirectoriesFor, worktreePathIn (`<Directory>/<worktrees folder>/<name>`) and its strict inverse worktreeDirectoryOf (ownership, the CLI's own worktrees, session dirs and a moved agent's Directory all go through them); attribution by location: worktreeLocationOf (a cwd under a Directory's worktrees folder — matched through the Directory's resolved path too, returned in its own spelling — the CLI's own worktrees included), the family of project dirs (isWorktreeProjectDirOf, projectDirNameOf), worktreeForProjectDir, isInWorktreesFolder (suggestions skip these), worktreesFolder / worktreesExcludeLine (the create's exclude line and include filter)
+    directories.ts                   Directories: host+user union (each with `isRepo`), save/remove (incl. default characters and Worktree base + branch prefix), directoryAt(launchPath) — the launch request's Directory, resolved by the message handler and handed to the launcher beside the cwd (never re-derived from the cwd)
+    terminal/                        Standalone terminals (TerminalSessions): in process (ptySessionManager.ts, the default) or, dev only, a PTY host that outlives the server (ptyHost.ts, remotePtySessions.ts, ptyHostProtocol.ts); standaloneLaunches.ts = the office's launches as operations, for the drawer, the conversation list and launch_agent alike (launchIntoDirectory — a Directory or a new Worktree of it; resumeInDirectory — worktreeResume's resumeConversation, now returning `{ ok, id } | { ok: false, reason, rejectedAt? }`; launchForOffice — launch_agent's resolution + join wait); launchAsks.ts = LaunchAsks (a launch's Nickname, first message, model, permission mode, seat: one object from the tool to the launcher) + checkLaunchAsks (the ONE check: the words, and the permission mode against the provider's modes and the office's posture); terminalScreen.ts = readScreen (a session's replay drawn into a fresh headless xterm: visible rows as text, token = sha256 prefix, bracketed-paste / app-cursor modes — works for both, no host protocol change); agentTerminals.ts = AgentTerminals (how a surface reads and writes its agents' terminals: has / screen / write), ptyAgentTerminals (standalone), screenlessAgentTerminals (VS Code: the terminal adapter's sendText, screen always null), typeInto (the ONE typing of a Message: text as one paste, keys one write each), MESSAGE_KEYS → bytes (keyBytes), textBytes (xterm's paste: CR line breaks, bracketed when asked), PLAIN_INPUT_MODES (what a surface that can't read its terminals types with where the provider declares no `terminalInputModes`); terminalEnv.ts = terminalEnv (TERM + a UTF-8 locale) + inheritedEnv / sessionMarkersUnset (an agent never inherits the office's own CLI session markers: `HookProvider.isInheritedSessionEnv`, Claude's in providers/hook/claude/sessionEnv.ts — else a server started inside a Claude Code session launches child sessions that save no transcript)
+      pcShells.ts                    StandalonePcShells: the registry (../pcShells.ts) over standalone's backend (see "PC shells"): the user's login shell `$SHELL -l` on the agents' terminal sessions, with an agent terminal's env rules — no CLI session markers; the ×'s probe (a running foreground command — `ps` tpgid ≠ the shell — asks unless `confirmed`; no pid yet counts as running; Windows has no probe); the saved list (PcShellSaves) and `restore`; `screen` / `write` (live shells only), the ONE way a shell's terminal is read and written (the MCP's shell tools) (reattach survivors of the PTY host under their ids — one with no saved record as a card of its own — drop the rest)
+      fileUploads.ts                 Files sent to a terminal: the upload directory (the setting, else our own `~/.pixel-agents/uploads`), its sweep (`sweepUploads`: files sent over 7 days ago, then the oldest past 2 GB; only our own folder, at start, daily and after each upload), the OS's Downloads folder for the lookup (Linux reads `user-dirs.dirs`), the saved name (same on every OS, never overwrites), the path as terminal text (per-OS quoting); the route is in terminalRoutes.ts
+      localFile.ts                   A file sent from a browser on this machine: find the original (name + size + modification time, straight under a few usual folders, no disk search) so its own path is pasted and no copy is made
+    usageLimits.ts                   Usage bars: last report per provider (~/.pixel-agents/usage-limits.json), merge + throttle, usageLimits/usageBridgeStatus messages (usageSnapshotMessages = both surfaces' handshake), applyUsageBridgeChoice; PRIVILEGED_BROADCAST_TYPES
+    cardOrder.ts                     The agent cards' order, one per surface for every client (desktop and phone): parse, load, save (pruned to live agents)
+    conversations.ts                 The sidebar's recent conversations: each Directory's newest transcripts (titles from the provider, cached per path while size + mtime match), the look + seat each session's agent had (~/.pixel-agents/conversations.json, recorded on saveAgentSeats), liveSessions + resumeRequest (a resume's checks); sessions of Worktrees gone for good (removedWorktreeSessionDirs) stay listed under their Directory and resume in its checkout, moved there first (moveSessionIntoDirectory)
+    officeFacts.ts                   OfficePlaceFacts (layout, catalogue, Directories, Area mappings): built ONCE per surface (cli.ts, the VS Code provider) and handed to the Pixel Office MCP (mcp/officeFacts.ts extends it) and the PC shells alike; catalogOf (the catalogue built once per data array)
+    pcShells.ts                      PcShellRegistry, the ONE owner of the live PC shells for both surfaces (see "PC shells"): ids, open (a piece's live shell, else pcShellPlace's folder, else the backend's fallback, else home), close (asked first only where the backend can tell a command runs), the terminal's own end, `pcShellsLoaded`; a small PcShellBackend per surface (standalone terminal/pcShells.ts, VS Code adapters/vscode/vscodePcShells.ts); PcShellView (the list + `has`: what /ws offices of both surfaces are sent) and handlePcShellMessage (openPcShell / closePcShell / focusAgent naming a shell, for clientMessageHandler and the VS Code provider alike); `pcs()` (the pieces that open a terminal) and `running` for the MCP's shell tools
+    visits.ts                        Visits: each agent's current one on `AgentState.visit` (start/end → `agentVisit` broadcast; visitSnapshot: re-sent, or `cleared`, for every agent on connect after the activity replay, both surfaces); ends on the agent's NEXT turn (an `agentStatus: active` after a `waiting`, not the turn that asked) or, without `stay`, silently VISIT_LINGER_MS + VISIT_WALK_ALLOWANCE_MS after it was asked; followTurnsForVisits (the store's `agentStatus` event; owned by mcp/visitsOps.ts)
+    pcShellPlace.ts                  Where a PC shell opens, for both surfaces (pure, over core's piecePlaces): pcShellPiece (the piece is in the layout and declares the `terminal` panel; its Area and that Area's Directories), shellDirectory (the named Directory — refused unless it is one of the Area's — else the single one, else none = the surface's default)
+    agentMessages.ts                 agentCreatedMessage: the one agentCreated builder for both surfaces
+    recentCharacters.ts              The roster's recency: a launch wearing a roster pick moves it first (config.json `recentCharacters`), broadcast to every office
+    characterRemap.ts                A save that inserts or deletes characters: renumbers agents, seats, Directory defaults, recency, conversation looks
+    characterProfilesPersistence.ts  The ONE owner of ~/.pixel-agents/characters.json (and wardrobe-items.json beside it) for both surfaces: save, watch, saveCharacterProfiles handling (refusedSaveAnswer)
+    characterProfilesStore.ts        The cached cast (cachedJsonFile per file): getCharacterProfiles / getWardrobeItems, read by getPaletteCount; depends on nothing that depends back on it
+    jsonFileWatcher.ts               Generic hybrid fs.watch + polling watcher + writeJsonAtomic (layout.json, characters.json)
+    fileWatcher.ts                   Hybrid fs.watch + 500ms polling, JSONL line buffering, /clear detection
+    transcriptParser.ts              JSONL parsing for heuristic / file-fallback mode
+    timerManager.ts                  Waiting / permission timers
+    assetLoader.ts                   PNG → SpriteData via pngjs
+    characterArt.ts                  The server draws characters with no office open: the wardrobe art decoded with pngjs once (findWardrobeDir: dist/assets/wardrobe, else core's source folder), characterRenderer(items), renderCharacterSheet, characterPreviewPng (CHARACTER_PREVIEW_SCALE)
+    teamUtils.ts                     isInlineTeammateOf, getInlineTeammates, hasInlineTeammates
+    types.ts                         ServerAgentState
+    constants.ts                     All timing/scanning constants
+  __tests__/                         28 Vitest files
+  manual-hook-events.http            Manual hook testing helper (REST-Client format)
+
+adapters/vscode/                     VS Code surface — composes core + server
+  extension.ts                       activate() / deactivate()
+  PixelAgentsViewProvider.ts         WebviewViewProvider, thin bridge to AgentRuntime
+  vscodeWorktrees.ts                 The window's side of Worktrees (VscodeWorktrees): holds its agents' Worktrees, sweeps a moment after activation (every saved agent holds), answers requestWorktrees / decideWorktree, the connect snapshot, prepares a Worktree launch and retires an unlaunched one, stops retiring on deactivation
+  agentManager.ts                    Terminal lifecycle (claude --session-id <uuid>), restore, persist
+  vscodeTerminalAdapter.ts           TerminalAdapter implementation (sendText: types into a terminal, no Enter added; openTerminal / showTerminal / disposeTerminal / onTerminalClosed for PC shells)
+  vscodePcShells.ts                  PC shells as the window keeps them (VscodePcShells: the shared registry over VS Code's backend, vscode-free, tested in pcShellsVsCode.test.ts): a PC opens a transient integrated terminal in the chosen Directory of its Area, else its single one, else the first workspace folder, else home; announced through the store (and listed to the embedded server's /ws offices, which cannot open one), shown again by a click on its PC or its card (`focusAgent` with its id), ended when the terminal closes; the card's × disposes it with no running-command question
+  vscodeOfficeMcp.ts                 The Pixel Office MCP as VS Code composes it (vscode-free, tested in officeMcpVsCode.test.ts): only the window's facts + capabilities handed to composeOfficeMcp, served at the embedded server's /mcp (the window that owns it; a window reusing another's server gets no MCP and is not offered it: no ask, no Settings switches); launchNewTerminal adds `--mcp-config` under the same consent; terminals are `screenlessAgentTerminals` guarded by `turnGuard` (read_agent_terminal = status only; send_message = text only, no token, only to agents done or active — keys and open prompts refused, and the Enter held back when a prompt opened while the text landed); no launch / close capability, so launch_agent and close_agent aren't offered; the webview's consent / switches / editing lock / undo go to the feature's `handleMessage`, its handshake part to `handshake(send)`
+  uninstall.ts                       vscode:uninstall hook — removes hook entries + factory-resets hooks config after extension removal
+  migrateVsCodeState.ts              One-time legacy state migration (verify-before-clear)
+  constants.ts                       VS Code IDs, command names, key names
+
+webview-ui/                          React 19 + Canvas UI (depends only on core/)
+  src/
+    transport/
+      index.ts                       createTransport() — single runtime branching point
+      postMessageTransport.ts        VS Code mode (acquireVsCodeApi)
+      webSocketTransport.ts          Standalone mode (exponential backoff, send queue)
+      onReconnect.ts                 Every `connected` after the first (the reconnect resync's trigger)
+      types.ts                       Re-exports MessageTransport from core
+    runtime.ts                       isBrowserRuntime detection
+    browserMock.ts                   Standalone-browser asset fetch + message injection
+    testHooks.ts                     window globals exposed for e2e (officeState, helpers)
+    main.tsx                         React entry (StrictMode + createRoot)
+    App.tsx                          Composition root (hooks + components + EditActionBar)
+    constants.ts                     Webview magic numbers/strings
+    notificationSound.ts             Web Audio API chime
+    changelogData.ts                 Changelog modal content
+    components/                      React UI (toolbars, modals, settings)
+      BottomToolbar.tsx, ZoomControls.tsx, SettingsModal.tsx, InfoModal.tsx,
+      DebugView.tsx, ui/Button.tsx, ...
+      IntroBubble.tsx + IntroChoices.tsx  The Intro (the greeter's speech bubble) and its choices step (a box per thing to turn on, "Read more", the all-off warning)
+      LoadingScene.tsx               The loading screen: a lamp-lit corner of the office in a black room — Byte and Nova typing at a table of PCs, Echo circling it, the cat on it, a wood floor fading out (vignette + radial fade); one canvas, bundled art only (no server needed). Dev preview: /loading.html (`npm run dev`)
+      loadingSceneLayout.ts          The scene (pure): tile layout, z order by the office's rules, the walker's loop, frames by time
+      loadingSceneArt.ts             The furniture, floor and cat PNGs inlined (?inline) and decoded to sprites
+      ui/pixelIcons.ts               The 8×8 pixel icon set (grids as strings; the canvas draws them too: the selected furniture's rotate/delete buttons)
+      ui/pixelGrid.ts                gridRuns / litBox: a '#' grid as horizontal runs and its lit box, for the SVGs and the canvas alike (DOM-free)
+      ui/PixelSvg.tsx                The one pixel-art SVG (runs as rects, crispEdges) behind PixelIcon and PixelText
+      ui/PixelIcon.tsx               PixelIcon renderer (whole device pixels per icon pixel, pixelSnap.ts)
+      AgentCard.tsx                  One agent card (mug shot + status dot + ×, its context left along the foot — office/contextGauge.ts + office/ContextBar.tsx, shared with the label's gauge)
+      AgentCardList.tsx              The card bar's cards for BOTH shells: same cards (by kind: AgentCard / PcShellCard, `onSelect(card)` / `onClose(card)` dispatched once in App), same server-owned order, same reorder + highlight rules, focused card kept in view; AgentCardBar (desktop/VS Code column) and MobileAgentBar (phone row) only wrap it
+      useCardReorder.ts              Drag-to-reorder: touch long-press (phone) or mouse drag (desktop), along the bar's axis; previews, then commits
+      drawerRowButtons.ts            The launch drawer's row buttons (pure, Node-tested): rowButtonsFor (a row's stack: the pencil on user rows, the worktree button on git repo rows — host rows too — on both surfaces) + rowStackReducer (which row's stack shows: hover on desktop, a long press on touch held until a press outside)
+      PcShellCard.tsx                A PC shell's card: the piece's sprite in its `on` state (PieceSprite `state`), where it was opened along the top, always (its Directory's name, or `Home`: `pcShellName`), and the PC's top (the screen) right under it, the ×; no status dot, no context gauge
+      cardBar.ts                     Pure card-bar rules: `Card` by kind (`agent` | `pcShell` with its shell), cardOrderOf (main agents — Teammates get none — and the live PC shells, in the saved order, via mergeOrder → Card[]), cardVariant, closeMode (the ×), reorderByPointer (Node-tested)
+      TerminalDrawer.tsx             Desktop standalone: right-docked terminal panel (slides with useSlidePanel); App draws the card bar beside it and its cards are the tabs
+      TerminalPaneStack.tsx          The agents' TerminalPanes, the shown one visible: desktop keeps every pane mounted, the phone only the shown one (memory; a pane that mounts gets its screen back from the server's replay)
+      TerminalPane.tsx               One xterm bound to one agent's PTY
+      MobileAgentBar.tsx             Mobile bottom bar: square + launch card with the roster's arrow beside it, the AgentCardList row
+      CharacterPicker.tsx            Roster carousel (CharacterRow): pick = launch as that character, hold / hover pencil = edit, leading + New; PhoneCharacterPicker = the sliding phone strip
+      MobileTerminalPage.tsx         Mobile terminal page (a TerminalPaneStack)
+      MobileKeyBar.tsx               Accessory keys above the software keyboard (/, tab, shift+tab, the square arrow trackpad centred on the bar, esc, forward del, line break)
+    officeMcp/                       The Pixel Office MCP in the office: agentEditStatus (one store per kind of agent edit: what its "Undo <agent>'s edit" would revert, a refused press, a landed edit); agentLayoutEdits (agentLayoutEditStatus → the layout editor's button, AgentEditUndoBar, shown while the editor is clean; the editing-lock reporter: `layoutEditing` on change and after a reconnect, via useAgentLayoutEdits); agentCharacterEdits (agentCharacterEditStatus → the Characters view's button, characters/ui/AgentCharacterUndo — desktop header, phone bottom left — shown while the draft is clean; landed edits and refusals in the view's status line, via useAgentCharacterEdits; its lock report lives in castStore); officeMcpStore (officeMcpStatus — present only on a server that offers it, so Settings shows its switches; the Intro step's ask, a snapshot held through this office's own answer, moot when another office answered) + useOfficeMcp (answer / dismiss / setEnabled / setReadOnly); the step itself is IntroBubble's `mcp` (alone when there is no hooks ask)
+    pcShells/                        PC shells in the office: pcShellStore (pcShellsLoaded → OfficeState.pieces.setPcShells + the list the cards read; this office's pcShellReady (numbered), pcShellCloseQuestion, pcShellRejected; openPcShell / closePcShell), usePcShellPanels (what a click on a piece opens — `canOpenPanels`, the Directory selector's choice — and this office's own shell shown once its pcShellReady comes, resolved from the store; App only composes it), PcDirectorySelector (the popover over a PC whose Area has several Directories, anchored `PC_DIRECTORY_SELECTOR_GAP_PX` above OfficeState.pieces.anchor, Escape / a press outside dismisses), PcShellCloseDialog (the ×'s one question, worded for a delete while one waits on it), closingShells.ts (ClosingShells, pure: the layout editor's delete of a PC with a live shell closes the shell first — one at a time, each asking while a command runs — then deletes; Keep Running keeps the PC), PcShellRejectedModal (a refused open, said to the user)
+    tutorial/                        The tutorial in the office: tutorialStore (tutorialStatus + numbered tutorialRejected) + useTutorial (start / skip / quit), tutorialOffer.ts (the ask's pure reducer: ask → starting → started | failed), TutorialAsk (the ask, on the Intro's closing step or alone), TutorialPanel (the checklist, top-right, collapsed); the greeter's walk to the Guide's seat is office/engine/greeterHandoff.ts
+    usage/                           UsageBars (top-left, no panel: heart + weekly bar over an equal 5-hour bar, % inside each; hover/tap any of it = the heart beats and each bar's reset time shows right of it) + PixelHeart (multi-colour art through PixelSvg + pixelGrid `colorRuns`; the beat flashes a one-pixel-bigger frame) (numbers through PixelText) + usageBarView (pure: share left, colour band, reset-since-report = full, heartbeat period, freshness) + usageStore (each provider's usageBridgeStatus/usageLimits outside React; `seq` counts status arrivals) + useUsageBridge (status, limits, this caller's `pending` request — answered by the next ARRIVAL, since a failed install re-reports the same value — and `setEnabled`; read by the Intro, Settings and App)
+    conversations/                   ConversationList (shared body; each Directory section ends in its WorktreeList — branch, state, size, Resume / Remove folder / Delete branch, Claude Code's labelled with no Remove/Delete; rules pure in worktrees/worktreeList.ts; requestWorktrees when a section opens; a conversation row shows its Worktree's icon + branch) in ConversationSidebar (desktop, left, shown and hidden from the zoom stack, slides with useSlidePanel, Settings at its foot; open/shut in useConversationSidebar) and MobileConversations (phone, History panel); useConversations (requestConversations while open, with the sections' "Show more" limits) + timeAgo; ConversationSearch (App-level modal: the list's search field and Recent's "See all" open it on every Directory, a section's "See all" on that one, a chip widening it; `searchConversations` by title on the server, debounced, a page of `CONVERSATION_SEARCH_PAGE` at a time as it scrolls)
+    music/                           The office radio (see "Office radio"): procedural 8-bit tunes, DOM-free composer, one Web Audio player
+      composer.ts                    makeSong: one tune as steps for the four Game Boy channels (pure, seeded); the melody, harmony, bass and drum writers
+      rng.ts, moods.ts               The seeded stream (Rng, newSeed); the moods and their theory tables (MOOD_KEYS, MOODS, scales, progressions, forms) + chooseMood (Auto)
+      tuneNames.ts, songCode.ts      Tune names (word lists, drawn last from the tune's stream); song codes (songCode/parseSongCode, keyLabel, ROOT_MIN/ROOT_MAX)
+      musicEngine.ts                 officeRadio: the player singleton (subscribe/getState, Web Audio scheduling, visualizer bands; volume, mood and hidden in localStorage); useOfficeRadio.ts reads it in React
+      MusicPlayer.tsx                The player bar + VolumeControl.tsx + RadioSettingsPanel.tsx (mood, song code, hide); playerSheet.ts = the phone sheet gesture (pure reducer); radioLift.ts = the CSS variables the version label rides on; playerFit.ts = what of the desktop player fits beside the toolbar (pure)
+    mobile/                          The phone shell (standalone only, see "Mobile shell")
+      MobileShell.tsx                Sliding office/terminal track + card bar + key bar
+      MobileMenu.tsx                 Menu panel from the left: recent conversations + Settings at its foot (one menuPanel for both swipes); MobileMenuButton
+      useMobileMenu.ts               The menu's open state + its swipe panel ref
+      useMobileShell.ts              Page state and navigation rules (toggle, card tap, launch-then-slide, openAgent from the menu)
+      edgeSwipe.ts                   Edge-swipe state machine (pure reducer, Node-runner tested)
+      keyboardViewport.ts            Software-keyboard decision: open vs per-width baseline, clamp only when the visual viewport is shorter (pure)
+      useEdgeSwipe.ts                DOM adapter for the reducer (capture listeners, detached-target rescue)
+    touch/
+      touchPrimitives.ts             findTouch (track one finger by id) + withinTapSlop (the one tap metric)
+      trackpad.ts                    Key bar trackpad: arrows per step, locked to the first axis moved on (pure)
+    terminal/                        Standalone terminal (xterm) support
+      terminalClient.ts              /terminal/:agentId socket (reconnect, replay)
+      terminalLinks.ts               Safe link opener + urlsOnLine/urlAtCell (one URL lookup for clicks and taps, across wraps)
+      linkProvider.ts                The mouse side: an xterm link provider over urlsOnLine
+      hardWrap.ts                    hardWrapIndent: a row Claude Code broke mid-token (filled to the last column, indented carry-on, a token too long to fit) — joined by links and every copy
+      touchGesture.ts                Terminal touch state machine: scroll, flick, tap, long-press select (Paste in the input area), handles (pure reducer)
+      touchInput.ts                  DOM adapter: listeners, flick rAF, long-press timer, detached-target rescue
+      selectionMath.ts               Word expansion, range ordering, handle clamping (pure)
+      selectionOverlay.ts            Copy pill (Copy | Copy as text), Paste pill + selection handles (DOM; styled in index.css)
+      inputArea.ts                   The TUI's input area: cursor row out to the prompt box's rules (pure)
+      fileSending.ts                 Files to the terminal: drop on the pane (desktop), the pill's "Attach file" picker (phone), the upload, the status line over the pane (DOM)
+      fileUpload.ts                  Its DOM-free part: the upload's address, a refusal's wording, what gets pasted
+      clipboard.ts                   The one clipboard write/read: Clipboard API on secure origins; plain http falls back to a copy event (write) / a native prompt (paste)
+      flowCopy.ts                    terminalCopyText: verbatim by default; opt-in re-flow of Claude Code's soft wraps (pure)
+      clipboardKeys.ts               Clipboard chords (Ctrl+C/Ctrl+Shift+C copy, Alt+C copy as text, Ctrl+V paste) + OSC 52 decode (pure)
+      terminalDom.ts                 xterm screen geometry + isTypingInTerminal
+    hooks/
+      useExtensionMessages.ts        Message handler — translates ServerMessage into OfficeState mutations
+      useEditorActions.ts            Editor state + callbacks
+      useFurnitureColorActions.ts    Furniture colour sliders + colour-only eyedropper
+      useEditorKeyboard.ts           Keyboard shortcuts (R, T, Esc, Ctrl+Z/Y)
+      introTourState.ts              Intro tour wire-state machine (pure reducer, Node-runner tested)
+      useIntroTour.ts                Wires the reducer to React + transport (snapshot, verdict, choices)
+      useTerminalDrawer.ts           Terminal-pane model for both shells: active/shown pane, socket status, card lookups, the launch latch (expectLaunch → lastLaunched), `show` (a pane before its list renders)
+      terminalPanes.ts               `Pane` by kind (agent | pcShell) + openedAgentPane: only a new AGENT pane opens the drawer and answers a launch (pure, Node-tested)
+      useFrameTick.ts                Re-render every animation frame while active (the DOM overlays that follow the canvas)
+      drawerWidth.ts                 clampDrawerWidth: the drawer's width for a viewport; it leaves the office OFFICE_MIN_WIDTH_PX where there is room (pure, Node-tested)
+      launchLatch.ts                 answersLaunch: a launch's latch expires after LAUNCH_ANSWER_TIMEOUT_MS (pure, Node-tested)
+      useSlidePanel.ts               A side panel's open/close motion (bounce out, snap shut, reduced motion; SIDE_PANEL_* timings)
+      slideTransitions.ts            Its two transitions (pure): the width only while opening/closing, the contents' delayed slide whenever motion is allowed (it outlasts the width)
+      useLaunchActions.ts            Launch into a Directory / resume a conversation, both through the drawer's expectLaunch
+      useLongPress.ts                Touch long-press (held still) that swallows the click it ends with
+      useDismiss.ts                  Close a popover on a press outside it or on Escape
+      useRosterLaunch.ts             The launch button's two menus (drawer | roster, never both) + the roster pick, shared by the phone bar and the desktop toolbar (state: pure `launchMenus.ts`); + always opens the plain drawer, dropping a pick; per-shell option: Escape closes the drawer (desktop only)
+      useHoverPin.ts                 Desktop hover-opens / press-pins menu (the toolbar's drawer and roster)
+      useIsMobile.ts                 Mobile breakpoint — always false in the VS Code webview
+      useKeyboardViewport.ts         Samples the viewport: keyboard open (key bar) + iOS shell clamp height
+    characters/                      Character profiles: the cast agents are drawn from (see "Characters"); the model itself (art, slots, renderer, wardrobe, sheet, colour, profile edits) is core/src/characters/
+      loadWardrobe.ts                The browser's wardrobe loader: core's art PNGs inlined (import.meta.glob ?inline) and decoded on a canvas; decodeItemPng
+      cast.ts                        CastStore: the cast as one { profiles, items } value — saved, the view's draft (openDraft) and its base — projected onto CastState; explicit Save, server sync (saveIds) — DOM/transport-free
+      items.ts                       Custom items + piece sheets: export a worn piece, import a PNG as edits, save as a new item, offeredParts
+      history.ts                     Undo/redo with press/merge step grouping — DOM-free
+      castStore.ts                   The app's CastStore over the transport (useCast); decodes custom items and rebuilds the renderer when they change
+      castMessages.ts                handleCastMessage: characterProfilesLoaded (looks first, then the list) + characterSpritesLoaded, handed over by useExtensionMessages
+      officeSprites.ts               Office sync: subscribes to the cast, sheets → office sprites (core's sheetToDirectionSprites; + external char_N.png)
+      profiles.ts                    What the view says and names: tabSummary, export file names, parseConfigFile, characterLabel, greeterPalette
+      ui/                            CharactersView (desktop modal / phone page), Stage, Wardrobe, ColorPanel, PixelEditor, Roster (ROSTER_ACTIONS), castActions (useCastActions), files; characters.css + characters.phone.css
+    office/
+      types.ts                       OfficeLayout, Character, etc. + re-exports constants
+      toolUtils.ts                   STATUS_TO_TOOL mapping, extractToolName (DOM-free; defaultZoom lives in useEditorActions)
+      projection.ts                  World→screen math shared by renderer + DOM overlays (mapOffset, overlayProjection)
+      colorize.ts                    Colorize (grayscale→HSL) + Adjust (HSL shift)
+      floorTiles.ts                  Floor sprite storage + colorized cache
+      wallTiles.ts                   Wall auto-tile: 16 bitmask sprites per set, each tile in its own set + colour, joins only between walls of the same height
+      sprites/
+        spriteData.ts                Pixel data (characters, furniture, tiles, bubbles); every setCharacterTemplates is announced (subscribeCharacterTemplates), so a mounted CharacterMugShot redraws when the cast arrives or is edited
+        spriteCache.ts               SpriteData → offscreen canvas, per-zoom WeakMap
+      editor/
+        editorActions.ts             core's layout/editOps.ts, the catalogue-taking ops bound to the webview's catalogue
+        editorState.ts               Imperative state (tools, ghost, selection, undo/redo + undo session, drag, placing, picked sections)
+        tileSections.ts              Re-exports core's layout/sections.ts: touching tiles of one material — sectionAt (flood fill), restyleSection (one edit), sectionStyleAt
+        editorRenderState.ts         buildEditorRenderState: ghosts + selection for the renderer (pure)
+        EditorToolbar.tsx
+      layout/
+        furnitureCatalog.ts          The webview's catalogue (core's, entries carrying sprites) in module state; activeCatalog()
+        layoutSerializer.ts          layoutToFurnitureInstances (sprites, z order) + core's layoutSerializer bound to the catalogue
+        tileMap.ts                   Re-exports core's walkability + BFS pathfinding
+        workstations.ts              Re-exports core's seat ↔ workstation pairing (one per seat, screen faces the seat)
+      engine/
+        characters.ts                Character FSM (idle/walk/type) + wander AI; updateVisit (one visit: stops in order, face, linger, stay), currentVisit (the top errand's)
+        agentVisit.ts                applyAgentVisit: `agentVisit` → OfficeState.visits.start / end; applyAgentMessageShow: `agentMessageShow` → visits.showMessage
+        piecesController.ts          PiecesController (os.pieces): interactive furniture in the office — the live PC shells by piece, the shown Directories, the cast's names, each piece's facts (the agent working at it, its shell, its Area's Directories) and what core's rules make of them; the piece under a pointer (`at` = the editor's furnitureAt, characters and pets win; `hoverAt` for the mouse, `tapAt` for clicks — touch: first tap hovers, second clicks → OfficeCanvas `onPieceClick`), `hovered`, `anchor`, `showingStates` (every frame, pieceState only); the layout editor opening clears the hover (OfficeCanvas, the one place that says so)
+        visitsController.ts          VisitsController (os.visits): each character's errand stack (Character.errands) — the server Visit at the bottom, a local errand (MessageShow, BuildoutWork) pushed above; each kind an Errand (step, endsWithServerVisit), finishing one uncovers the one below (walked again), else back to the usual FSM; start/end/showMessage/sendBuilder/gistOf/stopOf/drop
+        buildoutPlayer.ts            BuildoutPlayer (os.buildout): the Buildout playing — plan, clock, frame, tile maps (start/stop/advance, layout(), tileMap(), render())
+        blink.ts                     Each character's blink clock (startBlink/tickBlink, skewed random gaps, some doubles, fewer while working)
+        officeState.ts               Game world (layout, characters, seats, selection, subagents, consent greeter)
+        gameLoop.ts                  rAF loop with delta-time cap (0.1 s)
+        renderer.ts                  Canvas: tiles, z-sorted entities, overlays, edit UI; renderFrame(ctx, FrameInput)
+        selectionButtons.ts          The selected item's rotate/delete buttons: geometry, placement, hit test (DOM-free; renderer draws them)
+        buildout.ts                  The Buildout as a plan (pure): planBuildout (diff, order, times), buildoutFrame / dissolvingAt (what a moment shows)
+        matrixEffect.ts              Spawn/despawn digital rain (drawing only): renderMatrixEffect (characters), renderMatrixSprite (any sprite)
+        matrixEffectState.ts         Effect state: startMatrixEffect/advanceMatrixEffect (DOM-free)
+      components/
+        OfficeCanvas.tsx             Canvas, resize, DPR, mouse hit-testing, drag-to-move
+        useCanvasTouchGestures.ts    Touch pan / pinch zoom / tap on the canvas
+        ToolOverlay.tsx              Activity label + speech bubbles (DOM, above the labels) per character
+        FurnitureLabel.tsx           The Furniture labels (DOM, via projection.ts): the hovered piece's (OfficeState.pieces.hovered, re-drawn every frame while a piece is hovered — pieces.subscribeHover + hooks/useFrameTick.ts) and, under Always Show Labels, every piece's whose panel is in use (pieces.inUse: a PC with a live shell, "Busy" in a view-only office; not in the layout editor); the renderer outlines the piece faintly (FURNITURE_HOVER_OUTLINE_ALPHA)
+
+e2e/                                 Playwright suite (real VS Code + mock-claude scenarios)
+  playwright.config.ts
+  global-setup.ts
+  fixtures/
+    pixel-agents.ts                  VS Code fixture: launch Electron, wait for panel
+    standalone.ts                    Standalone CLI fixture: spawn server + browser page
+    mock-claude, mock-claude.cmd     Bash + cmd wrapper invoked instead of real claude
+    mock-claude-runner.cjs           Scenario runner: appendJsonl, emitHook, holdOpen, callOfficeMcp (a Pixel Office MCP tool call from its own --mcp-config; `{{mcp.<saveAs>…}}` reads earlier results); shows a starting prompt as `> <prompt>`
+  helpers/
+    launch.ts                        Electron app + isolated HOME/workspace
+    mock-claude.ts                   claudeScenario() builder
+    office.ts                        Overlay locators + assertions
+    webview.ts                       Settings/modal helpers
+    hooks.ts                         Hook server lifecycle helpers
+    standalone.ts                    Standalone server + WebSocket browser helpers
+    internal-agent.ts                spawnInternalAgentAndWait
+    lifecycle.ts                     Reusable scenario fragments
+    team.ts                          Team config seeding + teammate helpers
+    allure-labels.ts                 @area:<tag> → Allure epic
+  tests/
+    claude/hooks-on/                 basic.spec.ts, lifecycle.spec.ts, teams.spec.ts
+    claude/hooks-off/                lifecycle.spec.ts, matrix.spec.ts
+    standalone/                      hooks.spec.ts, terminal.spec.ts, office-mcp.spec.ts (the Pixel Office MCP loop: Intro consent → launch_agent with a first message → send_message → walk + gist), …
+  README.md                          Auto-generated test inventory (regen via npm run e2e:inventory)
+
+scripts/
+  generate-messages.ts               AsyncAPI → core/src/messages.ts via Modelina (with CI drift check)
+  run-e2e.mjs                        Playwright wrapper (run-id namespacing, video attach flags)
+  generate-e2e-inventory.mjs         Splices test list into e2e/README.md (CI drift check)
+  build-allure-report.mjs            Combine e2e+server+webview Allure results
+  assemble-vercel-output.mjs         Stage /reports/allure/ for Vercel deploy
+  asset-manager.html                 Unified furniture editor (positions + metadata)
+  jsonl-viewer.html                  Standalone JSONL transcript inspector
+  wall-tile-editor.html              Wall sprite editor
+  generate-wall-sets.mjs             Generates the bundled wall sets wall_1…wall_8.png from one piece model (height + face/cap textures); --preview <png> renders a colorized room per set
+
+core/                                npm workspace (no separate package; root manages)
+server/                              npm workspace
+webview-ui/                          npm workspace
+```
