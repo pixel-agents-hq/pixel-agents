@@ -78,16 +78,16 @@ export interface IntroCameraFrame {
   dpr: number;
   /** Greeter anchor (feet), world coords. */
   greeter: { x: number; y: number };
-  /** CSS px of the office's foot the dialog (and its menu) cover. */
+  /** CSS px of the office's foot the dialog box covers. */
   coveredHeight: number;
 }
 
 /**
- * The world point the camera centres while the greeter speaks: the greeter,
- * moved down by half of what the dialog covers, so the character stands in
- * the middle of the office left in view above it. A dialog taller than the
- * view allows (a short panel, a long menu) is counted only up to the point
- * that still leaves the character on screen.
+ * The world point the camera centres while the greeter speaks: the greeter's
+ * spot, moved down by half of what the dialog box covers, so the character
+ * stands in the middle of the office left in view above it. On a panel too
+ * short for that, the box is counted only up to the point that still leaves
+ * the character on screen.
  */
 export function introCameraTarget(frame: IntroCameraFrame): { x: number; y: number } {
   const project = overlayProjection(

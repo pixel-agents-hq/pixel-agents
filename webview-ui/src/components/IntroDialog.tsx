@@ -13,6 +13,7 @@ import {
   CLAUDE_CODE_INSTALL_COMMAND,
   CLAUDE_CODE_URL,
   INTRO_DIALOG_BOTTOM_PX,
+  INTRO_DIALOG_CAMERA_BOX_PX,
   INTRO_DIALOG_EDGE_MARGIN_PX,
   INTRO_DIALOG_MAX_WIDTH_PX,
   INTRO_DIALOG_MENU_GAP_PX,
@@ -121,9 +122,9 @@ const CHOICE_LABELS: Record<IntroChoiceId, string> = {
  * that (consentGate's disable/revert actions).
  *
  * Diegetic, in the manner of a game's dialog: a greeter character (char_0)
- * stands near the office's bottom-left corner, the camera centres on it in
- * what the dialog leaves of the office (a manual pan cancels that; see
- * OfficeState.cancelGreeterCamera), and its words appear in a box along the
+ * stands in the middle of the office, the camera sits on that spot from the
+ * first frame and stays there whatever the dialog shows (a manual pan takes
+ * it back; see OfficeState.cancelGreeterCamera), and its words appear in a box along the
  * office's foot, typed out letter by letter, one short message at a time
  * (introDialogRules.ts cuts them to the box's width). A press on the box, its
  * arrow, Enter or Space finishes the typing, then shows the next message. A
@@ -307,9 +308,11 @@ export function IntroDialog({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose, escapeSuppressed]);
 
-  // Per-frame tick: feed the camera target (the greeter walks to a seat for
-  // the tutorial, and the dialog grows and shrinks with its menu), ignored
-  // after a manual pan (cancelGreeterCamera).
+  // Per-frame tick: feed the camera target. It is one fixed point (the spot
+  // the greeter appears on, over the dialog box at its plain height), so the
+  // camera is there before the greeter shows and never moves with a menu or
+  // with the greeter's walk to a seat; ignored after a manual pan
+  // (cancelGreeterCamera).
   useEffect(() => {
     let rafId = 0;
     const tick = () => {
@@ -318,8 +321,8 @@ export function IntroDialog({
       if (container) {
         const rect = container.getBoundingClientRect();
         setOfficeWidth(rect.width);
-        if (ch) {
-          const stack = stackRef.current;
+        const home = officeState.greeterHome;
+        if (ch && home) {
           officeState.setGreeterCameraTarget(
             introCameraTarget({
               layout: officeState.getLayout(),
@@ -327,8 +330,8 @@ export function IntroDialog({
               zoom,
               pan: panRef.current,
               dpr: window.devicePixelRatio || 1,
-              greeter: ch,
-              coveredHeight: stack ? stack.offsetHeight + INTRO_DIALOG_BOTTOM_PX : 0,
+              greeter: home,
+              coveredHeight: INTRO_DIALOG_BOTTOM_PX + INTRO_DIALOG_CAMERA_BOX_PX,
             }),
           );
         }

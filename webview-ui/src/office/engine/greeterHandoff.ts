@@ -1,7 +1,8 @@
 /**
  * The greeter becoming the tutorial's agent (OfficeState.handoff): on the
- * tutorial's yes, the greeter walks to the nearest free seat (fewest steps)
- * and sits down, and only
+ * tutorial's yes, the greeter walks to the nearest free seat that faces
+ * sideways (fewest steps; any seat where none does), so it sits in profile
+ * beside where it stood, and only
  * then is the Guide's session started (`onSeated`, with the seat). When the Guide's
  * agent joins this office, it takes that seat and the greeter's place without
  * a spawn effect: one character, never a despawn and a respawn.
@@ -13,7 +14,7 @@
 
 import { TUTORIAL_NICKNAME } from '../../../../core/src/tutorial/quests.js';
 import type { Character, Seat } from '../types.js';
-import { CharacterState } from '../types.js';
+import { CharacterState, Direction } from '../types.js';
 import { walkAlong } from './characters.js';
 
 /** What the hand-off needs from the office. */
@@ -43,7 +44,7 @@ export class GreeterHandoff {
   }
 
   /** The tutorial's yes: walk the greeter to the nearest free seat it can
-   *  reach and sit it, then `onSeated(seatId)`. With no greeter or no seat it
+   *  reach (a sideways one first) and sit it, then `onSeated(seatId)`. With no greeter or no seat it
    *  can reach, `onSeated()` at once (the Guide then joins as any agent does). */
   begin(onSeated: (seatId?: string) => void): void {
     this.cancel();
@@ -59,18 +60,25 @@ export class GreeterHandoff {
     this.walk = { seatId, onSeated, seated: false };
   }
 
-  /** The free seat the fewest steps away (ties: the office's seat order). */
+  /** The free seat the fewest steps away among those facing left or right,
+   *  else among all of them (ties: the office's seat order). */
   private nearestSeat(ch: Character): { seatId: string; seat: Seat; path: Steps } | null {
     let best: { seatId: string; seat: Seat; path: Steps } | null = null;
+    let bestSideways: { seatId: string; seat: Seat; path: Steps } | null = null;
     for (const seatId of this.host.freeSeats()) {
       const seat = this.host.seat(seatId);
       if (!seat) continue;
       const there = ch.tileCol === seat.seatCol && ch.tileRow === seat.seatRow;
       const path = there ? [] : this.host.pathTo(ch, seat);
       if (!there && path.length === 0) continue;
-      if (!best || path.length < best.path.length) best = { seatId, seat, path };
+      const found = { seatId, seat, path };
+      if (!best || path.length < best.path.length) best = found;
+      const sideways = seat.facingDir === Direction.LEFT || seat.facingDir === Direction.RIGHT;
+      if (sideways && (!bestSideways || path.length < bestSideways.path.length)) {
+        bestSideways = found;
+      }
     }
-    return best;
+    return bestSideways ?? best;
   }
 
   /** One frame: walk on, or sit down and start the Guide's session. */

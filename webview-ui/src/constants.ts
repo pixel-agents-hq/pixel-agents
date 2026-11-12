@@ -295,15 +295,15 @@ export const PC_DIRECTORY_SELECTOR_GAP_PX = 8;
 export const PC_SHELL_CARD_STATE = 'on';
 /** How a Furniture label names an agent that has no Nickname, character name or Directory. */
 export const UNNAMED_AGENT_LABEL = 'An agent';
-/** The greeter stands this many tiles in from the office's bottom-left corner
- *  (target tile (margin, rows-1-margin); nearest walkable tile if blocked). */
-export const GREETER_TILE_MARGIN = 3;
 /** The Intro's dialog box: its width cap (CSS px), the gap kept from the
  *  office's sides and from its foot (clear of the toolbar and the radio there), and the gap between it and the menu box above. */
 export const INTRO_DIALOG_MAX_WIDTH_PX = 560;
 export const INTRO_DIALOG_EDGE_MARGIN_PX = 12;
 export const INTRO_DIALOG_BOTTOM_PX = 72;
 export const INTRO_DIALOG_MENU_GAP_PX = 10;
+/** The dialog box's height (CSS px) as the Intro's camera counts it: fixed, so
+ *  the camera never moves with what the dialog shows. */
+export const INTRO_DIALOG_CAMERA_BOX_PX = 80;
 /** ms per letter as the greeter's line types out. */
 export const INTRO_DIALOG_TYPE_MS = 22;
 /** How much one message of the dialog may hold: this many rows of text, at
@@ -317,10 +317,10 @@ export const INTRO_DIALOG_MIN_LETTERS = 60;
 /** Where the Intro's Claude Code step sends people who don't have it yet. */
 export const CLAUDE_CODE_URL = 'https://claude.com/claude-code';
 export const CLAUDE_CODE_INSTALL_COMMAND = 'npm install -g @anthropic-ai/claude-code';
-/** The Intro's camera centres the greeter in what the dialog leaves of the
- *  office: this many world px above its anchor (feet) is the point centred,
- *  and however tall the dialog and its menu get, this many world px of office
- *  stay in view above and below that point's share. */
+/** The Intro's camera centres the spot the greeter appears on in what the
+ *  dialog box leaves of the office: this many world px above its anchor
+ *  (feet) is the point centred, and on a very short panel this many world px
+ *  of office stay in view above and below that point's share. */
 export const INTRO_CAMERA_CHARACTER_RISE_WORLD = 16;
 export const INTRO_CAMERA_MIN_CHAR_VISIBLE_WORLD = 48;
 

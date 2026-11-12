@@ -31,7 +31,13 @@ beforeAll(() => {
     footprintH: 1,
     isDesk: false,
   };
-  assert.ok(buildDynamicCatalog({ catalog: [chair], sprites: { TEST_CHAIR: [['c']] } }));
+  const sideChair = { ...chair, id: 'TEST_CHAIR_SIDE', orientation: 'right' };
+  assert.ok(
+    buildDynamicCatalog({
+      catalog: [chair, sideChair],
+      sprites: { TEST_CHAIR: [['c']], TEST_CHAIR_SIDE: [['c']] },
+    }),
+  );
 });
 
 function layout(chairs: number): OfficeLayout {
@@ -134,6 +140,22 @@ test('the greeter takes the nearest free seat, not the first one', () => {
   os.handoff.begin((seatId) => seated.push(seatId));
   run(os, 15);
   assert.deepEqual(seated, ['near']);
+});
+
+test('a seat facing sideways wins over a nearer one that does not', () => {
+  const os = new OfficeState({
+    ...layout(0),
+    furniture: [
+      { uid: 'near', type: 'TEST_CHAIR', col: 4, row: 4 },
+      { uid: 'side', type: 'TEST_CHAIR_SIDE', col: 7, row: 3 },
+    ],
+  });
+  os.spawnGreeter();
+  run(os, 1);
+  const seated: Array<string | undefined> = [];
+  os.handoff.begin((seatId) => seated.push(seatId));
+  run(os, 15);
+  assert.deepEqual(seated, ['side']);
 });
 
 test('another agent launched while the greeter walks does not take its seat', () => {
