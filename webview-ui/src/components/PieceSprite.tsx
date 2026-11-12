@@ -1,7 +1,11 @@
 import { useEffect, useRef } from 'react';
 
 import { MUGSHOT_CROP_SIDE_PX, MUGSHOT_RENDER_ZOOM } from '../constants.js';
-import { getCatalogEntry, getStateVariant } from '../office/layout/furnitureCatalog.js';
+import {
+  getCatalogEntry,
+  getFrontType,
+  getStateVariant,
+} from '../office/layout/furnitureCatalog.js';
 import { getCachedSprite } from '../office/sprites/spriteCache.js';
 import type { SpriteData } from '../office/types.js';
 
@@ -25,7 +29,8 @@ function opaqueBox(sprite: SpriteData): { x: number; y: number; w: number; h: nu
 
 /**
  * A piece of furniture's sprite in a card's mug-shot square (the same size as
- * an agent's mug shot): the drawn part of the sprite, centred, whole sprite
+ * an agent's mug shot): the furniture facing the viewer, whichever way the
+ * piece is turned in the office; the drawn part of its sprite, centred, whole sprite
  * pixels at MUGSHOT_RENDER_ZOOM, hanging from the square's top (its top kept
  * when it is taller than the square: a PC shows its screen, not its foot).
  * `state` draws the
@@ -42,7 +47,9 @@ export function PieceSprite({ type, state }: { type: string; state?: string }) {
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, side, side);
-    const shown = (state && getStateVariant(type, state)) || type;
+    // Always facing the viewer, whichever way the piece stands in the office.
+    const front = getFrontType(type);
+    const shown = (state && getStateVariant(front, state)) || front;
     const sprite = getCatalogEntry(shown)?.sprite;
     const box = sprite ? opaqueBox(sprite) : null;
     if (!sprite || !box) return;

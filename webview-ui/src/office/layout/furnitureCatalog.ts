@@ -99,6 +99,11 @@ export function getStateVariant(type: string, state: string): string | null {
   return stateVariantOf(catalog, type, state);
 }
 
+/** The type turned to face the viewer (its rotation group's `front`), or itself when it has none. */
+export function getFrontType(type: string): string {
+  return catalog.rotationGroups.get(type)?.members.front ?? type;
+}
+
 /** Returns true if the given furniture type is part of a rotation group. */
 export function isRotatable(type: string): boolean {
   return isRotatableType(catalog, type);
