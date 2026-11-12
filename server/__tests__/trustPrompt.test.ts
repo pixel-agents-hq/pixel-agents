@@ -69,14 +69,63 @@ function fakeSession(frames: string[]): { session: TerminalSession; written: str
   return { session, written };
 }
 
+const ON_YES = QUESTION.replace('❯ No, exit', '  No, exit').replace(
+  '  Yes, I trust',
+  '❯ Yes, I trust',
+);
+
+/** A session showing the question as the CLI does: a move puts the pointer on
+ *  the other row, Enter confirms the pointed one (the test fails on "No,
+ *  exit"), and the first `dropped` keys are ignored. */
+function questionSession(opts: { dropped?: number } = {}): {
+  session: TerminalSession;
+  written: string[];
+} {
+  const written: string[] = [];
+  let screen: 'no' | 'yes' | 'gone' = 'no';
+  let dropped = opts.dropped ?? 0;
+  const session = {
+    replay: async () => ({
+      data: (screen === 'no' ? QUESTION : screen === 'yes' ? ON_YES : '❯ ').replace(/\n/g, '\r\n'),
+      cols: 100,
+      rows: 30,
+    }),
+    write: (bytes: string) => {
+      written.push(bytes);
+      if (dropped-- > 0 || screen === 'gone') return;
+      if (bytes === '\r') {
+        if (screen === 'no') throw new Error('confirmed "No, exit"');
+        screen = 'gone';
+      } else screen = screen === 'no' ? 'yes' : 'no';
+    },
+  } as unknown as TerminalSession;
+  return { session, written };
+}
+
 const FAST = { pollMs: 1, watchMs: 300 };
 const claude = { trustPromptKeys: claudeTrustPromptKeys };
 
 describe('answerTrustPrompt', () => {
-  it('presses the keys once when the question shows', async () => {
-    const { session, written } = fakeSession(['Starting…', QUESTION, QUESTION]);
+  it('moves, reads the screen again, and confirms only with the pointer on yes', async () => {
+    const { session, written } = questionSession();
     expect(await answerTrustPrompt(session, claude, () => true, FAST)).toBe(true);
     expect(written).toEqual(['\x1b[B', '\r']);
+  });
+
+  it('never confirms "No, exit" when the CLI drops the first keys', async () => {
+    // Claude Code ignores keys for a moment after the question appears: a
+    // "down, enter" sent together lost the move and confirmed "No, exit".
+    const { session, written } = questionSession({ dropped: 2 });
+    expect(await answerTrustPrompt(session, claude, () => true, FAST)).toBe(true);
+    expect(written).toEqual(['\x1b[B', '\x1b[B', '\x1b[B', '\r']);
+  });
+
+  it('reports no answer while the question stays on the screen', async () => {
+    const { session, written } = questionSession({ dropped: Infinity });
+    expect(await answerTrustPrompt(session, claude, () => true, { pollMs: 1, watchMs: 30 })).toBe(
+      false,
+    );
+    expect(written.every((bytes) => bytes === '\x1b[B')).toBe(true);
   });
 
   it('types nothing where the question never shows', async () => {
