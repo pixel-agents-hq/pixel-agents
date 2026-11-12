@@ -23,7 +23,7 @@ import {
 } from '../../../../core/src/furniture/pieceRules.js';
 import type { PcShell } from '../../../../core/src/messages.js';
 import { pcShellName } from '../../../../core/src/pcShells.js';
-import { UNNAMED_AGENT_LABEL } from '../../constants.js';
+import { FURNITURE_LABEL_HOVER_GRACE_MS, UNNAMED_AGENT_LABEL } from '../../constants.js';
 import { furnitureAt } from '../editor/editorActions.js';
 import { activeCatalog, getCatalogEntry } from '../layout/furnitureCatalog.js';
 import type {
@@ -62,6 +62,10 @@ export interface PiecesDeps {
 
 export class PiecesController {
   private hoveredPiece: string | null = null;
+  /** When the mouse left a piece whose label holds a button (its shell's ×): the
+   *  hover lingers from then for FURNITURE_LABEL_HOVER_GRACE_MS, so the pointer can
+   *  cross to the label. Null while the pointer is on the piece or its label. */
+  private leftAt: number | null = null;
   private readonly hoverListeners = new Set<() => void>();
   /** Piece uid → its live PC shell, as the server announced them (pcShellsLoaded). */
   private shellsByPiece: ReadonlyMap<string, PcShell> = new Map();
@@ -82,6 +86,7 @@ export class PiecesController {
     return this.hoveredPiece;
   }
   private set hoveredUid(uid: string | null) {
+    this.leftAt = null;
     if (this.hoveredPiece === uid) return;
     this.hoveredPiece = uid;
     for (const listener of this.hoverListeners) listener();
@@ -159,9 +164,44 @@ export class PiecesController {
    * A mouse over this world point: the piece there becomes the hovered one (or
    * none). Returns its view, whose `click` decides the cursor.
    */
-  hoverAt(worldX: number, worldY: number, ctx: PieceContext): PieceView | null {
-    this.hoveredUid = this.at(worldX, worldY, ctx);
+  hoverAt(
+    worldX: number,
+    worldY: number,
+    ctx: PieceContext,
+    now = performance.now(),
+  ): PieceView | null {
+    const uid = this.at(worldX, worldY, ctx);
+    // Off a piece whose label holds a button: the hover lingers (see `leftAt`),
+    // and nothing is under the pointer meanwhile.
+    if (uid === null && this.lingers(ctx)) {
+      this.leftAt ??= now;
+      return null;
+    }
+    this.hoveredUid = uid;
     return this.hovered(ctx)?.view ?? null;
+  }
+
+  /** The pointer is on the hovered piece's label: the hover holds. */
+  holdHover(): void {
+    this.leftAt = null;
+  }
+
+  /** The pointer left the hovered piece's label for the office: the hover lingers from now. */
+  releaseHover(now = performance.now()): void {
+    if (this.hoveredPiece !== null) this.leftAt = now;
+  }
+
+  /** Every frame a label shows: a lingering hover ends once its grace has run out. */
+  expireHover(now = performance.now()): void {
+    if (this.leftAt !== null && now - this.leftAt > FURNITURE_LABEL_HOVER_GRACE_MS) {
+      this.hoveredUid = null;
+    }
+  }
+
+  /** Whether the hovered piece's label holds something to press here (its live
+   *  shell's ×, where this office may close it). */
+  private lingers(ctx: PieceContext): boolean {
+    return this.hoveredPiece !== null && !ctx.readOnly && this.hasShell(this.hoveredPiece);
   }
 
   /**

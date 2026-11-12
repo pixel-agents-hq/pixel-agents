@@ -284,6 +284,9 @@ export const FURNITURE_LABEL_Z_INDEX = 40;
 export const PC_DIRECTORY_SELECTOR_Z_INDEX = 44;
 /** CSS px between a Furniture label's bottom and the top of the piece's sprite. */
 export const FURNITURE_LABEL_GAP_PX = 2;
+/** How long a Furniture label holding a button (a shell's ×) stays after the mouse
+ *  leaves its piece: time for the pointer to cross to it, however it travels. */
+export const FURNITURE_LABEL_HOVER_GRACE_MS = 450;
 /** How the canvas tells the pointer moved onto a piece's Furniture label (still that piece). */
 export const FURNITURE_LABEL_SELECTOR = '[data-testid="furniture-label"]';
 /** The Directory selector stands this far above its PC (a label hugs it; a menu of buttons needs air). */

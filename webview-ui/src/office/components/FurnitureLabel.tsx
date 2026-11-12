@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
 import { PixelIcon } from '../../components/ui/PixelIcon.js';
@@ -40,6 +40,9 @@ export function FurnitureLabel({
   const hoveredUid = useSyncExternalStore(pieces.subscribeHover, () => pieces.hoveredUid);
   useFrameTick(hoveredUid !== null && !hidden);
 
+  // A hover that lingers after the mouse left the piece (pieces.hoverAt) ends
+  // here: looked at after every frame's render while a piece is hovered.
+  useEffect(() => pieces.expireHover());
   const el = containerRef.current;
   const piece = hidden ? null : pieces.hovered({ readOnly });
   if (!el || !piece?.view.label) return null;
@@ -67,9 +70,12 @@ export function FurnitureLabel({
         paddingBottom: FURNITURE_LABEL_GAP_PX,
         zIndex: FURNITURE_LABEL_Z_INDEX,
       }}
+      onMouseEnter={() => pieces.holdHover()}
       onMouseLeave={(e) => {
-        // Back onto the canvas: its next move decides. Anywhere else: gone.
-        if (!(e.relatedTarget instanceof HTMLCanvasElement)) pieces.clearHover();
+        // Back onto the canvas: it lingers until the pointer is on the piece
+        // again or the grace runs out. Anywhere else: gone.
+        if (e.relatedTarget instanceof HTMLCanvasElement) pieces.releaseHover();
+        else pieces.clearHover();
       }}
       data-testid="furniture-label"
       data-piece-uid={piece.uid}

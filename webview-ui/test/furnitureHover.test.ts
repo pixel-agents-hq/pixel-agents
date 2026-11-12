@@ -131,7 +131,6 @@ describe('the piece under the pointer', () => {
     assert.equal(os.getCharacterAt(x, y), 1);
     assert.equal(os.pieces.at(x, y, OFFICE), null);
   });
-
 });
 
 describe('hovering a piece (mouse)', () => {
@@ -171,6 +170,34 @@ describe('hovering a piece (mouse)', () => {
     assert.equal(os.pieces.hoverAt(...at(2, 7), OFFICE), null);
     assert.equal(os.pieces.hoveredUid, null);
     assert.equal(os.pieces.hovered(OFFICE), null);
+  });
+
+  test('a piece with a live shell keeps its label a moment after the mouse leaves: time to reach its ×', () => {
+    const os = office();
+    os.pieces.setPcShells([{ id: 1_000_000_001, uid: 'kiosk', furnitureType: 'KIOSK_FRONT' }]);
+    os.pieces.hoverAt(...at(5, 3), OFFICE, 1000);
+    // Off the piece, over bare floor: still hovered, and nothing under the pointer.
+    assert.equal(os.pieces.hoverAt(...at(8, 8), OFFICE, 1100), null);
+    assert.equal(os.pieces.hoveredUid, 'kiosk');
+    // Within the grace it holds; on the label it holds for good; past it, it goes.
+    os.pieces.expireHover(1400);
+    assert.equal(os.pieces.hoveredUid, 'kiosk');
+    os.pieces.holdHover();
+    os.pieces.expireHover(9000);
+    assert.equal(os.pieces.hoveredUid, 'kiosk');
+    os.pieces.releaseHover(9000);
+    os.pieces.expireHover(9100);
+    assert.equal(os.pieces.hoveredUid, 'kiosk');
+    os.pieces.expireHover(9600);
+    assert.equal(os.pieces.hoveredUid, null);
+
+    // Onto another piece it moves at once; a view-only office never lingers.
+    os.pieces.hoverAt(...at(5, 3), OFFICE, 0);
+    os.pieces.hoverAt(...at(4, 3), OFFICE, 10);
+    assert.equal(os.pieces.hoveredUid, 'sign');
+    os.pieces.hoverAt(...at(5, 3), { readOnly: true }, 20);
+    os.pieces.hoverAt(...at(8, 8), { readOnly: true }, 30);
+    assert.equal(os.pieces.hoveredUid, null);
   });
 
   test('the layout editor opening clears it: no outline, no label, and the label hears so', () => {
