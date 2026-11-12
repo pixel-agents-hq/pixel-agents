@@ -125,7 +125,7 @@ _Avoid_: closet, inventory, asset list
 ## First Run
 
 **Intro**:
-The first-run tour the Greeter speaks: welcome, getting Claude Code (only when it isn't installed), choices, all set. The choices step asks for the usage bars, live updates (hooks) and the Pixel Office MCP, one box each, all off to start, not a separate dialog per ask; someone who finished the Intro before an ask existed is greeted with that ask alone. Where the Tutorial can run, the all-set step asks to start it, saying what that does. The Intro itself is scripted: no session, no tokens.
+The first-run tour the Greeter speaks: welcome, getting Claude Code (only when it isn't installed), signing it in (only when it is installed and holds no login; the choices wait for it), choices, all set. The choices step asks for the usage bars, live updates (hooks) and the Pixel Office MCP, one box each, all off to start, not a separate dialog per ask; someone who finished the Intro before an ask existed is greeted with that ask alone. Where the Tutorial can run, the all-set step asks to start it, saying what that does. The Intro itself is scripted: no session, no tokens.
 _Avoid_: onboarding, tutorial (that's what it offers), wizard, consent modal
 
 **Greeter**:

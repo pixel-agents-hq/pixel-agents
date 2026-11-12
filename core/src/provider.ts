@@ -139,6 +139,29 @@ export interface UsageBridge {
   normalizeContext(raw: unknown): ReportedContext | null;
 }
 
+// ── CLI sign-in ───────────────────────────────────────────────
+
+/** A provider's sign-in, as the office drives it: read whether the CLI is signed in, and run one sign-in at a time. */
+export interface CliSignIn {
+  /** Whether the CLI is signed in on this machine, asked of the CLI itself. False when it cannot say. */
+  status(): Promise<boolean>;
+  /** Start a sign-in. `openBrowser` lets the CLI open a browser on this machine, where signing in finishes with no
+   *  code; without it nothing is opened here and the office opens `url` wherever it is shown. */
+  begin(options: { openBrowser: boolean; account: 'subscription' | 'api' }): CliSignInAttempt;
+}
+
+/** One sign-in under way. */
+export interface CliSignInAttempt {
+  /** The page to sign in on, once the CLI named it; rejects when the attempt ends before it did. */
+  readonly url: Promise<string>;
+  /** Hand over the code the page ended on. */
+  submitCode(code: string): void;
+  /** Settles when the attempt ends: signed in, or why not, in words for the user. Never rejects. */
+  readonly done: Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** End it now. `done` then settles as not signed in. */
+  cancel(): void;
+}
+
 // ── Hook-based Provider (CLIs with hooks APIs) ────────────────
 
 /**
@@ -240,6 +263,13 @@ export interface HookProvider {
   /** Whether the provider's CLI is installed on this machine (the Intro's "get Claude Code" step shows only when it
    *  isn't). Absent = assumed installed. */
   isCliInstalled?(): boolean;
+  /** Signing the CLI in to its account, where the provider can run that for the office (the Intro's sign-in step,
+   *  which holds the choices back until it is done). Absent = the office never asks and counts the CLI signed in. */
+  readonly cliSignIn?: CliSignIn;
+  /** The keys that say yes to the CLI's own "do you trust this folder?" question when `screen` (a terminal's visible
+   *  text) shows it, else null. Only read where the operator started the office saying its folders are trusted
+   *  (standalone's --trust-directories): the office then answers for the agents it launches. Absent = never answered. */
+  trustPromptKeys?(screen: string): readonly ('up' | 'down' | 'enter')[] | null;
 
   /** Format tool status for display (e.g., "Read" -> "Reading foo.ts") */
   formatToolStatus(toolName: string, input?: unknown): string;

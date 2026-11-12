@@ -24,6 +24,7 @@ import {
   type ReloadAssetsSideEffect,
   sharedCharacterRefsMessages,
 } from './clientMessageHandler.js';
+import { cliSignIns } from './cliSignIn.js';
 import {
   getHooksConsent,
   getHooksEnabled,
@@ -72,6 +73,7 @@ import { closeStandaloneAgent } from './terminal/standaloneClose.js';
 import { launchForOffice } from './terminal/standaloneLaunches.js';
 import { standaloneTutorialSurface } from './terminal/standaloneTutorial.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
+import { setTrustDirectories } from './terminal/trustPrompt.js';
 import { setAttributionDirectories } from './worktreeAttribution.js';
 import { holdWorktreesOf, stopRetiring, sweepWorktrees } from './worktreeLeave.js';
 import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
@@ -97,6 +99,9 @@ export interface CliArgs {
   ptyHost: boolean;
   /** --pty-host-socket: where that process listens (default under ~/.pixel-agents). */
   ptyHostSocket?: string;
+  /** --trust-directories: answer the CLI's "do you trust this folder?" question
+   *  for every agent the office launches (terminal/trustPrompt.ts). */
+  trustDirectories: boolean;
 }
 
 /** Thrown by parseArgs on an invalid --port. Kept separate from process.exit so
@@ -111,6 +116,7 @@ export function parseArgs(argv: string[]): CliArgs {
     allowedHosts: [],
     rotateToken: false,
     ptyHost: false,
+    trustDirectories: false,
   };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port' || argv[i] === '-p') {
@@ -147,6 +153,8 @@ export function parseArgs(argv: string[]): CliArgs {
       args.rotateToken = true;
     } else if (argv[i] === '--no-terminal') {
       args.terminal = false;
+    } else if (argv[i] === '--trust-directories') {
+      args.trustDirectories = true;
     } else if (argv[i] === '--pty-host') {
       args.ptyHost = true;
     } else if (argv[i] === '--pty-host-socket') {
@@ -168,6 +176,10 @@ Options:
                         old one (bookmarks, other devices) stops working
   --no-terminal         Disable the embedded terminal (watch agents only; no
                         launching or attaching from the browser)
+  --trust-directories   Say yes to Claude Code's "do you trust this folder?"
+                        question for every agent launched from the office.
+                        Only for a machine whose folders are all your own
+                        (e.g. a cloud office): the question is a safeguard
   --pty-host            Development only: run agents' terminals in a separate
                         process that outlives the server, so restarting it
                         (e.g. to update it) leaves agents running
@@ -343,6 +355,7 @@ async function main(): Promise<void> {
   const server = new PixelAgentsServer();
 
   // Terminals for agents this server launches.
+  setTrustDirectories(args.trustDirectories);
   const ptyManager = await openTerminalSessions(args, distRoot).catch((err: unknown) => {
     console.error(`[Pixel Agents] --pty-host: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
@@ -656,6 +669,7 @@ async function main(): Promise<void> {
       // host: just disconnect; the agents keep running.
       await ptyManager.shutdown();
       characterProfilesWatcher.dispose();
+      cliSignIns.dispose();
       // Every agent's token dies with this server (and its config files go).
       officeMcp.dispose();
       // With the PTY host, stop, not dispose: the saved list keeps whoever is

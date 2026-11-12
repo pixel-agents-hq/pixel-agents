@@ -48,6 +48,7 @@ export type ServerMessage =
   | OfficeMcpStatus
   | TutorialStatus
   | TutorialRejected
+  | CliSignInStatus
   | UsageBridgeStatus
   | UsageLimits
   | ExternalAssetDirectoriesUpdated
@@ -93,6 +94,9 @@ export type ClientMessage =
   | SetHooksEnabled
   | HooksConsentResponse
   | SetUsageBridgeEnabled
+  | RequestCliSignInStatus
+  | StartCliSignIn
+  | SubmitCliSignInCode
   | OfficeMcpConsentResponse
   | SetOfficeMcpEnabled
   | SetOfficeMcpReadOnly
@@ -572,6 +576,16 @@ export interface TutorialRejected {
   reason: string;
 }
 
+export interface CliSignInStatus {
+  type: 'cliSignInStatus';
+  providerId: string;
+  signedIn: boolean;
+  cliMissing?: boolean;
+  signInUrl?: string;
+  openedOnHost?: boolean;
+  error?: string;
+}
+
 export interface UsageBridgeStatus {
   type: 'usageBridgeStatus';
   providerId: string;
@@ -912,6 +926,26 @@ export interface SetUsageBridgeEnabled {
   type: 'setUsageBridgeEnabled';
   providerId: string;
   enabled: boolean;
+}
+
+export interface RequestCliSignInStatus {
+  type: 'requestCliSignInStatus';
+  providerId: string;
+}
+
+export interface StartCliSignIn {
+  type: 'startCliSignIn';
+  providerId: string;
+  onHost: boolean;
+  account?: CliSignInAccount;
+}
+
+export type CliSignInAccount = 'subscription' | 'api';
+
+export interface SubmitCliSignInCode {
+  type: 'submitCliSignInCode';
+  providerId: string;
+  code: string;
 }
 
 export interface OfficeMcpConsentResponse {

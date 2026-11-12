@@ -18,12 +18,14 @@ import {
 } from '../constants.js';
 import type { ConsentChoice } from '../hooks/introTourState.js';
 import type { OfficeState } from '../office/engine/officeState.js';
+import { useCliSignIn } from '../signIn/useCliSignIn.js';
 import { TutorialAsk } from '../tutorial/TutorialAsk.js';
 import { tutorialOffered } from '../tutorial/tutorialOffer.js';
 import { useUsageBridge } from '../usage/useUsageBridge.js';
 import { DiscordIcon } from './ChangelogModal.js';
 import { computeIntroBubbleGeometry } from './introBubbleGeometry.js';
 import { type IntroChoiceId, type IntroChoiceOption, IntroChoices } from './IntroChoices.js';
+import { IntroSignIn } from './IntroSignIn.js';
 import { Button } from './ui/Button.js';
 
 interface IntroBubbleProps {
@@ -82,7 +84,7 @@ interface IntroBubbleProps {
   };
 }
 
-type StepId = 'welcome' | 'claudeCode' | 'choices' | 'closing' | 'tutorial';
+type StepId = 'welcome' | 'claudeCode' | 'signIn' | 'choices' | 'closing' | 'tutorial';
 
 /** Each box's name in the choices step (the server writes the line and the terms). */
 const CHOICE_LABELS: Record<IntroChoiceId, string> = {
@@ -97,7 +99,8 @@ const CHOICE_LABELS: Record<IntroChoiceId, string> = {
  * render this same component off the same server message).
  *
  * Steps: welcome ("Hi, I'm <greeter>") → get Claude Code (only when the
- * server found no CLI) → choices → all set, which offers the tutorial where
+ * server found no CLI) → sign in to Claude Code (only when the CLI is there
+ * and reports no login: IntroSignIn, which the choices wait for) → choices → all set, which offers the tutorial where
  * the server can start one (its ask, one paragraph, on the same step). The
  * choices step (IntroChoices) holds one box per thing to turn on, all off to
  * start: usage bars (only where the bridge can be installed and is not yet),
@@ -179,8 +182,31 @@ export function IntroBubble({
     setTutorialStartSent(true);
     tutorial.onStart(palette);
   };
+  // The sign-in step: asked of the server as the tour opens, and part of the
+  // tour from the first answer that says the CLI holds no login (kept once
+  // shown, so Back finds it).
+  const signIn = useCliSignIn(hooksAsk?.providerId);
+  const checkSignIn = signIn.check;
+  useEffect(() => {
+    if (hooksAsk) checkSignIn();
+  }, [hooksAsk, checkSignIn]);
+  // Signed out for certain: a CLI that is there and reports no login. A missing
+  // CLI has nothing to sign in (the install step covers it, and asks again).
+  const signedOut =
+    hooksAsk !== null && signIn.status?.signedIn === false && !signIn.status.cliMissing;
+  // Continue was pressed on the install step and its fresh answer has not come.
+  const [leavingInstall, setLeavingInstall] = useState(false);
+  const signInShownRef = useRef(false);
+  if (signedOut) signInShownRef.current = true;
+  const signInShown = signInShownRef.current;
   const steps: StepId[] = hooksAsk
-    ? ['welcome', ...(hooksAsk.cliInstalled ? [] : (['claudeCode'] as const)), 'choices', 'closing']
+    ? [
+        'welcome',
+        ...(hooksAsk.cliInstalled ? [] : (['claudeCode'] as const)),
+        ...(signInShown ? (['signIn'] as const) : []),
+        'choices',
+        'closing',
+      ]
     : mcpAsk
       ? ['choices', 'closing']
       : ['tutorial'];
@@ -228,8 +254,28 @@ export function IntroBubble({
     }
   };
   // A step the tour no longer has (an ask mooted under it) falls back to the first.
-  const step = steps.includes(chosenStep) ? chosenStep : steps[0];
+  const wanted = steps.includes(chosenStep) ? chosenStep : steps[0];
+  // The choices never open over a CLI that reports no login: back to the sign-in.
+  const step = signedOut && steps.indexOf(wanted) > steps.indexOf('signIn') ? 'signIn' : wanted;
   const stepIndex = steps.indexOf(step);
+
+  // Leaving for the choices waits for the server's word on the sign-in: its
+  // first answer, and a fresh one after the install step (the CLI may be
+  // there now). The answer decides whether the sign-in step comes first.
+  const awaitingSignIn =
+    hooksAsk !== null && (signIn.status === undefined || signIn.pending || leavingInstall);
+  const leaveInstallStep = (): void => {
+    setLeavingInstall(true);
+    signIn.check();
+  };
+  const signInPending = signIn.pending;
+  useEffect(() => {
+    if (!leavingInstall || signInPending) return;
+    setLeavingInstall(false);
+    setStep(steps[Math.min(steps.length - 1, stepIndex + 1)]);
+    // Runs on the answer's arrival; `steps` is rebuilt every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leavingInstall, signInPending]);
 
   // The greeter lives exactly as long as this component, wearing Byte (by id: see greeterPalette).
   useEffect(() => {
@@ -342,6 +388,7 @@ export function IntroBubble({
   const titles: Record<StepId, string> = {
     welcome: 'Welcome to Pixel Agents!',
     claudeCode: 'First, get Claude Code',
+    signIn: 'Sign in to Claude Code',
     choices: 'Pick what to turn on',
     closing: installFailed ? "Hooks couldn't be installed" : "You're all set!",
     tutorial: tutorial.status?.headline ?? '',
@@ -487,6 +534,12 @@ export function IntroBubble({
                 onClose={onClose}
                 onStart={startTutorial}
               />
+            ) : step === 'signIn' ? (
+              <IntroSignIn
+                signIn={signIn}
+                onBack={stepIndex > 0 ? back : undefined}
+                onContinue={forward}
+              />
             ) : step === 'choices' ? (
               <IntroChoices
                 options={options}
@@ -514,7 +567,12 @@ export function IntroBubble({
                     Let's Go
                   </Button>
                 ) : (
-                  <Button variant="default" size="sm" onClick={forward}>
+                  <Button
+                    variant={awaitingSignIn ? 'disabled' : 'default'}
+                    size="sm"
+                    disabled={awaitingSignIn}
+                    onClick={step === 'claudeCode' ? leaveInstallStep : forward}
+                  >
                     Continue
                   </Button>
                 )}

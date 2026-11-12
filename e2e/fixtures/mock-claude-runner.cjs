@@ -625,7 +625,55 @@ async function playScenario(homeDir, scenario, context) {
   echo(null, 'session ended');
 }
 
+/** The code the mock's sign-in page "ends on": the one `claude auth login` accepts. */
+const MOCK_SIGN_IN_CODE = 'mock-code';
+const MOCK_SIGN_IN_URL = 'https://claude.example/mock-sign-in';
+
+/**
+ * `claude auth status` / `claude auth login`, as the real CLI speaks them
+ * (the Intro's sign-in step). Signed in, unless the host was started with
+ * PIXEL_AGENTS_MOCK_SIGNED_OUT=1: then signed out until a login with the
+ * right code leaves a `signed-in` file in the mock's folder. Never a session:
+ * no scenario is claimed and nothing is logged as an invocation.
+ */
+function mockAuth(homeDir, args) {
+  const marker = path.join(getMockRoot(homeDir), 'signed-in');
+  const signedIn = () => process.env.PIXEL_AGENTS_MOCK_SIGNED_OUT !== '1' || fs.existsSync(marker);
+  if (args[0] === 'status') {
+    process.stdout.write(
+      JSON.stringify({ loggedIn: signedIn(), authMethod: signedIn() ? 'claude.ai' : 'none' }) +
+        '\n',
+    );
+    process.exit(signedIn() ? 0 : 1);
+  }
+  if (args[0] === 'login') {
+    logLine(homeDir, 'auth.log', JSON.stringify({ args, browser: process.env.BROWSER ?? null }));
+    process.stdout.write('Opening browser to sign in…\n');
+    process.stdout.write(`If the browser didn't open, visit: ${MOCK_SIGN_IN_URL}\n`);
+    process.stdout.write('Paste code here if prompted > ');
+    let typed = '';
+    process.stdin.on('data', (chunk) => {
+      typed += chunk;
+      if (!typed.includes('\n')) return;
+      if (typed.trim() === MOCK_SIGN_IN_CODE) {
+        fs.mkdirSync(path.dirname(marker), { recursive: true });
+        fs.writeFileSync(marker, '');
+        process.stdout.write('Login successful.\n');
+        process.exit(0);
+      }
+      process.stderr.write("Login failed: That code wasn't accepted.\n");
+      process.exit(1);
+    });
+    return;
+  }
+  process.exit(1);
+}
+
 async function main() {
+  if (process.argv[2] === 'auth') {
+    mockAuth(os.homedir(), process.argv.slice(3));
+    return;
+  }
   const sessionId = parseSessionId(process.argv.slice(2));
   const cwd = process.cwd();
   const homeDir = os.homedir();

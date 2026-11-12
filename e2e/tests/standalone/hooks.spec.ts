@@ -173,7 +173,8 @@ test.describe('Standalone / context after /clear', () => {
  * the token boundary and the checkbox route.
  */
 test.describe('Standalone / hooks consent', () => {
-  test.use({ seedHooksConsent: false });
+  // The mock CLI answers the Intro's sign-in check (signed in), whatever this machine has installed.
+  test.use({ seedHooksConsent: false, standaloneOptions: { mockClaude: true } });
 
   function readConsentFrom(tmpHome: string): boolean {
     try {
@@ -361,7 +362,8 @@ function readOfficeMcpConsent(tmpHome: string): string {
  * revises them as absolute states (docs/adr/0001).
  */
 test.describe('Standalone / Pixel Office MCP consent', () => {
-  test.use({ seedHooksConsent: false });
+  // The mock CLI answers the Intro's sign-in check (signed in), whatever this machine has installed.
+  test.use({ seedHooksConsent: false, standaloneOptions: { mockClaude: true } });
 
   test('the choices step asks both, and Back revises the answer @area:standalone', async ({
     page,

@@ -18,6 +18,7 @@ import {
   installHooks as installerInstallHooks,
   uninstallHooks as installerUninstallHooks,
 } from './claudeHookInstaller.js';
+import { claudeSignIn } from './claudeSignIn.js';
 import { claudeTeamProvider } from './claudeTeamProvider.js';
 import { claudeUsageBridge } from './claudeUsageBridge.js';
 import { CONSENT_DISCLOSURE, CONSENT_INSTALL_HEADLINE, CONSENT_SUMMARY } from './consentCopy.js';
@@ -31,6 +32,7 @@ import {
 import { conversationTitle } from './conversationTitle.js';
 import { isInheritedClaudeSessionEnv } from './sessionEnv.js';
 import { claudeSkillPackaging } from './skillPackaging.js';
+import { claudeTrustPromptKeys } from './trustPrompt.js';
 import { claudeWorktreeConvention } from './worktreeConvention.js';
 
 // ── formatToolStatus: moved from src/transcriptParser.ts ──
@@ -448,6 +450,8 @@ export const claudeProvider: HookProvider = {
   areHooksInstalled,
   consentDisclosure,
   isCliInstalled,
+  cliSignIn: claudeSignIn,
+  trustPromptKeys: claudeTrustPromptKeys,
 
   formatToolStatus,
   permissionExemptTools: new Set(['Task', 'Agent', 'AskUserQuestion']),

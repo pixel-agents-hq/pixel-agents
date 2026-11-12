@@ -131,6 +131,8 @@ components:
         # The tutorial (the Guide's hands-on tour, on top of the Pixel Office MCP)
         - $ref: '#/components/schemas/TutorialStatus'
         - $ref: '#/components/schemas/TutorialRejected'
+        # Sign-in to the provider's CLI (the Intro's sign-in step)
+        - $ref: '#/components/schemas/CliSignInStatus'
         # Usage bars (the account's plan limits)
         - $ref: '#/components/schemas/UsageBridgeStatus'
         - $ref: '#/components/schemas/UsageLimits'
@@ -183,6 +185,9 @@ components:
         - $ref: '#/components/schemas/SetHooksEnabled'
         - $ref: '#/components/schemas/HooksConsentResponse'
         - $ref: '#/components/schemas/SetUsageBridgeEnabled'
+        - $ref: '#/components/schemas/RequestCliSignInStatus'
+        - $ref: '#/components/schemas/StartCliSignIn'
+        - $ref: '#/components/schemas/SubmitCliSignInCode'
         - $ref: '#/components/schemas/OfficeMcpConsentResponse'
         - $ref: '#/components/schemas/SetOfficeMcpEnabled'
         - $ref: '#/components/schemas/SetOfficeMcpReadOnly'
@@ -1041,6 +1046,45 @@ components:
             verdict in particular reads only the provider it asked about.
         installed:
           type: boolean
+
+    CliSignInStatus:
+      description: |
+        Whether the provider's CLI is signed in to its account on this machine,
+        and the sign-in under way if there is one. The answer to
+        `requestCliSignInStatus`, `startCliSignIn` and `submitCliSignInCode`, to
+        the client that asked only; a sign-in that ends (signed in, refused,
+        timed out) is told to the client that started it. A provider with no
+        sign-in of its own is reported signed in. Privileged connections only.
+      type: object
+      additionalProperties: false
+      required: [type, providerId, signedIn]
+      properties:
+        type:
+          const: cliSignInStatus
+        providerId:
+          type: string
+          description: The provider this is about (HookProvider.id).
+        signedIn:
+          type: boolean
+        cliMissing:
+          type: boolean
+          description: >-
+            The CLI is not installed on this machine, so there is nothing to
+            sign in yet (`signedIn` is false). The Intro's install step covers
+            it; the sign-in step waits for a CLI that can be asked.
+        signInUrl:
+          type: string
+          description: >-
+            Present while a sign-in is under way: the provider's page to sign in
+            on. It ends on a code, which `submitCliSignInCode` hands back.
+        openedOnHost:
+          type: boolean
+          description: >-
+            With `signInUrl`: the CLI was left to open a browser on the host
+            itself, where signing in finishes without a code.
+        error:
+          type: string
+          description: Why the last sign-in did not finish, in words for the user.
 
     UsageBridgeStatus:
       description: |
@@ -2711,6 +2755,64 @@ components:
         type:
           const: requestWorktrees
         directoryPath:
+          type: string
+
+    RequestCliSignInStatus:
+      description: >-
+        Ask whether the provider's CLI is signed in: the host replies
+        `cliSignInStatus` to this client only (with the sign-in under way, if
+        this client started one). Privileged.
+      type: object
+      additionalProperties: false
+      required: [type, providerId]
+      properties:
+        type:
+          const: requestCliSignInStatus
+        providerId:
+          type: string
+
+    StartCliSignIn:
+      description: >-
+        Start signing the provider's CLI in (Claude: `claude auth login`),
+        replacing a sign-in already under way. Answered with `cliSignInStatus`
+        carrying the page to sign in on, and again when it ends. `onHost` says
+        the office is open on the host itself, so the CLI may open the browser
+        there and finish without a code; otherwise the host opens nothing and
+        the office opens `signInUrl`. Privileged.
+      type: object
+      additionalProperties: false
+      required: [type, providerId, onHost]
+      properties:
+        type:
+          const: startCliSignIn
+        providerId:
+          type: string
+        onHost:
+          type: boolean
+        account:
+          $ref: '#/components/schemas/CliSignInAccount'
+
+    CliSignInAccount:
+      description: >-
+        Which kind of account a sign-in is for: the provider's subscription
+        (the default when absent) or its pay-per-use API account.
+      type: string
+      enum: [subscription, api]
+
+    SubmitCliSignInCode:
+      description: >-
+        The code the provider's sign-in page ended on, handed to the sign-in
+        under way; ignored when there is none. The outcome arrives as
+        `cliSignInStatus`. Privileged.
+      type: object
+      additionalProperties: false
+      required: [type, providerId, code]
+      properties:
+        type:
+          const: submitCliSignInCode
+        providerId:
+          type: string
+        code:
           type: string
 
     RequestWorktreeOptions:

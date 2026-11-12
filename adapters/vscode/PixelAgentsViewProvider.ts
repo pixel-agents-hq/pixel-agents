@@ -39,6 +39,7 @@ import {
   handleCharacterProfilesClientMessage,
   watchCharacterProfiles,
 } from '../../server/src/characterProfilesPersistence.js';
+import { cliSignIns, isCliSignInMessage } from '../../server/src/cliSignIn.js';
 import {
   getHooksConsent,
   getHooksEnabled,
@@ -753,6 +754,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             },
           );
         }
+      } else if (isCliSignInMessage(message.type)) {
+        // The Intro's sign-in step, shared with the standalone host. This
+        // surface has one office: it is the client.
+        cliSignIns.handle(message as Record<string, unknown>, this, (m) =>
+          this.sendOrBuffer({ ...m }),
+        );
       } else if (message.type === 'hooksConsentResponse') {
         const provider = hookProviderById(message.providerId);
         if (provider) {
@@ -1373,6 +1380,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
    *  really ended), then let git work already under way finish. */
   async shutdown(): Promise<void> {
     const stopping = this.worktrees.stop();
+    cliSignIns.dispose();
     this.dispose();
     await stopping;
   }

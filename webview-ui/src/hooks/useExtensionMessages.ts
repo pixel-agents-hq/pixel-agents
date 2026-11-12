@@ -43,6 +43,7 @@ import { handleAgentLayoutEditMessage } from '../officeMcp/agentLayoutEdits.js';
 import { handleOfficeMcpMessage } from '../officeMcp/officeMcpStore.js';
 import { handlePcShellMessage, usePcShells } from '../pcShells/pcShellStore.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
+import { handleSignInMessage } from '../signIn/signInStore.js';
 import { transport } from '../transport/index.js';
 import { onReconnect } from '../transport/onReconnect.js';
 import { handleTutorialMessage } from '../tutorial/tutorialStore.js';
@@ -433,6 +434,7 @@ export function useExtensionMessages(
 
       // Usage bars (usage/usageStore.ts): the bridge's state and the plan usage.
       if (handleUsageMessage(msg)) return;
+      if (handleSignInMessage(msg)) return;
       // The Pixel Office MCP (officeMcp/officeMcpStore.ts): its settings and Intro step.
       if (handleOfficeMcpMessage(msg)) return;
       // The tutorial (tutorial/tutorialStore.ts): its offer, its run, a refused start.

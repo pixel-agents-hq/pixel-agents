@@ -34,6 +34,7 @@ import { retireWorktreesLeftBy } from '../worktreeLeave.js';
 import type { CheckedLaunchAsks } from './launchAsks.js';
 import { inheritedEnv, terminalEnv } from './terminalEnv.js';
 import type { TerminalSession, TerminalSessions } from './terminalSessions.js';
+import { answerTrustPrompt, trustsDirectories } from './trustPrompt.js';
 
 export interface LaunchStandaloneAgentDeps {
   store: AgentStateStore;
@@ -193,6 +194,14 @@ export function launchStandaloneAgent(
   }
 
   admitTerminalAgent(deps, agent, session);
+  // --trust-directories: the CLI's trust question, should this folder raise it, is answered for the user.
+  if (trustsDirectories()) {
+    void answerTrustPrompt(session, provider, () => ptyManager.get(id) === session).then(
+      (answered) => {
+        if (answered) console.log(`[Pixel Agents] Terminal: trusted ${cwd} for agent ${id}`);
+      },
+    );
+  }
   // A fresh session starts with an empty context: a full gauge from the spawn on.
   // A resumed one keeps its gauge, read from its transcript.
   if (!options.resume) clearContextUsage(id, store);
