@@ -4,6 +4,7 @@ import fastifyWebsocket from '@fastify/websocket';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 
+import { agentDirectoryPath } from './agentDirectoryPath.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { CapabilityRegistry } from './capabilities.js';
@@ -372,6 +373,7 @@ function registerWebSocketRoute(
         type: 'agentCreated',
         id,
         directoryName: agent.directoryName,
+        directoryPath: agentDirectoryPath(agent),
         isExternal: agent.isExternal || undefined,
         isTeammate: agent.leadAgentId !== undefined || undefined,
         teammateName: agent.agentName,

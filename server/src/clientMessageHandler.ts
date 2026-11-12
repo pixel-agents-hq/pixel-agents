@@ -3,6 +3,7 @@ import { DEFAULT_WORKSPACE_ID } from '../../core/src/constants.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import { resendAgentActivity } from './agentActivityResend.js';
 import { buildAgentDiagnostics } from './agentDiagnostics.js';
+import { agentDirectoryPath } from './agentDirectoryPath.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './assetLoader.js';
@@ -911,6 +912,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // 6. Existing agents (either just restored, or from VS Code adapter if present)
   const agentIds: number[] = [];
   const directoryNames: Record<number, string> = {};
+  // Only agents with a launch Directory (not agents observed from outside).
+  const directoryPaths: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
   // Only agents outside the default: an absent entry means the default.
   const workspaceIds: Record<number, string> = {};
@@ -925,6 +928,10 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     agentIds.push(id);
     if (agent.directoryName) {
       directoryNames[id] = agent.directoryName;
+    }
+    const directoryPath = agentDirectoryPath(agent);
+    if (directoryPath !== undefined) {
+      directoryPaths[id] = directoryPath;
     }
     if (agent.isExternal) {
       externalAgents[id] = true;
@@ -953,6 +960,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     agents: agentIds,
     agentMeta,
     directoryNames,
+    directoryPaths,
     externalAgents,
     workspaceIds,
     roleNames,

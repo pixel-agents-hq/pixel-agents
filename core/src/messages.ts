@@ -114,6 +114,7 @@ export interface AgentCreated {
   type: 'agentCreated';
   id: number;
   directoryName?: string;
+  directoryPath?: string;
   isExternal?: boolean;
   palette?: number;
   hueShift?: number;
@@ -138,6 +139,7 @@ export interface ExistingAgents {
   agents: number[];
   agentMeta: Record<string, AgentSeatMeta>;
   directoryNames: Record<string, string>;
+  directoryPaths?: Record<string, string>;
   externalAgents: Record<string, boolean>;
   workspaceIds?: Record<string, string>;
   names?: Record<string, string>;

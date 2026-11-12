@@ -228,6 +228,12 @@ components:
           type: integer
         directoryName:
           type: string
+        directoryPath:
+          type: string
+          description: >-
+            Real path of the Directory the agent works in (where it was launched,
+            or will start for a stopped record). Absent for agents observed from
+            outside. Clients compare Directories by this path, never by name.
         isExternal:
           type: boolean
         palette:
@@ -301,6 +307,14 @@ components:
         directoryNames:
           type: object
           description: Map of agent ID (string) to Directory name.
+          additionalProperties:
+            type: string
+        directoryPaths:
+          type: object
+          description: >-
+            Map of agent ID (string) to the real path of the Directory the agent
+            works in (see `agentCreated.directoryPath`). An agent missing from
+            the map has no launch Directory.
           additionalProperties:
             type: string
         externalAgents:

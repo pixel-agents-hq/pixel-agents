@@ -393,6 +393,30 @@ describe('createAgent with workspaceId', () => {
     });
   });
 
+  describe('agent Directory path on the wire', () => {
+    it('two stopped agents in same-named folders of different Workspaces each report their own path', () => {
+      const other = h.workspace('beta');
+      const sameName = path.join(other.dir, 'master');
+      const mine = path.join(ws.dir, 'master');
+      fs.mkdirSync(sameName);
+      fs.mkdirSync(mine);
+      h.send({ type: 'createAgent', workspaceId: other.id, directoryPath: sameName });
+      h.send({ type: 'createAgent', workspaceId: ws.id, directoryPath: mine });
+
+      const existing = h
+        .send({ type: 'webviewReady' })
+        .find((m) => m.type === 'existingAgents') as unknown as {
+        directoryNames: Record<string, string>;
+        directoryPaths: Record<string, string>;
+      };
+
+      expect(Object.values(existing.directoryNames)).toEqual(['master', 'master']);
+      expect(Object.values(existing.directoryPaths).sort()).toEqual(
+        [fs.realpathSync(sameName), fs.realpathSync(mine)].sort(),
+      );
+    });
+  });
+
   describe('without workspaceId', () => {
     it('is unchanged: an existing Directory, no KB folder, no Workspace write', () => {
       const pathsBefore = directoryPathsOf(ws.id);

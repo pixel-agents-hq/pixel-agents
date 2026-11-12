@@ -63,7 +63,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     teamUtils.ts                     isInlineTeammateOf, getInlineTeammates, hasInlineTeammates
     types.ts                         ServerAgentState
     constants.ts                     All timing/scanning constants
-  __tests__/                         28 Vitest files
+  __tests__/                         95 Vitest files
   manual-hook-events.http            Manual hook testing helper (REST-Client format)
 
 adapters/vscode/                     VS Code surface — composes core + server
@@ -239,8 +239,8 @@ Adding a new CLI integration is one subdirectory under `server/src/providers/hoo
 
 `core/asyncapi.yaml` is the contract. Pinned to **3.0.0** because `@asyncapi/modelina@5.10.1` declares `supportedVersions: ['3.0.0']` only; bumping to 3.1.0 produces `export type Root = any`. Revisit when Modelina ships 3.1.0 support.
 
-- **39 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + context usage, assets, access (`officeAccess` — sent first on `webviewReady`; `readOnly` hides every control a read-only office would only have refused), settings (`bypassPermissionsUpdated` — the skip-permissions posture, broadcast to every office on change because every launch reads it) + directories (`directoriesLoaded`, `directorySaved` — a save's ack to its sender, carrying the entry as stored, whose name keys the Area mapping; `directoryRejected`, `directorySuggestions`), terminal, diagnostics.
-- **27 ClientMessage variants** (client → server): lifecycle (`webviewReady`, `launchAgent`, `focusAgent`, `closeAgent`), layout (`saveAgentSeats`, `saveLayout`, `exportLayout`, `importLayout`), settings (`setSoundEnabled`, `setHooksEnabled`, `setWatchAllSessions`, `setAlwaysShowLabels`, `setHooksInfoShown`, `setLastSeenVersion`, `setBypassPermissions`, `setShowHostDirectories` — whether the host's own Directories are listed, off by default; only the list is gated, launches still name agents after them), directories (`saveDirectory`, `removeDirectory`, `requestDirectorySuggestions`), terminal, discovery + assets, diagnostics.
+- **52 ServerMessage variants** (server → client): agent lifecycle, agent activity, sub-agent activity, team + context usage, assets, settings (`settingsLoaded`, `bypassPermissionsUpdated` — the skip-permissions posture, broadcast to every office on change because every launch reads it, `hooksStatus`, `hooksConsentRequest`), Directories (`directoriesLoaded`, `directorySaved` — a save's ack to its sender, carrying the entry as stored, whose name keys the Area mapping; `directoryRejected`, `directorySuggestions`), Workspaces (`workspacesLoaded`, `workspaceRejected`, `agentWorkspaceChanged`), KB Writer / curators (`curatorsLoaded`, `workspaceCuratorChanged`, `curatorBindingChanged`, `curatorRejected`), write guard (`agentGuardStatus`), Roles (`rolesAvailable`, `rolePreview`, `roleConfirmed`, `roleRejected`), KB browsing (`kbFilesListed`, `kbFileRead`, `kbRejected`), terminal (`terminalAvailability`, `terminalSessionOpened`, `terminalSessionClosed`). `agentCreated.directoryPath` / `existingAgents.directoryPaths` carry the real path of the Directory an agent works in (absent for agents observed from outside); clients compare Directories by this path, never by name.
+- **39 ClientMessage variants** (client → server): lifecycle (`webviewReady`, `launchAgent`, `createAgent`, `startAgent`, `focusAgent`, `closeAgent`), layout (`saveAgentSeats`, `saveLayout`, `exportLayout`, `importLayout`), settings (`setSoundEnabled`, `setHooksEnabled`, `hooksConsentResponse`, `setWatchAllSessions`, `setAlwaysShowLabels`, `setGhostHeadlessAgents`, `setHooksInfoShown`, `setLastSeenVersion`, `setShowAreas`, `setBypassPermissions`, `setShowHostDirectories` — whether the host's own Directories are listed, off by default; only the list is gated, launches still name agents after them), Directories (`saveDirectory`, `removeDirectory`, `requestDirectorySuggestions`), Workspaces (`saveWorkspace`, `removeWorkspace`, `setWorkspaceRoot`, `setWorkspacePermissionRoles`, `setWorkspaceCurator`, `unsetWorkspaceCurator`), Roles (`requestRoles`, `requestRolePreview`, `confirmRole`), KB browsing (`listKbFiles`, `readKbFile`), assets (`addExternalAssetDirectory`, `removeExternalAssetDirectory`, `saveAreaMappings`), `openSessionsFolder`.
 
 Both unions use `oneOf` with `discriminator: type`. Every concrete message sets `additionalProperties: false`.
 
@@ -308,16 +308,9 @@ Teammate dismissal is driven by team config polling (`getTeamMembers(teamName)` 
 
 ```typescript
 export class AgentRuntime {
-  constructor(opts: {
-    store: AgentStateStore;
-    providerRegistry: ProviderRegistry;
-    layoutPersistence: LayoutPersistence;
-    assetCache: AssetCache;
-    config: Pick<AdapterSettings, 'hooksEnabled' | 'watchAllSessions'>;
-    terminalAdapter?: TerminalAdapter;
-    callbacks: RuntimeLifecycleCallbacks;
-  });
-  registerAgent / unregisterAgent / removeAgent / removeTeammate / removeTeammates
+  constructor(store: AgentStateStore, provider: HookProvider);
+  setLifecycleCallbacks(callbacks: RuntimeLifecycleCallbacks): void;
+  registerAgent / unregisterAgent / removeAgent / closeAgent / removeTeammate / removeTeammates
   restoreExternalAgents / handleHookEvent
   startProjectScan / startExternalScanning / startStaleCheck
   dispose();
@@ -345,18 +338,19 @@ Fastify v5 with `@fastify/cors`, `@fastify/websocket`, and (in standalone) `@fas
 | GET    | `/ws`                    | Bidirectional protocol channel          |
 | GET    | `/*` (standalone only)   | Webview SPA via `@fastify/static`       |
 
-`/ws` is gated in **two tiers**, because messages over this socket launch shells, grant durable machine-wide hook consent, and rewrite persisted state.
+`/ws` and `/terminal/:agentId` are gated by origin only in standalone (messages over `/ws` launch shells and rewrite persisted state, so the gate is the only thing between a web page the user visits and that channel). There is no server token on the standalone sockets, no read-only tier and no per-message privilege: every accepted connection may send every `ClientMessage`.
 
-1. **Connection** (`isAllowedWebSocketOrigin`): embedded requires the Bearer token; standalone requires a same-origin handshake. A missing Origin still connects (non-browser clients send none). This tier is weak by design — a DNS-rebound page sends `Origin` and `Host` as the same attacker-chosen name and IS accepted (`httpServerWs.test.ts` pins that).
-2. **Privileged messages** (`standaloneTokenValid`, `ClientMessageContext.privileged`): proved by an out-of-band secret — embedded via its Bearer token, standalone via the server token in the `/ws` `?token=` query, which the CLI prints in the local URL and the SPA forwards (`webview-ui/src/transport/index.ts`). **Never a network position**: peer address, `Host` and `Origin` all ride the channel a proxy speaks, so a LAN-bound forwarder piping bytes to 127.0.0.1 satisfies all three. The token is a replayable bearer capability, not evidence of locality — it reaches browser history (Fastify's request log redacts it, `wsAuth.redactTokenQuery`), so the printed URL is documented to the user as a secret. Standalone persists it in `~/.pixel-agents/standalone-token` (0600) so a bookmarked URL survives restarts; `--rotate-token` replaces it (revoking every device at once; refused while another standalone server is running, since it would keep honouring the old one). The terminal socket (`/terminal/:agentId`) carries it the same way and both sockets decide privilege with ONE predicate, `wsAuth.standaloneHandshakeVerdict`: the token AND an allowed `Host` — loopback, a specific `--host`, or a name passed with `--allowed-host` (anti-DNS-rebinding defence in depth). The allowlist is explicit rather than "loopback when loopback-bound" because a reverse proxy (Tailscale Serve) forwards to 127.0.0.1 under its public name; a loopback-only rule forced `--host 0.0.0.0`, exposing the port and the token in transit to the LAN. **An unprivileged client is read-only**: it may load and watch the office (`webviewReady`) and NOTHING else — every other message is refused by one gate at the top of `handleClientMessage` (`refuseReadOnly`), so a new message type is privileged by default. Where the UI updates optimistically (settings toggles, hooks toggle, asset directories, area mappings), the refused client is re-sent the real state. A tokened connection under an unlisted Host is read-only too and logs the `--allowed-host` hint. A second standalone launch reuses a running server only when its access matches (`ServerConfig.standalone`: terminal on/off, bind host, allowed hosts) — otherwise `--no-terminal` would silently attach to a server with a shell.
+- **Standalone** (`isAllowedWebSocketOrigin`, `wsAuth.ts`): the handshake's `Origin` host must equal the request's `Host`, else the socket closes with 4003. A missing Origin still connects (non-browser clients send none). The check is weak by design — a DNS-rebound page sends `Origin` and `Host` as the same attacker-chosen name and IS accepted (`httpServerWs.test.ts` pins that). `/terminal/:agentId` applies the same check, then closes with 4004 when the agent has no PTY (it only attaches, never starts one). The server binds `127.0.0.1` unless `--host` says otherwise. A dev proxy (Vite) must keep `changeOrigin: false` so `Origin` and `Host` stay equal.
+- **Embedded** (VS Code): `/ws` requires `Authorization: Bearer <token>`, else closes with 4001.
+- **Bearer token** (`bearerTokenValid`): `crypto.randomUUID()` per server start, kept in `server.json`; it authenticates hook ingress (`POST /api/hooks/:providerId`), the write-guard verdict endpoint and the embedded `/ws`. A second standalone launch reuses a running standalone server only when its access matches (terminal on/off, bind host; `sameStandaloneAccess`), otherwise it starts its own.
 
 The **hooks preference is persisted only after the install/uninstall settled and the on-disk result agrees** — writing it first strands the user when an uninstall fails: entries still firing, but a persisted hooks-off makes the next startup skip the consent/install path entirely.
 
-Server discovery written to `~/.pixel-agents/server.json` with `{ port, pid, authToken }`. Multi-window safe: a second server detects an existing `server.json` and reuses or replaces it based on PID liveness.
+Server discovery written to `~/.pixel-agents/server.json` with `{ port, pid, token, startedAt, servesSpa, protocol, standalone? }`. Multi-window safe: a second server detects an existing `server.json` and reuses or replaces it based on PID liveness.
 
 ### ClientMessageHandler
 
-Single dispatch point for `ClientMessage`. Each variant calls into `AgentRuntime`, `AgentStateStore`, `LayoutPersistence`, or `FileStateAdapter`, or delegates to host-specific callbacks (`onLaunchAgent`, `onOpenSessionsFolder`, `onExportLayout`, `onImportLayout`, `onSetHooksEnabled`). Both surfaces wire the same handler.
+Dispatch point for `ClientMessage` on the standalone `/ws` (`httpServer.ts` calls it per message). Each variant calls into `AgentRuntime`, `AgentStateStore`, the layout file functions (`layoutPersistence.ts`), `FileStateAdapter`, or the Workspace / Directory / Role / KB modules, or delegates to the side effects its context carries (`onSetHooksEnabled`, `onReloadAssets`). The VS Code adapter handles its webview messages in `PixelAgentsViewProvider` (`onDidReceiveMessage`) and does not use this handler.
 
 ### ServerAgentState (server/src/types.ts)
 
@@ -370,7 +364,7 @@ Per-agent runtime data: provider reference, session key, transcript-fallback fie
   vscode-state.json        { agents, seats }
   standalone-state.json    { agents, seats }
   layout.json              OfficeLayout (shared across surfaces)
-  server.json              { port, pid, authToken }
+  server.json              { port, pid, token, startedAt, servesSpa, protocol, standalone? }
   hooks/claude-hook.js     Bundled hook script (CJS, shebang)
 ```
 
@@ -462,7 +456,7 @@ Toggle via "Layout" button. Tools: SELECT (default), Floor paint, Wall paint, Er
 
 ## Asset System
 
-**Loading**: `esbuild.js` copies `webview-ui/public/assets/` → `dist/assets/`. Loader checks bundled path first, falls back to workspace root. PNG → pngjs → SpriteData (2D hex array, alpha≥2 = visible, `#RRGGBBAA` for semi-transparent). `loadDefaultLayout()` reads `assets/default-layout.json` as fallback for new workspaces.
+**Loading**: `esbuild.js` copies `webview-ui/public/assets/` → `dist/assets/`. Loader checks bundled path first, falls back to workspace root. PNG → pngjs → SpriteData (2D hex array, alpha≥2 = visible, `#RRGGBBAA` for semi-transparent). `loadDefaultLayout()` reads the highest-revision `assets/default-layout-{N}.json` (falling back to `assets/default-layout.json`) for new workspaces.
 
 **Catalog**: `furniture-catalog.json` with `id, name, label, category, footprint, isDesk, canPlaceOnWalls, groupId?, orientation?, state?, canPlaceOnSurfaces?, backgroundTiles?`. String-based type system. Categories: desks, chairs, storage, electronics, decor, wall, misc. Wall-placeable items use the `wall` category and appear in a dedicated "Wall" tab. Asset naming convention: `{BASE}[_{ORIENTATION}][_{STATE}]` (e.g., `MONITOR_FRONT_OFF`).
 
@@ -658,19 +652,9 @@ Use `console.log`/`error`/`warn` with prefixed context:
 
 If `cwd` is outside the current workspace, enable **Watch All Sessions** first.
 
-## Asset Pipeline (legacy tileset import)
+## Asset Tools
 
-7-stage pipeline in `scripts/` for importing third-party tilesets (the bundled assets don't need this):
-
-1. `0-import-tileset.ts` — Interactive CLI wrapper
-2. `1-detect-assets.ts` — Flood-fill asset detection
-3. `2-asset-editor.html` — Browser UI for position/bounds editing
-4. `3-vision-inspect.ts` — Claude vision auto-metadata
-5. `4-review-metadata.html` — Browser UI for metadata review
-6. `5-export-assets.ts` — Export PNGs + `furniture-catalog.json`
-7. `asset-manager.html` — Unified editor (stages 2+4 combined), Save/Save As via File System Access API
-
-Supporting: `wall-tile-editor.html` (wall sprite editing), `jsonl-viewer.html` (transcript inspector).
+Browser tools in `scripts/` for editing bundled assets: `asset-manager.html` (unified furniture editor — positions and metadata, Save/Save As via File System Access API), `wall-tile-editor.html` (wall sprite editing), `jsonl-viewer.html` (transcript inspector).
 
 ## Key Decisions
 
