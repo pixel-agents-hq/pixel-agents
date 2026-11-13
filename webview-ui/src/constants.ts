@@ -303,7 +303,7 @@ export const INTRO_DIALOG_BOTTOM_PX = 72;
 export const INTRO_DIALOG_MENU_GAP_PX = 10;
 /** The dialog box's height (CSS px) as the Intro's camera counts it: fixed, so
  *  the camera never moves with what the dialog shows. */
-export const INTRO_DIALOG_CAMERA_BOX_PX = 80;
+export const INTRO_DIALOG_CAMERA_BOX_PX = 122;
 /** ms per letter as the greeter's line types out. */
 export const INTRO_DIALOG_TYPE_MS = 22;
 /** How much one message of the dialog may hold: this many rows of text, at
@@ -312,7 +312,7 @@ export const INTRO_DIALOG_TYPE_MS = 22;
  *  narrow panel gets taller messages rather than one word each. */
 export const INTRO_DIALOG_ROWS = 2;
 export const INTRO_DIALOG_LETTER_PX = 8;
-export const INTRO_DIALOG_PADDING_X_PX = 58;
+export const INTRO_DIALOG_PADDING_X_PX = 32;
 export const INTRO_DIALOG_MIN_LETTERS = 60;
 /** Where the Intro's Claude Code step sends people who don't have it yet. */
 export const CLAUDE_CODE_URL = 'https://claude.com/claude-code';

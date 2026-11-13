@@ -12,7 +12,7 @@ interface TutorialAskProps {
   /** Inside the Intro's closing step the way out reads "Let's Go"; alone
    *  (Settings → Play the Tutorial) "Not Now". */
   embedded: boolean;
-  /** What the greeter says: the headline, then the server's copy. */
+  /** What the greeter says: the server's headline. */
   say: Say;
   /** Options of the step's own, listed after the ask's (the Intro's Discord link). */
   moreOptions?: ReactNode;
@@ -23,8 +23,7 @@ interface TutorialAskProps {
 }
 
 /**
- * The tutorial's ask, one step: the server's copy (it starts a Claude Code
- * session), spoken by the greeter in the Intro's dialog (`say`), and this, its
+ * The tutorial's ask, one step: the server's headline, spoken by the greeter in the Intro's dialog (`say`), and this, its
  * menu: Show Me Around, then the wait for the Guide's run. IntroDialog
  * supplies the boxes and the close x. The flow is tutorialOffer.ts.
  */
@@ -62,9 +61,7 @@ export function TutorialAsk({
     say,
     failed
       ? ["Sorry, I can't show you around just now! Try Settings → Play the Tutorial later."]
-      : blocked
-        ? [status.headline]
-        : [status.headline, status.disclosure],
+      : [status.headline],
   );
 
   return (

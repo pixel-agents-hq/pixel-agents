@@ -7,7 +7,9 @@ spends the user's plan and gives an AI session reach into their office, so it is
 its own, apart from the consent step, in the server's words ("Want me to show you around?":
 a real session, the plan, auto mode, how to stop it), right on the closing step beside Let's Go.
 It was first a separate step after an offer; one step with the terms in full proved enough and
-kept the Intro short. Nothing launches before `startTutorial`, and only an office's privileged
+kept the Intro short. Later (2026-11-13) the ask was cut to its headline alone at the
+maintainer's call: the terms are still sent (`tutorialStatus.disclosure`) but no longer said.
+Nothing launches before `startTutorial`, and only an office's privileged
 connection can send it. Let's Go ends the Intro as before.
 
 ## The tour is the Guide's conversation, driven by a session-only skill

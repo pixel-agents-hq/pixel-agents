@@ -251,34 +251,35 @@ test.describe('Hooks consent gate', () => {
     narrator.check('Settings shows Instant Detection OFF — the checkbox tells the truth');
   });
 
-  // Aborting the tour WITHOUT choosing. The close x (and Escape, which shares its
-  // close path) ends the tour from any step and SENDS nothing — there is no
-  // message whose mishandling could turn it into an approval. An abort must
-  // NOT behave like leaving the box off: the difference is whether the user
-  // is ever asked again, and an abort that silently
-  // persisted hooks-off would strand them with the gate skipped forever. The
-  // whole Intro simply returns on the next open.
-  test('the close x aborts the tour and writes nothing @area:cross-cutting', async ({
+  // The tour cannot be closed WITHOUT choosing: it has no close x, and Escape
+  // does nothing. Leaving it unanswered SENDS nothing — there is no message
+  // whose mishandling could turn it into an approval — and must NOT behave
+  // like leaving the box off: a silently persisted hooks-off would strand the
+  // user with the gate skipped forever.
+  test('the tour has no close and Escape writes nothing @area:cross-cutting', async ({
     pixelAgents,
   }) => {
     const { frame, tmpHome, narrator } = pixelAgents;
 
     const dialog = await openConsentDialog(frame);
-    // The x is on every step — here, mid-tour, past the welcome.
+    // Mid-tour, past the welcome.
     expect(await readIntro(dialog)).toMatch(/Pick what to turn on|only support Claude Code/);
 
-    narrator.step('aborting the tour with the x — no choice made');
-    await dialog.getByRole('button', { name: 'Close' }).click();
-    await expect(dialog).toBeHidden({ timeout: 15_000 });
+    narrator.step('pressing Escape — no choice made');
+    await expect(dialog.getByRole('button', { name: 'Close' })).toHaveCount(0);
+    await frame.page().keyboard.press('Escape');
 
     // Settle: an install, had it happened, would land well inside this window.
     await frame.page().waitForTimeout(3_000);
+    await expect(dialog).toBeVisible();
     expect(fs.existsSync(settingsPath(tmpHome))).toBe(false);
     expect(readConsent(tmpHome)).toBe(false);
     // The load-bearing half: an abort must NOT persist hooks-off, or the next
     // open skips the gate and the user is never asked again.
     expect(readHooksEnabled(tmpHome)).not.toBe(false);
-    narrator.check('settings.json never created, consent ungranted, hooks-off not persisted');
+    narrator.check(
+      'the tour still up, settings.json never created, consent ungranted, hooks-off not persisted',
+    );
   });
 
   // Change of mind, the honest kind: Live updates lands the hooks, Back re-opens
@@ -373,8 +374,8 @@ test.describe('Hooks consent gate', () => {
   });
 
   // A stray click on the office around the bubble must not read as an answer —
-  // OR as an abort. This is a decision surface: only the bubble's own buttons
-  // and Escape do anything at all. The office is live behind the tour (that is
+  // OR as an abort. This is a decision surface: only the dialog's own buttons
+  // do anything at all. The office is live behind the tour (that is
   // the point of the diegetic bubble), so the most common accidental gesture —
   // clicking somewhere in the office — must leave the tour exactly where it was.
   test('clicking the office around the bubble neither answers nor dismisses @area:cross-cutting', async ({

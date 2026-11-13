@@ -53,11 +53,9 @@ test.describe('Standalone / Tutorial', () => {
 
     const dialog = page.getByRole('dialog');
     await introToClosing(dialog);
-    // The closing step's ask says plainly what yes does, and nothing has launched yet.
+    // The closing step asks, and nothing has launched yet.
     const said = await readIntro(dialog);
     expect(said).toContain('Want me to show you around?');
-    expect(said).toContain('real Claude Code session');
-    expect(said).toContain('Claude plan');
     await expect(dialog.getByTestId('tutorial-offer')).toBeVisible();
     await expect(page.getByTitle(/Tutorial/)).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Show Me Around' }).click();

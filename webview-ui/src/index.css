@@ -759,19 +759,21 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
-  margin-top: 6px;
 }
 .intro-options-inline:empty,
 .intro-options-inline[hidden] {
   display: none;
 }
-/* The dialog's Back: a still arrow beside its close x. */
-.intro-dialog-back {
-  width: 0;
-  height: 0;
-  border: 5px solid transparent;
-  border-left: 0;
-  border-right: 6px solid currentColor;
+/* The dialog box's foot: Back on the left, the inline options on the right
+   (the Next arrow sits over its right end). Always there, at one height. */
+.intro-dialog-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 28px;
+  margin-top: 4px;
+  cursor: default;
 }
 .intro-options {
   display: flex;

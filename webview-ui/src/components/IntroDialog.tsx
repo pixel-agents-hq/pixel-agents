@@ -70,7 +70,9 @@ interface IntroDialogProps {
    *  moves on. Does NOT close the tour — the caller must keep this component
    *  mounted after a choice so the closing step can show. */
   onChoice: (choice: ConsentChoice) => void;
-  /** Every way the tour ends: the X, Escape, or Let's Go. Sends NOTHING by
+  /** Every way the tour ends: Let's Go, the tutorial's start, or, for the
+   *  tutorial's ask alone, Not Now and Escape (the first-run tour has no
+   *  close of its own). Sends NOTHING by
    *  itself — an unanswered consent step changes nothing and the whole Intro
    *  returns the next time the office is opened. */
   onClose: () => void;
@@ -134,15 +136,14 @@ const CHOICE_LABELS: Record<IntroChoiceId, string> = {
  * last message is out: its options stacked in one box at the right edge
  * (IntroOptions), or, where the step shows something over the dialog (the
  * choices' cards in a row, the sign-in's code bar), in the dialog box under
- * the words. Back is the box's own, an arrow beside its x: the message
+ * the words. Back is the box's own, at its foot: the message
  * before, then the step before.
  * The menus that know what to say (IntroSignIn, TutorialAsk) hand their lines
- * up through `say`. Mounting spawns the greeter; EVERY close path — the X,
- * Escape, Let's Go, or a hooksStatus that moots an unanswered ask — unmounts
+ * up through `say`. Mounting spawns the greeter; EVERY close path — Let's Go, the tutorial's start, or a hooksStatus that moots an unanswered ask — unmounts
  * this component, and the unmount despawns the greeter, so the two can never
  * disagree.
  *
- * Fail-closed by construction: only the choices step's Continue sends anything. The X and Escape close without sending, so an unanswered ask
+ * Fail-closed by construction: only the choices step's Continue sends anything. The tour has no close of its own (no x, no Escape), and a reload sends nothing, so an unanswered ask
  * changes nothing and reappears on the next open. Clicks on the office around
  * the dialog are deliberately inert — the consent step is a decision surface,
  * and a stray click must not read as an answer.
@@ -307,14 +308,18 @@ export function IntroDialog({
     officeState.setGreeterPalette(palette);
   }, [officeState, palette]);
 
+  // The first-run tour cannot be closed: it ends on Let's Go (or the
+  // tutorial's start). Only the tutorial's ask opened from Settings, which
+  // has Not Now, also closes on Escape.
+  const closable = !hooksAsk && !mcpAsk;
   useEffect(() => {
-    if (escapeSuppressed) return;
+    if (escapeSuppressed || !closable) return;
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose, escapeSuppressed]);
+  }, [onClose, escapeSuppressed, closable]);
 
   // Per-frame tick: feed the camera target. It is one fixed point (the spot
   // the greeter appears on, over the dialog box at its plain height), so the
@@ -448,7 +453,7 @@ export function IntroDialog({
     return () => clearTimeout(id);
   }, [typing, letters, text, greeterReady]);
 
-  // Back, the arrow beside the box's x: the message before this one, shown
+  // Back, at the box's foot: the message before this one, shown
   // whole; from a step's first, the step before, on its last (where its menu
   // is). A sign-in step that has nothing left to ask is passed over. Not
   // offered while something sent is still settling.
@@ -627,51 +632,28 @@ export function IntroDialog({
           keeps its space, so the box never grows while a message types. */}
       <div
         data-testid="intro-dialog"
-        className={`intro-dialog-box relative w-full shrink-0 py-8 pl-14 pr-40 ${canAdvance ? 'cursor-pointer' : ''}`}
+        className={`intro-dialog-box relative w-full shrink-0 pt-8 pb-6 px-14 ${canAdvance ? 'cursor-pointer' : ''}`}
         onClick={canAdvance ? advance : undefined}
       >
-        {/* Same close control as the Settings/changelog modals (ui/Modal.tsx):
-            ghost icon button, plain lowercase x. */}
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Close"
-          className="absolute top-2 right-2"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-        >
-          x
-        </Button>
-        {canGoBack && (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Back"
-            title="Back"
-            className="absolute top-2 right-20"
-            onClick={(e) => {
-              e.stopPropagation();
-              back();
-            }}
-          >
-            <span aria-hidden className="intro-dialog-back" />
-          </Button>
-        )}
         <p className="intro-dialog-text m-0" aria-live="polite" aria-label={text}>
           <span aria-hidden>
             {text.slice(0, letters)}
             <span className="invisible">{text.slice(letters)}</span>
           </span>
         </p>
-        {/* The step's options, where its menu puts them in the box (IntroOptions `inline`). */}
-        <div
-          ref={setOptionsSlot}
-          hidden={!menuShown}
-          className="intro-options-inline"
-          onClick={(e) => e.stopPropagation()}
-        />
+        {/* The box's foot, always there so the box keeps its height: Back on
+            the left, and on the right the step's options where its menu puts
+            them in the box (IntroOptions `inline`), else the Next arrow. */}
+        <div className="intro-dialog-foot" onClick={(e) => e.stopPropagation()}>
+          {canGoBack ? (
+            <Button variant="ghost" size="sm" icon="prev" className="py-2! pl-0!" onClick={back}>
+              Back
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div ref={setOptionsSlot} hidden={!menuShown} className="intro-options-inline" />
+        </div>
         {canAdvance && (
           <button
             type="button"
