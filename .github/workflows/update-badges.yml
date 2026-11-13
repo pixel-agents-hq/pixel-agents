@@ -94,7 +94,7 @@ jobs:
           echo "message=$MSG" >> "$GITHUB_OUTPUT"
 
       - name: Update version badge in gist
-        uses: schneegans/dynamic-badges-action@v1.8.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
           gistID: ${{ secrets.GIST_ID }}
@@ -106,7 +106,7 @@ jobs:
           logoColor: white
 
       - name: Update installs badge in gist
-        uses: schneegans/dynamic-badges-action@v1.8.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
           gistID: ${{ secrets.GIST_ID }}
@@ -116,7 +116,7 @@ jobs:
           color: '0183ff'
 
       - name: Update npm downloads badge in gist
-        uses: schneegans/dynamic-badges-action@v1.8.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
           gistID: ${{ secrets.GIST_ID }}
