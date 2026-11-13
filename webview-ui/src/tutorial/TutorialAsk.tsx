@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useReducer, useRef } from 'react';
+import { useEffect, useReducer, useRef } from 'react';
 
 import type { TutorialStatus } from '../../../core/src/messages.js';
 import { IntroOption, IntroOptions, IntroPanel } from '../components/IntroOptions.js';
@@ -14,8 +14,6 @@ interface TutorialAskProps {
   embedded: boolean;
   /** What the greeter says: the server's headline. */
   say: Say;
-  /** Options of the step's own, listed after the ask's (the Intro's Discord link). */
-  moreOptions?: ReactNode;
   /** The no: Let's Go / Not Now. */
   onDecline: () => void;
   /** Close, and a started run. */
@@ -34,7 +32,6 @@ export function TutorialAsk({
   rejected,
   embedded,
   say,
-  moreOptions,
   onDecline,
   onClose,
   onStart,
@@ -108,7 +105,6 @@ export function TutorialAsk({
             </IntroOption>
           </>
         )}
-        {moreOptions}
       </IntroOptions>
     </>
   );

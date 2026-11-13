@@ -309,7 +309,7 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/standalone/terminal.spec.ts:365` — a file dropped on the terminal is saved on the host and its path pasted in; one already on the host is not copied (Standalone / terminal)
 - `e2e/standalone/terminal.spec.ts:424` — --no-terminal keeps the office watch-only: launch disabled, hook-driven agents still render (Standalone / terminal disabled)
 - `e2e/standalone/tutorial.spec.ts:39` — the closing step asks; the greeter sits and becomes the Guide, with a card and a terminal; quests skip in any order, and the finished checklist goes (Standalone / Tutorial)
-- `e2e/standalone/tutorial.spec.ts:116` — Let's Go ends the Intro as before, launching nothing (Standalone / Tutorial)
+- `e2e/standalone/tutorial.spec.ts:117` — Let's Go ends the Intro as before, launching nothing (Standalone / Tutorial)
 - `e2e/standalone/ui.spec.ts:27` — closeAgent despawns the character (Standalone / UI)
 - `e2e/standalone/ui.spec.ts:61` — Debug View renders JSONL diagnostics in standalone (Standalone / UI)
 - `e2e/standalone/ui.spec.ts:95` — adding an external asset directory triggers a live asset reload (Standalone / UI)

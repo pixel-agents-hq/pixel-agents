@@ -62,6 +62,22 @@ export async function readIntro(dialog: Locator, timeoutMs = 30_000): Promise<st
 }
 
 /**
+ * The closing step, read up to its last menu: past the Discord invite (its
+ * Next) to the tutorial's ask where one is offered, else the invite's own
+ * (Let's Go). Returns what was said on the way.
+ */
+export async function readIntroClosing(dialog: Locator): Promise<string> {
+  let said = await readIntro(dialog);
+  const next = dialog.getByTestId('intro-invite').getByRole('button', { name: 'Next' });
+  if (await next.isVisible()) {
+    await next.click();
+    await expect(dialog.getByTestId('tutorial-offer')).toBeVisible();
+    said += ' ' + (await readIntro(dialog));
+  }
+  return said;
+}
+
+/**
  * Press the dialog's Back (the message before, then the step before) until
  * `target` shows.
  */
@@ -125,7 +141,7 @@ export async function finishIntro(dialog: Locator, picks: IntroPicks = {}): Prom
   await expect(closing.or(choices)).toBeVisible();
   if (await choices.isVisible()) await chooseInIntro(dialog, picks);
   await expect(dialog).toContainText("You're all set!");
-  await readIntro(dialog);
+  await readIntroClosing(dialog);
   await dialog.getByRole('button', { name: "Let's Go" }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
 }

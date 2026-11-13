@@ -23,7 +23,7 @@ export function toMajorMinor(version: string): string {
 
 export const CHANGELOG_REPO_URL = 'https://github.com/pixel-agents-hq/pixel-agents';
 
-export const DISCORD_INVITE_URL = 'https://discord.gg/Yk7jXebv9H';
+export { DISCORD_INVITE_URL } from '../../core/src/constants.js';
 
 export const changelogEntries: ChangelogEntry[] = [
   {

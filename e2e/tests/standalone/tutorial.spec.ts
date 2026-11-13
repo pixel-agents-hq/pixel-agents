@@ -1,7 +1,7 @@
 import type { Locator } from '@playwright/test';
 
 import { expect, test } from '../../fixtures/standalone';
-import { chooseInIntro, readIntro } from '../../helpers/intro';
+import { chooseInIntro, readIntroClosing } from '../../helpers/intro';
 import { arrangeNextClaudeInvocation, claudeScenario } from '../../helpers/mock-claude';
 
 /**
@@ -54,7 +54,8 @@ test.describe('Standalone / Tutorial', () => {
     const dialog = page.getByRole('dialog');
     await introToClosing(dialog);
     // The closing step asks, and nothing has launched yet.
-    const said = await readIntro(dialog);
+    const said = await readIntroClosing(dialog);
+    expect(said).toContain('Come hang out in our Discord.');
     expect(said).toContain('Want me to show you around?');
     await expect(dialog.getByTestId('tutorial-offer')).toBeVisible();
     await expect(page.getByTitle(/Tutorial/)).toHaveCount(0);
@@ -119,7 +120,7 @@ test.describe('Standalone / Tutorial', () => {
   }) => {
     const dialog = page.getByRole('dialog');
     await introToClosing(dialog);
-    await readIntro(dialog);
+    await readIntroClosing(dialog);
     await expect(dialog.getByTestId('tutorial-offer')).toBeVisible();
     await dialog.getByRole('button', { name: "Let's Go" }).click();
     await expect(dialog).toBeHidden({ timeout: 15_000 });

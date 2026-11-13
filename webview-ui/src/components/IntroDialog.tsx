@@ -208,6 +208,8 @@ export function IntroDialog({
   };
   // Let's Go was pressed: the greeter says goodbye, then the tour ends.
   const [farewell, setFarewell] = useState(false);
+  // The closing step's Discord invite was read on from: the tutorial's ask is up.
+  const [invited, setInvited] = useState(false);
   // The sign-in step: asked of the server as the tour opens, and part of the
   // tour from the first answer that says the CLI holds no login (kept once
   // shown, so Back finds it).
@@ -383,6 +385,9 @@ export function IntroDialog({
   const say = useCallback((lines: readonly string[]) => setMenuSpeech({ step, lines }), [step]);
   const spoken = menuSpeech?.step === step ? menuSpeech.lines : [];
 
+  // The closing step's second part: the invite read, the tutorial's ask up.
+  const asking = step === 'closing' && invited && offerTutorial && !!tutorial.status;
+
   const titles: Record<StepId, string> = {
     welcome: 'Welcome to Pixel Agents!',
     claudeCode: 'First, get Claude Code',
@@ -406,7 +411,7 @@ export function IntroDialog({
           ]
         : step === 'choices'
           ? ['Pick what to turn on. You can change any of these later in Settings.']
-          : step === 'closing'
+          : step === 'closing' && !asking
             ? [
                 ...(installFailed
                   ? [
@@ -414,9 +419,7 @@ export function IntroDialog({
                       'The office will watch your sessions the slower way instead. Everything still works, and you can retry any time from Settings!',
                     ]
                   : ["You're all set!"]),
-                ...(offerTutorial
-                  ? spoken
-                  : ['Questions, ideas, or pixel art to show off? Come hang out in our Discord.']),
+                'Questions, ideas, or pixel art to show off? Come hang out in our Discord.',
               ]
             : spoken;
 
@@ -471,7 +474,7 @@ export function IntroDialog({
       before === steps.indexOf('signIn') && signIn.status?.signedIn === true ? before - 1 : before
     ];
   const canGoBack =
-    (page > 0 || stepBefore !== undefined) &&
+    (page > 0 || asking || stepBefore !== undefined) &&
     !applying &&
     !tutorialStartSent &&
     !leavingInstall &&
@@ -479,7 +482,11 @@ export function IntroDialog({
   const back = (): void => {
     setShownWhole(true);
     if (page > 0) setPlace({ key: speechKey, page: page - 1 });
-    else if (stepBefore) {
+    else if (asking) {
+      // From the tutorial's ask: the invite, where its menu is.
+      setBackTo(step);
+      setInvited(false);
+    } else if (stepBefore) {
       setBackTo(stepBefore);
       setStep(stepBefore);
     }
@@ -614,24 +621,37 @@ export function IntroDialog({
                 />
               )}
 
-              {/* The tutorial's ask closes the Intro's last step, with its own options. */}
+              {/* The closing step ends on the Discord invite, a message of its
+                  own; where the tutorial is offered, its ask follows. */}
               {step === 'closing' &&
-                (offerTutorial && tutorial.status ? (
+                (asking && tutorial.status ? (
                   <TutorialAsk
                     status={tutorial.status}
                     rejected={tutorial.rejected}
                     embedded
                     say={say}
-                    moreOptions={discord}
                     onDecline={() => setFarewell(true)}
                     onClose={onClose}
                     onStart={startTutorial}
                   />
                 ) : (
-                  <IntroOptions>
-                    <IntroOption kind="primary" onClick={() => setFarewell(true)}>
-                      Let&apos;s Go
-                    </IntroOption>
+                  <IntroOptions data-testid="intro-invite">
+                    {offerTutorial ? (
+                      <IntroOption
+                        kind="primary"
+                        onClick={() => {
+                          setBackTo(null);
+                          setShownWhole(false);
+                          setInvited(true);
+                        }}
+                      >
+                        Next
+                      </IntroOption>
+                    ) : (
+                      <IntroOption kind="primary" onClick={() => setFarewell(true)}>
+                        Let&apos;s Go
+                      </IntroOption>
+                    )}
                     {discord}
                   </IntroOptions>
                 ))}
