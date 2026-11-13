@@ -7,6 +7,7 @@ import { expect, test } from '../../../fixtures/pixel-agents';
 import { ourHookEvents } from '../../../helpers/hooks';
 import {
   advanceIntroToChoices,
+  backInIntro,
   chooseInIntro,
   finishIntro,
   introChoice,
@@ -301,7 +302,7 @@ test.describe('Hooks consent gate', () => {
 
     await expect(dialog).toContainText("You're all set!");
     await readIntro(dialog);
-    await dialog.getByRole('button', { name: 'Back' }).click();
+    await backInIntro(dialog, introChoice(dialog, 'hooks'));
     await expect(introChoice(dialog, 'hooks')).toHaveAttribute('aria-pressed', 'true');
 
     narrator.step('unticking Live updates');
@@ -357,7 +358,7 @@ test.describe('Hooks consent gate', () => {
 
       narrator.step('walking back and unticking Live updates');
       await readIntro(dialog);
-      await dialog.getByRole('button', { name: 'Back' }).click();
+      await backInIntro(dialog, introChoice(dialog, 'hooks'));
       await introChoice(dialog, 'hooks').click();
       await chooseInIntro(dialog);
       await finishIntro(dialog);

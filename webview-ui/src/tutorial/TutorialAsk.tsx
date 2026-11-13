@@ -16,8 +16,6 @@ interface TutorialAskProps {
   say: Say;
   /** Options of the step's own, listed after the ask's (the Intro's Discord link). */
   moreOptions?: ReactNode;
-  /** Back to the Intro's previous step; absent when there is none. */
-  onBack?: () => void;
   /** Every way out: Let's Go / Not Now, Close, and a started run. */
   onClose: () => void;
   /** The yes: the caller sends startTutorial (and readies the terminal to open). */
@@ -36,7 +34,6 @@ export function TutorialAsk({
   embedded,
   say,
   moreOptions,
-  onBack,
   onClose,
   onStart,
 }: TutorialAskProps) {
@@ -86,7 +83,14 @@ export function TutorialAsk({
 
       <IntroOptions data-testid={blocked || failed ? undefined : 'tutorial-offer'}>
         {blocked || failed ? (
-          <IntroOption onClick={onClose}>Close</IntroOption>
+          <>
+            {failed && (
+              <IntroOption kind="primary" onClick={() => dispatch({ kind: 'retry' })}>
+                Try Again
+              </IntroOption>
+            )}
+            <IntroOption onClick={onClose}>Close</IntroOption>
+          </>
         ) : (
           <>
             <IntroOption
@@ -105,11 +109,6 @@ export function TutorialAsk({
           </>
         )}
         {moreOptions}
-        {onBack && !starting && (
-          <IntroOption kind="back" onClick={failed ? () => dispatch({ kind: 'retry' }) : onBack}>
-            Back
-          </IntroOption>
-        )}
       </IntroOptions>
     </>
   );

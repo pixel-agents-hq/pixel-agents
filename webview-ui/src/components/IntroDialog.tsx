@@ -30,6 +30,7 @@ import { DiscordIcon } from './ChangelogModal.js';
 import { type IntroChoiceId, type IntroChoiceOption, IntroChoices } from './IntroChoices.js';
 import { dialogLetterBudget, dialogMessages, introCameraTarget } from './introDialogRules.js';
 import { IntroOption, IntroOptionLink, IntroOptions, IntroPanel } from './IntroOptions.js';
+import { IntroOptionsSlot } from './introOptionsSlot.js';
 import { IntroSignIn } from './IntroSignIn.js';
 import { Button } from './ui/Button.js';
 
@@ -131,8 +132,10 @@ const CHOICE_LABELS: Record<IntroChoiceId, string> = {
  * arrow, Enter or Space finishes the typing, then shows the next message. A
  * step's controls are its menu, above the dialog and shown once the step's
  * last message is out: its options stacked in one box at the right edge
- * (IntroOptions), and over them whatever else it shows (the choices' cards
- * in a row, the sign-in's code bar).
+ * (IntroOptions), or, where the step shows something over the dialog (the
+ * choices' cards in a row, the sign-in's code bar), in the dialog box under
+ * the words. Back is the box's own, an arrow beside its x: the message
+ * before, then the step before.
  * The menus that know what to say (IntroSignIn, TutorialAsk) hand their lines
  * up through `say`. Mounting spawns the greeter; EVERY close path — the X,
  * Escape, Let's Go, or a hooksStatus that moots an unanswered ask — unmounts
@@ -160,6 +163,8 @@ export function IntroDialog({
   tutorial,
 }: IntroDialogProps) {
   const stackRef = useRef<HTMLDivElement>(null);
+  // The foot of the dialog box, where a step's inline options are drawn.
+  const [optionsSlot, setOptionsSlot] = useState<HTMLDivElement | null>(null);
   // The office's width (the messages are cut to the box's) and whether the
   // greeter has finished appearing, both read off the frame tick below.
   const [officeWidth, setOfficeWidth] = useState(0);
@@ -426,8 +431,12 @@ export function IntroDialog({
   const [instant] = useState(
     () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
   );
+  // A message gone back to is shown whole, until the user reads on.
+  const [shownWhole, setShownWhole] = useState(false);
   const [typed, setTyped] = useState({ text: '', letters: 0 });
-  if (typed.text !== text) setTyped({ text, letters: landLast || instant ? text.length : 0 });
+  if (typed.text !== text) {
+    setTyped({ text, letters: landLast || shownWhole || instant ? text.length : 0 });
+  }
   const letters = typed.text === text ? typed.letters : 0;
   const typing = letters < text.length;
   useEffect(() => {
@@ -439,13 +448,24 @@ export function IntroDialog({
     return () => clearTimeout(id);
   }, [typing, letters, text, greeterReady]);
 
+  // Back, the arrow beside the box's x: the message before this one, shown
+  // whole; from a step's first, the step before, on its last (where its menu
+  // is). A sign-in step that has nothing left to ask is passed over. Not
+  // offered while something sent is still settling.
+  const before = stepIndex - 1;
+  const stepBefore =
+    steps[
+      before === steps.indexOf('signIn') && signIn.status?.signedIn === true ? before - 1 : before
+    ];
+  const canGoBack =
+    (page > 0 || stepBefore !== undefined) && !applying && !tutorialStartSent && !leavingInstall;
   const back = (): void => {
-    // A sign-in step that has nothing left to ask is passed over.
-    const before = stepIndex - 1;
-    const skip = steps[before] === 'signIn' && signIn.status?.signedIn === true ? 1 : 0;
-    const to = steps[Math.max(0, before - skip)];
-    setBackTo(to);
-    setStep(to);
+    setShownWhole(true);
+    if (page > 0) setPlace({ key: speechKey, page: page - 1 });
+    else if (stepBefore) {
+      setBackTo(stepBefore);
+      setStep(stepBefore);
+    }
   };
   const forward = (): void => {
     setStep(steps[Math.min(steps.length - 1, stepIndex + 1)]);
@@ -459,6 +479,7 @@ export function IntroDialog({
   const canAdvance = typing || page < last || !hasMenu;
   const advance = (): void => {
     setBackTo(null);
+    setShownWhole(false);
     if (typing) setTyped({ text, letters: text.length });
     else if (page < last) setPlace({ key: speechKey, page: page + 1 });
     else if (!hasMenu && !awaitingSignIn) forward();
@@ -521,97 +542,84 @@ export function IntroDialog({
           edge (IntroOptions); the rest are panels above it. */}
       {step !== 'welcome' && (
         <div hidden={!menuShown} data-testid="intro-menu" className="self-stretch min-h-0">
-          <div className="intro-menu" style={{ gap: INTRO_DIALOG_MENU_GAP_PX }}>
-            {step === 'claudeCode' && (
-              <>
-                <IntroPanel>
-                  <div className="text-sm bg-btn-bg border-2 border-border py-4 px-8 mb-8 select-all">
-                    {CLAUDE_CODE_INSTALL_COMMAND}
-                  </div>
-                  <p className="text-sm m-0">
-                    For more info, visit{' '}
-                    <a
-                      href={CLAUDE_CODE_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-accent-bright hover:text-accent no-underline"
+          <IntroOptionsSlot value={optionsSlot}>
+            <div className="intro-menu" style={{ gap: INTRO_DIALOG_MENU_GAP_PX }}>
+              {step === 'claudeCode' && (
+                <>
+                  <IntroPanel>
+                    <div className="text-sm bg-btn-bg border-2 border-border py-4 px-8 mb-8 select-all">
+                      {CLAUDE_CODE_INSTALL_COMMAND}
+                    </div>
+                    <p className="text-sm m-0">
+                      For more info, visit{' '}
+                      <a
+                        href={CLAUDE_CODE_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-accent-bright hover:text-accent no-underline"
+                      >
+                        claude.com/claude-code
+                      </a>
+                    </p>
+                  </IntroPanel>
+                  <IntroOptions inline>
+                    <IntroOption
+                      kind="primary"
+                      disabled={awaitingSignIn}
+                      onClick={leaveInstallStep}
                     >
-                      claude.com/claude-code
-                    </a>
-                  </p>
-                </IntroPanel>
-                <IntroOptions>
-                  <IntroOption kind="primary" disabled={awaitingSignIn} onClick={leaveInstallStep}>
-                    Continue
-                  </IntroOption>
-                  {stepIndex > 0 && (
-                    <IntroOption kind="back" onClick={back}>
-                      Back
+                      Continue
                     </IntroOption>
-                  )}
-                </IntroOptions>
-              </>
-            )}
+                  </IntroOptions>
+                </>
+              )}
 
-            {step === 'signIn' && (
-              <IntroSignIn
-                signIn={signIn}
-                say={say}
-                onBack={stepIndex > 0 ? back : undefined}
-                onContinue={forward}
-              />
-            )}
+              {step === 'signIn' && <IntroSignIn signIn={signIn} say={say} onContinue={forward} />}
 
-            {step === 'choices' && (
-              <IntroChoices
-                options={options}
-                values={choices}
-                onToggle={(id) => setChoices((c) => ({ ...c, [id]: !c[id] }))}
-                pending={applying}
-                warnAllOff={hooksAsk !== null}
-                onBack={stepIndex > 0 ? back : undefined}
-                onContinue={applyChoices}
-              />
-            )}
+              {step === 'choices' && (
+                <IntroChoices
+                  options={options}
+                  values={choices}
+                  onToggle={(id) => setChoices((c) => ({ ...c, [id]: !c[id] }))}
+                  pending={applying}
+                  warnAllOff={hooksAsk !== null}
+                  onContinue={applyChoices}
+                />
+              )}
 
-            {/* The tutorial's ask closes the Intro's last step, with its own options. */}
-            {step === 'closing' &&
-              (offerTutorial && tutorial.status ? (
+              {/* The tutorial's ask closes the Intro's last step, with its own options. */}
+              {step === 'closing' &&
+                (offerTutorial && tutorial.status ? (
+                  <TutorialAsk
+                    status={tutorial.status}
+                    rejected={tutorial.rejected}
+                    embedded
+                    say={say}
+                    moreOptions={discord}
+                    onClose={onClose}
+                    onStart={startTutorial}
+                  />
+                ) : (
+                  <IntroOptions>
+                    <IntroOption kind="primary" onClick={onClose}>
+                      Let&apos;s Go
+                    </IntroOption>
+                    {discord}
+                  </IntroOptions>
+                ))}
+
+              {step === 'tutorial' && tutorial.status && (
                 <TutorialAsk
                   status={tutorial.status}
                   rejected={tutorial.rejected}
-                  embedded
+                  embedded={false}
                   say={say}
-                  moreOptions={discord}
-                  onBack={back}
                   onClose={onClose}
                   onStart={startTutorial}
                 />
-              ) : (
-                <IntroOptions>
-                  <IntroOption kind="primary" onClick={onClose}>
-                    Let&apos;s Go
-                  </IntroOption>
-                  {discord}
-                  {stepIndex > 0 && (
-                    <IntroOption kind="back" onClick={back}>
-                      Back
-                    </IntroOption>
-                  )}
-                </IntroOptions>
-              ))}
-
-            {step === 'tutorial' && tutorial.status && (
-              <TutorialAsk
-                status={tutorial.status}
-                rejected={tutorial.rejected}
-                embedded={false}
-                say={say}
-                onClose={onClose}
-                onStart={startTutorial}
-              />
-            )}
-          </div>
+              )}
+            </div>
+          </IntroOptionsSlot>
         </div>
       )}
 
@@ -619,7 +627,7 @@ export function IntroDialog({
           keeps its space, so the box never grows while a message types. */}
       <div
         data-testid="intro-dialog"
-        className={`intro-dialog-box relative w-full shrink-0 py-8 pl-14 pr-30 ${canAdvance ? 'cursor-pointer' : ''}`}
+        className={`intro-dialog-box relative w-full shrink-0 py-8 pl-14 pr-40 ${canAdvance ? 'cursor-pointer' : ''}`}
         onClick={canAdvance ? advance : undefined}
       >
         {/* Same close control as the Settings/changelog modals (ui/Modal.tsx):
@@ -636,12 +644,34 @@ export function IntroDialog({
         >
           x
         </Button>
+        {canGoBack && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Back"
+            title="Back"
+            className="absolute top-2 right-20"
+            onClick={(e) => {
+              e.stopPropagation();
+              back();
+            }}
+          >
+            <span aria-hidden className="intro-dialog-back" />
+          </Button>
+        )}
         <p className="intro-dialog-text m-0" aria-live="polite" aria-label={text}>
           <span aria-hidden>
             {text.slice(0, letters)}
             <span className="invisible">{text.slice(letters)}</span>
           </span>
         </p>
+        {/* The step's options, where its menu puts them in the box (IntroOptions `inline`). */}
+        <div
+          ref={setOptionsSlot}
+          hidden={!menuShown}
+          className="intro-options-inline"
+          onClick={(e) => e.stopPropagation()}
+        />
         {canAdvance && (
           <button
             type="button"

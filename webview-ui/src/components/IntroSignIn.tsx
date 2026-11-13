@@ -9,7 +9,6 @@ interface IntroSignInProps {
   signIn: CliSignInControls;
   /** What the greeter says for the state the sign-in is in. */
   say: Say;
-  onBack?: () => void;
   /** Signed in without a sign-in of this step's: on to the next step. */
   onContinue: () => void;
 }
@@ -24,7 +23,7 @@ interface IntroSignInProps {
  * greeter speaks the state (`say`); this is the step's menu: the options, and
  * over them the code bar while a sign-in waits for its code.
  */
-export function IntroSignIn({ signIn, say, onBack, onContinue }: IntroSignInProps) {
+export function IntroSignIn({ signIn, say, onContinue }: IntroSignInProps) {
   const { status, pending, onHost, check, start, submitCode } = signIn;
   const [code, setCode] = useState('');
   // A sign-in was started from this step (its end moves the tour on).
@@ -129,7 +128,7 @@ export function IntroSignIn({ signIn, say, onBack, onContinue }: IntroSignInProp
         )
       )}
 
-      <IntroOptions data-testid="intro-sign-in" data-signed-in={signedIn}>
+      <IntroOptions inline={!!url} data-testid="intro-sign-in" data-signed-in={signedIn}>
         {url ? (
           <>
             <IntroOptionLink href={url} data-testid="intro-sign-in-link">
@@ -156,11 +155,6 @@ export function IntroSignIn({ signIn, say, onBack, onContinue }: IntroSignInProp
               Check Again
             </IntroOption>
           </>
-        )}
-        {onBack && (
-          <IntroOption kind="back" onClick={onBack}>
-            Back
-          </IntroOption>
         )}
       </IntroOptions>
     </>

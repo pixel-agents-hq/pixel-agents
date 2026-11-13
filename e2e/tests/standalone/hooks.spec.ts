@@ -15,6 +15,7 @@ import {
 } from '../../helpers/hooks';
 import {
   advanceIntroToChoices,
+  backInIntro,
   chooseInIntro,
   finishIntro,
   introChoice,
@@ -382,7 +383,7 @@ test.describe('Standalone / Pixel Office MCP consent', () => {
 
     // Back keeps the boxes: swap them. The MCP declined, the hooks installed.
     await readIntro(dialog);
-    await dialog.getByRole('button', { name: 'Back' }).click();
+    await backInIntro(dialog, introChoice(dialog, 'mcp'));
     await expect(introChoice(dialog, 'mcp')).toHaveAttribute('aria-pressed', 'true');
     await introChoice(dialog, 'mcp').click();
     await chooseInIntro(dialog, { hooks: true });

@@ -62,6 +62,18 @@ export async function readIntro(dialog: Locator, timeoutMs = 30_000): Promise<st
 }
 
 /**
+ * Press the dialog's Back (the message before, then the step before) until
+ * `target` shows.
+ */
+export async function backInIntro(dialog: Locator, target: Locator): Promise<void> {
+  const back = dialog.getByRole('button', { name: 'Back', exact: true });
+  for (let presses = 0; presses < 12 && !(await target.isVisible()); presses++) {
+    await back.click();
+  }
+  await expect(target).toBeVisible();
+}
+
+/**
  * Walk the Intro from its opening step to the choices step's menu, past the
  * get-Claude-Code step when the server found no CLI (so it may or
  * may not come).

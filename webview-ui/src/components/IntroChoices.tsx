@@ -25,7 +25,6 @@ interface IntroChoicesProps {
   pending: boolean;
   /** Ask before going on with every box off (only where that limits the office a lot). */
   warnAllOff: boolean;
-  onBack?: () => void;
   onContinue: () => void;
 }
 
@@ -43,7 +42,6 @@ export function IntroChoices({
   onToggle,
   pending,
   warnAllOff,
-  onBack,
   onContinue,
 }: IntroChoicesProps) {
   const [open, setOpen] = useState<IntroChoiceId | null>(null);
@@ -114,7 +112,7 @@ export function IntroChoices({
         </IntroPanel>
       )}
 
-      <IntroOptions>
+      <IntroOptions inline>
         {warning ? (
           <>
             <IntroOption kind="primary" onClick={onContinue}>
@@ -129,11 +127,6 @@ export function IntroChoices({
             onClick={() => (warnAllOff && allOff ? setWarning(true) : onContinue())}
           >
             {pending ? 'Setting up...' : 'Continue'}
-          </IntroOption>
-        )}
-        {onBack && (
-          <IntroOption kind="back" disabled={pending} onClick={onBack}>
-            Back
           </IntroOption>
         )}
       </IntroOptions>

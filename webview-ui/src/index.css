@@ -748,6 +748,31 @@
   outline: 2px solid var(--color-bg);
   box-shadow: 4px 4px 0 2px var(--color-shadow);
 }
+.intro-options .intro-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+/* A step's options inside the dialog box, under the greeter's words. */
+.intro-options-inline {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+.intro-options-inline:empty,
+.intro-options-inline[hidden] {
+  display: none;
+}
+/* The dialog's Back: a still arrow beside its close x. */
+.intro-dialog-back {
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+  border-left: 0;
+  border-right: 6px solid currentColor;
+}
 .intro-options {
   display: flex;
   flex-direction: column;

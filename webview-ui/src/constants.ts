@@ -312,7 +312,7 @@ export const INTRO_DIALOG_TYPE_MS = 22;
  *  narrow panel gets taller messages rather than one word each. */
 export const INTRO_DIALOG_ROWS = 2;
 export const INTRO_DIALOG_LETTER_PX = 8;
-export const INTRO_DIALOG_PADDING_X_PX = 48;
+export const INTRO_DIALOG_PADDING_X_PX = 58;
 export const INTRO_DIALOG_MIN_LETTERS = 60;
 /** Where the Intro's Claude Code step sends people who don't have it yet. */
 export const CLAUDE_CODE_URL = 'https://claude.com/claude-code';
