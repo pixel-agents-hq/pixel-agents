@@ -306,6 +306,8 @@ export const INTRO_DIALOG_MENU_GAP_PX = 10;
 export const INTRO_DIALOG_CAMERA_BOX_PX = 122;
 /** ms per letter as the greeter's line types out. */
 export const INTRO_DIALOG_TYPE_MS = 22;
+/** How long the greeter's goodbye stays up once typed out, before the tour ends by itself. */
+export const INTRO_FAREWELL_LINGER_MS = 1500;
 /** How much one message of the dialog may hold: this many rows of text, at
  *  this many CSS px per letter (the dialog's font, averaged), over the box's
  *  width less its padding; never fewer letters than the minimum, so a very

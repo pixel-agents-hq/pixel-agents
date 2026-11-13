@@ -62,7 +62,8 @@ test.describe('Standalone / Tutorial', () => {
 
     // The greeter walks to a desk first; then the Guide is an agent with a card
     // and a terminal, and the Intro closes.
-    await expect(dialog.getByRole('button', { name: 'Taking a Seat...' })).toBeVisible();
+    // The dialog goes at once; the greeter walks to its seat on its own.
+    await expect(dialog).toBeHidden();
     const card = page.getByTitle(/· Guide$/);
     await expect(card).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('.xterm:visible')).toBeVisible({ timeout: 15_000 });

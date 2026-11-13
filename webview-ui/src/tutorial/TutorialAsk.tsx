@@ -16,7 +16,9 @@ interface TutorialAskProps {
   say: Say;
   /** Options of the step's own, listed after the ask's (the Intro's Discord link). */
   moreOptions?: ReactNode;
-  /** Every way out: Let's Go / Not Now, Close, and a started run. */
+  /** The no: Let's Go / Not Now. */
+  onDecline: () => void;
+  /** Close, and a started run. */
   onClose: () => void;
   /** The yes: the caller sends startTutorial (and readies the terminal to open). */
   onStart: () => void;
@@ -33,6 +35,7 @@ export function TutorialAsk({
   embedded,
   say,
   moreOptions,
+  onDecline,
   onClose,
   onStart,
 }: TutorialAskProps) {
@@ -100,7 +103,7 @@ export function TutorialAsk({
             >
               {starting ? 'Taking a Seat...' : 'Show Me Around'}
             </IntroOption>
-            <IntroOption disabled={starting} onClick={onClose}>
+            <IntroOption disabled={starting} onClick={onDecline}>
               {embedded ? "Let's Go" : 'Not Now'}
             </IntroOption>
           </>

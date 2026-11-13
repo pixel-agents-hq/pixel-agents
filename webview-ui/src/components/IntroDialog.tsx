@@ -19,6 +19,7 @@ import {
   INTRO_DIALOG_MENU_GAP_PX,
   INTRO_DIALOG_TYPE_MS,
   INTRO_DIALOG_Z_INDEX,
+  INTRO_FAREWELL_LINGER_MS,
 } from '../constants.js';
 import type { ConsentChoice } from '../hooks/introTourState.js';
 import type { OfficeState } from '../office/engine/officeState.js';
@@ -195,10 +196,18 @@ export function IntroDialog({
   // and kept once its start is sent (the start makes it unavailable).
   const [tutorialStartSent, setTutorialStartSent] = useState(false);
   const offerTutorial = tutorialOffered(tutorial.status) || tutorialStartSent;
+  // A start under way: the dialog goes at once on the yes (the greeter walks
+  // to its seat on its own; this component stays mounted, since the greeter
+  // lives with it), and comes back only to say a start was refused.
+  const [startSeq, setStartSeq] = useState<number | null>(null);
+  const startUnderWay = startSeq !== null && (tutorial.rejected?.seq ?? 0) === startSeq;
   const startTutorial = (): void => {
     setTutorialStartSent(true);
+    setStartSeq(tutorial.rejected?.seq ?? 0);
     tutorial.onStart(palette);
   };
+  // Let's Go was pressed: the greeter says goodbye, then the tour ends.
+  const [farewell, setFarewell] = useState(false);
   // The sign-in step: asked of the server as the tour opens, and part of the
   // tour from the first answer that says the CLI holds no login (kept once
   // shown, so Back finds it).
@@ -383,8 +392,9 @@ export function IntroDialog({
     tutorial: tutorial.status?.headline ?? '',
   };
   // The greeter's lines for the step, each cut to the box below.
-  const lines: readonly string[] =
-    step === 'welcome'
+  const lines: readonly string[] = farewell
+    ? ['Enjoy your new office!']
+    : step === 'welcome'
       ? [
           `Hi, I'm ${greeterName}. Welcome to Pixel Agents!`,
           'In this office, your AI agents become tiny pixel characters.',
@@ -406,9 +416,7 @@ export function IntroDialog({
                   : ["You're all set!"]),
                 ...(offerTutorial
                   ? spoken
-                  : [
-                      'Enjoy your new office! Questions, ideas, or pixel art to show off? Come hang out in our Discord.',
-                    ]),
+                  : ['Questions, ideas, or pixel art to show off? Come hang out in our Discord.']),
               ]
             : spoken;
 
@@ -463,7 +471,11 @@ export function IntroDialog({
       before === steps.indexOf('signIn') && signIn.status?.signedIn === true ? before - 1 : before
     ];
   const canGoBack =
-    (page > 0 || stepBefore !== undefined) && !applying && !tutorialStartSent && !leavingInstall;
+    (page > 0 || stepBefore !== undefined) &&
+    !applying &&
+    !tutorialStartSent &&
+    !leavingInstall &&
+    !farewell;
   const back = (): void => {
     setShownWhole(true);
     if (page > 0) setPlace({ key: speechKey, page: page - 1 });
@@ -479,7 +491,8 @@ export function IntroDialog({
   // Every step but the welcome ends on a menu; the welcome's last message
   // goes on to the next step, and so does the sign-in's once it is signed in
   // ("On we go!").
-  const hasMenu = step !== 'welcome' && !(step === 'signIn' && signIn.status?.signedIn === true);
+  const hasMenu =
+    step !== 'welcome' && !farewell && !(step === 'signIn' && signIn.status?.signedIn === true);
   const menuShown = hasMenu && messages.length > 0 && page === last && !typing;
   const canAdvance = typing || page < last || !hasMenu;
   const advance = (): void => {
@@ -487,13 +500,21 @@ export function IntroDialog({
     setShownWhole(false);
     if (typing) setTyped({ text, letters: text.length });
     else if (page < last) setPlace({ key: speechKey, page: page + 1 });
+    else if (farewell) onClose();
     else if (!hasMenu && !awaitingSignIn) forward();
   };
+  // The goodbye ends the tour by itself a moment after it is out.
+  const farewellSaid = farewell && !typing && text !== '' && page === last;
+  useEffect(() => {
+    if (!farewellSaid) return;
+    const id = setTimeout(onClose, INTRO_FAREWELL_LINGER_MS);
+    return () => clearTimeout(id);
+  }, [farewellSaid, onClose]);
   // Enter and Space advance like a press on the box, unless a control (or a
   // terminal) has the keyboard, or something is open over the dialog.
   const advanceRef = useRef<(() => void) | null>(null);
   useEffect(() => {
-    advanceRef.current = canAdvance ? advance : null;
+    advanceRef.current = canAdvance && !startUnderWay ? advance : null;
   });
   useEffect(() => {
     if (escapeSuppressed) return;
@@ -534,6 +555,7 @@ export function IntroDialog({
       style={{
         left: '50%',
         transform: 'translateX(-50%)',
+        display: startUnderWay ? 'none' : undefined,
         bottom: INTRO_DIALOG_BOTTOM_PX,
         width: boxWidth,
         maxHeight: `calc(100% - ${INTRO_DIALOG_BOTTOM_PX + INTRO_DIALOG_EDGE_MARGIN_PX}px)`,
@@ -601,12 +623,13 @@ export function IntroDialog({
                     embedded
                     say={say}
                     moreOptions={discord}
+                    onDecline={() => setFarewell(true)}
                     onClose={onClose}
                     onStart={startTutorial}
                   />
                 ) : (
                   <IntroOptions>
-                    <IntroOption kind="primary" onClick={onClose}>
+                    <IntroOption kind="primary" onClick={() => setFarewell(true)}>
                       Let&apos;s Go
                     </IntroOption>
                     {discord}
@@ -619,6 +642,7 @@ export function IntroDialog({
                   rejected={tutorial.rejected}
                   embedded={false}
                   say={say}
+                  onDecline={onClose}
                   onClose={onClose}
                   onStart={startTutorial}
                 />
