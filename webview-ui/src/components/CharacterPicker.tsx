@@ -11,6 +11,7 @@ import { SpriteCanvas } from '../characters/ui/SpriteCanvas.js';
 import { CHARACTER_ANIM_MS, CHARACTER_PICKER_SPRITE_SCALE } from '../constants.js';
 import { useDevicePixelRatio } from '../hooks/useDevicePixelRatio.js';
 import { useLongPress } from '../hooks/useLongPress.js';
+import { useT } from '../i18n/index.js';
 import { PixelIcon } from './ui/PixelIcon.js';
 
 /** The sheet's walk cycle, as the Characters view's stage plays it. */
@@ -192,17 +193,18 @@ function RosterCards({
   dpr: number;
 }) {
   const cast = useCast();
+  const t = useT();
   return (
     <>
       {cast.profiles.length < MAX_CHARACTER_PROFILES && (
         <button
           type="button"
           onClick={onNew}
-          title="Add a new character"
+          title={t('characters.addNew')}
           className="shrink-0 w-56 flex flex-col items-center justify-center gap-2 py-4 bg-transparent border-2 border-dashed border-border rounded-none cursor-pointer text-sm text-text-muted hover:text-text active:text-text select-none"
         >
           <span className="text-2xl leading-none">+</span>
-          New
+          {t('characters.new')}
         </button>
       )}
       {rosterOrder(cast.profiles.length, recent).map((index) => (
@@ -273,6 +275,7 @@ interface CharacterCardProps {
 }
 
 function CharacterCard({ index, profile, renderer, dpr, onPick, onEdit }: CharacterCardProps) {
+  const t = useT();
   const longPress = useLongPress(() => onEdit(index));
   const label = characterLabel(profile, index);
   // A mouse over the card walks the character in place. Mouse only: a tap's
@@ -289,7 +292,7 @@ function CharacterCard({ index, profile, renderer, dpr, onPick, onEdit }: Charac
           iOS text selection or the image callout on the canvas. */}
       <button
         type="button"
-        aria-label={`Launch as ${label}`}
+        aria-label={t('characters.launchAs', { name: label })}
         {...longPress.handlers}
         onClick={() => {
           if (!longPress.consumeClick()) onPick(index);
@@ -313,8 +316,8 @@ function CharacterCard({ index, profile, renderer, dpr, onPick, onEdit }: Charac
       <button
         type="button"
         onClick={() => onEdit(index)}
-        aria-label={`Edit ${label}`}
-        title="Edit character"
+        aria-label={t('characters.editName', { name: label })}
+        title={t('characters.editCharacter')}
         className="absolute top-2 right-2 flex items-center justify-center p-2 bg-bg border-none rounded-none cursor-pointer leading-none text-text-muted hover:text-text opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:hidden"
       >
         <PixelIcon name="pencil" />

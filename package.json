@@ -147,7 +147,7 @@
     "semver": "^7.8.5",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.54.0"
+    "typescript-eslint": "^8.36.0"
   },
   "lint-staged": {
     "adapters/vscode/**/*.ts": "eslint --fix",

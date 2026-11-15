@@ -17,6 +17,7 @@ import { useDevicePixelRatio } from '../hooks/useDevicePixelRatio.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
 import { usePageBackground } from '../hooks/usePageBackground.js';
 import { prefersReducedMotion } from '../hooks/usePresence.js';
+import { useT } from '../i18n/index.js';
 import { getCachedSprite } from '../office/sprites/spriteCache.js';
 import type { SpriteData } from '../office/types.js';
 import { type LoadingArt, loadLoadingArt } from './loadingSceneArt.js';
@@ -80,6 +81,7 @@ function fadedSprite(d: Drawable, zoom: number, bg: string): HTMLCanvasElement {
 /** "Loading the office" with its dots counting up. The missing dots are kept (invisible) so
  *  the words never shift; reduced motion shows all three, still. */
 function LoadingText() {
+  const t = useT();
   const [dots, setDots] = useState(LOADING_MAX_DOTS);
   useEffect(() => {
     if (prefersReducedMotion()) return;
@@ -88,7 +90,7 @@ function LoadingText() {
   }, []);
   return (
     <span className="text-lg text-text-muted" role="status">
-      Loading the office
+      {t('intro.loadingOffice')}
       <span aria-hidden="true">
         {'.'.repeat(dots)}
         <span className="invisible">{'.'.repeat(LOADING_MAX_DOTS - dots)}</span>

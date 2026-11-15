@@ -1,4 +1,5 @@
 import { CARD_CONTEXT_BAR_HEIGHT_PX, CARD_MUGSHOT_CROP_TOP_ROW } from '../constants.js';
+import { useT } from '../i18n/index.js';
 import { ContextBar } from '../office/ContextBar.js';
 import { contextLeft, useAgentContextUsed } from '../office/contextGauge.js';
 import type { CardVariant, CloseMode } from './cardBar.js';
@@ -60,12 +61,13 @@ export function AgentCard({
   onSelect,
   onClose,
 }: AgentCardProps) {
+  const t = useT();
   const contextUsed = useAgentContextUsed(agentId);
   return (
     <div
       className={`group relative pointer-events-auto flex items-stretch gap-1 p-1 cursor-pointer border-2 shrink-0 ${CARD_VARIANT[variant]}`}
       onClick={() => onSelect(agentId)}
-      title={`Agent ${agentId}`}
+      title={t('terminal.agentTitle', { id: agentId })}
     >
       <CharacterMugShot
         palette={appearance.palette}
@@ -83,7 +85,8 @@ export function AgentCard({
             e.stopPropagation();
             onClose(agentId);
           }}
-          title="Close agent"
+          title={t('terminal.closeAgent')}
+          aria-label={t('terminal.closeAgent')}
           className={CLOSE_MODE[close]}
         >
           {/* The × is drawn a pixel left of its grid's centre: nudged right,
@@ -106,7 +109,7 @@ export function AgentCard({
           used={contextUsed}
           height={CARD_CONTEXT_BAR_HEIGHT_PX}
           className="absolute left-0 right-0 bottom-0 pointer-events-none"
-          title={`${Math.round(contextLeft(contextUsed) * 100)}% context left`}
+          title={t('terminal.contextLeft', { pct: Math.round(contextLeft(contextUsed) * 100) })}
           testId="card-context-bar"
         />
       )}

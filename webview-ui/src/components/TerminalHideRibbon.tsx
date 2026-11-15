@@ -6,6 +6,7 @@ import {
   TERMINAL_HIDE_RIBBON_REST_RATIO,
   TERMINAL_SIDEBAR_WIDTH_PX,
 } from '../constants.js';
+import { useT } from '../i18n/index.js';
 import { PixelIcon } from './ui/PixelIcon.js';
 
 interface TerminalHideRibbonProps {
@@ -23,6 +24,7 @@ interface TerminalHideRibbonProps {
  * hovered, it stretches out to the cards' left edge.
  */
 export function TerminalHideRibbon({ shown, onHide }: TerminalHideRibbonProps) {
+  const t = useT();
   const style = {
     height: AGENT_CARD_HEIGHT_PX,
     '--ribbon-rest': `${AGENT_CARD_WIDTH_PX * TERMINAL_HIDE_RIBBON_REST_RATIO}px`,
@@ -38,8 +40,8 @@ export function TerminalHideRibbon({ shown, onHide }: TerminalHideRibbonProps) {
       <button
         type="button"
         onClick={onHide}
-        title="Hide terminal"
-        aria-label="Hide terminal"
+        title={t('terminal.hideTerminal')}
+        aria-label={t('terminal.hideTerminal')}
         tabIndex={shown ? undefined : -1}
         className="flex items-center justify-center bg-bg text-text-muted hover:text-text border-2 border-r-0 border-border rounded-none cursor-pointer p-0 opacity-60 hover:opacity-100 w-(--ribbon-rest) hover:w-(--ribbon-full) transition-[opacity,width] duration-200 ease-out"
         style={style}

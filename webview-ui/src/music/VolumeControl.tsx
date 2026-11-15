@@ -5,11 +5,13 @@ import { PixelIcon } from '../components/ui/PixelIcon.js';
 import { PixelText } from '../components/ui/PixelText.js';
 import { MUSIC_VOLUME_SLIDER_HEIGHT_PX } from '../constants.js';
 import { useDismiss } from '../hooks/useDismiss.js';
+import { useT } from '../i18n/index.js';
 import { officeRadio } from './musicEngine.js';
 
 /** The speaker button: a press mutes; hovering (or a tap, on touch) shows a
  *  vertical volume slider above it. */
 export function VolumeControl({ volume }: { volume: number }) {
+  const t = useT();
   const [hovered, setHovered] = useState(false);
   const [pinned, setPinned] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -40,7 +42,7 @@ export function VolumeControl({ volume }: { volume: number }) {
               ref={trackRef}
               role="slider"
               tabIndex={0}
-              aria-label="Music volume"
+              aria-label={t('music.volume')}
               aria-orientation="vertical"
               aria-valuemin={0}
               aria-valuemax={100}
@@ -85,8 +87,8 @@ export function VolumeControl({ volume }: { volume: number }) {
           if (lastPointer.current === 'touch') setPinned((v) => !v);
           else officeRadio.toggleMute();
         }}
-        aria-label={volume > 0 ? 'Mute music' : 'Unmute music'}
-        title={volume > 0 ? 'Mute' : 'Unmute'}
+        aria-label={volume > 0 ? t('music.muteMusic') : t('music.unmuteMusic')}
+        title={volume > 0 ? t('music.mute') : t('music.unmute')}
       >
         <PixelIcon name={volume > 0 ? 'speaker' : 'speakerMuted'} />
       </Button>

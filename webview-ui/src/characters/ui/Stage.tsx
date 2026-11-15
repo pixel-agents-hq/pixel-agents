@@ -16,6 +16,7 @@ import {
   CHARACTERS_PHONE_SCALES,
 } from '../../constants.js';
 import { useBoxSize } from '../../hooks/useBoxSize.js';
+import { type MessageKey, useT } from '../../i18n/index.js';
 import { SHEET_H, SHEET_W } from '../sheet.js';
 import { canBlink, editsOf } from '../slots.js';
 import {
@@ -37,6 +38,11 @@ import { useStudio } from './studio.js';
 type Anim = keyof typeof CHARACTER_ANIM_MS;
 const ANIMS: readonly Anim[] = ['walk', 'type', 'read'];
 const ANIM_FRAMES: Record<Anim, number[]> = { walk: [0, 1, 2, 1], type: [3, 4], read: [5, 6] };
+/** A facing's (or sheet row's) name key. */
+const facingKey = (f: string) => `characters.facing_${f}` as MessageKey;
+/** A sheet column's frame name key. */
+const frameKey = (f: string) => `characters.frame_${f}` as MessageKey;
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /** The export sheet's edited-frame mark, in sprite pixels: its size and its inset from the corner. */
 const EDIT_MARK = { size: 2, inset: 1 };
 
@@ -50,6 +56,8 @@ export interface StageScales {
 function Segmented<T extends string>(props: {
   label: string;
   options: readonly T[];
+  /** An option's shown name. */
+  name: (option: T) => string;
   value: T;
   onChange: (value: T) => void;
 }) {
@@ -62,7 +70,7 @@ function Segmented<T extends string>(props: {
           aria-pressed={props.value === option}
           onClick={() => props.onChange(option)}
         >
-          {option[0].toUpperCase() + option.slice(1)}
+          {props.name(option)}
         </button>
       ))}
     </div>
@@ -72,6 +80,7 @@ function Segmented<T extends string>(props: {
 /** The preview: hero and turn figures animate together, blinking now and then. */
 function Preview({ anim, facing, scales }: { anim: Anim; facing: Facing; scales: StageScales }) {
   const { renderer, profile, dpr } = useStudio();
+  const t = useT();
   const hero = useRef<HTMLCanvasElement>(null);
   const turns = useRef<(HTMLCanvasElement | null)[]>([]);
   const live = useRef({ profile, anim, facing });
@@ -129,7 +138,7 @@ function Preview({ anim, facing, scales }: { anim: Anim; facing: Facing; scales:
   return (
     <div className="chv-floor">
       <figure className="chv-hero">
-        <canvas ref={hero} aria-label="Animated preview" />
+        <canvas ref={hero} aria-label={t('characters.animatedPreview')} />
       </figure>
       <div className="chv-turn">
         {FACINGS.map((dir, i) => (
@@ -140,7 +149,7 @@ function Preview({ anim, facing, scales }: { anim: Anim; facing: Facing; scales:
               }}
               aria-hidden
             />
-            <figcaption>{dir}</figcaption>
+            <figcaption>{t(facingKey(dir))}</figcaption>
           </figure>
         ))}
       </div>
@@ -176,6 +185,7 @@ function useFittedSheetScale(
 /** The export sheet: 8 frames x 3 facings. Clicking a frame edits it; while editing it marks frames. */
 function ExportSheet({ fixedScale }: { fixedScale: number | null }) {
   const { renderer, profile, dpr, editor, openEditor, setEditor, phone } = useStudio();
+  const t = useT();
   const canvas = useRef<HTMLCanvasElement>(null);
   const grid = useRef<HTMLDivElement>(null);
   const [wrapRef, wrapBox] = useBoxSize<HTMLDivElement>();
@@ -229,9 +239,7 @@ function ExportSheet({ fixedScale }: { fixedScale: number | null }) {
   const cell = { w: (FRAME_W * n) / dpr, h: (FRAME_H * n) / dpr };
   return (
     <div className="chv-sheetbox">
-      <h2>
-        Export sheet · {SHEET_W} × {SHEET_H}
-      </h2>
+      <h2>{t('characters.exportSheet', { w: SHEET_W, h: SHEET_H })}</h2>
       <div className="chv-sheet-wrap" ref={wrapRef}>
         <div
           ref={grid}
@@ -241,23 +249,23 @@ function ExportSheet({ fixedScale }: { fixedScale: number | null }) {
           <div />
           {FRAME_NAMES.map((name) => (
             <div key={name} className="chv-sheet-col">
-              {name}
+              {t(frameKey(name))}
             </div>
           ))}
-          <div className="chv-sheet-row">{ROW_NAMES[0]}</div>
+          <div className="chv-sheet-row">{t(facingKey(ROW_NAMES[0]))}</div>
           <canvas
             ref={canvas}
             onClick={onClick}
-            aria-label="Sprite sheet that will be exported. Click a frame to edit it."
-            title="Click a frame to edit it pixel by pixel"
+            aria-label={t('characters.sheetAria')}
+            title={t('characters.sheetTitle')}
           />
           {ROW_NAMES.slice(1).map((name) => (
             <div key={name} className="chv-sheet-row">
-              {name}
+              {t(facingKey(name))}
             </div>
           ))}
           <div className="chv-sheet-note">
-            {phone ? 'Tap a frame to edit it pixel by pixel' : 'Click a frame to edit it'}
+            {phone ? t('characters.sheetNoteTap') : t('characters.sheetNoteClick')}
           </div>
         </div>
       </div>
@@ -268,20 +276,33 @@ function ExportSheet({ fixedScale }: { fixedScale: number | null }) {
 /** The preview column; on phones its pinned bar and floor sit above the wardrobe. */
 export function Stage({ scales, ref }: { scales: StageScales; ref?: React.Ref<HTMLElement> }) {
   const { phone, close } = useStudio();
+  const t = useT();
   const [anim, setAnim] = useState<Anim>('walk');
   const [facing, setFacing] = useState<Facing>('down');
   return (
-    <section ref={ref} className="chv-box chv-stage" aria-label="Preview">
+    <section ref={ref} className="chv-box chv-stage" aria-label={t('characters.preview')}>
       <div className="chv-pin">
         <div className="chv-stage-top">
-          <Segmented label="Animation" options={ANIMS} value={anim} onChange={setAnim} />
-          <Segmented label="Facing" options={FACINGS} value={facing} onChange={setFacing} />
+          <Segmented
+            label={t('characters.animation')}
+            options={ANIMS}
+            name={(a) => t(`characters.anim_${a}`)}
+            value={anim}
+            onChange={setAnim}
+          />
+          <Segmented
+            label={t('characters.facing')}
+            options={FACINGS}
+            name={(f) => capitalize(t(facingKey(f)))}
+            value={facing}
+            onChange={setFacing}
+          />
           {phone && (
             <Button
               variant="ghost"
               size="icon"
               className="chv-close"
-              aria-label="Close characters"
+              aria-label={t('characters.closeView')}
               onClick={close}
             >
               <PixelIcon name="close" />

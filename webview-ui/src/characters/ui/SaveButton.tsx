@@ -1,3 +1,4 @@
+import { useT } from '../../i18n/index.js';
 import { useStudio } from './studio.js';
 import { ViewButton } from './ViewButton.js';
 
@@ -8,16 +9,17 @@ import { ViewButton } from './ViewButton.js';
  */
 export function SaveButton() {
   const { cast, save } = useStudio();
+  const t = useT();
   return (
     <ViewButton
       primary={cast.dirty}
       disabled={!cast.dirty}
       icon="save"
       className="chv-save"
-      title={cast.dirty ? 'Save your changes to the roster (⌘S)' : 'No unsaved changes'}
+      title={cast.dirty ? t('characters.saveTitle') : t('characters.noUnsaved')}
       onClick={save}
     >
-      {cast.dirty ? 'Save' : 'Saved'}
+      {cast.dirty ? t('common.save') : t('characters.saved')}
     </ViewButton>
   );
 }

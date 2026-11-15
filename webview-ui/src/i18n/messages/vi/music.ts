@@ -1,0 +1,36 @@
+import type { music as en } from '../en/music.js';
+import type { Strings } from '../types.js';
+
+/** Tiếng Việt: music. */
+export const music: Strings<typeof en> = {
+  pause: 'Tạm dừng nhạc',
+  play: 'Phát nhạc',
+  nextTune: 'Bài tiếp theo',
+  settings: 'Cài đặt nhạc',
+  settingsTitle: 'Tâm trạng và mã bài hát',
+  showPlayer: 'Hiện trình phát nhạc',
+  swipeUp: 'Vuốt lên để nghe nhạc',
+  volume: 'Âm lượng nhạc',
+  muteMusic: 'Tắt tiếng nhạc',
+  unmuteMusic: 'Bật tiếng nhạc',
+  mute: 'Tắt tiếng',
+  unmute: 'Bật tiếng',
+  mood: 'Tâm trạng',
+  songCode: 'Mã bài hát',
+  copied: 'Đã sao chép',
+  pasteCode: 'Dán mã bài hát',
+  codeToPlay: 'Mã bài hát cần phát',
+  playCode: 'Phát',
+  invalidCode: 'Không phải mã bài hát. Mã có dạng TOWN-5-8F3A21C0.',
+  bringBack: 'Bật lại trong Cài đặt.',
+  hidePlayer: 'Ẩn trình phát',
+  moodAuto: 'Tự động',
+  moodTown: 'Thị trấn',
+  moodRoute: 'Đường đi',
+  moodLab: 'Phòng lab',
+  moodNight: 'Đêm',
+  moodOrbit: 'Quỹ đạo',
+  moodRain: 'Mưa',
+  moodDawn: 'Bình minh',
+  moodArcade: 'Arcade',
+};

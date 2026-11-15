@@ -7,6 +7,7 @@ import {
   WHATS_NEW_AUTO_CLOSE_MS,
   WHATS_NEW_FADE_MS,
 } from '../constants.ts';
+import { useT } from '../i18n/index.js';
 import { aboveRadio, RIDE_ABOVE_RADIO } from '../music/radioLift.js';
 import { Button } from './ui/Button.js';
 import { PixelText } from './ui/PixelText.js';
@@ -32,6 +33,7 @@ export function VersionIndicator({
   onDismiss,
   onOpenChangelog,
 }: VersionIndicatorProps) {
+  const t = useT();
   const [dismissed, setDismissed] = useState(false);
   const [fading, setFading] = useState(false);
   const [labelHovered, setLabelHovered] = useState(false);
@@ -87,13 +89,19 @@ export function VersionIndicator({
         >
           <div className="flex justify-between items-center gap-10">
             <span className="text-lg text-accent-bright leading-none">
-              Updated to v{currentMajorMinor}!
+              {t('intro.updatedTo', { version: currentMajorMinor })}
             </span>
-            <Button variant="ghost" size="icon" onClick={handleDismiss} className="leading-none">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleDismiss}
+              className="leading-none"
+              aria-label={t('common.close')}
+            >
               x
             </Button>
           </div>
-          <span className="text-sm whitespace-nowrap">See what's new</span>
+          <span className="text-sm whitespace-nowrap">{t('intro.seeWhatsNew')}</span>
         </div>
       )}
       {/* Hover tooltip — "See what's new" appears on label hover after notice is gone */}
@@ -103,7 +111,7 @@ export function VersionIndicator({
           className="absolute right-28 z-20 pixel-panel py-6 px-12 cursor-pointer text-sm whitespace-nowrap"
           style={{ bottom: NOTICE_BOTTOM, transition: RIDE_ABOVE_RADIO }}
         >
-          See what's new!
+          {t('intro.seeWhatsNewTooltip')}
         </div>
       )}
       {/* Version label — always visible, riding above the office radio (MusicPlayer) */}

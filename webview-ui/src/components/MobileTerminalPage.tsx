@@ -1,6 +1,7 @@
 import type { Ref } from 'react';
 
 import { MOBILE_TERMINAL_FONT_SIZE_PX } from '../constants.js';
+import { useT } from '../i18n/index.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 import type { TerminalInputHandle } from './TerminalPane.js';
 import { TerminalPaneStack } from './TerminalPaneStack.js';
@@ -33,12 +34,13 @@ export function MobileTerminalPage({
   onStatusChange,
   inputRef,
 }: MobileTerminalPageProps) {
+  const t = useT();
   return (
     <div className="relative w-full h-full bg-bg-dark">
       {agentIds.length === 0 && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-8 px-16 text-center">
-          <span className="text-lg text-text">No agent terminals yet</span>
-          <span className="text-sm text-text-muted">Tap + in the bar below to launch one</span>
+          <span className="text-lg text-text">{t('terminal.emptyTitle')}</span>
+          <span className="text-sm text-text-muted">{t('terminal.emptyHint')}</span>
         </div>
       )}
       <TerminalPaneStack

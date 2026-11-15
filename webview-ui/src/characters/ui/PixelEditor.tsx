@@ -14,6 +14,7 @@ import {
   CHARACTER_PAINT_FALLBACK,
 } from '../../constants.js';
 import { type BoxSize, useBoxSize } from '../../hooks/useBoxSize.js';
+import { type MessageKey, useT } from '../../i18n/index.js';
 import { rgbHex } from '../color.js';
 import { pieceName } from '../items.js';
 import { clearFrameEdits, clearPieceEdits, hasEdits, paintPixel } from '../profiles.js';
@@ -39,28 +40,40 @@ import { ViewButton } from './ViewButton.js';
 /** The editor canvas's view: one frame (sized like any frame; drawn by hand below). */
 const FRAME_VIEW: SpriteView = { kind: 'frame', facing: 'down', frame: 0 };
 
-const TOOLS: { id: EditorTool; label: string; short: string; key: string; help: string }[] = [
-  { id: 'pencil', label: 'Pencil', short: 'Pencil', key: 'B', help: 'Paint pixels of this piece.' },
+const TOOLS: {
+  id: EditorTool;
+  label: MessageKey;
+  short: MessageKey;
+  key: string;
+  help: MessageKey;
+}[] = [
+  {
+    id: 'pencil',
+    label: 'characters.tool_pencil',
+    short: 'characters.tool_pencil',
+    key: 'B',
+    help: 'characters.tool_pencil_help',
+  },
   {
     id: 'eraser',
-    label: 'Eraser',
-    short: 'Eraser',
+    label: 'characters.tool_eraser',
+    short: 'characters.tool_eraser',
     key: 'E',
-    help: 'Remove this piece’s pixels so whatever is underneath shows.',
+    help: 'characters.tool_eraser_help',
   },
   {
     id: 'restore',
-    label: 'Restore',
-    short: 'Restore',
+    label: 'characters.tool_restore',
+    short: 'characters.tool_restore',
     key: 'R',
-    help: 'Put pixels back to the generated piece.',
+    help: 'characters.tool_restore_help',
   },
   {
     id: 'picker',
-    label: 'Pick colour',
-    short: 'Pick',
+    label: 'characters.tool_picker',
+    short: 'characters.tool_picker_short',
     key: 'I',
-    help: 'Click one of this piece’s pixels to paint with its colour.',
+    help: 'characters.tool_picker_help',
   },
 ];
 /** Bresenham: every pixel from a to b. */
@@ -138,6 +151,7 @@ export function PixelEditor() {
     redo,
     status,
   } = studio;
+  const t = useT();
   const canvas = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<HTMLCanvasElement>(null);
   const body = useRef<HTMLDivElement | null>(null);
@@ -257,7 +271,7 @@ export function PixelEditor() {
     const base = renderer.layerBase(profile, layerOf(ed.pix))?.data;
     const o = cellAt(ed.frame, y * FRAME_W + x);
     if (!base || !isOpaque(base[o + 3])) {
-      status('That pixel isn’t part of this piece. Pick one of its own pixels.', 'err');
+      status(t('characters.pickNotPiece'), 'err');
       return;
     }
     status('');
@@ -266,30 +280,32 @@ export function PixelEditor() {
 
   const frameEdited = hasEdits(profile, ed.pix, ed.frame);
   const pieceEdited = hasEdits(profile, ed.pix);
-  const tool = TOOLS.find((t) => t.id === ed.tool)!;
+  const tool = TOOLS.find((def) => def.id === ed.tool)!;
 
   return (
     <div className="chv-editor">
       <div className="chv-ed-head">
         <div>
-          <h2>Edit {pieceLabel}</h2>
+          <h2>{t('characters.editPiece', { piece: pieceLabel })}</h2>
           <div className="chv-ed-frame">
-            Frame <b>{FRAME_NAMES[ed.frame % FRAMES_PER_ROW]}</b> · facing <b>{ROW_NAMES[row]}</b>
+            {t('characters.frameLabel')}{' '}
+            <b>{t(`characters.frame_${FRAME_NAMES[ed.frame % FRAMES_PER_ROW]}` as MessageKey)}</b> ·{' '}
+            {t('characters.facingLabel')} <b>{t(`characters.facing_${ROW_NAMES[row]}`)}</b>
           </div>
         </div>
         {phone ? (
-          <ViewButton title="Back to the sheet" onClick={closeEditor}>
+          <ViewButton title={t('characters.backToSheet')} onClick={closeEditor}>
             <PixelIcon name="prev" />
-            Sheet
+            {t('characters.sheet')}
           </ViewButton>
         ) : (
           <ViewButton primary onClick={closeEditor}>
-            Done
+            {t('common.done')}
           </ViewButton>
         )}
       </div>
 
-      <div className="chv-chips" role="group" aria-label="Piece to edit">
+      <div className="chv-chips" role="group" aria-label={t('characters.pieceToEdit')}>
         {worn.map((piece) => (
           <button
             key={piece.pix}
@@ -297,7 +313,7 @@ export function PixelEditor() {
             className={hasEdits(profile, piece.pix) ? 'chv-chip chv-chip-edited' : 'chv-chip'}
             title={
               hasEdits(profile, piece.pix)
-                ? `${pieceName(renderer, profile, piece.pix)} has edits`
+                ? t('characters.hasEdits', { piece: pieceName(renderer, profile, piece.pix) })
                 : undefined
             }
             aria-pressed={piece.pix === ed.pix}
@@ -321,7 +337,7 @@ export function PixelEditor() {
             <canvas
               ref={overlay}
               className="chv-ed-overlay"
-              aria-label="Frame being edited"
+              aria-label={t('characters.frameBeingEdited')}
               onPointerDown={(e) => {
                 const p = pixelAt(e);
                 if (!p) return;
@@ -366,27 +382,27 @@ export function PixelEditor() {
         </div>
 
         <div className="chv-ed-tools">
-          <div className="chv-toolrow" role="group" aria-label="Tool">
-            {TOOLS.map((t) => (
+          <div className="chv-toolrow" role="group" aria-label={t('characters.tool')}>
+            {TOOLS.map((def) => (
               <button
-                key={t.id}
+                key={def.id}
                 type="button"
                 className="chv-tool"
-                aria-pressed={ed.tool === t.id}
-                onClick={() => setEditor({ tool: t.id })}
+                aria-pressed={ed.tool === def.id}
+                onClick={() => setEditor({ tool: def.id })}
               >
-                {phone ? t.short : t.label}
-                <kbd>{t.key}</kbd>
+                {t(phone ? def.short : def.label)}
+                <kbd>{def.key}</kbd>
               </button>
             ))}
           </div>
-          <p className="chv-note">{tool.help}</p>
+          <p className="chv-note">{t(tool.help)}</p>
 
           <div className="chv-ed-current">
             <span className="chv-sw" style={{ background: shown(color) }} />
-            <span>Painting with {shown(color)}</span>
+            <span>{t('characters.paintingWith', { color: shown(color) })}</span>
             <label className="chv-custom">
-              Custom
+              {t('characters.custom')}
               <input
                 type="color"
                 value={color}
@@ -394,7 +410,7 @@ export function PixelEditor() {
               />
             </label>
           </div>
-          <div className="chv-ed-palette" aria-label="This piece’s colours">
+          <div className="chv-ed-palette" aria-label={t('characters.pieceColours')}>
             {palette.map((hex) => (
               <button
                 key={hex}
@@ -402,22 +418,19 @@ export function PixelEditor() {
                 className="chv-sw"
                 style={{ background: shown(hex) }}
                 title={shown(hex)}
-                aria-label={`Paint with ${shown(hex)}`}
+                aria-label={t('characters.paintWith', { color: shown(hex) })}
                 aria-pressed={hex === color}
                 onClick={() => setEditor({ color: hex, tool: 'pencil' })}
               />
             ))}
           </div>
-          <p className="chv-note">
-            These are the piece’s own colours. Everything you paint follows the piece’s colour
-            sliders, so recolouring later still works.
-          </p>
+          <p className="chv-note">{t('characters.pieceColoursNote')}</p>
 
           <div className="chv-ed-opts">
             {(
               [
-                ['fade', 'Fade other pieces'],
-                ['front', 'Show this piece in front'],
+                ['fade', 'characters.fadeOthers'],
+                ['front', 'characters.showInFront'],
               ] as const
             ).map(([key, label]) => (
               <Checkbox
@@ -427,7 +440,7 @@ export function PixelEditor() {
                 boxClassName="chv-check-box"
                 checked={ed[key]}
                 onChange={() => setEditor({ [key]: !ed[key] })}
-                label={label}
+                label={t(label)}
               />
             ))}
           </div>
@@ -435,33 +448,32 @@ export function PixelEditor() {
           <div className="chv-toolrow">
             <button type="button" className="chv-tool" disabled={!cast.canUndo} onClick={undo}>
               <PixelIcon name="undo" />
-              Undo<kbd>⌘Z</kbd>
+              {t('common.undo')}
+              <kbd>⌘Z</kbd>
             </button>
             <button type="button" className="chv-tool" disabled={!cast.canRedo} onClick={redo}>
               <PixelIcon name="redo" />
-              Redo<kbd>⇧⌘Z</kbd>
+              {t('common.redo')}
+              <kbd>⇧⌘Z</kbd>
             </button>
           </div>
           <div className="chv-toolrow">
             <ArmedButton
               className="chv-tool"
-              label={phone ? 'Clear frame' : 'Clear this frame'}
-              confirmLabel={phone ? 'Tap again' : 'Click again to confirm'}
+              label={t(phone ? 'characters.clearFrameShort' : 'characters.clearFrame')}
+              confirmLabel={t(phone ? 'characters.tapAgain' : 'characters.clickAgain')}
               disabled={!frameEdited}
               onConfirm={() => studio.edit((p) => clearFrameEdits(p, ed.pix, ed.frame))}
             />
             <ArmedButton
               className="chv-tool"
-              label={phone ? 'Clear piece' : 'Clear all edits to this piece'}
-              confirmLabel={phone ? 'Tap again' : 'Click again to confirm'}
+              label={t(phone ? 'characters.clearPieceShort' : 'characters.clearPiece')}
+              confirmLabel={t(phone ? 'characters.tapAgain' : 'characters.clickAgain')}
               disabled={!pieceEdited}
               onConfirm={() => studio.edit((p) => clearPieceEdits(p, ed.pix))}
             />
           </div>
-          <p className="chv-note">
-            Edits apply to this character only and to this one frame. Walking, typing and reading
-            frames are separate, and the left-facing frames reuse the right-facing ones mirrored.
-          </p>
+          <p className="chv-note">{t('characters.editsNote')}</p>
           <ItemTools />
         </div>
       </div>

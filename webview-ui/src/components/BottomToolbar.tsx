@@ -3,6 +3,7 @@ import type { Directory } from '../hooks/useExtensionMessages.js';
 import { useHoverPin } from '../hooks/useHoverPin.js';
 import { popClass, usePresence } from '../hooks/usePresence.js';
 import { useRosterLaunch } from '../hooks/useRosterLaunch.js';
+import { useT } from '../i18n/index.js';
 import { isBrowserRuntime } from '../runtime.js';
 import { CharacterRow } from './CharacterPicker.js';
 import { LaunchDrawer } from './LaunchDrawer.js';
@@ -56,6 +57,7 @@ export function BottomToolbar({
   terminalUnavailableReason,
   onLaunch,
 }: BottomToolbarProps) {
+  const t = useT();
   // Standalone can launch agents whenever the server has a working PTY. When it
   // doesn't, show the button disabled with the reason rather than hiding it —
   // silently missing UI reads as a bug, and the cause (a native module that
@@ -142,8 +144,8 @@ export function BottomToolbar({
             <button
               type="button"
               disabled
-              title={terminalUnavailableReason ?? 'Terminal unavailable on this server.'}
-              aria-label="New agent"
+              title={terminalUnavailableReason ?? t('app.terminalUnavailable')}
+              aria-label={t('app.newAgent')}
               className={`${LAUNCH_SQUARE} bg-btn-bg border-border text-text-muted cursor-default opacity-(--btn-disabled-opacity)`}
             >
               <PixelIcon name="plus" />
@@ -161,8 +163,8 @@ export function BottomToolbar({
               <button
                 type="button"
                 onClick={drawerHover.press}
-                aria-label="New agent"
-                title="Launch agent"
+                aria-label={t('app.newAgent')}
+                title={t('app.launchAgent')}
                 className={`${LAUNCH_SQUARE} press-juice border-accent text-white cursor-pointer ${isDrawerOpen ? 'bg-accent-bright' : 'bg-accent hover:bg-accent-bright'}`}
               >
                 {/* A quarter turn while its drawer is open (a + looks the
@@ -195,13 +197,9 @@ export function BottomToolbar({
             onClick={rosterHover.press}
             onMouseEnter={rosterHover.enter}
             onMouseLeave={rosterHover.leave}
-            aria-label="Roster"
+            aria-label={t('app.roster')}
             aria-expanded={menus.isRosterOpen}
-            title={
-              menus.isRosterOpen
-                ? 'Hide roster'
-                : 'Launch an agent as one of your characters, or edit them'
-            }
+            title={menus.isRosterOpen ? t('app.hideRoster') : t('app.rosterTitle')}
             // Enabled even when nothing can launch: a pick then edits.
             style={{ width: ROSTER_ARROW_WIDTH_PX }}
             className={`h-52 press-juice flex items-center justify-center border-2 border-l-bg/40 rounded-none select-none cursor-pointer ${
@@ -220,21 +218,21 @@ export function BottomToolbar({
         <Button
           variant={isEditMode ? 'active' : 'default'}
           onClick={onToggleEditMode}
-          title="Edit office layout"
+          title={t('app.layoutTitle')}
           className={`${ROW_HEIGHT} press-juice`}
           icon="layout"
         >
-          Layout
+          {t('app.layout')}
         </Button>
         {showSettings && (
           <Button
             variant={isSettingsOpen ? 'active' : 'default'}
             onClick={onToggleSettings}
-            title="Settings"
+            title={t('common.settings')}
             className={`${ROW_HEIGHT} press-juice`}
             icon="settings"
           >
-            Settings
+            {t('common.settings')}
           </Button>
         )}
       </div>

@@ -2,6 +2,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import { SIDE_PANEL_CONTENT_SHIFT_PX, TERMINAL_DRAWER_RESIZE_HANDLE_PX } from '../constants.js';
 import { useSlidePanel } from '../hooks/useSlidePanel.js';
+import { useT } from '../i18n/index.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 import { TerminalPaneStack } from './TerminalPaneStack.js';
 
@@ -39,6 +40,7 @@ export function TerminalDrawer({
   onResizeStart,
   onStatusChange,
 }: TerminalDrawerProps) {
+  const t = useT();
   // `rendered` keeps the panes laid out (display:none once shut — never
   // unmounted: that would drop each xterm's scrollback and force a reconnect
   // on every toggle); `shown` is the width target.
@@ -75,7 +77,7 @@ export function TerminalDrawer({
             className="absolute top-0 left-0 bottom-0 z-40 cursor-col-resize hover:bg-accent"
             style={{ width: TERMINAL_DRAWER_RESIZE_HANDLE_PX }}
             onMouseDown={onResizeStart}
-            title="Drag to resize"
+            title={t('terminal.dragToResize')}
           />
 
           <div className="relative flex-1 min-h-0 p-4">

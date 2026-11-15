@@ -8,6 +8,7 @@
 import { useState } from 'react';
 
 import { isItemId, MAX_WARDROBE_ITEMS } from '../../../../core/src/wardrobeItems.js';
+import { useT } from '../../i18n/index.js';
 import { castStore, registerItemArt } from '../castStore.js';
 import {
   importPieceSheet,
@@ -27,6 +28,7 @@ import { useStudio } from './studio.js';
 
 export function ItemTools() {
   const { renderer, profile, editor, cast, status, phone } = useStudio();
+  const t = useT();
   const pix = editor!.pix;
   const piece = itemPieceOf(pix);
   const worn = piece ? profile[piece] : undefined;
@@ -42,9 +44,10 @@ export function ItemTools() {
       onExport={async () => {
         const sheet = pieceSheet(renderer, profile, pix);
         if (!sheet) return;
-        const filename = `${fileBaseName(profile, cast.current)}-${pieceName(renderer, profile, pix)}.png`;
+        // file names stay in English, whatever the language
+        const filename = `${fileBaseName(profile, cast.current)}-${pieceName(renderer, profile, pix, 'en')}.png`;
         await saveFile(filename, await sheetPng(sheet));
-        status(`Saved ${filename}.`, 'ok');
+        status(t('characters.savedFile', { file: filename }), 'ok');
       }}
       onImport={() =>
         pickFiles('.png,image/png', false, ([file]) => {
@@ -55,15 +58,27 @@ export function ItemTools() {
               const sheet = decodeSheet(img);
               if (!sheet) {
                 status(
-                  `${file.name} is ${img.width}×${img.height}. A piece sheet is ${SHEET_W}×${SHEET_H}.`,
+                  t('characters.wrongSize', {
+                    file: file.name,
+                    w: img.width,
+                    h: img.height,
+                    sw: SHEET_W,
+                    sh: SHEET_H,
+                  }),
                   'err',
                 );
                 return;
               }
               castStore.update((p) => importPieceSheet(renderer, p, pix, sheet), editor!.frame);
-              status(`Loaded ${file.name} into ${pieceName(renderer, profile, pix)}.`, 'ok');
+              status(
+                t('characters.loadedInto', {
+                  file: file.name,
+                  piece: pieceName(renderer, profile, pix),
+                }),
+                'ok',
+              );
             })
-            .catch(() => status(`Could not read ${file.name} as a PNG.`, 'err'))
+            .catch(() => status(t('characters.notPng', { file: file.name }), 'err'))
             .finally(() => URL.revokeObjectURL(url));
         })
       }
@@ -76,10 +91,10 @@ export function ItemTools() {
         if (!item) return;
         registerItemArt(item.id, data);
         if (!castStore.addItem(item, (p) => wearNewItem(p, item))) {
-          status(`The wardrobe holds at most ${MAX_WARDROBE_ITEMS} items of your own.`, 'err');
+          status(t('characters.itemsFull', { max: MAX_WARDROBE_ITEMS }), 'err');
           return;
         }
-        status(`Added ${item.label}. Save to keep it.`, 'ok');
+        status(t('characters.itemAdded', { label: item.label }), 'ok');
       }}
       onDelete={(id) => castStore.removeItem(id)}
       phone={phone}
@@ -98,16 +113,17 @@ function ItemSection(props: {
   onDelete: (id: string) => void;
   phone: boolean;
 }) {
+  const t = useT();
   const [name, setName] = useState(props.defaultName);
   return (
     <div className="chv-ed-item">
-      <h3>Item</h3>
+      <h3>{t('characters.item')}</h3>
       <div className="chv-toolrow">
         <button type="button" className="chv-tool" onClick={() => void props.onExport()}>
-          Export PNG
+          {t('characters.exportPng')}
         </button>
         <button type="button" className="chv-tool" onClick={props.onImport}>
-          Import PNG
+          {t('characters.importPng')}
         </button>
       </div>
       {props.canSaveItem && (
@@ -121,12 +137,12 @@ function ItemSection(props: {
           <input
             value={name}
             maxLength={64}
-            aria-label="New item name"
-            placeholder="Item name"
+            aria-label={t('characters.newItemName')}
+            placeholder={t('characters.itemName')}
             onChange={(e) => setName(e.target.value)}
           />
           <button type="submit" className="chv-tool" disabled={!name.trim()}>
-            Save as new item
+            {t('characters.saveAsItem')}
           </button>
         </form>
       )}
@@ -134,17 +150,13 @@ function ItemSection(props: {
         <div className="chv-toolrow">
           <ArmedButton
             className="chv-tool"
-            label={`Delete ${props.customLabel}`}
-            confirmLabel={props.phone ? 'Tap again' : 'Click again to delete it everywhere'}
+            label={t('characters.deleteItem', { label: props.customLabel })}
+            confirmLabel={t(props.phone ? 'characters.tapAgain' : 'characters.deleteEverywhere')}
             onConfirm={() => props.onDelete(props.custom!)}
           />
         </div>
       )}
-      <p className="chv-note">
-        A PNG holds this piece alone, uncoloured, every frame in the sheet layout ({SHEET_W}×
-        {SHEET_H}). Importing one replaces this character’s edits to the piece. A new item joins the
-        wardrobe for every character.
-      </p>
+      <p className="chv-note">{t('characters.itemNote', { w: SHEET_W, h: SHEET_H })}</p>
     </div>
   );
 }

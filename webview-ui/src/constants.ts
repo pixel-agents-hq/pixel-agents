@@ -619,13 +619,6 @@ export const TERMINAL_ARROW_SEQUENCES = {
  *  fill the left half, the `right` keys the right. */
 export const MOBILE_KEY_BAR: {
   left: ReadonlyArray<{ label: string; sequence: string }>;
-  /** Press-hold-slide emits arrow keys with the finger, along the first
-   *  direction it moves in (touch/trackpad.ts), echoing the iOS space-bar
-   *  trackpad (whose real caret gesture can't reach xterm — its textarea
-   *  must stay empty for input diffing). Drives Claude Code's TUI menus (/resume, /model) and the
-   *  input-line cursor; the iOS keyboard has no arrows of its own. A plain
-   *  tap on it deliberately does nothing. */
-  pad: { label: string };
   right: ReadonlyArray<{ label: string; sequence: string }>;
 } = {
   left: [
@@ -635,7 +628,6 @@ export const MOBILE_KEY_BAR: {
     { label: 'tab', sequence: '\t' },
     { label: 'shift+tab', sequence: '\x1b[Z' },
   ],
-  pad: { label: 'Arrow keys' },
   right: [
     { label: 'esc', sequence: '\x1b' },
     // Forward delete: the iOS keyboard's ⌫ only deletes backwards.
@@ -659,9 +651,6 @@ export const MOBILE_TRACKPAD = {
 } as const;
 /** How long the trackpad's arrows nudge toward each arrow it sends. */
 export const MOBILE_TRACKPAD_NUDGE_MS = 90;
-/** The Paste pill's prompt where script can't read the clipboard (plain-http
- *  origins): the user pastes into the native field instead. */
-export const MOBILE_PASTE_PROMPT = 'Paste into the terminal:';
 /** visualViewport.height within this many px of innerHeight = nothing to
  *  clamp (the two disagree by sub-pixel rounding on some devices). */
 export const VISUAL_VIEWPORT_FULL_EPSILON_PX = 1;
@@ -877,3 +866,7 @@ export const MUSIC_VERSION_GAP_PX = 6;
 export const VERSION_LABEL_BOTTOM_PX = 10;
 /** The update notice / changelog tooltip, this far above the label's spot. */
 export const VERSION_NOTICE_ABOVE_PX = 34;
+
+// ── i18n ─────────────────────────────────────────────────────
+/** localStorage key: this viewer's UI language choice ('auto' or a locale id). */
+export const LANGUAGE_STORAGE_KEY = 'pixel-agents.language';

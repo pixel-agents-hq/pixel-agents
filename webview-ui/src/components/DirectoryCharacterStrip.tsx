@@ -17,6 +17,7 @@ import {
   MUGSHOT_CROP_TOP_ROW,
 } from '../constants.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
+import { useT } from '../i18n/index.js';
 import { getLoadedCharacterCount } from '../office/sprites/spriteData.js';
 import { CharacterMugShot } from './CharacterMugShot.js';
 import { directoryStrip } from './directoryStrip.js';
@@ -38,6 +39,7 @@ interface DirectoryCharacterStripProps {
  * defaults.
  */
 export function DirectoryCharacterStrip({ directory, onPick }: DirectoryCharacterStripProps) {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   // Subscribed so a character added or deleted re-renders (and re-reads the count).
   const cast = useCast();
@@ -76,8 +78,8 @@ export function DirectoryCharacterStrip({ directory, onPick }: DirectoryCharacte
               e.stopPropagation();
               onPick(palette);
             }}
-            aria-label={`Launch as ${label} in ${directory.name}`}
-            title={`Launch as ${label}`}
+            aria-label={t('launch.launchAsIn', { name: label, directory: directory.name })}
+            title={t('launch.launchAs', { name: label })}
             className="flex p-0 bg-transparent border-none rounded-none cursor-pointer hover:-translate-y-1 focus-visible:-translate-y-1"
           >
             <CharacterMugShot palette={palette} repeat={0} zoom={1} />
@@ -92,8 +94,11 @@ export function DirectoryCharacterStrip({ directory, onPick }: DirectoryCharacte
             e.stopPropagation();
             setExpanded(true);
           }}
-          aria-label={`Show all ${all.length} characters of ${directory.name}`}
-          title="Show all"
+          aria-label={t('launch.showAllCharacters', {
+            count: all.length,
+            directory: directory.name,
+          })}
+          title={t('launch.showAll')}
           className="flex p-0 bg-transparent border-none rounded-none cursor-pointer hover:-translate-y-1 focus-visible:-translate-y-1"
         >
           <SilhouetteMugShot />

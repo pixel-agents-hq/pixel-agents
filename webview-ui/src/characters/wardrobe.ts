@@ -21,6 +21,8 @@ import {
   type EyeRows,
 } from '../../../core/src/characterProfiles.js';
 import { isRecord } from '../../../core/src/isRecord.js';
+import { t } from '../i18n/index.js';
+import { partName } from './labels.js';
 import { SHEET_H, SHEET_W } from './sheet.js';
 
 export interface PartInfo {
@@ -142,9 +144,10 @@ export function decodeWardrobe(
 export const partInfo = (w: Wardrobe, cat: string, id: string | undefined): PartInfo | undefined =>
   w.manifest.parts[cat]?.find((p) => p.id === id);
 
-/** A part's label, or 'None'. */
+/** A part's label as shown (translated), or None. */
 export function partLabel(w: Wardrobe, cat: string, id: string | undefined): string {
-  return partInfo(w, cat, id)?.label ?? 'None';
+  const part = partInfo(w, cat, id);
+  return part ? partName(part) : t('characters.none');
 }
 
 const isPart = (v: unknown) =>

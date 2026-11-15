@@ -1,0 +1,22 @@
+/** English strings shared across the UI. The source of truth — vi/common.ts must carry every key. */
+export const common = {
+  cancel: 'Cancel',
+  close: 'Close',
+  save: 'Save',
+  delete: 'Delete',
+  add: 'Add',
+  remove: 'Remove',
+  edit: 'Edit',
+  back: 'Back',
+  next: 'Next',
+  done: 'Done',
+  ok: 'OK',
+  undo: 'Undo',
+  redo: 'Redo',
+  reset: 'Reset',
+  copy: 'Copy',
+  paste: 'Paste',
+  loading: 'Loading…',
+  search: 'Search',
+  settings: 'Settings',
+} as const;

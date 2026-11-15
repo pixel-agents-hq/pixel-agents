@@ -4,13 +4,13 @@ import type { CSSProperties } from 'react';
 import { useEffect, useRef } from 'react';
 
 import {
-  MOBILE_PASTE_PROMPT,
   TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE_PX,
   TERMINAL_RESIZE_DEBOUNCE_MS,
   TERMINAL_SCROLLBACK_LINES,
   TERMINAL_THEME,
 } from '../constants.js';
+import { t } from '../i18n/index.js';
 import { readClipboardText } from '../terminal/clipboard.js';
 import { attachClipboardInput } from '../terminal/clipboardInput.js';
 import { terminalLinkProvider } from '../terminal/linkProvider.js';
@@ -116,7 +116,9 @@ export function TerminalPane({
         scheduleFit();
       },
       onExit: (exitCode) => {
-        term.write(`\r\n\x1b[90m[process exited with code ${String(exitCode)}]\x1b[0m\r\n`);
+        term.write(
+          `\r\n\x1b[90m[${t('terminal.processExited', { code: String(exitCode) })}]\x1b[0m\r\n`,
+        );
       },
       onStatusChange: (status) => statusRef.current?.(agentId, status),
     });
@@ -146,7 +148,7 @@ export function TerminalPane({
       // turned that mode on — Claude Code has, and without the markers a
       // multiline paste would submit at its first newline.
       onPaste: () => {
-        void readClipboardText(MOBILE_PASTE_PROMPT).then((text) => {
+        void readClipboardText(t('terminal.pastePrompt')).then((text) => {
           if (text) term.paste(text);
         });
       },
