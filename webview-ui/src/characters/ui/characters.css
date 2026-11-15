@@ -705,6 +705,81 @@
   font-size: 15px;
 }
 
+/* ── Role tab (RolePanel): the character's launch settings ── */
+.chv-roles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px;
+}
+.chv-role {
+  background: var(--color-bg-thumb);
+  border: 2px solid transparent;
+  padding: 6px 8px;
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  text-align: left;
+  min-width: 0;
+}
+.chv-role:hover {
+  border-color: var(--color-border);
+}
+.chv-role[aria-pressed='true'] {
+  border-color: var(--color-accent-bright);
+  background: var(--color-active-bg);
+}
+.chv-role b {
+  font-weight: 400;
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chv-role-scope {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--color-text-muted-solid);
+  white-space: nowrap;
+}
+.chv-role-desc {
+  font-size: 14px;
+  line-height: 1.15;
+  color: var(--color-text-muted-solid);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.chv-role-custom {
+  display: grid;
+  gap: 4px;
+}
+.chv-role-custom input {
+  background: var(--color-bg-dark);
+  border: 2px solid var(--color-border);
+  padding: 4px 8px;
+  font-size: 16px;
+  min-width: 0;
+  max-width: 320px;
+}
+.chv-role-custom input[aria-invalid='true'] {
+  border-color: var(--color-danger);
+}
+.chv-role-invalid {
+  color: var(--color-warning);
+}
+/* a roster card's launch role, under its file name */
+.chv-card-role,
+.chv-mcard .chv-card-role {
+  font-size: 12px;
+  color: var(--color-accent-bright);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Roster ──────────────────────────────────────────────── */
 .chv-roster {
   padding: 12px;

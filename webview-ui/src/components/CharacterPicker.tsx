@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CharacterProfile } from '../../../core/src/characterProfiles.js';
 import { MAX_CHARACTER_PROFILES } from '../../../core/src/characterProfiles.js';
 import { useCast } from '../characters/castStore.js';
+import { launchBadge, launchSummary } from '../characters/launch.js';
 import { characterLabel } from '../characters/profiles.js';
 import { rosterOrder } from '../characters/recent.js';
 import type { CharacterRenderer } from '../characters/renderer.js';
@@ -278,6 +279,11 @@ function CharacterCard({ index, profile, renderer, dpr, onPick, onEdit }: Charac
   const t = useT();
   const longPress = useLongPress(() => onEdit(index));
   const label = characterLabel(profile, index);
+  // a character that launches with settings of its own says so under its name
+  const role = launchBadge(profile.launch);
+  const roleTitle = role
+    ? t('characters.roleBadgeTitle', { summary: launchSummary(profile.launch) })
+    : undefined;
   // A mouse over the card walks the character in place. Mouse only: a tap's
   // emulated hover would leave it walking until the next tap elsewhere.
   const [hovered, setHovered] = useState(false);
@@ -293,6 +299,7 @@ function CharacterCard({ index, profile, renderer, dpr, onPick, onEdit }: Charac
       <button
         type="button"
         aria-label={t('characters.launchAs', { name: label })}
+        title={roleTitle}
         {...longPress.handlers}
         onClick={() => {
           if (!longPress.consumeClick()) onPick(index);
@@ -309,6 +316,11 @@ function CharacterCard({ index, profile, renderer, dpr, onPick, onEdit }: Charac
         <span className="max-w-[7ch] overflow-hidden text-ellipsis whitespace-nowrap text-sm text-text-muted">
           {label}
         </span>
+        {role && (
+          <span className="max-w-[7ch] overflow-hidden text-ellipsis whitespace-nowrap text-2xs leading-none text-accent-bright">
+            {role}
+          </span>
+        )}
       </button>
       {/* Hidden until the card is hovered (hover: only exists on devices
           that have it) or the pencil is keyboard-focused; gone on coarse

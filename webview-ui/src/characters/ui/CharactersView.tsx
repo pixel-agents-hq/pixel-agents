@@ -25,8 +25,9 @@ import { type BoxSize, useBoxSize } from '../../hooks/useBoxSize.js';
 import { useDevicePixelRatio } from '../../hooks/useDevicePixelRatio.js';
 import { useT } from '../../i18n/index.js';
 import { castStore, useCast } from '../castStore.js';
+import { requestLaunchRoles } from '../launchRoles.js';
 import { FRAME_COUNT, SHEET_H, SHEET_W } from '../sheet.js';
-import { type ColorKey, type TabKey, tabPiece, TABS, wornPieces } from '../slots.js';
+import { type ColorKey, tabPiece, TABS, wornPieces } from '../slots.js';
 import { FRAME_H, useCanvasSnapping } from './pixelCanvas.js';
 import { HistoryButtons, PhoneDock, RosterPane } from './Roster.js';
 import { SaveButton } from './SaveButton.js';
@@ -38,6 +39,7 @@ import {
   type StatusKind,
   type Studio,
   StudioContext,
+  type ViewTab,
 } from './studio.js';
 import { Wardrobe } from './Wardrobe.js';
 
@@ -98,7 +100,7 @@ export function CharactersView({ phone, onClose }: CharactersViewProps) {
     },
     [rootBoxRef],
   );
-  const [tab, setTab] = useState<TabKey>('body');
+  const [tab, setTab] = useState<ViewTab>('body');
   const [pickerOpen, setPickerOpen] = useState<ColorKey | null>(null);
   const [editor, setEditorState] = useState<EditorState | null>(null);
   const [phoneMode, setPhoneModeState] = useState<PhoneMode>('wardrobe');
@@ -121,6 +123,8 @@ export function CharactersView({ phone, onClose }: CharactersViewProps) {
     };
   }, []);
   useCanvasSnapping(root, dpr);
+  // the roles a character can launch as (Role tab): asked afresh each time the view opens
+  useEffect(() => requestLaunchRoles(), []);
 
   const profile = cast.profiles[cast.current];
 
@@ -145,10 +149,8 @@ export function CharactersView({ phone, onClose }: CharactersViewProps) {
     (frame: number, pix?: string) => {
       if (!profile || !renderer) return;
       const worn = wornPieces(renderer.wardrobe, profile);
-      const wanted = tabPiece(
-        TABS.find((def) => def.key === tab)!,
-        profile,
-      );
+      const def = TABS.find((d) => d.key === tab);
+      const wanted = def ? tabPiece(def, profile) : undefined;
       const piece = pix ?? (worn.find((p) => p.pix === wanted) ?? worn[0])?.pix ?? 'body';
       setEditorState({ pix: piece, frame, tool: 'pencil', color: null, fade: false, front: false });
       if (phone) setPhoneMode('tile');

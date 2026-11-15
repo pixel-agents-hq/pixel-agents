@@ -127,6 +127,7 @@ components:
         - $ref: '#/components/schemas/DirectorySaved'
         - $ref: '#/components/schemas/DirectoryRejected'
         - $ref: '#/components/schemas/DirectorySuggestions'
+        - $ref: '#/components/schemas/LaunchRolesLoaded'
         - $ref: '#/components/schemas/ConversationsLoaded'
         - $ref: '#/components/schemas/ConversationSearchResults'
         # Terminal (standalone embedded terminal control plane)
@@ -169,6 +170,7 @@ components:
         - $ref: '#/components/schemas/SaveDirectory'
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/RequestDirectorySuggestions'
+        - $ref: '#/components/schemas/RequestLaunchRoles'
         - $ref: '#/components/schemas/RequestConversations'
         - $ref: '#/components/schemas/SearchConversations'
         - $ref: '#/components/schemas/ResumeConversation'
@@ -1043,6 +1045,23 @@ components:
           items:
             type: string
 
+    LaunchRolesLoaded:
+      description: |
+        The agent definitions a character can launch as: the user's own (every
+        project) and each Directory's. Sent point-to-point in reply to
+        `requestLaunchRoles` (never broadcast). Empty when the provider has none
+        or can't name its agents.
+      type: object
+      additionalProperties: false
+      required: [type, roles]
+      properties:
+        type:
+          const: launchRolesLoaded
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/LaunchRole'
+
     ConversationsLoaded:
       description: |
         The sidebar's recent conversations: for each Directory, the ones an
@@ -1629,6 +1648,18 @@ components:
         path:
           type: string
 
+    RequestLaunchRoles:
+      description: >-
+        Ask the host for the agent definitions a character can launch as; it
+        replies `launchRolesLoaded` to this client only. Sent when the
+        Characters view opens.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: requestLaunchRoles
+
     RequestDirectorySuggestions:
       description: >-
         Ask the host for tappable path suggestions for the Directory modal; it
@@ -1913,6 +1944,49 @@ components:
         v:
           type: number
           description: Profile format version (older versions are migrated on read).
+        launch:
+          $ref: '#/components/schemas/CharacterLaunch'
+
+    CharacterLaunch:
+      description: |
+        How an agent wearing this character by choice is launched (a roster pick, a
+        Directory default, a resumed conversation's remembered look — never a random
+        look): the coding agent's role (a named agent definition, e.g. Claude Code's
+        `--agent`), model and effort. Each absent field = the CLI's own default. The
+        validator (core/src/characterProfiles.ts) restricts each to characters safe on a
+        command line.
+      type: object
+      additionalProperties: false
+      properties:
+        agent:
+          type: string
+          description: Agent definition name (letters, digits, '.', '_', '-'; up to 64).
+        model:
+          type: string
+          description: Model alias or full name (letters, digits, '.', '_', '-', ':', '[', ']'; up to 100).
+        effort:
+          type: string
+          description: Effort level ('low', 'medium', 'high', 'xhigh' or 'max').
+
+    LaunchRole:
+      description: One agent definition the provider can launch as (see CharacterLaunch.agent).
+      type: object
+      additionalProperties: false
+      required: [name, scope]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        model:
+          type: string
+          description: The model the definition itself asks for, if any.
+        scope:
+          type: string
+          description: "'user' (every project) or 'project' (one Directory's own)."
+        directory:
+          type: string
+          description: The Directory path a project-scope definition lives in.
 
     AgentLook:
       description: An agent's look (see agentCreated.palette and repeat).

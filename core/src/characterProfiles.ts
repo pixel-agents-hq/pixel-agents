@@ -15,6 +15,7 @@ import { isRecord } from './isRecord.js';
 import { newLocalId } from './localId.js';
 import type {
   CharacterColor,
+  CharacterLaunch,
   CharacterPixelEdits,
   CharacterProfile as GeneratedCharacterProfile,
 } from './messages.js';
@@ -25,7 +26,7 @@ import type {
  * (`palette`); pixel edits are stored uncoloured, `cells[frame][pixel]` = '#rrggbb' to paint
  * or null to erase (frame 0-23 = row * 8 + frame, pixel y*16+x).
  */
-export type { CharacterColor, CharacterPixelEdits };
+export type { CharacterColor, CharacterLaunch, CharacterPixelEdits };
 
 /** Profile fields that hold a wardrobe part id (one per slot). */
 export const CHARACTER_SLOTS = [
@@ -94,6 +95,39 @@ export function parsePixId(key: string): [set: string, id: string] {
 }
 
 const EDIT_COLOR_RE = /^#[0-9a-f]{6}$/i;
+
+/** The effort levels a character can launch with (Claude Code's `--effort`). */
+export const LAUNCH_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type LaunchEffort = (typeof LAUNCH_EFFORTS)[number];
+/** An agent definition's name: it becomes a command-line argument, so nothing a shell reads. */
+export const LAUNCH_AGENT_RE = /^[A-Za-z0-9._-]{1,64}$/;
+/** A model alias or full name ('opus', 'claude-opus-5-5', 'sonnet[1m]'), likewise. */
+export const LAUNCH_MODEL_RE = /^[A-Za-z0-9._:[\]-]{1,100}$/;
+
+/** A character's launch settings: each field absent or safe on a command line. */
+export function isCharacterLaunch(value: unknown): value is CharacterLaunch {
+  if (!isRecord(value)) return false;
+  if (Object.keys(value).some((k) => k !== 'agent' && k !== 'model' && k !== 'effort'))
+    return false;
+  if (
+    value.agent !== undefined &&
+    !(typeof value.agent === 'string' && LAUNCH_AGENT_RE.test(value.agent))
+  )
+    return false;
+  if (
+    value.model !== undefined &&
+    !(typeof value.model === 'string' && LAUNCH_MODEL_RE.test(value.model))
+  )
+    return false;
+  return (
+    value.effort === undefined || (LAUNCH_EFFORTS as readonly unknown[]).includes(value.effort)
+  );
+}
+
+/** A launch with something in it (an empty one launches like none). */
+export function hasLaunchSettings(launch: CharacterLaunch | undefined): launch is CharacterLaunch {
+  return !!launch && (!!launch.agent || !!launch.model || !!launch.effort);
+}
 const CHARACTER_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** A fresh character id. */
@@ -155,6 +189,7 @@ export function isCharacterProfile(value: unknown): value is CharacterProfile {
   if (value.v !== undefined && !isFiniteNumber(value.v)) return false;
   if (value.colors !== undefined && !isMapOf(value.colors, isCharacterColor)) return false;
   if (value.edits !== undefined && !isMapOf(value.edits, isCharacterPixelEdits)) return false;
+  if (value.launch !== undefined && !isCharacterLaunch(value.launch)) return false;
   return true;
 }
 

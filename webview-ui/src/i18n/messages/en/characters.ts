@@ -311,4 +311,28 @@ export const characters = {
   w_white: 'White',
   w_with_coin: 'With coin',
   w_yellow: 'Yellow',
+
+  // ── Role tab (launch settings) ──
+  tab_role: 'Role',
+  roleNote:
+    'Used when an agent is launched as this character: a roster pick, a Directory default or a resumed conversation. Not for random looks, nor for agents already running.',
+  roleAgent: 'Role',
+  roleAgentHint: 'Claude Code agent definition (--agent)',
+  roleNone: 'None',
+  roleCustom: 'Custom',
+  roleCustomPlaceholder: 'agent-name',
+  roleAgentInvalid: 'Letters, digits, . _ - only (up to 64)',
+  roleNotFound: 'Not found in ~/.claude/agents or any Directory',
+  roleLoading: 'Looking for roles…',
+  roleNoneFound: 'No roles in ~/.claude/agents or your Directories’ .claude/agents',
+  roleUser: 'user',
+  roleModel: 'Model',
+  roleDefault: 'Default',
+  roleModelDefaultHint: 'The CLI’s default model',
+  roleModelFromRole: 'Role default: {model}',
+  roleModelPlaceholder: 'claude-opus-5-5',
+  roleModelInvalid: 'Letters, digits, . _ - : [ ] only',
+  roleEffort: 'Effort',
+  roleEffortDefaultHint: 'The CLI’s default effort',
+  roleBadgeTitle: 'Launches as {summary}',
 } as const;

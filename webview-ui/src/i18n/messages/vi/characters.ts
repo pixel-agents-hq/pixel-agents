@@ -313,4 +313,28 @@ export const characters: Strings<typeof en> = {
   w_white: 'Trắng',
   w_with_coin: 'Có mặt đồng xu',
   w_yellow: 'Vàng',
+
+  // ── Thẻ Vai trò (thiết lập khi khởi chạy) ──
+  tab_role: 'Vai trò',
+  roleNote:
+    'Áp dụng khi một agent được khởi chạy với nhân vật này: chọn từ danh sách nhân vật, nhân vật mặc định của Thư mục hoặc tiếp tục một cuộc trò chuyện. Không áp dụng cho ngoại hình ngẫu nhiên, cũng như cho các agent đang chạy.',
+  roleAgent: 'Vai trò',
+  roleAgentHint: 'Định nghĩa agent của Claude Code (--agent)',
+  roleNone: 'Không có',
+  roleCustom: 'Tùy chỉnh',
+  roleCustomPlaceholder: 'ten-agent',
+  roleAgentInvalid: 'Chỉ dùng chữ, số, . _ - (tối đa 64)',
+  roleNotFound: 'Không tìm thấy trong ~/.claude/agents hay Thư mục nào',
+  roleLoading: 'Đang tìm vai trò…',
+  roleNoneFound: 'Không có vai trò nào trong ~/.claude/agents hay .claude/agents của các Thư mục',
+  roleUser: 'người dùng',
+  roleModel: 'Model',
+  roleDefault: 'Mặc định',
+  roleModelDefaultHint: 'Model mặc định của CLI',
+  roleModelFromRole: 'Mặc định của vai trò: {model}',
+  roleModelPlaceholder: 'claude-opus-5-5',
+  roleModelInvalid: 'Chỉ dùng chữ, số, . _ - : [ ]',
+  roleEffort: 'Mức nỗ lực',
+  roleEffortDefaultHint: 'Mức nỗ lực mặc định của CLI',
+  roleBadgeTitle: 'Khởi chạy với {summary}',
 };

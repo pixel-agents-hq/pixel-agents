@@ -2,12 +2,14 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { isCharacterLaunch } from '../../../../../core/src/characterProfiles.js';
 import { normalizeProjectPath } from '../../../../../core/src/normalizeProjectPath.js';
 import type { AgentEvent, HookProvider } from '../../../../../core/src/provider.js';
 import {
   BASH_COMMAND_DISPLAY_MAX_LENGTH,
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
 } from '../../../constants.js';
+import { listClaudeAgents } from './claudeAgents.js';
 import {
   areHooksInstalled as installerAreHooksInstalled,
   installHooks as installerInstallHooks,
@@ -125,11 +127,29 @@ function sessionDirOf(workspacePath: string): string {
 function buildLaunchCommand(
   sessionId: string,
   cwd: string,
-  opts?: { bypassPermissions?: boolean; resume?: boolean },
+  opts?: {
+    bypassPermissions?: boolean;
+    resume?: boolean;
+    agent?: string;
+    model?: string;
+    effort?: string;
+  },
 ): { command: string; args: string[]; env?: Record<string, string> } {
   // A resumed session keeps its id and appends to its old transcript.
   const args = [opts?.resume ? '--resume' : '--session-id', sessionId];
   if (opts?.bypassPermissions) args.push('--dangerously-skip-permissions');
+  // The character's launch settings. Checked again here, not only where profiles
+  // are read: VS Code types this command line into a shell.
+  const launch = { agent: opts?.agent, model: opts?.model, effort: opts?.effort };
+  if (launch.agent || launch.model || launch.effort) {
+    if (isCharacterLaunch(launch)) {
+      if (launch.agent) args.push('--agent', launch.agent);
+      if (launch.model) args.push('--model', launch.model);
+      if (launch.effort) args.push('--effort', launch.effort);
+    } else {
+      console.warn('[Pixel Agents] Launch settings refused (unsafe on a command line)');
+    }
+  }
   return { command: 'claude', args, env: { PWD: cwd } };
 }
 
@@ -345,6 +365,7 @@ export const claudeProvider: HookProvider = {
   getAllSessionRoots,
   sessionFilePattern: '*.jsonl',
   buildLaunchCommand,
+  listLaunchRoles: listClaudeAgents,
   isInheritedSessionEnv: isInheritedClaudeSessionEnv,
   conversationTitle,
 

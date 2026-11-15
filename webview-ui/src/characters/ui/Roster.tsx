@@ -6,9 +6,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 
+import type { CharacterLaunch } from '../../../../core/src/characterProfiles.js';
 import { PixelIcon } from '../../components/ui/PixelIcon.js';
 import { type MessageKey, useT } from '../../i18n/index.js';
 import { castStore } from '../castStore.js';
+import { launchBadge, launchSummary } from '../launch.js';
 import { ArmedButton } from './ArmedButton.js';
 import { type CastActions, useCastActions } from './castActions.js';
 import type { SpriteView } from './pixelCanvas.js';
@@ -47,6 +49,21 @@ const ROSTER_ACTIONS: { label: MessageKey; title?: MessageKey; run: (a: CastActi
     run: (a) => a.loadConfigs(),
   },
 ];
+
+/** A character's launch role (else model, else effort) in small type; nothing without one. */
+function RoleBadge({ launch }: { launch: CharacterLaunch | undefined }) {
+  const t = useT();
+  const badge = launchBadge(launch);
+  if (!badge) return null;
+  return (
+    <span
+      className="chv-card-role"
+      title={t('characters.roleBadgeTitle', { summary: launchSummary(launch) })}
+    >
+      {badge}
+    </span>
+  );
+}
 
 /** Undo and Redo, for the desktop header and the phone's More sheet. */
 export function HistoryButtons() {
@@ -94,6 +111,7 @@ export function RosterPane() {
             >
               <SpriteCanvas sheet={renderer.sheet(p)} view={FRONT} scale={2} dpr={dpr} />
               <span className="chv-card-file">char_{i}</span>
+              <RoleBadge launch={p.launch} />
             </button>
             <input
               value={p.name ?? ''}
@@ -249,6 +267,7 @@ export function PhoneDock() {
               }}
             >
               <SpriteCanvas sheet={renderer.sheet(p)} view={FRONT} scale={1.5} dpr={dpr} />
+              <RoleBadge launch={p.launch} />
               <span>{p.name || `char_${i}`}</span>
             </button>
           ))}

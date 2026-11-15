@@ -23,7 +23,7 @@ import {
   startFileWatching,
 } from '../../server/src/fileWatcher.js';
 import { loadLayout } from '../../server/src/layoutPersistence.js';
-import { assignPaletteIfNeeded } from '../../server/src/paletteAssigner.js';
+import { assignPaletteIfNeeded, chosenLaunchSettings } from '../../server/src/paletteAssigner.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
 import { sessionMarkersUnset } from '../../server/src/terminal/terminalEnv.js';
@@ -96,11 +96,9 @@ export async function launchNewTerminal(
   }
 
   const sessionId = crypto.randomUUID();
-  const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, { bypassPermissions });
-  if (!launch) {
+  if (!claudeProvider.buildLaunchCommand) {
     throw new Error('claudeProvider.buildLaunchCommand is not implemented');
   }
-  terminal.sendText([launch.command, ...launch.args].join(' '));
 
   const projectDir = getProjectDirPath(cwd);
 
@@ -141,7 +139,15 @@ export async function launchNewTerminal(
   });
 
   // Only a launch the office aimed at a Directory wears its defaults.
-  assignPaletteIfNeeded(agent, agents, { picked: palette, directory: chosenDirectory });
+  const look = { picked: palette, directory: chosenDirectory };
+  assignPaletteIfNeeded(agent, agents, look);
+  // The look decides the command: a character chosen with a role, a model or
+  // an effort launches with them.
+  const launch = claudeProvider.buildLaunchCommand(sessionId, cwd, {
+    bypassPermissions,
+    ...chosenLaunchSettings(agent.palette, look),
+  });
+  terminal.sendText([launch.command, ...launch.args].join(' '));
   agents.set(id, agent);
   // A fresh session starts with an empty context: a full gauge from the spawn on.
   clearContextUsage(id, agents);

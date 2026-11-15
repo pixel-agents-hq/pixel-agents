@@ -616,6 +616,14 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           suggestions: () =>
             collectDirectorySuggestions(claudeProvider, this.shownHostDirectories()),
         });
+      } else if (message.type === 'requestLaunchRoles') {
+        this.sendOrBuffer({
+          type: 'launchRolesLoaded',
+          roles:
+            claudeProvider.listLaunchRoles?.(
+              listDirectories(this.hostDirectories()).map((d) => d.path),
+            ) ?? [],
+        });
       } else if (message.type === 'setShowHostDirectories') {
         if (typeof message.enabled === 'boolean') {
           this.adapter.setSetting(GLOBAL_KEY_SHOW_HOST_DIRECTORIES, message.enabled);

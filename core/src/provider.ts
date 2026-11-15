@@ -7,7 +7,7 @@
  * speculation.
  */
 
-import type { UsageWindow } from './messages.js';
+import type { LaunchRole, UsageWindow } from './messages.js';
 import type { TeamProvider } from './teamProvider.js';
 
 // ── Normalized Events (all provider types produce these) ──────
@@ -194,12 +194,25 @@ export interface HookProvider {
   buildLaunchCommand?(
     sessionId: string,
     cwd: string,
-    opts?: { bypassPermissions?: boolean; resume?: boolean },
+    opts?: {
+      bypassPermissions?: boolean;
+      resume?: boolean;
+      /** The character's launch settings (core CharacterLaunch, already validated):
+       *  the agent definition to run as, the model and the effort. Absent = the
+       *  CLI's own default; a provider without such a notion ignores them. */
+      agent?: string;
+      model?: string;
+      effort?: string;
+    },
   ): {
     command: string;
     args: string[];
     env?: Record<string, string>;
   };
+  /** The agent definitions a character can launch as (`buildLaunchCommand`'s
+   *  `agent`): the user's own and each of `directories`' own. Undefined = this
+   *  CLI has no named agents. */
+  listLaunchRoles?(directories: readonly string[]): LaunchRole[];
   /** True for an environment variable a running session of this CLI exports to
    *  the processes under it as a marker of THAT session (its id, its socket, a
    *  "you are a child session" flag). An agent the office launches is a session

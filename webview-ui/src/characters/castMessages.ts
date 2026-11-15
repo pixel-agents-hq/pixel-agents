@@ -1,7 +1,8 @@
 /**
  * The cast's server messages, handled here so the message hook only hands them over
  * (like usage/usageStore.ts handleUsageMessage): the character profiles and items, the
- * looks they move agents to, the roster's recency, and the external char_N.png sprites.
+ * looks they move agents to, the roster's recency, the external char_N.png sprites, and the
+ * roles a character can launch as.
  */
 
 import type { CharacterDirectionSprites } from '../../../core/src/assets/types.js';
@@ -12,6 +13,7 @@ import type {
 } from '../../../core/src/messages.js';
 import { parseWardrobeItems } from '../../../core/src/wardrobeItems.js';
 import { castStore } from './castStore.js';
+import { handleLaunchRolesMessage } from './launchRoles.js';
 import { setExternalCharacterSprites } from './officeSprites.js';
 
 /** What the cast's messages change in the office besides the cast. */
@@ -38,6 +40,7 @@ export function handleCastMessage(msg: { type?: unknown }, office: CastOffice): 
     castStore.receiveRecent((msg as RecentCharactersLoaded).recent);
     return true;
   }
+  if (handleLaunchRolesMessage(msg)) return true;
   if (msg.type === 'characterSpritesLoaded') {
     // External asset directories' char_N.png, worn after the character profiles
     setExternalCharacterSprites((msg as { characters: CharacterDirectionSprites[] }).characters);

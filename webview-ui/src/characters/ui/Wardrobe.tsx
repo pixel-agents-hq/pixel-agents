@@ -9,6 +9,7 @@ import type { CharacterProfile } from '../../../../core/src/characterProfiles.js
 import { useLocale, useT } from '../../i18n/index.js';
 import { offeredParts } from '../items.js';
 import { partName } from '../labels.js';
+import { launchSummary } from '../launch.js';
 import { setPart, setUnderwear, tabSummary } from '../profiles.js';
 import {
   ACCESSORIES,
@@ -17,12 +18,14 @@ import {
   eyeShape,
   layerOf,
   type SlotKey,
+  type TabKey,
   TABS,
   underOf,
 } from '../slots.js';
 import { ColorPanel } from './ColorPanel.js';
 import type { SpriteView } from './pixelCanvas.js';
 import { PixelEditor } from './PixelEditor.js';
+import { RolePanel } from './RolePanel.js';
 import { SpriteCanvas } from './SpriteCanvas.js';
 import { useStudio } from './studio.js';
 
@@ -159,8 +162,25 @@ function Accessories() {
   return <OptionGrid cards={cards} />;
 }
 
+/** The Role tab: the character's launch settings. */
+function RoleTab() {
+  const t = useT();
+  const { phone, cast } = useStudio();
+  return (
+    <div className="chv-slot">
+      {!phone && <h2 className="chv-slot-head">{t('characters.tab_role')}</h2>}
+      <RolePanel key={cast.current} />
+    </div>
+  );
+}
+
 function SlotPanel() {
-  const { profile, tab, phone, renderer } = useStudio();
+  const { tab } = useStudio();
+  return tab === 'role' ? <RoleTab /> : <WardrobeSlot tab={tab} />;
+}
+
+function WardrobeSlot({ tab }: { tab: TabKey }) {
+  const { profile, phone, renderer } = useStudio();
   const t = useT();
   const def = TABS.find((d) => d.key === tab)!;
   const under = underOf(tab);
@@ -272,6 +292,15 @@ function Tabs() {
           <span>{tabSummary(renderer.wardrobe, profile, def.key)}</span>
         </button>
       ))}
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === 'role'}
+        onClick={() => setTab('role')}
+      >
+        <b>{t('characters.tab_role')}</b>
+        <span>{launchSummary(profile.launch) || t('characters.roleNone')}</span>
+      </button>
     </div>
   );
 }

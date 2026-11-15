@@ -11,6 +11,9 @@ import type { CastState } from '../castStore.js';
 import type { CharacterRenderer } from '../renderer.js';
 import type { ColorKey, TabKey } from '../slots.js';
 
+/** The wardrobe's tabs: one per slot (TABS), then the character's launch Role. */
+export type ViewTab = TabKey | 'role';
+
 export type EditorTool = 'pencil' | 'eraser' | 'restore' | 'picker';
 
 /** The pixel editor's tool shortcuts (P is the pencil too). */
@@ -47,8 +50,8 @@ export interface Studio {
   phone: boolean;
   phoneMode: PhoneMode;
   setPhoneMode: (mode: PhoneMode) => void;
-  tab: TabKey;
-  setTab: (tab: TabKey) => void;
+  tab: ViewTab;
+  setTab: (tab: ViewTab) => void;
   /** The colour key whose picker is open (one at a time). */
   pickerOpen: ColorKey | null;
   setPickerOpen: (key: ColorKey | null) => void;

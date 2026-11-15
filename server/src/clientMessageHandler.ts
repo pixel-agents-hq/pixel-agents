@@ -472,6 +472,18 @@ export function handleClientMessage(
       break;
     }
 
+    case 'requestLaunchRoles':
+      // Every Directory the host knows, shown in the drawer or not: a role
+      // defined in one is one a character may launch as there.
+      send({
+        type: 'launchRolesLoaded',
+        roles:
+          claudeProvider.listLaunchRoles?.(
+            listDirectories(hostDirectoriesFor(ctx)).map((d) => d.path),
+          ) ?? [],
+      });
+      break;
+
     case 'saveDirectory':
     case 'removeDirectory':
     case 'requestDirectorySuggestions':

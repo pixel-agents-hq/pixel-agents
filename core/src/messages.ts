@@ -48,6 +48,7 @@ export type ServerMessage =
   | DirectorySaved
   | DirectoryRejected
   | DirectorySuggestions
+  | LaunchRolesLoaded
   | ConversationsLoaded
   | ConversationSearchResults
   | TerminalAvailability
@@ -86,6 +87,7 @@ export type ClientMessage =
   | SaveDirectory
   | RemoveDirectory
   | RequestDirectorySuggestions
+  | RequestLaunchRoles
   | RequestConversations
   | SearchConversations
   | ResumeConversation
@@ -284,6 +286,7 @@ export interface CharacterProfile {
   colors?: Record<string, CharacterColor>;
   edits?: Record<string, CharacterPixelEdits>;
   v?: number;
+  launch?: CharacterLaunch;
 }
 
 export interface CharacterColor {
@@ -297,6 +300,12 @@ export interface CharacterColor {
 
 export interface CharacterPixelEdits {
   cells: Record<string, Record<string, string | null>>;
+}
+
+export interface CharacterLaunch {
+  agent?: string;
+  model?: string;
+  effort?: string;
 }
 
 export interface AgentLook {
@@ -465,6 +474,19 @@ export interface DirectoryRejected {
 export interface DirectorySuggestions {
   type: 'directorySuggestions';
   paths: string[];
+}
+
+export interface LaunchRolesLoaded {
+  type: 'launchRolesLoaded';
+  roles: LaunchRole[];
+}
+
+export interface LaunchRole {
+  name: string;
+  description?: string;
+  model?: string;
+  scope: string;
+  directory?: string;
 }
 
 export interface ConversationsLoaded {
@@ -686,6 +708,10 @@ export interface RemoveDirectory {
 
 export interface RequestDirectorySuggestions {
   type: 'requestDirectorySuggestions';
+}
+
+export interface RequestLaunchRoles {
+  type: 'requestLaunchRoles';
 }
 
 export interface RequestConversations {

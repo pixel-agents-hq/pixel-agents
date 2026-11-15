@@ -5,6 +5,7 @@
  * created, so every connected client draws the same character.
  */
 
+import { type CharacterLaunch, hasLaunchSettings } from '../../core/src/characterProfiles.js';
 import type { Directory } from '../../core/src/messages.js';
 import { chooseLook } from '../../core/src/paletteUtils.js';
 import type { AgentStateStore } from './agentStateStore.js';
@@ -30,13 +31,18 @@ export function getPaletteCount(): number {
   return getCharacterProfiles().length + externalCount;
 }
 
-/** Every character some Directory claims as a default: left for its own
- *  launches when another agent needs a character (see pickRandomPalette). */
-function directoryDefaults(): Set<number> {
+/** Every character some Directory claims as a default, and every character
+ *  with launch settings (a role, a model): left for the launches that choose
+ *  them when another agent needs a character (see pickRandomPalette), so a
+ *  random look rarely reads as a role the agent doesn't have. */
+function reservedCharacters(): Set<number> {
   const reserved = new Set<number>();
   for (const directory of readConfig().directories) {
     for (const palette of directory.characters ?? []) reserved.add(palette);
   }
+  getCharacterProfiles().forEach((profile, palette) => {
+    if (hasLaunchSettings(profile.launch)) reserved.add(palette);
+  });
   return reserved;
 }
 
@@ -65,8 +71,25 @@ export function assignPaletteIfNeeded(
     worn: [...store.values()].filter((existing) => existing.id !== agent.id),
     picked: launch.picked,
     directory: launch.directory,
-    reserved: directoryDefaults(),
+    reserved: reservedCharacters(),
   });
   agent.palette = look.palette;
   agent.repeat = look.repeat;
+}
+
+/**
+ * The launch settings of the character an agent wears, when it wears it by
+ * choice: the roster pick, or a default of the Directory it was launched into.
+ * A random look launches plainly — the settings belong to choosing the
+ * character, not to happening to look like it.
+ */
+export function chosenLaunchSettings(
+  palette: number | undefined,
+  launch: LaunchLook = {},
+): CharacterLaunch | undefined {
+  if (palette === undefined) return undefined;
+  const chosen = palette === launch.picked || !!launch.directory?.characters?.includes(palette);
+  if (!chosen) return undefined;
+  const settings = getCharacterProfiles()[palette]?.launch;
+  return hasLaunchSettings(settings) ? settings : undefined;
 }

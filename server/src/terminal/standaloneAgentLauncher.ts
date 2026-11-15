@@ -26,7 +26,7 @@ import { clearContextUsage } from '../contextUsage.js';
 import { directoryAt } from '../directories.js';
 import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor, hostDirectory } from '../hostDirectory.js';
-import { assignPaletteIfNeeded } from '../paletteAssigner.js';
+import { assignPaletteIfNeeded, chosenLaunchSettings } from '../paletteAssigner.js';
 import type { AgentState } from '../types.js';
 import { inheritedEnv, terminalEnv } from './terminalEnv.js';
 import type { TerminalSession, TerminalSessions } from './terminalSessions.js';
@@ -74,11 +74,7 @@ export function launchStandaloneAgent(
   const cwd = options.directoryPath ?? process.cwd();
   const sessionId = options.resume?.sessionId ?? crypto.randomUUID();
 
-  const launch = provider.buildLaunchCommand?.(sessionId, cwd, {
-    bypassPermissions: options.bypassPermissions,
-    resume: options.resume !== undefined,
-  });
-  if (!launch) {
+  if (!provider.buildLaunchCommand) {
     console.error('[Pixel Agents] Terminal: provider.buildLaunchCommand is not implemented');
     return null;
   }
@@ -127,7 +123,15 @@ export function launchStandaloneAgent(
   // Server-side, like every other creation path: the palette rides the
   // agentCreated broadcast and is persisted with the agent, so a reload
   // restores the same character without the webview having to save it back.
-  assignPaletteIfNeeded(agent, store, { picked: options.palette, directory });
+  const look = { picked: options.palette, directory };
+  assignPaletteIfNeeded(agent, store, look);
+  // The look decides the command: a character chosen with a role, a model or
+  // an effort launches with them.
+  const launch = provider.buildLaunchCommand(sessionId, cwd, {
+    bypassPermissions: options.bypassPermissions,
+    resume: options.resume !== undefined,
+    ...chosenLaunchSettings(agent.palette, look),
+  });
 
   let session;
   try {
