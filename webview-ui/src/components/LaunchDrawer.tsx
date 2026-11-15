@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LAUNCH_DRAWER_PENCIL_GAP_PX } from '../constants.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import { useLongPress } from '../hooks/useLongPress.js';
+import { useT } from '../i18n/index.js';
 import { DirectoryCharacterStrip } from './DirectoryCharacterStrip.js';
 import { Dropdown, DropdownItem } from './ui/Dropdown.js';
 import { PixelIcon } from './ui/PixelIcon.js';
@@ -67,6 +68,7 @@ export function LaunchDrawer({
   pick,
   className = '',
 }: LaunchDrawerProps) {
+  const t = useT();
   const drawerRef = useRef<HTMLDivElement>(null);
   // The row whose pencil shows: the pencil hangs outside the drawer's right
   // border, level with the row. Kept until another row (or `+ Directory`) is
@@ -138,7 +140,7 @@ export function LaunchDrawer({
           onMouseEnter={() => setPencilRow(null)}
         >
           <DropdownItem onClick={onAddDirectory} className="text-base text-accent-bright">
-            + Directory
+            {t('launch.addDirectoryRow')}
           </DropdownItem>
         </div>
         <div
@@ -175,8 +177,8 @@ export function LaunchDrawer({
         >
           <button
             onClick={() => onEditDirectory(pencil.directory)}
-            aria-label={`Edit ${pencil.directory.name}`}
-            title="Edit directory"
+            aria-label={t('launch.editNamed', { name: pencil.directory.name })}
+            title={t('launch.editDirectoryTitle')}
             className="flex items-center px-8 bg-bg border-2 border-border rounded-none shadow-pixel cursor-pointer leading-none text-text-muted hover:text-text"
           >
             <PixelIcon name="pencil" />
@@ -207,6 +209,7 @@ function DirectoryRow({
   onEditDirectory,
   onHover,
 }: DirectoryRowProps) {
+  const t = useT();
   const editable = directory.source === 'user';
   // A long press opens the edit modal (touch only: a mouse gets the pencil).
   const longPress = useLongPress(() => onEditDirectory(directory), editable);
@@ -244,7 +247,7 @@ function DirectoryRow({
               aria-hidden="true"
               className="shrink-0 text-2xs text-text-muted border-2 border-border pl-4 pr-2 leading-none"
             >
-              host
+              {t('launch.hostBadge')}
             </span>
           )}
         </span>

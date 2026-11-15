@@ -7,6 +7,7 @@ import {
   ZOOM_MAX,
   ZOOM_MIN,
 } from '../constants.js';
+import { useT } from '../i18n/index.js';
 import { Button } from './ui/Button.js';
 import { PixelIcon } from './ui/PixelIcon.js';
 import { PixelText } from './ui/PixelText.js';
@@ -88,6 +89,7 @@ export function MobileZoomLevel({ zoom }: { zoom: number }) {
 }
 
 export function ZoomControls({ zoom, onZoomChange, sidebar }: ZoomControlsProps) {
+  const t = useT();
   const flash = useZoomFlash(zoom);
   const [hovered, setHovered] = useState(false);
   // Bumped per toggle: remounts the icon so its pop plays (never on first paint).
@@ -111,7 +113,7 @@ export function ZoomControls({ zoom, onZoomChange, sidebar }: ZoomControlsProps)
             }}
             aria-pressed={sidebar.open}
             className="border-border! shadow-pixel mb-4"
-            title={sidebar.open ? 'Hide conversations' : 'Show conversations'}
+            title={sidebar.open ? t('app.hideConversations') : t('app.showConversations')}
           >
             <span key={toggles} className={`flex ${toggles > 0 ? 'pixel-pop' : ''}`}>
               <PixelIcon name={sidebar.open ? 'sidebar' : 'sidebarShut'} />
@@ -130,7 +132,7 @@ export function ZoomControls({ zoom, onZoomChange, sidebar }: ZoomControlsProps)
             onClick={() => onZoomChange(zoom + 1)}
             disabled={maxDisabled}
             className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
-            title="Zoom in (Ctrl+Scroll)"
+            title={t('app.zoomIn')}
           >
             <PixelIcon name="zoomIn" />
           </Button>
@@ -139,7 +141,7 @@ export function ZoomControls({ zoom, onZoomChange, sidebar }: ZoomControlsProps)
             onClick={() => onZoomChange(zoom - 1)}
             disabled={minDisabled}
             className="border-border! shadow-pixel disabled:hover:bg-btn-bg disabled:cursor-default disabled:opacity-(--btn-disabled-opacity)"
-            title="Zoom out (Ctrl+Scroll)"
+            title={t('app.zoomOut')}
           >
             <PixelIcon name="zoomOut" />
           </Button>

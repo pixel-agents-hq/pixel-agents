@@ -9,6 +9,7 @@ import {
   ConversationList,
   type ConversationSearchScope,
 } from '../conversations/ConversationList.js';
+import { useT } from '../i18n/index.js';
 import type { SwipePanel } from './useEdgeSwipe.js';
 import { useEdgeSwipe } from './useEdgeSwipe.js';
 
@@ -56,6 +57,7 @@ export function MobileMenu({
   statusFor,
   onSearch,
 }: MobileMenuProps) {
+  const t = useT();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -98,17 +100,19 @@ export function MobileMenu({
       />
       <aside
         ref={panelRef}
-        aria-label="Menu"
+        aria-label={t('mobile.menu')}
         data-testid="mobile-menu"
         className={`absolute top-0 bottom-0 left-0 flex flex-col bg-bg border-r-2 border-border shadow-pixel transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full'}`}
         style={{ width: MOBILE_CONVERSATIONS_WIDTH, paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="flex items-center justify-between pl-10 pr-4 py-6 border-b-2 border-border">
-          <span className="text-base">{showConversations ? 'Conversations' : 'Menu'}</span>
+          <span className="text-base">
+            {showConversations ? t('mobile.conversations') : t('mobile.menu')}
+          </span>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close menu"
+            aria-label={t('mobile.closeMenu')}
             className="flex items-center justify-center w-32 h-32 bg-transparent border-none rounded-none cursor-pointer text-text-muted"
           >
             <PixelIcon name="close" />
@@ -142,7 +146,7 @@ export function MobileMenu({
               onOpenSettings();
             }}
           >
-            Settings
+            {t('common.settings')}
           </Button>
         </div>
       </aside>
@@ -196,6 +200,7 @@ function menuPanel(
 
 /** The phone's menu button, floating top-left over the office. */
 export function MobileMenuButton({ active, onClick }: { active: boolean; onClick: () => void }) {
+  const t = useT();
   return (
     <div className="absolute mobile-safe-top left-8 z-20 flex gap-6">
       <Button
@@ -203,8 +208,8 @@ export function MobileMenuButton({ active, onClick }: { active: boolean; onClick
         variant={active ? 'active' : 'default'}
         className="border-border! shadow-pixel"
         onClick={onClick}
-        aria-label="Menu"
-        title="Menu"
+        aria-label={t('mobile.menu')}
+        title={t('mobile.menu')}
       >
         <PixelIcon name="menu" />
       </Button>

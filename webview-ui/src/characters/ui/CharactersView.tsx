@@ -23,6 +23,7 @@ import {
 } from '../../constants.js';
 import { type BoxSize, useBoxSize } from '../../hooks/useBoxSize.js';
 import { useDevicePixelRatio } from '../../hooks/useDevicePixelRatio.js';
+import { useT } from '../../i18n/index.js';
 import { castStore, useCast } from '../castStore.js';
 import { FRAME_COUNT, SHEET_H, SHEET_W } from '../sheet.js';
 import { type ColorKey, type TabKey, tabPiece, TABS, wornPieces } from '../slots.js';
@@ -83,6 +84,7 @@ function isTextEntry(target: EventTarget | null): boolean {
 }
 
 export function CharactersView({ phone, onClose }: CharactersViewProps) {
+  const t = useT();
   const store = useCast();
   // the view shows and edits the draft (the saved list until the first change)
   const cast = useMemo(() => ({ ...store, profiles: store.draft ?? store.profiles }), [store]);
@@ -144,7 +146,7 @@ export function CharactersView({ phone, onClose }: CharactersViewProps) {
       if (!profile || !renderer) return;
       const worn = wornPieces(renderer.wardrobe, profile);
       const wanted = tabPiece(
-        TABS.find((t) => t.key === tab)!,
+        TABS.find((def) => def.key === tab)!,
         profile,
       );
       const piece = pix ?? (worn.find((p) => p.pix === wanted) ?? worn[0])?.pix ?? 'body';
@@ -288,7 +290,7 @@ export function CharactersView({ phone, onClose }: CharactersViewProps) {
       style={{ zIndex: CHARACTERS_VIEW_Z_INDEX }}
     >
       {!studio ? (
-        <p className="chv-loading">Loading characters…</p>
+        <p className="chv-loading">{t('characters.loading')}</p>
       ) : (
         <StudioContext.Provider value={studio}>
           {phone ? (
@@ -303,14 +305,14 @@ export function CharactersView({ phone, onClose }: CharactersViewProps) {
               <div className="chv-backdrop bg-black/50" onClick={requestClose} />
               <div className="chv-panel" ref={desk.panel}>
                 <header className="chv-head">
-                  <div className="chv-hist" role="group" aria-label="History">
+                  <div className="chv-hist" role="group" aria-label={t('characters.history')}>
                     <HistoryButtons />
                   </div>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="chv-close"
-                    aria-label="Close characters"
+                    aria-label={t('characters.closeView')}
                     onClick={requestClose}
                   >
                     <PixelIcon name="close" />
@@ -331,16 +333,14 @@ export function CharactersView({ phone, onClose }: CharactersViewProps) {
       <Modal
         isOpen={confirmClose}
         onClose={() => setConfirmClose(false)}
-        title="Unsaved changes"
+        title={t('characters.unsavedTitle')}
         zIndex={CHARACTERS_VIEW_Z_INDEX + 1}
       >
         <div className="flex flex-col gap-8 px-10 py-4">
-          <p className="text-base m-0">
-            Your changes to the characters aren't saved. Save them before closing?
-          </p>
+          <p className="text-base m-0">{t('characters.unsavedBody')}</p>
           <div className="flex gap-4 justify-end flex-wrap">
             <Button variant="default" onClick={() => setConfirmClose(false)}>
-              Keep editing
+              {t('characters.keepEditing')}
             </Button>
             <Button
               variant="default"
@@ -350,7 +350,7 @@ export function CharactersView({ phone, onClose }: CharactersViewProps) {
                 onClose();
               }}
             >
-              Discard
+              {t('characters.discard')}
             </Button>
             <Button
               variant="accent"
@@ -361,7 +361,7 @@ export function CharactersView({ phone, onClose }: CharactersViewProps) {
                 onClose();
               }}
             >
-              Save
+              {t('common.save')}
             </Button>
           </div>
         </div>

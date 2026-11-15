@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button.js';
 import { PixelIcon } from '../components/ui/PixelIcon.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import type { TerminalDrawerController } from '../hooks/useTerminalDrawer.js';
+import { useT } from '../i18n/index.js';
 import type { SwipePanel } from './useEdgeSwipe.js';
 import {
   refPanel,
@@ -72,6 +73,7 @@ export function MobileShell({
   keyboardOpen,
   menuSwipe,
 }: MobileShellProps) {
+  const t = useT();
   const shellRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   // In the office the right edge pulls the terminal and the left edge the
@@ -130,8 +132,10 @@ export function MobileShell({
               size="icon_lg"
               className="border-border! shadow-pixel"
               onClick={shell.toggleView}
-              title={shell.view === 'office' ? 'Show terminal' : 'Show office'}
-              aria-label={shell.view === 'office' ? 'Show terminal' : 'Show office'}
+              title={shell.view === 'office' ? t('mobile.showTerminal') : t('mobile.showOffice')}
+              aria-label={
+                shell.view === 'office' ? t('mobile.showTerminal') : t('mobile.showOffice')
+              }
             >
               <PixelIcon name={shell.view === 'office' ? 'terminal' : 'office'} />
             </Button>

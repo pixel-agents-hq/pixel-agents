@@ -17,11 +17,13 @@ import { paintPickCanvas } from '../../components/ui/pickCanvas.js';
 import { PixelInputText } from '../../components/ui/PixelInputText.js';
 import { PixelText } from '../../components/ui/PixelText.js';
 import { CHARACTER_HEX_INSET_PX } from '../../constants.js';
+import { useT } from '../../i18n/index.js';
 import { SWATCHES } from '../art/artColors.js';
 import { hsl01ToRgb, isAsDrawn, toColorize, wrapHue, ZERO_COLOR } from '../color.js';
 import { offeredParts } from '../items.js';
+import { partName, wardrobeText } from '../labels.js';
 import { setColor, setPart } from '../profiles.js';
-import { ACCESSORIES, colorArt, type ColorKey, type ColorPicker } from '../slots.js';
+import { ACCESSORIES, colorArt, type ColorKey } from '../slots.js';
 import { useStudio } from './studio.js';
 
 type Channel = 'h' | 's' | 'b' | 'c';
@@ -58,6 +60,12 @@ function parseHex(text: string): string | null {
   return `#${digits.toLowerCase()}`;
 }
 
+/** A colour panel's colour and its (translated) heading. */
+export interface ShownPicker {
+  key: ColorKey;
+  label: string;
+}
+
 const SQUARE_PX = 40;
 const HUE_PX = 64;
 
@@ -66,11 +74,12 @@ function Picker({
   value,
   gray,
 }: {
-  picker: ColorPicker;
+  picker: ShownPicker;
   value: CharacterColor;
   gray: boolean;
 }) {
   const { renderer, profile, edit } = useStudio();
+  const t = useT();
   const square = useRef<HTMLCanvasElement>(null);
   const hueBar = useRef<HTMLCanvasElement>(null);
   const live = useRef(value);
@@ -133,8 +142,8 @@ function Picker({
           id={`${id}-sb`}
           tabIndex={0}
           role="slider"
-          aria-label={`${picker.label} saturation and brightness`}
-          aria-valuetext={`saturation ${value.s}, brightness ${value.b}`}
+          aria-label={t('characters.satBright', { label: picker.label })}
+          aria-valuetext={t('characters.satBrightValue', { s: value.s, b: value.b })}
           onPick={(fx, fy) =>
             write({ s: valueAt('s', live.current, fx), b: valueAt('b', live.current, 1 - fy) })
           }
@@ -167,7 +176,7 @@ function Picker({
           id={`${id}-h`}
           tabIndex={0}
           role="slider"
-          aria-label={`${picker.label} hue`}
+          aria-label={t('characters.hue', { label: picker.label })}
           aria-valuenow={value.h}
           onPick={(_fx, fy) => write({ h: valueAt('h', live.current, fy) })}
           onKeyDown={(e) => {
@@ -192,7 +201,7 @@ function Picker({
             // remounted whenever the worn colour changes, so it always starts from it
             key={hex}
             className="chv-pick-hex"
-            aria-label={`${picker.label} hex`}
+            aria-label={t('characters.hex', { label: picker.label })}
             defaultValue={hex}
             maxLength={7}
             spellCheck={false}
@@ -209,14 +218,14 @@ function Picker({
             variant="inline"
             className="chv-check"
             checked={!!value.colorize}
-            title="Colorize sets an absolute hue and saturation instead of shifting the original colours"
+            title={t('characters.colorizeTitle')}
             onChange={toggleColorize}
-            label="Colorize"
+            label={t('characters.colorize')}
           />
         )}
       </div>
       <label className="chv-c-lab" htmlFor={`${id}-c`}>
-        Contrast
+        {t('characters.contrast')}
       </label>
       <output className="chv-c-out" htmlFor={`${id}-c`}>
         <PixelText text={String(value.c)} />
@@ -260,8 +269,9 @@ function ChoiceRow(props: {
   );
 }
 
-export function ColorPanel({ picker }: { picker: ColorPicker }) {
+export function ColorPanel({ picker }: { picker: ShownPicker }) {
   const { renderer, profile, edit, pickerOpen, setPickerOpen, cast } = useStudio();
+  const t = useT();
   const key: ColorKey = picker.key;
   // gray clothes and hair nobody has coloured wear their default: that square reads as picked
   const fallback = profile.colors?.[key] ? null : renderer.defaultColor(profile, key);
@@ -275,6 +285,8 @@ export function ColorPanel({ picker }: { picker: ColorPicker }) {
 
   // `value` is computed on click: fitting a swatch to the part scans its pixels
   const squares: {
+    /** Its id (the palette's English label, or the hex) and what it is called. */
+    id: string;
     label: string;
     hex: string | null;
     value: () => CharacterColor;
@@ -288,12 +300,19 @@ export function ColorPanel({ picker }: { picker: ColorPicker }) {
         : isAsDrawn(cv)
           ? asDrawnPressed
           : sameColor(value, cv);
-      squares.push({ label: square.label, hex: square.hex, value: () => cv, pressed });
+      squares.push({
+        id: square.label,
+        label: wardrobeText(square.label),
+        hex: square.hex,
+        value: () => cv,
+        pressed,
+      });
     });
   } else {
     // eyes, lashes and underwear: the art as drawn, then swatches fitted to the part's shading
     squares.push({
-      label: 'As drawn',
+      id: 'as-drawn',
+      label: t('characters.asDrawn'),
       hex: renderer.wayHex(art, ZERO_COLOR),
       value: () => ZERO_COLOR,
       pressed: asDrawnPressed,
@@ -302,6 +321,7 @@ export function ColorPanel({ picker }: { picker: ColorPicker }) {
       key === 'eyes' || key === 'lashes' ? SWATCHES[key] : SWATCHES.default;
     for (const hex of swatches) {
       squares.push({
+        id: hex,
         label: hex,
         hex,
         value: () => renderer.swatchValue(art, hex, key),
@@ -324,19 +344,19 @@ export function ColorPanel({ picker }: { picker: ColorPicker }) {
         <button
           type="button"
           className="chv-sw chv-wheel"
-          title="Custom colour"
-          aria-label={`${picker.label}: custom colour`}
+          title={t('characters.customColour')}
+          aria-label={t('characters.customColourOf', { label: picker.label })}
           aria-pressed={pickerOpen === key}
           onClick={() => setPickerOpen(pickerOpen === key ? null : key)}
         />
         {squares.map((sq) => (
           <button
-            key={sq.label}
+            key={sq.id}
             type="button"
             className="chv-sw"
             style={sq.hex ? { background: sq.hex } : undefined}
             title={sq.label}
-            aria-label={`${picker.label} ${sq.label}`}
+            aria-label={t('characters.swatchOf', { label: picker.label, swatch: sq.label })}
             aria-pressed={sq.pressed}
             onClick={() => choose(sq.value())}
           />
@@ -344,10 +364,10 @@ export function ColorPanel({ picker }: { picker: ColorPicker }) {
       </div>
       {styled && styles && profile[styled.key] && (
         <ChoiceRow
-          label={styles}
+          label={t(styles)}
           options={offeredParts(renderer, cast, styled.key).map((part) => ({
             id: part.id,
-            label: part.label,
+            label: partName(part),
             pressed: profile[styled.key] === part.id,
             onClick: () => edit((p) => setPart(p, styled.key, part.id)),
           }))}
@@ -356,11 +376,11 @@ export function ColorPanel({ picker }: { picker: ColorPicker }) {
       {key === 'eyes' && (
         // which of each eye's two pixels takes the colour (the other is black pupil)
         <ChoiceRow
-          label="Colour on"
+          label={t('characters.colourOn')}
           options={EYE_ROWS.map((rows) => ({
             id: rows,
-            label: rows[0].toUpperCase() + rows.slice(1),
-            title: `Colour the ${rows === 'both' ? 'whole eye' : `${rows} pixel of each eye`} in every frame`,
+            label: t(`characters.eyeRow_${rows}`),
+            title: t(`characters.eyeRow_${rows}_title`),
             pressed: (profile.eyeRows ?? DEFAULT_EYE_ROWS) === rows,
             onClick: () =>
               edit((p) => {

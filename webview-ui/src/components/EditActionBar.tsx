@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import type { useEditorActions } from '../hooks/useEditorActions.js';
+import { useT } from '../i18n/index.js';
 import type { EditorState } from '../office/editor/editorState.js';
 import { Button } from './ui/Button.js';
 
@@ -10,6 +11,7 @@ interface EditActionBarProps {
 }
 
 export function EditActionBar({ editor, editorState: es }: EditActionBarProps) {
+  const t = useT();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const undoDisabled = es.undoStack.length === 0;
@@ -21,42 +23,42 @@ export function EditActionBar({ editor, editorState: es }: EditActionBarProps) {
         variant={undoDisabled ? 'disabled' : 'default'}
         size="md"
         onClick={undoDisabled ? undefined : editor.handleUndo}
-        title="Undo (Ctrl+Z)"
+        title={t('editor.undoTitle')}
         icon="undo"
       >
-        Undo
+        {t('common.undo')}
       </Button>
       <Button
         variant={redoDisabled ? 'disabled' : 'default'}
         size="md"
         onClick={redoDisabled ? undefined : editor.handleRedo}
-        title="Redo (Ctrl+Y)"
+        title={t('editor.redoTitle')}
         icon="redo"
       >
-        Redo
+        {t('common.redo')}
       </Button>
       <Button
         variant="default"
         size="md"
         onClick={editor.handleSave}
-        title="Save layout"
+        title={t('editor.saveTitle')}
         icon="save"
       >
-        Save
+        {t('common.save')}
       </Button>
       {!showResetConfirm ? (
         <Button
           variant="default"
           size="md"
           onClick={() => setShowResetConfirm(true)}
-          title="Reset to last saved layout"
+          title={t('editor.resetTitle')}
           icon="reset"
         >
-          Reset
+          {t('common.reset')}
         </Button>
       ) : (
         <div className="flex gap-4 items-center">
-          <span className="text-base text-reset-text">Reset?</span>
+          <span className="text-base text-reset-text">{t('editor.resetConfirm')}</span>
           <Button
             variant="default"
             size="md"
@@ -66,10 +68,10 @@ export function EditActionBar({ editor, editorState: es }: EditActionBarProps) {
               editor.handleReset();
             }}
           >
-            Yes
+            {t('editor.yes')}
           </Button>
           <Button variant="default" size="md" onClick={() => setShowResetConfirm(false)}>
-            No
+            {t('editor.no')}
           </Button>
         </div>
       )}

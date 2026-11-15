@@ -1,4 +1,6 @@
 import { TERMINAL_SEL_HANDLE_KNOB_PX, TERMINAL_SEL_HANDLE_WIDTH_PX } from '../constants.js';
+import type { MessageKey } from '../i18n/index.js';
+import { t } from '../i18n/index.js';
 import type { TerminalCopyMode } from './flowCopy.js';
 import type { CellGrid, CellPos, CellRange, HandleEnd, PixelPos } from './selectionMath.js';
 import { cellRange, copyPillPosition, handlePositions } from './selectionMath.js';
@@ -15,10 +17,10 @@ import type { TouchHit } from './touchGesture.js';
  * `.terminal-sel-handle`); this module only creates, positions and
  * hit-tests the elements. touchGesture.ts decides when they show.
  */
-/** The pill's buttons: label → what it copies. */
-const COPY_ACTIONS: ReadonlyArray<readonly [string, TerminalCopyMode]> = [
-  ['Copy', 'verbatim'],
-  ['Copy as text', 'text'],
+/** The pill's buttons: label (translated when the pill opens) → what it copies. */
+const COPY_ACTIONS: ReadonlyArray<readonly [MessageKey, TerminalCopyMode]> = [
+  ['common.copy', 'verbatim'],
+  ['terminal.copyAsText', 'text'],
 ];
 
 export interface SelectionOverlay {
@@ -106,11 +108,11 @@ export function createSelectionOverlay(
       if (!opts.hasSelection()) return;
       openPill(
         range,
-        COPY_ACTIONS.map(([label, mode]) => [label, () => opts.onCopy(mode)] as const),
+        COPY_ACTIONS.map(([label, mode]) => [t(label), () => opts.onCopy(mode)] as const),
       );
     },
     showPastePill(cell) {
-      openPill(cellRange(cell), [['Paste', opts.onPaste]]);
+      openPill(cellRange(cell), [[t('common.paste'), opts.onPaste]]);
     },
     hidePill,
     showHandles(range) {

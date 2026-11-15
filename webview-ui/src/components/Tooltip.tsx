@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { useT } from '../i18n/index.js';
+
 interface TooltipProps {
   title: string;
   onDismiss: () => void;
@@ -18,6 +20,7 @@ const positionStyles: Record<string, { className: string; style: React.CSSProper
 };
 
 export function Tooltip({ title, onDismiss, position = 'top-right', children }: TooltipProps) {
+  const t = useT();
   return (
     <div
       className={`absolute z-20 pixel-panel whitespace-nowrap p-0 ${positionStyles[position].className}`}
@@ -27,6 +30,7 @@ export function Tooltip({ title, onDismiss, position = 'top-right', children }: 
         <span className="text-base text-accent font-bold">{title}</span>
         <button
           onClick={onDismiss}
+          aria-label={t('common.close')}
           className="bg-transparent border-none text-text-muted cursor-pointer text-sm px-2 leading-none"
         >
           x

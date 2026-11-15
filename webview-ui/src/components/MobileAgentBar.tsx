@@ -1,6 +1,7 @@
 import { AGENT_CARD_HEIGHT_PX, ROSTER_ARROW_WIDTH_PX } from '../constants.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import { useRosterLaunch } from '../hooks/useRosterLaunch.js';
+import { useT } from '../i18n/index.js';
 import { isTypingInTerminal } from '../terminal/terminalDom.js';
 import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCardList } from './AgentCardList.js';
@@ -66,6 +67,7 @@ export function MobileAgentBar({
   statusFor,
   onReorder,
 }: MobileAgentBarProps) {
+  const t = useT();
   // The + card's drawer and the roster beside it: a pick opens the drawer for
   // that character. A plain press of + never launches: it opens the plain
   // drawer (dropping any pick), and the launch happens from a Directory row
@@ -122,7 +124,9 @@ export function MobileAgentBar({
               onContextMenu={(e) => e.preventDefault()}
               disabled={!canLaunch}
               title={
-                canLaunch ? 'Launch agent' : (launchUnavailableReason ?? 'Terminal unavailable')
+                canLaunch
+                  ? t('mobile.launchAgent')
+                  : (launchUnavailableReason ?? t('mobile.terminalUnavailable'))
               }
               style={{ width: AGENT_CARD_HEIGHT_PX, height: AGENT_CARD_HEIGHT_PX }}
               className={`flex items-center justify-center border-2 rounded-none select-none ${
@@ -138,9 +142,9 @@ export function MobileAgentBar({
                 ref={menus.buttonRef}
                 type="button"
                 onClick={menus.toggleRoster}
-                aria-label="Roster"
+                aria-label={t('mobile.roster')}
                 aria-expanded={menus.isRosterOpen}
-                title={menus.isRosterOpen ? 'Hide roster' : 'Roster'}
+                title={menus.isRosterOpen ? t('mobile.hideRoster') : t('mobile.roster')}
                 // Enabled even when nothing can launch: a pick then edits.
                 style={{ width: ROSTER_ARROW_WIDTH_PX, height: AGENT_CARD_HEIGHT_PX }}
                 className={`flex items-center justify-center border-2 border-l-bg/40 rounded-none select-none cursor-pointer ${

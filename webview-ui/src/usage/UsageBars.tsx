@@ -9,6 +9,7 @@ import {
   USAGE_BAR_WIDTH_PX,
   USAGE_BARS_LEFT_PX,
 } from '../constants.js';
+import { type MessageKey, useT } from '../i18n/index.js';
 import { PixelHeart } from './PixelHeart.js';
 import {
   freshnessLabel,
@@ -37,7 +38,7 @@ const FILL: Record<BarId, Record<UsageBarView['level'], string>> = {
   },
 };
 /** Each bar's name, before its reset time on hover. */
-const BAR_NAME: Record<BarId, string> = { weekly: 'Weekly', fiveHour: '5-hour' };
+const BAR_NAME: Record<BarId, MessageKey> = { weekly: 'usage.weekly', fiveHour: 'usage.fiveHour' };
 
 interface UsageBarsProps {
   /** The last usageLimits for the provider; undefined until the server sends it. */
@@ -60,8 +61,13 @@ function useNow(intervalMs: number): number {
 
 /** A bar's name and when it resets: "Weekly · resets in 3d 11h". */
 function ResetLabel({ id, view }: { id: BarId; view: UsageBarView }) {
+  const t = useT();
   return (
-    <PixelText text={`${BAR_NAME[id]} · ${view.reset}`} shadow className="text-2xs text-text" />
+    <PixelText
+      text={t('usage.resetLabel', { name: t(BAR_NAME[id]), reset: view.reset })}
+      shadow
+      className="text-2xs text-text"
+    />
   );
 }
 
@@ -98,6 +104,7 @@ function BarRow({ id, view, showReset }: { id: BarId; view: UsageBarView; showRe
  * with the reset times below the bars, where the narrow screen has room.
  */
 export function UsageBars({ limits, providerName, mobile }: UsageBarsProps) {
+  const t = useT();
   const now = useNow(USAGE_BAR_TICK_MS);
   const [active, setActive] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -121,7 +128,13 @@ export function UsageBars({ limits, providerName, mobile }: UsageBarsProps) {
       className={`absolute z-10 flex items-center gap-8 cursor-default ${mobile ? 'mobile-safe-top' : 'top-8'}`}
       style={{ left: USAGE_BARS_LEFT_PX }}
       title={freshnessLabel(limits?.updatedAt, now, providerName)}
-      aria-label={`${providerName} usage. Weekly: ${weekly.percent} left, ${weekly.reset}. 5-hour: ${fiveHour.percent} left, ${fiveHour.reset}.`}
+      aria-label={t('usage.ariaLabel', {
+        provider: providerName,
+        weeklyPercent: weekly.percent,
+        weeklyReset: weekly.reset,
+        fiveHourPercent: fiveHour.percent,
+        fiveHourReset: fiveHour.reset,
+      })}
       // A phone's tap also fires the emulated mouseenter, which would cancel
       // the click's toggle, so there only the tap counts.
       onMouseEnter={mobile ? undefined : () => setActive(true)}

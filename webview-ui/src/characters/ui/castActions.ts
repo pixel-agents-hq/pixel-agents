@@ -4,6 +4,7 @@ import {
   type CharacterProfile,
   MAX_CHARACTER_PROFILES,
 } from '../../../../core/src/characterProfiles.js';
+import { t } from '../../i18n/index.js';
 import { isBrowserRuntime } from '../../runtime.js';
 import { castStore } from '../castStore.js';
 import {
@@ -36,9 +37,9 @@ export function castActions(studio: Studio): CastActions {
   const { renderer, cast, profile, setTab, status } = studio;
   // the browser downloads at once; VS Code shows its own save dialog and notice
   const saved = (filename: string) => {
-    if (isBrowserRuntime) status(`Saved ${filename}.`, 'ok');
+    if (isBrowserRuntime) status(t('characters.savedFile', { file: filename }), 'ok');
   };
-  const full = `The roster holds at most ${MAX_CHARACTER_PROFILES} characters.`;
+  const full = t('characters.rosterFull', { max: MAX_CHARACTER_PROFILES });
   /** Add to the cast; false (and says so) when the roster is full. */
   const addOne = (p: CharacterProfile, at?: number) => {
     if (castStore.add([p], at)) return true;
@@ -54,11 +55,19 @@ export function castActions(studio: Studio): CastActions {
       else bad.push(file.name);
     }
     const loaded = castStore.add(added);
-    const count = (n: number) => `${n} ${n === 1 ? 'character' : 'characters'}`;
-    if (bad.length) status(`Could not read ${bad.join(', ')} as a character config.`, 'err');
+    const count = (n: number) =>
+      t(n === 1 ? 'characters.countOne' : 'characters.countOther', { n });
+    if (bad.length) status(t('characters.badConfig', { files: bad.join(', ') }), 'err');
     else if (loaded < added.length) {
-      status(`${full} Loaded ${count(loaded)}, left out ${added.length - loaded}.`, 'err');
-    } else if (loaded) status(`Loaded ${count(loaded)}.`, 'ok');
+      status(
+        t('characters.loadedPartly', {
+          full,
+          count: count(loaded),
+          left: added.length - loaded,
+        }),
+        'err',
+      );
+    } else if (loaded) status(t('characters.loaded', { count: count(loaded) }), 'ok');
   };
   return {
     add: () => {
@@ -71,7 +80,7 @@ export function castActions(studio: Studio): CastActions {
     },
     duplicate: () => {
       const copy = structuredClone(profile);
-      copy.name = `${copy.name || 'Copy'} 2`;
+      copy.name = `${copy.name || t('characters.copyName')} 2`;
       addOne(copy, cast.current + 1);
     },
     randomizeCurrent: () => studio.edit((p) => randomize(renderer, p)),

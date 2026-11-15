@@ -19,20 +19,22 @@ import {
   TOOL_OVERLAY_VERTICAL_OFFSET,
 } from '../../constants.js';
 import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
+import type { Translate } from '../../i18n/index.js';
+import { useT } from '../../i18n/index.js';
 import { ContextBar } from '../ContextBar.js';
 import { contextLeft } from '../contextGauge.js';
 import type { OfficeState } from '../engine/officeState.js';
 import { overlayProjection } from '../projection.js';
 import { getCachedSprite } from '../sprites/spriteCache.js';
 import { BUBBLE_PERMISSION_SPRITE, BUBBLE_WAITING_SPRITE } from '../sprites/spriteData.js';
+import { localizeToolStatus } from '../toolStatusText.js';
 import type { ToolActivity } from '../types.js';
 import { CharacterState } from '../types.js';
 
 // Both turn-end states show the green checkmark bubble. A finished turn (Stop)
 // shows ONLY the checkmark (the label falls through to its normal idle text);
 // going idle waiting on the user (Notification(idle_prompt)) additionally
-// surfaces this label. Driven by Character.waitingAwaitingInput.
-const WAITING_INPUT_ACTIVITY_TEXT = 'Waiting for input';
+// surfaces this label (office.waitingForInput). Driven by Character.waitingAwaitingInput.
 
 interface ToolOverlayProps {
   officeState: OfficeState;
@@ -54,29 +56,30 @@ function getActivityText(
   isActive: boolean,
   bubbleType: 'permission' | 'waiting' | null,
   waitingAwaitingInput: boolean,
+  t: Translate,
 ): string {
-  if (bubbleType === 'permission') return 'Needs approval';
+  if (bubbleType === 'permission') return t('office.needsApproval');
   // Only the idle case ("Waiting for input") gets a dedicated label. A finished
   // turn (Stop, waitingAwaitingInput=false) falls through so the checkmark alone
   // signals "done", same as the original behavior.
-  if (bubbleType === 'waiting' && waitingAwaitingInput) return WAITING_INPUT_ACTIVITY_TEXT;
+  if (bubbleType === 'waiting' && waitingAwaitingInput) return t('office.waitingForInput');
 
   const tools = agentTools[agentId];
   if (tools && tools.length > 0) {
     // Find the latest non-done tool
     const activeTool = [...tools].reverse().find((t) => !t.done);
     if (activeTool) {
-      if (activeTool.permissionWait) return 'Needs approval';
-      return activeTool.status;
+      if (activeTool.permissionWait) return t('office.needsApproval');
+      return localizeToolStatus(activeTool.status, t);
     }
     // All tools done but agent still active (mid-turn) — keep showing last tool status
     if (isActive) {
       const lastTool = tools[tools.length - 1];
-      if (lastTool) return lastTool.status;
+      if (lastTool) return localizeToolStatus(lastTool.status, t);
     }
   }
 
-  return 'Idle';
+  return t('office.idle');
 }
 
 /** A speech-bubble sprite blitted into a DOM canvas. Bubbles live in the DOM
@@ -112,6 +115,7 @@ export function ToolOverlay({
   onCloseAgent,
   alwaysShowOverlay,
 }: ToolOverlayProps) {
+  const t = useT();
   const [, setTick] = useState(0);
   useEffect(() => {
     let rafId = 0;
@@ -241,10 +245,10 @@ export function ToolOverlay({
         if (hasWaitingBubble && ch.waitingAwaitingInput) {
           // Idle, waiting on the user -> dedicated label. A finished turn (Stop)
           // shows only the checkmark and falls through to the normal idle text.
-          activityText = WAITING_INPUT_ACTIVITY_TEXT;
+          activityText = t('office.waitingForInput');
         } else if (isSub) {
           if (subHasPermission) {
-            activityText = 'Needs approval';
+            activityText = t('office.needsApproval');
           } else {
             // Hover shows the subtask title; SELECTING the sub reveals its live
             // tool activity (watched sub-agents stream it via subagentToolStart).
@@ -252,7 +256,9 @@ export function ToolOverlay({
             const rows = sub ? subagentTools[sub.parentAgentId]?.[sub.parentToolId] : undefined;
             const activeRow =
               isSelected && rows ? [...rows].reverse().find((t) => !t.done) : undefined;
-            activityText = activeRow?.status ?? (sub?.label || 'Subtask');
+            activityText = activeRow
+              ? localizeToolStatus(activeRow.status, t)
+              : sub?.label || t('office.subtask');
           }
         } else {
           activityText = getActivityText(
@@ -261,6 +267,7 @@ export function ToolOverlay({
             ch.isActive,
             ch.bubbleType,
             ch.waitingAwaitingInput ?? false,
+            t,
           );
         }
 
@@ -279,7 +286,7 @@ export function ToolOverlay({
         }
 
         // Team info
-        const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
+        const teamRoleLabel = ch.isTeamLead ? t('office.teamLead') : ch.agentName || null;
 
         // Context gauge. Every agent gets one — lead, teammate, adopted,
         // headless — as soon as the server reports its context (a cleared
@@ -350,7 +357,7 @@ export function ToolOverlay({
                       e.stopPropagation();
                       onCloseAgent(id);
                     }}
-                    title="Close agent"
+                    title={t('office.closeAgent')}
                     className="ml-2 shrink-0"
                   >
                     {/* The panel's padding favours the text (pb > pt) and the × fills
@@ -365,7 +372,11 @@ export function ToolOverlay({
                   width={CONTEXT_GAUGE_WIDTH_PX}
                   height={CONTEXT_GAUGE_HEIGHT_PX}
                   style={{ marginTop: CONTEXT_GAUGE_GAP_PX }}
-                  title={`${Math.round(contextLeft(contextRatio) * 100)}% context left (${(ch.contextTokens / 1000).toFixed(0)}k of ${(ch.maxContextTokens / 1000).toFixed(0)}k tokens used)`}
+                  title={t('office.contextLeft', {
+                    pct: Math.round(contextLeft(contextRatio) * 100),
+                    used: (ch.contextTokens / 1000).toFixed(0),
+                    max: (ch.maxContextTokens / 1000).toFixed(0),
+                  })}
                   testId="context-gauge"
                   pct={Math.round(contextRatio * 100)}
                 />

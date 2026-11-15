@@ -17,6 +17,7 @@ import {
   type ItemPiece,
   type WardrobeItem,
 } from '../../../core/src/wardrobeItems.js';
+import { getLocale, type Locale, translate } from '../i18n/index.js';
 import type { CastState } from './cast.js';
 import { rgbHex } from './color.js';
 import type { CharacterRenderer } from './renderer.js';
@@ -120,13 +121,18 @@ export function offeredParts(
   return (r.wardrobe.manifest.parts[slot] ?? []).filter((p) => !p.base || drafted.has(p.id));
 }
 
-/** A piece's name in the pixel editor: a custom item's own name, else the piece's. */
-export function pieceName(r: CharacterRenderer, p: CharacterProfile, pix: string): string {
+/** A piece's name in the pixel editor: a custom item's own name, else the piece's (in `locale`). */
+export function pieceName(
+  r: CharacterRenderer,
+  p: CharacterProfile,
+  pix: string,
+  locale: Locale = getLocale(),
+): string {
   const piece = itemPieceOf(pix);
   const worn = piece ? p[piece] : undefined;
   if (piece && isItemId(worn)) {
     const label = partInfo(r.wardrobe, piece, worn)?.label;
     if (label) return label;
   }
-  return layerOf(pix).label;
+  return translate(locale, layerOf(pix).label);
 }

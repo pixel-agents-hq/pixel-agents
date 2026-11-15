@@ -1,0 +1,56 @@
+/** English strings: app. The source of truth — vi/app.ts must carry every key. */
+export const app = {
+  // Layout import (standalone)
+  replaceLayoutConfirm: 'Replace the current layout? Unsaved edits will be lost.',
+  invalidLayoutFile: 'Invalid layout file.',
+  layoutReadFailed: 'Failed to read or parse layout file.',
+  // Hooks first-run tooltip + info modal
+  hooksTooltipTitle: 'Instant Detection Active',
+  hooksTooltipBody: 'Your agents now respond in real-time.',
+  viewMore: 'View more',
+  viewOnly: 'View only',
+  hooksInfoTitle: 'Instant Detection is ON',
+  hooksInfoIntro: 'Your Pixel Agents office now reacts in real-time:',
+  hooksInfoPermissions: 'Permission prompts appear instantly',
+  hooksInfoTurns: 'Turn completions detected the moment they happen',
+  hooksInfoSounds: 'Sound notifications play immediately',
+  hooksInfoHow:
+    'This works through Claude Code Hooks, small event listeners that notify Pixel Agents whenever something happens in your Claude sessions.',
+  gotIt: 'Got it',
+  hooksInfoDisable: 'To disable, go to Settings > Instant Detection',
+  // Bottom toolbar
+  newAgent: 'New agent',
+  launchAgent: 'Launch agent',
+  terminalUnavailable: 'Terminal unavailable on this server.',
+  roster: 'Roster',
+  hideRoster: 'Hide roster',
+  rosterTitle: 'Launch an agent as one of your characters, or edit them',
+  layout: 'Layout',
+  layoutTitle: 'Edit office layout',
+  // Zoom controls
+  hideConversations: 'Hide conversations',
+  showConversations: 'Show conversations',
+  zoomIn: 'Zoom in (Ctrl+Scroll)',
+  zoomOut: 'Zoom out (Ctrl+Scroll)',
+  // Connection indicator
+  connecting: 'Connecting…',
+  reconnecting: 'Reconnecting…',
+  disconnected: 'Disconnected',
+  // Debug view
+  debugView: 'Debug View',
+  agentNumber: 'Agent #{id}',
+  closeAgent: 'Close agent',
+  needsApproval: 'Needs approval',
+  waitingForInput: 'Waiting for input',
+  jsonlConnected: 'JSONL connected',
+  jsonlNotFound: 'JSONL not found',
+  lines: 'Lines: {count}',
+  lastData: 'Last data: {ago}',
+  projectDirMissing: 'Project dir does not exist: {dir}',
+  noLinesParsed: 'File has data ({bytes} bytes) but 0 lines parsed. Possible format issue.',
+  never: 'never',
+  justNow: 'just now',
+  secondsAgo: '{n}s ago',
+  minutesAgo: '{n}m ago',
+  hoursAgo: '{n}h ago',
+} as const;

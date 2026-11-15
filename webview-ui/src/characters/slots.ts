@@ -13,6 +13,7 @@ import {
   DEFAULT_EYE_ROWS,
   pixId,
 } from '../../../core/src/characterProfiles.js';
+import type { MessageKey } from '../i18n/index.js';
 import { eyeArt, partArt, type Underwear, type Wardrobe } from './wardrobe.js';
 
 /** Profile fields that hold a part id. */
@@ -25,7 +26,8 @@ export type ColorKey = 'skin' | 'eyes' | 'lashes' | 'tie' | Exclude<SlotKey, 'bo
 
 export interface ColorPicker {
   key: ColorKey;
-  label: string;
+  /** Its heading (translated when shown). */
+  label: MessageKey;
 }
 
 /** Wardrobe tabs, in order. Underwear, beards and accessories live inside other tabs. */
@@ -34,7 +36,7 @@ export type TabKey =
 
 export interface TabDef {
   key: TabKey;
-  label: string;
+  label: MessageKey;
   /** Its own colour panels, shown while a part is worn that has art for them (the tie: only outfits with one). */
   pickers: ColorPicker[];
   /** The piece the pixel editor opens on from this tab. */
@@ -46,55 +48,70 @@ export interface TabDef {
 }
 
 export const TABS: readonly TabDef[] = [
-  { key: 'body', label: 'Body', pickers: [{ key: 'skin', label: 'Skin' }], piece: 'body' },
+  {
+    key: 'body',
+    label: 'characters.tab_body',
+    pickers: [{ key: 'skin', label: 'characters.picker_skin' }],
+    piece: 'body',
+  },
   {
     key: 'eyes',
-    label: 'Eyes',
+    label: 'characters.tab_eyes',
     pickers: [
-      { key: 'eyes', label: 'Eyes' },
-      { key: 'lashes', label: 'Lashes' },
+      { key: 'eyes', label: 'characters.picker_eyes' },
+      { key: 'lashes', label: 'characters.picker_lashes' },
     ],
     piece: 'whites',
   },
   {
     key: 'hair',
-    label: 'Hair',
-    pickers: [{ key: 'hair', label: 'Colour' }],
+    label: 'characters.tab_hair',
+    pickers: [{ key: 'hair', label: 'characters.picker_colour' }],
     piece: 'hair',
     inner: 'beard',
   },
   {
     key: 'top',
-    label: 'Top',
-    pickers: [{ key: 'top', label: 'Colour' }],
+    label: 'characters.tab_top',
+    pickers: [{ key: 'top', label: 'characters.picker_colour' }],
     piece: 'top',
     under: 'utop',
   },
   {
     key: 'jacket',
-    label: 'Jacket',
-    pickers: [{ key: 'jacket', label: 'Colour' }],
+    label: 'characters.tab_jacket',
+    pickers: [{ key: 'jacket', label: 'characters.picker_colour' }],
     piece: 'jacket',
   },
   {
     key: 'pants',
-    label: 'Pants',
-    pickers: [{ key: 'pants', label: 'Colour' }],
+    label: 'characters.tab_pants',
+    pickers: [{ key: 'pants', label: 'characters.picker_colour' }],
     piece: 'pants',
     under: 'under',
   },
-  { key: 'shoes', label: 'Shoes', pickers: [{ key: 'shoes', label: 'Colour' }], piece: 'shoes' },
+  {
+    key: 'shoes',
+    label: 'characters.tab_shoes',
+    pickers: [{ key: 'shoes', label: 'characters.picker_colour' }],
+    piece: 'shoes',
+  },
   {
     key: 'full',
-    label: 'Outfit',
+    label: 'characters.tab_full',
     pickers: [
-      { key: 'full', label: 'Colour' },
-      { key: 'tie', label: 'Tie' },
+      { key: 'full', label: 'characters.picker_colour' },
+      { key: 'tie', label: 'characters.picker_tie' },
     ],
     piece: 'full',
   },
-  { key: 'hat', label: 'Hat', pickers: [{ key: 'hat', label: 'Colour' }], piece: 'hat' },
-  { key: 'acc', label: 'Accessories', pickers: [], piece: null },
+  {
+    key: 'hat',
+    label: 'characters.tab_hat',
+    pickers: [{ key: 'hat', label: 'characters.picker_colour' }],
+    piece: 'hat',
+  },
+  { key: 'acc', label: 'characters.tab_acc', pickers: [], piece: null },
 ];
 
 /** Slots with a tab of their own besides the body: hair and the clothes, each with a category palette. */
@@ -127,7 +144,7 @@ interface LayerBase {
   /** The colour it takes; the first piece with a colour key owns that colour's colourways. */
   color: ColorKey | null;
   /** Its name in the pixel editor. */
-  label: string;
+  label: MessageKey;
   /** Its place among the pixel editor's pieces (they don't follow draw order). */
   chip: number;
   /** Underwear: drawn only while nothing covers it. */
@@ -158,13 +175,20 @@ export type LayerDef = PartLayer | EyeLayer;
 
 /** Draw order, bottom to top. */
 export const LAYERS: readonly LayerDef[] = [
-  { kind: 'part', pix: 'body', sel: 'body', color: 'skin', label: 'Body', chip: 0 },
+  {
+    kind: 'part',
+    pix: 'body',
+    sel: 'body',
+    color: 'skin',
+    label: 'characters.piece_body',
+    chip: 0,
+  },
   {
     kind: 'part',
     pix: 'under',
     sel: 'body',
     color: 'under',
-    label: 'Under bottom',
+    label: 'characters.piece_under',
     chip: 6,
     when: 'under',
     neutral: true,
@@ -174,51 +198,136 @@ export const LAYERS: readonly LayerDef[] = [
     pix: 'utop',
     sel: 'body',
     color: 'utop',
-    label: 'Under top',
+    label: 'characters.piece_utop',
     chip: 5,
     when: 'utop',
     neutral: true,
   },
-  { kind: 'eye', pix: 'whites', filedBy: 'body', color: null, label: 'Eyes', chip: 1 }, // whites and pupils, never recoloured
-  { kind: 'eye', pix: 'iris', filedBy: 'body', color: 'eyes', label: 'Iris', chip: 2, rows: true },
-  { kind: 'eye', pix: 'lashes', filedBy: 'shape', color: 'lashes', label: 'Lashes', chip: 3 },
-  { kind: 'part', pix: 'pants', sel: 'pants', color: 'pants', label: 'Pants', chip: 10 },
-  { kind: 'part', pix: 'top', sel: 'top', color: 'top', label: 'Top', chip: 8 },
-  { kind: 'part', pix: 'full', sel: 'full', color: 'full', label: 'Outfit', chip: 12 },
-  { kind: 'part', pix: 'tie', sel: 'full', color: 'tie', label: 'Tie', chip: 21 }, // the outfit's tie (tie/<outfit>.png), when it has one
-  { kind: 'part', pix: 'jacket', sel: 'jacket', color: 'jacket', label: 'Jacket', chip: 9 }, // over the top or the outfit
-  { kind: 'part', pix: 'lanyard', sel: 'lanyard', color: 'lanyard', label: 'Lanyard', chip: 15 },
+  {
+    kind: 'eye',
+    pix: 'whites',
+    filedBy: 'body',
+    color: null,
+    label: 'characters.piece_whites',
+    chip: 1,
+  }, // whites and pupils, never recoloured
+  {
+    kind: 'eye',
+    pix: 'iris',
+    filedBy: 'body',
+    color: 'eyes',
+    label: 'characters.piece_iris',
+    chip: 2,
+    rows: true,
+  },
+  {
+    kind: 'eye',
+    pix: 'lashes',
+    filedBy: 'shape',
+    color: 'lashes',
+    label: 'characters.piece_lashes',
+    chip: 3,
+  },
+  {
+    kind: 'part',
+    pix: 'pants',
+    sel: 'pants',
+    color: 'pants',
+    label: 'characters.piece_pants',
+    chip: 10,
+  },
+  { kind: 'part', pix: 'top', sel: 'top', color: 'top', label: 'characters.piece_top', chip: 8 },
+  {
+    kind: 'part',
+    pix: 'full',
+    sel: 'full',
+    color: 'full',
+    label: 'characters.piece_full',
+    chip: 12,
+  },
+  { kind: 'part', pix: 'tie', sel: 'full', color: 'tie', label: 'characters.piece_tie', chip: 21 }, // the outfit's tie (tie/<outfit>.png), when it has one
+  {
+    kind: 'part',
+    pix: 'jacket',
+    sel: 'jacket',
+    color: 'jacket',
+    label: 'characters.piece_jacket',
+    chip: 9,
+  }, // over the top or the outfit
+  {
+    kind: 'part',
+    pix: 'lanyard',
+    sel: 'lanyard',
+    color: 'lanyard',
+    label: 'characters.piece_lanyard',
+    chip: 15,
+  },
   {
     kind: 'part',
     pix: 'necklace',
     sel: 'necklace',
     color: 'necklace',
-    label: 'Necklace',
+    label: 'characters.piece_necklace',
     chip: 14,
   },
-  { kind: 'part', pix: 'watch', sel: 'watch', color: 'watch', label: 'Wristband', chip: 19 },
-  { kind: 'part', pix: 'shoes', sel: 'shoes', color: 'shoes', label: 'Shoes', chip: 11 },
-  { kind: 'part', pix: 'hair', sel: 'hair', color: 'hair', label: 'Hair', chip: 7 },
+  {
+    kind: 'part',
+    pix: 'watch',
+    sel: 'watch',
+    color: 'watch',
+    label: 'characters.piece_watch',
+    chip: 19,
+  },
+  {
+    kind: 'part',
+    pix: 'shoes',
+    sel: 'shoes',
+    color: 'shoes',
+    label: 'characters.piece_shoes',
+    chip: 11,
+  },
+  {
+    kind: 'part',
+    pix: 'hair',
+    sel: 'hair',
+    color: 'hair',
+    label: 'characters.piece_hair',
+    chip: 7,
+  },
   {
     kind: 'part',
     pix: 'earrings',
     sel: 'earrings',
     color: 'earrings',
-    label: 'Earrings',
+    label: 'characters.piece_earrings',
     chip: 16,
     behind: 'hair', // over the hair, under it from behind
   },
-  { kind: 'part', pix: 'beard', sel: 'beard', color: 'beard', label: 'Beard', chip: 20 }, // over the hair, under sunglasses
-  { kind: 'part', pix: 'shades', sel: 'shades', color: 'shades', label: 'Glasses', chip: 17 },
+  {
+    kind: 'part',
+    pix: 'beard',
+    sel: 'beard',
+    color: 'beard',
+    label: 'characters.piece_beard',
+    chip: 20,
+  }, // over the hair, under sunglasses
+  {
+    kind: 'part',
+    pix: 'shades',
+    sel: 'shades',
+    color: 'shades',
+    label: 'characters.piece_shades',
+    chip: 17,
+  },
   {
     kind: 'part',
     pix: 'hairshades',
     sel: 'hairshades',
     color: 'hairshades',
-    label: 'Shades on hair',
+    label: 'characters.piece_hairshades',
     chip: 18,
   },
-  { kind: 'part', pix: 'hat', sel: 'hat', color: 'hat', label: 'Hat', chip: 13 },
+  { kind: 'part', pix: 'hat', sel: 'hat', color: 'hat', label: 'characters.piece_hat', chip: 13 },
 ];
 
 export const layerOf = (pix: string): LayerDef => {
@@ -236,20 +345,20 @@ export const EDIT_PIECES: readonly LayerDef[] = [...LAYERS].sort((a, b) => a.chi
 
 /** Accessories: each worn or not, each in its own colour. `styles` = one card, its parts picked as styles. */
 const ACCESSORY_DEFS = [
-  { key: 'necklace', styles: 'Style' },
+  { key: 'necklace', styles: 'characters.acc_style' },
   { key: 'lanyard' },
   { key: 'earrings' },
   { key: 'shades' },
-  { key: 'hairshades', label: 'Sunglasses on hair' }, // the pixel editor's chip is shorter
-  { key: 'watch', styles: 'Wrist' },
-] as const satisfies readonly { key: SlotKey; label?: string; styles?: string }[];
+  { key: 'hairshades', label: 'characters.acc_hairshades' }, // the pixel editor's chip is shorter
+  { key: 'watch', styles: 'characters.acc_wrist' },
+] as const satisfies readonly { key: SlotKey; label?: MessageKey; styles?: MessageKey }[];
 
 export type AccessoryKey = (typeof ACCESSORY_DEFS)[number]['key'];
 
 export interface AccessoryDef {
   key: AccessoryKey;
-  label: string;
-  styles?: string;
+  label: MessageKey;
+  styles?: MessageKey;
 }
 
 export const ACCESSORIES: readonly AccessoryDef[] = ACCESSORY_DEFS.map((d): AccessoryDef => ({
@@ -261,9 +370,9 @@ export const ACCESSORIES: readonly AccessoryDef[] = ACCESSORY_DEFS.map((d): Acce
 export interface EyeShape {
   /** Its folder under eyes/. */
   id: string;
-  label: string;
+  label: MessageKey;
   /** Its card's tooltip. */
-  title: string;
+  title: MessageKey;
   /** Its eye pieces are its own drawing: their edits are filed under the shape, not the body. */
   drawn?: boolean;
   /** Reads without the reading glasses. */
@@ -273,27 +382,27 @@ export interface EyeShape {
 }
 
 export const EYE_SHAPES: readonly EyeShape[] = [
-  { id: 'plain', label: 'Plain', title: 'Eyes without the lash flick' },
-  { id: 'lashes', label: 'Lashes', title: 'A lash flick at the outer corner of each eye' },
+  { id: 'plain', label: 'characters.eye_plain', title: 'characters.eye_plain_title' },
+  { id: 'lashes', label: 'characters.eye_lashes', title: 'characters.eye_lashes_title' },
   {
     id: 'lidded',
-    label: 'Lidded',
-    title: 'Heavy lids half over the eyes',
+    label: 'characters.eye_lidded',
+    title: 'characters.eye_lidded_title',
     drawn: true,
     bare: true,
   },
   {
     id: 'stern',
-    label: 'Stern',
-    title: 'Brows drawn low over the eyes',
+    label: 'characters.eye_stern',
+    title: 'characters.eye_stern_title',
     drawn: true,
     bare: true,
     blinkLashes: true,
   },
   {
     id: 'closed',
-    label: 'Closed',
-    title: 'Eyes shut, a lid line in the lashes colour',
+    label: 'characters.eye_closed',
+    title: 'characters.eye_closed_title',
     drawn: true,
   },
 ];

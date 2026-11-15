@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 
+import { useT } from '../../i18n/index.js';
 import { VisualColorPicker } from '../VisualColorPicker.js';
 import { Button } from './Button.js';
 import { PixelText } from './PixelText.js';
@@ -63,6 +64,7 @@ export function ColorPicker({
   onCopy,
   copyActive,
 }: ColorPickerProps) {
+  const t = useT();
   const handleChange = (key: keyof ColorValue, v: number) => {
     onChange({ ...value, [key]: v });
   };
@@ -72,28 +74,28 @@ export function ColorPicker({
   return (
     <div className="fade-stagger flex flex-col py-8 px-10 bg-bg-dark border-2 border-border rounded-none">
       <ColorSlider
-        label="Hue"
+        label={t('editor.hue')}
         value={value.h}
         min={isColorize ? 0 : -180}
         max={isColorize ? 360 : 180}
         onChange={(v) => handleChange('h', v)}
       />
       <ColorSlider
-        label="Saturation"
+        label={t('editor.saturation')}
         value={value.s}
         min={isColorize ? 0 : -100}
         max={100}
         onChange={(v) => handleChange('s', v)}
       />
       <ColorSlider
-        label="Brightness"
+        label={t('editor.brightness')}
         value={value.b}
         min={-100}
         max={100}
         onChange={(v) => handleChange('b', v)}
       />
       <ColorSlider
-        label="Contrast"
+        label={t('editor.contrast')}
         value={value.c}
         min={-100}
         max={100}
@@ -109,9 +111,9 @@ export function ColorPicker({
               type="button"
               onClick={() => onChange({ ...value, colorize: !value.colorize || undefined })}
               className="flex items-center gap-8 shrink-0 bg-transparent border-0 p-0 cursor-pointer text-left"
-              title="Toggle colorize mode"
+              title={t('editor.colorizeTitle')}
             >
-              <span className="text-sm text-text-muted w-64 shrink-0">Colorize</span>
+              <span className="text-sm text-text-muted w-64 shrink-0">{t('editor.colorize')}</span>
               <span
                 className={`w-18 h-18 border-2 border-border inline-flex items-center justify-center text-2xs leading-none text-text shrink-0 ${
                   value.colorize ? 'bg-accent' : 'bg-bg'
@@ -134,10 +136,10 @@ export function ColorPicker({
               variant={copyActive ? 'active' : 'default'}
               size="sm"
               onClick={onCopy}
-              title="Copy color from another item — click one in the office"
+              title={t('editor.copyColorTitle')}
               className="mt-6 mr-4"
             >
-              Copy
+              {t('common.copy')}
             </Button>
           )}
           {onReset && (
@@ -145,10 +147,10 @@ export function ColorPicker({
               variant="default"
               size="sm"
               onClick={onReset}
-              title="Reset to default"
+              title={t('editor.resetColorTitle')}
               className="mt-6"
             >
-              Reset
+              {t('common.reset')}
             </Button>
           )}
         </div>

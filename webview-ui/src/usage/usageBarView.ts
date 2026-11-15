@@ -13,6 +13,7 @@ import {
   USAGE_BAR_WARN_FRACTION,
   USAGE_HEART_MAX_BPM,
 } from '../constants.js';
+import { t } from '../i18n/index.js';
 
 /** How full a bar reads, which colour band it is in, and what it says. */
 export interface UsageBarView {
@@ -27,10 +28,11 @@ export interface UsageBarView {
 
 /** One bar's view of a window at `nowMs`. */
 export function usageBarView(window: UsageWindow | undefined, nowMs: number): UsageBarView {
-  if (!window) return { remaining: null, level: 'unknown', percent: '--', reset: 'no data yet' };
+  if (!window)
+    return { remaining: null, level: 'unknown', percent: '--', reset: t('usage.noData') };
   const resetAtMs = window.resetsAt * 1000;
   if (resetAtMs <= nowMs) {
-    return { remaining: 1, level: 'ok', percent: '100%', reset: 'reset since the last report' };
+    return { remaining: 1, level: 'ok', percent: '100%', reset: t('usage.resetSinceReport') };
   }
   const remaining = Math.min(1, Math.max(0, (100 - window.usedPercentage) / 100));
   const level =
@@ -43,7 +45,7 @@ export function usageBarView(window: UsageWindow | undefined, nowMs: number): Us
     remaining,
     level,
     percent: `${Math.round(remaining * 100)}%`,
-    reset: `resets in ${formatDuration(resetAtMs - nowMs)}`,
+    reset: t('usage.resetsIn', { duration: formatDuration(resetAtMs - nowMs) }),
   };
 }
 
@@ -74,7 +76,9 @@ export function freshnessLabel(
   nowMs: number,
   providerName: string,
 ): string {
-  if (updatedAtMs === undefined) return `Updates once a ${providerName} session replies`;
+  if (updatedAtMs === undefined) return t('usage.updatesOnce', { provider: providerName });
   const age = nowMs - updatedAtMs;
-  return age < 60_000 ? 'Updated just now' : `Updated ${formatDuration(age)} ago`;
+  return age < 60_000
+    ? t('usage.updatedJustNow')
+    : t('usage.updatedAgo', { duration: formatDuration(age) });
 }

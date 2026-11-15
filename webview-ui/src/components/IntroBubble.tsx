@@ -11,6 +11,7 @@ import {
   INTRO_BUBBLE_Z_INDEX,
 } from '../constants.js';
 import type { ConsentChoice } from '../hooks/introTourState.js';
+import { useT } from '../i18n/index.js';
 import type { OfficeState } from '../office/engine/officeState.js';
 import { useUsageBridge } from '../usage/useUsageBridge.js';
 import { DiscordIcon } from './ChangelogModal.js';
@@ -106,6 +107,7 @@ export function IntroBubble({
   onClose,
   escapeSuppressed,
 }: IntroBubbleProps) {
+  const t = useT();
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
   const [step, setStep] = useState<StepId>('welcome');
@@ -257,11 +259,11 @@ export function IntroBubble({
   const pending = installPending || usagePending;
 
   const titles: Record<StepId, string> = {
-    welcome: 'Welcome to Pixel Agents!',
-    claudeCode: 'Powered by Claude Code',
-    usage: 'Track your usage',
+    welcome: t('intro.welcomeTitle'),
+    claudeCode: t('intro.claudeCodeTitle'),
+    usage: t('intro.usageTitle'),
     consent: headline,
-    closing: installFailed ? "Hooks couldn't be installed" : "You're all set!",
+    closing: installFailed ? t('intro.closingFailedTitle') : t('intro.closingTitle'),
   };
 
   return (
@@ -302,7 +304,7 @@ export function IntroBubble({
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Close"
+          aria-label={t('common.close')}
           className="absolute top-4 right-4"
           onClick={onClose}
         >
@@ -310,7 +312,10 @@ export function IntroBubble({
         </Button>
 
         {/* Step dots: the tour's "1 of 5", drawn as pixels rather than prose. */}
-        <div className="flex gap-4 mb-8" aria-label={`Step ${stepIndex + 1} of ${steps.length}`}>
+        <div
+          className="flex gap-4 mb-8"
+          aria-label={t('intro.stepOf', { current: stepIndex + 1, total: steps.length })}
+        >
           {steps.map((id) => (
             <div
               key={id}
@@ -322,24 +327,16 @@ export function IntroBubble({
 
         <div className="text-xl mb-8 text-accent-bright pr-20">{titles[step]}</div>
 
-        {step === 'welcome' && (
-          <p className="text-sm m-0 mb-8">
-            In this office, your AI agents become tiny pixel characters: they type at their desks
-            while they work, wander off when they're done, and speak up when they need you.
-          </p>
-        )}
+        {step === 'welcome' && <p className="text-sm m-0 mb-8">{t('intro.welcomeBody')}</p>}
 
         {step === 'claudeCode' && (
           <>
-            <p className="text-sm m-0 mb-8">
-              The office watches your Claude Code sessions and brings them to life in here. New to
-              Claude Code? Download it first:
-            </p>
+            <p className="text-sm m-0 mb-8">{t('intro.claudeCodeBody')}</p>
             <div className="text-sm bg-btn-bg border-2 border-border py-4 px-8 mb-8 select-all">
               {CLAUDE_CODE_INSTALL_COMMAND}
             </div>
             <p className="text-sm m-0 mb-8">
-              For more info, visit{' '}
+              {t('intro.moreInfo')}{' '}
               <a
                 href={CLAUDE_CODE_URL}
                 target="_blank"
@@ -354,7 +351,7 @@ export function IntroBubble({
 
         {step === 'usage' &&
           (usageBridge?.installed ? (
-            <p className="text-sm m-0 mb-8">Your usage now shows in the top-left corner.</p>
+            <p className="text-sm m-0 mb-8">{t('intro.usageShown')}</p>
           ) : (
             <>
               {(usageBridge?.disclosure ?? '').split('\n\n').map((paragraph, i) => (
@@ -378,16 +375,9 @@ export function IntroBubble({
         {step === 'closing' && (
           <>
             {installFailed ? (
-              <p className="text-sm m-0 mb-8">
-                Something went wrong writing to your Claude Code settings, so the office will watch
-                your sessions the slower way instead. No worries, everything still works and you can
-                retry activating them any time from Settings.
-              </p>
+              <p className="text-sm m-0 mb-8">{t('intro.installFailedBody')}</p>
             ) : null}
-            <p className="text-sm m-0 mb-8">
-              Enjoy your new office! Questions, ideas, or pixel art to show off? Come hang out in
-              our Discord.
-            </p>
+            <p className="text-sm m-0 mb-8">{t('intro.enjoyBody')}</p>
             <p className="text-base text-center m-0 mt-12 mb-12">
               <a
                 href={DISCORD_INVITE_URL}
@@ -396,7 +386,7 @@ export function IntroBubble({
                 className="inline-flex items-center gap-8 text-accent-bright hover:text-accent no-underline"
               >
                 <DiscordIcon />
-                Join our Discord!
+                {t('intro.joinDiscord')}
               </a>
             </p>
           </>
@@ -415,7 +405,7 @@ export function IntroBubble({
               className={pending ? 'opacity-[var(--btn-disabled-opacity)]' : ''}
               onClick={back}
             >
-              Back
+              {t('common.back')}
             </Button>
           )}
 
@@ -427,7 +417,7 @@ export function IntroBubble({
                 disabled={usagePending}
                 onClick={forward}
               >
-                Skip
+                {t('intro.skip')}
               </Button>
               <Button
                 variant={usagePending ? 'disabled' : 'accent'}
@@ -435,7 +425,7 @@ export function IntroBubble({
                 disabled={usagePending}
                 onClick={enableUsageBars}
               >
-                {usagePending ? 'Connecting...' : 'Show Usage'}
+                {usagePending ? t('intro.connecting') : t('intro.showUsage')}
               </Button>
             </div>
           ) : step === 'consent' ? (
@@ -447,7 +437,7 @@ export function IntroBubble({
                 className={installPending ? 'opacity-[var(--btn-disabled-opacity)]' : ''}
                 onClick={() => choose('never')}
               >
-                Don't Ask Again
+                {t('intro.dontAskAgain')}
               </Button>
               <Button
                 variant={installPending ? 'disabled' : 'default'}
@@ -455,7 +445,7 @@ export function IntroBubble({
                 disabled={installPending}
                 onClick={() => choose('notNow')}
               >
-                Not Now
+                {t('intro.notNow')}
               </Button>
               <Button
                 variant={installPending ? 'disabled' : 'accent'}
@@ -463,16 +453,16 @@ export function IntroBubble({
                 disabled={installPending}
                 onClick={() => choose('install')}
               >
-                {installPending ? 'Installing...' : 'Install Hooks'}
+                {installPending ? t('intro.installing') : t('intro.installHooks')}
               </Button>
             </div>
           ) : step === 'closing' ? (
             <Button variant="accent" size="sm" onClick={onClose}>
-              Let's Go
+              {t('intro.letsGo')}
             </Button>
           ) : (
             <Button variant="default" size="sm" onClick={forward}>
-              Continue
+              {t('intro.continue')}
             </Button>
           )}
         </div>

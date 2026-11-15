@@ -104,6 +104,7 @@ webview-ui/                          React 19 + Canvas UI (depends only on core/
     App.tsx                          Composition root (hooks + components + EditActionBar)
     constants.ts                     Webview magic numbers/strings
     notificationSound.ts             Web Audio API chime
+    i18n/                            UI languages (no library): index.ts (`t` / `useT` / `useLocale`, `setLanguageChoice` — per browser in localStorage, 'auto' = navigator.language), messages/en/<ns>.ts (source of truth) + messages/vi/<ns>.ts typed `Strings<typeof en>` (a missing key fails typecheck; test/i18n.test.ts checks keys + placeholders)
     changelogData.ts                 Changelog modal content
     components/                      React UI (toolbars, modals, settings)
       BottomToolbar.tsx, ZoomControls.tsx, SettingsModal.tsx, InfoModal.tsx,
@@ -517,6 +518,8 @@ Custom ESLint rules (`eslint-rules/pixel-agents-rules.mjs`) enforce: `no-inline-
 **Sub-agents**: Negative IDs (from -1 down). Created on `agentToolStart` with "Subtask:" prefix, or lazily by `subagentToolStart` when missing (watched background spawns, post-reload recreation). Same palette + repeat as parent. Click focuses parent terminal. Not persisted. Spawn at the closest free walkable tile to the parent's seat (the parent itself when it has none, `anchorTile`) — around it, never in a seat. They never wander and never trail a wandering lead: `updateHelper` keeps them within `HELPER_FOLLOW_RADIUS_TILES` of that home tile, walking back when it moves (a reseated lead), facing it, sitting in place (no chair under them) while working and standing while idle. Idle (stop typing) when every tracked sub-tool row is done; overlay shows the latest non-done sub-tool status, falling back to the Subtask label.
 
 **Speech bubbles**: Permission ("..." amber dots) stays until clicked/cleared. Waiting (green checkmark) auto-fades 2 s. Sprites in `spriteData.ts`.
+
+**Languages (i18n)**: every UI string goes through `t('<namespace>.<key>')` (`webview-ui/src/i18n/`); English is the source of truth, Vietnamese (`vi`) the first translation. A new string = its key in `messages/en/<ns>.ts` AND `messages/vi/<ns>.ts`. The choice is per browser (Settings → Language: Auto / English / Tiếng Việt), never sent to the server. Server-provided text (consent and usage disclosures, tool statuses) arrives in English; tool statuses are localized at display time by prefix only, never where they're parsed. The changelog, tune names and song codes stay English. FS Pixel Sans covers Vietnamese diacritics; the pixel number font keeps its compact formats ("3d 11h", "NOW") in every language.
 
 **Sound notifications**: Ascending two-note chime (E5 → E6) via Web Audio API plays when waiting bubble appears (`agentStatus: 'waiting'`). `notificationSound.ts` manages AudioContext lifecycle; `unlockAudio()` on canvas mousedown resumes the context (webviews start suspended). Toggled via Settings modal. Persisted per-namespace in `~/.pixel-agents/config.json`.
 

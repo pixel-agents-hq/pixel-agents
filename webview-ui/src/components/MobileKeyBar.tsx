@@ -8,6 +8,7 @@ import {
   PIXEL_ICON_SCALE,
   TERMINAL_ARROW_SEQUENCES,
 } from '../constants.js';
+import { useT } from '../i18n/index.js';
 import { findTouch, withinTapSlop } from '../touch/touchPrimitives.js';
 import type { TrackpadArrow, TrackpadConfig, TrackpadState } from '../touch/trackpad.js';
 import { TRACKPAD_IDLE, trackpadMove } from '../touch/trackpad.js';
@@ -39,6 +40,7 @@ const NUDGE: Record<TrackpadArrow, string> = {
  * the terminal's input area (touchGesture.ts), not a key.
  */
 export function MobileKeyBar({ onKey, lineCols }: MobileKeyBarProps) {
+  const t = useT();
   // The bar scrolls horizontally when the keys outgrow a narrow screen, so a
   // touch only counts as a key press if it didn't travel — otherwise the
   // release of a scroll-drag would fire whatever key it happened to end on.
@@ -170,7 +172,7 @@ export function MobileKeyBar({ onKey, lineCols }: MobileKeyBarProps) {
     <div className="shrink-0 flex items-center gap-6 px-8 py-6 bg-bg border-t-2 border-border overflow-x-auto touch-pan-x">
       <div className="flex-1 min-w-fit flex gap-6">{MOBILE_KEY_BAR.left.map(renderKey)}</div>
       <button
-        aria-label={MOBILE_KEY_BAR.pad.label}
+        aria-label={t('terminal.arrowKeys')}
         onTouchStart={onPadTouchStart}
         onTouchMove={onPadTouchMove}
         onTouchEnd={onPadTouchEnd}
