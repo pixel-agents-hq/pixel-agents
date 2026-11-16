@@ -34,12 +34,15 @@ import {
   WILDCARD_HOSTNAMES,
 } from './constants.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
+import { setDirectoryNameResolver } from './fileWatcher.js';
+import { hostDirectory } from './hostDirectory.js';
 import {
   claudeProvider,
   copyHookScript,
   hookProviderById,
   hookProviders,
 } from './providers/index.js';
+import { createStandaloneDirectoryNameResolver } from './repoDirectoryName.js';
 import { PixelAgentsServer } from './server.js';
 import {
   defaultPtyHostSocket,
@@ -319,6 +322,11 @@ async function main(): Promise<void> {
   });
 
   try {
+    // Label external agents by the repository they work in, so every worktree
+    // of a repo shares one label and one Area mapping (VS Code maps to its
+    // workspace folders instead).
+    setDirectoryNameResolver(createStandaloneDirectoryNameResolver(() => [hostDirectory()]));
+
     // Create runtime first (before server.start, so we can pass it in)
     const runtime = new AgentRuntime(store, claudeProvider);
 
