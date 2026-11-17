@@ -119,7 +119,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     teamUtils.ts                     isInlineTeammateOf, getInlineTeammates, hasInlineTeammates
     types.ts                         ServerAgentState
     constants.ts                     All timing/scanning constants
-  __tests__/                         28 Vitest files
+  __tests__/                         Vitest suites; helpers/removeTempDir.ts is the ONE place they delete folders (removeTempDir, removeInTempDir, clearTestHome; eslint-rules/noComputedRecursiveDelete.mjs bans any other recursive rm)
   manual-hook-events.http            Manual hook testing helper (REST-Client format)
 
 adapters/vscode/                     VS Code surface — composes core + server
@@ -306,6 +306,7 @@ e2e/                                 Playwright suite (real VS Code + mock-claud
     lifecycle.ts                     Reusable scenario fragments
     team.ts                          Team config seeding + teammate helpers
     allure-labels.ts                 @area:<tag> → Allure epic
+    removeTempDir.ts                 The ONE place e2e deletes folders: removeTempDir (a mkdtemp folder in the temp dir), removeUnder (the suite's own artifacts / results / cache under their root); the runner's deletePath is fenced to the temp dir
   tests/
     claude/hooks-on/                 basic.spec.ts, lifecycle.spec.ts, teams.spec.ts
     claude/hooks-off/                lifecycle.spec.ts, matrix.spec.ts

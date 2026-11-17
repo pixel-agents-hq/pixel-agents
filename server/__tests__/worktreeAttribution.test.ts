@@ -44,6 +44,7 @@ import {
 } from '../src/worktreeLocation.js';
 import { readRegistry } from '../src/worktreeRegistry.js';
 import { gitIn, makeRepo, removeTempRepos } from './fixtures/gitRepos.js';
+import { clearTestHome, removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * Worktrees across reloads, reconnects and adoption: attribution goes by
@@ -175,7 +176,7 @@ describe("worktreeLocation, following the bundled provider's convention", () => 
       directory,
     ]);
     expect(found).toEqual({ directory, name: 'x', path: worktreePathIn(link, 'x') });
-    fs.rmSync(path.dirname(link), { recursive: true, force: true });
+    removeTempDir(path.dirname(link));
   });
 });
 
@@ -248,7 +249,7 @@ describe('adopting sessions in a Directory’s worktrees', () => {
     runtime.dispose();
     setAttributionDirectories(() => []);
     removeTempRepos();
-    fs.rmSync(path.join(os.homedir(), '.claude'), { recursive: true, force: true });
+    clearTestHome('.claude');
   });
 
   it('a claude -w session (hooks) is adopted with Watch All off, named after the Directory, marked', () => {
@@ -318,7 +319,7 @@ describe('a Worktree agent across a reload', () => {
   afterEach(() => {
     resumeRetiringForTests();
     removeTempRepos();
-    fs.rmSync(path.join(os.homedir(), '.pixel-agents'), { recursive: true, force: true });
+    clearTestHome('.pixel-agents');
   });
 
   function worktreeAgent(id: number, jsonlFile: string): AgentState {
@@ -453,6 +454,6 @@ describe('a Directory’s Worktrees on the wire', () => {
       expect((await worktreesMessage(store, asked)).directoryPath).toBe(link);
     }
     setAttributionDirectories(() => []);
-    fs.rmSync(path.dirname(link), { recursive: true, force: true });
+    removeTempDir(path.dirname(link));
   });
 });

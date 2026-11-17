@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,6 +9,7 @@ import { create } from '../src/worktreeCreate.js';
 import { handleCloseAgent, retireWorktreesLeftBy } from '../src/worktreeLeave.js';
 import { readRegistry } from '../src/worktreeRegistry.js';
 import { gitIn, gitOk, makeRepo, removeTempRepos, writeFile } from './fixtures/gitRepos.js';
+import { clearTestHome } from './helpers/removeTempDir.js';
 
 /** The card's ×: a Worktree agent with uncommitted files is asked about
  *  before it is stopped, and the answer is applied when it has exited. */
@@ -17,7 +17,7 @@ import { gitIn, gitOk, makeRepo, removeTempRepos, writeFile } from './fixtures/g
 afterEach(() => {
   vi.restoreAllMocks();
   removeTempRepos();
-  fs.rmSync(path.join(os.homedir(), '.pixel-agents'), { recursive: true, force: true });
+  clearTestHome('.pixel-agents');
 });
 
 async function launched(store: AgentStateStore, id = 1, sessionId = 's-1') {

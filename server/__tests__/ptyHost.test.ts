@@ -18,6 +18,7 @@ import {
   launchStandaloneAgent,
   reattachTerminalAgents,
 } from '../src/terminal/standaloneAgentLauncher.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * The PTY host (development only, `--pty-host`) over a real Unix socket: a host
@@ -112,7 +113,7 @@ describe('PTY host', () => {
   afterEach(async () => {
     for (const client of clients.splice(0)) await client.shutdown();
     await host?.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
   });
 
   it('spawns with exactly the env the server sends, and reports the pid', async () => {

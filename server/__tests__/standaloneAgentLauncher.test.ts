@@ -15,6 +15,7 @@ import {
   resumedTranscript,
 } from '../src/terminal/standaloneAgentLauncher.js';
 import { sessionMarkersUnset } from '../src/terminal/terminalEnv.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * launchStandaloneAgent is the standalone counterpart of the VS Code adapter's
@@ -103,7 +104,7 @@ describe('launchStandaloneAgent', () => {
     vi.useRealTimers();
     runtime.dispose();
     store.dispose();
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    removeTempDir(tempDir);
   });
 
   // ── Successful launch ────────────────────────────────────────

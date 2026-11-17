@@ -9,6 +9,7 @@ import {
   createClaudeSignIn,
   signInStateFromStatus,
 } from '../src/providers/hook/claude/claudeSignIn.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 // A stand-in for `claude` that speaks the two commands the way the CLI does
 // (probed on Claude Code 2.1.322): `auth status` prints JSON and exits 1
@@ -67,7 +68,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(dir, { recursive: true, force: true });
+  removeTempDir(dir);
 });
 
 const launchedWith = (): { args: string[]; browser: string | null; session: string | null } =>

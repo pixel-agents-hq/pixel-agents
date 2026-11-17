@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildAgentDiagnostics } from '../src/agentDiagnostics.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import type { AgentState } from '../src/types.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
   return {
@@ -49,7 +50,7 @@ describe('buildAgentDiagnostics', () => {
   });
 
   afterAll(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   it('emits the exact 9-field shape for an agent with an existing jsonl file', () => {

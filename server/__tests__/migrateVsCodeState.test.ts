@@ -25,6 +25,7 @@ import { migrateVsCodeState } from '../../adapters/vscode/migrateVsCodeState.js'
 import { getHooksEnabled } from '../src/configPersistence.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../src/layoutPersistence.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /** Lightweight in-memory Memento for workspaceState/globalState simulation. */
 function createMemento(seed: Record<string, unknown> = {}): {
@@ -69,7 +70,7 @@ describe('migrateVsCodeState', () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   it('migrates every legacy globalState setting — and DISCARDS the hooks preference', () => {

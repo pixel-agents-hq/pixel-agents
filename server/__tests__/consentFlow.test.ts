@@ -18,6 +18,7 @@ import {
   CONSENT_SUMMARY,
 } from '../src/providers/hook/claude/consentCopy.js';
 import { CLAUDE_HOOK_EVENTS } from '../src/providers/hook/claude/constants.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /** Let a dispatch's async chain (side effect → areHooksInstalled → persist →
  *  send) run to completion. */
@@ -92,7 +93,7 @@ describe('clientMessageHandler: hooks consent flow', () => {
       process.env.HOME = originalHome;
     }
     store.dispose();
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   // ── hooksConsentRequest: who is asked, and on what terms ─────

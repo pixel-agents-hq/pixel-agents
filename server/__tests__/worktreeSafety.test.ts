@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -18,6 +17,7 @@ import {
   removeTempRepos,
   writeFile,
 } from './fixtures/gitRepos.js';
+import { clearTestHome, removeInTempDir } from './helpers/removeTempDir.js';
 
 /**
  * The edge the leave rules must never misread: a Worktree folder that is
@@ -28,7 +28,7 @@ import {
 
 afterEach(() => {
   removeTempRepos();
-  fs.rmSync(path.join(os.homedir(), '.pixel-agents'), { recursive: true, force: true });
+  clearTestHome('.pixel-agents');
 });
 
 let counter = 0;
@@ -251,9 +251,7 @@ describe('a removal git leaves half done', () => {
       // What the office found after the leave: git's record gone, the folder
       // (its .git file included) still there.
       gitIn(repo, 'worktree', 'unlock', worktree.path);
-      fs.rmSync(path.join(repo, '.git', 'worktrees', path.basename(worktree.path)), {
-        recursive: true,
-      });
+      removeInTempDir(path.join(repo, '.git', 'worktrees', path.basename(worktree.path)));
 
       expect(await retire(worktree)).toMatchObject({ ok: true, outcome: 'needsDecision' });
       expect((await decide(worktree, { choice: 'save' })).ok).toBe(false);

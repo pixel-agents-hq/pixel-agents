@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { exists, realPath, realPathKey, sameFolder } from '../src/pathKey.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /** The one comparison for Worktree folders: every spelling of a folder is the folder. */
 
@@ -15,7 +16,7 @@ function tempDir(): string {
 }
 
 afterEach(() => {
-  for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  for (const dir of made.splice(0)) removeTempDir(dir);
 });
 
 describe('sameFolder', () => {

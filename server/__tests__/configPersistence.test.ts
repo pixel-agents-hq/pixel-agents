@@ -17,6 +17,7 @@ import {
   setHooksEnabled,
   writeConfig,
 } from '../src/configPersistence.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 describe('configPersistence: areas', () => {
   let tempHome: string;
@@ -34,7 +35,7 @@ describe('configPersistence: areas', () => {
     } else {
       process.env.HOME = originalHome;
     }
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   // ── parseAreaMappings ────────────────────────────────────────

@@ -23,6 +23,7 @@ import {
 } from '../src/fileWatcher.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import { setHookProvider } from '../src/transcriptParser.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 describe('initialReadOffset', () => {
   let dir: string;
@@ -36,7 +37,7 @@ describe('initialReadOffset', () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
   });
 
   it('reads a file that just came to life (a /clear transcript) from the start', () => {
@@ -125,7 +126,7 @@ describe('resuming a session', () => {
       for (const w of fileWatchers.values()) w.close();
       for (const t of pollingTimers.values()) clearInterval(t);
       vi.useRealTimers();
-      fs.rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 });
@@ -178,7 +179,7 @@ describe('clearing a session', () => {
     } finally {
       for (const w of fileWatchers.values()) w.close();
       for (const t of pollingTimers.values()) clearInterval(t);
-      fs.rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     }
   });
 });

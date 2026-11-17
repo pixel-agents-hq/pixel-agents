@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type JsonFileWatcher, watchJsonFile, writeJsonAtomic } from '../src/jsonFileWatcher.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 const POLL_MS = 50;
 const tick = (ms = 20) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -25,7 +26,7 @@ describe('watchJsonFile', () => {
   afterEach(() => {
     watcher?.dispose();
     watcher = null;
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
   });
 
   it('reports an external change', async () => {

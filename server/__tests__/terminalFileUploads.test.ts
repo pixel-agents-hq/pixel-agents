@@ -22,6 +22,7 @@ import {
 } from '../src/terminal/fileUploads.js';
 import { registerTerminalRoutes } from '../src/terminal/terminalRoutes.js';
 import type { TerminalSessions } from '../src/terminal/terminalSessions.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 const TOKEN = 'test-token';
 const MAX_BYTES = 32;
@@ -50,7 +51,7 @@ describe('terminal file upload route', () => {
 
   afterEach(async () => {
     await app.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
   });
 
   function upload(
@@ -179,7 +180,7 @@ describe('a file already on this machine', () => {
 
   afterEach(async () => {
     await app.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
   });
 
   const locate = (body: unknown, opts: { host?: string; token?: string } = {}) =>
@@ -349,7 +350,7 @@ describe('sweeping our own uploads folder', () => {
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-sweep-test-'));
   });
-  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => removeTempDir(dir));
 
   /** A file of `size` bytes sent `daysAgo` days before NOW. */
   const sent = (name: string, daysAgo: number, size = 1): string => {

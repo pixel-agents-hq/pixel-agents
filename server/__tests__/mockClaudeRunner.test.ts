@@ -4,6 +4,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { removeTempDir } from './helpers/removeTempDir.js';
+
 const MOCK_CLAUDE_RUNNER = path.join(__dirname, '../../e2e/fixtures/mock-claude-runner.cjs');
 
 let tmpBase: string;
@@ -85,7 +87,7 @@ describe('mock-claude-runner hook execution', () => {
 
   afterEach(() => {
     try {
-      fs.rmSync(tmpBase, { recursive: true, force: true });
+      removeTempDir(tmpBase);
     } catch {
       /* ignore */
     }

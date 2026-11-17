@@ -25,6 +25,7 @@ import {
   waitForGit,
   writeFile,
 } from './fixtures/gitRepos.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 // Waits follow git spawns (see waitForGit): room for them under a loaded run.
 vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
@@ -212,7 +213,7 @@ describe('launching an agent into a Worktree', () => {
       const saved = sent.filter((m) => m.type === 'directorySaved');
       expect(saved.map((m) => (m.directory as { isRepo: boolean }).isRepo)).toEqual([true, false]);
     } finally {
-      fs.rmSync(plain, { recursive: true, force: true });
+      removeTempDir(plain);
     }
   });
   // ── When the agent leaves ──

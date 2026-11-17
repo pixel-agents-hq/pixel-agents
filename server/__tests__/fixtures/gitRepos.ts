@@ -11,6 +11,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { vi } from 'vitest';
 
+import { removeTempDir } from '../helpers/removeTempDir.js';
+
 const IDENTITY = [
   '-c',
   'user.name=Pixel Agents Test',
@@ -93,7 +95,7 @@ export function commitAll(dir: string, message: string): string {
 
 /** Remove every directory this module made. */
 export function removeTempRepos(): void {
-  for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  for (const dir of made.splice(0)) removeTempDir(dir);
 }
 
 /** How long a wait after a git operation may take: git spawns (create, inspect, add +

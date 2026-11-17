@@ -37,8 +37,8 @@ import {
   buildAssistantToolUseRecord,
   buildAsyncAgentLaunchResultRecord,
   buildBackgroundAgentDoneRecord,
-  buildTeamMetadataRecord,
   buildTeammateSpawnResultRecord,
+  buildTeamMetadataRecord,
   seedTeamConfig,
 } from '../../../helpers/team';
 import { getPixelAgentsFrame, openPixelAgentsPanel, setSettings } from '../../../helpers/webview';

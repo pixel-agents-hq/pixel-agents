@@ -12,6 +12,7 @@ import {
   setExternalCharacterCount,
 } from '../src/paletteAssigner.js';
 import type { AgentState } from '../src/types.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 const PALETTE_COUNT = DEFAULT_CHARACTER_PROFILES.length;
 
@@ -75,7 +76,7 @@ describe('paletteAssigner', () => {
   afterEach(() => {
     // Reset module-level state so tests don't leak into each other.
     process.env.HOME = originalHome;
-    for (const home of tempHomes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
+    for (const home of tempHomes.splice(0)) removeTempDir(home);
     setExternalCharacterCount(0);
     vi.restoreAllMocks();
   });

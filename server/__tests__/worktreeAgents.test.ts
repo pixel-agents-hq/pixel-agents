@@ -6,13 +6,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createAgentState } from '../src/agentState.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { owningSession, worktreeLook } from '../src/worktreeAgents.js';
+import { clearTestHome, removeTempDir } from './helpers/removeTempDir.js';
 
 /** Whose character a Worktree's row wears. */
 
 const tmp: string[] = [];
 afterEach(() => {
-  for (const dir of tmp.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
-  fs.rmSync(path.join(os.homedir(), '.pixel-agents'), { recursive: true, force: true });
+  for (const dir of tmp.splice(0)) removeTempDir(dir);
+  clearTestHome('.pixel-agents');
 });
 
 function folder(): string {

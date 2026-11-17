@@ -19,6 +19,7 @@ import {
   removeTempRepos,
   waitForGit,
 } from './fixtures/gitRepos.js';
+import { clearTestHome, removeTempDir } from './helpers/removeTempDir.js';
 
 // Waits follow git spawns (see waitForGit): room for them under a loaded run.
 vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
@@ -39,7 +40,7 @@ function freshStore(): AgentStateStore {
 
 afterEach(() => {
   removeTempRepos();
-  fs.rmSync(path.join(os.homedir(), '.pixel-agents'), { recursive: true, force: true });
+  clearTestHome('.pixel-agents');
 });
 
 describe('launching into a Worktree from any host', () => {
@@ -232,7 +233,7 @@ describe('an office holding its Worktrees', () => {
 
     expect(fs.existsSync(path.join(registered.path, 'README.md'))).toBe(true);
     expect(readRegistry().map((e) => e.state)).toEqual(['active']);
-    fs.rmSync(path.dirname(link), { recursive: true, force: true });
+    removeTempDir(path.dirname(link));
   });
 
   it("the launching office's leave retires it, though another office adopted the same session", async () => {

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PersistedAgent } from '../../core/src/schemas.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 // Mock os.homedir() so the adapter resolves to an isolated temp dir on every
 // platform. Overriding process.env.HOME is not portable: os.homedir() reads
@@ -25,7 +26,7 @@ describe('FileStateAdapter', () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   // ── Settings (shared config.json, per-namespace section) ────

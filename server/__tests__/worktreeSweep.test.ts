@@ -18,6 +18,7 @@ import {
   removeTempRepos,
   writeFile,
 } from './fixtures/gitRepos.js';
+import { clearTestHome, removeInTempDir, removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * The startup sweep, against real temporary repos: what a crash or a closed
@@ -27,7 +28,7 @@ import {
 
 afterEach(() => {
   removeTempRepos();
-  fs.rmSync(path.join(os.homedir(), '.pixel-agents'), { recursive: true, force: true });
+  clearTestHome('.pixel-agents');
 });
 
 let counter = 0;
@@ -162,7 +163,7 @@ describe('sweep: kept and parked Worktrees', () => {
     writeFile(kept.path, 'notes.txt', 'mine\n');
     await retire(kept);
     await decide(kept, { choice: 'keep' });
-    fs.rmSync(kept.path, { recursive: true, force: true });
+    removeInTempDir(kept.path);
 
     await sweep(nobody);
 
@@ -216,10 +217,10 @@ describe('sweep: never what is not ours', () => {
     writeFile(claudes, 'wip.txt', 'claude is working\n');
     const claudesGone = path.join(repo, '.claude', 'worktrees', 'claude-gone');
     gitIn(repo, 'worktree', 'add', '--quiet', '-b', 'claude-gone', claudesGone);
-    fs.rmSync(claudesGone, { recursive: true, force: true });
+    removeInTempDir(claudesGone);
 
     const ours = await created(repo);
-    fs.rmSync(ours.path, { recursive: true, force: true });
+    removeInTempDir(ours.path);
 
     await sweep(nobody);
 
@@ -235,7 +236,7 @@ describe('sweep: never what is not ours', () => {
   it('skips a repo that is gone from disk, keeping its entries, and still sweeps the others', async () => {
     const gone = makeRepo();
     const goneEntry = await created(gone);
-    fs.rmSync(gone, { recursive: true, force: true });
+    removeTempDir(gone);
     const repo = makeRepo();
     const leftover = await created(repo);
 

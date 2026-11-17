@@ -4,8 +4,14 @@ import fs from 'fs';
 import path from 'path';
 
 import { applyAllureLabels } from '../helpers/allure-labels';
-import { launchVSCode, type VSCodeSession, waitForWorkbench } from '../helpers/launch';
+import {
+  ARTIFACTS_DIR,
+  launchVSCode,
+  type VSCodeSession,
+  waitForWorkbench,
+} from '../helpers/launch';
 import { killTrackedExternalProcesses } from '../helpers/mock-claude';
+import { removeUnder } from '../helpers/removeTempDir';
 import {
   clearNarrationContext,
   finishNarration,
@@ -57,7 +63,7 @@ function shouldAttachRunVideo(testInfo: TestInfo): boolean {
 function removeDirIfExists(dirPath: string | undefined): void {
   try {
     if (!dirPath || !fs.existsSync(dirPath)) return;
-    fs.rmSync(dirPath, { recursive: true, force: true });
+    removeUnder(ARTIFACTS_DIR, dirPath);
   } catch {
     // Artifact cleanup failures are non-fatal in teardown.
   }

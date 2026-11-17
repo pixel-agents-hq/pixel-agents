@@ -17,6 +17,7 @@ import type { IPty, PtyModule, PtySpawnOptions } from '../src/terminal/ptyModule
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
 import { RemotePtySessions } from '../src/terminal/remotePtySessions.js';
 import type { TerminalSessions } from '../src/terminal/terminalSessions.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 const ESC = '\x1b';
 
@@ -86,7 +87,7 @@ for (const where of ['in process', 'PTY host'] as const) {
       await sessions.shutdown();
       await host?.close();
       host = null;
-      fs.rmSync(dir, { recursive: true, force: true });
+      removeTempDir(dir);
     });
 
     /** Spawn agent 1 and let its program draw `output`. */

@@ -14,6 +14,7 @@ import {
 } from '../src/contextUsage.js';
 import { claudeProvider, contextWindowForModel } from '../src/providers/hook/claude/claude.js';
 import type { AgentState } from '../src/types.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
   return {
@@ -261,7 +262,7 @@ describe('seedContextUsage', () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   function writeTranscript(name: string, records: Array<Record<string, unknown>>): string {
