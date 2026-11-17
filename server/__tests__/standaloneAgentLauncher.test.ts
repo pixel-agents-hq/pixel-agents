@@ -6,11 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HookProvider } from '../../core/src/provider.js';
 import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
-import { JSONL_POLL_INTERVAL_MS } from '../src/constants.js';
+import { JSONL_POLL_INTERVAL_MS, RESUME_FALLBACK_POLLS } from '../src/constants.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import type { IPty, PtyModule, PtySpawnOptions } from '../src/terminal/ptyModule.js';
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
-import { launchStandaloneAgent } from '../src/terminal/standaloneAgentLauncher.js';
+import {
+  launchStandaloneAgent,
+  resumedTranscript,
+} from '../src/terminal/standaloneAgentLauncher.js';
 import { sessionMarkersUnset } from '../src/terminal/terminalEnv.js';
 
 /**
@@ -403,5 +406,41 @@ describe('launchStandaloneAgent', () => {
 
     expect(runtime.jsonlPollTimers.has(id)).toBe(false);
     expect(runtime.pollingTimers.has(id)).toBe(false);
+  });
+
+  it('a /resume typed in the terminal: past the threshold, the agent moves to the newest new transcript', () => {
+    vi.useFakeTimers();
+    const harness = workingPtyManager();
+    const id = launch(harness)!;
+    const expected = store.get(id)!.jsonlFile;
+    const stamp = (file: string, secondsFromNow: number) => {
+      const t = Date.now() / 1000 + secondsFromNow;
+      fs.utimesSync(file, t, t);
+    };
+    // Older than the launch: never a candidate.
+    const old = path.join(projectDir, 'old-session.jsonl');
+    fs.writeFileSync(old, '');
+    stamp(old, -60);
+
+    // Before the threshold a new transcript is left alone.
+    const resumed = path.join(projectDir, 'resumed-session.jsonl');
+    fs.writeFileSync(resumed, '');
+    stamp(resumed, 5);
+    vi.advanceTimersByTime(JSONL_POLL_INTERVAL_MS * RESUME_FALLBACK_POLLS);
+    expect(store.get(id)!.jsonlFile).toBe(expected);
+    expect(runtime.jsonlPollTimers.has(id)).toBe(true);
+
+    vi.advanceTimersByTime(JSONL_POLL_INTERVAL_MS);
+    expect(store.get(id)!.jsonlFile).toBe(resumed);
+    expect(runtime.jsonlPollTimers.has(id)).toBe(false);
+  });
+
+  it('resumedTranscript skips a transcript another agent reads', () => {
+    const harness = workingPtyManager();
+    const id = launch(harness)!;
+    const taken = path.join(projectDir, 'taken.jsonl');
+    fs.writeFileSync(taken, '');
+    store.get(id)!.jsonlFile = taken;
+    expect(resumedTranscript(store, projectDir, 0)).toBeNull();
   });
 });

@@ -23,9 +23,13 @@ import { restoredAgentInit } from '../agentPersistence.js';
 import type { AgentRuntime } from '../agentRuntime.js';
 import { createAgentState } from '../agentState.js';
 import type { AgentStateStore } from '../agentStateStore.js';
-import { JSONL_POLL_INTERVAL_MS, OFFICE_MCP_SERVER_NAME } from '../constants.js';
+import {
+  JSONL_POLL_INTERVAL_MS,
+  OFFICE_MCP_SERVER_NAME,
+  RESUME_FALLBACK_POLLS,
+} from '../constants.js';
 import { clearContextUsage } from '../contextUsage.js';
-import { startFileWatching } from '../fileWatcher.js';
+import { reassignAgentToFile, startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor } from '../hostDirectory.js';
 import type { AgentMcpAccess } from '../mcp/officeMcp.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
@@ -339,23 +343,45 @@ function admitTerminalAgent(
  * Wait for the session's JSONL to appear, then start watching it.
  *
  * Hooks (the default) already route by sessionId, so this is what backfills tool
- * content and keeps hooks-off standalone working at all. Unlike the VS Code
- * path this does NOT implement /resume reassignment: a launch either names a
- * fresh --session-id or --resume's an existing one, so the transcript is
- * known up front either way.
+ * content and keeps hooks-off working at all. A launch names its transcript up
+ * front (a fresh --session-id, or the --resume'd one), but the user can still
+ * `/resume` another conversation in the terminal before the first one writes
+ * anything: past `RESUME_FALLBACK_POLLS` with the expected file still missing,
+ * the agent is moved to the newest transcript in its project dir that appeared
+ * after the launch and no other agent reads.
  */
 function startJsonlPoll(deps: LaunchStandaloneAgentDeps, id: number, agent: AgentState): void {
   const { store, runtime } = deps;
+  const launchedAt = Date.now();
   let pollCount = 0;
 
   const timer = setInterval(() => {
     pollCount++;
     try {
       if (!fs.existsSync(agent.jsonlFile)) {
-        if (pollCount === 10) {
+        if (pollCount === RESUME_FALLBACK_POLLS) {
           console.warn(
             `[Pixel Agents] Terminal: Agent ${id} - JSONL not found after 10s. Expected: ${agent.jsonlFile}`,
           );
+        } else if (pollCount > RESUME_FALLBACK_POLLS && store.has(id)) {
+          const resumed = resumedTranscript(store, agent.projectDir, launchedAt);
+          if (resumed) {
+            clearInterval(timer);
+            runtime.jsonlPollTimers.delete(id);
+            console.log(
+              `[Pixel Agents] Terminal: Agent ${id} - /resume detected, reassigning to ${path.basename(resumed)}`,
+            );
+            reassignAgentToFile(
+              id,
+              resumed,
+              store,
+              runtime.fileWatchers,
+              runtime.pollingTimers,
+              runtime.waitingTimers,
+              runtime.permissionTimers,
+              () => store.persist(),
+            );
+          }
         }
         return;
       }
@@ -381,4 +407,22 @@ function startJsonlPoll(deps: LaunchStandaloneAgentDeps, id: number, agent: Agen
   }, JSONL_POLL_INTERVAL_MS);
 
   runtime.jsonlPollTimers.set(id, timer);
+}
+
+/** The newest transcript in `projectDir` written since `since` that no agent reads, or null. */
+export function resumedTranscript(
+  store: AgentStateStore,
+  projectDir: string,
+  since: number,
+): string | null {
+  const tracked = new Set([...store.values()].map((a) => path.resolve(a.jsonlFile)));
+  let newest: { file: string; mtime: number } | null = null;
+  for (const name of fs.readdirSync(projectDir)) {
+    if (!name.endsWith('.jsonl')) continue;
+    const file = path.join(projectDir, name);
+    if (tracked.has(path.resolve(file))) continue;
+    const mtime = fs.statSync(file).mtimeMs;
+    if (mtime > since && (!newest || mtime > newest.mtime)) newest = { file, mtime };
+  }
+  return newest?.file ?? null;
 }
