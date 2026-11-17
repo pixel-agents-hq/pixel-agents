@@ -806,6 +806,14 @@ export class OfficeState {
   }
 
   /** Find seat uid at a given tile position, or null */
+  /** The seat paired with a workstation piece (the chair in front of a PC), or null. */
+  seatOfPiece(pieceUid: string): string | null {
+    for (const [seatId, piece] of this.seatWorkstations) {
+      if (piece === pieceUid) return seatId;
+    }
+    return null;
+  }
+
   getSeatAtTile(col: number, row: number): string | null {
     for (const [uid, seat] of this.seats) {
       if (seat.seatCol === col && seat.seatRow === row) return uid;

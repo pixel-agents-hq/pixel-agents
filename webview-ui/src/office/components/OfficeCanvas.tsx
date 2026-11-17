@@ -715,6 +715,40 @@ export function OfficeCanvas({
       // anywhere else clears them.
       // The Intro's greeter answers no click (and hides what stands behind it).
       if (officeState.greeterAt(pos.worldX, pos.worldY)) return;
+
+      /** The selected agent (never a sub-agent) sent to a seat: its own (back to it)
+       *  or a free one (it moves there). False when the seat is someone else's. */
+      const seatSelected = (seatId: string): boolean => {
+        const id = officeState.selectedAgentId;
+        const ch = id !== null ? officeState.characters.get(id) : undefined;
+        const seat = officeState.seats.get(seatId);
+        if (id === null || !ch || ch.isSubagent || !seat) return false;
+        if (ch.seatId === seatId) {
+          officeState.sendToSeat(id);
+        } else if (!seat.assigned) {
+          officeState.reassignSeat(id, seatId);
+          transport.send({ type: 'saveAgentSeats', seats: officeState.getPersistableSeats() });
+        } else {
+          return false;
+        }
+        officeState.selectedAgentId = null;
+        officeState.cameraFollowId = null;
+        return true;
+      };
+
+      // An agent selected, then a workstation (a PC): the agent goes to the seat in
+      // front of it, as a click on that chair would (the PC often hides it).
+      if (officeState.selectedAgentId !== null && officeState.greeter === null) {
+        const pieceUid = officeState.pieces.at(pos.worldX, pos.worldY, {
+          readOnly: piecesReadOnly(),
+        });
+        const seatId = pieceUid !== null ? officeState.seatOfPiece(pieceUid) : null;
+        if (seatId !== null && seatSelected(seatId)) {
+          officeState.pieces.clearHover();
+          return;
+        }
+      }
+
       const piece = officeState.pieces.tapAt(pos.worldX, pos.worldY, {
         readOnly: piecesReadOnly(),
         twoStep: touch,
@@ -772,36 +806,9 @@ export function OfficeCanvas({
 
       // No agent hit — check seat click while agent is selected
       if (officeState.selectedAgentId !== null) {
-        const selectedCh = officeState.characters.get(officeState.selectedAgentId);
-        // Skip seat reassignment for sub-agents
-        if (selectedCh && !selectedCh.isSubagent) {
-          const tile = screenToTile(clientX, clientY);
-          if (tile) {
-            const seatId = officeState.getSeatAtTile(tile.col, tile.row);
-            if (seatId) {
-              const seat = officeState.seats.get(seatId);
-              if (seat && selectedCh) {
-                if (selectedCh.seatId === seatId) {
-                  // Clicked own seat — send agent back to it
-                  officeState.sendToSeat(officeState.selectedAgentId);
-                  officeState.selectedAgentId = null;
-                  officeState.cameraFollowId = null;
-                  return;
-                } else if (!seat.assigned) {
-                  // Clicked available seat — reassign
-                  officeState.reassignSeat(officeState.selectedAgentId, seatId);
-                  officeState.selectedAgentId = null;
-                  officeState.cameraFollowId = null;
-                  transport.send({
-                    type: 'saveAgentSeats',
-                    seats: officeState.getPersistableSeats(),
-                  });
-                  return;
-                }
-              }
-            }
-          }
-        }
+        const tile = screenToTile(clientX, clientY);
+        const seatId = tile ? officeState.getSeatAtTile(tile.col, tile.row) : null;
+        if (seatId !== null && seatSelected(seatId)) return;
         // Clicked empty space — deselect
         officeState.selectedAgentId = null;
         officeState.cameraFollowId = null;

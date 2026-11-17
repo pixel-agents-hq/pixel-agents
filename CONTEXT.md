@@ -251,7 +251,7 @@ _Avoid_: chair (that's the furniture), workstation
 The furniture category whose items create seats. Every footprint tile of a chair yields one seat.
 
 **Seat assignment**:
-Which agent owns which seat. Persisted, and changeable by selecting a character and clicking a free seat.
+Which agent owns which seat. Persisted, and changeable by selecting a character and clicking a free seat (or the workstation it faces).
 
 **Pet**:
 An animated creature that lives in the office and belongs to no agent. Purely decorative; wanders like a character.
