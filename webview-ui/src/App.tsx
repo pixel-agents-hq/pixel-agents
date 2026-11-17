@@ -1014,6 +1014,7 @@ function App() {
               onToggleSettings={() => setIsSettingsOpen((v) => !v)}
               worktrees={officeReadOnly ? undefined : worktreesListing}
               onSearch={setConversationSearch}
+              onAddDirectory={officeReadOnly ? undefined : directoryEditor.add}
             />
           )}
 
@@ -1120,6 +1121,7 @@ function App() {
           statusFor={terminalDrawer.statusFor}
           worktrees={worktreesListing}
           onSearch={setConversationSearch}
+          onAddDirectory={directoryEditor.add}
         />
       )}
 

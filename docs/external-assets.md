@@ -187,7 +187,7 @@ Furniture can also say how it takes part in the office, with one optional `inter
     "name": "PC",
     "lines": [
       { "when": "panelInUse", "text": "Shell in {panel}" },
-      { "when": "agentWorking", "text": "{agent} works here" },
+      { "when": "agentSeated", "text": "{agent} works here" },
       { "when": "free", "text": "Free" }
     ]
   },
@@ -206,10 +206,11 @@ Furniture can also say how it takes part in the office, with one optional `inter
 **Conditions** (`when`: one condition, or a list where any one holding is enough) are a closed set of facts the office holds about a piece:
 
 - `agentWorking` — an agent is working at it (active, sitting in its paired seat and typing; walking there or resting in the chair between turns doesn't count)
+- `agentSeated` — an agent's seat is its paired seat, whether it is working or idle between turns (the desk is that agent's)
 - `panelInUse` — its panel is in use (for `terminal`: the piece has a live PC shell)
-- `free` — neither
+- `free` — no agent seated at it and its panel not in use
 
-**Placeholders** in a label line: `{agent}` (the working agent's name — its Nickname, else its character's name, else its Directory) only on a line shown on `agentWorking` alone, and `{panel}` (a PC shell's Directory, or `Home`) only on a line shown on `panelInUse` alone.
+**Placeholders** in a label line: `{agent}` (the agent working at it, else the one seated at it — its Nickname, else its character's name, else its Directory) only on a line shown on `agentWorking` and/or `agentSeated` alone, and `{panel}` (a PC shell's Directory, or `Home`) only on a line shown on `panelInUse` alone.
 
 **What a click on a `terminal` piece opens**, in order: its live PC shell; else the terminal of the agent working at it; else a new PC shell — the user's login shell on the host — in the Directory mapped to the Area the piece stands in (several: a small selector over the piece asks which; none: the home folder, in VS Code the first workspace folder). Only the Directories the office lists count: with Settings → Show host Directories off (the default), the host's own folder is neither offered nor picked. Clicks do nothing while the layout editor is open, and a read-only office offers none.
 

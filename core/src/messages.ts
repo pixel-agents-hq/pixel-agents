@@ -376,7 +376,7 @@ export interface FurnitureLabelLine {
   text: string;
 }
 
-export type FurnitureCondition = 'agentWorking' | 'panelInUse' | 'free';
+export type FurnitureCondition = 'agentWorking' | 'agentSeated' | 'panelInUse' | 'free';
 
 export type FurniturePanel = 'terminal';
 

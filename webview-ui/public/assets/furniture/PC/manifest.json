@@ -14,7 +14,7 @@
       "name": "PC",
       "lines": [
         { "when": "panelInUse", "text": "Shell in {panel}" },
-        { "when": "agentWorking", "text": "{agent} works here" },
+        { "when": "agentSeated", "text": "{agent} works here" },
         { "when": "free", "text": "Free" }
       ]
     },

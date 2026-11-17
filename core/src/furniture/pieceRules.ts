@@ -18,6 +18,11 @@ export interface PieceUse {
   /** The agent working at the piece (sitting at its workstation seat, working), or null. */
   agentAtWork: { id: number; name: string } | null;
   /**
+   * The agent whose seat is the piece's workstation seat, working or idle (the one
+   * at work when there is one), or null: whose desk this is.
+   */
+  agentSeated: { id: number; name: string } | null;
+  /**
    * The piece's panel is in use (a PC: a live PC shell), naming what it holds, or
    * null. A null `name` = in use, but this office is not told by what (a view-only
    * office): its label reads PANEL_IN_USE_UNNAMED.
@@ -67,10 +72,12 @@ function holds(condition: FurnitureCondition, facts: PieceUse): boolean {
   switch (condition) {
     case 'agentWorking':
       return facts.agentAtWork !== null;
+    case 'agentSeated':
+      return facts.agentSeated !== null || facts.agentAtWork !== null;
     case 'panelInUse':
       return facts.panelInUse !== null;
     case 'free':
-      return facts.agentAtWork === null && facts.panelInUse === null;
+      return facts.agentAtWork === null && facts.agentSeated === null && facts.panelInUse === null;
   }
 }
 
@@ -81,7 +88,7 @@ function fill(text: string, facts: PieceUse): string {
   // The validator only lets a known placeholder into a line shown on its own fact,
   // so the fact is there whenever the line is.
   const values: Record<LabelPlaceholder, string | undefined> = {
-    agent: facts.agentAtWork?.name,
+    agent: (facts.agentAtWork ?? facts.agentSeated)?.name,
     panel: facts.panelInUse?.name ?? undefined,
   };
   return text.replace(LABEL_PLACEHOLDER, (_, name: LabelPlaceholder) => values[name] ?? '');

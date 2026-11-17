@@ -45,6 +45,7 @@ const AGENT_USES: Record<FurnitureAgentUse, true> = { workstation: true };
 const PANELS: Record<FurniturePanel, true> = { terminal: true };
 const CONDITIONS: Record<FurnitureCondition, true> = {
   agentWorking: true,
+  agentSeated: true,
   panelInUse: true,
   free: true,
 };
@@ -54,15 +55,15 @@ export const FURNITURE_PANELS = Object.keys(PANELS) as FurniturePanel[];
 export const FURNITURE_CONDITIONS = Object.keys(CONDITIONS) as FurnitureCondition[];
 
 /**
- * The placeholders a label line may name, each with the one condition its line
- * must be shown on alone (so the fact it names is always there to fill it).
+ * The placeholders a label line may name, each with the conditions its line must be
+ * shown on alone (so the fact it names is always there to fill it).
  */
 export const LABEL_PLACEHOLDERS = {
-  /** The agent working at the piece. */
-  agent: 'agentWorking',
+  /** The agent working at the piece, else the one seated at it. */
+  agent: ['agentWorking', 'agentSeated'],
   /** What the piece's panel holds: a PC shell's Directory. */
-  panel: 'panelInUse',
-} as const satisfies Record<string, FurnitureCondition>;
+  panel: ['panelInUse'],
+} as const satisfies Record<string, readonly FurnitureCondition[]>;
 
 export type LabelPlaceholder = keyof typeof LABEL_PLACEHOLDERS;
 
@@ -117,9 +118,9 @@ function labelLine(value: unknown, where: string): FurnitureLabelLine {
   for (const [, name] of value.text.matchAll(LABEL_PLACEHOLDER)) {
     if (!Object.hasOwn(LABEL_PLACEHOLDERS, name))
       refuse(`${where}.text: unknown placeholder {${name}}`);
-    const needs = LABEL_PLACEHOLDERS[name as LabelPlaceholder];
-    if (when.some((c) => c !== needs)) {
-      refuse(`${where}.text: {${name}} needs a line shown on "${needs}" alone`);
+    const needs: readonly FurnitureCondition[] = LABEL_PLACEHOLDERS[name as LabelPlaceholder];
+    if (when.some((c) => !needs.includes(c))) {
+      refuse(`${where}.text: {${name}} needs a line shown on "${needs.join('" / "')}" alone`);
     }
   }
   return { when, text: value.text };

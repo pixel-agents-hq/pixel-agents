@@ -5,6 +5,7 @@ import type { Conversation, DirectoryConversations } from '../../../core/src/mes
 import type { TabStatus } from '../components/AgentCard.js';
 import { CharacterMugShot } from '../components/CharacterMugShot.js';
 import { STATUS_DOT } from '../components/statusDot.js';
+import { Button } from '../components/ui/Button.js';
 import { PixelIcon } from '../components/ui/PixelIcon.js';
 import { PixelText } from '../components/ui/PixelText.js';
 import {
@@ -47,6 +48,8 @@ interface ConversationListProps {
   worktrees?: WorktreesListing;
   /** Open the search over every conversation (or one Directory's). */
   onSearch?: (scope: ConversationSearchScope) => void;
+  /** Add a Directory (the launch drawer's dialog): offered while there is none. */
+  onAddDirectory?: () => void;
 }
 
 /** Where a search looks: every Directory, or the one named. */
@@ -73,6 +76,7 @@ export function ConversationList({
   roomy = false,
   worktrees,
   onSearch,
+  onAddDirectory,
 }: ConversationListProps) {
   /** What pressing a row does: a running one opens its agent, a past one resumes. */
   const press = (conversation: Conversation, directory: DirectoryConversations) => () =>
@@ -98,13 +102,10 @@ export function ConversationList({
     }));
 
   // flex-1 even while empty: whatever sits below the list stays at the bottom.
-  if (list === null || list.directories.length === 0) {
-    return (
-      <p className="flex-1 m-0 px-10 py-8 text-sm text-text-muted">
-        {list === null ? 'Loading…' : 'No Directories yet.'}
-      </p>
-    );
+  if (list === null) {
+    return <p className="flex-1 m-0 px-10 py-8 text-sm text-text-muted">Loading…</p>;
   }
+  if (list.directories.length === 0) return <NoDirectories onAdd={onAddDirectory} />;
   const recent = recentAcross(list.directories, RECENT_CONVERSATIONS_COUNT);
   const now = list.receivedAt;
   return (
@@ -531,5 +532,35 @@ function RowTrail({ running, status, at, now, push = false, testId }: RowTrailPr
       smaller
       className={`shrink-0 ${push ? 'ml-auto ' : ''}text-xs text-text-muted`}
     />
+  );
+}
+
+/** No Directory yet: what the list would hold, and the way to get there. */
+function NoDirectories({ onAdd }: { onAdd?: () => void }) {
+  return (
+    <div
+      data-testid="conversations-empty"
+      className="flex-1 flex flex-col items-center justify-center gap-6 px-20 pb-40 text-center"
+    >
+      <PixelIcon name="history" scale={3} className="mb-4 text-text-muted opacity-50" />
+      <p className="m-0 text-base text-text">No history yet</p>
+      <p className="m-0 text-sm text-text-muted leading-snug">
+        The conversations with your agents will show up here.
+      </p>
+      {onAdd && (
+        // Outlined, quiet: the panel's border colour, no accent.
+        <Button
+          size="md"
+          className="mt-10 bg-transparent! border-border! text-text hover:bg-btn-hover!"
+          onClick={onAdd}
+        >
+          <span className="inline-flex items-center gap-8">
+            {/* The pixel font's capitals sit low: the icon comes down a pixel to them. */}
+            <PixelIcon name="plus" style={{ translate: '0 1px' }} />
+            Add Directory
+          </span>
+        </Button>
+      )}
+    </div>
   );
 }

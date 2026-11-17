@@ -31,7 +31,7 @@ const KIOSK: FurnitureInteractive = {
     name: 'Kiosk',
     lines: [
       { when: ['free'], text: 'Free' },
-      { when: ['agentWorking'], text: '{agent} works here' },
+      { when: ['agentSeated'], text: '{agent} works here' },
     ],
   },
   panel: 'terminal',
@@ -227,6 +227,23 @@ describe('hovering a piece (mouse)', () => {
     os.pieces.setCharacterName(() => undefined);
     assert.equal(line(), 'webapp works here');
     assert.deepEqual(os.pieces.hovered(OFFICE)?.view.click, { kind: 'agentTerminal', agentId: 1 });
+  });
+});
+
+describe("an idle agent's desk", () => {
+  test('is still its own: named, not free, off; a click opens a new panel there', () => {
+    const os = office();
+    os.pieces.setCharacterName((palette) => (palette === 0 ? 'Byte' : undefined));
+    os.addAgent(1, 0, 0, 'chair', true, 'webapp');
+    os.setAgentActive(1, false);
+    os.pieces.hoverAt(...at(5, 3), OFFICE);
+    const view = os.pieces.hovered(OFFICE)?.view;
+    assert.equal(view?.label?.line, 'Byte works here');
+    assert.equal(view?.state, null);
+    assert.equal(view?.click?.kind, 'newPanel');
+    // Its agent gone, the desk is free again.
+    os.removeAgent(1);
+    assert.equal(os.pieces.hovered(OFFICE)?.view.label?.line, 'Free');
   });
 });
 

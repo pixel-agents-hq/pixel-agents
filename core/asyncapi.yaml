@@ -3287,7 +3287,8 @@ components:
     FurnitureAgentUse:
       description: |
         How agents use a furniture: `workstation` = agents work here (a seat facing it
-        pairs with it, and its agent at work is the `agentWorking` condition).
+        pairs with it; its agent at work is the `agentWorking` condition, the agent
+        seated at it, working or not, `agentSeated`).
       type: string
       enum: [workstation]
 
@@ -3299,16 +3300,18 @@ components:
     FurnitureCondition:
       description: |
         A fact the office holds about a piece: `agentWorking` = an agent is working at
-        it; `panelInUse` = its panel is in use (a PC: a live PC shell); `free` = neither.
+        it; `agentSeated` = an agent's seat is its workstation seat, working or idle;
+        `panelInUse` = its panel is in use (a PC: a live PC shell); `free` = no agent
+        seated at it and its panel not in use.
       type: string
-      enum: [agentWorking, panelInUse, free]
+      enum: [agentWorking, agentSeated, panelInUse, free]
 
     FurnitureLabelSpec:
       description: |
         A Furniture label: its name, then the first of its lines whose condition
         holds (a label says one thing: list the lines in the order a click resolves).
-        A line's text may name `{agent}` (the agent working at it; only in a line shown
-        on `agentWorking` alone) or `{panel}` (what its panel holds, a PC shell's
+        A line's text may name `{agent}` (the agent working at it, else the one seated
+        at it; only in a line shown on `agentWorking` and/or `agentSeated` alone) or `{panel}` (what its panel holds, a PC shell's
         Directory; only in a line shown on `panelInUse` alone).
       type: object
       additionalProperties: false

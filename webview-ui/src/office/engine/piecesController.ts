@@ -150,7 +150,11 @@ export class PiecesController {
    * it stands in (core's piecePlaces, as the server resolves an open).
    */
   facts(uid: string, readOnly: boolean): PieceFacts {
-    return { ...this.use(uid, this.agentsAtWork()), places: this.places(uid), readOnly };
+    return {
+      ...this.use(uid, this.agentsAtWork(), this.agentsSeated()),
+      places: this.places(uid),
+      readOnly,
+    };
   }
 
   /**
@@ -317,10 +321,11 @@ export class PiecesController {
   showingStates(): Map<string, string> {
     const shown = new Map<string, string>();
     const atWork = this.agentsAtWork();
+    const seated = this.agentsSeated();
     for (const item of this.deps.shownLayout().furniture) {
       const interactive = getCatalogEntry(item.type)?.interactive;
       if (!interactive?.states) continue;
-      const state = pieceState(interactive, this.use(item.uid, atWork));
+      const state = pieceState(interactive, this.use(item.uid, atWork, seated));
       if (state) shown.set(item.uid, state);
     }
     return shown;
@@ -330,12 +335,19 @@ export class PiecesController {
     return pieceView(getCatalogEntry(item.type)?.interactive, this.facts(item.uid, readOnly));
   }
 
-  /** Who and what is using a piece: the agent working at it, its live PC shell. */
-  private use(uid: string, atWork: ReadonlyMap<string, Character>): PieceUse {
+  /** Who and what is using a piece: the agent working at it, the one seated at it,
+   *  its live PC shell. */
+  private use(
+    uid: string,
+    atWork: ReadonlyMap<string, Character>,
+    seated: ReadonlyMap<string, Character>,
+  ): PieceUse {
     const ch = atWork.get(uid);
+    const owner = ch ?? seated.get(uid);
     const shell = this.shellsByPiece.get(uid);
     return {
       agentAtWork: ch ? { id: ch.id, name: this.agentName(ch) } : null,
+      agentSeated: owner ? { id: owner.id, name: this.agentName(owner) } : null,
       panelInUse: shell
         ? { name: pcShellName(shell) }
         : this.busyPieces.has(uid)
@@ -363,6 +375,22 @@ export class PiecesController {
       if (piece) atWork.set(piece, ch);
     }
     return atWork;
+  }
+
+  /**
+   * Piece uid → the agent whose seat is its workstation seat, working or idle,
+   * wherever it is standing now (a desk is its agent's between turns too). Not one
+   * leaving the office (despawning).
+   */
+  private agentsSeated(): Map<string, Character> {
+    const seated = new Map<string, Character>();
+    const workstations = this.deps.seatWorkstations();
+    for (const ch of this.deps.characters.values()) {
+      if (!ch.seatId || ch.matrixEffect === 'despawn') continue;
+      const piece = workstations.get(ch.seatId);
+      if (piece && !seated.has(piece)) seated.set(piece, ch);
+    }
+    return seated;
   }
 
   /** The Directories mapped to the Area a piece stands in, by name (none without one,
