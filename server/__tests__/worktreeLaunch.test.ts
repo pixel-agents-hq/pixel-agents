@@ -16,13 +16,18 @@ import type { AgentState } from '../src/types.js';
 import { readRegistry } from '../src/worktreeRegistry.js';
 import {
   commitAll,
+  GIT_TEST_TIMEOUT_MS,
   gitIn,
   gitOk,
   makeRepo,
   removeTempRepos,
   tempDir,
+  waitForGit,
   writeFile,
 } from './fixtures/gitRepos.js';
+
+// Waits follow git spawns (see waitForGit): room for them under a loaded run.
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
 
 /**
  * A launch into a Worktree, end to end on the server: the launch message from
@@ -117,7 +122,7 @@ describe('launching an agent into a Worktree', () => {
     });
 
     dispatch({ type: 'launchAgent', directoryPath: repo, worktree: true });
-    await vi.waitFor(() => expect(store.size).toBe(1));
+    await waitForGit(() => expect(store.size).toBe(1));
 
     const [entry] = readRegistry();
     expect(entry.directoryPath).toBe(repo);
@@ -152,7 +157,7 @@ describe('launching an agent into a Worktree', () => {
     const cwd = vi.spyOn(process, 'cwd').mockReturnValue(repo);
     try {
       dispatch({ type: 'launchAgent', worktree: true });
-      await vi.waitFor(() => expect(store.size).toBe(1));
+      await waitForGit(() => expect(store.size).toBe(1));
     } finally {
       cwd.mockRestore();
     }
@@ -167,7 +172,7 @@ describe('launching an agent into a Worktree', () => {
     dispatch({ type: 'saveDirectory', name: 'Plain', path: plain });
 
     dispatch({ type: 'launchAgent', directoryPath: plain, worktree: true });
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(sent).toContainEqual({
         type: 'worktreeRejected',
         directoryPath: plain,
@@ -215,7 +220,7 @@ describe('launching an agent into a Worktree', () => {
   async function launchedIntoWorktree(repo: string) {
     dispatch({ type: 'saveDirectory', name: 'Side Project', path: repo });
     dispatch({ type: 'launchAgent', directoryPath: repo, worktree: true });
-    await vi.waitFor(() => expect(store.size).toBe(1));
+    await waitForGit(() => expect(store.size).toBe(1));
     const [entry] = readRegistry();
     return { entry, id: [...store][0][0] };
   }
@@ -231,13 +236,13 @@ describe('launching an agent into a Worktree', () => {
     const { entry } = await launchedIntoWorktree(repo);
 
     ptys[0].exit(0); // `/exit`
-    await vi.waitFor(() => expect(readRegistry()).toEqual([]));
+    await waitForGit(() => expect(readRegistry()).toEqual([]));
     expect(store.size).toBe(0);
     expect(fs.existsSync(entry.path)).toBe(false);
     expect(gitOk(repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${entry.branch}`)).toBe(
       false,
     );
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(worktreeLists().at(-1)).toEqual({
         type: 'worktreesLoaded',
         directoryPath: repo,
@@ -253,14 +258,14 @@ describe('launching an agent into a Worktree', () => {
     commitAll(entry.path, 'agent work');
 
     dispatch({ type: 'closeAgent', id });
-    await vi.waitFor(() => expect(store.size).toBe(0));
+    await waitForGit(() => expect(store.size).toBe(0));
     expect(sent.filter((m) => m.type === 'agentCloseQuestion')).toEqual([]);
 
-    await vi.waitFor(() => expect(readRegistry()[0]?.state).toBe('parked'));
+    await waitForGit(() => expect(readRegistry()[0]?.state).toBe('parked'));
     expect(fs.existsSync(entry.path)).toBe(false);
     expect(gitOk(repo, 'rev-parse', '--verify', `refs/heads/${entry.branch}`)).toBe(true);
     // The list every office is sent after the leave (so nothing lands in the next test).
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(worktreeLists().at(-1)?.worktrees).toEqual([
         expect.objectContaining({ name: entry.name, state: 'parked' }),
       ]),
@@ -273,7 +278,7 @@ describe('launching an agent into a Worktree', () => {
     writeFile(entry.path, 'draft.txt', 'unsaved\n');
 
     dispatch({ type: 'closeAgent', id });
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(sent.filter((m) => m.type === 'agentCloseQuestion')).toEqual([
         expect.objectContaining({ id, name: entry.name, uncommittedFiles: 1 }),
       ]),
@@ -283,12 +288,12 @@ describe('launching an agent into a Worktree', () => {
     expect(manager.has(id)).toBe(true);
 
     dispatch({ type: 'closeAgent', id, worktreeChoice: 'save' });
-    await vi.waitFor(() => expect(readRegistry()[0]?.state).toBe('parked'), { timeout: 10_000 });
+    await waitForGit(() => expect(readRegistry()[0]?.state).toBe('parked'));
     expect(store.size).toBe(0);
     expect(fs.existsSync(entry.path)).toBe(false);
     expect(gitIn(repo, 'show', `${entry.branch}:draft.txt`)).toBe('unsaved');
     // The list every office is sent after the leave (so nothing lands in the next test).
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(worktreeLists().at(-1)?.worktrees).toEqual([
         expect.objectContaining({ name: entry.name, state: 'parked' }),
       ]),
@@ -307,7 +312,7 @@ describe('launching an agent into a Worktree', () => {
     writeFile(entry.path, 'draft.txt', 'unsaved\n');
 
     ptys[0].exit(0);
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(worktreeLists().at(-1)?.worktrees).toEqual([
         expect.objectContaining({ name: entry.name, state: 'needsDecision', uncommittedFiles: 1 }),
       ]),
@@ -316,7 +321,7 @@ describe('launching an agent into a Worktree', () => {
 
     // Answered on one device: every office gets the list without the question.
     dispatch({ type: 'decideWorktree', directoryPath: repo, name: entry.name, choice: 'save' });
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(worktreeLists().at(-1)?.worktrees).toEqual([
         expect.objectContaining({ name: entry.name, state: 'parked', uncommittedFiles: 0 }),
       ]),
@@ -332,7 +337,7 @@ describe('launching an agent into a Worktree', () => {
     const { entry } = await launchedIntoWorktree(repo);
     writeFile(entry.path, 'draft.txt', 'unsaved\n');
     ptys[0].exit(0);
-    await vi.waitFor(() => expect(readRegistry()[0]?.state).toBe('needsDecision'));
+    await waitForGit(() => expect(readRegistry()[0]?.state).toBe('needsDecision'));
 
     dispatch(
       {
@@ -354,10 +359,10 @@ describe('launching an agent into a Worktree', () => {
     const { entry } = await launchedIntoWorktree(repo);
     writeFile(entry.path, 'draft.txt', 'unsaved\n');
     ptys[0].exit(0);
-    await vi.waitFor(() => expect(readRegistry()[0]?.state).toBe('needsDecision'));
+    await waitForGit(() => expect(readRegistry()[0]?.state).toBe('needsDecision'));
 
     dispatch({ type: 'decideWorktree', directoryPath: repo, name: entry.name, choice: 'discard' });
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(sent).toContainEqual(expect.objectContaining({ type: 'worktreeDecisionRejected' })),
     );
     expect(fs.existsSync(path.join(entry.path, 'draft.txt'))).toBe(true);
@@ -382,10 +387,10 @@ describe('launching an agent into a Worktree', () => {
     failSpawn = true;
 
     dispatch({ type: 'launchAgent', directoryPath: repo, worktree: true });
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(sent).toContainEqual(expect.objectContaining({ type: 'worktreeRejected' })),
     );
-    await vi.waitFor(() => expect(readRegistry()).toEqual([]));
+    await waitForGit(() => expect(readRegistry()).toEqual([]));
     expect(store.size).toBe(0);
     expect(fs.readdirSync(path.join(repo, '.claude', 'worktrees'))).toEqual([]);
   });

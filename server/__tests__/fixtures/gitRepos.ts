@@ -9,6 +9,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { vi } from 'vitest';
 
 const IDENTITY = [
   '-c',
@@ -93,4 +94,15 @@ export function commitAll(dir: string, message: string): string {
 /** Remove every directory this module made. */
 export function removeTempRepos(): void {
   for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+}
+
+/** How long a wait after a git operation may take: git spawns (create, inspect, add +
+ *  commit + `worktree remove`) under a loaded test run do not fit vi.waitFor's 1 s. */
+export const GIT_WAIT_MS = 10_000;
+/** The test timeout of a suite that waits on git (vitest.config's 10 s would cut a wait short). */
+export const GIT_TEST_TIMEOUT_MS = 30_000;
+
+/** vi.waitFor with room for the git operations a wait in a worktree suite follows. */
+export function waitForGit<T>(assertion: () => T | Promise<T>): Promise<T> {
+  return vi.waitFor(assertion, { timeout: GIT_WAIT_MS, interval: 50 });
 }

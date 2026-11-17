@@ -12,7 +12,17 @@ import { create } from '../src/worktreeCreate.js';
 import { prepareWorktreeLaunch, retireUnlaunched } from '../src/worktreeLaunch.js';
 import { holdWorktreesOf, retireWhenUnused, sweepWorktrees } from '../src/worktreeLeave.js';
 import { readRegistry, recordSession } from '../src/worktreeRegistry.js';
-import { gitIn, gitOk, makeRepo, removeTempRepos } from './fixtures/gitRepos.js';
+import {
+  GIT_TEST_TIMEOUT_MS,
+  gitIn,
+  gitOk,
+  makeRepo,
+  removeTempRepos,
+  waitForGit,
+} from './fixtures/gitRepos.js';
+
+// Waits follow git spawns (see waitForGit): room for them under a loaded run.
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
 
 /**
  * The launch into a Worktree as any host sees it (worktreeLaunch.ts): the
@@ -77,7 +87,7 @@ describe('launching into a Worktree from any host', () => {
 
     expect(reason).toContain(prepared.where.worktree.branch);
     // A new Worktree is clean: retired entirely, folder and branch.
-    await vi.waitFor(() => expect(readRegistry()).toEqual([]));
+    await waitForGit(() => expect(readRegistry()).toEqual([]));
     expect(fs.readdirSync(path.join(repo, '.claude', 'worktrees'))).toEqual([]);
     expect(gitIn(repo, 'branch', '--format=%(refname:short)')).toBe('main');
   });

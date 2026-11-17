@@ -19,13 +19,18 @@ import { readRegistry } from '../src/worktreeRegistry.js';
 import { decide, retire } from '../src/worktreeRetire.js';
 import {
   commitAll,
+  GIT_TEST_TIMEOUT_MS,
   gitIn,
   gitOk,
   makeRepo,
   removeTempRepos,
   tempDir,
+  waitForGit,
   writeFile,
 } from './fixtures/gitRepos.js';
+
+// Waits follow git spawns (see waitForGit): room for them under a loaded run.
+vi.setConfig({ testTimeout: GIT_TEST_TIMEOUT_MS });
 
 /**
  * A Directory's Worktree conversations on the server: listed under the
@@ -139,7 +144,7 @@ describe('Worktree conversations', () => {
   async function conversations() {
     sent.length = 0;
     dispatch({ type: 'requestConversations' });
-    await vi.waitFor(() => expect(sent.some((m) => m.type === 'conversationsLoaded')).toBe(true));
+    await waitForGit(() => expect(sent.some((m) => m.type === 'conversationsLoaded')).toBe(true));
     const loaded = sent.find((m) => m.type === 'conversationsLoaded') as {
       directories: Array<{ path: string; conversations: Array<Record<string, unknown>> }>;
     };
@@ -149,7 +154,7 @@ describe('Worktree conversations', () => {
   async function worktreesOf(repo: string) {
     sent.length = 0;
     dispatch({ type: 'requestWorktrees', directoryPath: repo });
-    await vi.waitFor(() => expect(sent.some((m) => m.type === 'worktreesLoaded')).toBe(true));
+    await waitForGit(() => expect(sent.some((m) => m.type === 'worktreesLoaded')).toBe(true));
     return (
       sent.find((m) => m.type === 'worktreesLoaded') as {
         worktrees: Array<Record<string, unknown>>;
@@ -180,7 +185,7 @@ describe('Worktree conversations', () => {
     const { repo, worktree } = await parkedWorktree();
 
     dispatch({ type: 'resumeConversation', sessionId: uuid(1), directoryPath: repo });
-    await vi.waitFor(() => expect(store.size).toBe(1));
+    await waitForGit(() => expect(store.size).toBe(1));
 
     expect(spawns).toHaveLength(1);
     expect(spawns[0].cwd).toBe(worktree.path);
@@ -207,7 +212,7 @@ describe('Worktree conversations', () => {
 
     // Its agent leaves again: the restored changes make it wait on a decision.
     ptys[0].exit(0);
-    await vi.waitFor(() => expect(readRegistry()[0]?.state).toBe('needsDecision'));
+    await waitForGit(() => expect(readRegistry()[0]?.state).toBe('needsDecision'));
   });
 
   it('a kept folder is resumed in place', async () => {
@@ -222,7 +227,7 @@ describe('Worktree conversations', () => {
     await decide(worktree, { choice: 'keep' });
 
     dispatch({ type: 'resumeConversation', sessionId: uuid(1), directoryPath: repo });
-    await vi.waitFor(() => expect(store.size).toBe(1));
+    await waitForGit(() => expect(store.size).toBe(1));
     expect(spawns[0].cwd).toBe(worktree.path);
     expect(fs.readFileSync(path.join(worktree.path, 'work.txt'), 'utf-8')).toBe('in progress\n');
   });
@@ -232,7 +237,7 @@ describe('Worktree conversations', () => {
     gitIn(repo, 'branch', '-D', worktree.branch);
 
     dispatch({ type: 'resumeConversation', sessionId: uuid(1), directoryPath: repo });
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(sent).toContainEqual({
         type: 'worktreeRejected',
         directoryPath: repo,
@@ -264,7 +269,7 @@ describe('Worktree conversations', () => {
       name: worktree.name,
       choice: 'deleteBranch',
     });
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(sent).toContainEqual(
         expect.objectContaining({ type: 'worktreeDecisionRejected', name: worktree.name }),
       ),
@@ -280,7 +285,7 @@ describe('Worktree conversations', () => {
       choice: 'deleteBranch',
       confirmedCommits: 1,
     });
-    await vi.waitFor(() => expect(readRegistry()).toEqual([]));
+    await waitForGit(() => expect(readRegistry()).toEqual([]));
     expect(gitOk(repo, 'show-ref', '--verify', '--quiet', `refs/heads/${worktree.branch}`)).toBe(
       false,
     );
@@ -304,7 +309,7 @@ describe('Worktree conversations', () => {
       name: worktree.name,
       choice: 'remove',
     });
-    await vi.waitFor(() => expect(readRegistry()[0]?.state).toBe('needsDecision'));
+    await waitForGit(() => expect(readRegistry()[0]?.state).toBe('needsDecision'));
     expect(fs.existsSync(path.join(worktree.path, 'scratch.txt'))).toBe(true);
 
     // Clean but with a commit: the folder goes, the branch is parked.
@@ -315,7 +320,7 @@ describe('Worktree conversations', () => {
       name: worktree.name,
       choice: 'remove',
     });
-    await vi.waitFor(() => expect(readRegistry()[0]?.state).toBe('parked'));
+    await waitForGit(() => expect(readRegistry()[0]?.state).toBe('parked'));
     expect(fs.existsSync(worktree.path)).toBe(false);
   });
 
@@ -355,7 +360,7 @@ describe('Worktree conversations', () => {
         confirmedFiles: 99,
         confirmedCommits: 99,
       });
-      await vi.waitFor(() =>
+      await waitForGit(() =>
         expect(sent).toContainEqual({
           type: 'worktreeDecisionRejected',
           directoryPath: repo,
@@ -372,13 +377,13 @@ describe('Worktree conversations', () => {
 
     // Resumed in place, wearing the marker; still not ours.
     dispatch({ type: 'resumeConversation', sessionId: uuid(3), directoryPath: repo });
-    await vi.waitFor(() => expect(store.size).toBe(1));
+    await waitForGit(() => expect(store.size).toBe(1));
     expect(spawns[0].cwd).toBe(theirs);
     expect(created[0]).toMatchObject({
       worktree: { name: 'claude-made', branch: 'worktree-claude-made' },
     });
     ptys[0].exit(0);
-    await vi.waitFor(() => expect(store.size).toBe(0));
+    await waitForGit(() => expect(store.size).toBe(0));
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(fs.existsSync(path.join(theirs, 'draft.txt'))).toBe(true);
     expect(readRegistry()).toEqual([]);
@@ -404,7 +409,7 @@ describe('Worktree conversations', () => {
         ...extra,
       });
       // Every answer ends with the Worktrees as they stand, sent to every office.
-      await vi.waitFor(() =>
+      await waitForGit(() =>
         expect(broadcasts.some((m) => m.type === 'worktreesLoaded')).toBe(true),
       );
       return sent.find((m) => m.type === 'worktreeDecisionRejected')?.reason as string | undefined;
@@ -452,7 +457,7 @@ describe('Worktree conversations', () => {
     gitIn(repo, 'worktree', 'add', '--quiet', '-b', 'worktree-claude-made', theirs);
     transcript(theirs, uuid(4), 'Claude on its own');
     dispatch({ type: 'resumeConversation', sessionId: uuid(4), directoryPath: repo });
-    await vi.waitFor(() => expect(store.size).toBe(1));
+    await waitForGit(() => expect(store.size).toBe(1));
 
     sent.length = 0;
     dispatch({
@@ -461,7 +466,7 @@ describe('Worktree conversations', () => {
       name: 'claude-made',
       choice: 'remove',
     });
-    await vi.waitFor(() =>
+    await waitForGit(() =>
       expect(sent).toContainEqual(
         expect.objectContaining({
           type: 'worktreeDecisionRejected',
@@ -471,7 +476,7 @@ describe('Worktree conversations', () => {
     );
     expect(fs.existsSync(theirs)).toBe(true);
     ptys[0].exit(0);
-    await vi.waitFor(() => expect(store.size).toBe(0));
+    await waitForGit(() => expect(store.size).toBe(0));
   });
 
   it("a removed Worktree's conversation stays listed under its Directory and resumes in its checkout, moved there", async () => {
@@ -490,7 +495,7 @@ describe('Worktree conversations', () => {
       name: 'claude-made',
       choice: 'remove',
     });
-    await vi.waitFor(() => expect(broadcasts.some((m) => m.type === 'worktreesLoaded')).toBe(true));
+    await waitForGit(() => expect(broadcasts.some((m) => m.type === 'worktreesLoaded')).toBe(true));
     expect(fs.existsSync(theirs)).toBe(false);
 
     // Still listed, as the Directory's own now.
@@ -501,7 +506,7 @@ describe('Worktree conversations', () => {
     expect(listed).not.toHaveProperty('worktree');
 
     dispatch({ type: 'resumeConversation', sessionId: uuid(5), directoryPath: repo });
-    await vi.waitFor(() => expect(store.size).toBe(1));
+    await waitForGit(() => expect(store.size).toBe(1));
     expect(fs.realpathSync(spawns[0].cwd!)).toBe(fs.realpathSync(repo));
     expect(created[0].worktree).toBeUndefined();
     // Moved where the CLI looks for the checkout's sessions, folder and all.
@@ -515,7 +520,7 @@ describe('Worktree conversations', () => {
     expect(fs.existsSync(path.join(home, uuid(5), 'subagents'))).toBe(true);
     expect(fs.existsSync(old)).toBe(false);
     ptys[0].exit(0);
-    await vi.waitFor(() => expect(store.size).toBe(0));
+    await waitForGit(() => expect(store.size).toBe(0));
   });
 
   it("a parked Worktree's conversation is not taken for a removed one's", async () => {
