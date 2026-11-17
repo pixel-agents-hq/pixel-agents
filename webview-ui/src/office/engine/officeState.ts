@@ -1534,20 +1534,27 @@ export class OfficeState {
   getCharacterAt(worldX: number, worldY: number): number | null {
     const chars = Array.from(this.characters.values()).sort((a, b) => b.y - a.y);
     for (const ch of chars) {
-      // Skip characters that are despawning
-      if (ch.matrixEffect === 'despawn') continue;
-      // Character sprite is 16x24, anchored bottom-center
-      // Apply sitting offset to match visual position
-      const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
-      const anchorY = ch.y + sittingOffset;
-      const left = ch.x - CHARACTER_HIT_HALF_WIDTH;
-      const right = ch.x + CHARACTER_HIT_HALF_WIDTH;
-      const top = anchorY - CHARACTER_HIT_HEIGHT;
-      const bottom = anchorY;
-      if (worldX >= left && worldX <= right && worldY >= top && worldY <= bottom) {
-        return ch.id;
-      }
+      if (characterHit(ch, worldX, worldY)) return ch.id;
     }
     return null;
   }
+
+  /** Is the Intro's greeter under this point? (It is no agent: hovered, never clicked.) */
+  greeterAt(worldX: number, worldY: number): boolean {
+    return this.greeter !== null && characterHit(this.greeter, worldX, worldY);
+  }
+}
+
+/** A character's hit box: its 16×24 sprite, anchored bottom-centre, lower while it
+ *  sits; none while it dematerializes. */
+function characterHit(ch: Character, worldX: number, worldY: number): boolean {
+  if (ch.matrixEffect === 'despawn') return false;
+  const sittingOffset = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
+  const anchorY = ch.y + sittingOffset;
+  return (
+    worldX >= ch.x - CHARACTER_HIT_HALF_WIDTH &&
+    worldX <= ch.x + CHARACTER_HIT_HALF_WIDTH &&
+    worldY >= anchorY - CHARACTER_HIT_HEIGHT &&
+    worldY <= anchorY
+  );
 }

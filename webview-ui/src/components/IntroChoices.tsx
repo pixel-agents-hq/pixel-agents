@@ -138,6 +138,7 @@ export function IntroChoices({
         ) : (
           <IntroOption
             kind="primary"
+            forward
             disabled={pending}
             onClick={() => (warnAllOff && allOff ? setWarning(true) : onContinue())}
           >

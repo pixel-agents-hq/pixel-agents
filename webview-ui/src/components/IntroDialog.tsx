@@ -614,6 +614,7 @@ export function IntroDialog({
                     <IntroOptions inline>
                       <IntroOption
                         kind="primary"
+                        forward
                         disabled={awaitingSignIn}
                         onClick={leaveInstallStep}
                       >
@@ -651,25 +652,30 @@ export function IntroDialog({
                       onStart={startTutorial}
                     />
                   ) : (
-                    <IntroOptions data-testid="intro-invite">
-                      {offerTutorial ? (
-                        <IntroOption
-                          kind="primary"
-                          onClick={() => {
-                            setBackTo(null);
-                            setShownWhole(false);
-                            setInvited(true);
-                          }}
-                        >
-                          Next
-                        </IntroOption>
-                      ) : (
-                        <IntroOption kind="primary" onClick={() => setFarewell(true)}>
-                          Let&apos;s Go
-                        </IntroOption>
-                      )}
-                      {discord}
-                    </IntroOptions>
+                    <>
+                      {/* The invite itself over the box, in the accent; the way
+                          on in the box, as on the choices step. */}
+                      <IntroOptions data-testid="intro-invite-menu">{discord}</IntroOptions>
+                      <IntroOptions inline data-testid="intro-invite">
+                        {offerTutorial ? (
+                          <IntroOption
+                            kind="primary"
+                            forward
+                            onClick={() => {
+                              setBackTo(null);
+                              setShownWhole(false);
+                              setInvited(true);
+                            }}
+                          >
+                            Continue
+                          </IntroOption>
+                        ) : (
+                          <IntroOption kind="primary" forward onClick={() => setFarewell(true)}>
+                            Let&apos;s Go
+                          </IntroOption>
+                        )}
+                      </IntroOptions>
+                    </>
                   ))}
 
                 {step === 'tutorial' && tutorial.status && (

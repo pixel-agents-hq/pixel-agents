@@ -762,6 +762,11 @@
   /* Into the box's right padding (14px), as far from its side as from its foot (6px). */
   margin-right: -8px;
 }
+/* The way on (IntroOption `forward`): its arrow as far in from the box's right
+   side as Back's is from its left (the box's 14px padding). */
+.intro-options-inline .intro-option-forward:last-child {
+  margin-right: 8px;
+}
 .intro-options-inline:empty,
 .intro-options-inline[hidden] {
   display: none;
