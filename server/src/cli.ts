@@ -179,7 +179,7 @@ Options:
   --trust-directories   Say yes to Claude Code's "do you trust this folder?"
                         question for every agent launched from the office.
                         Only for a machine whose folders are all your own
-                        (e.g. a cloud office): the question is a safeguard
+                        (e.g. a remote server): the question is a safeguard
   --pty-host            Development only: run agents' terminals in a separate
                         process that outlives the server, so restarting it
                         (e.g. to update it) leaves agents running

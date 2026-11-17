@@ -2,7 +2,7 @@
  * Answering the CLI's "do you trust this folder?" question for the agents the
  * office launches, where the operator said its folders are trusted
  * (`pixel-agents --trust-directories`: a server set up for one person's own
- * work, e.g. a cloud office, where nobody should meet a terminal question
+ * work, e.g. a remote server, where nobody should meet a terminal question
  * before their first agent says a word). Off unless asked for: the question
  * is the CLI's own safeguard, and answering it is the operator's decision.
  *

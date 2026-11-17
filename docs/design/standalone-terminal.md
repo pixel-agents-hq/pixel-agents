@@ -233,8 +233,8 @@ under an unlisted `Host` stays read-only and the server logs the `--allowed-host
 ### `--trust-directories`
 
 Claude Code asks "do you trust this folder?" the first time a session opens in a folder, with "No,
-exit" selected. On a server set up for one person's own work with nobody at a keyboard (a cloud
-office), that question meets a new user before their first agent has said a word. Started with
+exit" selected. On a remote server set up for one person's own work, with nobody at a keyboard,
+that question meets a new user before their first agent has said a word. Started with
 `--trust-directories`, the office answers it for every agent it launches: `terminal/trustPrompt.ts`
 reads the new session's screen (`readScreen`) for `TRUST_PROMPT_WATCH_MS` after the launch, and
 when the provider recognizes its question (`HookProvider.trustPromptKeys`; Claude's wants both
