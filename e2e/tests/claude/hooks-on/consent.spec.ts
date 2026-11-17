@@ -176,7 +176,10 @@ test.describe('Hooks consent gate', () => {
       .getByTestId('intro-choice-hooks')
       .getByRole('button', { name: 'Read more' })
       .click();
-    const text = (await dialog.textContent()) ?? '';
+    // In a modal of their own, over the Intro.
+    const terms = frame.getByTestId('intro-choice-terms');
+    await expect(terms).toBeVisible();
+    const text = (await terms.textContent()) ?? '';
     expect(text).toMatch(/adds hooks for 12 Claude Code events/);
     expect(text).toContain('~/.claude/settings.json');
     expect(text).toContain('.pixel-agents.backup');
@@ -188,6 +191,8 @@ test.describe('Hooks consent gate', () => {
     narrator.check(
       'the consent step discloses event scope, payload destination, and how to remove',
     );
+    await frame.locator('body').press('Escape');
+    await expect(terms).toHaveCount(0);
 
     // No answer buttons beside the box: Continue sends what the boxes say.
     await expect(dialog.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();

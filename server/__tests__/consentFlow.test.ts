@@ -167,6 +167,42 @@ describe('clientMessageHandler: hooks consent flow', () => {
     });
   });
 
+  // ── replayIntro: Settings → Replay the Intro ─────────────────
+
+  describe('replayIntro', () => {
+    // The asks the handshake leaves out once answered come back on request,
+    // to the asker alone, and asking writes nothing.
+    it('asks again whatever was answered and is installed, writing nothing', async () => {
+      grantHooksConsent('claude');
+      seedInstalledHooks();
+      const settingsBefore = fs.readFileSync(
+        path.join(tempHome, '.claude', 'settings.json'),
+        'utf8',
+      );
+      handleClientMessage({ type: 'replayIntro' }, (m) => sent.push(m), ctx);
+
+      expect(sent.find((m) => m.type === 'hooksConsentRequest')).toEqual({
+        type: 'hooksConsentRequest',
+        providerId: 'claude',
+        headline: CONSENT_INSTALL_HEADLINE,
+        summary: CONSENT_SUMMARY,
+        disclosure: CONSENT_DISCLOSURE,
+        cliInstalled: expect.any(Boolean),
+      });
+      expect(getHooksConsent('claude')).toBe('granted');
+      expect(fs.readFileSync(path.join(tempHome, '.claude', 'settings.json'), 'utf8')).toBe(
+        settingsBefore,
+      );
+    });
+
+    it('is refused for an unprivileged connection', () => {
+      ctx.privileged = false;
+      handleClientMessage({ type: 'replayIntro' }, (m) => sent.push(m), ctx);
+
+      expect(sent.find((m) => m.type === 'hooksConsentRequest')).toBeUndefined();
+    });
+  });
+
   // ── hooksConsentResponse: what each answer writes ────────────
 
   describe('hooksConsentResponse', () => {

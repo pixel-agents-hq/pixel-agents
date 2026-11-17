@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
-import { INTRO_DIALOG_MENU_GAP_PX } from '../constants.js';
+import { INTRO_DIALOG_MENU_GAP_PX, INTRO_DIALOG_Z_INDEX } from '../constants.js';
 import { IntroOption, IntroOptions, IntroPanel } from './IntroOptions.js';
 import { Checkbox } from './ui/Checkbox.js';
+import { Modal } from './ui/Modal.js';
 
 export type IntroChoiceId = 'usage' | 'hooks' | 'mcp';
 
@@ -31,7 +33,7 @@ interface IntroChoicesProps {
 /**
  * The Intro's choices step: what to turn on (usage bars, live updates through
  * hooks, the Pixel Office MCP), one card each in a row, all off to start, each
- * with one line and its full terms behind "Read more" (shown under the row). Continue applies the boxes as
+ * with one line and its full terms behind "Read more" (a line of its own at the card's foot, opening a modal). Continue applies the boxes as
  * they stand (IntroDialog sends the answers; the greeter says they can be
  * changed later in Settings); with every box off it first
  * says what that costs.
@@ -60,47 +62,60 @@ export function IntroChoices({
         {options.map((option) => (
           <IntroPanel
             key={option.id}
-            className="flex-1 basis-0 min-w-[150px]"
+            className="flex flex-col flex-1 basis-0 min-w-[150px]"
             data-testid={`intro-choice-${option.id}`}
           >
+            {/* The box at the title's first line, whatever its length; a
+                title that wraps sits tight. */}
             <Checkbox
               variant="inline"
-              className="text-left"
+              className="items-start! text-left"
+              boxClassName="mt-3"
               checked={values[option.id]}
               onChange={() => {
                 setWarning(false);
                 onToggle(option.id);
               }}
-              label={<span className="text-base text-accent-bright">{option.label}</span>}
+              label={
+                <span className="text-base leading-[22px] text-accent-bright">{option.label}</span>
+              }
             />
-            <p className="text-sm m-0 mt-4">
-              {option.summary}{' '}
-              <button
-                type="button"
-                aria-expanded={open === option.id}
-                className="p-0 bg-transparent border-0 text-sm text-accent hover:text-accent-bright cursor-pointer underline"
-                onClick={() => setOpen(open === option.id ? null : option.id)}
-              >
-                {open === option.id ? 'Show less' : 'Read more'}
-              </button>
-            </p>
+            <p className="text-sm m-0 mt-8">{option.summary}</p>
             {option.error && !pending && (
               <p className="text-sm m-0 mt-4 text-status-error">{option.error}</p>
             )}
+            {/* Its own line at the card's foot, every card's at one height. */}
+            <button
+              type="button"
+              className="self-start mt-auto pt-8 p-0 bg-transparent border-0 text-sm text-accent hover:text-accent-bright cursor-pointer underline"
+              onClick={() => setOpen(option.id)}
+            >
+              Read more
+            </button>
           </IntroPanel>
         ))}
       </div>
 
-      {/* The opened card's full terms, the dialog's width. */}
-      {opened && (
-        <IntroPanel wide data-testid="intro-choice-terms">
-          <p className="text-sm m-0 text-accent-bright">{opened.label}</p>
-          {opened.disclosure.split('\n\n').map((paragraph, i) => (
-            <p key={i} className="text-sm m-0 mt-4 text-text-muted">
-              {paragraph}
-            </p>
-          ))}
-        </IntroPanel>
+      {/* The opened card's full terms, over the office (and the Intro): at the
+          page's top level, since the Intro's stack is transformed (a fixed box
+          inside it would be its size, not the screen's). */}
+      {createPortal(
+        <Modal
+          isOpen={opened !== undefined}
+          onClose={() => setOpen(null)}
+          title={opened?.label ?? ''}
+          zIndex={INTRO_DIALOG_Z_INDEX + 1}
+          className="max-w-[560px]!"
+        >
+          <div data-testid="intro-choice-terms" className="px-10 pb-8">
+            {opened?.disclosure.split('\n\n').map((paragraph, i) => (
+              <p key={i} className="text-sm m-0 mt-8 leading-[1.4] text-text-muted">
+                {paragraph}
+              </p>
+            ))}
+          </div>
+        </Modal>,
+        document.body,
       )}
 
       {warning && (

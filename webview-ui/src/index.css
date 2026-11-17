@@ -759,6 +759,8 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
+  /* Into the box's right padding (14px), as far from its side as from its foot (6px). */
+  margin-right: -8px;
 }
 .intro-options-inline:empty,
 .intro-options-inline[hidden] {
@@ -771,10 +773,12 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 6px;
-  min-height: 28px;
+  /* Back's height, whole pixels: the box keeps one height with or without it. */
+  min-height: 40px;
   margin-top: 4px;
-  cursor: default;
 }
+/* A stack of options: each row the dialog box's own colour, the 2px between
+   them (the box's background here) a lighter line. */
 .intro-options {
   display: flex;
   flex-direction: column;
@@ -782,7 +786,15 @@
   gap: 2px;
   width: 200px;
   max-width: 100%;
-  padding: 4px;
+  padding: 0;
+  background: var(--color-btn-bg);
+}
+/* The menu over the dialog box: clear of the speaker on its top border while
+   what stands on the box spans its width (a panel, the choices' cards); a
+   stack of options at the right edge always sits right on the box, whatever
+   is above it. */
+.intro-menu-wrap:has(> .intro-menu > :last-child:not(.intro-options)) {
+  margin-bottom: var(--intro-speaker-h);
 }
 /* The menu scrolls when it is taller than the office; the padding keeps its
    boxes' outlines and shadows inside the scrolled area. */
@@ -795,12 +807,36 @@
   padding: 4px 8px 8px 4px;
   margin: -4px -8px -8px -4px;
 }
+/* The speaker, standing on the dialog box's top border at its left (offsets
+   count from inside the 2px border): the mug shot, and beside it the name in
+   the regular size, "bold" the pixel way — the font has one weight, so each
+   letter is drawn twice, one CSS px apart. */
+.intro-dialog-speaker {
+  position: absolute;
+  left: 12px;
+  bottom: calc(100% + 2px);
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  cursor: default;
+}
+.intro-dialog-name {
+  font-size: var(--text-base);
+  line-height: 0.8;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  color: var(--color-dialog-line);
+  text-shadow: 1px 0 0 currentColor;
+  letter-spacing: 1px;
+}
 .intro-dialog-text {
   font-size: 26px;
-  line-height: 1.15;
+  /* Whole pixels (not 1.15 / 2.3em), so the box is a whole number of pixels
+     tall and the speaker's mug shot on its top border lands on the pixel grid. */
+  line-height: 30px;
   color: var(--color-dialog-line);
   /* Two rows, so a one-row message doesn't shrink the box. */
-  min-height: 2.3em;
+  min-height: 60px;
 }
 .intro-dialog-next {
   position: absolute;

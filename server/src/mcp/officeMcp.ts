@@ -214,6 +214,11 @@ export class OfficeMcp implements AgentMcpAccess {
    *  caller asks no other (a read-only office's answer would be refused). */
   consentRequest(): OfficeMcpConsentRequest | null {
     if (getOfficeMcpConsent() !== 'unanswered') return null;
+    return this.replayedConsentRequest();
+  }
+
+  /** The same ask whatever was answered: Settings → Replay the Intro. */
+  replayedConsentRequest(): OfficeMcpConsentRequest {
     return {
       type: 'officeMcpConsentRequest',
       headline: OFFICE_MCP_HEADLINE,

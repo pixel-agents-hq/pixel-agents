@@ -47,7 +47,7 @@ import { getPaletteCount } from './paletteAssigner.js';
 import { handlePcShellMessage, type PcShellRegistry, type PcShellView } from './pcShells.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
-import { hooksConsentRequest } from './providers/hook/consentGate.js';
+import { hooksConsentRequest, replayedConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
 import { recentCharactersMessage } from './recentCharacters.js';
 import { parseUploadDirectory, resolveUploadDirectory } from './terminal/fileUploads.js';
@@ -508,6 +508,14 @@ export function handleClientMessage(
       // belongs to the connection that started it.
       cliSignIns.handle(msg, ctx.client ?? ctx, (m) => send({ ...m }));
       break;
+
+    case 'replayIntro': {
+      // The Intro's asks again, to this office alone, in the handshake's order
+      // (the hooks asks, then the MCP's); the answers are the usual ones.
+      for (const provider of hookProviders) send({ ...replayedConsentRequest(provider) });
+      ctx.officeMcp?.replayAsk((m) => send({ ...m }));
+      break;
+    }
 
     case 'hooksConsentResponse': {
       // Fail-closed on the provider exactly like on the choice: an id naming

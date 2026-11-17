@@ -442,6 +442,12 @@ export const TERMINAL_HIDE_RIBBON_REST_RATIO = 0.75;
 export const MUGSHOT_CROP_TOP_ROW = 0;
 export const MUGSHOT_CROP_LEFT_COL = -1;
 export const MUGSHOT_CROP_SIDE_PX = 20;
+/** The speaker over the dialog box's top left: its mug shot's zoom (CSS px per
+ *  sprite pixel, whole) and the room it takes above the box (the mug shot's
+ *  height, MUGSHOT_CROP_SIDE_PX x the zoom, plus the 2 px border it stands on),
+ *  kept clear of the menu and counted by the camera. */
+export const INTRO_SPEAKER_MUG_ZOOM = 2;
+export const INTRO_SPEAKER_HEIGHT_PX = MUGSHOT_CROP_SIDE_PX * INTRO_SPEAKER_MUG_ZOOM + 2;
 /** The side of a Worktrees list row's square trash button: a 16 px icon in its 2 px border, with room. */
 export const WORKTREE_ROW_BUTTON_PX = 24;
 /** Integer sprite-pixel zoom. 2 = each sprite pixel is 2 px. */

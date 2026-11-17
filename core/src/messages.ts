@@ -116,6 +116,7 @@ export type ClientMessage =
   | SetBypassPermissions
   | SetShowHostDirectories
   | SetUploadDirectory
+  | ReplayIntro
   | SaveDirectory
   | RemoveDirectory
   | RequestDirectorySuggestions
@@ -1042,6 +1043,10 @@ export interface SetShowHostDirectories {
 export interface SetUploadDirectory {
   type: 'setUploadDirectory';
   path: string;
+}
+
+export interface ReplayIntro {
+  type: 'replayIntro';
 }
 
 export interface SaveDirectory {

@@ -502,6 +502,31 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
     }
   });
 
+  it("Replay the Intro asks the MCP's step again only where the MCP is offered", async () => {
+    const serving = anotherWindow();
+    const reusing = anotherWindow();
+    const server = new PixelAgentsServer();
+    try {
+      serving.mcp.setEndpoint(`http://127.0.0.1:${h.port}/mcp`);
+      allow();
+      const asked: Message[] = [];
+      serving.mcp.replayAsk((m) => asked.push({ ...m }));
+      expect(asked.map((m) => m.type)).toEqual(['officeMcpConsentRequest']);
+
+      await server.start({ store: reusing.store, embedded: true, officeMcp: reusing.mcp });
+      expect(reusing.mcp.offered()).toBe(false);
+      const notAsked: Message[] = [];
+      reusing.mcp.replayAsk((m) => notAsked.push({ ...m }));
+      expect(notAsked).toEqual([]);
+    } finally {
+      serving.mcp.dispose();
+      reusing.mcp.dispose();
+      server.stop();
+      serving.store.dispose();
+      reusing.store.dispose();
+    }
+  });
+
   it('a window whose server serves the MCP offers the tutorial as usual', async () => {
     const { store, mcp } = anotherWindow(guideLauncher);
     try {

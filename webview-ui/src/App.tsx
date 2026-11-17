@@ -368,6 +368,13 @@ function App() {
   // checklist while a run is under way.
   const tutorial = useTutorial();
   const [tutorialRequested, setTutorialRequested] = useState(false);
+  // Settings → Replay the Intro: what was on when it was asked for (the
+  // choices' boxes start there); the server answers with the Intro's asks.
+  const [introReplay, setIntroReplay] = useState<{
+    usage: boolean;
+    hooks: boolean;
+    mcp: boolean;
+  } | null>(null);
   const { expectLaunch } = terminalDrawer;
   const { start: startTutorial } = tutorial;
   const tutorialSteps = useMemo(
@@ -390,6 +397,7 @@ function App() {
     handleIntroClose();
     dismissOfficeMcpAsk();
     setTutorialRequested(false);
+    setIntroReplay(null);
   }, [handleIntroClose, dismissOfficeMcpAsk]);
 
   // The Settings surface renders one provider today; its checkbox binds to
@@ -935,6 +943,7 @@ function App() {
           onChoice={handleConsentChoice}
           onClose={handleTourClose}
           tutorial={tutorialSteps}
+          replay={introReplay ?? undefined}
           escapeSuppressed={
             isSettingsOpen ||
             isCharactersOpen ||
@@ -1176,6 +1185,18 @@ function App() {
         onImportLayout={handleImportLayout}
         onPlayTutorial={
           tutorial.status && !tutorial.status.run ? () => setTutorialRequested(true) : undefined
+        }
+        onReplayIntro={
+          !officeReadOnly && !introUnfinished
+            ? () => {
+                setIntroReplay({
+                  usage: usage.status?.installed === true,
+                  hooks: claudeHooksInstalled,
+                  mcp: officeMcp.status?.consent === 'granted',
+                });
+                transport.send({ type: 'replayIntro' });
+              }
+            : undefined
         }
       />
 

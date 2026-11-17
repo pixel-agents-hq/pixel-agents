@@ -142,6 +142,7 @@ export async function finishIntro(dialog: Locator, picks: IntroPicks = {}): Prom
   if (await choices.isVisible()) await chooseInIntro(dialog, picks);
   await expect(dialog).toContainText("You're all set!");
   await readIntroClosing(dialog);
-  await dialog.getByRole('button', { name: "Let's Go" }).click();
+  // Let's Go where no tutorial is offered, else the tutorial ask's No, thanks.
+  await dialog.getByRole('button', { name: /^(Let's Go|No, thanks)$/ }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
 }

@@ -17,7 +17,7 @@ export interface TutorialOfferState {
 export const TUTORIAL_OFFER_START: TutorialOfferState = { step: 'ask', reason: null };
 
 export type TutorialOfferEvent =
-  /** "Show Me Around": the yes. The caller sends startTutorial. */
+  /** "Yes, please!": the yes. The caller sends startTutorial. */
   | { kind: 'confirm' }
   /** Back from a failure to the ask. */
   | { kind: 'retry' }
