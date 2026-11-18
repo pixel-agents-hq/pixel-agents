@@ -49,7 +49,7 @@ const REMOVAL_LOOKS: Record<
 > = {
   remove: {
     icon: 'trash',
-    title: (w) => (w.owner === 'claude' ? 'Remove its folder and branch' : 'Remove its folder'),
+    title: (w) => (w.owner === 'cli' ? 'Remove its folder and branch' : 'Remove its folder'),
     testId: 'worktree-remove',
   },
   deleteBranch: {
@@ -89,15 +89,15 @@ export function WorktreeList({
     worktree: WorktreeSummary,
     choice: 'remove' | 'deleteBranch' | 'save' | 'discard',
   ) => {
-    const claudes = worktree.owner === 'claude';
+    const cliMade = worktree.owner === 'cli';
     transport.send({
       type: 'decideWorktree',
       directoryPath,
       name: worktree.name,
       choice,
       // What the user was shown losing: the server refuses to lose more.
-      ...(choice === 'deleteBranch' || claudes ? { confirmedCommits: worktree.uniqueCommits } : {}),
-      ...(claudes || choice === 'discard' ? { confirmedFiles: worktree.uncommittedFiles } : {}),
+      ...(choice === 'deleteBranch' || cliMade ? { confirmedCommits: worktree.uniqueCommits } : {}),
+      ...(cliMade || choice === 'discard' ? { confirmedFiles: worktree.uncommittedFiles } : {}),
     });
     setConfirming(null);
   };
@@ -166,7 +166,7 @@ export function WorktreeList({
                 >
                   {worktree.branch}
                 </span>
-                {worktree.owner === 'claude' && (
+                {worktree.owner === 'cli' && (
                   <span
                     className="shrink-0 px-4 text-2xs text-text-muted border-2 border-border"
                     title="Made by Claude Code (claude -w, EnterWorktree)"

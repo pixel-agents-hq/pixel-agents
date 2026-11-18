@@ -331,7 +331,7 @@ describe('Worktree conversations', () => {
       expect.objectContaining({
         name: 'claude-made',
         branch: 'worktree-claude-made',
-        owner: 'claude',
+        owner: 'cli',
         state: 'kept',
         uncommittedFiles: 1,
         latestSessionId: uuid(3),

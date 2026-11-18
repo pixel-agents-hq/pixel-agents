@@ -243,6 +243,11 @@ export interface HookProvider {
    *  (Claude: `worktree.symlinkDirectories`, user and project scope).
    *  Undefined = this provider has no such setting. */
   worktreeSymlinkDirectories?(repoPath: string): string[];
+  /** The process a git worktree lock of this CLI's names, read from the
+   *  lock's reason (Claude: `claude session <name> (pid N …)`), or null when
+   *  the reason names none. Whether that process still runs is the caller's
+   *  check. Undefined = this CLI locks no worktrees. */
+  worktreeLockHolder?(lockReason: string): number | null;
 
   /** Optional account-usage reporting (the office's usage bars). */
   readonly usageBridge?: UsageBridge;

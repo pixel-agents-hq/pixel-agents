@@ -560,7 +560,7 @@ test.describe('Standalone / worktrees', () => {
     const sidebar = page.getByTestId('conversation-sidebar');
     await sidebar.locator('button[aria-expanded]').filter({ hasText: 'Repo' }).click();
     const listed = sidebar.locator('[data-testid="worktree-row"][data-worktree="probe"]');
-    await expect(listed).toHaveAttribute('data-owner', 'claude', { timeout: 15_000 });
+    await expect(listed).toHaveAttribute('data-owner', 'cli', { timeout: 15_000 });
 
     // It loses a file: asked first, and Back changes nothing.
     await listed.getByTestId('worktree-remove').click();

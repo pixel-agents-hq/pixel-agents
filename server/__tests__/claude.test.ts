@@ -274,6 +274,19 @@ describe('claudeProvider', () => {
     });
   });
 
+  describe('worktreeLockHolder', () => {
+    it("reads the pid out of Claude Code's worktree lock reason", () => {
+      expect(
+        claudeProvider.worktreeLockHolder?.('claude session probe (pid 4242 start 1700000000)'),
+      ).toBe(4242);
+    });
+
+    it('names no process for a lock that carries no pid', () => {
+      expect(claudeProvider.worktreeLockHolder?.('kept by hand')).toBeNull();
+      expect(claudeProvider.worktreeLockHolder?.('')).toBeNull();
+    });
+  });
+
   describe('formatToolStatus', () => {
     it('formats Read', () => {
       expect(claudeProvider.formatToolStatus('Read', { file_path: '/a/b.ts' })).toBe(

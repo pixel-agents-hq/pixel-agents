@@ -3,11 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  claudeWorktreeHoldings,
-  isClaudeWorktree,
-  listClaudeWorktrees,
-} from '../src/claudeWorktrees.js';
+import { cliWorktreeHoldings, isCliWorktree, listCliWorktrees } from '../src/cliWorktrees.js';
 import { create } from '../src/worktreeCreate.js';
 import { worktreesOf } from '../src/worktreeListing.js';
 import { readRegistry } from '../src/worktreeRegistry.js';
@@ -209,7 +205,7 @@ describe("Claude Code's worktrees", () => {
     const elsewhere = path.join(repo, 'elsewhere');
     gitIn(repo, 'worktree', 'add', '--quiet', '-b', 'elsewhere', elsewhere);
 
-    const listed = await listClaudeWorktrees(repo);
+    const listed = await listCliWorktrees(repo);
     expect(listed).toEqual([
       expect.objectContaining({
         name: 'claude-made',
@@ -217,17 +213,17 @@ describe("Claude Code's worktrees", () => {
         branch: 'worktree-claude-made',
       }),
     ]);
-    const holds = await claudeWorktreeHoldings(repo, listed[0]);
+    const holds = await cliWorktreeHoldings(repo, listed[0]);
     expect(holds).toMatchObject({ uncommittedFiles: 1, uniqueCommits: 0 });
     expect(holds.sizeBytes).toBeGreaterThan(0);
     // The one listing: ours, then Claude Code's.
     expect((await worktreesOf(repo, { details: false })).map((w) => [w.name, w.owner])).toEqual([
       [ours.name, 'pixelAgents'],
-      ['claude-made', 'claude'],
+      ['claude-made', 'cli'],
     ]);
-    expect(isClaudeWorktree(repo, 'claude-made')).toBe(true);
-    expect(isClaudeWorktree(repo, ours.name)).toBe(false);
-    expect(isClaudeWorktree(repo, '../elsewhere')).toBe(false);
+    expect(isCliWorktree(repo, 'claude-made')).toBe(true);
+    expect(isCliWorktree(repo, ours.name)).toBe(false);
+    expect(isCliWorktree(repo, '../elsewhere')).toBe(false);
 
     expect((await restore({ path: theirs })).ok).toBe(false);
     expect((await deleteParkedBranch({ path: theirs }, { confirmedCommits: 99 })).ok).toBe(false);

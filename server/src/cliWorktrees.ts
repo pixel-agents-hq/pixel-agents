@@ -1,15 +1,20 @@
 /**
- * Claude Code's own worktrees (`claude -w`, EnterWorktree): linked worktrees
- * under a Directory's `.claude/worktrees/` that are not in our registry.
- * Listed for the office and read without writing (no index refresh, no
- * lock). The one action taken on one is the user's Remove from the Worktrees
- * list, once no Claude session is in it (`removeClaudeWorktree`): Claude Code
- * only offers to clean one up when its session ends from inside, so one whose
- * agent was stopped from outside would otherwise stay for good.
+ * The CLI's own worktrees (Claude Code: `claude -w`, EnterWorktree): linked
+ * worktrees under a Directory's `.claude/worktrees/` that are not in our
+ * registry. Listed for the office and read without writing (no index refresh,
+ * no lock). The one action taken on one is the user's Remove from the
+ * Worktrees list, once no CLI session is in it (`removeCliWorktree`): Claude
+ * Code only offers to clean one up when its session ends from inside, so one
+ * whose agent was stopped from outside would otherwise stay for good.
+ *
+ * Nothing here reads a CLI's own formats: the lock's reason is the
+ * provider's to read (`HookProvider.worktreeLockHolder`), and the CLI is
+ * named in a refusal by the provider's `displayName`.
  */
 
 import * as path from 'path';
 
+import type { HookProvider } from '../../core/src/provider.js';
 import { realPath, sameFolder } from './pathKey.js';
 import {
   git,
@@ -24,9 +29,10 @@ import { folderSize } from './worktreeInspect.js';
 import { isWorktreeName, worktreeDirectoryOf, worktreePathIn } from './worktreeLocation.js';
 import { readRegistry, serialized } from './worktreeRegistry.js';
 
-/** A worktree Claude Code made under a Directory's `.claude/worktrees/`
- *  (`claude -w`, EnterWorktree): not in our registry, so never ours. */
-export interface ClaudeWorktree {
+/** A worktree the CLI made itself under a Directory's `.claude/worktrees/`
+ *  (Claude Code: `claude -w`, EnterWorktree): not in our registry, so never
+ *  ours. */
+export interface CliWorktree {
   name: string;
   path: string;
   /** Its branch, or its short commit when detached. */
@@ -35,8 +41,8 @@ export interface ClaudeWorktree {
   head: string;
 }
 
-/** What one of Claude Code's worktrees holds, read without writing. */
-export interface ClaudeWorktreeHoldings {
+/** What one of the CLI's own worktrees holds, read without writing. */
+export interface CliWorktreeHoldings {
   uncommittedFiles: number;
   /** Commits on it that the main checkout's current commit lacks. */
   uniqueCommits: number;
@@ -44,28 +50,26 @@ export interface ClaudeWorktreeHoldings {
 }
 
 /**
- * Where Claude Code's own worktrees of a Directory are: the linked worktrees
+ * Where the CLI's own worktrees of a Directory are: the linked worktrees
  * git lists whose folder is `<directoryPath>/.claude/worktrees/<name>` and
  * that are not in our registry. Cheap (one `git worktree list`); what each
- * holds is `claudeWorktreeHoldings`.
+ * holds is `cliWorktreeHoldings`.
  */
-export function listClaudeWorktrees(directoryPath: string): Promise<ClaudeWorktree[]> {
+export function listCliWorktrees(directoryPath: string): Promise<CliWorktree[]> {
   const root = path.resolve(directoryPath);
-  return serialized(root, async () =>
-    (await claudeWorktreesIn(root)).map(({ worktree }) => worktree),
-  );
+  return serialized(root, async () => (await cliWorktreesIn(root)).map(({ worktree }) => worktree));
 }
 
-/** Claude Code's worktrees of the repo at `root`, with git's own line on
+/** The CLI's own worktrees of the repo at `root`, with git's own line on
  *  each (its lock). Unserialized: callers hold the repo's queue. */
-async function claudeWorktreesIn(
+async function cliWorktreesIn(
   root: string,
-): Promise<Array<{ worktree: ClaudeWorktree; linked: LinkedWorktree }>> {
+): Promise<Array<{ worktree: CliWorktree; linked: LinkedWorktree }>> {
   if (!isRepo(root)) return [];
   const listed = await listLinkedWorktrees(root);
   if (!listed) return [];
   const registry = readRegistry();
-  const out: Array<{ worktree: ClaudeWorktree; linked: LinkedWorktree }> = [];
+  const out: Array<{ worktree: CliWorktree; linked: LinkedWorktree }> = [];
   for (const linked of listed) {
     const { path: folder, head, branch } = linked;
     if (!isLinkedWorktreeFolder(folder)) continue;
@@ -81,13 +85,13 @@ async function claudeWorktreesIn(
   return out;
 }
 
-/** What one of Claude Code's worktrees holds: uncommitted files, commits the
+/** What one of the CLI's own worktrees holds: uncommitted files, commits the
  *  main checkout lacks, size. Read with --no-optional-locks: nothing of
  *  theirs is ever written, not even the index. */
-export function claudeWorktreeHoldings(
+export function cliWorktreeHoldings(
   directoryPath: string,
-  worktree: ClaudeWorktree,
-): Promise<ClaudeWorktreeHoldings> {
+  worktree: CliWorktree,
+): Promise<CliWorktreeHoldings> {
   const root = path.resolve(directoryPath);
   return serialized(root, async () => ({
     uncommittedFiles: await uncommittedIn(worktree.path),
@@ -144,55 +148,62 @@ async function commitsOnlyOn(root: string, branch: string, head: string): Promis
   return count.ok ? Number(count.stdout.trim()) || 0 : commitsMissingFromHead(root, head);
 }
 
-/** The Claude Code session a worktree's lock names (`claude session <name>
- *  (pid N …)`), if that process is still alive. */
-function liveClaudeSession(lockReason: string | undefined): number | null {
-  const pid = /\(pid (\d+)/.exec(lockReason ?? '')?.[1];
-  if (!pid) return null;
+/** The CLI session a worktree's lock names, if that process is still alive.
+ *  Which process a lock names is the provider's reading of its own reason. */
+function liveCliSession(
+  lockReason: string | undefined,
+  provider: Pick<HookProvider, 'worktreeLockHolder'>,
+): number | null {
+  const pid = lockReason ? (provider.worktreeLockHolder?.(lockReason) ?? null) : null;
+  if (pid === null) return null;
   try {
-    process.kill(Number(pid), 0);
-    return Number(pid);
+    process.kill(pid, 0);
+    return pid;
   } catch (err) {
     // EPERM: alive, just not ours to signal.
-    return (err as NodeJS.ErrnoException).code === 'EPERM' ? Number(pid) : null;
+    return (err as NodeJS.ErrnoException).code === 'EPERM' ? pid : null;
   }
 }
 
-export interface RemoveClaudeWorktreeOptions {
+export interface RemoveCliWorktreeOptions {
   /** How many uncommitted files the user confirmed losing. */
   confirmedFiles?: number;
   /** How many commits the user confirmed losing. */
   confirmedCommits?: number;
   /** Whether an agent in the office runs in this folder. */
   inUse: (folder: string) => boolean;
+  /** The CLI whose worktrees these are: its name in a refusal, and its
+   *  reading of its own lock. */
+  provider: Pick<HookProvider, 'displayName' | 'worktreeLockHolder'>;
 }
 
 /**
- * Remove one of Claude Code's worktrees, as its own exit prompt would: the
+ * Remove one of the CLI's worktrees, as its own exit prompt would: the
  * folder (`git worktree remove`, --force only over files the user confirmed
- * losing) and then its branch. Refused while an office agent or a live Claude
- * session (the pid in Claude's lock) is in it, and when it would lose more
+ * losing) and then its branch. Refused while an office agent or a live CLI
+ * session (the process its lock names) is in it, and when it would lose more
  * uncommitted files or commits than the user confirmed. A branch git won't
  * delete is left, and said so in the log: the folder is what was asked for.
  */
-export function removeClaudeWorktree(
+export function removeCliWorktree(
   directoryPath: string,
   name: string,
-  options: RemoveClaudeWorktreeOptions,
+  options: RemoveCliWorktreeOptions,
 ): Promise<{ ok: true; branchKept: boolean } | { ok: false; reason: string }> {
   const root = path.resolve(directoryPath);
+  const cli = options.provider.displayName;
   return serialized(root, async () => {
-    const found = (await claudeWorktreesIn(root)).find((w) => w.worktree.name === name);
-    if (!found) return { ok: false, reason: `There is no Claude Code worktree ${name} here.` };
+    const found = (await cliWorktreesIn(root)).find((w) => w.worktree.name === name);
+    if (!found) return { ok: false, reason: `There is no ${cli} worktree ${name} here.` };
     const { worktree, linked } = found;
     if (options.inUse(worktree.path)) {
       return { ok: false, reason: `An agent is still running in ${worktree.branch}.` };
     }
-    const pid = liveClaudeSession(linked.lockReason);
+    const pid = liveCliSession(linked.lockReason, options.provider);
     if (pid !== null) {
       return {
         ok: false,
-        reason: `A Claude Code session (pid ${pid}) is still running in ${worktree.branch}.`,
+        reason: `A ${cli} session (pid ${pid}) is still running in ${worktree.branch}.`,
       };
     }
     const files = await uncommittedIn(worktree.path);
@@ -218,7 +229,7 @@ export function removeClaudeWorktree(
       worktree.path,
     ]);
     if (!removed.ok) {
-      // Leave it as it was, Claude's lock included.
+      // Leave it as it was, the CLI's lock included.
       if (linked.locked) {
         await git(root, [
           'worktree',
@@ -233,18 +244,18 @@ export function removeClaudeWorktree(
     const deleted = await git(root, ['branch', '-D', linked.branch]);
     if (!deleted.ok) {
       console.warn(
-        `[Pixel Agents] Worktrees: kept Claude Code's branch ${linked.branch}: ${gitReason(deleted)}`,
+        `[Pixel Agents] Worktrees: kept ${cli}'s branch ${linked.branch}: ${gitReason(deleted)}`,
       );
     }
     return { ok: true, branchKept: !deleted.ok };
   });
 }
 
-/** Whether `name` names a worktree Claude Code made in the Directory: a
+/** Whether `name` names a worktree the CLI made itself in the Directory: a
  *  linked worktree's folder at `<directoryPath>/.claude/worktrees/<name>` that
  *  is not in our registry. A filesystem check: what the office's actions on
  *  it are refused by. */
-export function isClaudeWorktree(directoryPath: string, name: string): boolean {
+export function isCliWorktree(directoryPath: string, name: string): boolean {
   if (!isWorktreeName(name)) return false;
   const folder = worktreePathIn(directoryPath, name);
   return isLinkedWorktreeFolder(folder) && !readRegistry().some((e) => sameFolder(e.path, folder));

@@ -593,7 +593,7 @@ export interface WorktreeSummary {
   repeat?: number;
 }
 
-export type WorktreeOwner = 'pixelAgents' | 'claude';
+export type WorktreeOwner = 'pixelAgents' | 'cli';
 
 export type WorktreeState = 'active' | 'kept' | 'parked' | 'needsDecision';
 

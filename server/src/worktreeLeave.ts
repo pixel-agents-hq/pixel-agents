@@ -23,13 +23,14 @@ import type {
   WorktreesLoaded,
   WorktreeSummary,
 } from '../../core/src/messages.js';
+import type { HookProvider } from '../../core/src/provider.js';
 import type { PersistedAgent } from '../../core/src/schemas.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import { isClaudeWorktree, removeClaudeWorktree } from './claudeWorktrees.js';
+import { isCliWorktree, removeCliWorktree } from './cliWorktrees.js';
 import { WORKTREE_CLOSE_CHOICE_TTL_MS } from './constants.js';
 import { latestWorktreeSession } from './conversations.js';
 import { realPathKey, sameFolder } from './pathKey.js';
-import { claudeProvider } from './providers/index.js';
+import { hookProviders } from './providers/index.js';
 import type { AgentState } from './types.js';
 import { worktreeLook } from './worktreeAgents.js';
 import { listedDirectoryPath } from './worktreeAttribution.js';
@@ -64,8 +65,21 @@ function count(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
-/** One Directory's Worktrees, as the office lists them: ours, then Claude
- *  Code's (shown, removed only at the user's word). */
+/** A Worktree's newest session, from the first bundled provider that files
+ *  one for it. */
+function latestSessionIn(
+  directoryPath: string,
+  worktree: { name: string; path: string },
+): string | undefined {
+  for (const provider of hookProviders) {
+    const sessionId = latestWorktreeSession(provider, directoryPath, worktree);
+    if (sessionId) return sessionId;
+  }
+  return undefined;
+}
+
+/** One Directory's Worktrees, as the office lists them: ours, then the CLI's
+ *  own (shown, removed only at the user's word). */
 export async function worktreesMessage(
   store: AgentStateStore,
   directoryPath: string,
@@ -73,12 +87,12 @@ export async function worktreesMessage(
   const worktrees: WorktreeSummary[] = [];
   for (const listed of await worktreesOf(directoryPath, { details: true })) {
     const agentId = occupantOf(store, listed.entry ?? listed);
-    const sessionId = latestWorktreeSession(claudeProvider, directoryPath, listed);
+    const sessionId = latestSessionIn(directoryPath, listed);
     worktrees.push({
       name: listed.name,
       branch: listed.branch,
       owner: listed.owner,
-      // Claude Code's have no state of ours: running while an agent is in one.
+      // The CLI's own have no state of ours: running while an agent is in one.
       state: listed.entry?.state ?? (agentId !== undefined ? 'active' : 'kept'),
       sizeBytes: listed.holds?.sizeBytes ?? 0,
       uncommittedFiles: listed.holds?.uncommittedFiles ?? 0,
@@ -217,9 +231,9 @@ export async function handleRequestWorktrees(
  * decision (save, keep, discard) or a Worktrees list action (`remove`: the
  * leave rules, which may come back needing a decision; `deleteBranch`: a
  * parked one's branch, confirmed when its commits are merged nowhere).
- * One of Claude Code's worktrees takes `remove` alone: its folder and branch,
+ * One of the CLI's own worktrees takes `remove` alone: its folder and branch,
  * losing no more than the files and commits the user confirmed
- * (`removeClaudeWorktree`). Refused (to the sender, as
+ * (`removeCliWorktree`; `provider` names the CLI and reads its lock). Refused (to the sender, as
  * `worktreeDecisionRejected`) when it names no Worktree, an agent runs in it,
  * or git could not do it; every office is then sent the Worktrees as they stand, so an
  * answered dialog closes everywhere.
@@ -228,6 +242,7 @@ export async function handleDecideWorktree(
   store: AgentStateStore,
   msg: Record<string, unknown>,
   send: Send,
+  provider: Pick<HookProvider, 'displayName' | 'worktreeLockHolder'>,
 ): Promise<void> {
   const { directoryPath, name, choice, confirmedFiles, confirmedCommits } =
     msg as Partial<DecideWorktree>;
@@ -244,18 +259,19 @@ export async function handleDecideWorktree(
   const entry: WorktreeEntry | undefined = readRegistry().find(
     (e) => e.name === name && sameFolder(e.directoryPath, directoryPath),
   );
-  if (!entry && isClaudeWorktree(directoryPath, name)) {
+  if (!entry && isCliWorktree(directoryPath, name)) {
     if (choice !== 'remove') {
-      reject(`${name} is Claude Code's worktree: Pixel Agents can only remove it.`);
+      reject(`${name} is ${provider.displayName}'s worktree: Pixel Agents can only remove it.`);
     } else {
-      const result = await removeClaudeWorktree(directoryPath, name, {
+      const result = await removeCliWorktree(directoryPath, name, {
         confirmedFiles: confirmed,
         confirmedCommits: count(confirmedCommits),
         inUse: (folder) => worktreeInUse(store, { path: folder }),
+        provider,
       });
       if (result.ok) {
         console.log(
-          `[Pixel Agents] Worktrees: ${name} (Claude Code's) - remove: removed${result.branchKept ? ', branch kept' : ''}`,
+          `[Pixel Agents] Worktrees: ${name} (${provider.displayName}'s) - remove: removed${result.branchKept ? ', branch kept' : ''}`,
         );
       } else {
         reject(result.reason);

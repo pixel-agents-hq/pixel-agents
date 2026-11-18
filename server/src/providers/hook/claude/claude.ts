@@ -29,6 +29,7 @@ import {
 } from './constants.js';
 import { conversationTitle } from './conversationTitle.js';
 import { isInheritedClaudeSessionEnv } from './sessionEnv.js';
+import { worktreeLockHolder } from './worktreeLock.js';
 import { worktreeSymlinkDirectories } from './worktreeSettings.js';
 
 // ── formatToolStatus: moved from src/transcriptParser.ts ──
@@ -398,6 +399,7 @@ export const claudeProvider: HookProvider = {
   isInheritedSessionEnv: isInheritedClaudeSessionEnv,
   conversationTitle,
   worktreeSymlinkDirectories,
+  worktreeLockHolder,
 
   team: claudeTeamProvider,
   usageBridge: claudeUsageBridge,

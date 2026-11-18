@@ -1197,7 +1197,7 @@ components:
     WorktreesLoaded:
       description: |
         One Directory's Worktrees (the ones Pixel Agents made, then the ones
-        Claude Code made under its `.claude/worktrees/`, `owner: claude`), each
+        Claude Code made under its `.claude/worktrees/`, `owner: cli`), each
         with what it holds now. Sent to the client that asked (`requestWorktrees`), to
         every privileged client on connect for each Directory that has any,
         and broadcast to every privileged client after every change (an agent
@@ -1266,14 +1266,15 @@ components:
     WorktreeOwner:
       description: |
         Who made a Worktree. `pixelAgents`: Pixel Agents (listed in its
-        registry), so the office manages it. `claude`: Claude Code made it
-        under the Directory's `.claude/worktrees/` (`claude -w`, EnterWorktree):
+        registry), so the office manages it. `cli`: the CLI made it itself
+        under the Directory's `.claude/worktrees/` (Claude Code: `claude -w`,
+        EnterWorktree):
         shown, and only ever removed — `remove` deletes its folder and branch
         once no agent or Claude session is in it (confirmed files and commits
         only), every other `decideWorktree` on it is refused — and its state
         is only `active` (an agent runs in it) or `kept`.
       type: string
-      enum: [pixelAgents, claude]
+      enum: [pixelAgents, cli]
 
     WorktreeState:
       description: |

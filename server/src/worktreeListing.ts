@@ -1,12 +1,12 @@
 /**
  * A Directory's Worktrees, as every list of them reads them: ours (from the
- * registry), then Claude Code's (from git), each with where it is and, when
+ * registry), then the CLI's own (from git), each with where it is and, when
  * asked for `details`, what it holds. The office's Worktrees list
  * (`worktreesLoaded`) and the conversations' worktree lookup both map this.
  */
 
 import type { WorktreeOwner } from '../../core/src/messages.js';
-import { claudeWorktreeHoldings, listClaudeWorktrees } from './claudeWorktrees.js';
+import { cliWorktreeHoldings, listCliWorktrees } from './cliWorktrees.js';
 import { sameFolder } from './pathKey.js';
 import { list } from './worktreeInspect.js';
 import { ownedEntry, readRegistry, type WorktreeEntry } from './worktreeRegistry.js';
@@ -30,7 +30,7 @@ export interface ListedWorktree {
   holds?: WorktreeHoldings;
 }
 
-/** `directoryPath`'s Worktrees: ours, then Claude Code's. `details` reads
+/** `directoryPath`'s Worktrees: ours, then the CLI's own. `details` reads
  *  what each holds (git status, commits, size); without it only where they
  *  are, which is cheap. */
 export async function worktreesOf(
@@ -51,10 +51,10 @@ export async function worktreesOf(
         .filter((e) => sameFolder(e.directoryPath, directoryPath) && ownedEntry(e).ok)
         .map((entry) => ({ ...where(entry, 'pixelAgents'), entry }));
   const theirs: ListedWorktree[] = [];
-  for (const worktree of await listClaudeWorktrees(directoryPath)) {
+  for (const worktree of await listCliWorktrees(directoryPath)) {
     theirs.push({
-      ...where(worktree, 'claude'),
-      ...(details ? { holds: await claudeWorktreeHoldings(directoryPath, worktree) } : {}),
+      ...where(worktree, 'cli'),
+      ...(details ? { holds: await cliWorktreeHoldings(directoryPath, worktree) } : {}),
     });
   }
   return [...ours, ...theirs];

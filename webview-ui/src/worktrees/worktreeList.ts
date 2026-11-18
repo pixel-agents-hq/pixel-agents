@@ -37,7 +37,7 @@ export function worktreeActions(worktree: WorktreeSummary): WorktreeAction[] {
   const actions: WorktreeAction[] = [];
   if (worktree.latestSessionId !== undefined) actions.push('resume');
   if (worktree.state === 'active') return actions;
-  if (worktree.owner === 'claude') {
+  if (worktree.owner === 'cli') {
     if (worktree.state === 'kept') actions.push('remove');
     return actions;
   }
@@ -58,7 +58,7 @@ export function deleteNeedsConfirmation(worktree: WorktreeSummary): boolean {
  *  files, asking save or discard there (as the leave dialog would) — clean,
  *  the leave rules remove it and park a branch with commits, losing nothing. */
 export function removeNeedsConfirmation(worktree: WorktreeSummary): boolean {
-  if (worktree.owner === 'claude') {
+  if (worktree.owner === 'cli') {
     return worktree.uncommittedFiles > 0 || worktree.uniqueCommits > 0;
   }
   return worktree.uncommittedFiles > 0;

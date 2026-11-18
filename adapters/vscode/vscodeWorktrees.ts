@@ -67,7 +67,7 @@ export class VscodeWorktrees {
     if (message.type === 'requestWorktrees') {
       void handleRequestWorktrees(this.store, message, this.send);
     } else if (message.type === 'decideWorktree') {
-      void handleDecideWorktree(this.store, message, this.send);
+      void handleDecideWorktree(this.store, message, this.send, claudeProvider);
     } else {
       return false;
     }

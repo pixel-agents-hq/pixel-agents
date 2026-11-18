@@ -8,7 +8,7 @@
  *
  * Claude Code's worktrees are resumed in place only: never rebuilt, never
  * marked, never cleaned up by the leave rules (no registry entry); only the
- * user's Remove from the Worktrees list takes one away (claudeWorktrees.ts).
+ * user's Remove from the Worktrees list takes one away (cliWorktrees.ts).
  *
  * A session whose Worktree is gone for good (removed, its branch deleted —
  * ours or Claude Code's) resumes in the Directory's own checkout, its
@@ -18,7 +18,7 @@
 import type { Directory } from '../../core/src/messages.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import { isClaudeWorktree } from './claudeWorktrees.js';
+import { isCliWorktree } from './cliWorktrees.js';
 import {
   moveSessionIntoDirectory,
   resumeRequest,
@@ -122,9 +122,9 @@ export async function resumeConversation(
   if (unavailable) return reject(unavailable);
   const marker = { name: worktree.name, path: worktree.path, branch: worktree.branch };
 
-  if (worktree.owner === 'claude') {
-    if (!isClaudeWorktree(directoryPath, worktree.name)) {
-      return reject(`Claude Code's worktree ${worktree.branch} is gone.`);
+  if (worktree.owner === 'cli') {
+    if (!isCliWorktree(directoryPath, worktree.name)) {
+      return reject(`${provider.displayName}'s worktree ${worktree.branch} is gone.`);
     }
     return deps.launch({ ...options, cwd: worktree.path, worktree: marker });
   }

@@ -31,9 +31,7 @@ describe('worktree list', () => {
     expect(worktreeStateLabel(wt({ state: 'kept' }))).toBe('kept');
     expect(worktreeStateLabel(wt({ state: 'parked' }))).toBe('parked');
     expect(worktreeStateLabel(wt({ state: 'needsDecision' }))).toBe('needs a decision');
-    expect(worktreeStateLabel(wt({ owner: 'claude', state: 'active', agentId: 1 }))).toBe(
-      'running',
-    );
+    expect(worktreeStateLabel(wt({ owner: 'cli', state: 'active', agentId: 1 }))).toBe('running');
   });
 
   it('a running one only goes to its agent', () => {
@@ -57,19 +55,19 @@ describe('worktree list', () => {
   });
 
   it("Claude Code's: Resume and Remove once no agent is in it, never Delete branch", () => {
-    expect(worktreeActions(wt({ owner: 'claude', latestSessionId: 's' }))).toEqual([
+    expect(worktreeActions(wt({ owner: 'cli', latestSessionId: 's' }))).toEqual([
       'resume',
       'remove',
     ]);
-    expect(worktreeActions(wt({ owner: 'claude' }))).toEqual(['remove']);
-    expect(worktreeActions(wt({ owner: 'claude', state: 'active', agentId: 1 }))).toEqual(['open']);
-    expect(worktreeActions(wt({ owner: 'claude', state: 'parked' }))).toEqual([]);
+    expect(worktreeActions(wt({ owner: 'cli' }))).toEqual(['remove']);
+    expect(worktreeActions(wt({ owner: 'cli', state: 'active', agentId: 1 }))).toEqual(['open']);
+    expect(worktreeActions(wt({ owner: 'cli', state: 'parked' }))).toEqual([]);
   });
 
   it("removing asks first: Claude Code's when it loses files or commits, ours when it holds files", () => {
-    expect(removeNeedsConfirmation(wt({ owner: 'claude' }))).toBe(false);
-    expect(removeNeedsConfirmation(wt({ owner: 'claude', uncommittedFiles: 1 }))).toBe(true);
-    expect(removeNeedsConfirmation(wt({ owner: 'claude', uniqueCommits: 2 }))).toBe(true);
+    expect(removeNeedsConfirmation(wt({ owner: 'cli' }))).toBe(false);
+    expect(removeNeedsConfirmation(wt({ owner: 'cli', uncommittedFiles: 1 }))).toBe(true);
+    expect(removeNeedsConfirmation(wt({ owner: 'cli', uniqueCommits: 2 }))).toBe(true);
     expect(removeNeedsConfirmation(wt({ uncommittedFiles: 3 }))).toBe(true);
     // Ours, clean: commits are parked on the branch, nothing is lost.
     expect(removeNeedsConfirmation(wt({ uniqueCommits: 2 }))).toBe(false);
