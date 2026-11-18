@@ -70,6 +70,10 @@ export interface TutorialDeps {
   store: AgentStateStore;
   /** The surface's side, or absent where the office can't launch it. */
   surface?: TutorialSurface;
+  /** Why this office can't hand the Pixel Office MCP to the agents it
+   *  launches, whatever the consent (its server is another's, or its CLI takes
+   *  no MCP config), in plain words; null where it can. */
+  mcpUnavailable(): string | null;
   /** Whether agents get the Pixel Office MCP (its consent granted). */
   mcpGranted(): boolean;
   /** The MCP access the Guide's launch is given. */
@@ -323,6 +327,8 @@ export class Tutorial {
     where: ReturnType<TutorialSurface['where']> | undefined,
   ): string | null {
     if (!this.deps.surface || !where) return "This office can't launch the tutorial's Guide.";
+    const noMcp = this.deps.mcpUnavailable();
+    if (noMcp !== null) return noMcp;
     if (!this.deps.mcpGranted()) {
       return 'The tutorial runs on the Pixel Agents Office MCP: turn it on in Settings first.';
     }

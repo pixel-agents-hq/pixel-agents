@@ -185,6 +185,16 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
   const tutorial = new Tutorial({
     store,
     surface: surface.tutorial,
+    // The Guide's skill sends it to the MCP's tools: no MCP here, no tutorial.
+    mcpUnavailable: () => {
+      if (officeMcp.offered()) return null;
+      if (!facts.provider.mcpConfigFile) {
+        return `The tutorial runs on the Pixel Agents Office MCP, which ${facts.provider.displayName} can't be given.`;
+      }
+      return decided
+        ? "This window shares another window's office: start the tutorial from that one."
+        : 'The office is still starting.';
+    },
     mcpGranted: () => getOfficeMcpConsent() === 'granted',
     mcp: {
       configFor: (agentId) => officeMcp.configFor(agentId),
