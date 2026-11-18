@@ -21,18 +21,33 @@
  */
 
 import { pcShellName } from '../../core/src/pcShells.js';
-import type { ITerminalAdapter,TerminalHandle } from '../../core/src/terminalAdapter.js';
+import type { TerminalHandle } from '../../core/src/terminalAdapter.js';
 import type { PlaceDirectory } from '../../server/src/pcShellPlace.js';
 import { PcShellRegistry, type PcShellRegistryDeps } from '../../server/src/pcShells.js';
 import { PC_SHELL_TERMINAL_NAME_PREFIX } from './constants.js';
 
-export interface VscodePcShellsDeps
-  extends Pick<PcShellRegistryDeps, 'facts' | 'directories' | 'broadcast'> {
+/** The editor's terminals as PC shells use them. The VS Code adapter's own
+ *  (VscodeTerminalAdapter implements it): core's ITerminalAdapter carries
+ *  only what the shared runtime calls. */
+export interface PcShellTerminals {
+  /** Open an ordinary terminal (the user's own shell) named `name` in `cwd`:
+   *  a PC shell's. Transient: never restored by the editor after a reload. */
+  openTerminal(options: { name: string; cwd: string }): TerminalHandle;
+  /** Bring `terminal` to the front. */
+  showTerminal(terminal: TerminalHandle): void;
+  /** Close `terminal` (its close event follows, as for any other close). */
+  disposeTerminal(terminal: TerminalHandle): void;
+  /** Every terminal that closes, however it closed (the editor's ×, `exit`,
+   *  disposeTerminal); disposing the result stops listening. */
+  onTerminalClosed(listener: (terminal: TerminalHandle) => void): { dispose(): void };
+}
+
+export interface VscodePcShellsDeps extends Pick<
+  PcShellRegistryDeps,
+  'facts' | 'directories' | 'broadcast'
+> {
   /** The editor's terminals. */
-  terminals: Pick<
-    ITerminalAdapter,
-    'openTerminal' | 'showTerminal' | 'disposeTerminal' | 'onTerminalClosed'
-  >;
+  terminals: PcShellTerminals;
   /** The window's workspace folders, in order: the fallback is the first. */
   workspaceFolders: () => readonly PlaceDirectory[];
 }

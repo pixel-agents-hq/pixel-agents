@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 
 import type { ITerminalAdapter, TerminalHandle } from '../../core/src/terminalAdapter.js';
+import type { PcShellTerminals } from './vscodePcShells.js';
 
-/** VS Code implementation of ITerminalAdapter. Wraps vscode.window terminal access. */
-export class VscodeTerminalAdapter implements ITerminalAdapter {
+/** VS Code implementation of ITerminalAdapter, and the editor's terminals as
+ *  PC shells and Messages use them. Wraps vscode.window terminal access. */
+export class VscodeTerminalAdapter implements ITerminalAdapter, PcShellTerminals {
   activeTerminal(): TerminalHandle | undefined {
     return vscode.window.activeTerminal;
   }
