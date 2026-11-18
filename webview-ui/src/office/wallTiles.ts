@@ -5,22 +5,79 @@
  * Each set contains 16 wall sprites (one per 4-bit bitmask).
  * At render time, each wall tile's 4 cardinal neighbors are checked to build
  * a bitmask, and the corresponding sprite is drawn directly.
- * No changes to the layout model — auto-tiling is purely visual.
+ *
+ * Every wall tile wears a set (`OfficeLayout.wallSets`, absent = set 0), and
+ * sets of different heights (a cubicle wall against a full one) never join:
+ * each closes its own end, so a low partition reads as standing against the
+ * wall instead of melting into it. A set's height is read off its art (the
+ * first opaque row of its lone piece), so a new sheet needs no metadata.
  *
  * Bitmask convention: N=1, E=2, S=4, W=8. Out-of-bounds = NOT wall.
  */
 
 import type { ColorValue } from '../components/ui/types.js';
+import { WALL_CAP_ROWS } from '../constants.js';
 import { getColorizedSprite } from './colorize.js';
 import type { FurnitureInstance, SpriteData, TileType as TileTypeVal } from './types.js';
 import { TILE_SIZE, TileType } from './types.js';
 
 /** Wall tile sets: each set has 16 sprites indexed by bitmask (0-15) */
 let wallSets: SpriteData[][] = [];
+/** Each set's height in pixels (rows of its lone piece from the first opaque one). */
+let wallSetHeights: number[] = [];
 
 /** Set wall tile sets (called once when extension sends wallTilesLoaded) */
 export function setWallSprites(sets: SpriteData[][]): void {
   wallSets = sets;
+  wallSetHeights = sets.map(spriteHeight);
+  seamless.clear();
+}
+
+/**
+ * Seams a piece drops where the wall is thicker than one tile. The 4-bit mask
+ * can't see diagonals, so a piece running south (or north) along a joined side
+ * keeps that side's outline: right when the neighbour beside it is a plain
+ * run with its front face there, wrong when the neighbour runs the same way —
+ * then the two top faces would show a dashed seam between them.
+ *   NE / NW: the corner pixel of the cap's first row (an inner-corner mark).
+ *   SE / SW: the column under the cap.
+ */
+const SEAM_NE = 1;
+const SEAM_SE = 2;
+const SEAM_SW = 4;
+const SEAM_NW = 8;
+
+/** Pieces with seams dropped, by `set:mask:seams`. */
+const seamless = new Map<string, SpriteData>();
+
+/** The piece with the given seams filled from the column next to them. */
+function withoutSeams(set: number, mask: number, seams: number): SpriteData {
+  const raw = wallSets[set][mask];
+  if (seams === 0) return raw;
+  const key = `${set}:${mask}:${seams}`;
+  const cached = seamless.get(key);
+  if (cached) return cached;
+  const top = raw.length - wallSetHeights[set];
+  const sprite = raw.map((row) => [...row]);
+  const last = (sprite[0]?.length ?? 0) - 1;
+  const fill = (x: number, from: number, y0: number, y1: number) => {
+    for (let y = Math.max(0, y0); y < Math.min(sprite.length, y1); y++) {
+      if (sprite[y][x] !== '') sprite[y][x] = sprite[y][from];
+    }
+  };
+  if (seams & SEAM_NE) fill(last, last - 1, top, top + 1);
+  if (seams & SEAM_NW) fill(0, 1, top, top + 1);
+  if (seams & SEAM_SE) fill(last, last - 1, top + WALL_CAP_ROWS, sprite.length);
+  if (seams & SEAM_SW) fill(0, 1, top + WALL_CAP_ROWS, sprite.length);
+  seamless.set(key, sprite);
+  return sprite;
+}
+
+/** Rows from a sprite's first non-transparent row to its foot. */
+function spriteHeight(set: SpriteData[]): number {
+  const lone = set[0] ?? [];
+  const first = lone.findIndex((row) => row.some((px) => px !== ''));
+  return first === -1 ? 0 : lone.length - first;
 }
 
 /** Check if wall sprites have been loaded */
@@ -33,101 +90,99 @@ export function getWallSetCount(): number {
   return wallSets.length;
 }
 
-/** Get the first sprite (bitmask 0, top-left piece) of a wall set for preview rendering */
-export function getWallSetPreviewSprite(setIndex: number): SpriteData | null {
-  const set = wallSets[setIndex];
-  if (!set) return null;
-  return set[0] ?? null;
+/** The set a tile wears: its own when that set is loaded, else set 0. */
+export function wallSetAt(sets: Array<number | null> | undefined, idx: number): number {
+  const set = sets?.[idx] ?? 0;
+  return set >= 0 && set < wallSets.length ? set : 0;
 }
 
 /**
- * Build the 4-bit neighbor bitmask for a wall tile at (col, row).
+ * A wall set's thumbnail: a short straight run (west end, east end), coloured,
+ * so its face texture shows. Null when the set isn't loaded.
  */
-function buildWallMask(col: number, row: number, tileMap: TileTypeVal[][]): number {
+export function getWallSetPreviewSprites(
+  setIndex: number,
+  color: ColorValue,
+): [SpriteData, SpriteData] | null {
+  const set = wallSets[setIndex];
+  if (!set?.[2] || !set[8]) return null;
+  const key = (mask: number) =>
+    `wall-${setIndex}-${mask}-${color.h}-${color.s}-${color.b}-${color.c}`;
+  return [
+    getColorizedSprite(key(2), set[2], { ...color, colorize: true }),
+    getColorizedSprite(key(8), set[8], { ...color, colorize: true }),
+  ];
+}
+
+/**
+ * Build the 4-bit neighbor bitmask for a wall tile at (col, row): a neighbor
+ * counts when it is a wall of the same height. Plus the seams to drop where a
+ * diagonal joins too (see `withoutSeams`).
+ */
+function buildWallMask(
+  col: number,
+  row: number,
+  tileMap: TileTypeVal[][],
+  setOf: (col: number, row: number) => number,
+): { mask: number; seams: number } {
   const tmRows = tileMap.length;
   const tmCols = tmRows > 0 ? tileMap[0].length : 0;
+  const height = wallSetHeights[setOf(col, row)];
+  const joins = (c: number, r: number) =>
+    tileMap[r][c] === TileType.WALL && wallSetHeights[setOf(c, r)] === height;
 
-  let mask = 0;
-  if (row > 0 && tileMap[row - 1][col] === TileType.WALL) mask |= 1; // N
-  if (col < tmCols - 1 && tileMap[row][col + 1] === TileType.WALL) mask |= 2; // E
-  if (row < tmRows - 1 && tileMap[row + 1][col] === TileType.WALL) mask |= 4; // S
-  if (col > 0 && tileMap[row][col - 1] === TileType.WALL) mask |= 8; // W
-  return mask;
-}
+  const n = row > 0 && joins(col, row - 1);
+  const e = col < tmCols - 1 && joins(col + 1, row);
+  const s = row < tmRows - 1 && joins(col, row + 1);
+  const w = col > 0 && joins(col - 1, row);
+  const mask = (n ? 1 : 0) | (e ? 2 : 0) | (s ? 4 : 0) | (w ? 8 : 0);
 
-/**
- * Get the wall sprite for a tile based on its cardinal neighbors.
- * Returns the sprite + Y offset, or null to fall back to solid WALL_COLOR.
- */
-function getWallSprite(
-  col: number,
-  row: number,
-  tileMap: TileTypeVal[][],
-  setIndex = 0,
-): { sprite: SpriteData; offsetY: number } | null {
-  if (wallSets.length === 0) return null;
-  const sprites = wallSets[setIndex] ?? wallSets[0];
-
-  const mask = buildWallMask(col, row, tileMap);
-  const sprite = sprites[mask];
-  if (!sprite) return null;
-
-  // Anchor sprite at bottom of tile — tall sprites extend upward
-  return { sprite, offsetY: TILE_SIZE - sprite.length };
-}
-
-/**
- * Get a colorized wall sprite for a tile based on its cardinal neighbors.
- * Uses Colorize mode (grayscale → HSL) like floor tiles.
- * Returns the colorized sprite + Y offset, or null if no wall sprites loaded.
- */
-function getColorizedWallSprite(
-  col: number,
-  row: number,
-  tileMap: TileTypeVal[][],
-  color: ColorValue,
-  setIndex = 0,
-): { sprite: SpriteData; offsetY: number } | null {
-  if (wallSets.length === 0) return null;
-  const sprites = wallSets[setIndex] ?? wallSets[0];
-
-  const mask = buildWallMask(col, row, tileMap);
-  const sprite = sprites[mask];
-  if (!sprite) return null;
-
-  const cacheKey = `wall-${setIndex}-${mask}-${color.h}-${color.s}-${color.b}-${color.c}`;
-  const colorized = getColorizedSprite(cacheKey, sprite, { ...color, colorize: true });
-
-  return { sprite: colorized, offsetY: TILE_SIZE - sprite.length };
+  // A diagonal that joins too: the block is solid there, no seam between.
+  let seams = 0;
+  if (n && e && joins(col + 1, row - 1)) seams |= SEAM_NE;
+  if (s && e && joins(col + 1, row + 1)) seams |= SEAM_SE;
+  if (s && w && joins(col - 1, row + 1)) seams |= SEAM_SW;
+  if (n && w && joins(col - 1, row - 1)) seams |= SEAM_NW;
+  return { mask, seams };
 }
 
 /**
  * Build FurnitureInstance-like objects for all wall tiles so they can participate
- * in z-sorting with furniture and characters.
+ * in z-sorting with furniture and characters. Each tile is drawn in its own set
+ * and colour (Colorize mode, like floors); an uncoloured wall keeps its raw art.
  */
 export function getWallInstances(
   tileMap: TileTypeVal[][],
   tileColors?: Array<ColorValue | null>,
   cols?: number,
+  tileWallSets?: Array<number | null>,
 ): FurnitureInstance[] {
   if (wallSets.length === 0) return [];
   const tmRows = tileMap.length;
   const tmCols = tmRows > 0 ? tileMap[0].length : 0;
   const layoutCols = cols ?? tmCols;
+  const setOf = (c: number, r: number) => wallSetAt(tileWallSets, r * layoutCols + c);
   const instances: FurnitureInstance[] = [];
   for (let r = 0; r < tmRows; r++) {
     for (let c = 0; c < tmCols; c++) {
       if (tileMap[r][c] !== TileType.WALL) continue;
-      const colorIdx = r * layoutCols + c;
-      const wallColor = tileColors?.[colorIdx];
-      const wallInfo = wallColor
-        ? getColorizedWallSprite(c, r, tileMap, wallColor)
-        : getWallSprite(c, r, tileMap);
-      if (!wallInfo) continue;
+      const setIndex = setOf(c, r);
+      const { mask, seams } = buildWallMask(c, r, tileMap, setOf);
+      if (!wallSets[setIndex][mask]) continue;
+      const raw = withoutSeams(setIndex, mask, seams);
+      const color = tileColors?.[r * layoutCols + c];
+      const sprite = color
+        ? getColorizedSprite(
+            `wall-${setIndex}-${mask}-s${seams}-${color.h}-${color.s}-${color.b}-${color.c}`,
+            raw,
+            { ...color, colorize: true },
+          )
+        : raw;
       instances.push({
-        sprite: wallInfo.sprite,
+        sprite,
         x: c * TILE_SIZE,
-        y: r * TILE_SIZE + wallInfo.offsetY,
+        // Anchor sprite at bottom of tile — tall sprites extend upward
+        y: r * TILE_SIZE + TILE_SIZE - raw.length,
         zY: (r + 1) * TILE_SIZE,
       });
     }

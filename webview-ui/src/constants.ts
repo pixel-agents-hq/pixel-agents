@@ -98,6 +98,8 @@ export const BUTTON_SHADOW_COLOR = '#0a0a14';
 export const CANVAS_FALLBACK_TILE_COLOR = '#444';
 export const CANVAS_ERROR_TILE_COLOR = '#FF00FF';
 export const WALL_COLOR = '#3A3A5C';
+/** Rows of a wall piece's top cap (every set draws an 8-row cap above its face). */
+export const WALL_CAP_ROWS = 8;
 
 // ── Camera ───────────────────────────────────────────────────
 export const CAMERA_FOLLOW_LERP = 0.1;
@@ -128,6 +130,18 @@ export const LAYOUT_EXPORT_FILENAME = 'pixel-agents-layout.json';
 export const LAYOUT_EXPORT_MIME = 'application/json';
 export const DEFAULT_FLOOR_COLOR: ColorValue = { h: 35, s: 30, b: 15, c: 0 };
 export const DEFAULT_WALL_COLOR: ColorValue = { h: 240, s: 25, b: 0, c: 0 };
+/** Names of the bundled wall sets, by index (wall_N.png); sets past these are "Wall N". */
+export const WALL_SET_LABELS = [
+  'Plain',
+  'Brick',
+  'Wood planks',
+  'Stone',
+  'Wainscot',
+  'Office panel',
+  'Glass partition',
+  'Half panel',
+  'Cubicle',
+];
 export const DEFAULT_NEUTRAL_COLOR: ColorValue = { h: 0, s: 0, b: 0, c: 0 };
 
 // ── Carpets ──────────────────────────────────────────────────

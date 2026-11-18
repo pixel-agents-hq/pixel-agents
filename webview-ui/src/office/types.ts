@@ -89,6 +89,8 @@ export const EditTool = {
   AREA_PAINT: 'area_paint',
   /** Colour-only eyedropper: takes a placed item's colour, leaves its type alone. */
   COLOR_PICK: 'color_pick',
+  /** Wall eyedropper: takes a wall's set and colour, then paints walls with them. */
+  WALL_PICK: 'wall_pick',
 } as const;
 export type EditTool = (typeof EditTool)[keyof typeof EditTool];
 
@@ -153,8 +155,14 @@ export interface OfficeLayout {
   rows: number;
   tiles: TileType[];
   furniture: PlacedFurniture[];
-  /** Per-tile color settings, parallel to tiles array. null = wall/no color */
+  /** Per-tile color settings, parallel to tiles array (floors and walls alike). null = no color */
   tileColors?: Array<ColorValue | null>;
+  /**
+   * Per-tile wall set (index into the loaded wall sets), parallel to tiles.
+   * Only wall tiles carry one; null or absent = set 0, so layouts from before
+   * wall sets keep their walls.
+   */
+  wallSets?: Array<number | null>;
   /** Bumped when the bundled default layout changes; forces a reset on existing installs */
   layoutRevision?: number;
   /** Pets placed in the office. Optional for backward-compat; migrateLayout coerces to []. */

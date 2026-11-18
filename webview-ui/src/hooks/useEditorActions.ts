@@ -24,13 +24,13 @@ import {
   paintCarpet,
   paintTile,
   placeNewFurniture,
-  recolorWalls,
   removeArea,
   removeFurniture,
   renameArea,
   rotateFurniture,
   toggleFurnitureState,
   updateAreaColor,
+  wallSetOf,
   wallStrokeAdds,
   wallStrokeTile,
 } from '../office/editor/editorActions.js';
@@ -201,13 +201,14 @@ export function useEditorActions(
       const next = !prev;
       editorState.isEditMode = next;
       if (next) {
-        // Initialize wallColor from existing wall tiles so new walls match
+        // Initialize the wall brush from an existing wall so new walls match
         const os = getOfficeState();
         const layout = os.getLayout();
         if (layout.tileColors) {
           for (let i = 0; i < layout.tiles.length; i++) {
             if (layout.tiles[i] === TileType.WALL && layout.tileColors[i]) {
               editorState.wallColor = { ...layout.tileColors[i]! };
+              editorState.selectedWallSet = wallSetOf(layout, i);
               break;
             }
           }
@@ -360,19 +361,14 @@ export function useEditorActions(
     [editorState],
   );
 
-  // Recolours every existing wall; a slider run is one undo entry.
+  // The colour new walls are painted in (like the floor's: walls already
+  // standing keep theirs until painted over).
   const handleWallColorChange = useCallback(
     (color: ColorValue) => {
       editorState.wallColor = color;
-      const layout = getOfficeState().getLayout();
-      const newLayout = recolorWalls(layout, color);
-      if (newLayout !== layout) {
-        commitLayout(newLayout, 'wallColor');
-      } else {
-        bumpTick();
-      }
+      setEditorTick((n) => n + 1);
     },
-    [editorState, getOfficeState, commitLayout, bumpTick],
+    [editorState],
   );
 
   const handleWallSetChange = useCallback(
@@ -625,9 +621,10 @@ export function useEditorActions(
             applyStrokeEdit(paintTile(base, c, r, floor.type, floor.color));
           } else {
             // The stroke's first tile decides whether it adds or removes walls.
-            editorState.wallDragAdding ??= wallStrokeAdds(base, c, r);
+            const wall = { set: editorState.selectedWallSet, color: editorState.wallColor };
+            editorState.wallDragAdding ??= wallStrokeAdds(base, c, r, wall);
             const adding = editorState.wallDragAdding;
-            applyStrokeEdit(wallStrokeTile(base, c, r, adding, editorState.wallColor, floor));
+            applyStrokeEdit(wallStrokeTile(base, c, r, adding, wall, floor));
           }
           return;
         }
@@ -671,14 +668,26 @@ export function useEditorActions(
           const tile = layout.tiles[idx];
           const color = layout.tileColors?.[idx];
           if (tile === TileType.WALL) {
-            // Pick wall color and switch to wall tool
+            // Pick the wall's set and colour and switch to the wall tool
             if (color) editorState.wallColor = { ...color };
+            editorState.selectedWallSet = wallSetOf(layout, idx);
             editorState.activeTool = EditTool.WALL_PAINT;
           } else if (tile !== undefined && tile !== TileType.VOID) {
             editorState.selectedTileType = tile;
             if (color) editorState.floorColor = { ...color };
             editorState.activeTool = EditTool.TILE_PAINT;
           }
+          bumpTick();
+          return;
+        }
+        case EditTool.WALL_PICK: {
+          // The wall panel's Copy: a wall's set and colour become the brush.
+          const idx = row * layout.cols + col;
+          if (layout.tiles[idx] !== TileType.WALL) return;
+          const color = layout.tileColors?.[idx];
+          if (color) editorState.wallColor = { ...color };
+          editorState.selectedWallSet = wallSetOf(layout, idx);
+          editorState.activeTool = EditTool.WALL_PAINT;
           bumpTick();
           return;
         }
