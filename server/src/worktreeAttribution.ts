@@ -1,11 +1,12 @@
 /**
  * Worktree attribution for the scanners and for moved agents. Any session
- * whose working folder is under a Directory's `.claude/worktrees/<name>`
- * belongs to that Directory, whoever made the worktree (worktreeLocation.ts).
- * Its sessions are filed under the Directory's family of project dirs
- * (`<hash>--claude-worktrees-<name>`), which the external scanner tracks like
- * the Directory's own, so `claude -w` sessions are adopted, named after the
- * Directory and marked with the worktree and its branch.
+ * whose working folder is under a Directory's worktrees folder belongs to
+ * that Directory, whoever made the worktree (worktreeLocation.ts, which owns
+ * the folder and the project dirs' naming). Its sessions are filed under the
+ * Directory's family of project dirs, which the external scanner tracks like
+ * the Directory's own, so the CLI's own worktree sessions (Claude Code:
+ * `claude -w`) are adopted, named after the Directory and marked with the
+ * worktree and its branch.
  *
  * The host's Directories are read through `setAttributionDirectories` and
  * cached: the scanners ask on every tick, for every project dir, and a fresh
@@ -17,14 +18,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { normalizeProjectPath } from '../../core/src/normalizeProjectPath.js';
+import type { HookProvider } from '../../core/src/provider.js';
 import { ATTRIBUTION_DIRECTORIES_TTL_MS } from './constants.js';
+import { transcriptSuffix } from './directorySuggestions.js';
 import { sameFolder } from './pathKey.js';
+import { hookProviders } from './providers/index.js';
 import type { AgentState } from './types.js';
 import { branchAt } from './worktreeGit.js';
 import {
   directorySpellings,
   isWorktreeProjectDirOf,
+  projectDirNameOf,
   worktreeForProjectDir,
   worktreeLocationOf,
 } from './worktreeLocation.js';
@@ -99,7 +103,8 @@ export function familyHashes(trackedProjectDirs: Iterable<string>): Set<string> 
   for (const dir of trackedProjectDirs) hashes.add(path.basename(dir));
   for (const directory of currentDirectories()) {
     for (const spelling of directorySpellings(directory.path)) {
-      hashes.add(normalizeProjectPath(spelling));
+      const hash = projectDirNameOf(spelling);
+      if (hash !== null) hashes.add(hash);
     }
   }
   return hashes;
@@ -140,6 +145,20 @@ export function worktreeFamilyDirs(
   return out;
 }
 
+/** Whether a file is named like a transcript of one of the bundled
+ *  providers. A provider that declares no transcript pattern names none
+ *  (`transcriptSuffix` would match every file). */
+export function isTranscriptName(
+  fileName: string,
+  providers: readonly Pick<HookProvider, 'sessionFilePattern'>[] = hookProviders,
+): boolean {
+  return providers.some(
+    (p) =>
+      p.sessionFilePattern !== undefined &&
+      fileName.endsWith(transcriptSuffix(p.sessionFilePattern)),
+  );
+}
+
 /** Family dirs whose existing transcripts were seeded as known. */
 const seededFamilyDirs = new Set<string>();
 
@@ -159,7 +178,7 @@ export function seedWorktreeFamilyDirs(
     seededFamilyDirs.add(dir);
     let files: string[];
     try {
-      files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+      files = fs.readdirSync(dir).filter((f) => isTranscriptName(f));
     } catch {
       continue;
     }

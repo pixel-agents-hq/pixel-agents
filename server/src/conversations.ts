@@ -211,7 +211,7 @@ export const noWorktrees: WorktreesOf = () => [];
  * Where a Worktree's sessions are filed: the project dirs of its folder,
  * worked out also from the Directory's resolved path, because a removed
  * folder can't be resolved itself and the CLI files sessions under the
- * resolved one (`<repo hash>--claude-worktrees-<name>`).
+ * resolved one (Claude Code: `<repo hash>--claude-worktrees-<name>`).
  */
 export function worktreeSessionDirs(
   provider: HookProvider,
@@ -238,11 +238,15 @@ export function latestWorktreeSession(
 
 /**
  * Where sessions of a Directory's Worktrees that are gone for good are filed:
- * the project dirs named like one of its Worktree folders
- * (`<repo hash>--claude-worktrees-<name>`) that belong to none of the
- * Worktrees it has now (`known`: ours, parked ones included, and Claude
- * Code's). Removing a Worktree never deletes its sessions; these are where
+ * the project dirs named like one of its Worktree folders (Claude Code:
+ * `<repo hash>--claude-worktrees-<name>`) that belong to none of the
+ * Worktrees it has now (`known`: ours, parked ones included, and the CLI's
+ * own). Removing a Worktree never deletes its sessions; these are where
  * they stay, listed under the Directory and resumed in its own checkout.
+ *
+ * The naming is found the way any session dir is, through the provider's
+ * `getSessionDirs`, here for a probe Worktree's folder: the convention's
+ * `sessionDirName` is not asked.
  */
 export function removedWorktreeSessionDirs(
   provider: HookProvider,

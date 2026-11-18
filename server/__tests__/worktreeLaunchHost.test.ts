@@ -7,7 +7,6 @@ import { createAgentState } from '../src/agentState.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { directoryAt } from '../src/directories.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
-import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import { create } from '../src/worktreeCreate.js';
 import { prepareWorktreeLaunch, retireUnlaunched } from '../src/worktreeLaunch.js';
 import { holdWorktreesOf, retireWhenUnused, sweepWorktrees } from '../src/worktreeLeave.js';
@@ -55,7 +54,6 @@ describe('launching into a Worktree from any host', () => {
     const prepared = await prepareWorktreeLaunch({
       directoryPath: second,
       directory: directoryAt(second, folders),
-      provider: claudeProvider,
     });
 
     if (!prepared.ok) throw new Error(prepared.reason);
@@ -78,7 +76,6 @@ describe('launching into a Worktree from any host', () => {
     const prepared = await prepareWorktreeLaunch({
       directoryPath: repo,
       directory: directoryAt(repo, [{ name: 'repo', path: repo }]),
-      provider: claudeProvider,
     });
     if (!prepared.ok) throw new Error(prepared.reason);
 
@@ -98,13 +95,11 @@ describe('launching into a Worktree from any host', () => {
     const noShell = await prepareWorktreeLaunch({
       directoryPath: repo,
       directory: directoryAt(repo, [{ name: 'repo', path: repo }]),
-      provider: claudeProvider,
       terminalUnavailable: 'No shell.',
     });
     const nowhere = await prepareWorktreeLaunch({
       directoryPath: '/nowhere',
       directory: undefined,
-      provider: claudeProvider,
     });
 
     expect(noShell).toEqual({ ok: false, reason: 'No shell.' });

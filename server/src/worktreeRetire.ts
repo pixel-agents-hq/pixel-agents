@@ -7,7 +7,7 @@
  *     user decides (save, keep or discard)
  *
  * Every path here that deletes anything first proves the Worktree is ours
- * (`ownedEntry`: registered, at `<its Directory>/.claude/worktrees/<name>`,
+ * (`ownedEntry`: registered, at `<its Directory>/<worktrees folder>/<name>`,
  * and a linked worktree of that repo by git's own list), re-inspects it on
  * fresh state inside the repo's queue, and lets git refuse what git would
  * refuse: a folder is removed without --force unless the user chose Discard

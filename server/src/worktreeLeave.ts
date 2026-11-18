@@ -23,10 +23,9 @@ import type {
   WorktreesLoaded,
   WorktreeSummary,
 } from '../../core/src/messages.js';
-import type { HookProvider } from '../../core/src/provider.js';
 import type { PersistedAgent } from '../../core/src/schemas.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import { isCliWorktree, removeCliWorktree } from './cliWorktrees.js';
+import { cliName, isCliWorktree, removeCliWorktree } from './cliWorktrees.js';
 import { WORKTREE_CLOSE_CHOICE_TTL_MS } from './constants.js';
 import { latestWorktreeSession } from './conversations.js';
 import { realPathKey, sameFolder } from './pathKey.js';
@@ -233,7 +232,7 @@ export async function handleRequestWorktrees(
  * parked one's branch, confirmed when its commits are merged nowhere).
  * One of the CLI's own worktrees takes `remove` alone: its folder and branch,
  * losing no more than the files and commits the user confirmed
- * (`removeCliWorktree`; `provider` names the CLI and reads its lock). Refused (to the sender, as
+ * (`removeCliWorktree`, which names the CLI and reads its lock). Refused (to the sender, as
  * `worktreeDecisionRejected`) when it names no Worktree, an agent runs in it,
  * or git could not do it; every office is then sent the Worktrees as they stand, so an
  * answered dialog closes everywhere.
@@ -242,7 +241,6 @@ export async function handleDecideWorktree(
   store: AgentStateStore,
   msg: Record<string, unknown>,
   send: Send,
-  provider: Pick<HookProvider, 'displayName' | 'worktreeLockHolder'>,
 ): Promise<void> {
   const { directoryPath, name, choice, confirmedFiles, confirmedCommits } =
     msg as Partial<DecideWorktree>;
@@ -261,17 +259,16 @@ export async function handleDecideWorktree(
   );
   if (!entry && isCliWorktree(directoryPath, name)) {
     if (choice !== 'remove') {
-      reject(`${name} is ${provider.displayName}'s worktree: Pixel Agents can only remove it.`);
+      reject(`${name} is ${cliName()}'s worktree: Pixel Agents can only remove it.`);
     } else {
       const result = await removeCliWorktree(directoryPath, name, {
         confirmedFiles: confirmed,
         confirmedCommits: count(confirmedCommits),
         inUse: (folder) => worktreeInUse(store, { path: folder }),
-        provider,
       });
       if (result.ok) {
         console.log(
-          `[Pixel Agents] Worktrees: ${name} (${provider.displayName}'s) - remove: removed${result.branchKept ? ', branch kept' : ''}`,
+          `[Pixel Agents] Worktrees: ${name} (${cliName()}'s) - remove: removed${result.branchKept ? ', branch kept' : ''}`,
         );
       } else {
         reject(result.reason);

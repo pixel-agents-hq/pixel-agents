@@ -10,7 +10,6 @@
 import type { Directory } from '../../core/src/messages.js';
 import type { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { WORKTREE_SHUTDOWN_WAIT_MS, WORKTREE_SWEEP_DELAY_MS } from '../../server/src/constants.js';
-import { claudeProvider } from '../../server/src/providers/index.js';
 import {
   prepareWorktreeLaunch,
   retireUnlaunched,
@@ -67,7 +66,7 @@ export class VscodeWorktrees {
     if (message.type === 'requestWorktrees') {
       void handleRequestWorktrees(this.store, message, this.send);
     } else if (message.type === 'decideWorktree') {
-      void handleDecideWorktree(this.store, message, this.send, claudeProvider);
+      void handleDecideWorktree(this.store, message, this.send);
     } else {
       return false;
     }
@@ -103,7 +102,6 @@ export class VscodeWorktrees {
     const prepared = await prepareWorktreeLaunch({
       directoryPath: directoryPath ?? '',
       directory,
-      provider: claudeProvider,
       ...launchWorktreeChoices(message),
     });
     if (prepared.ok) return prepared.where;

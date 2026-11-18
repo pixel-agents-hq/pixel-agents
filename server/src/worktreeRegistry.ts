@@ -189,8 +189,9 @@ export function updateEntry(
 
 /**
  * The registry entry for `worktree`, when it is one we may manage: listed in
- * the registry, and its path is `<its directoryPath>/.claude/worktrees/<name>`
- * (both as written and with symlinks resolved), never the Directory itself.
+ * the registry, and its path is `<its directoryPath>/<worktrees folder>/<name>`
+ * (Claude Code: `.claude/worktrees/<name>`; both as written and with
+ * symlinks resolved), never the Directory itself.
  */
 export function ownedEntry(
   worktree: WorktreeRef,

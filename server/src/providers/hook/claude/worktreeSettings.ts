@@ -24,7 +24,9 @@ function symlinkDirectoriesIn(file: string): string[] {
   }
 }
 
-export function worktreeSymlinkDirectories(repoPath: string): string[] {
+/** The union of `worktree.symlinkDirectories` over every scope, first seen
+ *  first. */
+export function symlinkDirectoriesSetting(repoPath: string): string[] {
   const files = [
     path.join(os.homedir(), '.claude', 'settings.json'),
     path.join(repoPath, '.claude', 'settings.json'),

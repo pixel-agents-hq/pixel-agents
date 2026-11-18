@@ -138,6 +138,40 @@ export interface UsageBridge {
 
 // ── Hook-based Provider (CLIs with hooks APIs) ────────────────
 
+/**
+ * How a CLI keeps a repo's git worktrees and files their sessions. The office
+ * puts the Worktrees it creates in the same folder, so the CLI files their
+ * sessions with the repo's own, and reads the CLI's own worktrees from there.
+ * Shared code knows neither the folder, nor how a session dir is named, nor
+ * the CLI's lock and settings: it asks this, through
+ * server/src/worktreeLocation.ts, which picks the one provider whose
+ * convention the office follows (where a folder's session dirs are is still
+ * the provider's `getSessionDirs`).
+ */
+export interface WorktreeConvention {
+  /** The worktrees folder under a repo root, as path segments (Claude:
+   *  `.claude`, `worktrees`). */
+  readonly folder: readonly string[];
+  /** The name of the session dir of the folder at `folderPath`, whether or
+   *  not either exists. */
+  sessionDirName(folderPath: string): string;
+  /** The worktree whose sessions the session dir named `dirName` holds, when
+   *  it is a worktree of the repo whose own session dir is named
+   *  `repoDirName`: the worktree folder's name as the dir name spells it
+   *  (which may have lost characters), else null. */
+  worktreeOfSessionDir(dirName: string, repoDirName: string): string | null;
+  /** The process a git worktree lock of this CLI's names, read from the
+   *  lock's reason (Claude: `claude session <name> (pid N …)`), or null when
+   *  the reason names none. Whether that process still runs is the caller's
+   *  check. Undefined = this CLI locks no worktrees. */
+  lockHolder?(lockReason: string): number | null;
+  /** Folders (relative to the repo root) a new Worktree of `repoPath` links to
+   *  the main checkout instead of copying, as this CLI's own settings list them
+   *  (Claude: `worktree.symlinkDirectories`, user and project scope).
+   *  Undefined = this CLI has no such setting. */
+  symlinkDirectories?(repoPath: string): string[];
+}
+
 export interface HookProvider {
   readonly kind: 'hook';
   readonly id: string;
@@ -238,16 +272,10 @@ export interface HookProvider {
    *  recent conversations; undefined = this provider names no conversations
    *  (and is never asked to resume one). */
   conversationTitle?(transcriptPath: string): string | undefined;
-  /** Folders (relative to the repo root) a new Worktree of `repoPath` links to
-   *  the main checkout instead of copying, as this CLI's own settings list them
-   *  (Claude: `worktree.symlinkDirectories`, user and project scope).
-   *  Undefined = this provider has no such setting. */
-  worktreeSymlinkDirectories?(repoPath: string): string[];
-  /** The process a git worktree lock of this CLI's names, read from the
-   *  lock's reason (Claude: `claude session <name> (pid N …)`), or null when
-   *  the reason names none. Whether that process still runs is the caller's
-   *  check. Undefined = this CLI locks no worktrees. */
-  worktreeLockHolder?(lockReason: string): number | null;
+  /** How this CLI keeps a repo's git worktrees and files their sessions:
+   *  the folder, the session dirs' naming, its lock and its symlink setting.
+   *  Undefined = this CLI has no worktrees of its own. */
+  readonly worktrees?: WorktreeConvention;
 
   /** Optional account-usage reporting (the office's usage bars). */
   readonly usageBridge?: UsageBridge;

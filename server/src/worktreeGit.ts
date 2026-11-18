@@ -123,8 +123,8 @@ export function gitReason(result: GitResult): string {
  * repo still reads as one, and `create` is where it fails with git's reason.
  * A linked worktree's folder (its `.git` is a file) counts too, on purpose: a
  * Directory that is itself a linked worktree gets Worktrees nested under its
- * own `.claude/worktrees/`, which git allows (`create` checks it is the
- * checkout's root with `--show-toplevel`).
+ * own worktrees folder (Claude Code: `.claude/worktrees/`), which git
+ * allows (`create` checks it is the checkout's root with `--show-toplevel`).
  */
 export function isRepo(directoryPath: string): boolean {
   return fs.existsSync(path.join(directoryPath, '.git'));

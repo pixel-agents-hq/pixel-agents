@@ -18,7 +18,7 @@
 import type { Directory } from '../../core/src/messages.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import { isCliWorktree } from './cliWorktrees.js';
+import { cliName, isCliWorktree } from './cliWorktrees.js';
 import {
   moveSessionIntoDirectory,
   resumeRequest,
@@ -28,6 +28,7 @@ import {
 import type { LaunchStandaloneAgentOptions } from './terminal/standaloneAgentLauncher.js';
 import { broadcastWorktrees, retireWhenUnused } from './worktreeLeave.js';
 import { worktreesOf } from './worktreeListing.js';
+import { symlinkDirectoriesFor } from './worktreeLocation.js';
 import { restore } from './worktreeRestore.js';
 import { markIdle } from './worktreeRetire.js';
 
@@ -124,13 +125,13 @@ export async function resumeConversation(
 
   if (worktree.owner === 'cli') {
     if (!isCliWorktree(directoryPath, worktree.name)) {
-      return reject(`${provider.displayName}'s worktree ${worktree.branch} is gone.`);
+      return reject(`${cliName()}'s worktree ${worktree.branch} is gone.`);
     }
     return deps.launch({ ...options, cwd: worktree.path, worktree: marker });
   }
 
   const restored = await restore(worktree, {
-    symlinkDirectories: provider.worktreeSymlinkDirectories?.(directoryPath),
+    symlinkDirectories: symlinkDirectoriesFor(directoryPath),
     sessionId: resume.sessionId,
   });
   if (!restored.ok) {

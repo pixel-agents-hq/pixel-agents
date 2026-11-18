@@ -248,7 +248,6 @@ export function handleClientMessage(
       void prepareWorktreeLaunch({
         directoryPath: rejectedAt,
         directory,
-        provider: claudeProvider,
         terminalUnavailable: terminalUnavailableReason(ptyManager),
         ...launchWorktreeChoices(msg),
       })
@@ -367,7 +366,7 @@ export function handleClientMessage(
       break;
 
     case 'decideWorktree':
-      void handleDecideWorktree(store, msg, send, claudeProvider);
+      void handleDecideWorktree(store, msg, send);
       break;
 
     case 'requestDiagnostics':

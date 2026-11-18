@@ -90,8 +90,9 @@ export function collectDirectorySuggestions(
     .map((entry) => entry.resolved);
 }
 
-/** `'*.jsonl'` → `'.jsonl'`. Anything else (or nothing) matches every file, so
- *  a provider that doesn't declare a pattern still gets scanned. */
+/** `'*.jsonl'` → `'.jsonl'`; any other pattern is returned whole and used as
+ *  a literal suffix. No pattern → `''`, which matches every file, so a
+ *  provider that doesn't declare one still gets scanned here. */
 export function transcriptSuffix(pattern: string | undefined): string {
   if (pattern === undefined) return '';
   return pattern.startsWith('*') ? pattern.slice(1) : pattern;

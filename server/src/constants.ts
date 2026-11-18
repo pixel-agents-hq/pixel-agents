@@ -286,13 +286,12 @@ export const WORKTREE_AGENTS_MAX = 500;
  *  own Directory changes drop it at once; this only bounds how long another
  *  process's edit takes to be seen. */
 export const ATTRIBUTION_DIRECTORIES_TTL_MS = 10_000;
-/** Where a Directory's Worktrees live, relative to its repo root: Claude Code's
- *  own convention (`claude --worktree`), so their transcripts share the
- *  Directory's project-hash prefix. */
-export const WORKTREES_SUBDIR = '.claude/worktrees';
-/** The line the repo's local exclude file (`<git common dir>/info/exclude`)
- *  gets, once, so the Worktrees never show in the main checkout's status. */
-export const WORKTREES_EXCLUDE_LINE = '/.claude/worktrees/';
+/** Where a Directory's Worktrees live under its repo root when no bundled
+ *  provider declares a worktrees folder of its own. With one that does (Claude
+ *  Code today), they live in the provider's (`HookProvider.worktrees`,
+ *  read by worktreeLocation.ts), so the CLI files their sessions with the
+ *  Directory's. */
+export const FALLBACK_WORKTREES_FOLDER: readonly string[] = ['.pixel-agents', 'worktrees'];
 /** The repo file listing the gitignored files a new Worktree gets a copy of
  *  (gitignore syntax; the convention Claude Code, Conductor and Codex share). */
 export const WORKTREE_INCLUDE_FILE = '.worktreeinclude';

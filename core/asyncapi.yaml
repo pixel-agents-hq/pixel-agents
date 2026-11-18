@@ -479,11 +479,12 @@ components:
 
     AgentWorktreeChanged:
       description: |
-        A running agent moved into or out of a Worktree mid-session (Claude
-        Code's EnterWorktree / ExitWorktree, or a background session's own
-        move): the same agent, now in `worktree`, or in its Directory's own
-        checkout (or somewhere else) when absent. Only a folder under a
-        Directory's `.claude/worktrees/` is a Worktree; the agent keeps its
+        A running agent moved into or out of a Worktree mid-session (a move
+        the CLI makes, Claude Code's EnterWorktree / ExitWorktree, or a
+        background session's own): the same agent, now in `worktree`, or in its
+        Directory's own checkout (or somewhere else) when absent. Only a
+        folder under the Directory's worktrees folder (Claude Code:
+        `.claude/worktrees/`) is a Worktree; the agent keeps its
         Directory, name and look. Its sub-agents wear the same marker.
       type: object
       additionalProperties: false
@@ -1144,7 +1145,7 @@ components:
       description: |
         The answer to a `decideWorktree` that could not be carried out (git
         refused the save, more files changed than the user agreed to discard,
-        an agent or Claude session still runs in it, it is Claude Code's and
+        an agent or CLI session still runs in it, it is the CLI's own and
         the choice is not `remove`): the Worktree is left
         as it was. Sent point-to-point to the client that asked; the decision
         dialog (or the Worktrees list) shows `reason`.
@@ -1186,7 +1187,9 @@ components:
           description: The Directory the Worktree belongs to, as the office lists it.
         name:
           type: string
-          description: The Worktree's name (its folder under `.claude/worktrees/`).
+          description: >-
+            The Worktree's name (its folder in the worktrees folder,
+            `.claude/worktrees/` for Claude Code).
         branch:
           type: string
         uncommittedFiles:
@@ -1197,8 +1200,9 @@ components:
     WorktreesLoaded:
       description: |
         One Directory's Worktrees (the ones Pixel Agents made, then the ones
-        Claude Code made under its `.claude/worktrees/`, `owner: cli`), each
-        with what it holds now. Sent to the client that asked (`requestWorktrees`), to
+        the CLI made itself in the worktrees folder, Claude Code's
+        `.claude/worktrees/`, `owner: cli`), each with what it holds now.
+        Sent to the client that asked (`requestWorktrees`), to
         every privileged client on connect for each Directory that has any,
         and broadcast to every privileged client after every change (an agent
         leaving, a decision). Never sent to read-only clients. A Worktree in
@@ -1267,10 +1271,10 @@ components:
       description: |
         Who made a Worktree. `pixelAgents`: Pixel Agents (listed in its
         registry), so the office manages it. `cli`: the CLI made it itself
-        under the Directory's `.claude/worktrees/` (Claude Code: `claude -w`,
-        EnterWorktree):
+        under the Directory's worktrees folder (Claude Code: `claude -w`,
+        EnterWorktree, under `.claude/worktrees/`):
         shown, and only ever removed — `remove` deletes its folder and branch
-        once no agent or Claude session is in it (confirmed files and commits
+        once no agent or CLI session is in it (confirmed files and commits
         only), every other `decideWorktree` on it is refused — and its state
         is only `active` (an agent runs in it) or `kept`.
       type: string
@@ -1294,7 +1298,7 @@ components:
         departing agent's Worktree gets (so it may come back needing a
         decision), and `deleteBranch` deletes a parked Worktree's branch
         (needs `confirmedCommits` when its commits are merged nowhere). On one
-        of Claude Code's, `remove` deletes the folder and its branch (needs
+        of the CLI's own, `remove` deletes the folder and its branch (needs
         `confirmedFiles` / `confirmedCommits` for what that loses).
       type: string
       enum: [save, keep, discard, remove, deleteBranch]
@@ -1313,8 +1317,8 @@ components:
       description: |
         The Worktree an agent runs in: a separate checkout of its Directory's
         repo on a branch of its own. `name` is its folder under the repo's
-        `.claude/worktrees/`, `branch` its branch (the Directory's prefix +
-        the name).
+        worktrees folder (Claude Code: `.claude/worktrees/`), `branch` its
+        branch (the Directory's prefix + the name).
       type: object
       additionalProperties: false
       required: [name, branch]
@@ -1433,7 +1437,7 @@ components:
     Conversation:
       description: >-
         One conversation. `worktree`: the Directory's Worktree it ran in
-        (Pixel Agents' or Claude Code's); resuming one whose folder was
+        (Pixel Agents' or the CLI's own); resuming one whose folder was
         removed rebuilds the folder from its branch first.
       type: object
       additionalProperties: false
@@ -2124,21 +2128,23 @@ components:
           description: The Directory the Worktree belongs to.
         name:
           type: string
-          description: The Worktree's name (its folder under `.claude/worktrees/`).
+          description: >-
+            The Worktree's name (its folder in the worktrees folder,
+            `.claude/worktrees/` for Claude Code).
         choice:
           $ref: '#/components/schemas/WorktreeChoice'
         confirmedFiles:
           type: integer
           minimum: 0
           description: >-
-            `discard`, and `remove` of one of Claude Code's worktrees: how
+            `discard`, and `remove` of one of the CLI's own worktrees: how
             many files the user confirmed losing. Refused when more are
             uncommitted by the time it arrives.
         confirmedCommits:
           type: integer
           minimum: 0
           description: >-
-            `deleteBranch`, and `remove` of one of Claude Code's worktrees
+            `deleteBranch`, and `remove` of one of the CLI's own worktrees
             (which deletes its branch too): how many commits the user
             confirmed losing (the ones merged into no other branch). Refused
             when more would be lost by the time it arrives; absent = none may

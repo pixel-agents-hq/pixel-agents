@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
 import { normalizeProjectPath } from '../../core/src/normalizeProjectPath.js';
+import type { HookProvider } from '../../core/src/provider.js';
 import type { PersistedAgent } from '../../core/src/schemas.js';
 import { agentCreatedMessage } from '../src/agentMessages.js';
 import { restoredAgentInit, toPersistedAgent } from '../src/agentPersistence.js';
@@ -13,15 +14,17 @@ import { AgentRuntime } from '../src/agentRuntime.js';
 import { createAgentState } from '../src/agentState.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { handleClientMessage } from '../src/clientMessageHandler.js';
+import { isCliWorktree, listCliWorktrees, removeCliWorktree } from '../src/cliWorktrees.js';
 import { isTrackedProjectDir } from '../src/fileWatcher.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import type { AgentState } from '../src/types.js';
 import {
   familyHashes,
   invalidateAttributionDirectories,
+  isTranscriptName,
   setAttributionDirectories,
 } from '../src/worktreeAttribution.js';
-import { create } from '../src/worktreeCreate.js';
+import { create, excludeWorktreesFolder } from '../src/worktreeCreate.js';
 import { worktreesMessage } from '../src/worktreeLeave.js';
 import {
   resumeRetiringForTests,
@@ -32,10 +35,12 @@ import {
 import {
   isInWorktreesFolder,
   isWorktreeProjectDirOf,
+  worktreeConventionOf,
   worktreeDirectoryOf,
   worktreeForProjectDir,
   worktreeLocationOf,
   worktreePathIn,
+  worktreesExcludeLine,
 } from '../src/worktreeLocation.js';
 import { readRegistry } from '../src/worktreeRegistry.js';
 import { gitIn, makeRepo, removeTempRepos } from './fixtures/gitRepos.js';
@@ -79,7 +84,7 @@ function transcriptFor(cwd: string, sessionId: string): string {
   return file;
 }
 
-describe('worktreeLocation (pure)', () => {
+describe("worktreeLocation, following the bundled provider's convention", () => {
   const directories = [
     { name: 'Repo', path: '/code/repo' },
     { name: 'Nested', path: '/code/repo/packages/app' },
@@ -115,6 +120,15 @@ describe('worktreeLocation (pure)', () => {
     expect(isWorktreeProjectDirOf(`${hash}--claude-worktrees-foo`, hash)).toBe(true);
     expect(isWorktreeProjectDirOf(hash, hash)).toBe(false);
     expect(isWorktreeProjectDirOf(`${hash}-src`, hash)).toBe(false);
+  });
+
+  it('the folder and the naming come from the first provider that declares them', () => {
+    expect(worktreeConventionOf([])).toBeUndefined();
+    expect(worktreeConventionOf([{}, claudeProvider])).toBe(claudeProvider.worktrees);
+    // The office follows it: our Worktrees share the CLI's folder.
+    expect(worktreePathIn('/code/repo', 'foo')).toBe(
+      path.join('/code/repo', ...claudeProvider.worktrees!.folder, 'foo'),
+    );
   });
 
   it('a project dir is read back to its folder by listing the worktrees folder', () => {
@@ -162,6 +176,57 @@ describe('worktreeLocation (pure)', () => {
     ]);
     expect(found).toEqual({ directory, name: 'x', path: worktreePathIn(link, 'x') });
     fs.rmSync(path.dirname(link), { recursive: true, force: true });
+  });
+});
+
+/** Runs `run` as if no bundled provider declared a worktrees convention. */
+async function withoutConvention(run: () => Promise<void> | void): Promise<void> {
+  const provider = claudeProvider as { worktrees?: HookProvider['worktrees'] };
+  const convention = provider.worktrees;
+  delete provider.worktrees;
+  try {
+    await run();
+  } finally {
+    provider.worktrees = convention;
+  }
+}
+
+describe('with no provider declaring a worktrees convention', () => {
+  afterEach(() => removeTempRepos());
+
+  it("our Worktrees go in the office's own folder, kept out of the repo's status", async () => {
+    await withoutConvention(async () => {
+      expect(worktreesExcludeLine()).toBe('/.pixel-agents/worktrees/');
+      expect(worktreePathIn('/code/repo', 'foo')).toBe(
+        path.join(path.resolve('/code/repo'), '.pixel-agents', 'worktrees', 'foo'),
+      );
+      const repo = makeRepo();
+      expect(await excludeWorktreesFolder(repo)).toEqual({ ok: true });
+      const exclude = fs.readFileSync(path.join(repo, '.git', 'info', 'exclude'), 'utf-8');
+      expect(exclude.split('\n')).toContain('/.pixel-agents/worktrees/');
+    });
+  });
+
+  it('the CLI has no worktrees of its own: an unregistered one in that folder is none', async () => {
+    const repo = makeRepo();
+    const stray = path.join(repo, '.pixel-agents', 'worktrees', 'stray');
+    gitIn(repo, 'worktree', 'add', '--quiet', '-b', 'stray', stray);
+    await withoutConvention(async () => {
+      expect(await listCliWorktrees(repo)).toEqual([]);
+      expect(isCliWorktree(repo, 'stray')).toBe(false);
+      expect(await removeCliWorktree(repo, 'stray', { inUse: () => false })).toEqual({
+        ok: false,
+        reason: 'There is no CLI worktree stray here.',
+      });
+    });
+    expect(fs.existsSync(stray)).toBe(true);
+  });
+
+  it('a provider with no transcript pattern makes no file a transcript', () => {
+    expect(isTranscriptName('notes.txt', [{}])).toBe(false);
+    expect(isTranscriptName('a.jsonl', [{}])).toBe(false);
+    expect(isTranscriptName('a.jsonl', [{}, claudeProvider])).toBe(true);
+    expect(isTranscriptName('notes.txt', [claudeProvider])).toBe(false);
   });
 });
 

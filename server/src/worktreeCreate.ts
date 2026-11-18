@@ -1,9 +1,10 @@
 /**
  * Creating a Worktree for a launch. We create worktrees ourselves rather than
  * through `claude --worktree` (owning their cleanup is the point), but keep
- * Claude Code's conventions so an agent feels the same either way: the folder
- * is `<repo root>/.claude/worktrees/<name>`, the repo's `.worktreeinclude`
- * lists the gitignored files to copy in, and the provider's symlink setting
+ * the CLI's conventions so an agent feels the same either way: the folder
+ * is `<repo root>/<worktrees folder>/<name>` (Claude Code:
+ * `.claude/worktrees/<name>`; worktreeLocation.ts), the repo's
+ * `.worktreeinclude` lists the gitignored files to copy in, and the provider's symlink setting
  * (`worktree.symlinkDirectories` for Claude) lists folders to link rather
  * than copy. This module knows no provider: the caller hands it those folders.
  */
@@ -16,8 +17,6 @@ import {
   WORKTREE_FETCH_TIMEOUT_MS,
   WORKTREE_INCLUDE_FILE,
   WORKTREE_NAME_ATTEMPTS,
-  WORKTREES_EXCLUDE_LINE,
-  WORKTREES_SUBDIR,
 } from './constants.js';
 import { exists, sameFolder } from './pathKey.js';
 import {
@@ -28,7 +27,7 @@ import {
   lockFolder,
   makeDirLink,
 } from './worktreeGit.js';
-import { worktreePathIn } from './worktreeLocation.js';
+import { worktreePathIn, worktreesExcludeLine, worktreesFolder } from './worktreeLocation.js';
 import { randomWorktreeName, worktreeNameProblem } from './worktreeNames.js';
 import {
   readRegistry,
@@ -65,7 +64,7 @@ export type CreateWorktreeResult = { ok: true; worktree: Worktree } | { ok: fals
 /**
  * Create a Worktree for a launch into `directory`: a generated name (its
  * branch = prefix + name, retried while either is taken), a new branch and
- * folder at `<repo root>/.claude/worktrees/<name>` from the chosen base, the
+ * folder at `<repo root>/<worktrees folder>/<name>` from the chosen base, the
  * `.worktreeinclude` files copied in (gitignored ones only, never overwriting,
  * skipping symlinks), the symlink folders linked, the worktrees folder hidden
  * in the repo's local exclude file (once), the Worktree locked while its agent
@@ -304,7 +303,7 @@ export async function fitOut(
 export function excludeWorktreesFolder(
   root: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  return excludeLines(root, [WORKTREES_EXCLUDE_LINE]);
+  return excludeLines(root, [worktreesExcludeLine()]);
 }
 
 /** Append each of `lines` to the repo's local exclude file
@@ -370,7 +369,7 @@ async function copyIncludedFiles(root: string, worktree: string, linked: string[
   const candidates = matching.stdout
     .split('\0')
     .filter((rel) => rel.length > 0 && !rel.endsWith('/'))
-    .filter((rel) => !isUnder(path.normalize(rel), path.normalize(WORKTREES_SUBDIR)))
+    .filter((rel) => !isUnder(path.normalize(rel), worktreesFolder()))
     .filter((rel) => !linked.some((dir) => isUnder(path.normalize(rel), dir)));
   if (candidates.length === 0) return;
   // check-ignore prints exactly the paths the repo's own ignore rules ignore

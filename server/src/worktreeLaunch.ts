@@ -18,11 +18,11 @@
 import * as crypto from 'crypto';
 
 import type { Directory, WorktreeBranch, WorktreeRejected } from '../../core/src/messages.js';
-import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { AgentState } from './types.js';
 import { create as createWorktree } from './worktreeCreate.js';
 import { retireWhenUnused } from './worktreeLeave.js';
+import { symlinkDirectoriesFor } from './worktreeLocation.js';
 
 /** Where a host starts an agent's terminal for a Worktree launch. */
 export interface WorktreeTerminalLaunch {
@@ -47,8 +47,6 @@ export async function prepareWorktreeLaunch(request: {
   directoryPath: string;
   /** The Directory at that path, resolved by the host; none = refused. */
   directory: Directory | undefined;
-  /** The provider whose settings say which folders to link, not copy. */
-  provider: HookProvider;
   /** Why the host can't start a terminal right now; null when it can. */
   terminalUnavailable?: string | null;
   /** The name the user gave it (absent = generated). */
@@ -66,7 +64,7 @@ export async function prepareWorktreeLaunch(request: {
     prefix: directory.worktreeBranchPrefix,
     ...(request.name !== undefined ? { name: request.name } : {}),
     ...(request.from ? { from: request.from } : {}),
-    symlinkDirectories: request.provider.worktreeSymlinkDirectories?.(directory.path),
+    symlinkDirectories: symlinkDirectoriesFor(directory.path),
     sessionId,
   });
   if (!created.ok) return created;

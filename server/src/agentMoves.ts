@@ -17,8 +17,9 @@
  *
  * So the one operation, `relocate`, takes whatever a signal says
  * (SessionWhereabouts) and:
- * 1. a new folder → the marker: a folder under a Directory's
- *    `.claude/worktrees/<name>` is that worktree (whoever made it); anywhere
+ * 1. a new folder → the marker: a folder under a Directory's worktrees
+ *    folder (Claude Code: `.claude/worktrees/<name>`) is that worktree
+ *    (whoever made it); anywhere
  *    else, none. The agent keeps its Directory, name and look.
  * 2. the transcript → followed only to a file that exists, and only once the
  *    one being read is gone. It is the same file under a new name, so the
