@@ -39,7 +39,7 @@ export function hooksConsentRequest(
   if (state.installed || state.consentAnswered || !state.hooksEnabled || !state.privileged) {
     return null;
   }
-  const { headline, summary, disclosure } = provider.consentDisclosure();
+  const { headline, summary = headline, disclosure } = provider.consentDisclosure();
   return {
     type: 'hooksConsentRequest',
     providerId: provider.id,

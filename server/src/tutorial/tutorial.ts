@@ -18,18 +18,19 @@
  */
 
 import type { ServerMessage, TutorialStatus } from '../../../core/src/messages.js';
+import type { SkillPackaging } from '../../../core/src/provider.js';
 import { tutorialQuest } from '../../../core/src/tutorial/quests.js';
 import type { AgentStateStore } from '../agentStateStore.js';
 import type { AgentMcpAccess } from '../mcp/officeMcp.js';
 import type { AgentLaunchOutcome } from '../mcp/officeOperations.js';
 import {
-  TUTORIAL_FIRST_MESSAGE,
   TUTORIAL_NICKNAME,
   TUTORIAL_PREAPPROVED_TOOLS,
-  TUTORIAL_SKILL_NAME,
   tutorialBrief,
   tutorialDisclosure,
+  tutorialFirstMessage,
   tutorialHeadline,
+  tutorialSkillName,
 } from './tutorialCopy.js';
 import {
   isTutorialFinished,
@@ -49,8 +50,9 @@ export interface TutorialLaunch {
   preapprovedTools: readonly string[];
   /** The seat the greeter walked to: taken when free. */
   seatId?: string;
-  /** A plugin directory for this session alone, holding the onboarding skill. */
-  pluginDir: string;
+  /** A plugin directory for this session alone, holding the onboarding skill,
+   *  where the CLI packages skills. */
+  pluginDir?: string;
 }
 
 /** What a surface brings so its office can run the tutorial. */
@@ -76,8 +78,12 @@ export interface TutorialDeps {
   readFacts(): TutorialFacts;
   /** The Guide's name: the character `palette` names, else the greeter's. */
   guideName(palette?: number): string;
-  /** Write the onboarding skill's plugin for a launch (as `name`); returns its directory. */
-  writePlugin(name: string): string;
+  /** How the Guide's CLI packages skills, or absent where it has none: the
+   *  Guide is then sent to the `tutorial` tool's brief. */
+  skills?: SkillPackaging;
+  /** Write the onboarding skill for a launch (as `name`); returns the folder
+   *  the launch names, or nothing where the CLI packages no skills. */
+  writePlugin(name: string): string | undefined;
 }
 
 /** The `tutorial` tool's view, for the agent asking. */
@@ -223,7 +229,7 @@ export class Tutorial {
         {
           palette,
           seatId,
-          firstMessage: TUTORIAL_FIRST_MESSAGE,
+          firstMessage: tutorialFirstMessage(this.deps.skills),
           nickname: TUTORIAL_NICKNAME,
           preapprovedTools: TUTORIAL_PREAPPROVED_TOOLS,
           pluginDir: this.deps.writePlugin(name),
@@ -267,11 +273,12 @@ export class Tutorial {
       };
     }
     const you = run.agentId === caller;
+    const skillName = tutorialSkillName(this.deps.skills);
     return {
       running: true,
       agentId: run.agentId,
       you,
-      ...(you ? { skill: TUTORIAL_SKILL_NAME } : {}),
+      ...(you && skillName ? { skill: skillName } : {}),
       ...(you && opts.brief ? { brief: tutorialBrief(this.name) } : {}),
       finished: isTutorialFinished(run),
       quests: run.quests.map(({ id, state }) => {

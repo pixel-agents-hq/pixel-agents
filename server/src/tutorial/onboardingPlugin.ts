@@ -1,34 +1,39 @@
 /**
- * The onboarding skill on disk: a plugin folder Claude Code loads for the
- * Guide's session alone (`--plugin-dir`, nothing written to
- * ~/.claude). Rewritten on every start from tutorialCopy.ts, so the skill is
- * always this build's.
- *
- *   ~/.pixel-agents/tutorial-plugin/
- *     .claude-plugin/plugin.json   { name: "pixel-agents" }
- *     skills/onboarding/SKILL.md
+ * The onboarding skill on disk, for the Guide's session alone: written under
+ * ~/.pixel-agents/tutorial-plugin/ on every start from tutorialCopy.ts, so the
+ * skill is always this build's. What is written there (the folder layout, the
+ * files' format) is the provider's packaging (`HookProvider.skills`; Claude
+ * Code's is a plugin folder holding one skill).
  */
 
-import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import type { SkillPackaging } from '../../../core/src/provider.js';
 import { PIXEL_AGENTS_DIR } from '../constants.js';
-import { TUTORIAL_PLUGIN_NAME, TUTORIAL_SKILL_DIR, tutorialSkillMarkdown } from './tutorialCopy.js';
+import {
+  TUTORIAL_PLUGIN_DESCRIPTION,
+  TUTORIAL_PLUGIN_NAME,
+  TUTORIAL_SKILL_ID,
+  TUTORIAL_SKILL_TITLE,
+  tutorialBrief,
+  tutorialSkillDescription,
+} from './tutorialCopy.js';
 
 const PLUGIN_FOLDER = 'tutorial-plugin';
 
-/** Write the plugin and return its folder. Throws when it can't be written. */
-export function writeOnboardingPlugin(guideName: string, home: string = os.homedir()): string {
-  const root = path.join(home, PIXEL_AGENTS_DIR, PLUGIN_FOLDER);
-  const manifestDir = path.join(root, '.claude-plugin');
-  const skillDir = path.join(root, 'skills', TUTORIAL_SKILL_DIR);
-  fs.mkdirSync(manifestDir, { recursive: true });
-  fs.mkdirSync(skillDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(manifestDir, 'plugin.json'),
-    `${JSON.stringify({ name: TUTORIAL_PLUGIN_NAME, description: 'The Pixel Agents tutorial' }, null, 2)}\n`,
-  );
-  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), tutorialSkillMarkdown(guideName));
-  return root;
+/** Write the skill and return the folder its launch names. Throws when it can't be written. */
+export function writeOnboardingPlugin(
+  skills: SkillPackaging,
+  guideName: string,
+  home: string = os.homedir(),
+): string {
+  return skills.write(path.join(home, PIXEL_AGENTS_DIR, PLUGIN_FOLDER), {
+    plugin: TUTORIAL_PLUGIN_NAME,
+    pluginDescription: TUTORIAL_PLUGIN_DESCRIPTION,
+    id: TUTORIAL_SKILL_ID,
+    description: tutorialSkillDescription(guideName),
+    title: TUTORIAL_SKILL_TITLE,
+    instructions: tutorialBrief(guideName),
+  });
 }

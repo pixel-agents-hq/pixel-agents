@@ -41,6 +41,18 @@ describe('hooksConsentRequest — when to ask', () => {
     expect(request?.disclosure).toContain('~/.claude/settings.json');
   });
 
+  it('a provider with no summary of its own is asked with its headline in its place', () => {
+    const provider = {
+      ...claudeProvider,
+      consentDisclosure: () => ({ headline: 'Install hooks?', disclosure: 'What it writes.' }),
+    };
+    expect(hooksConsentRequest(askable, provider)).toMatchObject({
+      headline: 'Install hooks?',
+      summary: 'Install hooks?',
+      disclosure: 'What it writes.',
+    });
+  });
+
   // Each of these is a reason the ask would be wrong, not merely redundant.
   it.each([
     ['our hooks are already installed', { installed: true }],

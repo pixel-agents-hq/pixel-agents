@@ -45,7 +45,7 @@ import {
   OFFICE_MCP_TOKEN_BYTES,
   PIXEL_AGENTS_DIR,
 } from '../constants.js';
-import { TUTORIAL_MCP_INSTRUCTIONS } from '../tutorial/tutorialCopy.js';
+import { tutorialMcpInstructions } from '../tutorial/tutorialCopy.js';
 import { OFFICE_MCP_DISCLOSURE, OFFICE_MCP_HEADLINE, OFFICE_MCP_SUMMARY } from './consentCopy.js';
 import type { OfficeCapabilities, OfficeOperations } from './officeOperations.js';
 import type { OfficeTool, ToolContext } from './tool.js';
@@ -64,8 +64,9 @@ export interface AgentMcpAccess {
 export interface OfficeMcpOptions {
   office: OfficeOperations;
   /** The CLI the office launches: it writes an agent's config file in its own
-   *  format (`mcpConfigFile`). One that has none is offered no MCP. */
-  provider: Pick<HookProvider, 'mcpConfigFile'>;
+   *  format (`mcpConfigFile`; one that has none is offered no MCP) and says
+   *  how the tutorial's skill is invoked (`skills`). */
+  provider: Pick<HookProvider, 'mcpConfigFile' | 'skills'>;
   /** Defaults to every tool in ./tools/. Only those whose `uses` the office
    *  supplies are offered. */
   tools?: readonly OfficeTool[];
@@ -86,7 +87,7 @@ interface Grant {
 
 export class OfficeMcp implements AgentMcpAccess {
   private readonly office: OfficeOperations;
-  private readonly provider: Pick<HookProvider, 'mcpConfigFile'>;
+  private readonly provider: Pick<HookProvider, 'mcpConfigFile' | 'skills'>;
   private readonly tools: readonly OfficeTool[];
   private readonly agentOfToken = new Map<string, number>();
   private readonly grants = new Map<number, Grant>();
@@ -297,7 +298,7 @@ export class OfficeMcp implements AgentMcpAccess {
     const server = new McpServer(
       { name: OFFICE_MCP_SERVER_NAME, version: process.env.PIXEL_AGENTS_VERSION ?? '0.0.0' },
       // The tutorial's first message is only its skill's command: this is the fallback.
-      { instructions: TUTORIAL_MCP_INSTRUCTIONS },
+      { instructions: tutorialMcpInstructions(this.provider.skills) },
     );
     // Every tool registered here uses only capabilities this office supplies (toolsFor).
     const ctx: ToolContext = {

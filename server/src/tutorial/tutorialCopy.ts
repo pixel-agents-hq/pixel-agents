@@ -3,7 +3,13 @@
  * shown verbatim, never duplicated in the webview), the Guide's first message,
  * and the onboarding skill the Guide follows (also the `tutorial` tool's brief).
  * The Guide goes by its character's name (`name`: Byte unless renamed).
+ *
+ * How the skill is packaged, named and invoked is the provider's
+ * (`HookProvider.skills`, a SkillPackaging): this module names the skill and
+ * writes its words.
  */
+
+import type { SkillPackaging } from '../../../core/src/provider.js';
 
 /** The Pixel Office MCP tools the tutorial agent may use without a prompt:
  *  the ones that only read. Everything else still asks. */
@@ -20,14 +26,6 @@ export { TUTORIAL_NICKNAME } from '../../../core/src/tutorial/quests.js';
 /** The Guide's name when its character has none (the default cast's). */
 export const GUIDE_FALLBACK_NAME = 'Byte';
 
-/** The permission mode the Guide always runs in, whatever the office's
- *  skip-permissions setting: Claude Code's auto mode, which lets safe actions
- *  through and still asks for risky ones (the ask says so). */
-export const TUTORIAL_PERMISSION_MODE = 'auto';
-/** The model the Guide always runs, whatever the user's default model: the
- *  CLI's alias for its newest Opus. */
-export const TUTORIAL_MODEL = 'opus';
-
 /** The ask's title, named after the Guide. */
 export function tutorialHeadline(name: string): string {
   return `Want ${name} to show you around?`;
@@ -43,22 +41,41 @@ export function tutorialDisclosure(name: string, directoryName: string | null): 
   );
 }
 
-/** The plugin that carries the onboarding skill (`--plugin-dir`, that session only). */
+/** The plugin (namespace) that carries the onboarding skill, for that session only. */
 export const TUTORIAL_PLUGIN_NAME = 'pixel-agents';
-export const TUTORIAL_SKILL_DIR = 'onboarding';
-/** How Claude Code names the skill: `<plugin>:<skill>`. */
-export const TUTORIAL_SKILL_NAME = `${TUTORIAL_PLUGIN_NAME}:${TUTORIAL_SKILL_DIR}`;
+export const TUTORIAL_PLUGIN_DESCRIPTION = 'The Pixel Agents tutorial';
+/** The onboarding skill's id. */
+export const TUTORIAL_SKILL_ID = 'onboarding';
+export const TUTORIAL_SKILL_TITLE = 'Pixel Agents tutorial';
+
+/** How the CLI names the onboarding skill to the Guide, where it packages
+ *  skills at all. */
+export function tutorialSkillName(skills: SkillPackaging | undefined): string | undefined {
+  return skills?.skillName(TUTORIAL_PLUGIN_NAME, TUTORIAL_SKILL_ID);
+}
+
+/** What the Guide does when it has no skill to follow: the `tutorial` tool's brief. */
+const FOLLOW_THE_BRIEF =
+  "call this server's tutorial tool with action status and brief true, and follow the brief it returns.";
 
 /** The Guide's first message, the first line the user reads in its terminal:
- *  only the skill's command. A Claude Code that didn't load the plugin is
- *  pointed at the `tutorial` tool's brief by the MCP server's instructions. */
-export const TUTORIAL_FIRST_MESSAGE = `/${TUTORIAL_SKILL_NAME}`;
+ *  only the skill's command. A CLI that didn't load the skill is pointed at
+ *  the `tutorial` tool's brief by the MCP server's instructions; one that
+ *  packages no skills is sent to the brief outright. */
+export function tutorialFirstMessage(skills: SkillPackaging | undefined): string {
+  return skills
+    ? skills.command(TUTORIAL_PLUGIN_NAME, TUTORIAL_SKILL_ID)
+    : `You are the Guide of the Pixel Agents tutorial: ${FOLLOW_THE_BRIEF}`;
+}
 
 /** What the Pixel Office MCP tells every agent about the tutorial (its server
  *  instructions): the fallback for a Guide whose skill didn't load. */
-export const TUTORIAL_MCP_INSTRUCTIONS =
-  `If you were asked to run /${TUTORIAL_SKILL_NAME} and have no such skill, you are the Guide of the Pixel Agents tutorial: ` +
-  `call this server's tutorial tool with action status and brief true, and follow the brief it returns.`;
+export function tutorialMcpInstructions(skills: SkillPackaging | undefined): string {
+  const asked = skills
+    ? `asked to run ${tutorialFirstMessage(skills)} and have no such skill`
+    : 'asked to guide the Pixel Agents tutorial';
+  return `If you were ${asked}, you are the Guide of the Pixel Agents tutorial: ${FOLLOW_THE_BRIEF}`;
+}
 
 /** The onboarding skill's instructions (its SKILL.md body, and the `tutorial` tool's `brief`). */
 export function tutorialBrief(name: string): string {
@@ -74,17 +91,7 @@ export function tutorialBrief(name: string): string {
   ].join('\n\n');
 }
 
-/** The onboarding skill's SKILL.md. */
-export function tutorialSkillMarkdown(name: string): string {
-  return [
-    '---',
-    `name: ${TUTORIAL_SKILL_DIR}`,
-    `description: Show the user around the Pixel Agents office as ${name}, its resident guide, through the Pixel Office MCP. Use when asked to start the Pixel Agents tutorial.`,
-    '---',
-    '',
-    '# Pixel Agents tutorial',
-    '',
-    tutorialBrief(name),
-    '',
-  ].join('\n');
+/** The onboarding skill's one-line description: when the CLI should reach for it. */
+export function tutorialSkillDescription(name: string): string {
+  return `Show the user around the Pixel Agents office as ${name}, its resident guide, through the Pixel Office MCP. Use when asked to start the Pixel Agents tutorial.`;
 }

@@ -13,7 +13,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { TUTORIAL_QUESTS } from '../../core/src/tutorial/quests.js';
 import { type LoadedAssets, loadFurnitureAssets } from '../src/assetLoader.js';
-import { TUTORIAL_FIRST_MESSAGE, TUTORIAL_SKILL_NAME } from '../src/tutorial/tutorialCopy.js';
+import { claudeProvider } from '../src/providers/index.js';
+import { tutorialFirstMessage, tutorialSkillName } from '../src/tutorial/tutorialCopy.js';
 import { BUNDLED, type Json, useStandaloneOffice, waitFor } from './helpers/officeMcpHarness.js';
 
 const FLOOR = 1;
@@ -30,6 +31,15 @@ function floorLayout(): Json {
     tileColors: new Array(cols * rows).fill(null),
     furniture: [],
   };
+}
+
+/** Turn the office's Skip Permissions on, as Settings does, and wait for it. */
+async function skipPermissions(h: ReturnType<typeof useStandaloneOffice>): Promise<void> {
+  h.send({ type: 'setBypassPermissions', enabled: true });
+  await waitFor(
+    () => h.received.find((m) => m.type === 'bypassPermissionsUpdated' && m.enabled === true),
+    'Skip Permissions to be on',
+  );
 }
 
 describe('the tutorial (composed server, the Guide in a PTY)', () => {
@@ -117,8 +127,8 @@ describe('the tutorial (composed server, the Guide in a PTY)', () => {
       'mcp__pixel-office__get_layout',
       'mcp__pixel-office__list_catalog',
     ]);
-    expect(args.slice(-2)).toEqual(['--', TUTORIAL_FIRST_MESSAGE]);
-    expect(TUTORIAL_FIRST_MESSAGE).toBe(`/${TUTORIAL_SKILL_NAME}`);
+    expect(args.slice(-2)).toEqual(['--', tutorialFirstMessage(claudeProvider.skills)]);
+    expect(tutorialFirstMessage(claudeProvider.skills)).toBe('/pixel-agents:onboarding');
     // The skill, for this session alone: a plugin folder under ~/.pixel-agents.
     const plugin = args[args.indexOf('--plugin-dir') + 1];
     expect(plugin.startsWith(path.join(h.home, '.pixel-agents'))).toBe(true);
@@ -137,6 +147,13 @@ describe('the tutorial (composed server, the Guide in a PTY)', () => {
     expect(run.quests.map((q: Json) => q.id)).toEqual(TUTORIAL_QUESTS.map((q) => q.id));
     expect(run.quests.every((q: Json) => q.state === 'open')).toBe(true);
     expect(run.finished).toBe(false);
+  });
+
+  it("launches the Guide in auto mode, never skipping prompts, while the office's Skip Permissions is on", async () => {
+    await skipPermissions(h);
+    const { start } = await startGuide();
+    expect(start.args[start.args.indexOf('--permission-mode') + 1]).toBe('auto');
+    expect(start.args).not.toContain('--dangerously-skip-permissions');
   });
 
   it('a second start while one runs is refused', async () => {
@@ -158,7 +175,7 @@ describe('the tutorial (composed server, the Guide in a PTY)', () => {
       running: true,
       agentId: id,
       you: true,
-      skill: TUTORIAL_SKILL_NAME,
+      skill: tutorialSkillName(claudeProvider.skills),
     });
     expect(status.current).toBeUndefined();
     expect(status.brief).toBeUndefined();
@@ -286,5 +303,28 @@ describe('the tutorial (composed server, the Guide in a PTY)', () => {
     h.send({ type: 'closeAgent', id });
     await waitFor(() => !h.store.has(id), 'the Guide to leave');
     await waitFor(() => latest() && !latest()!.run, 'the run to end');
+  });
+});
+
+describe('the tutorial with a CLI that declares no auto permission mode', () => {
+  const h = useStandaloneOffice({
+    name: 'pxl-tutorial-nomode',
+    launch: true,
+    tutorial: true,
+    provider: { ...claudeProvider, autoPermissionMode: undefined },
+  });
+
+  it("launches the Guide in the CLI's default mode, never skipping prompts, while the office's Skip Permissions is on", async () => {
+    await skipPermissions(h);
+    await h.answer('allow');
+    await waitFor(
+      () => h.received.filter((m) => m.type === 'tutorialStatus').at(-1)?.available === true,
+      'the tutorial to be offered',
+    );
+    const before = h.starts().length;
+    h.send({ type: 'startTutorial', palette: 0 });
+    const start = await waitFor(() => h.starts()[before], "the Guide's CLI to start");
+    expect(start.args).not.toContain('--dangerously-skip-permissions');
+    expect(start.args).not.toContain('--permission-mode');
   });
 });

@@ -76,10 +76,6 @@ import {
 } from '../../server/src/providers/index.js';
 import { recentCharactersMessage, recordCharacterUse } from '../../server/src/recentCharacters.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
-import {
-  TUTORIAL_MODEL,
-  TUTORIAL_PERMISSION_MODE,
-} from '../../server/src/tutorial/tutorialCopy.js';
 import { applyUsageBridgeChoice, usageSnapshotMessages } from '../../server/src/usageLimits.js';
 import {
   invalidateAttributionDirectories,
@@ -234,8 +230,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             // Claude Code's own prompts, whatever the skip-permissions setting:
             // the tutorial's ask promises them.
             bypassPermissions: false,
-            permissionMode: TUTORIAL_PERMISSION_MODE,
-            model: TUTORIAL_MODEL,
+            permissionMode: claudeProvider.autoPermissionMode,
+            model: claudeProvider.mostCapableModel,
             firstMessage: request.firstMessage,
             nickname: request.nickname,
             preapprovedMcpTools: request.preapprovedTools,

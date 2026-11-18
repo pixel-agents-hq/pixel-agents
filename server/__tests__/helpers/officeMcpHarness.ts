@@ -263,7 +263,8 @@ export interface StandaloneOfficeOptions {
   forwardHooks?: boolean;
   /** After the handshake, the office answers the MCP ask with allow. */
   grant?: boolean;
-  /** The CLI the MCP writes agents' config files for. Default: Claude's. */
+  /** The CLI the MCP writes agents' config files for, and the tutorial's
+   *  Guide is launched with. Default: Claude's. */
   provider?: HookProvider;
 }
 
@@ -568,7 +569,7 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
                 store,
                 runtime,
                 ptyManager,
-                provider: claudeProvider,
+                provider: options.provider ?? claudeProvider,
                 hostDirectories: directories,
               },
               (id: number) => closeStandaloneAgent(ptyManager, runtime, id),

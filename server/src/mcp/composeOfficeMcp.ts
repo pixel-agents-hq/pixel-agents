@@ -200,7 +200,9 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
       const cast = getCharacterProfiles();
       return cast[palette ?? greeterPalette(cast)]?.name || GUIDE_FALLBACK_NAME;
     },
-    writePlugin: (name) => writeOnboardingPlugin(name),
+    skills: facts.provider.skills,
+    writePlugin: (name) =>
+      facts.provider.skills ? writeOnboardingPlugin(facts.provider.skills, name) : undefined,
   });
   const closing = surface.close ? createClosing(facts, surface.close, terminals) : undefined;
   const launch = surface.launch;

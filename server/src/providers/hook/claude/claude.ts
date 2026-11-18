@@ -30,6 +30,7 @@ import {
 } from './constants.js';
 import { conversationTitle } from './conversationTitle.js';
 import { isInheritedClaudeSessionEnv } from './sessionEnv.js';
+import { claudeSkillPackaging } from './skillPackaging.js';
 import { claudeWorktreeConvention } from './worktreeConvention.js';
 
 // ── formatToolStatus: moved from src/transcriptParser.ts ──
@@ -466,6 +467,11 @@ export const claudeProvider: HookProvider = {
   isInheritedSessionEnv: isInheritedClaudeSessionEnv,
   permissionModes: CLAUDE_PERMISSION_MODES,
   bypassPermissionMode: 'bypassPermissions',
+  // Auto mode: safe actions go through, risky ones still ask.
+  autoPermissionMode: 'auto',
+  // The CLI's alias for its newest Opus.
+  mostCapableModel: 'opus',
+  skills: claudeSkillPackaging,
   conversationTitle,
   worktrees: claudeWorktreeConvention,
 

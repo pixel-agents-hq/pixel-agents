@@ -22,12 +22,19 @@ export interface LaunchAsks {
   /** A seat id: taken when free, else the office picks one. Wins over a
    *  resumed agent's old seat. */
   seatId?: string;
+  /** Never skip permission prompts, whatever the office's setting: with no
+   *  mode asked the CLI's default mode is used, and its bypass mode is refused
+   *  (the tutorial's Guide, whose ask promises the CLI still asks). */
+  neverSkipPermissions?: boolean;
 }
 
 /** Asks that passed the check: the Nickname trimmed, the permission mode
  *  resolved against the office's posture (`bypassPermissions` is the bypass
  *  mode, `permissionMode` any other). */
-export interface CheckedLaunchAsks extends Omit<LaunchAsks, 'permissionMode'> {
+export interface CheckedLaunchAsks extends Omit<
+  LaunchAsks,
+  'permissionMode' | 'neverSkipPermissions'
+> {
   bypassPermissions: boolean;
   /** A permission mode of the provider's, the bypass one excepted. */
   permissionMode?: string;
@@ -43,7 +50,7 @@ const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
  * Check a launch's asks. No permission mode asked: the office's posture (skip
  * permissions while its setting is on, `bypassAllowed`). A mode asked: that
  * mode, when the provider has it; its bypass mode only while the office allows
- * it.
+ * it. `neverSkipPermissions` takes the office's allowance away for this launch.
  */
 export function checkLaunchAsks(
   provider: Pick<HookProvider, 'displayName' | 'permissionModes' | 'bypassPermissionMode'>,
@@ -52,7 +59,8 @@ export function checkLaunchAsks(
 ): { ok: true; asks: CheckedLaunchAsks } | { ok: false; reason: string } {
   const problem = wordsProblem(asks);
   if (problem) return { ok: false, reason: problem };
-  const { permissionMode: mode, ...rest } = asks;
+  const { permissionMode: mode, neverSkipPermissions, ...rest } = asks;
+  const allowed = bypassAllowed && !neverSkipPermissions;
   const nickname = rest.nickname?.trim();
   const checked = (
     permissions: Pick<CheckedLaunchAsks, 'bypassPermissions' | 'permissionMode'>,
@@ -60,7 +68,7 @@ export function checkLaunchAsks(
     ok: true as const,
     asks: { ...rest, nickname, ...permissions },
   });
-  if (mode === undefined) return checked({ bypassPermissions: bypassAllowed });
+  if (mode === undefined) return checked({ bypassPermissions: allowed });
   const modes = provider.permissionModes ?? [];
   if (!modes.includes(mode)) {
     return {
@@ -72,7 +80,7 @@ export function checkLaunchAsks(
     };
   }
   if (mode === provider.bypassPermissionMode) {
-    return bypassAllowed
+    return allowed
       ? checked({ bypassPermissions: true })
       : {
           ok: false,

@@ -131,6 +131,11 @@ export function usageLimitsMessage(providerId: string): UsageLimits {
   return { type: 'usageLimits', providerId, ...(entry ?? {}) };
 }
 
+/** The Intro's line for a usage bridge that brings none of its own. */
+export function usageBridgeFallbackSummary(provider: Pick<HookProvider, 'displayName'>): string {
+  return `See how much of your ${provider.displayName} plan's limits is left.`;
+}
+
 /** The `usageBridgeStatus` message: install state, plus why a change failed. */
 export function usageBridgeStatusMessage(
   provider: HookProvider,
@@ -141,7 +146,7 @@ export function usageBridgeStatusMessage(
     providerId: provider.id,
     providerName: provider.displayName,
     installed: provider.usageBridge?.isInstalled() ?? false,
-    summary: provider.usageBridge?.summary ?? '',
+    summary: provider.usageBridge?.summary ?? usageBridgeFallbackSummary(provider),
     disclosure: provider.usageBridge?.disclosure ?? '',
     ...(error ? { error } : {}),
   };

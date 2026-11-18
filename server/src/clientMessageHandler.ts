@@ -376,7 +376,6 @@ export function handleClientMessage(
     case 'setOfficeMcpEnabled':
     case 'setOfficeMcpReadOnly':
     case 'startTutorial':
-    case 'tutorialQuestDone':
     case 'skipTutorialQuest':
     case 'quitTutorial':
       // The Pixel Office MCP's consent, its switches, the editing lock and undo,

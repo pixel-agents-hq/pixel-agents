@@ -8,14 +8,15 @@
 import { describe, expect, it } from 'vitest';
 
 import { TUTORIAL_QUESTS } from '../../core/src/tutorial/quests.js';
+import { skillMarkdown } from '../src/providers/hook/claude/skillPackaging.js';
 import { claudeProvider } from '../src/providers/index.js';
 import {
-  TUTORIAL_FIRST_MESSAGE,
-  TUTORIAL_MCP_INSTRUCTIONS,
-  TUTORIAL_SKILL_NAME,
   tutorialBrief,
   tutorialDisclosure,
-  tutorialSkillMarkdown,
+  tutorialFirstMessage,
+  tutorialMcpInstructions,
+  tutorialSkillDescription,
+  tutorialSkillName,
 } from '../src/tutorial/tutorialCopy.js';
 import {
   isTutorialFinished,
@@ -115,16 +116,47 @@ describe('questsSeen', () => {
 });
 
 describe("the Guide's words", () => {
+  const skills = claudeProvider.skills;
   it('the first message is only the skill command, and the MCP instructions name the fallback', () => {
-    expect(TUTORIAL_FIRST_MESSAGE).toBe(`/${TUTORIAL_SKILL_NAME}`);
-    expect(TUTORIAL_MCP_INSTRUCTIONS).toContain(TUTORIAL_FIRST_MESSAGE);
-    expect(TUTORIAL_MCP_INSTRUCTIONS).toContain('brief true');
+    expect(tutorialSkillName(skills)).toBe('pixel-agents:onboarding');
+    expect(tutorialFirstMessage(skills)).toBe('/pixel-agents:onboarding');
+    expect(tutorialMcpInstructions(skills)).toBe(
+      "If you were asked to run /pixel-agents:onboarding and have no such skill, you are the Guide of the Pixel Agents tutorial: call this server's tutorial tool with action status and brief true, and follow the brief it returns.",
+    );
+  });
+  it('a CLI that packages no skills is sent to the brief outright', () => {
+    expect(tutorialSkillName(undefined)).toBeUndefined();
+    expect(tutorialFirstMessage(undefined)).toContain('brief true');
+    expect(tutorialMcpInstructions(undefined)).toContain('brief true');
+    expect(tutorialMcpInstructions(undefined)).not.toContain('/');
+  });
+  it("the skill's file is Claude Code's SKILL.md: frontmatter, a title, the brief", () => {
+    expect(
+      skillMarkdown({
+        id: 'onboarding',
+        description: tutorialSkillDescription('Zed'),
+        title: 'Pixel Agents tutorial',
+        instructions: tutorialBrief('Zed'),
+      }),
+    ).toBe(
+      [
+        '---',
+        'name: onboarding',
+        'description: Show the user around the Pixel Agents office as Zed, its resident guide, through the Pixel Office MCP. Use when asked to start the Pixel Agents tutorial.',
+        '---',
+        '',
+        '# Pixel Agents tutorial',
+        '',
+        tutorialBrief('Zed'),
+        '',
+      ].join('\n'),
+    );
   });
   it("go by the character's name, never a fixed one", () => {
     for (const text of [
       tutorialDisclosure('Zed', 'app'),
       tutorialBrief('Zed'),
-      tutorialSkillMarkdown('Zed'),
+      tutorialSkillDescription('Zed'),
     ]) {
       expect(text).toContain('Zed');
       expect(text).not.toMatch(/\b(Suit|Byte)\b/);
