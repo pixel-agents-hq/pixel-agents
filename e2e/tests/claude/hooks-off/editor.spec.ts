@@ -430,9 +430,11 @@ test.describe('Layout editor — desks carry what stands on them', () => {
         const pc = byUid['seed-pc'];
         return { desk: byUid['seed-desk']?.type, pc: pc?.type, at: pc && `${pc.col},${pc.row}` };
       })
-      .toEqual({ desk: 'DESK_SIDE', pc: 'PC_SIDE', at: '3,4' });
+      .toEqual({ desk: 'DESK_SIDE', pc: 'PC_SIDE:left', at: '3,4' });
+    // A screen steps the cycle the other way (a PC faces its user), so the
+    // front PC turns to the left-facing side and keeps facing the chair.
     narrator.check(
-      'desk front→side, PC front→side, and the PC moved onto the 1-wide side desk at (3,4)',
+      'desk front→side, PC front→left side, and the PC moved onto the 1-wide side desk at (3,4)',
     );
   });
 

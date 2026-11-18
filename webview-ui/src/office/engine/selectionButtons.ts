@@ -56,23 +56,28 @@ export interface ButtonPlacement {
   offsetY: number;
   zoom: number;
   rotatable: boolean;
+  /** Centre the row over the footprint (a selection of several) instead of right-aligning it. */
+  centered?: boolean;
 }
 
 /**
  * The selected item's buttons' top-left corners, in a row just above it
- * (never over it), flush with its right edge: rotate (when it rotates), then
- * delete. An item at the top of the screen gets them just below it instead,
- * and the row is kept inside the canvas's left edge. Unrounded: drawing
- * rounds them to whole device pixels.
+ * (never over it), flush with its right edge — or, for a selection of
+ * several (`centered`), centred over the box round them all: rotate (when it
+ * rotates), then delete. An item at the top of the screen gets them just
+ * below it instead, and the row is kept inside the canvas's left edge.
+ * Unrounded: drawing rounds them to whole device pixels.
  */
 export function placeSelectionButtons(
-  { col, row, w, h, offsetX, offsetY, zoom, rotatable }: ButtonPlacement,
+  { col, row, w, h, offsetX, offsetY, zoom, rotatable, centered }: ButtonPlacement,
   { size, gap }: ButtonGeometry,
 ): { delete: { x: number; y: number }; rotate: { x: number; y: number } | null } {
   const s = TILE_SIZE * zoom;
   const above = offsetY + row * s - gap - size;
   const y = above >= gap ? above : offsetY + (row + h) * s + gap;
-  const right = Math.max(offsetX + (col + w) * s, (rotatable ? size * 2 + gap : size) + gap);
+  const rowW = rotatable ? size * 2 + gap : size;
+  const edge = centered ? offsetX + (col + w / 2) * s + rowW / 2 : offsetX + (col + w) * s;
+  const right = Math.max(edge, rowW + gap);
   return {
     delete: { x: right - size, y },
     rotate: rotatable ? { x: right - size * 2 - gap, y } : null,

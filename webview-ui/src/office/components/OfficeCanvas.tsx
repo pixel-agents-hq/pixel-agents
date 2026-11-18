@@ -11,7 +11,7 @@ import {
 } from '../../constants.js';
 import { unlockAudio } from '../../notificationSound.js';
 import { transport } from '../../transport/index.js';
-import { furnitureAt } from '../editor/editorActions.js';
+import { furnitureAt, furnitureInBox } from '../editor/editorActions.js';
 import { buildEditorRenderState } from '../editor/editorRenderState.js';
 import type { EditorState, SelectionButton } from '../editor/editorState.js';
 import { startGameLoop } from '../engine/gameLoop.js';
@@ -316,6 +316,10 @@ export function OfficeCanvas({
         if (tile) {
           editorState.ghostCol = tile.col;
           editorState.ghostRow = tile.row;
+          if (editorState.marquee) {
+            editorState.marquee.endCol = tile.col;
+            editorState.marquee.endRow = tile.row;
+          }
 
           // Drag-to-move: check if cursor moved to different tile
           if (editorState.dragUid) {
@@ -504,6 +508,12 @@ export function OfficeCanvas({
         (editorState.activeTool === EditTool.FURNITURE_PLACE && editorState.placing === null);
       if (actAsSelect && tile) {
         const hitFurniture = furnitureAt(officeState.getLayout(), tile.col, tile.row);
+        if (hitFurniture && e.shiftKey) {
+          // Shift+click: add the item to the selection, or take it out.
+          editorState.toggleFurnitureInSelection(hitFurniture.uid);
+          onEditorSelectionChange();
+          return;
+        }
         if (hitFurniture) {
           // Start drag — record offset from furniture's top-left. Alt at press
           // time means "drag out a copy"; mousemove keeps it in sync after that.
@@ -517,14 +527,22 @@ export function OfficeCanvas({
           );
           return;
         } else {
-          // Clicked empty space — deselect
-          editorState.clearSelection();
-          onEditorSelectionChange();
+          // Empty floor: start a box selection (Shift adds to the current one).
+          // A click without a drag catches nothing, so it deselects as before.
+          editorState.marquee = {
+            startCol: tile.col,
+            startRow: tile.row,
+            endCol: tile.col,
+            endRow: tile.row,
+            additive: e.shiftKey,
+          };
+          return;
         }
       }
 
       // Non-select tools: start paint drag
       editorState.isDragging = true;
+      editorState.sectionAdditive = e.shiftKey;
       if (tile) {
         onEditorTileAction(tile.col, tile.row);
       }
@@ -571,6 +589,24 @@ export function OfficeCanvas({
         return;
       }
 
+      // A box selection ends: select what it caught.
+      const marquee = editorState.marquee;
+      if (marquee) {
+        editorState.marquee = null;
+        const caught = furnitureInBox(
+          officeState.getLayout(),
+          marquee.startCol,
+          marquee.startRow,
+          marquee.endCol,
+          marquee.endRow,
+        );
+        editorState.selectPlacedGroup(
+          marquee.additive ? [...new Set([...editorState.selectedUids, ...caught])] : caught,
+        );
+        onEditorSelectionChange();
+        return;
+      }
+
       // Handle drag-to-move completion
       if (editorState.dragUid) {
         if (editorState.isDragMoving) {
@@ -583,7 +619,11 @@ export function OfficeCanvas({
         } else {
           // Click (no movement) — toggle selection. Selecting also collapses
           // the open tool tab, so the toolbar shows the item's own controls.
-          if (editorState.selectedFurnitureUid === editorState.dragUid) {
+          // A plain click in a selection of several narrows it to that item.
+          if (
+            editorState.selectedFurnitureUid === editorState.dragUid &&
+            editorState.extraSelectedUids.length === 0
+          ) {
             editorState.clearSelection();
           } else {
             editorState.selectPlacedFurniture(editorState.dragUid);
@@ -603,6 +643,7 @@ export function OfficeCanvas({
     },
     [
       editorState,
+      officeState,
       isEditMode,
       onDrop,
       onEditorSelectionChange,
@@ -716,6 +757,7 @@ export function OfficeCanvas({
     editorState.isDragging = false;
     editorState.endStroke();
     editorState.clearDrag();
+    editorState.marquee = null;
     editorState.ghostCol = -1;
     editorState.ghostRow = -1;
     officeState.hoveredAgentId = null;

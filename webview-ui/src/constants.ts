@@ -87,6 +87,17 @@ export const GHOST_BORDER_STROKE = 'rgba(255, 255, 255, 0.06)';
 export const GHOST_VALID_TINT = '#00ff00';
 export const GHOST_INVALID_TINT = '#ff0000';
 export const SELECTION_HIGHLIGHT_COLOR = '#007fd4';
+/** Floor / wall sections: the picked ones' outline, and the one the Select tool hovers. */
+export const SECTION_PICKED_OUTLINE = '#4fb3ff';
+export const SECTION_PICKED_FILL = 'rgba(79, 179, 255, 0.10)';
+export const SECTION_HOVER_OUTLINE = 'rgba(255, 255, 255, 0.55)';
+export const SECTION_HOVER_FILL = 'rgba(255, 255, 255, 0.08)';
+/** How long selection outlines (sections, furniture) stay hidden after a colour edit, so the colour reads clean while it changes. */
+export const EDIT_OUTLINE_HIDE_MS = 700;
+/** Box selection dragged out on empty floor. */
+export const MARQUEE_FILL = 'rgba(0, 127, 212, 0.12)';
+/** Section outline thickness, in device pixels per zoom step (min 1). */
+export const SECTION_OUTLINE_PX_PER_ZOOM = 0.5;
 /** --color-danger, --color-accent, --color-shadow (index.css): canvas can't read CSS variables. */
 export const DELETE_BUTTON_BG = '#d14249';
 export const ROTATE_BUTTON_BG = '#6030ff';
