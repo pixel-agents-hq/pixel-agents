@@ -35,6 +35,7 @@ import { worktreeLook } from './worktreeAgents.js';
 import { listedDirectoryPath } from './worktreeAttribution.js';
 import { uncommittedFileCount } from './worktreeInspect.js';
 import { worktreesOf } from './worktreeListing.js';
+import { worktreesCli } from './worktreeLocation.js';
 import {
   entriesHeldBy,
   heldPaths,
@@ -102,7 +103,13 @@ export async function worktreesMessage(
     });
   }
   // Keyed as the office lists the Directory, whichever spelling asked.
-  return { type: 'worktreesLoaded', directoryPath: listedDirectoryPath(directoryPath), worktrees };
+  const cliName = worktreesCli()?.displayName;
+  return {
+    type: 'worktreesLoaded',
+    directoryPath: listedDirectoryPath(directoryPath),
+    worktrees,
+    ...(cliName !== undefined ? { cliName } : {}),
+  };
 }
 
 /** The connect snapshot: one `worktreesLoaded` per Directory that has any. */

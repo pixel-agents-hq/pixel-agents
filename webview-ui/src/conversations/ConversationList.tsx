@@ -355,6 +355,7 @@ function DirectorySection({
           <WorktreeList
             directoryPath={directory.path}
             worktrees={directoryWorktrees}
+            cliName={worktrees.cliName}
             error={worktrees.error}
             onResume={onResume}
             onOpenAgent={onOpenAgent}

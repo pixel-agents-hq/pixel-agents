@@ -143,6 +143,9 @@ interface ExtensionMessageState {
   /** Each Directory's Worktrees as the server last listed them (privileged
    *  offices only; read-only ones are never sent any). */
   worktreesByDirectory: Record<string, WorktreeSummary[]>;
+  /** The name of the CLI whose own worktrees (`owner: cli`) are listed, as
+   *  the server last named it; undefined = it named none. */
+  worktreesCliName: string | undefined;
   /** The last decision of this office's the server refused. */
   worktreeDecisionError: WorktreeDecisionError | null;
   /** The × this office pressed on an agent that would leave a Worktree with
@@ -251,6 +254,7 @@ export function useExtensionMessages(
   const [worktreesByDirectory, setWorktreesByDirectory] = useState<
     Record<string, WorktreeSummary[]>
   >({});
+  const [worktreesCliName, setWorktreesCliName] = useState<string | undefined>(undefined);
   const [worktreeDecisionError, setWorktreeDecisionError] = useState<WorktreeDecisionError | null>(
     null,
   );
@@ -854,6 +858,7 @@ export function useExtensionMessages(
         const directoryPath = msg.directoryPath as string;
         const worktrees = msg.worktrees as WorktreeSummary[];
         setWorktreesByDirectory((prev) => ({ ...prev, [directoryPath]: worktrees }));
+        setWorktreesCliName(msg.cliName as string | undefined);
       } else if (msg.type === 'worktreeDecisionRejected') {
         // The decision dialog (or the Worktrees list) says why.
         setWorktreeDecisionError((prev) => ({
@@ -1047,6 +1052,7 @@ export function useExtensionMessages(
     worktreeRejection,
     dismissWorktreeRejection,
     worktreesByDirectory,
+    worktreesCliName,
     worktreeDecisionError,
     agentCloseQuestion,
     clearAgentCloseQuestion,

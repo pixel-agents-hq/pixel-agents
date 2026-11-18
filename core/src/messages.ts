@@ -577,6 +577,7 @@ export interface WorktreesLoaded {
   type: 'worktreesLoaded';
   directoryPath: string;
   worktrees: WorktreeSummary[];
+  cliName?: string;
 }
 
 export interface WorktreeSummary {

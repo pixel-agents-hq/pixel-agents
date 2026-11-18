@@ -342,6 +342,10 @@ describe('Worktree conversations', () => {
         latestSessionId: uuid(3),
       }),
     ]);
+    // The list names the CLI they belong to, for their badge.
+    expect(sent.find((m) => m.type === 'worktreesLoaded')).toMatchObject({
+      cliName: 'Claude Code',
+    });
     const directory = (await conversations()).find((d) => d.path === repo)!;
     expect(directory.conversations).toContainEqual(
       expect.objectContaining({

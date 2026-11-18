@@ -117,6 +117,7 @@ function App() {
     worktreeRejection,
     dismissWorktreeRejection,
     worktreesByDirectory,
+    worktreesCliName,
     worktreeDecisionError,
     agentCloseQuestion,
     clearAgentCloseQuestion,
@@ -163,8 +164,12 @@ function App() {
   const editorPanel = usePresence(editor.isEditMode);
   const sidebar = useConversationSidebar(terminalAvailable, officeReadOnly);
   const worktreesListing = useMemo<WorktreesListing>(
-    () => ({ byDirectory: worktreesByDirectory, error: worktreeDecisionError }),
-    [worktreesByDirectory, worktreeDecisionError],
+    () => ({
+      byDirectory: worktreesByDirectory,
+      cliName: worktreesCliName,
+      error: worktreeDecisionError,
+    }),
+    [worktreesByDirectory, worktreesCliName, worktreeDecisionError],
   );
   const { hasSidebar } = sidebar;
   // The phone menu (recent conversations + Settings).

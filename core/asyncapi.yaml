@@ -1221,6 +1221,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorktreeSummary'
+        cliName:
+          type: string
+          description: >-
+            The name of the CLI whose own worktrees are listed (`owner: cli`),
+            as its provider gives it (e.g. "Claude Code"). Absent when no
+            provider declares a worktrees folder: the CLI has none of its own.
 
     WorktreeSummary:
       description: |

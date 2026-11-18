@@ -247,6 +247,7 @@ describe('launching an agent into a Worktree', () => {
         type: 'worktreesLoaded',
         directoryPath: repo,
         worktrees: [],
+        cliName: 'Claude Code',
       }),
     );
   });

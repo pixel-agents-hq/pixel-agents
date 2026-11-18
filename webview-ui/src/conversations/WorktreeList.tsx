@@ -24,6 +24,9 @@ import {
 export interface WorktreesListing {
   /** Each Directory's Worktrees as the server last listed them. */
   byDirectory: Readonly<Record<string, readonly WorktreeSummary[]>>;
+  /** The name of the CLI whose own worktrees are listed (`worktreesLoaded`'s
+   *  `cliName`); undefined = the server named none. */
+  cliName?: string;
   /** The last refused Worktree action this office sent (shown on its row). */
   error: WorktreeDecisionError | null;
 }
@@ -31,6 +34,8 @@ export interface WorktreesListing {
 interface WorktreeListProps {
   directoryPath: string;
   worktrees: readonly WorktreeSummary[];
+  /** Names the CLI on its own worktrees' badge (`<cliName>'s`). */
+  cliName?: string;
   error: WorktreeDecisionError | null;
   /** Resume a conversation (the Worktree's latest). */
   onResume: (sessionId: string, directoryPath: string) => void;
@@ -70,6 +75,7 @@ const REMOVAL_LOOKS: Record<
 export function WorktreeList({
   directoryPath,
   worktrees,
+  cliName,
   error,
   onResume,
   onOpenAgent,
@@ -168,10 +174,10 @@ export function WorktreeList({
                 </span>
                 {worktree.owner === 'cli' && (
                   <span
-                    className="shrink-0 px-4 text-2xs text-text-muted border-2 border-border"
-                    title="Made by Claude Code (claude -w, EnterWorktree)"
+                    className="shrink-0 px-4 text-2xs text-text-muted border-2 border-border whitespace-nowrap"
+                    title={cliName ? `Made by ${cliName}` : 'Made by the CLI'}
                   >
-                    Claude's
+                    {cliName ? `${cliName}'s` : "CLI's"}
                   </span>
                 )}
               </span>
