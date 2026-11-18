@@ -85,8 +85,9 @@ export class PixelAgentsServer {
      *  would keep honouring the old token until it restarts. */
     rotateToken?: boolean;
     /** The Pixel Office MCP to serve at /mcp (see httpServer's option). Told
-     *  its endpoint once the port is known. Ignored when an existing server is
-     *  reused: that one serves its own agents. */
+     *  its endpoint once the port is known. When an existing server is reused
+     *  it is told it has none: that one serves its own agents, so this office
+     *  offers no MCP. */
     officeMcp?: OfficeMcpFeature;
   }): Promise<ServerConfig> {
     const embedded = options?.embedded ?? true;
@@ -124,6 +125,7 @@ export class PixelAgentsServer {
     if (candidate) {
       this.config = candidate;
       this.ownsServer = false;
+      options?.officeMcp?.setEndpoint(null);
       console.log(
         `[Pixel Agents] Reusing existing ${wantsSpa ? 'standalone' : 'embedded'} server on port ${candidate.port} (PID ${candidate.pid})`,
       );

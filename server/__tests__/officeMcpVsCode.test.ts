@@ -51,6 +51,9 @@ vi.mock('vscode', () => ({
 }));
 
 import { launchNewTerminal } from '../../adapters/vscode/agentManager.js';
+import { createVscodeOfficeMcp } from '../../adapters/vscode/vscodeOfficeMcp.js';
+import { AgentStateStore } from '../src/agentStateStore.js';
+import { PixelAgentsServer } from '../src/server.js';
 import { type Message, useVscodeOffice } from './helpers/officeMcpHarness.js';
 
 interface Launched {
@@ -182,5 +185,64 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
     const after = await call(a.client, 'list_agents', {});
     expect(after.isError).toBe(true);
     expect(after.text).toMatch(/revoked|left/i);
+  });
+
+  // ── Whether this office offers it at all ────────────────────
+
+  /** Another window's MCP, composed as the adapter composes it. */
+  function anotherWindow(): {
+    store: AgentStateStore;
+    mcp: ReturnType<typeof createVscodeOfficeMcp>;
+  } {
+    const store = new AgentStateStore();
+    const mcp = createVscodeOfficeMcp({
+      store,
+      defaultLayout: () => null,
+      assets: () => null,
+      directories: () => [],
+    });
+    return { store, mcp };
+  }
+
+  it('a handshake before the server has started waits for it, then offers as usual', async () => {
+    const { store, mcp } = anotherWindow();
+    try {
+      const sent: Message[] = [];
+      mcp.handshake((m) => sent.push({ ...m }));
+      await Promise.resolve();
+      expect(sent).toEqual([]);
+      // What server.start does once its own server listens.
+      mcp.setEndpoint(`http://127.0.0.1:${h.port}/mcp`);
+      await Promise.resolve();
+      expect(mcp.offered()).toBe(true);
+      expect(sent.map((m) => m.type)).toEqual(['officeMcpStatus', 'officeMcpConsentRequest']);
+    } finally {
+      mcp.dispose();
+      store.dispose();
+    }
+  });
+
+  it("a second window reusing this one's server is not offered the MCP: no settings, no ask, no config", async () => {
+    const { store, mcp } = anotherWindow();
+    const server = new PixelAgentsServer();
+    try {
+      const sent: Message[] = [];
+      // Its webview may be ready before its server has started.
+      mcp.handshake((m) => sent.push({ ...m }));
+      const config = await server.start({ store, embedded: true, officeMcp: mcp });
+      expect(config.port).toBe(h.port);
+      mcp.handshake((m) => sent.push({ ...m }));
+      await new Promise((r) => setTimeout(r, 50));
+      expect(mcp.offered()).toBe(false);
+      expect(sent).toEqual([]);
+
+      // Granted (the consent is machine-wide), its launches still get none.
+      allow();
+      expect(mcp.configFor(1)).toBeUndefined();
+    } finally {
+      mcp.dispose();
+      server.stop();
+      store.dispose();
+    }
   });
 });

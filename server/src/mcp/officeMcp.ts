@@ -120,6 +120,12 @@ export class OfficeMcp implements AgentMcpAccess {
     this.endpoint = url;
   }
 
+  /** Whether agents this office launches can be handed the MCP: this server
+   *  serves /mcp (an endpoint is set) and the CLI takes a config file for it. */
+  offered(): boolean {
+    return this.endpoint !== null && this.provider.mcpConfigFile !== undefined;
+  }
+
   /** Mount `/mcp` on the office server (beside the hook and usage routes). */
   registerRoutes(app: FastifyInstance): void {
     app.route({

@@ -31,12 +31,20 @@ export interface OfficeMcpFeature extends AgentMcpAccess {
   readonly office: OfficeOperations;
   /** Mount `/mcp` on the office server. */
   registerRoutes(app: FastifyInstance): void;
-  /** The URL agents reach /mcp at, once the server listens. */
-  setEndpoint(url: string): void;
+  /** The URL agents reach /mcp at, once the server listens; null when this
+   *  office's server is another's, reused (a second VS Code window), whose
+   *  /mcp serves that office's agents and not this one's. */
+  setEndpoint(url: string | null): void;
+  /** Whether this office can hand the MCP to the agents it launches: its own
+   *  server serves /mcp and its CLI takes an MCP config file. Where it can't,
+   *  the office is neither asked nor shown the MCP's settings. */
+  offered(): boolean;
   /**
-   * Its part of a privileged office's connect snapshot: its settings at once,
-   * then the Intro's ask while unanswered — after `afterHooksAsks`, so an office asked both shows this
-   * step after the hooks one.
+   * Its part of a privileged office's connect snapshot, where the MCP is
+   * offered: its settings, then the Intro's ask while unanswered — after
+   * `afterHooksAsks`, so an office asked both shows this step after the hooks
+   * one. A handshake that comes before the server has said whether it serves
+   * /mcp (`setEndpoint`) waits for it.
    */
   handshake(send: (message: ServerMessage) => void, afterHooksAsks?: Promise<unknown>): void;
   /** Answer one of an office's MCP messages (consent, its switches); false when it isn't one. */
@@ -56,21 +64,37 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
   // Tokens die with their agents.
   officeMcp.attach(store);
 
+  // Whether this office's server serves /mcp is known once it has started
+  // (`setEndpoint`); a handshake before then waits for it rather than guess.
+  let decided = false;
+  let decide!: () => void;
+  const whenDecided = new Promise<void>((resolve) => (decide = resolve));
+
   return {
     office,
     configFor: (agentId) => officeMcp.configFor(agentId),
     revoke: (agentId) => officeMcp.revoke(agentId),
     registerRoutes: (app) => officeMcp.registerRoutes(app),
-    setEndpoint: (url) => officeMcp.setEndpoint(url),
+    setEndpoint(url) {
+      if (url !== null) officeMcp.setEndpoint(url);
+      decided = true;
+      decide();
+    },
+    offered: () => officeMcp.offered(),
 
     handshake(send, afterHooksAsks) {
-      send(officeMcp.statusMessage());
-      const ask = () => {
-        const request = officeMcp.consentRequest();
-        if (request) send(request);
+      const offer = () => {
+        if (!officeMcp.offered()) return;
+        send(officeMcp.statusMessage());
+        const ask = () => {
+          const request = officeMcp.consentRequest();
+          if (request) send(request);
+        };
+        if (afterHooksAsks) void afterHooksAsks.then(ask, ask);
+        else ask();
       };
-      if (afterHooksAsks) void afterHooksAsks.then(ask, ask);
-      else ask();
+      if (decided) offer();
+      else void whenDecided.then(offer);
     },
 
     handleMessage: (message) =>
