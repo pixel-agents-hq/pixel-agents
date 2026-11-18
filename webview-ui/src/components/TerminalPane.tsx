@@ -13,6 +13,7 @@ import {
 } from '../constants.js';
 import { readClipboardText } from '../terminal/clipboard.js';
 import { attachClipboardInput } from '../terminal/clipboardInput.js';
+import { attachFileSending } from '../terminal/fileSending.js';
 import { terminalLinkProvider } from '../terminal/linkProvider.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 import { TerminalConnection } from '../terminal/terminalClient.js';
@@ -132,9 +133,20 @@ export function TerminalPane({
       cols: () => term.cols,
     });
 
+    // Files: one dropped on the pane, or picked through the touch pill's
+    // "Attach file", is saved on the agent's machine and its path pasted in,
+    // as a native terminal does with a dropped file. Through xterm's paste
+    // for the same reason as below: the running app sees one paste, which is
+    // how Claude Code tells a dropped image from typed text.
+    const files = attachFileSending(host, {
+      agentId,
+      paste: (text) => term.paste(text),
+      onDrop: () => term.focus(),
+    });
+
     // Touch: scroll + flick, tap to focus / open a URL, long-press selection
-    // with handles and a copy pill, or Paste in the input area (see
-    // touchGesture.ts for the why).
+    // with handles and a copy pill, or Paste | Attach file in the input area
+    // (see touchGesture.ts for the why).
     const detachTouch = attachTouchInput(term, host, {
       openLink,
       fallbackRowHeightPx: fontSizePx,
@@ -150,6 +162,7 @@ export function TerminalPane({
           if (text) term.paste(text);
         });
       },
+      onAttach: () => files.pickFiles(),
     });
 
     // Debounced: ResizeObserver fires per frame during a drag, and every resize
@@ -206,6 +219,7 @@ export function TerminalPane({
       if (resizeTimer) clearTimeout(resizeTimer);
       if (verifyFrame !== null) cancelAnimationFrame(verifyFrame);
       detachTouch();
+      files.dispose();
       detachClipboard();
       observer.disconnect();
       registerInputRef.current?.(agentId, null);

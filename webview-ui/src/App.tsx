@@ -129,6 +129,7 @@ function App() {
     setBypassPermissions,
     showHostDirectories,
     setShowHostDirectories,
+    uploadDirectory,
     officeReadOnly,
     terminalAvailable,
     terminalUnavailableReason,
@@ -1016,6 +1017,7 @@ function App() {
           setShowHostDirectories(newVal);
           transport.send({ type: 'setShowHostDirectories', enabled: newVal });
         }}
+        uploadDirectory={terminalAvailable ? uploadDirectory : null}
         onExportLayout={handleExportLayout}
         onImportLayout={handleImportLayout}
       />

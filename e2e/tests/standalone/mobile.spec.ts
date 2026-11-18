@@ -406,7 +406,7 @@ test.describe('Standalone / mobile shell', () => {
     // Paste: a hold on the input area (the cursor's row, under the word)
     // offers it; with no clipboard to read, it asks for the text instead.
     await longPress(page, at.x, at.y + at.h, 900);
-    await expect(pill.getByRole('button')).toHaveText(['Paste']);
+    await expect(pill.getByRole('button')).toHaveText(['Paste', 'Attach file']);
     page.once('dialog', (d) => void d.accept('pastedviaprompt'));
     await pill.getByRole('button', { name: 'Paste', exact: true }).tap();
     await expect(pill).toHaveCount(0);

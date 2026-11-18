@@ -7,7 +7,8 @@ import type { TouchHit } from './touchGesture.js';
 /**
  * The chrome of the terminal's touch text selection, laid over the pane's
  * host: a floating copy pill — "Copy" (verbatim) and "Copy as text" (soft
- * wraps re-flowed), or "Paste" after a long press in the input area — and iOS-style selection handles — a
+ * wraps re-flowed), or "Paste" and "Attach file" after a long press in the
+ * input area — and iOS-style selection handles — a
  * knob-and-bar lollipop at each end of the selection, knob above the start
  * and below the end, each draggable to move that end. Square knob and hard
  * edges to match the pixel design language; same grammar as the native
@@ -23,7 +24,8 @@ const COPY_ACTIONS: ReadonlyArray<readonly [string, TerminalCopyMode]> = [
 
 export interface SelectionOverlay {
   showPill(range: CellRange): void;
-  /** The Paste pill, in the copy pill's slot over `cell`. */
+  /** The input area's pill (Paste | Attach file), in the copy pill's slot
+   *  over `cell`. */
   showPastePill(cell: CellPos): void;
   hidePill(): void;
   /** Show the handles (creating them if needed) and position them. */
@@ -45,6 +47,8 @@ export function createSelectionOverlay(
     onCopy: (mode: TerminalCopyMode) => void;
     /** The Paste pill was clicked. */
     onPaste: () => void;
+    /** "Attach file" was clicked. */
+    onAttach: () => void;
   },
 ): SelectionOverlay {
   let pill: HTMLDivElement | null = null;
@@ -110,7 +114,10 @@ export function createSelectionOverlay(
       );
     },
     showPastePill(cell) {
-      openPill(cellRange(cell), [['Paste', opts.onPaste]]);
+      openPill(cellRange(cell), [
+        ['Paste', opts.onPaste],
+        ['Attach file', opts.onAttach],
+      ]);
     },
     hidePill,
     showHandles(range) {
