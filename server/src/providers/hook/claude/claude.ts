@@ -373,6 +373,21 @@ export function contextWindowForModel(model: string | undefined): number | undef
 
 // ── The provider ──
 
+/** The `--mcp-config` file for one HTTP MCP server: Claude Code's `mcpServers`
+ *  JSON, the token as the server's Authorization header. */
+function mcpConfigFile(server: { name: string; url: string; token: string }): string {
+  const config = {
+    mcpServers: {
+      [server.name]: {
+        type: 'http',
+        url: server.url,
+        headers: { Authorization: `Bearer ${server.token}` },
+      },
+    },
+  };
+  return JSON.stringify(config, null, 2);
+}
+
 export const claudeProvider: HookProvider = {
   kind: 'hook',
   id: 'claude',
@@ -398,6 +413,7 @@ export const claudeProvider: HookProvider = {
   sessionFilePattern: '*.jsonl',
   sessionMoveFromRecord,
   buildLaunchCommand,
+  mcpConfigFile,
   isInheritedSessionEnv: isInheritedClaudeSessionEnv,
   conversationTitle,
   worktrees: claudeWorktreeConvention,

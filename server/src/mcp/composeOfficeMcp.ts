@@ -52,7 +52,7 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
   const office: OfficeOperations = {
     agents: createAgentsView(facts),
   };
-  const officeMcp = new OfficeMcp({ office, tools: surface.tools });
+  const officeMcp = new OfficeMcp({ office, provider: facts.provider, tools: surface.tools });
   // Tokens die with their agents.
   officeMcp.attach(store);
 

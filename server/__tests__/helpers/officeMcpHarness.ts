@@ -21,6 +21,7 @@ import { WebSocket } from 'ws';
 
 import { createVscodeOfficeMcp } from '../../../adapters/vscode/vscodeOfficeMcp.js';
 import type { CatalogSource } from '../../../core/src/layout/index.js';
+import type { HookProvider } from '../../../core/src/provider.js';
 import { AgentRuntime } from '../../src/agentRuntime.js';
 import { AgentStateStore } from '../../src/agentStateStore.js';
 import { FileStateAdapter } from '../../src/fileStateAdapter.js';
@@ -182,6 +183,8 @@ export interface StandaloneOfficeOptions {
   tools?: readonly OfficeTool[];
   /** After the handshake, the office answers the MCP ask with allow. */
   grant?: boolean;
+  /** The CLI the MCP writes agents' config files for. Default: Claude's. */
+  provider?: HookProvider;
 }
 
 export interface Launched {
@@ -388,7 +391,7 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
     officeMcp = composeOfficeMcp({
       facts: {
         store,
-        provider: claudeProvider,
+        provider: options.provider ?? claudeProvider,
         layout: layout === 'file' ? () => readLayoutFromFile() : (layout ?? (() => null)),
         catalog,
         directories: () => directories,

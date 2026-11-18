@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import type { CatalogSource } from '../../core/src/layout/index.js';
+import { setOfficeMcpConsent } from '../src/configPersistence.js';
 import { defineTool, ok } from '../src/mcp/tool.js';
 import { OFFICE_TOOLS } from '../src/mcp/tools/index.js';
 import { claudeProvider } from '../src/providers/index.js';
@@ -335,5 +336,21 @@ describe('Pixel Office MCP (composed server, mock-claude launches)', () => {
     expect(fs.existsSync(file)).toBe(true);
     h.officeMcp.dispose();
     expect(fs.existsSync(file)).toBe(false);
+  });
+});
+
+describe('Pixel Office MCP with a CLI that takes no MCP config file', () => {
+  const h = useStandaloneOffice({
+    name: 'pxl-office-mcp-nofile',
+    provider: { ...claudeProvider, mcpConfigFile: undefined },
+  });
+
+  it('granted, a launch still gets no --mcp-config, no file and no token', async () => {
+    setOfficeMcpConsent('granted');
+    const launched = await h.launchFromOffice();
+    expect(launched.args).not.toContain('--mcp-config');
+    expect(h.officeMcp.configFor(launched.id)).toBeUndefined();
+    // No file written, so no token was minted to put in one.
+    expect(fs.existsSync(path.join(h.home, '.pixel-agents', 'mcp'))).toBe(false);
   });
 });

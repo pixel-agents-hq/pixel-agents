@@ -27,6 +27,7 @@ import * as path from 'path';
 import { z } from 'zod';
 
 import type { OfficeMcpConsentRequest, OfficeMcpStatus } from '../../../core/src/messages.js';
+import type { HookProvider } from '../../../core/src/provider.js';
 import type { AgentStateStore } from '../agentStateStore.js';
 import {
   getOfficeMcpConsent,
@@ -61,6 +62,9 @@ export interface AgentMcpAccess {
 
 export interface OfficeMcpOptions {
   office: OfficeOperations;
+  /** The CLI the office launches: it writes an agent's config file in its own
+   *  format (`mcpConfigFile`). One that has none is offered no MCP. */
+  provider: Pick<HookProvider, 'mcpConfigFile'>;
   /** Defaults to every tool in ./tools/. Only those whose `uses` the office
    *  supplies are offered. */
   tools?: readonly OfficeTool[];
@@ -81,6 +85,7 @@ interface Grant {
 
 export class OfficeMcp implements AgentMcpAccess {
   private readonly office: OfficeOperations;
+  private readonly provider: Pick<HookProvider, 'mcpConfigFile'>;
   private readonly tools: readonly OfficeTool[];
   private readonly agentOfToken = new Map<string, number>();
   private readonly grants = new Map<number, Grant>();
@@ -92,6 +97,7 @@ export class OfficeMcp implements AgentMcpAccess {
 
   constructor(options: OfficeMcpOptions) {
     this.office = options.office;
+    this.provider = options.provider;
     this.tools = toolsFor(options.office, options.tools ?? OFFICE_TOOLS);
     const root = path.join(os.homedir(), PIXEL_AGENTS_DIR, OFFICE_MCP_CONFIG_DIR);
     pruneDeadServerDirs(root);
@@ -144,22 +150,19 @@ export class OfficeMcp implements AgentMcpAccess {
 
   configFor(agentId: number): string | undefined {
     if (!this.endpoint || getOfficeMcpConsent() !== 'granted') return undefined;
+    if (!this.provider.mcpConfigFile) return undefined;
     this.revoke(agentId);
     const token = crypto.randomBytes(OFFICE_MCP_TOKEN_BYTES).toString('base64url');
     const file = path.join(this.configDir, `agent-${agentId}.json`);
-    const config = {
-      mcpServers: {
-        [OFFICE_MCP_SERVER_NAME]: {
-          type: 'http',
-          url: this.endpoint,
-          headers: { Authorization: `Bearer ${token}` },
-        },
-      },
-    };
+    const config = this.provider.mcpConfigFile({
+      name: OFFICE_MCP_SERVER_NAME,
+      url: this.endpoint,
+      token,
+    });
     try {
       fs.mkdirSync(this.configDir, { recursive: true, mode: 0o700 });
       // A fresh path every time (revoked above), created 0600 and never wider.
-      fs.writeFileSync(file, JSON.stringify(config, null, 2), { mode: 0o600, flag: 'wx' });
+      fs.writeFileSync(file, config, { mode: 0o600, flag: 'wx' });
       fs.chmodSync(file, 0o600);
     } catch (err) {
       console.error(
