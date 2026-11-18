@@ -70,7 +70,10 @@ import { PathSet } from '../../server/src/pathKey.js';
 import { handlePcShellMessage } from '../../server/src/pcShells.js';
 import type { ConsentEffects } from '../../server/src/providers/hook/consentExecutor.js';
 import { applyConsentChoice } from '../../server/src/providers/hook/consentExecutor.js';
-import { hooksConsentRequest } from '../../server/src/providers/hook/consentGate.js';
+import {
+  hooksConsentRequest,
+  replayedConsentRequest,
+} from '../../server/src/providers/hook/consentGate.js';
 import {
   claudeProvider,
   copyHookScript,
@@ -765,6 +768,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         if (provider) {
           void applyConsentChoice(provider.id, message.choice, this.consentEffects(provider));
         }
+      } else if (message.type === 'replayIntro') {
+        // Settings → Replay the Intro: every ask again, whatever was answered
+        // (as clientMessageHandler answers it in standalone).
+        for (const provider of hookProviders) {
+          this.sendOrBuffer({ ...replayedConsentRequest(provider) });
+        }
+        this.mcp.replayAsk((m) => this.sendOrBuffer({ ...m }));
       } else if (message.type === 'setShowAreas') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_SHOW_AREAS, enabled);
