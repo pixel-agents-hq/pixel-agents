@@ -233,8 +233,10 @@ export const layerOf = (pix: string): LayerDef => {
 };
 
 /** The layer that owns each colour key (the first to take it: skin is the body's). */
-const COLOR_LAYER = new Map<ColorKey, LayerDef>();
-for (const l of LAYERS) if (l.color && !COLOR_LAYER.has(l.color)) COLOR_LAYER.set(l.color, l);
+const COLOR_LAYER: ReadonlyMap<ColorKey, LayerDef> = new Map(
+  // Reversed, so the first layer to take a key is the one that stays.
+  [...LAYERS].reverse().flatMap((l) => (l.color ? [[l.color, l] as const] : [])),
+);
 
 /** Pieces the pixel editor offers, in chip order. */
 export const EDIT_PIECES: readonly LayerDef[] = [...LAYERS].sort((a, b) => a.chip - b.chip);
