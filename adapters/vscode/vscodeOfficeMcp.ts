@@ -76,6 +76,6 @@ export function createVscodeOfficeMcp(deps: VscodeOfficeMcpDeps): OfficeMcpFeatu
       },
     },
     terminals,
-    deliveryGuard: turnGuard(store),
+    deliveryGuard: turnGuard(store, claudeProvider),
   });
 }

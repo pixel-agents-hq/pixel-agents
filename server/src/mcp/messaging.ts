@@ -14,13 +14,14 @@
  */
 
 import type { AgentMessageShow } from '../../../core/src/messages.js';
+import type { HookProvider } from '../../../core/src/provider.js';
 import type { AgentStateStore } from '../agentStateStore.js';
 import { MESSAGE_SUBMIT_DELAY_MS } from '../constants.js';
 import { pause } from '../pause.js';
 import {
   type AgentTerminals,
-  ASSUMED_CLI_MODES,
   type InputModes,
+  PLAIN_INPUT_MODES,
   typeInto,
 } from '../terminal/agentTerminals.js';
 import type { AgentState } from '../types.js';
@@ -80,8 +81,13 @@ export function screenTokenGuard(terminals: AgentTerminals): DeliveryGuard {
   };
 }
 
-/** The guard of a surface that can't read its terminals: the agent's turn. */
-export function turnGuard(store: AgentStateStore): DeliveryGuard {
+/** The guard of a surface that can't read its terminals: the agent's turn.
+ *  It types in the modes the agents' CLI says its TUI runs with. */
+export function turnGuard(
+  store: AgentStateStore,
+  provider: Pick<HookProvider, 'terminalInputModes'>,
+): DeliveryGuard {
+  const modes = provider.terminalInputModes ?? PLAIN_INPUT_MODES;
   /** Why text can't be typed blind into `agent` now, or null when it can. */
   function promptOpenReason(agent: AgentState): string | null {
     const status = statusOf(agent);
@@ -102,9 +108,7 @@ export function turnGuard(store: AgentStateStore): DeliveryGuard {
         };
       }
       const promptOpen = promptOpenReason(agent);
-      return promptOpen
-        ? { ok: false, reason: promptOpen }
-        : { ok: true, modes: ASSUMED_CLI_MODES };
+      return promptOpen ? { ok: false, reason: promptOpen } : { ok: true, modes };
     },
     // Looked at again just before the Enter: a prompt that opened since (a
     // permission request landing mid-message) must not take it.

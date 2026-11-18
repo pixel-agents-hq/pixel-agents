@@ -244,6 +244,11 @@ export interface HookProvider {
    *  (Claude: `relocated`, `worktree-state`), else null. What the runtime
    *  follows an agent by without hooks. Undefined = no such records. */
   sessionMoveFromRecord?(record: unknown): SessionWhereabouts | null;
+  /** The terminal input modes this CLI's TUI runs with: whether it turns
+   *  bracketed paste on, and whether its cursor keys are in application mode.
+   *  For a surface that types into an agent's terminal without being able to
+   *  read it (VS Code). Undefined = plain: neither. */
+  readonly terminalInputModes?: { bracketedPaste: boolean; applicationCursorKeys: boolean };
   /** The contents of the file a launch's `mcpConfig` names, in this CLI's own
    *  format, for one MCP server reached over HTTP with a bearer token (Claude:
    *  the `--mcp-config` JSON). Undefined = this CLI takes no such file, and its

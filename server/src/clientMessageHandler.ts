@@ -301,11 +301,15 @@ export function handleClientMessage(
     }
 
     case 'resumeConversation': {
-      if (!runtime || !ctx.ptyManager) break;
-      void resumeInDirectory(launchDepsFor(ctx, runtime, ctx.ptyManager), {
-        sessionId: msg.sessionId,
-        directoryPath: msg.directoryPath,
-      })
+      if (!runtime || !ctx.ptyManager || !conversationProvider) break;
+      // The CLI whose conversation list it is resumes it.
+      void resumeInDirectory(
+        { ...launchDepsFor(ctx, runtime, ctx.ptyManager), provider: conversationProvider },
+        {
+          sessionId: msg.sessionId,
+          directoryPath: msg.directoryPath,
+        },
+      )
         .then((outcome) => answerRejected(outcome, send))
         .catch((err: unknown) => console.error('[Pixel Agents] Resume failed:', err));
       break;

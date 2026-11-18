@@ -99,10 +99,12 @@ export interface AgentTerminals {
   write(agentId: number, bytes: string): void;
 }
 
-/** The modes a surface that can't read its terminals types with, assumed:
- *  the agents' CLI TUI (Claude Code's) turns bracketed paste on and leaves the
- *  cursor keys normal. */
-export const ASSUMED_CLI_MODES: InputModes = { bracketedPaste: true, applicationCursorKeys: false };
+/** The modes a surface that can't read its terminals types with where the
+ *  agents' CLI declares none (`HookProvider.terminalInputModes`): plain. */
+export const PLAIN_INPUT_MODES: InputModes = {
+  bracketedPaste: false,
+  applicationCursorKeys: false,
+};
 
 /**
  * Type text or keys into a terminal: text as one paste (`textBytes`), keys

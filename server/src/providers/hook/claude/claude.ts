@@ -436,6 +436,8 @@ export const claudeProvider: HookProvider = {
   sessionMoveFromRecord,
   buildLaunchCommand,
   mcpConfigFile,
+  // Claude Code's TUI turns bracketed paste on and leaves the cursor keys normal.
+  terminalInputModes: { bracketedPaste: true, applicationCursorKeys: false },
   isInheritedSessionEnv: isInheritedClaudeSessionEnv,
   permissionModes: CLAUDE_PERMISSION_MODES,
   bypassPermissionMode: 'bypassPermissions',

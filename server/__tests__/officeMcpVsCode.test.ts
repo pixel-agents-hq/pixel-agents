@@ -56,8 +56,11 @@ vi.mock('vscode', () => ({
 import { launchNewTerminal } from '../../adapters/vscode/agentManager.js';
 import { createVscodeOfficeMcp } from '../../adapters/vscode/vscodeOfficeMcp.js';
 import type { TerminalHandle } from '../../core/src/terminalAdapter.js';
+import { createAgentState } from '../src/agentState.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
+import { turnGuard } from '../src/mcp/messaging.js';
 import { PixelAgentsServer } from '../src/server.js';
+import { PLAIN_INPUT_MODES } from '../src/terminal/agentTerminals.js';
 import {
   type Message,
   useVscodeOffice,
@@ -454,6 +457,32 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
     } finally {
       mcp.dispose();
       server.stop();
+      store.dispose();
+    }
+  });
+});
+
+describe('turnGuard: a CLI that declares no terminal input modes', () => {
+  it('is typed into in plain modes', async () => {
+    const store = new AgentStateStore();
+    try {
+      store.set(
+        1,
+        createAgentState({
+          id: 1,
+          sessionId: 'session-1',
+          projectDir: '/tmp/none',
+          jsonlFile: '/tmp/none/session-1.jsonl',
+          isExternal: false,
+        }),
+      );
+      store.setAgentStatus(1, { active: false, awaitingInput: false });
+      const verdict = await turnGuard(store, {}).check(
+        { id: 1, screenToken: undefined },
+        { text: 'hello', submit: true },
+      );
+      expect(verdict).toEqual({ ok: true, modes: PLAIN_INPUT_MODES });
+    } finally {
       store.dispose();
     }
   });
