@@ -91,6 +91,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     cli.ts                           npx pixel-agents entry
     agentPersistence.ts              What of an agent survives a reload
     agentMoves.ts                    Following an agent that moves mid-session (AgentMoves.relocate)
+    resumedTranscript.ts             The transcript a /resume typed in a launched agent's terminal moved to (both surfaces)
     backgroundSpawns.ts              A lead's live background spawns and their rules
     subagentWatch.ts                 Shadow store watching unnamed background spawns
     fileStateAdapter.ts              Namespaced ~/.pixel-agents/ persistence

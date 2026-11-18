@@ -8,12 +8,10 @@ import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS, RESUME_FALLBACK_POLLS } from '../src/constants.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import { resumedTranscript } from '../src/resumedTranscript.js';
 import type { IPty, PtyModule, PtySpawnOptions } from '../src/terminal/ptyModule.js';
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
-import {
-  launchStandaloneAgent,
-  resumedTranscript,
-} from '../src/terminal/standaloneAgentLauncher.js';
+import { launchStandaloneAgent } from '../src/terminal/standaloneAgentLauncher.js';
 import { sessionMarkersUnset } from '../src/terminal/terminalEnv.js';
 import { removeTempDir } from './helpers/removeTempDir.js';
 
@@ -442,6 +440,24 @@ describe('launchStandaloneAgent', () => {
     const taken = path.join(projectDir, 'taken.jsonl');
     fs.writeFileSync(taken, '');
     store.get(id)!.jsonlFile = taken;
-    expect(resumedTranscript(store, projectDir, 0)).toBeNull();
+    expect(resumedTranscript(store, projectDir, 0, '*.jsonl')).toBeNull();
+  });
+
+  it("resumedTranscript takes files only: a session's folder beside the transcripts is never one", () => {
+    // The CLI keeps a `<sessionId>/` folder (sub-agents, tool results) beside
+    // transcripts; one whose name ends like a transcript is still a folder.
+    const folder = path.join(projectDir, 'folder.jsonl');
+    fs.mkdirSync(folder);
+    expect(resumedTranscript(store, projectDir, 0, '*.jsonl')).toBeNull();
+
+    const transcript = path.join(projectDir, 'resumed.jsonl');
+    fs.writeFileSync(transcript, '');
+    expect(resumedTranscript(store, projectDir, 0, '*.jsonl')).toBe(transcript);
+  });
+
+  it('resumedTranscript finds nothing for a provider that declares no transcript pattern', () => {
+    fs.writeFileSync(path.join(projectDir, 'resumed.jsonl'), '');
+    fs.writeFileSync(path.join(projectDir, 'notes.txt'), '');
+    expect(resumedTranscript(store, projectDir, 0, undefined)).toBeNull();
   });
 });

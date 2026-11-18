@@ -17,6 +17,7 @@ import { createAgentState } from '../../server/src/agentState.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS, OFFICE_MCP_SERVER_NAME } from '../../server/src/constants.js';
 import { clearContextUsage } from '../../server/src/contextUsage.js';
+import { transcriptSuffix } from '../../server/src/directorySuggestions.js';
 import {
   ensureProjectScan,
   readNewLines,
@@ -28,6 +29,7 @@ import type { AgentMcpAccess } from '../../server/src/mcp/officeMcp.js';
 import { assignPaletteIfNeeded } from '../../server/src/paletteAssigner.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
+import { resumedTranscript } from '../../server/src/resumedTranscript.js';
 import { sessionMarkersUnset } from '../../server/src/terminal/terminalEnv.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
 import type { AgentState } from '../../server/src/types.js';
@@ -178,7 +180,8 @@ export async function launchNewTerminal(
   terminal.sendText([launch.command, ...launch.args].map(shellWord).join(' '));
 
   // Pre-register expected JSONL file so project scan won't treat it as a /clear file
-  const expectedFile = path.join(projectDir, `${sessionId}.jsonl`);
+  const suffix = transcriptSuffix(claudeProvider.sessionFilePattern);
+  const expectedFile = path.join(projectDir, `${sessionId}${suffix}`);
   knownJsonlFiles.add(expectedFile);
 
   // Create agent immediately (before JSONL file exists)
@@ -266,7 +269,7 @@ export async function launchNewTerminal(
         let dirContents = '';
         if (dirExists) {
           try {
-            const files = fs.readdirSync(projectDir).filter((f) => f.endsWith('.jsonl'));
+            const files = fs.readdirSync(projectDir).filter((f) => f.endsWith(suffix));
             dirContents =
               files.length > 0
                 ? `Dir has ${files.length} JSONL file(s): ${files.slice(0, 3).join(', ')}${files.length > 3 ? '...' : ''}`
@@ -285,26 +288,21 @@ export async function launchNewTerminal(
         // Possible /resume: terminal started a different session than expected.
         // Check every tick for a file modified after the agent was created.
         try {
-          const trackedFiles = new Set([...agents.values()].map((a) => path.resolve(a.jsonlFile)));
-          const candidates = fs
-            .readdirSync(projectDir)
-            .filter((f) => f.endsWith('.jsonl'))
-            .map((f) => {
-              const full = path.join(projectDir, f);
-              return { file: full, mtime: fs.statSync(full).mtimeMs };
-            })
-            .filter((c) => !trackedFiles.has(path.resolve(c.file)) && c.mtime > createdAt)
-            .sort((a, b) => b.mtime - a.mtime); // newest first
-
-          if (candidates.length > 0) {
+          const resumed = resumedTranscript(
+            agents,
+            projectDir,
+            createdAt,
+            claudeProvider.sessionFilePattern,
+          );
+          if (resumed) {
             console.log(
-              `[Pixel Agents] Terminal: Agent ${id} - /resume detected, reassigning to ${path.basename(candidates[0].file)}`,
+              `[Pixel Agents] Terminal: Agent ${id} - /resume detected, reassigning to ${path.basename(resumed)}`,
             );
             clearInterval(pollTimer);
             jsonlPollTimers.delete(id);
             reassignAgentToFile(
               id,
-              candidates[0].file,
+              resumed,
               agents,
               fileWatchers,
               pollingTimers,

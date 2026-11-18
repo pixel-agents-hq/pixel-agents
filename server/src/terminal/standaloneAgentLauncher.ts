@@ -7,7 +7,8 @@
  * server/) and takes twelve positional dependencies, so unifying the two would
  * mean rewriting the whole VS Code lifecycle -- out of scope here and a certain
  * conflict with the sibling branches. What IS shared is the thing that matters:
- * both call provider.buildLaunchCommand(), so the launched command is identical.
+ * both call provider.buildLaunchCommand(), so the launched command is identical,
+ * and both follow a /resume typed in the terminal with resumedTranscript().
  * Unifying the hosting is deferred (docs/design/standalone-terminal.md).
  */
 
@@ -29,10 +30,12 @@ import {
   RESUME_FALLBACK_POLLS,
 } from '../constants.js';
 import { clearContextUsage } from '../contextUsage.js';
+import { transcriptSuffix } from '../directorySuggestions.js';
 import { reassignAgentToFile, startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor } from '../hostDirectory.js';
 import type { AgentMcpAccess } from '../mcp/officeMcp.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
+import { resumedTranscript } from '../resumedTranscript.js';
 import type { AgentState } from '../types.js';
 import { retireWorktreesLeftBy } from '../worktreeLeave.js';
 import type { CheckedLaunchAsks } from './launchAsks.js';
@@ -116,7 +119,9 @@ export function launchStandaloneAgent(
   }
   // A resumed session's transcript is wherever the CLI filed it (under the
   // Directory's resolved path, when it was reached through a symlink).
-  const jsonlFile = options.resume?.transcript ?? path.join(dirs[0], `${sessionId}.jsonl`);
+  const jsonlFile =
+    options.resume?.transcript ??
+    path.join(dirs[0], `${sessionId}${transcriptSuffix(provider.sessionFilePattern)}`);
   const projectDir = path.dirname(jsonlFile);
 
   const id = store.nextAgentId.current++;
@@ -364,7 +369,12 @@ function startJsonlPoll(deps: LaunchStandaloneAgentDeps, id: number, agent: Agen
             `[Pixel Agents] Terminal: Agent ${id} - JSONL not found after 10s. Expected: ${agent.jsonlFile}`,
           );
         } else if (pollCount > RESUME_FALLBACK_POLLS && store.has(id)) {
-          const resumed = resumedTranscript(store, agent.projectDir, launchedAt);
+          const resumed = resumedTranscript(
+            store,
+            agent.projectDir,
+            launchedAt,
+            deps.provider.sessionFilePattern,
+          );
           if (resumed) {
             clearInterval(timer);
             runtime.jsonlPollTimers.delete(id);
@@ -407,22 +417,4 @@ function startJsonlPoll(deps: LaunchStandaloneAgentDeps, id: number, agent: Agen
   }, JSONL_POLL_INTERVAL_MS);
 
   runtime.jsonlPollTimers.set(id, timer);
-}
-
-/** The newest transcript in `projectDir` written since `since` that no agent reads, or null. */
-export function resumedTranscript(
-  store: AgentStateStore,
-  projectDir: string,
-  since: number,
-): string | null {
-  const tracked = new Set([...store.values()].map((a) => path.resolve(a.jsonlFile)));
-  let newest: { file: string; mtime: number } | null = null;
-  for (const name of fs.readdirSync(projectDir)) {
-    if (!name.endsWith('.jsonl')) continue;
-    const file = path.join(projectDir, name);
-    if (tracked.has(path.resolve(file))) continue;
-    const mtime = fs.statSync(file).mtimeMs;
-    if (mtime > since && (!newest || mtime > newest.mtime)) newest = { file, mtime };
-  }
-  return newest?.file ?? null;
 }
