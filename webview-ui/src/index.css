@@ -4,8 +4,10 @@
   font-family: 'FS Pixel Sans';
   font-style: normal;
   font-weight: 400;
-  font-display: swap;
-  src: url('/fonts/FSPixelSansUnicode-Regular.ttf') format('truetype');
+  /* block, not swap: text waits for the pixel font (preloaded, so a moment at
+     most) instead of flashing in the system font first. */
+  font-display: block;
+  src: url('/fonts/FSPixelSansUnicode-Regular.woff2') format('woff2');
 }
 
 :root {

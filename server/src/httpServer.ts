@@ -17,6 +17,8 @@ import { readConfig } from './configPersistence.js';
 import {
   HOOK_API_PREFIX,
   MAX_HOOK_BODY_SIZE,
+  STATIC_FONT_MAX_AGE_SECONDS,
+  STATIC_HASHED_MAX_AGE_SECONDS,
   USAGE_API_PREFIX,
   WS_CLOSE_FORBIDDEN_ORIGIN,
   WS_CLOSE_UNAUTHORIZED,
@@ -95,6 +97,20 @@ export interface HttpServerHandle {
 
 const startTime = Date.now();
 
+/** A Vite bundle: `assets/<name>-<8 hash characters>.js|css`. */
+const HASHED_BUNDLE = /[\\/]assets[\\/][^\\/]+-[A-Za-z0-9_-]{8}\.(?:js|css)$/;
+const FONT_FILE = /[\\/]fonts[\\/][^\\/]+\.woff2$/;
+
+/** The `Cache-Control` of a static file the browser may keep, or null to
+ *  leave it revalidated on every load. */
+export function staticCacheControl(filePath: string): string | null {
+  if (HASHED_BUNDLE.test(filePath)) {
+    return `public, max-age=${STATIC_HASHED_MAX_AGE_SECONDS}, immutable`;
+  }
+  if (FONT_FILE.test(filePath)) return `public, max-age=${STATIC_FONT_MAX_AGE_SECONDS}`;
+  return null;
+}
+
 /**
  * Create a Fastify server with hook endpoint, health check, and WebSocket support.
  *
@@ -119,6 +135,15 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
     await app.register(fastifyStatic, {
       root: options.staticDir,
       prefix: '/',
+      // Files that never change under their name are kept by the browser, so a
+      // reopened office (a phone's home-screen app above all) doesn't fetch the
+      // font and the bundle again: Vite's hashed bundles for good, the font for
+      // STATIC_FONT_MAX_AGE_SECONDS. Everything else (index.html, the manifest,
+      // furniture art) is revalidated on every load, as before.
+      setHeaders: (res, filePath) => {
+        const cacheControl = staticCacheControl(filePath);
+        if (cacheControl) res.header('Cache-Control', cacheControl);
+      },
     });
     // HTML5 history fallback: serve index.html for unmatched routes
     app.setNotFoundHandler((_req, reply) => {

@@ -123,6 +123,10 @@ export const HOOK_EVENT_BUFFER_MS = 5_000;
  *  the agent is cleaned up instead of staying as a zombie with pendingClear forever. */
 export const SESSION_END_GRACE_MS = 2000;
 export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
+/** How long a browser keeps a Vite bundle (its name carries its content's hash). */
+export const STATIC_HASHED_MAX_AGE_SECONDS = 31_536_000; // a year
+/** How long a browser keeps the font, whose name does not change with its content. */
+export const STATIC_FONT_MAX_AGE_SECONDS = 2_592_000; // 30 days
 
 // ── Standalone Embedded Terminal ────────────────────────────
 /** PTY module ids tried in order by the loader. @lydell/node-pty ships prebuilt
