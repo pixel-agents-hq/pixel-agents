@@ -25,6 +25,7 @@ import {
   getHooksEnabled,
   grantHooksConsent,
   readConfig,
+  writeConfig,
 } from './configPersistence.js';
 import {
   MAX_PORT,
@@ -38,7 +39,7 @@ import {
 import { listDirectoryLocations } from './directories.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { hostDirectory } from './hostDirectory.js';
-import { readLayoutFromFile } from './layoutPersistence.js';
+import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import { composeOfficeMcp } from './mcp/composeOfficeMcp.js';
 import {
   claudeProvider,
@@ -432,9 +433,22 @@ async function main(): Promise<void> {
         store,
         provider: claudeProvider,
         layout: () => readLayoutFromFile() ?? assetCache.defaultLayout,
+        writeLayout: writeLayoutToFile,
         catalog: () => assetCache.furniture?.catalog ?? [],
+        assets: () => ({
+          floorPatterns: assetCache.floorTiles?.length ?? 0,
+          wallSets: assetCache.wallTiles?.length ?? 0,
+          carpets: assetCache.carpetTiles?.length ?? 0,
+          pets: assetCache.pets?.manifests ?? [],
+        }),
         directories: () => listDirectoryLocations([hostDirectory()]),
         seats: () => adapter.loadSeats(),
+        readAreaMappings: () => readConfig().standalone.areaMappings,
+        writeAreaMappings: (mappings) => {
+          const cfg = readConfig();
+          cfg.standalone.areaMappings = mappings;
+          writeConfig(cfg);
+        },
       },
     });
 

@@ -74,10 +74,12 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
   // ── Helpers ─────────────────────────────────────────────────
 
   /** The webview's message, answered as the provider answers it. */
-  function fromWebview(message: Message): { handled: boolean } {
-    const handled = h.mcp.handleMessage(message);
-    return { handled };
+  function fromWebview(message: Message): { handled: boolean; replies: Message[] } {
+    const replies: Message[] = [];
+    const handled = h.mcp.handleMessage(message, webviewClient, (m) => replies.push({ ...m }));
+    return { handled, replies };
   }
+  const webviewClient = {};
 
   /** The MCP's part of the webview's handshake, as the provider sends it. */
   function handshake(): Message[] {
@@ -134,7 +136,11 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
 
   it("asks in the webview's handshake until answered, and launches get the MCP only once granted", async () => {
     const asked = handshake();
-    expect(asked.map((m) => m.type)).toEqual(['officeMcpStatus', 'officeMcpConsentRequest']);
+    expect(asked.map((m) => m.type)).toEqual([
+      'officeMcpStatus',
+      'agentLayoutEditStatus',
+      'officeMcpConsentRequest',
+    ]);
     expect(asked[0]).toMatchObject({ consent: 'unanswered', readOnly: false });
 
     // Unanswered: a launch runs the CLI with no MCP.
@@ -187,6 +193,23 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
     expect(after.text).toMatch(/revoked|left/i);
   });
 
+  it("the editor's unsaved changes lock agents' layout edits, from the webview", async () => {
+    allow();
+    const a = await launch();
+    expect(fromWebview({ type: 'layoutEditing', dirty: true }).handled).toBe(true);
+    const edit = await call(a.client, 'edit_layout', {
+      ops: [{ op: 'remove_furniture', uid: 'desk-1' }],
+    });
+    expect(edit.isError).toBe(true);
+    expect(edit.text).toContain('unsaved changes');
+
+    // Nothing to undo: the refusal goes back to the webview alone.
+    const undo = fromWebview({ type: 'undoAgentLayoutEdit' });
+    expect(undo.handled).toBe(true);
+    expect(undo.replies).toEqual([expect.objectContaining({ type: 'agentLayoutEditStatus' })]);
+    expect(undo.replies[0].refused).toEqual(expect.any(String));
+  });
+
   // ── Whether this office offers it at all ────────────────────
 
   /** Another window's MCP, composed as the adapter composes it. */
@@ -215,7 +238,11 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
       mcp.setEndpoint(`http://127.0.0.1:${h.port}/mcp`);
       await Promise.resolve();
       expect(mcp.offered()).toBe(true);
-      expect(sent.map((m) => m.type)).toEqual(['officeMcpStatus', 'officeMcpConsentRequest']);
+      expect(sent.map((m) => m.type)).toEqual([
+        'officeMcpStatus',
+        'agentLayoutEditStatus',
+        'officeMcpConsentRequest',
+      ]);
     } finally {
       mcp.dispose();
       store.dispose();

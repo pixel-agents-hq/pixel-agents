@@ -154,12 +154,17 @@ Ask an agent in plain words — "start an agent in the api repo to review the RE
 - **Each agent has its own key.** The file, readable only by you under `~/.pixel-agents/mcp/`, holds the server address and a key made for that one agent. It stops working when the agent leaves, when the server stops, or when you turn the feature off — and it is never the server token in your browser's URL. Agents kept alive across a `--pty-host` restart need a resume to get access back.
 - **Claude Code still asks.** Its own MCP permission prompts apply in the agent's terminal, so you can approve risky calls there.
 - **A read-only office stays read-only.** A browser without the token can't reach any of it.
+- **Your unsaved work wins.** Layout edits wait while someone has unsaved changes in the layout editor, and undoing an agent's edit is refused once the layout has changed since.
 
 ### Tools
 
-| Tool          | What an agent can do                                                                                                                                              |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_agents` | See every agent: id, Directory, Worktree, status, activity, sub-agents, context left, conversation title, team, seat and Area, character, and which one is itself |
+| Tool               | What an agent can do                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_agents`      | See every agent: id, Directory, Worktree, status, activity, sub-agents, context left, conversation title, team, seat and Area, character, and which one is itself |
+| `get_layout`       | Read the office: a summary of Areas, seats and furniture by default, or the furniture list, or a tile map                                                         |
+| `list_catalog`     | See what can be placed: furniture, floor patterns, wall sets, carpets, pets                                                                                       |
+| `edit_layout`      | Change the office in one all-or-nothing batch: furniture, floors, walls, erase, carpets, pets, Areas and their Directories, grid size                             |
+| `undo_layout_edit` | Undo the last agent layout edit (also a button in the layout editor: "Undo <agent>'s edit")                                                                       |
 
 ## Where This Is Going
 

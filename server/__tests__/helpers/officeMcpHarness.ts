@@ -24,8 +24,18 @@ import type { CatalogSource } from '../../../core/src/layout/index.js';
 import type { HookProvider } from '../../../core/src/provider.js';
 import { AgentRuntime } from '../../src/agentRuntime.js';
 import { AgentStateStore } from '../../src/agentStateStore.js';
+import {
+  loadCarpetTiles,
+  type LoadedAssets,
+  type LoadedPetSprites,
+  loadFloorTiles,
+  loadFurnitureAssets,
+  loadPetSprites,
+  loadWallTiles,
+} from '../../src/assetLoader.js';
+import { readConfig, writeConfig } from '../../src/configPersistence.js';
 import { FileStateAdapter } from '../../src/fileStateAdapter.js';
-import { readLayoutFromFile } from '../../src/layoutPersistence.js';
+import { readLayoutFromFile, writeLayoutToFile } from '../../src/layoutPersistence.js';
 import { composeOfficeMcp, type OfficeMcpFeature } from '../../src/mcp/composeOfficeMcp.js';
 import type { OfficeOperations } from '../../src/mcp/officeOperations.js';
 import type { OfficeTool } from '../../src/mcp/tool.js';
@@ -52,6 +62,31 @@ export async function waitFor<T>(
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
     await new Promise((r) => setTimeout(r, pollMs));
   }
+}
+
+// ── Bundled assets ──────────────────────────────────────────
+
+export interface OfficeAssetCounts {
+  floorPatterns: number;
+  wallSets: number;
+  carpets: number;
+}
+
+/** The bundled furniture, pets and tile counts, as the office loads them. */
+export async function loadBundledAssets(): Promise<{
+  furniture: LoadedAssets;
+  pets: LoadedPetSprites;
+  counts: OfficeAssetCounts;
+}> {
+  return {
+    furniture: (await loadFurnitureAssets(BUNDLED))!,
+    pets: (await loadPetSprites(BUNDLED))!,
+    counts: {
+      floorPatterns: (await loadFloorTiles(BUNDLED))!.sprites.length,
+      wallSets: (await loadWallTiles(BUNDLED))!.sets.length,
+      carpets: (await loadCarpetTiles(BUNDLED))!.sets.length,
+    },
+  };
 }
 
 // ── The agent's side (any surface) ──────────────────────────
@@ -179,6 +214,8 @@ export interface StandaloneOfficeOptions {
   layout?: 'file' | (() => Record<string, unknown> | null);
   /** The furniture catalogue the office reads. Default: none. */
   catalog?: () => readonly CatalogSource[];
+  /** The loaded asset counts and pets (get_layout's / list_catalog's). */
+  assets?: () => OfficeAssetCounts & { pets: LoadedPetSprites['manifests'] };
   /** The MCP's tool table (default: every tool). */
   tools?: readonly OfficeTool[];
   /** After the handshake, the office answers the MCP ask with allow. */
@@ -387,15 +424,24 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
     store.setAdapter(adapter);
     runtime = new AgentRuntime(store, claudeProvider);
     ptyManager = new PtySessionManager();
+    const counts = options.assets;
     // Composed as cli.ts composes it, over the test's layout, catalogue and assets.
     officeMcp = composeOfficeMcp({
       facts: {
         store,
         provider: options.provider ?? claudeProvider,
         layout: layout === 'file' ? () => readLayoutFromFile() : (layout ?? (() => null)),
+        writeLayout: writeLayoutToFile,
         catalog,
+        assets: counts ?? (() => ({ floorPatterns: 0, wallSets: 0, carpets: 0, pets: [] })),
         directories: () => directories,
         seats: () => adapter.loadSeats(),
+        readAreaMappings: () => readConfig().standalone.areaMappings,
+        writeAreaMappings: (mappings) => {
+          const cfg = readConfig();
+          cfg.standalone.areaMappings = mappings;
+          writeConfig(cfg);
+        },
       },
       ...(options.tools ? { tools: options.tools } : {}),
     });
@@ -531,4 +577,43 @@ export function useVscodeOffice(options: VscodeOfficeOptions): VscodeOffice {
   });
 
   return h;
+}
+
+// ── Seeded layouts ──────────────────────────────────────────
+
+export const BLUE = ['#', '3b82f6'].join('');
+export const RED = ['#', 'ef4444'].join('');
+const WALL_TILE = 0;
+const VOID_TILE = 255;
+
+/** The bundled default office (21x22: rooms on rows 11-20, void above and in the last
+ *  column) with two Areas: "Blue room" (cols 1-9, the left room) and "API" (cols 11-18,
+ *  the right one); the doorway column between them stays unassigned. */
+export function seededLayout(): Json {
+  const layout = JSON.parse(
+    fs.readFileSync(path.join(BUNDLED, 'assets', 'default-layout-1.json'), 'utf8'),
+  ) as Json;
+  const { cols, rows, tiles } = layout as { cols: number; rows: number; tiles: number[] };
+  const areaTiles: Array<string | null> = new Array(cols * rows).fill(null);
+  for (let row = 11; row <= 20; row++) {
+    for (let col = 1; col <= 18; col++) {
+      if (tiles[row * cols + col] === WALL_TILE || tiles[row * cols + col] === VOID_TILE) continue;
+      if (col <= 9) areaTiles[row * cols + col] = 'Blue room';
+      if (col >= 11) areaTiles[row * cols + col] = 'API';
+    }
+  }
+  return {
+    ...layout,
+    areas: [
+      { label: 'Blue room', color: BLUE },
+      { label: 'API', color: RED },
+    ],
+    areaTiles,
+  };
+}
+
+/** Write `layout` as ~/.pixel-agents/layout.json (a StandaloneOfficeOptions.prepare step). */
+export function seedLayoutFile(home: string, layout: Json): void {
+  fs.mkdirSync(path.join(home, '.pixel-agents'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.pixel-agents', 'layout.json'), JSON.stringify(layout));
 }

@@ -27,6 +27,7 @@ export type ServerMessage =
   | AgentWorktreeChanged
   | AgentContextUsage
   | LayoutLoaded
+  | AgentLayoutEditStatus
   | FurnitureAssetsLoaded
   | CharacterProfilesLoaded
   | RecentCharactersLoaded
@@ -70,6 +71,8 @@ export type ClientMessage =
   | CloseAgent
   | SaveAgentSeats
   | SaveLayout
+  | LayoutEditing
+  | UndoAgentLayoutEdit
   | SaveCharacterProfiles
   | SetSoundEnabled
   | SetLastSeenVersion
@@ -248,6 +251,30 @@ export interface LayoutLoaded {
   type: 'layoutLoaded';
   layout: Record<string, any> | null;
   wasReset?: boolean;
+  buildout?: LayoutBuildout;
+  shift?: GridShift;
+}
+
+export interface LayoutBuildout {
+  agentId: number;
+  origin: TilePosition;
+}
+
+export interface TilePosition {
+  col: number;
+  row: number;
+}
+
+export interface GridShift {
+  col: number;
+  row: number;
+}
+
+export interface AgentLayoutEditStatus {
+  type: 'agentLayoutEditStatus';
+  agentId?: number;
+  agentName?: string;
+  refused?: string;
 }
 
 export interface FurnitureAssetsLoaded {
@@ -682,6 +709,15 @@ export interface SeatAssignment {
 export interface SaveLayout {
   type: 'saveLayout';
   layout: Record<string, any>;
+}
+
+export interface LayoutEditing {
+  type: 'layoutEditing';
+  dirty: boolean;
+}
+
+export interface UndoAgentLayoutEdit {
+  type: 'undoAgentLayoutEdit';
 }
 
 export interface SaveCharacterProfiles {

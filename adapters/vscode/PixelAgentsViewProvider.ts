@@ -172,6 +172,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   private readonly mcp: OfficeMcpFeature;
   // What the office's assets are, once the handshake loaded them (its tools read them).
   private officeAssets: VscodeOfficeAssets | null = null;
+  // This webview as the editing lock knows it: a fresh one per iframe.
+  private layoutEditingClient: object = {};
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -544,12 +546,19 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     // sendCurrentAgentStatuses + asset loaders).
     this.isWebviewReady = false;
     this.pendingBroadcasts = [];
+    // The old iframe's editor is gone, and its unsaved changes with it.
+    this.mcp.clientGone(this.layoutEditingClient);
+    this.layoutEditingClient = {};
+    const layoutEditingClient = this.layoutEditingClient;
+    webviewView.onDidDispose(() => this.mcp.clientGone(layoutEditingClient));
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = getWebviewContent(webviewView.webview, this.extensionUri);
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
-      // The Pixel Office MCP's consent and its switches.
-      if (this.mcp.handleMessage(message)) {
+      // The Pixel Office MCP's consent, its switches, the layout editing lock and undo.
+      if (
+        this.mcp.handleMessage(message, layoutEditingClient, (m) => this.sendOrBuffer({ ...m }))
+      ) {
         return;
       }
       if (message.type === 'launchAgent') {
@@ -654,6 +663,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         await this.exportFile(message.filename, message.dataBase64);
       } else if (message.type === 'saveLayout') {
         writeLayoutToFile(message.layout as Record<string, unknown>);
+        // An editor save over an agent's edit takes away what its undo would restore.
+        this.mcp.layoutSaved();
       } else if (message.type === 'setSoundEnabled') {
         this.adapter.setSetting(GLOBAL_KEY_SOUND_ENABLED, message.enabled);
       } else if (message.type === 'setLastSeenVersion') {
@@ -726,6 +737,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         const cfg = readConfig();
         cfg.vscode.areaMappings = mappings;
         writeConfig(cfg);
+        // Mappings an agent's edit wrote, changed by hand: its undo no longer applies.
+        this.mcp.layoutSaved();
       } else if (message.type === 'setWatchAllSessions') {
         const enabled = message.enabled as boolean;
         this.adapter.setSetting(GLOBAL_KEY_WATCH_ALL_SESSIONS, enabled);
@@ -867,8 +880,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           if (consentRequest) this.webview?.postMessage(consentRequest);
         }
 
-        // The Pixel Office MCP: its settings, and its Intro step while unanswered —
-        // after the hooks asks.
+        // The Pixel Office MCP: its settings, what an agent edit's undo would
+        // revert, and its Intro step while unanswered — after the hooks asks.
         this.mcp.handshake((message) => void this.webview?.postMessage(message));
 
         // Usage bars: install state and the last known account usage.
@@ -1043,9 +1056,13 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
               console.log('[Extension] ✅ Assets loaded, sending to webview');
               sendAssetsToWebview(this.webview, assets);
             }
-            // What the Pixel Office MCP's tools describe.
+            // What the Pixel Office MCP's tools describe (list_catalog, get_layout, edit_layout).
             this.officeAssets = {
               catalog: assets?.catalog ?? [],
+              floorPatterns: floorTiles?.sprites.length ?? 0,
+              wallSets: wallTiles?.sets.length ?? 0,
+              carpets: carpetTiles?.sets.length ?? 0,
+              pets: petSprites?.manifests ?? [],
             };
           } catch (err) {
             console.error('[Extension] ❌ Error loading assets:', err);
@@ -1274,6 +1291,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       const pets = await this.loadAllPetSprites();
       if (pets) {
         sendPetSpritesToWebview(this.webview, pets);
+        if (this.officeAssets) this.officeAssets.pets = pets.manifests;
       }
     } catch (err) {
       console.error('[Extension] Error reloading pet sprites:', err);

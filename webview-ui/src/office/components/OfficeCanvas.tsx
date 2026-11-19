@@ -186,30 +186,25 @@ export function OfficeCanvas({
           characters: officeState.characters,
         };
 
-        const layout = officeState.getLayout();
-        const { offsetX, offsetY } = renderFrame(
-          ctx,
-          w,
-          h,
-          officeState.tileMap,
-          officeState.furniture,
-          officeState.getCharacters(),
+        // What the office shows: during a Buildout, the layout as built so far.
+        const layout = officeState.shownLayout();
+        const { offsetX, offsetY } = renderFrame(ctx, {
+          canvasWidth: w,
+          canvasHeight: h,
           zoom,
-          panRef.current.x,
-          panRef.current.y,
-          selectionRender,
-          editorRender,
-          layout.tileColors,
-          layout.cols,
-          layout.rows,
-          layout.carpetTiles,
-          layout.areas,
-          layout.areaTiles,
+          panX: panRef.current.x,
+          panY: panRef.current.y,
+          layout,
+          tileMap: officeState.shownTileMap(),
+          furniture: officeState.furniture,
+          characters: officeState.getCharacters(),
+          pets: officeState.pets,
+          selection: selectionRender,
+          editor: editorRender,
           showAreas,
           activeAreaLabel,
-          officeState.pets,
-          layout.wallSets,
-        );
+          buildout: officeState.buildout.render(),
+        });
         offsetRef.current = { x: offsetX, y: offsetY };
 
         // Store delete/rotate button bounds for hit-testing

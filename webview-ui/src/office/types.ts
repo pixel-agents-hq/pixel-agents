@@ -41,6 +41,8 @@ export interface FurnitureInstance {
   zY: number;
   /** Render-time horizontal flip flag (for mirrored side variants) */
   mirrored?: boolean;
+  /** The placed item it draws (absent for walls). */
+  uid?: string;
 }
 
 export interface ToolActivity {

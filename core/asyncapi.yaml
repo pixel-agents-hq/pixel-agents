@@ -104,6 +104,7 @@ components:
         - $ref: '#/components/schemas/AgentContextUsage'
         # Layout
         - $ref: '#/components/schemas/LayoutLoaded'
+        - $ref: '#/components/schemas/AgentLayoutEditStatus'
         # Assets
         - $ref: '#/components/schemas/FurnitureAssetsLoaded'
         - $ref: '#/components/schemas/CharacterProfilesLoaded'
@@ -156,6 +157,8 @@ components:
         - $ref: '#/components/schemas/CloseAgent'
         - $ref: '#/components/schemas/SaveAgentSeats'
         - $ref: '#/components/schemas/SaveLayout'
+        - $ref: '#/components/schemas/LayoutEditing'
+        - $ref: '#/components/schemas/UndoAgentLayoutEdit'
         - $ref: '#/components/schemas/SaveCharacterProfiles'
         - $ref: '#/components/schemas/SetSoundEnabled'
         - $ref: '#/components/schemas/SetLastSeenVersion'
@@ -525,11 +528,28 @@ components:
         maxContextTokens:
           type: integer
 
+    TilePosition:
+      description: A tile of the office grid (column and row, from the top left).
+      type: object
+      additionalProperties: false
+      required: [col, row]
+      properties:
+        col:
+          type: integer
+        row:
+          type: integer
+
     LayoutLoaded:
       description: |
         Office layout (tiles, furniture, colors). `null` when no layout file or
         bundled default exists. `wasReset` is true when the bundled default
-        replaced an outdated user layout.
+        replaced an outdated user layout. `buildout` is set only on the
+        broadcast of a Pixel Office MCP agent's layout edit (never an undo, a
+        person's save, or the connect snapshot): offices open at the time play
+        the Buildout (CONTEXT.md) from it. `shift` is how far the change
+        moved the grid's existing tiles (a resize growing or cutting the
+        left/top edge: an agent's edit, or the undo of one), so characters
+        and pets move with them; absent = not at all.
       type: object
       additionalProperties: false
       required: [type, layout]
@@ -546,6 +566,57 @@ components:
             - type: 'null'
         wasReset:
           type: boolean
+        buildout:
+          $ref: '#/components/schemas/LayoutBuildout'
+        shift:
+          $ref: '#/components/schemas/GridShift'
+
+    LayoutBuildout:
+      description: |
+        An agent's layout edit, to be built into the office: agent `agentId`
+        made it, and it grows outward from `origin` (the first tile the edit
+        names, in the new grid; the old layout lines up with it by the
+        message's `shift`). An edit that names no tile (a resize alone, a pet, a new Area) carries
+        no buildout and simply appears.
+      type: object
+      additionalProperties: false
+      required: [agentId, origin]
+      properties:
+        agentId:
+          type: integer
+        origin:
+          $ref: '#/components/schemas/TilePosition'
+
+    GridShift:
+      description: How far a resize moved the grid's existing tiles (columns right, rows down; negative = left/up).
+      type: object
+      additionalProperties: false
+      required: [col, row]
+      properties:
+        col:
+          type: integer
+        row:
+          type: integer
+
+    AgentLayoutEditStatus:
+      description: |
+        What the layout editor's "Undo <agent>'s edit" would revert: the newest
+        Pixel Office MCP layout edit, while the office still holds exactly what
+        it wrote (`agentId` + `agentName`); neither = nothing to undo. Broadcast
+        whenever that changes and sent on connect. Sent to one office alone with
+        `refused` when its `undoAgentLayoutEdit` was refused (the reason).
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: agentLayoutEditStatus
+        agentId:
+          type: integer
+        agentName:
+          type: string
+        refused:
+          type: string
 
     FurnitureAssetsLoaded:
       description: Furniture catalog and sprite data, sent once after webviewReady.
@@ -1715,6 +1786,33 @@ components:
         layout:
           type: object
           description: Opaque layout object; format owned by the rendering layer.
+
+    LayoutEditing:
+      description: |
+        Whether this office's layout editor holds unsaved changes. While any
+        office reports `dirty`, agents' layout edits and their undo are refused;
+        `false` on save, reset or close, and dropped when the socket closes.
+      type: object
+      additionalProperties: false
+      required: [type, dirty]
+      properties:
+        type:
+          const: layoutEditing
+        dirty:
+          type: boolean
+
+    UndoAgentLayoutEdit:
+      description: |
+        The layout editor's "Undo <agent>'s edit": restore the layout from before
+        the newest Pixel Office MCP layout edit (undo_layout_edit's operation).
+        Refused (answered with `agentLayoutEditStatus.refused`) when the layout
+        changed since or an office holds unsaved editor changes.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: undoAgentLayoutEdit
 
     SaveCharacterProfiles:
       description: |

@@ -887,3 +887,10 @@ export const MUSIC_VERSION_GAP_PX = 6;
 export const VERSION_LABEL_BOTTOM_PX = 10;
 /** The update notice / changelog tooltip, this far above the label's spot. */
 export const VERSION_NOTICE_ABOVE_PX = 34;
+
+// ── Buildout ────────────────────────────────────────────────
+/** An agent's layout edit builds in within this long (s), however large:
+ *  the last change starts by BUILDOUT_MAX_SEC minus a removal's dissolve. */
+export const BUILDOUT_MAX_SEC = 2;
+/** The gap between two changes appearing, for an edit small enough not to need squeezing (s). */
+export const BUILDOUT_STEP_SEC = 0.12;
