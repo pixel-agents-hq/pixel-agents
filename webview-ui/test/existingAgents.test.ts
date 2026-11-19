@@ -213,3 +213,33 @@ test('layout ready: agent with no metadata is still added with undefined fields'
     },
   ]);
 });
+
+// ── Worktrees survive a reload and a reconnect ──────────────────
+
+test('a restored Worktree agent wears its Worktree, buffered or added at once', () => {
+  const worktree = { name: 'brave-otter', branch: 'feature/brave-otter' };
+  const set: Array<{ id: number; worktree?: { name: string; branch: string } }> = [];
+  const os = fakeOffice();
+  os.setAgentWorktree = (id, wt) => set.push({ id, worktree: wt });
+
+  const pending: PendingAgent[] = [];
+  reconcileExistingAgents(os, [5, 6], {}, {}, false, pending, {}, { 5: worktree });
+  assert.deepEqual(pending[0].worktree, worktree);
+  assert.equal(pending[1].worktree, undefined);
+
+  reconcileExistingAgents(os, [5, 6], {}, {}, true, [], {}, { 5: worktree });
+  assert.deepEqual(set, [{ id: 5, worktree }]);
+});
+
+test('a reconnect re-applies each shown agent its Worktree, or none', () => {
+  const worktree = { name: 'brave-otter', branch: 'brave-otter' };
+  const set: Array<{ id: number; worktree?: { name: string; branch: string } }> = [];
+  const os = fakeOffice([5, 6]);
+  os.setAgentWorktree = (id, wt) => set.push({ id, worktree: wt });
+
+  reconcileExistingAgents(os, [5, 6], {}, {}, true, [], {}, { 5: worktree });
+  assert.deepEqual(set, [
+    { id: 5, worktree },
+    { id: 6, worktree: undefined },
+  ]);
+});

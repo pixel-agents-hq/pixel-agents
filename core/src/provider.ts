@@ -70,6 +70,23 @@ export type AgentEvent =
     }
   | { kind: 'sessionEnd'; reason?: string };
 
+/**
+ * Where a session runs now, as one signal tells it: a hook payload (every
+ * event names its working folder and transcript) or a transcript record that
+ * says the session moved (Claude: EnterWorktree / ExitWorktree write
+ * `relocated` and `worktree-state`). The runtime follows the agent when this
+ * differs from where it was (server/src/agentMoves.ts).
+ */
+export interface SessionWhereabouts {
+  /** The folder the session runs in now. */
+  cwd?: string;
+  /** Where the CLI says the transcript is now. A hint only: it is followed
+   *  when that file exists (Claude's `-p` sessions name a file never made). */
+  transcriptPath?: string;
+  /** The branch checked out there, when the signal names it. */
+  branch?: string;
+}
+
 // ── Account usage (plan rate limits) ──────────────────────────
 
 /** The account's plan limits as one report states them (windows on the wire
@@ -121,6 +138,40 @@ export interface UsageBridge {
 
 // ── Hook-based Provider (CLIs with hooks APIs) ────────────────
 
+/**
+ * How a CLI keeps a repo's git worktrees and files their sessions. The office
+ * puts the Worktrees it creates in the same folder, so the CLI files their
+ * sessions with the repo's own, and reads the CLI's own worktrees from there.
+ * Shared code knows neither the folder, nor how a session dir is named, nor
+ * the CLI's lock and settings: it asks this, through
+ * server/src/worktreeLocation.ts, which picks the one provider whose
+ * convention the office follows (where a folder's session dirs are is still
+ * the provider's `getSessionDirs`).
+ */
+export interface WorktreeConvention {
+  /** The worktrees folder under a repo root, as path segments (Claude:
+   *  `.claude`, `worktrees`). */
+  readonly folder: readonly string[];
+  /** The name of the session dir of the folder at `folderPath`, whether or
+   *  not either exists. */
+  sessionDirName(folderPath: string): string;
+  /** The worktree whose sessions the session dir named `dirName` holds, when
+   *  it is a worktree of the repo whose own session dir is named
+   *  `repoDirName`: the worktree folder's name as the dir name spells it
+   *  (which may have lost characters), else null. */
+  worktreeOfSessionDir(dirName: string, repoDirName: string): string | null;
+  /** The process a git worktree lock of this CLI's names, read from the
+   *  lock's reason (Claude: `claude session <name> (pid N …)`), or null when
+   *  the reason names none. Whether that process still runs is the caller's
+   *  check. Undefined = this CLI locks no worktrees. */
+  lockHolder?(lockReason: string): number | null;
+  /** Folders (relative to the repo root) a new Worktree of `repoPath` links to
+   *  the main checkout instead of copying, as this CLI's own settings list them
+   *  (Claude: `worktree.symlinkDirectories`, user and project scope).
+   *  Undefined = this CLI has no such setting. */
+  symlinkDirectories?(repoPath: string): string[];
+}
+
 export interface HookProvider {
   readonly kind: 'hook';
   readonly id: string;
@@ -137,6 +188,9 @@ export interface HookProvider {
   normalizeHookEvent(raw: Record<string, unknown>): {
     sessionId: string;
     event: AgentEvent;
+    /** Where the session runs as of this event (every event, not only
+     *  sessionStart): how the runtime notices an agent that moved. */
+    where?: SessionWhereabouts;
   } | null;
 
   /** Install hook scripts that POST to our server. */
@@ -186,6 +240,10 @@ export interface HookProvider {
   readonly sessionFilePattern?: string;
   /** Parse one line of a transcript file into an AgentEvent. */
   parseTranscriptLine?(line: string): AgentEvent | null;
+  /** The session's new whereabouts when a transcript record says it moved
+   *  (Claude: `relocated`, `worktree-state`), else null. What the runtime
+   *  follows an agent by without hooks. Undefined = no such records. */
+  sessionMoveFromRecord?(record: unknown): SessionWhereabouts | null;
   /** Build CLI launch command for +Agent button. `resume`: continue the
    *  existing session `sessionId` (its transcript) instead of starting one. Only
    *  a provider with `conversationTitle` is asked to resume (the conversation
@@ -214,6 +272,10 @@ export interface HookProvider {
    *  recent conversations; undefined = this provider names no conversations
    *  (and is never asked to resume one). */
   conversationTitle?(transcriptPath: string): string | undefined;
+  /** How this CLI keeps a repo's git worktrees and files their sessions:
+   *  the folder, the session dirs' naming, its lock and its symlink setting.
+   *  Undefined = this CLI has no worktrees of its own. */
+  readonly worktrees?: WorktreeConvention;
 
   /** Optional account-usage reporting (the office's usage bars). */
   readonly usageBridge?: UsageBridge;

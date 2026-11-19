@@ -46,6 +46,15 @@ export interface ClaudeMockDeletePathAction {
   filePath: string;
 }
 
+/** The session moves itself to another folder mid-session (Claude Code's
+ *  EnterWorktree / ExitWorktree in an interactive session): `{{cwd}}` becomes
+ *  `cwd`, and the transcript file moves into that folder's project dir. */
+export interface ClaudeMockRelocateSessionAction {
+  kind: 'relocateSession';
+  atMs: number;
+  cwd: string;
+}
+
 export interface ClaudeMockExitAction {
   kind: 'exit';
   atMs: number;
@@ -57,6 +66,7 @@ export type ClaudeMockAction =
   | ClaudeMockEmitHookAction
   | ClaudeMockWriteJsonAction
   | ClaudeMockDeletePathAction
+  | ClaudeMockRelocateSessionAction
   | ClaudeMockExitAction;
 
 export interface ClaudeMockScenario {
@@ -111,6 +121,15 @@ class TimedScenarioStepBuilder {
       kind: 'deletePath',
       atMs: this.atMs,
       filePath,
+    });
+    return this.scenario;
+  }
+
+  relocateSession(cwd: string): ClaudeMockScenarioBuilder {
+    this.scenario.pushAction({
+      kind: 'relocateSession',
+      atMs: this.atMs,
+      cwd,
     });
     return this.scenario;
   }

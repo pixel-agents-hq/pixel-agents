@@ -3,7 +3,11 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { normalizeProjectPath } from '../../../../../core/src/normalizeProjectPath.js';
-import type { AgentEvent, HookProvider } from '../../../../../core/src/provider.js';
+import type {
+  AgentEvent,
+  HookProvider,
+  SessionWhereabouts,
+} from '../../../../../core/src/provider.js';
 import {
   BASH_COMMAND_DISPLAY_MAX_LENGTH,
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
@@ -25,6 +29,7 @@ import {
 } from './constants.js';
 import { conversationTitle } from './conversationTitle.js';
 import { isInheritedClaudeSessionEnv } from './sessionEnv.js';
+import { claudeWorktreeConvention } from './worktreeConvention.js';
 
 // ── formatToolStatus: moved from src/transcriptParser.ts ──
 
@@ -152,6 +157,22 @@ function getAllSessionRoots(): string[] {
 
 function normalizeHookEvent(
   raw: Record<string, unknown>,
+): { sessionId: string; event: AgentEvent; where?: SessionWhereabouts } | null {
+  const normalized = normalizeEvent(raw);
+  if (!normalized) return null;
+  // Every Claude hook payload names the folder the session runs in and its
+  // transcript, and both follow an EnterWorktree / ExitWorktree at once
+  // (recorded live, server/__tests__/fixtures/enter-worktree/).
+  const where: SessionWhereabouts = {};
+  if (typeof raw.cwd === 'string' && raw.cwd) where.cwd = raw.cwd;
+  if (typeof raw.transcript_path === 'string' && raw.transcript_path) {
+    where.transcriptPath = raw.transcript_path;
+  }
+  return where.cwd || where.transcriptPath ? { ...normalized, where } : normalized;
+}
+
+function normalizeEvent(
+  raw: Record<string, unknown>,
 ): { sessionId: string; event: AgentEvent } | null {
   const eventName = raw.hook_event_name;
   const sessionId = raw.session_id;
@@ -278,6 +299,34 @@ function normalizeHookEvent(
   }
 }
 
+// ── A session that moves (EnterWorktree / ExitWorktree) ──
+
+/**
+ * The session's new whereabouts when a transcript record says it moved.
+ * Claude writes `{type: 'relocated', relocatedCwd}` when a session enters or
+ * leaves a worktree mid-session, and `{type: 'worktree-state', worktreeSession:
+ * {worktreePath, worktreeBranch, …} | null}` beside it (each repeated on later
+ * turns; null on leaving, where `relocated` names the folder it returned to).
+ */
+function sessionMoveFromRecord(record: unknown): SessionWhereabouts | null {
+  if (typeof record !== 'object' || record === null) return null;
+  const r = record as Record<string, unknown>;
+  if (r.type === 'relocated' && typeof r.relocatedCwd === 'string' && r.relocatedCwd) {
+    return { cwd: r.relocatedCwd };
+  }
+  if (r.type === 'worktree-state' && typeof r.worktreeSession === 'object' && r.worktreeSession) {
+    const ws = r.worktreeSession as Record<string, unknown>;
+    if (typeof ws.worktreePath !== 'string' || !ws.worktreePath) return null;
+    return {
+      cwd: ws.worktreePath,
+      ...(typeof ws.worktreeBranch === 'string' && ws.worktreeBranch
+        ? { branch: ws.worktreeBranch }
+        : {}),
+    };
+  }
+  return null;
+}
+
 // ── Installer wrappers: adapt sync signatures to async interface ──
 
 /** Async so an installer throw (e.g. unparseable settings.json) always reaches
@@ -344,9 +393,11 @@ export const claudeProvider: HookProvider = {
   getSessionDirs,
   getAllSessionRoots,
   sessionFilePattern: '*.jsonl',
+  sessionMoveFromRecord,
   buildLaunchCommand,
   isInheritedSessionEnv: isInheritedClaudeSessionEnv,
   conversationTitle,
+  worktrees: claudeWorktreeConvention,
 
   team: claudeTeamProvider,
   usageBridge: claudeUsageBridge,

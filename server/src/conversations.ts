@@ -9,6 +9,7 @@ import type {
   Directory,
   DirectoryConversations,
   FoundConversation,
+  WorktreeOwner,
 } from '../../core/src/messages.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
@@ -24,7 +25,9 @@ import {
 } from './constants.js';
 import { transcriptSuffix } from './directorySuggestions.js';
 import { writeJsonAtomic } from './jsonFileWatcher.js';
+import { realPath } from './pathKey.js';
 import type { AgentState } from './types.js';
+import { worktreePathIn } from './worktreeLocation.js';
 
 /**
  * The sidebar's recent conversations: each Directory's newest transcripts,
@@ -169,10 +172,154 @@ export function findTranscript(
   directoryPath: string,
   sessionId: string,
 ): string | undefined {
-  const suffix = transcriptSuffix(provider.sessionFilePattern);
-  return sessionDirsFor(provider, directoryPath)
-    .map((dir) => path.join(dir, `${sessionId}${suffix}`))
-    .find((file) => fs.existsSync(file));
+  return transcriptIn(provider, sessionDirsFor(provider, directoryPath), sessionId);
+}
+
+/** The provider's transcript name ending (`sessionFilePattern`: `*` is the session id). */
+function suffixOf(provider: HookProvider): string {
+  return transcriptSuffix(provider.sessionFilePattern);
+}
+
+function transcriptIn(
+  provider: HookProvider,
+  dirs: readonly string[],
+  sessionId: string,
+): string | undefined {
+  const suffix = suffixOf(provider);
+  return dirs.map((dir) => path.join(dir, `${sessionId}${suffix}`)).find((f) => fs.existsSync(f));
+}
+
+/** A Worktree of a Directory (Pixel Agents' or Claude Code's), as the
+ *  conversation listing and a resume need it. Its folder may be gone (a
+ *  parked one of ours). */
+export interface WorktreeLocation {
+  name: string;
+  path: string;
+  branch: string;
+  owner: WorktreeOwner;
+}
+
+/** A Directory's Worktrees, by its path. Required wherever conversations
+ *  are listed or resumed, so no caller forgets them; a surface with no
+ *  Worktrees passes `noWorktrees`. */
+export type WorktreesOf = (directoryPath: string) => readonly WorktreeLocation[];
+
+/** For a caller with no Worktrees to list. */
+export const noWorktrees: WorktreesOf = () => [];
+
+/**
+ * Where a Worktree's sessions are filed: the project dirs of its folder,
+ * worked out also from the Directory's resolved path, because a removed
+ * folder can't be resolved itself and the CLI files sessions under the
+ * resolved one (Claude Code: `<repo hash>--claude-worktrees-<name>`).
+ */
+export function worktreeSessionDirs(
+  provider: HookProvider,
+  directoryPath: string,
+  worktree: { name: string; path: string },
+): string[] {
+  const resolved = worktreePathIn(realPath(directoryPath), worktree.name);
+  return [
+    ...new Set([...sessionDirsFor(provider, worktree.path), ...sessionDirsFor(provider, resolved)]),
+  ];
+}
+
+/** A Worktree's newest session (any, titled or not), if it has one. */
+export function latestWorktreeSession(
+  provider: HookProvider,
+  directoryPath: string,
+  worktree: { name: string; path: string },
+): string | undefined {
+  const newest = worktreeSessionDirs(provider, directoryPath, worktree)
+    .flatMap((dir) => transcriptsIn(dir, suffixOf(provider)))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)[0];
+  return newest && path.basename(newest.path, suffixOf(provider));
+}
+
+/**
+ * Where sessions of a Directory's Worktrees that are gone for good are filed:
+ * the project dirs named like one of its Worktree folders (Claude Code:
+ * `<repo hash>--claude-worktrees-<name>`) that belong to none of the
+ * Worktrees it has now (`known`: ours, parked ones included, and the CLI's
+ * own). Removing a Worktree never deletes its sessions; these are where
+ * they stay, listed under the Directory and resumed in its own checkout.
+ *
+ * The naming is found the way any session dir is, through the provider's
+ * `getSessionDirs`, here for a probe Worktree's folder: the convention's
+ * `sessionDirName` is not asked.
+ */
+export function removedWorktreeSessionDirs(
+  provider: HookProvider,
+  directoryPath: string,
+  known: readonly { name: string; path: string }[],
+): string[] {
+  const taken = new Set(known.flatMap((w) => worktreeSessionDirs(provider, directoryPath, w)));
+  // The project dir a Worktree named PROBE would have, less the name: the
+  // prefix every Worktree's dir of this Directory starts with.
+  const PROBE = 'pixelagentsprobe';
+  const prefixes = new Set<string>();
+  for (const dir of worktreeSessionDirs(provider, directoryPath, {
+    name: PROBE,
+    path: worktreePathIn(directoryPath, PROBE),
+  })) {
+    if (dir.endsWith(PROBE)) prefixes.add(dir.slice(0, -PROBE.length));
+  }
+  const out: string[] = [];
+  for (const prefix of prefixes) {
+    const root = path.dirname(prefix);
+    let names: string[];
+    try {
+      names = fs.readdirSync(root);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const dir = path.join(root, name);
+      if (!dir.startsWith(prefix) || dir.length === prefix.length) continue;
+      if (taken.has(dir) || out.includes(dir)) continue;
+      out.push(dir);
+    }
+  }
+  return out;
+}
+
+/**
+ * Move a session of a removed Worktree into the Directory's own project dir
+ * (its transcript and the folder of the same name beside it: sub-agents,
+ * tool results), so the CLI, which resumes only sessions filed under the
+ * folder it runs in, finds it in the Directory's checkout. Returns the
+ * transcript's new path, or a reason it could not be moved (nothing moved).
+ */
+export function moveSessionIntoDirectory(
+  provider: HookProvider,
+  directoryPath: string,
+  transcript: string,
+): { ok: true; transcript: string } | { ok: false; reason: string } {
+  const target = sessionDirsFor(provider, directoryPath)[0];
+  if (!target) return { ok: false, reason: 'This coding agent files no sessions by folder.' };
+  const suffix = suffixOf(provider);
+  const sessionId = path.basename(transcript, suffix);
+  const moved = path.join(target, `${sessionId}${suffix}`);
+  const from = path.dirname(transcript);
+  const folder = path.join(from, sessionId);
+  try {
+    if (fs.existsSync(moved)) return { ok: false, reason: `${moved} already exists.` };
+    fs.mkdirSync(target, { recursive: true });
+    fs.renameSync(transcript, moved);
+  } catch (err) {
+    return { ok: false, reason: `Couldn't move the conversation: ${(err as Error).message}` };
+  }
+  try {
+    if (fs.existsSync(folder)) fs.renameSync(folder, path.join(target, sessionId));
+  } catch (err) {
+    console.warn(`[Pixel Agents] Conversations: left ${folder} behind:`, err);
+  }
+  try {
+    fs.rmdirSync(from); // Only once nothing else is filed there.
+  } catch {
+    // Other sessions still there.
+  }
+  return { ok: true, transcript: moved };
 }
 
 /** An agent in the office, as the list needs it: which one runs a session
@@ -206,6 +353,11 @@ export interface ResumeRequest {
   transcript: string;
   /** The look its agent last had, if the office ever saw it. */
   look: ConversationLook | undefined;
+  /** The Directory's Worktree it ran in, when it did. */
+  worktree?: WorktreeLocation;
+  /** It ran in a Worktree that is gone for good: it resumes in the
+   *  Directory's checkout, moved there first (`moveSessionIntoDirectory`). */
+  fromRemovedWorktree?: true;
 }
 
 /**
@@ -219,6 +371,7 @@ export function resumeRequest(
   store: AgentStateStore,
   provider: HookProvider,
   msg: { sessionId?: unknown; directoryPath?: unknown },
+  worktreesOf: WorktreesOf,
 ): ResumeRequest | null {
   if (!provider.conversationTitle || !provider.buildLaunchCommand) return null;
   const { sessionId, directoryPath } = msg;
@@ -226,9 +379,29 @@ export function resumeRequest(
   if (typeof directoryPath !== 'string') return null;
   // Already in the office: nothing to bring back.
   if ([...store].some(([, agent]) => agent.sessionId === sessionId)) return null;
+  const look = conversationLook(sessionId);
   const transcript = findTranscript(provider, directoryPath, sessionId);
-  if (!transcript) return null;
-  return { sessionId, directoryPath, transcript, look: conversationLook(sessionId) };
+  if (transcript) return { sessionId, directoryPath, transcript, look };
+  // Else one of its Worktrees' (only where its transcript is says which).
+  const known = worktreesOf(directoryPath);
+  for (const worktree of known) {
+    const file = transcriptIn(
+      provider,
+      worktreeSessionDirs(provider, directoryPath, worktree),
+      sessionId,
+    );
+    if (file) return { sessionId, directoryPath, transcript: file, look, worktree };
+  }
+  // Else a Worktree that is gone: back in the Directory's own checkout.
+  const removed = transcriptIn(
+    provider,
+    removedWorktreeSessionDirs(provider, directoryPath, known),
+    sessionId,
+  );
+  if (removed) {
+    return { sessionId, directoryPath, transcript: removed, look, fromRemovedWorktree: true };
+  }
+  return null;
 }
 
 /** A transcript as the listing sees it. */
@@ -255,23 +428,50 @@ function cachedTitle(provider: HookProvider, file: TranscriptFile): string | und
   return title;
 }
 
-/** Every transcript of a Directory, newest first. */
-function directoryTranscripts(directory: Directory, provider: HookProvider): TranscriptFile[] {
-  const suffix = transcriptSuffix(provider.sessionFilePattern);
-  return sessionDirsFor(provider, directory.path)
-    .flatMap((dir) => transcriptsIn(dir, suffix))
+/** A transcript of a Directory, with the Worktree it ran in (if it did). */
+interface DirectoryTranscript extends TranscriptFile {
+  worktree?: WorktreeLocation;
+}
+
+/**
+ * Every transcript of a Directory, newest first: its own sessions, then its
+ * Worktrees', then those of Worktrees that are gone (each project dir read
+ * once; a gone Worktree's sessions are the Directory's again).
+ */
+function directoryTranscripts(
+  directory: Directory,
+  provider: HookProvider,
+  worktreesOf: WorktreesOf,
+): DirectoryTranscript[] {
+  const sources: Array<{ dir: string; worktree?: WorktreeLocation }> = sessionDirsFor(
+    provider,
+    directory.path,
+  ).map((dir) => ({ dir }));
+  const known = worktreesOf(directory.path);
+  for (const worktree of known) {
+    for (const dir of worktreeSessionDirs(provider, directory.path, worktree)) {
+      if (!sources.some((s) => s.dir === dir)) sources.push({ dir, worktree });
+    }
+  }
+  for (const dir of removedWorktreeSessionDirs(provider, directory.path, known)) {
+    if (!sources.some((s) => s.dir === dir)) sources.push({ dir });
+  }
+  return sources
+    .flatMap(({ dir, worktree }) =>
+      transcriptsIn(dir, suffixOf(provider)).map((file) => ({ ...file, worktree })),
+    )
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
 /** A transcript as a listed conversation, or null when it has no title (a
  *  past session that never got a prompt; a running one is "New conversation"). */
 function conversationOf(
-  file: TranscriptFile,
+  file: DirectoryTranscript,
   provider: HookProvider,
   live: ReadonlyMap<string, LiveSession>,
   looks: Looks,
 ): Conversation | null {
-  const sessionId = path.basename(file.path, transcriptSuffix(provider.sessionFilePattern));
+  const sessionId = path.basename(file.path, suffixOf(provider));
   const running = live.get(sessionId);
   const title = cachedTitle(provider, file) ?? (running && NEW_CONVERSATION_TITLE);
   if (!title) return null;
@@ -283,6 +483,9 @@ function conversationOf(
     palette: look?.palette,
     repeat: look?.repeat,
     agentId: running?.agentId,
+    ...(file.worktree
+      ? { worktree: { name: file.worktree.name, branch: file.worktree.branch } }
+      : {}),
   };
 }
 
@@ -316,6 +519,7 @@ export function listConversations(
   directories: readonly Directory[],
   provider: HookProvider,
   live: ReadonlyMap<string, LiveSession>,
+  worktreesOf: WorktreesOf,
   limits: ReadonlyMap<string, number> = new Map(),
 ): DirectoryConversations[] {
   const looks = readLooks();
@@ -324,7 +528,7 @@ export function listConversations(
     const limit = limits.get(directory.path) ?? CONVERSATIONS_PER_DIRECTORY;
     const conversations: Conversation[] = [];
     let more = false;
-    for (const file of directoryTranscripts(directory, provider)) {
+    for (const file of directoryTranscripts(directory, provider, worktreesOf)) {
       found.add(file.path);
       // Past the cap, titles are read only until one says there are more.
       if (conversations.length >= limit) {
@@ -388,13 +592,17 @@ export function searchConversations(
   directories: readonly Directory[],
   provider: HookProvider,
   live: ReadonlyMap<string, LiveSession>,
+  worktreesOf: WorktreesOf,
   { query, directoryPath, limit }: ConversationQuery,
 ): { results: FoundConversation[]; more: boolean } {
   const looks = readLooks();
   const files = directories
     .filter((d) => directoryPath === undefined || d.path === directoryPath)
     .flatMap((directory) =>
-      directoryTranscripts(directory, provider).map((file) => ({ file, directory })),
+      directoryTranscripts(directory, provider, worktreesOf).map((file) => ({
+        file,
+        directory,
+      })),
     )
     .sort((a, b) => b.file.mtimeMs - a.file.mtimeMs);
   const results: FoundConversation[] = [];

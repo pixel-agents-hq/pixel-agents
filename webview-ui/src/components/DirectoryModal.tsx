@@ -1,11 +1,12 @@
 import type { KeyboardEvent } from 'react';
 import { useEffect, useState } from 'react';
 
-import type { DirectoryCharacterOrder } from '../../../core/src/messages.js';
+import type { DirectoryCharacterOrder, WorktreeBase } from '../../../core/src/messages.js';
 import type { Directory } from '../hooks/useExtensionMessages.js';
 import { DirectoryCharactersField } from './DirectoryCharactersField.js';
 import { Button } from './ui/Button.js';
 import { Modal } from './ui/Modal.js';
+import { PixelIcon } from './ui/PixelIcon.js';
 
 export interface DirectoryModalValues {
   name: string;
@@ -15,7 +16,25 @@ export interface DirectoryModalValues {
   /** Default characters for its launches, highest priority first. */
   characters: number[];
   characterOrder: DirectoryCharacterOrder;
+  /** What its new Worktrees start from. */
+  worktreeBase: WorktreeBase;
+  /** Put before a new Worktree's name to make its branch ('' = none). */
+  worktreeBranchPrefix: string;
 }
+
+/** The Worktree base choices, as the modal names them. */
+const WORKTREE_BASES: Array<{ value: WorktreeBase; label: string; title: string }> = [
+  {
+    value: 'head',
+    label: 'Current commit',
+    title: "Start from the main checkout's current commit (unpushed work included)",
+  },
+  {
+    value: 'fresh',
+    label: 'Latest from origin',
+    title: 'Fetch origin and start from its default branch (the current commit if that fails)',
+  },
+];
 
 interface DirectoryModalProps {
   isOpen: boolean;
@@ -66,6 +85,9 @@ export function DirectoryModal({
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
   const [characters, setCharacters] = useState<number[]>([]);
   const [characterOrder, setCharacterOrder] = useState<DirectoryCharacterOrder>('priority');
+  const [worktreeBase, setWorktreeBase] = useState<WorktreeBase>('head');
+  const [worktreeBranchPrefix, setWorktreeBranchPrefix] = useState('');
+  const [worktreesOpen, setWorktreesOpen] = useState(false);
 
   // Refill from whatever the modal was opened on. Keyed on isOpen too, so
   // re-opening Add after a cancelled edit starts blank rather than stale.
@@ -76,6 +98,9 @@ export function DirectoryModal({
     setSelectedAreas(assignedAreas);
     setCharacters(editing?.characters ?? []);
     setCharacterOrder(editing?.characterOrder ?? 'priority');
+    setWorktreeBase(editing?.worktreeBase ?? 'head');
+    setWorktreeBranchPrefix(editing?.worktreeBranchPrefix ?? '');
+    setWorktreesOpen(false);
     // assignedAreas is derived per render; keying the refill on it would reset
     // the multi-select on every keystroke. Opening the modal is the only moment
     // it should be read.
@@ -84,6 +109,10 @@ export function DirectoryModal({
 
   if (!isOpen) return null;
 
+  // Only a repo with an origin has a "latest" to start from; without one
+  // there is nothing to choose, and the Directory starts from its current commit.
+  const offersOrigin = editing?.hasOrigin === true;
+
   const submit = () => {
     onSubmit({
       name: name.trim(),
@@ -91,6 +120,8 @@ export function DirectoryModal({
       areas: selectedAreas,
       characters,
       characterOrder,
+      worktreeBase: offersOrigin ? worktreeBase : 'head',
+      worktreeBranchPrefix: worktreeBranchPrefix.trim(),
     });
   };
 
@@ -127,7 +158,7 @@ export function DirectoryModal({
       // Wider minimum than Modal's so path suggestions get room, still
       // yielding via min() on narrow screens — a phone gets the full width
       // (minus Modal's margin padding), a desktop only this floor.
-      className="min-w-[min(420px,100%)]!"
+      className="w-[min(420px,100%)]"
     >
       <div
         data-testid="directory-modal"
@@ -210,6 +241,65 @@ export function DirectoryModal({
             setCharacterOrder(nextOrder);
           }}
         />
+        <div data-testid="directory-worktrees" className="flex flex-col gap-4">
+          {/* Agents launched with a row's worktree button get a checkout of
+              their own; these decide what it starts from by default (only a
+              repo with an origin has a choice) and its branch. Folded away:
+              most Directories never change them. */}
+          <button
+            type="button"
+            aria-expanded={worktreesOpen}
+            onClick={() => setWorktreesOpen((open) => !open)}
+            className="self-start flex items-center gap-4 p-0 bg-transparent border-none rounded-none cursor-pointer text-xs text-text-muted hover:text-text"
+          >
+            Worktrees
+            <PixelIcon name={worktreesOpen ? 'down' : 'next'} scale={1} />
+          </button>
+          {worktreesOpen && (
+            <div className="flex flex-col gap-6 pl-8 border-l-2 border-border">
+              {offersOrigin && (
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs text-text-muted">Default base</span>
+                  <div className="flex flex-wrap gap-4" role="radiogroup" aria-label="Default base">
+                    {WORKTREE_BASES.map((base) => {
+                      const selected = worktreeBase === base.value;
+                      return (
+                        <button
+                          key={base.value}
+                          role="radio"
+                          aria-checked={selected}
+                          title={base.title}
+                          onClick={() => setWorktreeBase(base.value)}
+                          className={`text-sm py-2 px-4 border-2 rounded-none cursor-pointer ${
+                            selected
+                              ? 'bg-accent border-accent text-text'
+                              : 'bg-transparent border-border text-text-muted hover:text-text'
+                          }`}
+                        >
+                          {base.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <label className="flex flex-col gap-2 text-xs text-text-muted">
+                Branch prefix
+                <input
+                  type="text"
+                  value={worktreeBranchPrefix}
+                  placeholder="e.g. feature/"
+                  onChange={(e) => setWorktreeBranchPrefix(e.target.value)}
+                  className="text-sm py-2 px-4 bg-bg border-2 border-border rounded-none text-text"
+                />
+              </label>
+              <span className="text-2xs text-text-muted leading-tight">
+                Gitignored files listed in .worktreeinclude are copied in; folders in Claude Code's
+                worktree.symlinkDirectories are linked.
+              </span>
+            </div>
+          )}
+        </div>
         {error !== null && (
           <div role="alert" className="text-xs text-danger">
             {error}

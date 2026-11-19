@@ -30,6 +30,14 @@ export interface AgentState {
   hadToolsInTurn: boolean;
   /** Directory name — the agent's origin label (only set for multi-root workspaces) */
   directoryName?: string;
+  /** The Worktree the agent runs in (a checkout of its Directory's repo on a
+   *  branch of its own, server/src/worktreeCreate.ts). The agent is still an agent
+   *  of its Directory: `directoryName` stays the Directory's. */
+  worktree?: { name: string; path: string; branch: string };
+  /** The folder the session was last seen running in (a hook's cwd, a
+   *  transcript's relocation record); how a move is noticed. Unknown until
+   *  a signal says. Transient, never persisted. */
+  cwd?: string;
   /** Timestamp of last JSONL data received (ms since epoch) */
   lastDataAt: number;
   /** Total JSONL lines processed for this agent */

@@ -12,6 +12,7 @@ import {
 } from '../../helpers/mock-claude';
 import { expectOverlayCount, expectOverlayVisibleWithTexts } from '../../helpers/office';
 import { appendJsonlRecord, createClaudeTranscript } from '../../helpers/team';
+import { heldTouch } from '../../helpers/touch';
 import {
   addDirectory,
   directoryPencil,
@@ -475,5 +476,53 @@ test.describe('Standalone / long Directory lists on a phone', () => {
     await expectDrawerFits(page, drawer);
     await drawer.getByRole('button', { name: '+ Directory', exact: true }).tap();
     await expect(getDirectoryModal(page)).toBeVisible();
+  });
+});
+
+test.describe('Standalone / Directory row buttons on a phone', () => {
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    standaloneOptions: {
+      mockClaude: true,
+      viewport: { width: 390, height: 844 },
+      seedConfig: { directories: MANY_DIRECTORIES.slice(0, 3) },
+    },
+  });
+
+  test('a long press on a row reveals its buttons instead of launching; a tap elsewhere hides them; the pencil edits @area:mobile', async ({
+    page,
+    standalone: _standalone,
+  }) => {
+    await page.getByTitle('Launch agent', { exact: true }).tap();
+    const drawer = getLaunchDrawer(page);
+    await expect(drawer).toBeVisible();
+    const row = drawer.getByRole('button', { name: 'Project 01', exact: true });
+    const pencil = page.getByRole('button', { name: 'Edit Project 01' });
+    // No hover on a phone: nothing beside the drawer until a long press.
+    await expect(pencil).toBeHidden();
+
+    await heldTouch(page, row, 900);
+    await expect(pencil).toBeVisible();
+    // Revealing is all it did: the drawer is still open and no agent launched.
+    await expect(drawer).toBeVisible();
+    await expect(page.getByTitle('Agent 1', { exact: true })).toHaveCount(0);
+
+    // A tap elsewhere (the office, above the drawer) hides them, closing
+    // the drawer with them; reopened, it shows no stack until the next press.
+    await page.touchscreen.tap(195, 120);
+    await expect(pencil).toBeHidden();
+    await expect(drawer).toBeHidden();
+    await page.getByTitle('Launch agent', { exact: true }).tap();
+    await expect(drawer).toBeVisible();
+    await expect(pencil).toBeHidden();
+
+    // Revealed again, the pencil opens the Directory editor on that row.
+    await heldTouch(page, row, 900);
+    await expect(pencil).toBeVisible();
+    await pencil.tap();
+    const modal = getDirectoryModal(page);
+    await expect(modal).toBeVisible();
+    await expect(modal.getByPlaceholder('~/code/my-project')).toHaveValue(MANY_DIRECTORIES[0].path);
   });
 });

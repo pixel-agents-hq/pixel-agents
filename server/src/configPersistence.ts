@@ -6,7 +6,7 @@ import {
   parseCharacterOrder,
   parseDirectoryCharacters,
 } from '../../core/src/directoryCharacters.js';
-import type { DirectoryCharacterOrder } from '../../core/src/messages.js';
+import type { DirectoryCharacterOrder, WorktreeBase } from '../../core/src/messages.js';
 import { CONFIG_FILE_NAME, PIXEL_AGENTS_DIR } from './constants.js';
 
 export interface AdapterSettings {
@@ -67,6 +67,10 @@ export interface UserDirectory {
   characters?: number[];
   /** Absent = 'priority'. */
   characterOrder?: DirectoryCharacterOrder;
+  /** What its new Worktrees start from. Absent = 'head'. */
+  worktreeBase?: WorktreeBase;
+  /** Put before a new Worktree's name to make its branch. Absent = none. */
+  worktreeBranchPrefix?: string;
 }
 
 export interface PixelAgentsConfig {
@@ -171,7 +175,9 @@ export function parseUserDirectories(raw: unknown): UserDirectory[] {
     if (typeof name !== 'string' || typeof dirPath !== 'string' || dirPath.length === 0) {
       continue;
     }
-    out.push(withDirectoryCharacters({ name, path: dirPath }, entry));
+    out.push(
+      withDirectoryWorktrees(withDirectoryCharacters({ name, path: dirPath }, entry), entry),
+    );
   }
   return out;
 }
@@ -185,14 +191,38 @@ export function withDirectoryCharacters(
   entry: UserDirectory,
   raw: { characters?: unknown; characterOrder?: unknown },
 ): UserDirectory {
+  // Every other field of the entry (its Worktree settings) is kept as it is.
+  const rest: UserDirectory = { ...entry };
+  delete rest.characters;
+  delete rest.characterOrder;
   const characters = parseDirectoryCharacters(raw.characters);
-  if (characters.length === 0) return { name: entry.name, path: entry.path };
+  if (characters.length === 0) return rest;
   const order = parseCharacterOrder(raw.characterOrder);
   return {
-    name: entry.name,
-    path: entry.path,
+    ...rest,
     characters,
     ...(order === 'random' ? { characterOrder: order } : {}),
+  };
+}
+
+/**
+ * `entry` with the Worktree settings in `raw` (a loose object), stored only
+ * when they differ from the defaults: base `head`, no branch prefix. The
+ * prefix is trimmed; whether git accepts it is the saver's check.
+ */
+export function withDirectoryWorktrees(
+  entry: UserDirectory,
+  raw: { worktreeBase?: unknown; worktreeBranchPrefix?: unknown },
+): UserDirectory {
+  const rest: UserDirectory = { ...entry };
+  delete rest.worktreeBase;
+  delete rest.worktreeBranchPrefix;
+  const prefix =
+    typeof raw.worktreeBranchPrefix === 'string' ? raw.worktreeBranchPrefix.trim() : '';
+  return {
+    ...rest,
+    ...(raw.worktreeBase === 'fresh' ? { worktreeBase: 'fresh' as const } : {}),
+    ...(prefix.length > 0 ? { worktreeBranchPrefix: prefix } : {}),
   };
 }
 

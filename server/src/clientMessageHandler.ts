@@ -1,8 +1,10 @@
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { Directory } from '../../core/src/messages.js';
 import { rosterPick } from '../../core/src/paletteUtils.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import { resendAgentActivity } from './agentActivityResend.js';
 import { buildAgentDiagnostics } from './agentDiagnostics.js';
+import { existingAgentWorktrees } from './agentMessages.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './assetLoader.js';
@@ -26,10 +28,10 @@ import {
   listConversations,
   liveSessions,
   recordConversationLooks,
-  resumeRequest,
   searchConversations,
 } from './conversations.js';
 import {
+  directoryAt,
   handleDirectoryClientMessage,
   type HostDirectoryEntry,
   listDirectories,
@@ -47,6 +49,20 @@ import { parseUploadDirectory, resolveUploadDirectory } from './terminal/fileUpl
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
 import { applyUsageBridgeChoice, usageSnapshotMessages } from './usageLimits.js';
+import {
+  prepareWorktreeLaunch,
+  retireUnlaunched,
+  worktreeRejectedMessage,
+  type WorktreeTerminalLaunch,
+} from './worktreeLaunch.js';
+import {
+  handleCloseAgent,
+  handleDecideWorktree,
+  handleRequestWorktrees,
+  worktreesSnapshot,
+} from './worktreeLeave.js';
+import { handleRequestWorktreeOptions, launchWorktreeChoices } from './worktreeOptions.js';
+import { resumeConversation, worktreeLocations } from './worktreeResume.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
@@ -72,6 +88,13 @@ export interface AssetCache {
   carpetTiles: string[][][][] | null;
   furniture: LoadedAssets | null;
   defaultLayout: Record<string, unknown> | null;
+}
+
+/** Why `ptyManager` can't start a terminal now, or null when it can. */
+function terminalUnavailableReason(ptyManager: TerminalSessions): string | null {
+  return ptyManager.isAvailable()
+    ? null
+    : (ptyManager.unavailableReason() ?? 'The terminal is unavailable.');
 }
 
 export interface ClientMessageContext {
@@ -140,6 +163,20 @@ function shownHostDirectoriesFor(ctx: ClientMessageContext): HostDirectoryEntry[
     : [];
 }
 
+/**
+ * The Directory a launch request names: the one at its `directoryPath` (no
+ * path = the server cwd, the host entry), or none when the path is no
+ * Directory. Matched against every host Directory, shown or not, so a hidden
+ * start directory still names its agents. The launcher gets it explicitly,
+ * beside the folder to run in, and never re-derives it from that folder.
+ */
+function launchDirectoryFor(
+  ctx: ClientMessageContext,
+  directoryPath: string | undefined,
+): Directory | undefined {
+  return directoryAt(directoryPath ?? process.cwd(), hostDirectoriesFor(ctx));
+}
+
 /** The drawer's Directories as this client is sent them (shown host entries + the user's). */
 function directoriesMessage(ctx: ClientMessageContext) {
   return {
@@ -186,33 +223,67 @@ export function handleClientMessage(
       // drawer row and carries its Directory's path; no directoryPath falls
       // back to the server cwd (launchStandaloneAgent's own default).
       const picked = rosterPick(msg.palette, getPaletteCount());
-      const launched = launchStandaloneAgent(
-        { store, runtime, ptyManager: ctx.ptyManager, provider: claudeProvider },
-        {
-          directoryPath: msg.directoryPath as string | undefined,
-          bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
-          palette: picked,
-        },
-      );
+      const directory = launchDirectoryFor(ctx, msg.directoryPath as string | undefined);
+      const bypassPermissions = adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false;
       // A roster pick moves to the front of every office's roster, once an
       // agent wears it: a launch that failed (no PTY, no command) records nothing.
-      if (launched === null) break;
-      const recent = recordCharacterUse(picked);
-      if (recent) store.broadcast(recent);
+      const recordPick = (launched: number | null) => {
+        if (launched === null) return;
+        const recent = recordCharacterUse(picked);
+        if (recent) store.broadcast(recent);
+      };
+      const ptyManager = ctx.ptyManager;
+      const directoryPath = msg.directoryPath as string | undefined;
+      // The one launch: into the Directory, or into the Worktree prepared below.
+      const launch = (where: { cwd?: string } & Partial<WorktreeTerminalLaunch>) =>
+        launchStandaloneAgent(
+          { store, runtime, ptyManager, provider: claudeProvider },
+          { ...where, directory, bypassPermissions, palette: picked },
+        );
+      if (msg.worktree !== true) {
+        recordPick(launch({ cwd: directoryPath }));
+        break;
+      }
+      const rejectedAt = directoryPath ?? process.cwd();
+      void prepareWorktreeLaunch({
+        directoryPath: rejectedAt,
+        directory,
+        terminalUnavailable: terminalUnavailableReason(ptyManager),
+        ...launchWorktreeChoices(msg),
+      })
+        .then((prepared) => {
+          if (!prepared.ok)
+            return send({ ...worktreeRejectedMessage(rejectedAt, prepared.reason) });
+          const launched = launch(prepared.where);
+          if (launched === null) {
+            send({
+              ...worktreeRejectedMessage(rejectedAt, retireUnlaunched(store, prepared.where)),
+            });
+          }
+          recordPick(launched);
+        })
+        .catch((err: unknown) => console.error('[Pixel Agents] Worktree launch failed:', err));
       break;
     }
 
     case 'requestConversations': {
       if (!ctx.ptyManager || !conversationProvider) break;
-      send({
-        type: 'conversationsLoaded',
-        directories: listConversations(
-          listDirectories(shownHostDirectoriesFor(ctx)),
-          conversationProvider,
-          liveSessions(store),
-          conversationLimitsFrom(msg.limits),
-        ),
-      });
+      // Each Directory's Worktrees too (Claude Code's are found through git).
+      const directories = listDirectories(shownHostDirectoriesFor(ctx));
+      void worktreeLocations(directories)
+        .then((worktreesOf) =>
+          send({
+            type: 'conversationsLoaded',
+            directories: listConversations(
+              directories,
+              conversationProvider,
+              liveSessions(store),
+              worktreesOf,
+              conversationLimitsFrom(msg.limits),
+            ),
+          }),
+        )
+        .catch((err: unknown) => console.error('[Pixel Agents] Conversations: failed:', err));
       break;
     }
 
@@ -220,36 +291,45 @@ export function handleClientMessage(
       if (!ctx.ptyManager || !conversationProvider) break;
       const query = conversationQueryFrom(msg);
       if (!query) break;
-      send({
-        type: 'conversationSearchResults',
-        ...query,
-        ...searchConversations(
-          listDirectories(shownHostDirectoriesFor(ctx)),
-          conversationProvider,
-          liveSessions(store),
-          query,
-        ),
-      });
+      const directories = listDirectories(shownHostDirectoriesFor(ctx));
+      void worktreeLocations(directories)
+        .then((worktreesOf) =>
+          send({
+            type: 'conversationSearchResults',
+            ...query,
+            ...searchConversations(
+              directories,
+              conversationProvider,
+              liveSessions(store),
+              worktreesOf,
+              query,
+            ),
+          }),
+        )
+        .catch((err: unknown) => console.error('[Pixel Agents] Conversation search: failed:', err));
       break;
     }
 
     case 'resumeConversation': {
-      if (!runtime || !ctx.ptyManager || !conversationProvider) break;
-      const resume = resumeRequest(store, conversationProvider, msg);
-      if (!resume) break;
-      launchStandaloneAgent(
-        { store, runtime, ptyManager: ctx.ptyManager, provider: conversationProvider },
+      const ptyManager = ctx.ptyManager;
+      if (!runtime || !ptyManager || !conversationProvider) break;
+      const provider = conversationProvider;
+      const bypassPermissions = adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false;
+      void resumeConversation(
         {
-          directoryPath: resume.directoryPath,
-          bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,
-          palette: resume.look?.palette,
-          resume: {
-            sessionId: resume.sessionId,
-            transcript: resume.transcript,
-            seatId: resume.look?.seatId,
-          },
+          store,
+          provider,
+          directoryFor: (directoryPath) => launchDirectoryFor(ctx, directoryPath),
+          terminalUnavailable: () => terminalUnavailableReason(ptyManager),
+          launch: (options) =>
+            launchStandaloneAgent(
+              { store, runtime, ptyManager, provider },
+              { ...options, bypassPermissions },
+            ),
         },
-      );
+        send,
+        msg,
+      ).catch((err: unknown) => console.error('[Pixel Agents] Resume failed:', err));
       break;
     }
 
@@ -259,18 +339,35 @@ export function handleClientMessage(
       // merely observed (dismiss the file so the scanner doesn't re-adopt it,
       // then remove). removeAgent fires agentRemoved, which httpServer maps to
       // an agentClosed broadcast.
-      const id = msg.id as number;
-      const agent = store.get(id);
-      if (agent && runtime) {
+      // A Worktree agent with uncommitted files is asked about first
+      // (handleCloseAgent), and closed by the answer's closeAgent.
+      if (!runtime) break;
+      void handleCloseAgent(store, msg, send, (id) => {
         // dispose() is a no-op for agents with no terminal, so this is safe for
         // both shapes. The PTY's onExit handler does the store cleanup for
         // PTY-backed agents; do it here too so external agents (and a PTY that
         // never exits) are still removed promptly.
         ctx.ptyManager?.dispose(id);
         runtime.closeAgent(id);
-      }
+      }).catch((err: unknown) => console.error('[Pixel Agents] Close failed:', err));
       break;
     }
+
+    case 'requestWorktrees':
+      void handleRequestWorktrees(store, msg, send);
+      break;
+
+    case 'requestWorktreeOptions':
+      void handleRequestWorktreeOptions(
+        msg.directoryPath,
+        launchDirectoryFor(ctx, msg.directoryPath as string | undefined),
+        send,
+      );
+      break;
+
+    case 'decideWorktree':
+      void handleDecideWorktree(store, msg, send);
+      break;
 
     case 'requestDiagnostics':
       // Point-to-point reply to the requesting socket (NOT a broadcast).
@@ -704,6 +801,17 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     for (const message of usageSnapshotMessages()) send({ ...message });
   }
 
+  // 4a-quater. The Worktrees we made, privileged clients only: one waiting on
+  // a decision opens its dialog in this office too. Async (git reads); lands
+  // as a follow-up to the handshake.
+  if (ctx.privileged) {
+    void worktreesSnapshot(store)
+      .then((messages) => {
+        for (const message of messages) send({ ...message });
+      })
+      .catch((err: unknown) => console.error('[Pixel Agents] Worktrees: snapshot failed:', err));
+  }
+
   // 4b. Directory→Area mappings (must arrive before existingAgents so the
   // webview seat-preference logic has the dict when characters are created).
   send({
@@ -760,6 +868,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     agentMeta,
     directoryNames,
     externalAgents,
+    worktrees: existingAgentWorktrees(store),
   });
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents

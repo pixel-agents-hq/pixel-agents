@@ -112,7 +112,7 @@ describe('launchStandaloneAgent', () => {
     fs.writeFileSync(transcript, '{"type":"user"}\n{"type":"assistant"}\n');
 
     const id = launch(harness, {
-      directoryPath: tempDir,
+      cwd: tempDir,
       palette: 3,
       resume: { sessionId, transcript, seatId: 'chair-7' },
     });
@@ -124,11 +124,13 @@ describe('launchStandaloneAgent', () => {
     expect(agent?.seatId).toBe('chair-7');
     expect(agent?.palette).toBe(3);
     expect(harness.spawnArgs[0].args).toEqual(['--resume', sessionId]);
+    // It knows where its session runs: its first hook is no move.
+    expect(agent?.cwd).toBe(tempDir);
   });
 
   it('a fresh launch reports an empty context (a full gauge) at once; a resume does not', () => {
     const harness = workingPtyManager();
-    const id = launch(harness, { directoryPath: tempDir });
+    const id = launch(harness, { cwd: tempDir });
     expect(broadcasts).toContainEqual(
       expect.objectContaining({ type: 'agentContextUsage', id, contextTokens: 0 }),
     );
@@ -138,7 +140,7 @@ describe('launchStandaloneAgent', () => {
     const sessionId = '0b8a701c-400d-41ea-801f-40de5e070a8d';
     const transcript = path.join(projectDir, `${sessionId}.jsonl`);
     fs.writeFileSync(transcript, '{"type":"user"}\n');
-    launch(harness, { directoryPath: tempDir, resume: { sessionId, transcript } });
+    launch(harness, { cwd: tempDir, resume: { sessionId, transcript } });
     expect(broadcasts.some((m) => m.type === 'agentContextUsage')).toBe(false);
   });
 
@@ -147,7 +149,7 @@ describe('launchStandaloneAgent', () => {
     const cwd = path.join(tempDir, 'workspace');
     fs.mkdirSync(cwd);
 
-    const id = launch(harness, { directoryPath: cwd });
+    const id = launch(harness, { cwd });
 
     expect(id).toBe(1);
     const agent = store.get(1);
@@ -220,6 +222,37 @@ describe('launchStandaloneAgent', () => {
         PATH: '/bin',
       }),
     ).toEqual({ CLAUDECODE: null, CLAUDE_CODE_SESSION_ID: null });
+  });
+
+  it('takes its Directory from the launch request, not from the folder it runs in', () => {
+    const harness = workingPtyManager();
+    const directoryPath = path.join(tempDir, 'side-project');
+    const elsewhere = path.join(tempDir, 'somewhere-else');
+    fs.mkdirSync(directoryPath);
+    fs.mkdirSync(elsewhere);
+
+    const id = launch(harness, {
+      directory: { name: 'Side Project', path: directoryPath, source: 'user', characters: [4] },
+      cwd: elsewhere,
+    });
+
+    // Named after the Directory (the Area-mapping key), wearing its default
+    // character, while the process runs in the other folder.
+    expect(store.get(id!)?.directoryName).toBe('Side Project');
+    expect(store.get(id!)?.palette).toBe(4);
+    expect(harness.spawnArgs[0].options.cwd).toBe(elsewhere);
+  });
+
+  it('runs in its Directory when no folder is given; with no Directory it is named after its folder', () => {
+    const harness = workingPtyManager();
+    const directoryPath = path.join(tempDir, 'side-project');
+    fs.mkdirSync(directoryPath);
+
+    launch(harness, { directory: { name: 'Side Project', path: directoryPath, source: 'user' } });
+    expect(harness.spawnArgs[0].options.cwd).toBe(directoryPath);
+
+    const id = launch(harness, { cwd: directoryPath });
+    expect(store.get(id!)?.directoryName).toBe('side-project');
   });
 
   it('wears the character picked from the roster even when it is taken, the copy in red clothes', () => {

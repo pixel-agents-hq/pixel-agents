@@ -62,6 +62,10 @@ _Avoid_: spawn (that's the character-level visual event), create
 A named filesystem location agents can be launched into. Directories come from two sources: defined by the user in the office, or contributed by the host — VS Code contributes its workspace folders, standalone contributes the directory the server was started from. Host-contributed directories cannot be edited in the office.
 _Avoid_: folder, workspace folder (that's the VS Code-contributed source, not the concept), project
 
+**Worktree**:
+A separate checkout of a Directory's repo on its own branch, created by Pixel Agents for one agent's work and cleaned up when it leaves. A Worktree agent is still an agent of its Directory. Its states, in UI copy too: **running** (an agent works in it), **kept** (its folder stays by the user's choice), **parked** (folder removed, branch kept: it has commits of its own), **needs a decision** (its agent left uncommitted changes; the answer is Save & remove, Keep folder or Discard). "Commits of its own" are the branch's commits whose changes are not in its base, so squash- or rebase-merged work counts as none. A worktree the CLI made itself in the same folder (Claude Code: `claude -w`, EnterWorktree) is a **CLI worktree**, never a Worktree: the office lists it and removes it only at the user's word.
+_Avoid_: workspace, quest, sandbox
+
 **Adopt**:
 Begin tracking a session that was started outside the office. An adopted agent is a full citizen.
 _Avoid_: import, attach

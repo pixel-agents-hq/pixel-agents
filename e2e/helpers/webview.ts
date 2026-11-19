@@ -478,6 +478,28 @@ export function getDirectoryModal(surface: WebviewSurface): Locator {
   return surface.locator('[data-testid="directory-modal"]');
 }
 
+/**
+ * Answer the new-worktree modal a row's worktree button opens: optionally
+ * rename it and pick the branch to start from (`local:<name>` /
+ * `origin:<name>`), then Launch. Returns the name it launched with.
+ */
+export async function confirmNewWorktree(
+  surface: WebviewSurface,
+  choices: { name?: string; from?: string } = {},
+): Promise<string> {
+  const modal = surface.locator('[data-testid="new-worktree-modal"]');
+  await expect(modal).toBeVisible();
+  const nameField = modal.locator('[data-testid="new-worktree-name"]');
+  if (choices.name !== undefined) await nameField.fill(choices.name);
+  if (choices.from !== undefined) {
+    await modal.locator(`[data-testid="new-worktree-base"][data-branch="${choices.from}"]`).click();
+  }
+  const name = await nameField.inputValue();
+  await modal.locator('[data-testid="new-worktree-launch"]').click();
+  await expect(modal).toHaveCount(0);
+  return name;
+}
+
 /** Open the drawer's `+ Directory` row and return the modal it opens. */
 export async function openDirectoryModal(surface: WebviewSurface): Promise<Locator> {
   const drawer = await openLaunchDrawer(surface);

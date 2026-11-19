@@ -12,7 +12,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import type { HookProvider } from '../../core/src/provider.js';
+import type { HookProvider, SessionWhereabouts } from '../../core/src/provider.js';
+import { AgentMoves } from './agentMoves.js';
 import { isPersistedSpawnChild, restoredAgentInit } from './agentPersistence.js';
 import { createAgentState } from './agentState.js';
 import type { AgentStateStore } from './agentStateStore.js';
@@ -26,6 +27,7 @@ import {
   reassignAgentToFile,
   scanForBackgroundAgentFiles,
   scanForTeammateFiles,
+  setAgentMovedCallback,
   setAgentRemovalCallback,
   setDismissalTracker,
   setHookProvider as setFileWatcherHookProvider,
@@ -49,6 +51,7 @@ import {
   setBackgroundAgentCompletedCallback,
   setBackgroundAgentDetectedCallback,
   setHookProvider,
+  setSessionMovedCallback,
   setTeamSwitchCallback,
 } from './transcriptParser.js';
 import type { AgentState } from './types.js';
@@ -89,6 +92,8 @@ export class AgentRuntime {
   readonly subagentWatch: SubagentWatch;
   private hookEventHandler: HookEventHandler;
   private lifecycleCallbacks: RuntimeLifecycleCallbacks = {};
+  /** Follows agents whose sessions move (EnterWorktree / ExitWorktree). */
+  private readonly moves: AgentMoves;
 
   constructor(
     private readonly store: AgentStateStore,
@@ -104,6 +109,12 @@ export class AgentRuntime {
       setTeamProvider(provider.team);
     }
     setAgentRemovalCallback((id) => this.removeAgent(id));
+    // A session that moves mid-session: every signal (a hook's cwd, a
+    // transcript's own move records, a scanner finding its file elsewhere)
+    // funnels into one operation.
+    this.moves = new AgentMoves({ store, provider, knownJsonlFiles: this.knownJsonlFiles });
+    setAgentMovedCallback((id, where) => this.relocateAgent(id, where));
+    setSessionMovedCallback((id, where) => this.relocateAgent(id, where));
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
     // New-style teammates run their own sessions; registering routes their hook
     // events (PreToolUse, Stop, SessionEnd) directly to the teammate agent.
@@ -273,6 +284,7 @@ export class AgentRuntime {
       onTeammateRemoved: (teammateAgentId) => {
         this.removeTeammate(teammateAgentId, 'hooks');
       },
+      onSessionSeen: (agentId, where) => this.relocateAgent(agentId, where),
       onSessionEnd: (agentId) => {
         const agent = this.store.get(agentId);
         if (!agent) return;
@@ -301,6 +313,16 @@ export class AgentRuntime {
   /** Route an incoming hook event to the appropriate agent. */
   handleHookEvent(providerId: string, event: Record<string, unknown>): void {
     this.hookEventHandler.handleEvent(providerId, event as HookEvent);
+  }
+
+  /**
+   * The agent's session runs at `where` now: it moved itself into or out of
+   * a worktree (or elsewhere). Same agent, same session; its transcript is
+   * followed to where the CLI continues it and its worktree marker updated
+   * (agentMoves.ts).
+   */
+  relocateAgent(agentId: number, where: SessionWhereabouts): void {
+    this.moves.relocate(agentId, where);
   }
 
   /** Register an agent with the hook event handler for session->agent mapping. */
@@ -600,6 +622,7 @@ export class AgentRuntime {
    */
   stop(): void {
     this.hookEventHandler.dispose();
+    this.moves.dispose();
     this.subagentWatch.dispose();
 
     if (this.projectScanTimer.current) {

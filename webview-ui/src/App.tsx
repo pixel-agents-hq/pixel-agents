@@ -12,22 +12,29 @@ import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
 import { LoadingScene } from './components/LoadingScene.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
+import { NewWorktreeModal } from './components/NewWorktreeModal.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TerminalDrawer } from './components/TerminalDrawer.js';
 import { TerminalHideRibbon } from './components/TerminalHideRibbon.js';
 import { Tooltip } from './components/Tooltip.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
+import {
+  CloseAgentQuestionDialog,
+  WorktreeDecisionDialog,
+} from './components/WorktreeDecisionDialog.js';
+import { WorktreeRejectedModal } from './components/WorktreeRejectedModal.js';
 import { MobileZoomLevel, ZoomControls } from './components/ZoomControls.js';
 import { CONVERSATION_SIDEBAR_WIDTH_PX, OFFICE_CANVAS_TEST_ID } from './constants.js';
 import type { ConversationSearchScope } from './conversations/ConversationList.js';
 import { ConversationSearch } from './conversations/ConversationSearch.js';
 import { ConversationSidebar } from './conversations/ConversationSidebar.js';
 import { useConversationSidebar } from './conversations/useConversationSidebar.js';
+import type { WorktreesListing } from './conversations/WorktreeList.js';
 import { useDirectoryEditor } from './hooks/useDirectoryEditor.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
-import { useExtensionMessages } from './hooks/useExtensionMessages.js';
+import { type Directory, useExtensionMessages } from './hooks/useExtensionMessages.js';
 import { useIntroTour } from './hooks/useIntroTour.js';
 import { useIsMobile } from './hooks/useIsMobile.js';
 import { useKeyboardViewport } from './hooks/useKeyboardViewport.js';
@@ -55,6 +62,7 @@ import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
 import { UsageBars } from './usage/UsageBars.js';
 import { useUsageBridge } from './usage/useUsageBridge.js';
+import { useNewWorktree } from './worktrees/useNewWorktree.js';
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null };
@@ -106,6 +114,13 @@ function App() {
     directoryRejection,
     directorySaved,
     directorySuggestions,
+    worktreeRejection,
+    dismissWorktreeRejection,
+    worktreesByDirectory,
+    worktreesCliName,
+    worktreeDecisionError,
+    agentCloseQuestion,
+    clearAgentCloseQuestion,
     agentDirectoryNames,
     externalAssetDirectories,
     lastSeenVersion,
@@ -148,6 +163,14 @@ function App() {
   // The Layout editor's panel, kept on screen while it rolls shut.
   const editorPanel = usePresence(editor.isEditMode);
   const sidebar = useConversationSidebar(terminalAvailable, officeReadOnly);
+  const worktreesListing = useMemo<WorktreesListing>(
+    () => ({
+      byDirectory: worktreesByDirectory,
+      cliName: worktreesCliName,
+      error: worktreeDecisionError,
+    }),
+    [worktreesByDirectory, worktreesCliName, worktreeDecisionError],
+  );
   const { hasSidebar } = sidebar;
   // The phone menu (recent conversations + Settings).
   const menu = useMobileMenu();
@@ -190,8 +213,19 @@ function App() {
     besidePx: hasSidebar && sidebar.open ? CONVERSATION_SIDEBAR_WIDTH_PX : 0,
   });
 
-  const { launch: launchIntoDirectory, resume: resumeAndFocus } = useLaunchActions(
+  const { launch: launchAgent, resume: resumeAndFocus } = useLaunchActions(
     terminalDrawer.expectLaunch,
+  );
+  // A drawer row's worktree button asks for the new Worktree's name and base
+  // first (NewWorktreeModal); every other launch goes straight out.
+  const newWorktree = useNewWorktree(launchAgent);
+  const { open: askNewWorktree } = newWorktree;
+  const launchIntoDirectory = useCallback(
+    (directory: Directory, palette?: number, worktree?: boolean) => {
+      if (worktree) askNewWorktree(directory, palette);
+      else launchAgent(directory, palette);
+    },
+    [askNewWorktree, launchAgent],
   );
   const mobileShell = useMobileShell({
     getOfficeState,
@@ -830,6 +864,7 @@ function App() {
               statusFor={terminalDrawer.statusFor}
               isSettingsOpen={isSettingsOpen}
               onToggleSettings={() => setIsSettingsOpen((v) => !v)}
+              worktrees={officeReadOnly ? undefined : worktreesListing}
               onSearch={setConversationSearch}
             />
           )}
@@ -924,6 +959,30 @@ function App() {
         onDelete={directoryEditor.remove}
         onClose={directoryEditor.close}
       />
+      <NewWorktreeModal
+        directory={newWorktree.asking?.directory ?? null}
+        options={newWorktree.asking?.options ?? null}
+        onSubmit={newWorktree.submit}
+        onClose={newWorktree.close}
+      />
+      <WorktreeRejectedModal rejection={worktreeRejection} onClose={dismissWorktreeRejection} />
+      {/* A Worktree its agent left with uncommitted changes: asked in every
+          privileged office, both shells (read-only offices are never sent
+          any, and the server refuses their answers). */}
+      {!officeReadOnly && (
+        <WorktreeDecisionDialog
+          worktreesByDirectory={worktreesByDirectory}
+          directories={directories}
+          error={worktreeDecisionError}
+        />
+      )}
+      {/* This office's × on an agent with uncommitted Worktree files: asked
+          before the agent is stopped. */}
+      <CloseAgentQuestionDialog
+        question={agentCloseQuestion}
+        directories={directories}
+        onDone={clearAgentCloseQuestion}
+      />
 
       <ChangelogModal
         isOpen={isChangelogOpen}
@@ -942,6 +1001,7 @@ function App() {
           onResume={resumeAndFocus}
           onOpenAgent={mobileShell.openAgent}
           statusFor={terminalDrawer.statusFor}
+          worktrees={worktreesListing}
           onSearch={setConversationSearch}
         />
       )}

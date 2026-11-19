@@ -336,9 +336,22 @@ export function ToolOverlay({
                   >
                     {activityText}
                   </span>
-                  {ch.directoryName && (
-                    <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
+                  {(ch.directoryName || ch.worktree) && (
+                    // `<directory> · <icon> <branch>` for an agent in a Worktree.
+                    <span
+                      data-testid="agent-overlay-origin"
+                      className="text-2xs leading-none overflow-hidden text-ellipsis block"
+                    >
                       {ch.directoryName}
+                      {ch.worktree && (
+                        <>
+                          {ch.directoryName && ' · '}
+                          <span data-testid="agent-overlay-worktree" className="inline-flex">
+                            <PixelIcon name="worktree" scale={1} />
+                          </span>{' '}
+                          {ch.worktree.branch}
+                        </>
+                      )}
                     </span>
                   )}
                 </div>

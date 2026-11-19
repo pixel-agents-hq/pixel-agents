@@ -24,6 +24,7 @@ export type ServerMessage =
   | SubagentClear
   | SubagentToolPermission
   | AgentTeamInfo
+  | AgentWorktreeChanged
   | AgentContextUsage
   | LayoutLoaded
   | FurnitureAssetsLoaded
@@ -50,6 +51,11 @@ export type ServerMessage =
   | DirectorySuggestions
   | ConversationsLoaded
   | ConversationSearchResults
+  | WorktreeRejected
+  | WorktreeOptions
+  | WorktreeDecisionRejected
+  | AgentCloseQuestion
+  | WorktreesLoaded
   | TerminalAvailability
   | TerminalSessionOpened
   | TerminalSessionClosed
@@ -90,6 +96,9 @@ export type ClientMessage =
   | RequestConversations
   | SearchConversations
   | ResumeConversation
+  | RequestWorktrees
+  | RequestWorktreeOptions
+  | DecideWorktree
   | RequestDiagnostics;
 
 export interface ProviderCapabilities {
@@ -106,6 +115,12 @@ export interface AgentCreated {
   palette?: number;
   repeat?: number;
   seatId?: string;
+  worktree?: AgentWorktree;
+}
+
+export interface AgentWorktree {
+  name: string;
+  branch: string;
 }
 
 export interface AgentClosed {
@@ -124,6 +139,7 @@ export interface ExistingAgents {
   agentMeta: Record<string, AgentSeatMeta>;
   directoryNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
+  worktrees?: Record<string, AgentWorktree>;
 }
 
 export interface AgentSeatMeta {
@@ -208,6 +224,12 @@ export interface AgentTeamInfo {
   isTeamLead?: boolean;
   leadAgentId?: number;
   teamUsesTmux?: boolean;
+}
+
+export interface AgentWorktreeChanged {
+  type: 'agentWorktreeChanged';
+  id: number;
+  worktree?: AgentWorktree;
 }
 
 export interface AgentContextUsage {
@@ -445,11 +467,17 @@ export interface Directory {
   name: string;
   path: string;
   source: DirectorySource;
+  isRepo: boolean;
+  hasOrigin?: boolean;
+  worktreeBase?: WorktreeBase;
+  worktreeBranchPrefix?: string;
   characters?: number[];
   characterOrder?: DirectoryCharacterOrder;
 }
 
 export type DirectorySource = 'user' | 'host';
+
+export type WorktreeBase = 'head' | 'fresh';
 
 export type DirectoryCharacterOrder = 'priority' | 'random';
 
@@ -488,6 +516,7 @@ export interface Conversation {
   palette?: number;
   repeat?: number;
   agentId?: number;
+  worktree?: AgentWorktree;
 }
 
 export interface ConversationSearchResults {
@@ -504,6 +533,70 @@ export interface FoundConversation {
   directoryName: string;
   conversation: Conversation;
 }
+
+export interface WorktreeRejected {
+  type: 'worktreeRejected';
+  directoryPath: string;
+  reason: string;
+}
+
+export interface WorktreeOptions {
+  type: 'worktreeOptions';
+  directoryPath: string;
+  name: string;
+  prefix: string;
+  branches: WorktreeBranch[];
+  defaultBase?: WorktreeBranch;
+}
+
+export interface WorktreeBranch {
+  name: string;
+  location: WorktreeBranchLocation;
+  current?: boolean;
+}
+
+export type WorktreeBranchLocation = 'local' | 'origin';
+
+export interface WorktreeDecisionRejected {
+  type: 'worktreeDecisionRejected';
+  directoryPath: string;
+  name: string;
+  reason: string;
+}
+
+export interface AgentCloseQuestion {
+  type: 'agentCloseQuestion';
+  id: number;
+  directoryPath: string;
+  name: string;
+  branch: string;
+  uncommittedFiles: number;
+}
+
+export interface WorktreesLoaded {
+  type: 'worktreesLoaded';
+  directoryPath: string;
+  worktrees: WorktreeSummary[];
+  cliName?: string;
+}
+
+export interface WorktreeSummary {
+  name: string;
+  branch: string;
+  owner: WorktreeOwner;
+  latestSessionId?: string;
+  state: WorktreeState;
+  sizeBytes: number;
+  uncommittedFiles: number;
+  uniqueCommits: number;
+  agentId?: number;
+  palette?: number;
+  repeat?: number;
+}
+
+export type WorktreeOwner = 'pixelAgents' | 'cli';
+
+export type WorktreeState = 'active' | 'kept' | 'parked' | 'needsDecision';
 
 export interface TerminalAvailability {
   type: 'terminalAvailability';
@@ -535,6 +628,9 @@ export interface LaunchAgent {
   type: 'launchAgent';
   directoryPath?: string;
   palette?: number;
+  worktree?: boolean;
+  worktreeName?: string;
+  worktreeFrom?: WorktreeBranch;
 }
 
 export interface FocusAgent {
@@ -545,7 +641,11 @@ export interface FocusAgent {
 export interface CloseAgent {
   type: 'closeAgent';
   id: number;
+  worktreeChoice?: WorktreeLeaveChoice;
+  confirmedFiles?: number;
 }
+
+export type WorktreeLeaveChoice = 'save' | 'keep' | 'discard';
 
 export interface SaveAgentSeats {
   type: 'saveAgentSeats';
@@ -684,6 +784,8 @@ export interface SaveDirectory {
   previousPath?: string;
   characters?: number[];
   characterOrder?: DirectoryCharacterOrder;
+  worktreeBase?: WorktreeBase;
+  worktreeBranchPrefix?: string;
 }
 
 export interface RemoveDirectory {
@@ -717,6 +819,27 @@ export interface ResumeConversation {
   sessionId: string;
   directoryPath: string;
 }
+
+export interface RequestWorktrees {
+  type: 'requestWorktrees';
+  directoryPath: string;
+}
+
+export interface RequestWorktreeOptions {
+  type: 'requestWorktreeOptions';
+  directoryPath: string;
+}
+
+export interface DecideWorktree {
+  type: 'decideWorktree';
+  directoryPath: string;
+  name: string;
+  choice: WorktreeChoice;
+  confirmedFiles?: number;
+  confirmedCommits?: number;
+}
+
+export type WorktreeChoice = 'save' | 'keep' | 'discard' | 'remove' | 'deleteBranch';
 
 export interface RequestDiagnostics {
   type: 'requestDiagnostics';

@@ -20,7 +20,7 @@ interface MobileAgentBarProps {
   onCloseAgent: (agentId: number) => void;
   /** Launch into a Directory picked from the + card's drawer, wearing
    *  `palette` when the launch started from the roster. */
-  onLaunchDirectory: (directory: Directory, palette?: number) => void;
+  onLaunchDirectory: (directory: Directory, palette?: number, worktree?: boolean) => void;
   /** Directories offered by the launch drawer (tap on the + card). */
   directories: Directory[];
   /** Drawer's pinned `+ Directory` row — opens the Directory modal empty. */
@@ -161,9 +161,9 @@ export function MobileAgentBar({
             isOpen={menus.isDrawerOpen}
             directories={directories}
             pick={menus.pendingPick}
-            onSelect={(directory, palette) => {
+            onSelect={(directory, palette, worktree) => {
               closeDrawer();
-              onLaunchDirectory(directory, palette);
+              onLaunchDirectory(directory, palette, worktree);
             }}
             onAddDirectory={() => {
               closeDrawer();

@@ -99,6 +99,21 @@ describe('directorySuggestions', () => {
     expect(collectDirectorySuggestions(provider, [])).toEqual([alive]);
   });
 
+  it("never suggests a worktree folder, ours or Claude Code's, nor anything inside one", () => {
+    const repo = makeDirectory('repo-with-worktrees');
+    const worktree = makeDirectory(
+      path.join('repo-with-worktrees', '.claude', 'worktrees', 'brave-otter'),
+    );
+    const inside = makeDirectory(
+      path.join('repo-with-worktrees', '.claude', 'worktrees', 'brave-otter', 'pkg'),
+    );
+    seedTranscript('proj-repo', repo);
+    seedTranscript('proj-worktree', worktree);
+    seedTranscript('proj-inside', inside);
+
+    expect(collectDirectorySuggestions(provider, [])).toEqual([repo]);
+  });
+
   it('drops a path that exists but is a file', () => {
     const file = path.join(tempHome, 'notes.txt');
     fs.writeFileSync(file, 'hi', 'utf-8');

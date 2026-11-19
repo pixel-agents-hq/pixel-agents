@@ -25,6 +25,7 @@ import {
   DIRECTORY_SUGGESTION_LIMIT,
 } from './constants.js';
 import { type HostDirectoryEntry, listDirectories, normalizeDirectoryPath } from './directories.js';
+import { isInWorktreesFolder } from './worktreeLocation.js';
 
 /** The slice of a provider this needs: where sessions live and what they're
  *  called. Both are optional on HookProvider (a provider without a file
@@ -63,6 +64,8 @@ export function collectDirectorySuggestions(
       if (recovered === undefined) continue;
 
       const resolved = path.resolve(recovered.cwd);
+      // A worktree (ours or Claude's) is its Directory's, never one of its own.
+      if (isInWorktreesFolder(resolved)) continue;
       const key = normalizeDirectoryPath(resolved);
       if (known.has(key)) continue;
       // Several session directories can resolve to one working directory (a
@@ -87,8 +90,9 @@ export function collectDirectorySuggestions(
     .map((entry) => entry.resolved);
 }
 
-/** `'*.jsonl'` → `'.jsonl'`. Anything else (or nothing) matches every file, so
- *  a provider that doesn't declare a pattern still gets scanned. */
+/** `'*.jsonl'` → `'.jsonl'`; any other pattern is returned whole and used as
+ *  a literal suffix. No pattern → `''`, which matches every file, so a
+ *  provider that doesn't declare one still gets scanned here. */
 export function transcriptSuffix(pattern: string | undefined): string {
   if (pattern === undefined) return '';
   return pattern.startsWith('*') ? pattern.slice(1) : pattern;

@@ -274,6 +274,60 @@ describe('claudeProvider', () => {
     });
   });
 
+  describe('worktrees', () => {
+    const convention = claudeProvider.worktrees!;
+
+    it('keeps worktrees in .claude/worktrees', () => {
+      expect(convention.folder).toEqual(['.claude', 'worktrees']);
+    });
+
+    it('names a session dir after its folder, as getSessionDirs files it', () => {
+      const repo = '/Users/me/my_repo.v2';
+      expect(convention.sessionDirName(repo)).toBe(normalizeProjectPath(repo));
+      expect(convention.sessionDirName(repo)).toBe('-Users-me-my-repo-v2');
+    });
+
+    it("reads a worktree's name off its session dir, only for the repo named", () => {
+      const repoDir = convention.sessionDirName('/Users/me/repo');
+      const worktreeDir = convention.sessionDirName('/Users/me/repo/.claude/worktrees/fix_a.b');
+      expect(convention.worktreeOfSessionDir(worktreeDir, repoDir)).toBe('fix-a-b');
+      expect(convention.worktreeOfSessionDir(repoDir, repoDir)).toBeNull();
+      expect(convention.worktreeOfSessionDir(`${repoDir}-src`, repoDir)).toBeNull();
+      expect(convention.worktreeOfSessionDir(worktreeDir, '')).toBeNull();
+    });
+
+    it("reads the pid out of Claude Code's worktree lock reason", () => {
+      expect(convention.lockHolder?.('claude session probe (pid 4242 start 1700000000)')).toBe(
+        4242,
+      );
+    });
+
+    it('names no process for a lock that carries no pid', () => {
+      expect(convention.lockHolder?.('kept by hand')).toBeNull();
+      expect(convention.lockHolder?.('')).toBeNull();
+    });
+
+    it('links the folders worktree.symlinkDirectories lists, user and project scope', () => {
+      const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'pa-symlink-dirs-'));
+      const userSettings = path.join(os.homedir(), '.claude', 'settings.json');
+      const before = fs.existsSync(userSettings) ? fs.readFileSync(userSettings) : null;
+      try {
+        const write = (file: string, dirs: unknown) => {
+          fs.mkdirSync(path.dirname(file), { recursive: true });
+          fs.writeFileSync(file, JSON.stringify({ worktree: { symlinkDirectories: dirs } }));
+        };
+        write(userSettings, ['node_modules']);
+        write(path.join(repo, '.claude', 'settings.json'), ['node_modules', '.venv']);
+        write(path.join(repo, '.claude', 'settings.local.json'), ['vendor', 7]);
+        expect(convention.symlinkDirectories?.(repo)).toEqual(['node_modules', '.venv', 'vendor']);
+      } finally {
+        fs.rmSync(repo, { recursive: true, force: true });
+        if (before) fs.writeFileSync(userSettings, before);
+        else fs.rmSync(userSettings, { force: true });
+      }
+    });
+  });
+
   describe('formatToolStatus', () => {
     it('formats Read', () => {
       expect(claudeProvider.formatToolStatus('Read', { file_path: '/a/b.ts' })).toBe(

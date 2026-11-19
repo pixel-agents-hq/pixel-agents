@@ -5,6 +5,7 @@ import os from 'os';
 import path from 'path';
 
 import { namespaceE2EPath } from '../run-config';
+import { initGitRepo } from './git';
 import { applyMockHomeEnv } from './mock-claude';
 
 const REPO_ROOT = path.join(__dirname, '../..');
@@ -41,6 +42,11 @@ export interface LaunchOptions {
    * (single-folder default is unchanged).
    */
   workspaceFolders?: string[];
+  /**
+   * Workspace folders (of `workspaceFolders`) to make git repos with one
+   * commit before VS Code opens, so their drawer rows offer a Worktree launch.
+   */
+  gitRepoFolders?: string[];
   /** Pre-seed `~/.pixel-agents/config.json` (written before the server reads it). */
   seedConfig?: unknown;
   /** Pre-seed `~/.pixel-agents/layout.json` (written before the panel loads). */
@@ -168,6 +174,7 @@ export async function launchVSCode(
     const folderEntries = multiRootFolders.map((name) => {
       const folderDir = path.join(workspaceDir, name);
       fs.mkdirSync(folderDir, { recursive: true });
+      if (opts.gitRepoFolders?.includes(name)) initGitRepo(folderDir);
       const resolved =
         IS_WINDOWS || process.platform === 'darwin' ? fs.realpathSync.native(folderDir) : folderDir;
       return { path: resolved };
@@ -256,6 +263,9 @@ export async function launchVSCode(
     'workbench.panel.defaultLocation': 'left',
     'pixel-agents.autoShowPanel': true,
     'terminal.integrated.defaultLocation': 'editor',
+    // Killing an agent's terminal from VS Code (the worktrees spec) must not
+    // stop on a "terminate the running process?" confirmation.
+    'terminal.integrated.confirmOnKill': 'never',
     'workbench.activityBar.location': 'hidden',
     'workbench.startupEditor': 'none',
     'workbench.editor.empty.hint': 'hidden',

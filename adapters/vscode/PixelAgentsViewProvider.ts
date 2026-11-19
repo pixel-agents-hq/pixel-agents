@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { Directory } from '../../core/src/messages.js';
 import { rosterPick } from '../../core/src/paletteUtils.js';
 import type { HookProvider } from '../../core/src/provider.js';
 import { buildAgentDiagnostics } from '../../server/src/agentDiagnostics.js';
@@ -47,9 +48,11 @@ import {
   writeConfig,
 } from '../../server/src/configPersistence.js';
 import {
+  directoryAt,
   handleDirectoryClientMessage,
   type HostDirectoryEntry,
   listDirectories,
+  listDirectoryLocations,
 } from '../../server/src/directories.js';
 import { collectDirectorySuggestions } from '../../server/src/directorySuggestions.js';
 import { setDirectoryNameResolver, setTerminalAdapter } from '../../server/src/fileWatcher.js';
@@ -74,8 +77,15 @@ import { recentCharactersMessage, recordCharacterUse } from '../../server/src/re
 import { PixelAgentsServer } from '../../server/src/server.js';
 import { applyUsageBridgeChoice, usageSnapshotMessages } from '../../server/src/usageLimits.js';
 import {
+  invalidateAttributionDirectories,
+  setAttributionDirectories,
+} from '../../server/src/worktreeAttribution.js';
+import type { WorktreeTerminalLaunch } from '../../server/src/worktreeLaunch.js';
+import { retireWorktreesLeftBy } from '../../server/src/worktreeLeave.js';
+import {
   getProjectDirPath,
   launchNewTerminal,
+  type LaunchTerminalOptions,
   restoreAgents,
   sendCurrentAgentStatuses,
   sendExistingAgents,
@@ -97,6 +107,19 @@ import {
 } from './constants.js';
 import { workspaceDirectories } from './hostDirectories.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
+import { VscodeWorktrees } from './vscodeWorktrees.js';
+
+/**
+ * The Directory a launch request names: the one at its `directoryPath`,
+ * matched against every workspace folder (shown or not) and the user's
+ * entries; none for no path (the workspace fallback, named by the multi-root
+ * rule) or a path that is no Directory. launchNewTerminal gets it explicitly,
+ * beside the folder to run in, and never re-derives it from that folder.
+ */
+function launchDirectoryFor(directoryPath: unknown): Directory | undefined {
+  if (typeof directoryPath !== 'string' || directoryPath === '') return undefined;
+  return directoryAt(directoryPath, workspaceDirectories());
+}
 
 /** Cap on the pending-broadcast queue. If we exceed this, something has gone
  *  wrong (webviewReady never arriving) — log and drop the oldest. */
@@ -139,12 +162,17 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   // session, even though webviewReady fires on every panel focus.
   private autoSpawnAttempted = false;
 
+  // Worktrees: held, swept, their messages answered, launches prepared.
+  private readonly worktrees: VscodeWorktrees;
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     adapter: StateAdapter,
   ) {
     this.adapter = adapter;
     this.store.setAdapter(this.adapter);
+    // Before any agent is added: this window holds its agents' Worktrees.
+    this.worktrees = new VscodeWorktrees(this.store, (m) => this.sendOrBuffer(m));
     // Through the store: the panel hears it there, and so do the embedded
     // server's /ws clients.
     this.characterProfilesWatcher = watchCharacterProfiles(
@@ -169,6 +197,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     setTerminalAdapter(new VscodeTerminalAdapter());
+
+    // Sessions in a Directory's worktrees (ours or Claude's own) belong to
+    // that Directory: every workspace folder and user Directory.
+    setAttributionDirectories(() => listDirectoryLocations(this.hostDirectories()));
 
     // Map an external agent's cwd/projectDir to its Directory name (here, the
     // owning workspace folder's name) — the identity areaMappings is keyed on — so
@@ -209,6 +241,28 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.runtime = new AgentRuntime(this.store, claudeProvider);
 
     this.initServer();
+  }
+
+  /** Start an agent's terminal and register it for hook routing; its id. */
+  private async launchTerminal(options: LaunchTerminalOptions): Promise<number> {
+    const id = await launchNewTerminal(
+      this.store.nextAgentId,
+      this.store.nextTerminalIndex,
+      this.store,
+      this.runtime.activeAgentId,
+      this.runtime.knownJsonlFiles,
+      this.runtime.fileWatchers,
+      this.runtime.pollingTimers,
+      this.runtime.waitingTimers,
+      this.runtime.permissionTimers,
+      this.runtime.jsonlPollTimers,
+      this.runtime.projectScanTimer,
+      () => this.store.persist(),
+      options,
+    );
+    const agent = this.store.get(id);
+    if (agent) this.runtime.registerAgent(agent.sessionId, id);
+    return id;
   }
 
   private get extensionUri(): vscode.Uri {
@@ -258,6 +312,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   /** Send the current union (user-defined + shown workspace folders) to the
    *  office. Also the success signal for a Directory mutation. */
   private sendDirectories(): void {
+    invalidateAttributionDirectories();
     this.sendOrBuffer({
       type: 'directoriesLoaded',
       directories: listDirectories(this.shownHostDirectories()),
@@ -476,44 +531,50 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
       if (message.type === 'launchAgent') {
-        const prevAgentIds = new Set(this.store.keys());
         const picked = rosterPick(message.palette, getPaletteCount());
-        await launchNewTerminal(
-          this.store.nextAgentId,
-          this.store.nextTerminalIndex,
-          this.store,
-          this.runtime.activeAgentId,
-          this.runtime.knownJsonlFiles,
-          this.runtime.fileWatchers,
-          this.runtime.pollingTimers,
-          this.runtime.waitingTimers,
-          this.runtime.permissionTimers,
-          this.runtime.jsonlPollTimers,
-          this.runtime.projectScanTimer,
-          () => this.store.persist(),
-          {
-            // Every launch comes from a drawer row and carries its Directory's
-            // path; no directoryPath leaves launchNewTerminal's own fallback —
-            // the first workspace folder — exactly as it was.
-            directoryPath: message.directoryPath as string | undefined,
-            // Permission posture is a persisted per-host setting, never a
-            // per-launch field: the webview sends only where to launch (and,
-            // picked from the roster, which character).
-            bypassPermissions: this.adapter.getSetting<boolean>(
-              GLOBAL_KEY_BYPASS_PERMISSIONS,
-              false,
-            ),
-            palette: picked,
-          },
+        // Every launch comes from a drawer row and carries its Directory's
+        // path; the Directory is resolved here, from the request, and handed
+        // over beside the folder to run in. No directoryPath leaves
+        // launchNewTerminal's own fallback — the first workspace folder —
+        // exactly as it was.
+        const directory = launchDirectoryFor(message.directoryPath);
+        // Permission posture is a persisted per-host setting, never a
+        // per-launch field: the webview sends only where to launch (and,
+        // picked from the roster, which character).
+        const bypassPermissions = this.adapter.getSetting<boolean>(
+          GLOBAL_KEY_BYPASS_PERMISSIONS,
+          false,
         );
-        // A roster pick moves to the front of the roster.
-        const recent = recordCharacterUse(picked);
-        if (recent) this.sendOrBuffer(recent);
-        // Register newly created agent(s) with hook handler
-        for (const [id, agent] of this.store) {
-          if (!prevAgentIds.has(id)) {
-            this.runtime.registerAgent(agent.sessionId, id);
-          }
+        const directoryPath =
+          typeof message.directoryPath === 'string' ? message.directoryPath : undefined;
+        // Into the Directory, or into a new Worktree of its repo: the terminal
+        // runs in the Worktree, the agent is still the Directory's. Any
+        // workspace folder (multi-root included) or user Directory that is a repo.
+        let intoWorktree: WorktreeTerminalLaunch | undefined;
+        if (message.worktree === true) {
+          const where = await this.worktrees.prepareLaunch(directoryPath, directory, message);
+          if (!where) return;
+          intoWorktree = where;
+        }
+        let launched: number | null;
+        try {
+          launched = await this.launchTerminal({
+            cwd: directoryPath,
+            ...intoWorktree,
+            directory,
+            bypassPermissions,
+            palette: picked,
+          });
+        } catch (err) {
+          console.error('[Pixel Agents] The terminal failed to start:', err);
+          launched = null;
+        }
+        if (launched === null && intoWorktree)
+          this.worktrees.unlaunched(directoryPath, intoWorktree);
+        // A roster pick moves to the front of the roster, once an agent wears it.
+        if (launched !== null) {
+          const recent = recordCharacterUse(picked);
+          if (recent) this.sendOrBuffer(recent);
         }
       } else if (message.type === 'focusAgent') {
         const agent = this.store.get(message.id);
@@ -529,17 +590,23 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           }
         }
       } else if (message.type === 'closeAgent') {
-        const agent = this.store.get(message.id);
-        if (agent) {
+        // A Worktree agent with uncommitted files is asked about first.
+        this.worktrees.closeAgent(message, (id) => {
+          const agent = this.store.get(id);
+          if (!agent) return;
           if (agent.terminalRef) {
             agent.terminalRef.dispose();
           } else {
             // External agent -- remove from tracking and dismiss the file
             // so the external scanner doesn't re-adopt it
             this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
-            this.runtime.removeAgent(message.id);
+            this.runtime.removeAgent(id);
           }
-        }
+        });
+      } else if (message.type === 'requestWorktreeOptions') {
+        this.worktrees.requestOptions(message, launchDirectoryFor(message.directoryPath));
+      } else if (message.type === 'requestWorktrees' || message.type === 'decideWorktree') {
+        this.worktrees.handleMessage(message);
       } else if (message.type === 'saveAgentSeats') {
         // Store seat assignments in a separate key (never touched by persistAgents)
         console.log(`[Pixel Agents] State: saveAgentSeats:`, JSON.stringify(message.seats));
@@ -809,6 +876,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.runtime.registerAgent(agent.sessionId, agent.id);
         }
 
+        // The Worktrees we made, as a follow-up to the handshake.
+        this.worktrees.sendSnapshot();
+
         // Auto-spawn: launch one agent on first webviewReady if the setting is
         // enabled and no agents are currently running.
         if (
@@ -824,30 +894,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           const autoShowPanel = vscode.workspace
             .getConfiguration()
             .get<boolean>(CONFIG_KEY_AUTO_SHOW_PANEL, false);
-          const prevAgentIds = new Set(this.store.keys());
-          await launchNewTerminal(
-            this.store.nextAgentId,
-            this.store.nextTerminalIndex,
-            this.store,
-            this.runtime.activeAgentId,
-            this.runtime.knownJsonlFiles,
-            this.runtime.fileWatchers,
-            this.runtime.pollingTimers,
-            this.runtime.waitingTimers,
-            this.runtime.permissionTimers,
-            this.runtime.jsonlPollTimers,
-            this.runtime.projectScanTimer,
-            () => this.store.persist(),
-            // No directoryPath: the workspace fallback. Auto-spawn is a launch
-            // like any other, so it runs under the same persisted permission
-            // posture.
-            { bypassPermissions, suppressShow: autoShowPanel },
-          );
-          for (const [id, agent] of this.store) {
-            if (!prevAgentIds.has(id)) {
-              this.runtime.registerAgent(agent.sessionId, id);
-            }
-          }
+          // No directoryPath: the workspace fallback. Auto-spawn is a launch
+          // like any other, so it runs under the same persisted permission
+          // posture.
+          await this.launchTerminal({ bypassPermissions, suppressShow: autoShowPanel });
         } else {
           // Mark as attempted even when skipping, so subsequent panel focuses
           // (which retrigger webviewReady) never auto-spawn unexpectedly.
@@ -1087,6 +1137,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
           this.runtime.unregisterAgent(agent.sessionId);
           this.runtime.removeAgent(id);
+          // Its process is gone (however it left: the card's x, /exit, the
+          // user closing the terminal in VS Code): the leave rules apply once
+          // no other agent runs in its Worktree. In the background — closing
+          // never waits on git.
+          void retireWorktreesLeftBy(this.store, agent);
         }
       }
     });
@@ -1202,7 +1257,17 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
+  /** Deactivation: retire no Worktree from here on (a window reload keeps
+   *  its terminals running, and the next activation's sweep handles any that
+   *  really ended), then let git work already under way finish. */
+  async shutdown(): Promise<void> {
+    const stopping = this.worktrees.stop();
+    this.dispose();
+    await stopping;
+  }
+
   dispose() {
+    this.worktrees.dispose();
     this.pixelAgentsServer?.stop();
     this.pixelAgentsServer = null;
     this.runtime.dispose();

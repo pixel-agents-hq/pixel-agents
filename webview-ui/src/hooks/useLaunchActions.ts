@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 
 import { resumeConversation } from '../conversations/useConversations.js';
 import { transport } from '../transport/index.js';
+import type { WorktreeChoices } from '../worktrees/useNewWorktree.js';
 import type { Directory } from './useExtensionMessages.js';
 
 /**
@@ -11,11 +12,25 @@ import type { Directory } from './useExtensionMessages.js';
  */
 export function useLaunchActions(expectLaunch: () => void) {
   // palette: the character picked from the roster (absent = the Directory's
-  // default characters, else a random pick, server-side).
+  // default characters, else a random pick, server-side). worktree: into a new
+  // Worktree of the Directory's repo, named and based as the new-worktree
+  // modal chose (a failed create answers worktreeRejected and opens no
+  // terminal, so the launch latch just times out).
   const launch = useCallback(
-    (directory: Directory, palette?: number) => {
+    (directory: Directory, palette?: number, worktree?: WorktreeChoices) => {
       expectLaunch();
-      transport.send({ type: 'launchAgent', directoryPath: directory.path, palette });
+      transport.send({
+        type: 'launchAgent',
+        directoryPath: directory.path,
+        palette,
+        ...(worktree
+          ? {
+              worktree: true,
+              worktreeName: worktree.name,
+              ...(worktree.from ? { worktreeFrom: worktree.from } : {}),
+            }
+          : {}),
+      });
     },
     [expectLaunch],
   );

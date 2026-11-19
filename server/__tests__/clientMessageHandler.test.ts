@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.js';
 import { AgentRuntime } from '../src/agentRuntime.js';
@@ -1043,6 +1043,19 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     expect(broadcasts).toHaveLength(0);
   });
 
+  it('a worktree launch is refused from an untokened client, with no reply that could say why', () => {
+    const { manager } = workingPtyManager();
+
+    dispatch(
+      { type: 'launchAgent', worktree: true },
+      ctx({ runtime, ptyManager: manager, privileged: false }),
+    );
+
+    expect(store.size).toBe(0);
+    expect(broadcasts).toHaveLength(0);
+    expect(sent).toEqual([]);
+  });
+
   it('launchAgent applies the persisted permission posture, not a per-launch field', () => {
     const { manager, spawnArgs } = workingPtyManager();
 
@@ -1131,7 +1144,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
 
     const directories = sent.find((m) => m.type === 'directoriesLoaded');
     expect(directories?.directories).toEqual([
-      { name: path.basename(process.cwd()), path: process.cwd(), source: 'host' },
+      { name: path.basename(process.cwd()), path: process.cwd(), source: 'host', isRepo: false },
     ]);
     const settings = sent.find((m) => m.type === 'settingsLoaded');
     expect(settings?.showHostDirectories).toBe(true);
@@ -1139,7 +1152,12 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
 
   it('setShowHostDirectories persists and rebroadcasts the list to every office', () => {
     const { manager } = workingPtyManager();
-    const host = { name: path.basename(process.cwd()), path: process.cwd(), source: 'host' };
+    const host = {
+      name: path.basename(process.cwd()),
+      path: process.cwd(),
+      source: 'host',
+      isRepo: false,
+    };
 
     dispatch({ type: 'setShowHostDirectories', enabled: true }, ctx({ ptyManager: manager }));
     expect(store.getAdapter()!.getSetting('pixel-agents.showHostDirectories', false)).toBe(true);
@@ -1166,7 +1184,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     expect(broadcasts).toEqual([
       {
         type: 'directoriesLoaded',
-        directories: [{ name: 'Side Project', path: target, source: 'user' }],
+        directories: [{ name: 'Side Project', path: target, source: 'user', isRepo: false }],
       },
     ]);
   });
@@ -1209,7 +1227,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     expect(sent).toEqual([
       {
         type: 'directorySaved',
-        directory: { name: 'Side Project', path: target, source: 'user' },
+        directory: { name: 'Side Project', path: target, source: 'user', isRepo: false },
       },
     ]);
     expect(broadcasts).toHaveLength(1);
@@ -1218,6 +1236,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
       name: 'Side Project',
       path: target,
       source: 'user',
+      isRepo: false,
     });
     expect(readConfig().directories).toEqual([{ name: 'Side Project', path: target }]);
   });
@@ -1350,14 +1369,15 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
 
   // ── closeAgent ───────────────────────────────────────────────
 
-  it('closeAgent kills the PTY and removes the agent', () => {
+  it('closeAgent kills the PTY and removes the agent', async () => {
     const { manager, spawned } = workingPtyManager();
     store.set(5, makeAgent(5));
     manager.create({ agentId: 5, command: 'claude', args: [], cwd: tempHome, env: {} });
 
     dispatch({ type: 'closeAgent', id: 5 }, ctx({ runtime, ptyManager: manager }));
 
-    expect(spawned[0].killSignals.length).toBeGreaterThan(0);
+    // Closed once it has checked for a Worktree to ask about (none here).
+    await vi.waitFor(() => expect(spawned[0].killSignals.length).toBeGreaterThan(0));
     expect(manager.has(5)).toBe(false);
     expect(store.has(5)).toBe(false);
   });
@@ -1377,7 +1397,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     expect(store.has(5)).toBe(true);
   });
 
-  it("closeAgent takes the Lead's teammates with it", () => {
+  it("closeAgent takes the Lead's teammates with it", async () => {
     const { manager } = workingPtyManager();
     store.set(5, { ...makeAgent(5), isTeamLead: true });
     store.set(6, { ...makeAgent(6), leadAgentId: 5, agentName: 'review-helper' });
@@ -1385,11 +1405,11 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
 
     dispatch({ type: 'closeAgent', id: 5 }, ctx({ runtime, ptyManager: manager }));
 
-    expect(store.has(5)).toBe(false);
+    await vi.waitFor(() => expect(store.has(5)).toBe(false));
     expect(store.has(6)).toBe(false);
   });
 
-  it('closeAgent removes an observed agent that has no PTY', () => {
+  it('closeAgent removes an observed agent that has no PTY', async () => {
     store.set(7, makeAgent(7));
 
     dispatch(
@@ -1397,7 +1417,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
       ctx({ runtime, ptyManager: workingPtyManager().manager }),
     );
 
-    expect(store.has(7)).toBe(false);
+    await vi.waitFor(() => expect(store.has(7)).toBe(false));
   });
 });
 
@@ -1479,6 +1499,14 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
       { type: 'saveDirectory', name: 'Project', path: directory },
       { type: 'removeDirectory', path: directory },
       { type: 'requestDirectorySuggestions' },
+      { type: 'requestWorktrees', directoryPath: directory },
+      {
+        type: 'decideWorktree',
+        directoryPath: directory,
+        name: 'brave-otter',
+        choice: 'discard',
+        confirmedFiles: 1,
+      },
       { type: 'requestDiagnostics' },
     ]) {
       handleClientMessage(msg, (m) => sent.push(m), untokened);

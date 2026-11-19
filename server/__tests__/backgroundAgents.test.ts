@@ -691,6 +691,19 @@ describe('background spawns (teams OFF) classified by sidecar name', () => {
     expect(watch.isWatching(jsonlPath)).toBe(false);
   });
 
+  it("a Teammate of a Worktree agent wears its Lead's Worktree", () => {
+    lead.worktree = {
+      name: 'brave-otter',
+      path: '/repo/.claude/worktrees/brave-otter',
+      branch: 'feature/brave-otter',
+    };
+    seedSidecar({ name: 'ghost-writer' });
+    spawnAndLaunch();
+
+    const teammate = [...agents.values()].find((a) => a.leadAgentId === 1);
+    expect(teammate?.worktree).toEqual(lead.worktree);
+  });
+
   it('does not create a second teammate when the sidecar path is spelled differently', () => {
     // Windows only: the same transcript reaches the runtime spelled two ways
     // (hooks carry Claude's `process.cwd()` casing, scanners build from

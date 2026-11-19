@@ -74,11 +74,14 @@ export const test = base.extend<{
   seedClaudeSettings: unknown;
   /** Folder basenames for a multi-root workspace (>1 → multi-root). */
   workspaceFolders: string[];
+  /** Workspace folders to make git repos (one commit) before VS Code opens. */
+  gitRepoFolders: string[];
 }>({
   seedConfig: [undefined, { option: true }],
   seedLayout: [undefined, { option: true }],
   seedClaudeSettings: [undefined, { option: true }],
   workspaceFolders: [[], { option: true }],
+  gitRepoFolders: [[], { option: true }],
   // Auto-fixture: tag every test with Allure epic + feature derived from its
   // @area: annotation and enclosing describe path. Runs before pixelAgents.
   _allureLabels: [
@@ -89,7 +92,7 @@ export const test = base.extend<{
     { auto: true },
   ],
   pixelAgents: async (
-    { seedConfig, seedLayout, seedClaudeSettings, workspaceFolders },
+    { seedConfig, seedLayout, seedClaudeSettings, workspaceFolders, gitRepoFolders },
     use,
     testInfo,
   ) => {
@@ -98,6 +101,7 @@ export const test = base.extend<{
       seedLayout,
       seedClaudeSettings,
       workspaceFolders,
+      gitRepoFolders,
     });
     const { window, tmpHome, workspaceDir, mockLogFile } = session;
     const runVideo = window.video();

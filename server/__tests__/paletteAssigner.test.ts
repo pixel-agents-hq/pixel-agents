@@ -226,6 +226,7 @@ describe('paletteAssigner', () => {
       name: 'D',
       path: '/d',
       source: 'user' as const,
+      isRepo: false,
       characters,
       characterOrder,
     });

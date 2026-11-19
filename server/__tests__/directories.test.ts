@@ -94,8 +94,8 @@ describe('directories', () => {
         [{ name: 'beta', path: beta }],
       );
       expect(union).toEqual([
-        { name: 'beta', path: beta, source: 'host' },
-        { name: 'Mine', path: alpha, source: 'user' },
+        { name: 'beta', path: beta, source: 'host', isRepo: false },
+        { name: 'Mine', path: alpha, source: 'user', isRepo: false },
       ]);
     });
 
@@ -104,7 +104,7 @@ describe('directories', () => {
         [{ name: 'My Project', path: alpha }],
         [{ name: 'alpha', path: alpha }],
       );
-      expect(union).toEqual([{ name: 'My Project', path: alpha, source: 'user' }]);
+      expect(union).toEqual([{ name: 'My Project', path: alpha, source: 'user', isRepo: false }]);
     });
 
     it('treats a trailing separator and a ~ path as the same Directory', () => {
@@ -142,7 +142,9 @@ describe('directories', () => {
       });
 
       expect(readConfig().directories).toEqual([{ name: 'Mine', path: alpha }]);
-      expect(listDirectories([])).toEqual([{ name: 'Mine', path: alpha, source: 'user' }]);
+      expect(listDirectories([])).toEqual([
+        { name: 'Mine', path: alpha, source: 'user', isRepo: false },
+      ]);
     });
 
     it('stores the expanded path, so ~ never reaches the office', () => {
@@ -190,7 +192,7 @@ describe('directories', () => {
 
       const stored = { name: 'Mine', path: alpha, characters: [3, 1, 0], characterOrder: 'random' };
       expect(readConfig().directories).toEqual([stored]);
-      expect(listDirectories([])).toEqual([{ ...stored, source: 'user' }]);
+      expect(listDirectories([])).toEqual([{ ...stored, source: 'user', isRepo: false }]);
     });
 
     it('stores no character fields when there are no defaults, nor the default order', () => {
@@ -253,14 +255,17 @@ describe('directories', () => {
 
       expect(handled).toBe(true);
       expect(replies).toEqual([
-        { type: 'directorySaved', directory: { name: 'Mine', path: alpha, source: 'user' } },
+        {
+          type: 'directorySaved',
+          directory: { name: 'Mine', path: alpha, source: 'user', isRepo: false },
+        },
       ]);
       expect(broadcasts).toEqual([
         {
           type: 'directoriesLoaded',
           directories: [
-            { name: 'beta', path: beta, source: 'host' },
-            { name: 'Mine', path: alpha, source: 'user' },
+            { name: 'beta', path: beta, source: 'host', isRepo: false },
+            { name: 'Mine', path: alpha, source: 'user', isRepo: false },
           ],
         },
       ]);
@@ -275,7 +280,12 @@ describe('directories', () => {
       expect(replies).toEqual([
         {
           type: 'directorySaved',
-          directory: { name: path.basename(tempHome), path: tempHome, source: 'user' },
+          directory: {
+            name: path.basename(tempHome),
+            path: tempHome,
+            source: 'user',
+            isRepo: false,
+          },
         },
       ]);
     });
@@ -312,7 +322,9 @@ describe('directories', () => {
 
       expect(readConfig().directories).toEqual([]);
       expect(broadcasts).toHaveLength(1);
-      expect(broadcasts[0].directories).toEqual([{ name: 'beta', path: beta, source: 'host' }]);
+      expect(broadcasts[0].directories).toEqual([
+        { name: 'beta', path: beta, source: 'host', isRepo: false },
+      ]);
     });
 
     it('saveDirectory reports a failed write as a rejection, not a saved Directory', () => {
@@ -351,6 +363,91 @@ describe('directories', () => {
   });
 
   // ── launch labelling ─────────────────────────────────────────
+
+  describe('Worktree settings', () => {
+    it('stores base and branch prefix, lists them, and keeps them through a reload', () => {
+      const result = saveUserDirectory({
+        name: 'Mine',
+        path: alpha,
+        worktreeBase: 'fresh',
+        worktreeBranchPrefix: '  feature/ ',
+      });
+      expect(result.ok).toBe(true);
+
+      expect(readConfig().directories).toEqual([
+        { name: 'Mine', path: alpha, worktreeBase: 'fresh', worktreeBranchPrefix: 'feature/' },
+      ]);
+      expect(listDirectories([])).toEqual([
+        {
+          name: 'Mine',
+          path: alpha,
+          source: 'user',
+          isRepo: false,
+          worktreeBase: 'fresh',
+          worktreeBranchPrefix: 'feature/',
+        },
+      ]);
+    });
+
+    it('stores nothing for the defaults, and an edit back to them clears the fields', () => {
+      saveUserDirectory({
+        name: 'Mine',
+        path: alpha,
+        worktreeBase: 'fresh',
+        worktreeBranchPrefix: 'x/',
+      });
+      saveUserDirectory({
+        name: 'Mine',
+        path: alpha,
+        previousPath: alpha,
+        worktreeBase: 'head',
+        worktreeBranchPrefix: '',
+      });
+
+      expect(readConfig().directories).toEqual([{ name: 'Mine', path: alpha }]);
+    });
+
+    it('keeps the Worktree settings beside the default characters', () => {
+      saveUserDirectory({
+        name: 'Mine',
+        path: alpha,
+        characters: [2],
+        worktreeBase: 'fresh',
+      });
+
+      expect(readConfig().directories).toEqual([
+        { name: 'Mine', path: alpha, characters: [2], worktreeBase: 'fresh' },
+      ]);
+    });
+
+    it('refuses a branch prefix git would not accept, persisting nothing', () => {
+      const result = saveUserDirectory({
+        name: 'Mine',
+        path: alpha,
+        worktreeBranchPrefix: 'a..b/',
+      });
+
+      expect(result.ok).toBe(false);
+      expect(readConfig().directories).toEqual([]);
+    });
+
+    it('host Directories carry no Worktree settings: their Worktrees take the defaults', () => {
+      const union = buildDirectoryUnion([], [{ name: 'beta', path: beta }]);
+      expect(union).toEqual([{ name: 'beta', path: beta, source: 'host', isRepo: false }]);
+    });
+
+    it('marks a Directory that is a git repo root', () => {
+      fs.mkdirSync(path.join(beta, '.git'));
+      const union = buildDirectoryUnion(
+        [{ name: 'Mine', path: alpha }],
+        [{ name: 'beta', path: beta }],
+      );
+      expect(union.map((d) => [d.name, d.isRepo])).toEqual([
+        ['beta', true],
+        ['Mine', false],
+      ]);
+    });
+  });
 
   describe('directoryAt', () => {
     it('gives a launch the name its Directory was given, not the path basename', () => {

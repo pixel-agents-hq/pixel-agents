@@ -434,6 +434,8 @@ export const TERMINAL_HIDE_RIBBON_REST_RATIO = 0.75;
 export const MUGSHOT_CROP_TOP_ROW = 0;
 export const MUGSHOT_CROP_LEFT_COL = -1;
 export const MUGSHOT_CROP_SIDE_PX = 20;
+/** The side of a Worktrees list row's square trash button: a 16 px icon in its 2 px border, with room. */
+export const WORKTREE_ROW_BUTTON_PX = 24;
 /** Integer sprite-pixel zoom. 2 = each sprite pixel is 2 px. */
 export const MUGSHOT_RENDER_ZOOM = 2;
 /** A Directory's default characters, inline in the launch drawer: mug shots

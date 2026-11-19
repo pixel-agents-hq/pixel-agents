@@ -322,6 +322,28 @@ export const ICONS = {
     '........',
     '........',
   ],
+  // A git branch: the trunk's two commits on the left, a branch forking off
+  // to its own commit top right (a Worktree's mark).
+  trash: [
+    '...##...',
+    '.######.',
+    '........',
+    '.######.',
+    '.#.##.#.',
+    '.#.##.#.',
+    '.#.##.#.',
+    '.######.',
+  ],
+  worktree: [
+    '##...##.',
+    '##...##.',
+    '.#...#..',
+    '.#..#...',
+    '.#.#....',
+    '.##.....',
+    '##......',
+    '##......',
+  ],
   // A magnifying glass: the lens top-left, the handle out to the corner.
   search: [
     '.####...',

@@ -1,6 +1,6 @@
 import * as path from 'path';
 
-import type { AgentEvent, HookProvider } from '../../core/src/provider.js';
+import type { AgentEvent, HookProvider, SessionWhereabouts } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { SESSION_END_GRACE_MS } from './constants.js';
 import { pathsMatch } from './pathKey.js';
@@ -55,6 +55,9 @@ interface SessionLifecycleCallbacks {
   /** Called when a teammate should be removed (e.g. no longer in team config members).
    *  Removes the teammate agent from the office. */
   onTeammateRemoved?: (teammateAgentId: number) => void;
+  /** Called with where every hook of a known session says it runs (its cwd
+   *  and transcript): the host decides whether it moved (agentMoves.ts). */
+  onSessionSeen?: (agentId: number, where: SessionWhereabouts) => void;
 }
 
 export class HookEventHandler {
@@ -321,6 +324,11 @@ export class HookEventHandler {
       console.log(
         `[Pixel Agents] Hook: Agent ${agentId} - ${eventName} (session=${event.session_id.slice(0, 8)}...)`,
       );
+
+    // Every hook names where the session runs: AgentMoves.relocate decides
+    // whether that is news (a new folder: it moved itself into or out of a
+    // worktree), cheaply when it isn't.
+    if (normalized.where) this.lifecycleCallbacks.onSessionSeen?.(agentId, normalized.where);
 
     // Dispatch on normalized AgentEvent.kind, not raw hook event names.
     // The TeammateIdle / TaskCompleted hooks normalize to `subagentTurnEnd` -- both
