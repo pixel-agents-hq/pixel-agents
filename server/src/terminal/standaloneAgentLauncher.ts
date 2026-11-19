@@ -22,7 +22,7 @@ import { restoredAgentInit } from '../agentPersistence.js';
 import type { AgentRuntime } from '../agentRuntime.js';
 import { createAgentState } from '../agentState.js';
 import type { AgentStateStore } from '../agentStateStore.js';
-import { JSONL_POLL_INTERVAL_MS } from '../constants.js';
+import { JSONL_POLL_INTERVAL_MS, OFFICE_MCP_SERVER_NAME } from '../constants.js';
 import { clearContextUsage } from '../contextUsage.js';
 import { startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor } from '../hostDirectory.js';
@@ -70,6 +70,11 @@ export interface LaunchStandaloneAgentOptions {
   /** The new session's id, when the caller already chose it (a Worktree
    *  records the session it was made for). Absent = a fresh UUID. */
   sessionId?: string;
+  /** Pixel Office MCP tools it may call without a prompt (the tutorial
+   *  agent's read-only ones); only with the MCP given. */
+  preapprovedMcpTools?: readonly string[];
+  /** A plugin folder this session alone loads (the tutorial's onboarding skill). */
+  pluginDir?: string;
   cols?: number;
   rows?: number;
 }
@@ -121,6 +126,11 @@ export function launchStandaloneAgent(
     permissionMode: options.asks?.permissionMode,
     model: options.asks?.model,
     prompt: options.asks?.firstMessage,
+    preapprovedMcpTools:
+      mcpConfig && options.preapprovedMcpTools
+        ? { server: OFFICE_MCP_SERVER_NAME, tools: options.preapprovedMcpTools }
+        : undefined,
+    pluginDirs: options.pluginDir ? [options.pluginDir] : undefined,
   });
 
   const agent = createAgentState({

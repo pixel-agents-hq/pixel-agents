@@ -13,7 +13,12 @@ import {
   sessionStartClear,
   sessionStartStartup,
 } from '../../helpers/hooks';
-import { advanceIntroToConsentStep, finishIntro, officeMcpButtons } from '../../helpers/intro';
+import {
+  advanceIntroToChoices,
+  chooseInIntro,
+  finishIntro,
+  introChoice,
+} from '../../helpers/intro';
 import { expectContextGauge, expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
 import type { RecordedServerMessage } from '../../helpers/standalone';
 import { getClaudeProjectDir } from '../../helpers/team';
@@ -185,23 +190,26 @@ test.describe('Standalone / hooks consent', () => {
   }
 
   // The operator's route: the printed tokened URL loads a privileged session,
-  // the Intro rides the handshake, and Install (on its consent step) writes
-  // the hooks.
-  test('the tokened page shows the Intro and Install writes the hooks @area:standalone', async ({
+  // the Intro rides the handshake, and ticking Live updates writes the hooks.
+  test('the tokened page shows the Intro and Live updates writes the hooks @area:standalone', async ({
     page,
     standalone,
   }) => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 30_000 });
-    await advanceIntroToConsentStep(dialog);
-    // The disclosure travels with the request — the browser renders the
+    await advanceIntroToChoices(dialog);
+    // The terms travel with the request, behind Read more — the browser renders the
     // server's exact terms.
+    await dialog
+      .getByTestId('intro-choice-hooks')
+      .getByRole('button', { name: 'Read more' })
+      .click();
     await expect(dialog).toContainText('~/.claude/settings.json');
     await expect(dialog).toContainText('Instant Detection (Hooks)');
 
     expect(fs.existsSync(path.join(standalone.tmpHome, '.claude', 'settings.json'))).toBe(false);
 
-    await dialog.getByRole('button', { name: 'Install Hooks' }).click();
+    await chooseInIntro(dialog, { hooks: true });
 
     await expect.poll(() => readConsentFrom(standalone.tmpHome), { timeout: 15_000 }).toBe(true);
     await expect.poll(() => ourHookEventCount(standalone.tmpHome), { timeout: 15_000 }).toBe(12);
@@ -258,8 +266,8 @@ test.describe('Standalone / hooks consent', () => {
   });
 
   /**
-   * The Settings-checkbox route, for a user who dismissed the dialog: Not Now
-   * writes nothing, the checkbox shows the ACTUAL install state (not the
+   * The Settings-checkbox route, for a user who left Live updates off: that
+   * writes nothing to ~/.claude, the checkbox shows the ACTUAL install state (not the
    * hooksEnabled preference, which still defaults true), and clicking it is
    * the consent grant.
    */
@@ -269,16 +277,20 @@ test.describe('Standalone / hooks consent', () => {
   }) => {
     const settingsPath = path.join(standalone.tmpHome, '.claude', 'settings.json');
 
-    // First-run Intro is up; decline with Not Now — which writes NOTHING —
-    // and finish the tour.
+    // First-run Intro is up; leave everything off (past its warning) — which
+    // writes nothing to ~/.claude — and finish the tour.
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 30_000 });
-    await advanceIntroToConsentStep(dialog);
-    await dialog.getByRole('button', { name: 'Not Now' }).click();
+    await advanceIntroToChoices(dialog);
+    // Everything off: it warns first.
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(dialog.getByTestId('intro-choices-warning')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Continue Anyway' }).click();
+    await expect(dialog).toContainText("You're all set!");
     await finishIntro(dialog);
     await page.waitForTimeout(1_000);
 
-    // Nothing installed, no consent — but the preference defaults true.
+    // Nothing installed, no consent.
     expect(fs.existsSync(settingsPath)).toBe(false);
     expect(readConsentFrom(standalone.tmpHome)).toBe(false);
 
@@ -344,34 +356,42 @@ function readOfficeMcpConsent(tmpHome: string): string {
 }
 
 /**
- * The Intro's fifth step: may agents launched here use the Pixel Agents
- * Office MCP? It comes after the hooks step, sends its answer at once, and
- * Back revises it as an absolute state (docs/adr/0001).
+ * The Intro's choices step also asks: may agents launched here use the Pixel
+ * Agents Office MCP? Continue sends every box's answer at once, and Back
+ * revises them as absolute states (docs/adr/0001).
  */
 test.describe('Standalone / Pixel Office MCP consent', () => {
   test.use({ seedHooksConsent: false });
 
-  test('the tour asks after the hooks step, and Back revises the answer @area:standalone', async ({
+  test('the choices step asks both, and Back revises the answer @area:standalone', async ({
     page,
     standalone,
   }) => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 30_000 });
-    await advanceIntroToConsentStep(dialog);
-    await dialog.getByRole('button', { name: 'Not Now' }).click();
+    await advanceIntroToChoices(dialog);
+    await expect(introChoice(dialog, 'hooks')).toBeVisible();
+    await expect(introChoice(dialog, 'mcp')).toBeVisible();
 
-    const { allow, decline } = officeMcpButtons(dialog);
-    await expect(allow).toBeVisible();
-    await expect(dialog).toContainText('Pixel Agents Office MCP');
-    expect(readOfficeMcpConsent(standalone.tmpHome)).toBe('unanswered');
-
-    await allow.click();
+    // The MCP alone: granted, the hooks declined.
+    await chooseInIntro(dialog, { mcp: true });
     await expect.poll(() => readOfficeMcpConsent(standalone.tmpHome)).toBe('granted');
-    await expect(dialog).toContainText("You're all set!");
 
+    // Back keeps the boxes: swap them. The MCP declined, the hooks installed.
     await dialog.getByRole('button', { name: 'Back' }).click();
-    await decline.click();
+    await expect(introChoice(dialog, 'mcp')).toHaveAttribute('aria-pressed', 'true');
+    await introChoice(dialog, 'mcp').click();
+    await chooseInIntro(dialog, { hooks: true });
     await expect.poll(() => readOfficeMcpConsent(standalone.tmpHome)).toBe('declined');
+    // The same Continue installs the hooks.
+    const settings = path.join(standalone.tmpHome, '.claude', 'settings.json');
+    await expect
+      .poll(
+        () =>
+          fs.existsSync(settings) && fs.readFileSync(settings, 'utf8').includes('claude-hook.js'),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
     await finishIntro(dialog);
   });
 });
@@ -386,11 +406,11 @@ test.describe('Standalone / Pixel Office MCP step alone', () => {
   }) => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 30_000 });
-    await expect(dialog).toContainText('Pixel Agents Office MCP');
+    await expect(introChoice(dialog, 'mcp')).toBeVisible();
     await expect(dialog).not.toContainText('Welcome to Pixel Agents!');
-    await expect(dialog.getByRole('button', { name: 'Install Hooks' })).toHaveCount(0);
+    await expect(dialog).not.toContainText('settings.json');
 
-    await finishIntro(dialog, 'allow');
+    await finishIntro(dialog, { mcp: true });
     await expect.poll(() => readOfficeMcpConsent(standalone.tmpHome)).toBe('granted');
 
     // Settings shows the switch on, with the read-only switch beside it.

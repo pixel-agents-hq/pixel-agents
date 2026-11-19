@@ -50,6 +50,9 @@ interface SettingsModalProps {
   onExportLayout: () => void;
   /** Browser-native layout import from a chosen file (standalone only). */
   onImportLayout: (file: File) => void;
+  /** Settings → Play the Tutorial: opens the tutorial's ask (absent: no
+   *  tutorial on this server, or one is running). */
+  onPlayTutorial?: () => void;
 }
 
 export function SettingsModal({
@@ -76,6 +79,7 @@ export function SettingsModal({
   uploadDirectory,
   onExportLayout,
   onImportLayout,
+  onPlayTutorial,
 }: SettingsModalProps) {
   // The office radio's player is a per-browser setting the radio keeps itself.
   const radio = useOfficeRadio();
@@ -123,6 +127,16 @@ export function SettingsModal({
         >
           Export Layout
         </MenuItem>
+        {onPlayTutorial && (
+          <MenuItem
+            onClick={() => {
+              onPlayTutorial();
+              onClose();
+            }}
+          >
+            Play the Tutorial
+          </MenuItem>
+        )}
         <MenuItem
           onClick={() => {
             if (isBrowserRuntime) {

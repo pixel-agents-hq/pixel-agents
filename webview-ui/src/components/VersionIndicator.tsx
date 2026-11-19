@@ -37,7 +37,8 @@ export function VersionIndicator({
   const [labelHovered, setLabelHovered] = useState(false);
 
   const currentMajorMinor = toMajorMinor(currentVersion);
-  const isUnseen = currentMajorMinor !== lastSeenVersion;
+  // No version seen yet is a first run, not an update: nothing to announce.
+  const isUnseen = lastSeenVersion !== '' && currentMajorMinor !== lastSeenVersion;
   const showUpdateNotice = isUnseen && !dismissed && !hideUpdateNotice;
 
   // Start fade-out after auto-close delay, then fully dismiss after the transition

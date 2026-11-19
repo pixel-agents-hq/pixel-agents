@@ -82,6 +82,10 @@ export async function launchIntoDirectory(
     palette?: number;
     worktree?: { name?: string; from?: WorktreeBranch };
     asks?: LaunchAsks;
+    /** Pixel Office MCP tools it may call without a prompt (the tutorial agent). */
+    preapprovedMcpTools?: readonly string[];
+    /** A plugin folder this session alone loads (the tutorial's onboarding skill). */
+    pluginDir?: string;
   },
 ): Promise<LaunchOutcome> {
   const { store, ptyManager } = deps;
@@ -95,6 +99,8 @@ export async function launchIntoDirectory(
       directory,
       asks: checked.asks,
       palette,
+      preapprovedMcpTools: request.preapprovedMcpTools,
+      pluginDir: request.pluginDir,
     });
     if (id !== null) recordPick(store, palette);
     return id;

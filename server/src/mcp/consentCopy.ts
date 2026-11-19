@@ -5,15 +5,14 @@
  * Office MCP" in full, "Pixel Office MCP" short — never "Office MCP".
  */
 
-export const OFFICE_MCP_HEADLINE = 'Let agents use the office?';
+export const OFFICE_MCP_HEADLINE = 'Agents that use the office';
 
-export const OFFICE_MCP_DISCLOSURE = [
-  'The Pixel Agents Office MCP lets the agents you launch from this office see and act on it: ' +
-    'list the agents here and what they are doing, read and edit the office layout, launch and ' +
-    'close agents, and read or type into other agents’ terminals.',
-  'Each agent gets its own key when it launches, passed to it with --mcp-config. It stops ' +
-    'working when the agent leaves, when this server stops, or when you turn this off. Nothing ' +
-    'is written to your ~/.claude files, and agents started outside the office never get it.',
-  'Claude Code’s own permission prompts still apply. Change this any time in Settings, or ' +
-    'make it read-only so agents can look but not change anything.',
-].join('\n\n');
+/** The Intro's checkbox line; the full terms are OFFICE_MCP_DISCLOSURE, behind "Read more". */
+export const OFFICE_MCP_SUMMARY =
+  'Agents you launch here can see and change the office, and work with each other.';
+
+export const OFFICE_MCP_DISCLOSURE =
+  'Agents you launch here get the Pixel Agents Office MCP, with a key of their own that ends ' +
+  'with them: they can see the office and its agents, edit the layout, launch and close agents, ' +
+  'and read or type into other agents’ terminals. Nothing is written to ~/.claude, and Claude ' +
+  'Code’s permission prompts still apply. Turn it off or make it read-only in Settings.';

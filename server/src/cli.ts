@@ -64,6 +64,7 @@ import { RemotePtySessions, startPtyHostProcess } from './terminal/remotePtySess
 import { reattachTerminalAgents } from './terminal/standaloneAgentLauncher.js';
 import { closeStandaloneAgent } from './terminal/standaloneClose.js';
 import { launchForOffice } from './terminal/standaloneLaunches.js';
+import { standaloneTutorialSurface } from './terminal/standaloneTutorial.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
 import { setAttributionDirectories } from './worktreeAttribution.js';
 import { holdWorktreesOf, stopRetiring, sweepWorktrees } from './worktreeLeave.js';
@@ -483,6 +484,17 @@ async function main(): Promise<void> {
         ),
       // close_agent: the card's ×, as this host ends an agent.
       close: (id) => closeStandaloneAgent(ptyManager, runtime, id),
+      // The tutorial: the Guide launched into the start Directory, ended as its card's ×.
+      tutorial: standaloneTutorialSurface(
+        {
+          store,
+          runtime,
+          ptyManager,
+          provider: claudeProvider,
+          hostDirectories: [hostDirectory()],
+        },
+        (id) => closeStandaloneAgent(ptyManager, runtime, id),
+      ),
     });
     officeMcpFeature = officeMcp;
 

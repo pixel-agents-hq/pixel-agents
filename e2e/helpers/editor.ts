@@ -69,12 +69,12 @@ export interface PlacedItem {
 export const TILE = { WALL: 0, FLOOR_1: 1, FLOOR_2: 2, VOID: 255 } as const;
 
 /**
- * Dismiss the first-run tooltips ("Instant Detection Active", "Updated to vN")
+ * Dismiss the first-run tooltip ("Updated to vN")
  * that overlay the top toolbar and would otherwise intercept the Layout click.
  * Mirrors the helper inlined in pets.spec.ts.
  */
 export async function dismissFirstRunTooltips(frame: Frame): Promise<void> {
-  for (const tooltipText of ['Instant Detection Active', 'Updated to v']) {
+  for (const tooltipText of ['Updated to v']) {
     const tooltip = frame.locator('div', { hasText: tooltipText }).first();
     if (await tooltip.isVisible().catch(() => false)) {
       const closeBtn = tooltip.locator('button', { hasText: 'x' }).first();
@@ -168,6 +168,12 @@ export async function addArea(frame: Frame, name: string): Promise<void> {
 /** Select an existing Area card (single click on its label bubbles to onSelect). */
 export async function selectArea(frame: Frame, label: string): Promise<void> {
   await frame.locator(`span[title^="${label} —"]`).click();
+}
+
+/** An Area's card, by its label (the card's header row holds the label's span). The bundled
+ *  default layout has Areas of its own, so a card is never "the first one". */
+export function areaCard(frame: Frame, label: string): Locator {
+  return frame.locator(`div:has(> div > span[title^="${label} —"])`);
 }
 
 /** Paint a tile with the active tool via the real tile-action handler (by col,row). */

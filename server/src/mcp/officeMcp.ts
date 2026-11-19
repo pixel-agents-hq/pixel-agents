@@ -45,7 +45,8 @@ import {
   OFFICE_MCP_TOKEN_BYTES,
   PIXEL_AGENTS_DIR,
 } from '../constants.js';
-import { OFFICE_MCP_DISCLOSURE, OFFICE_MCP_HEADLINE } from './consentCopy.js';
+import { tutorialMcpInstructions } from '../tutorial/tutorialCopy.js';
+import { OFFICE_MCP_DISCLOSURE, OFFICE_MCP_HEADLINE, OFFICE_MCP_SUMMARY } from './consentCopy.js';
 import type { OfficeCapabilities, OfficeOperations } from './officeOperations.js';
 import type { OfficeTool, ToolContext } from './tool.js';
 import { OFFICE_TOOLS } from './tools/index.js';
@@ -63,8 +64,9 @@ export interface AgentMcpAccess {
 export interface OfficeMcpOptions {
   office: OfficeOperations;
   /** The CLI the office launches: it writes an agent's config file in its own
-   *  format (`mcpConfigFile`). One that has none is offered no MCP. */
-  provider: Pick<HookProvider, 'mcpConfigFile'>;
+   *  format (`mcpConfigFile`; one that has none is offered no MCP) and says
+   *  how the tutorial's skill is invoked (`skills`). */
+  provider: Pick<HookProvider, 'mcpConfigFile' | 'skills'>;
   /** Defaults to every tool in ./tools/. Only those whose `uses` the office
    *  supplies are offered. */
   tools?: readonly OfficeTool[];
@@ -85,7 +87,7 @@ interface Grant {
 
 export class OfficeMcp implements AgentMcpAccess {
   private readonly office: OfficeOperations;
-  private readonly provider: Pick<HookProvider, 'mcpConfigFile'>;
+  private readonly provider: Pick<HookProvider, 'mcpConfigFile' | 'skills'>;
   private readonly tools: readonly OfficeTool[];
   private readonly agentOfToken = new Map<string, number>();
   private readonly grants = new Map<number, Grant>();
@@ -215,15 +217,16 @@ export class OfficeMcp implements AgentMcpAccess {
     return {
       type: 'officeMcpConsentRequest',
       headline: OFFICE_MCP_HEADLINE,
+      summary: OFFICE_MCP_SUMMARY,
       disclosure: OFFICE_MCP_DISCLOSURE,
     };
   }
 
   /** Record an answer (Intro or Settings). A decline revokes every running
    *  agent's access at once; a grant reaches agents launched from now on. */
-  answer(answer: OfficeMcpConsentAnswer): OfficeMcpStatus {
+  answer(answer: OfficeMcpConsentAnswer | 'unanswered'): OfficeMcpStatus {
     setOfficeMcpConsent(answer);
-    if (answer === 'declined') this.revokeAll();
+    if (answer !== 'granted') this.revokeAll();
     return this.statusMessage();
   }
 
@@ -292,10 +295,11 @@ export class OfficeMcp implements AgentMcpAccess {
 
   /** An MCP server for one request, its tools bound to `caller`. */
   private serverFor(caller: number): McpServer {
-    const server = new McpServer({
-      name: OFFICE_MCP_SERVER_NAME,
-      version: process.env.PIXEL_AGENTS_VERSION ?? '0.0.0',
-    });
+    const server = new McpServer(
+      { name: OFFICE_MCP_SERVER_NAME, version: process.env.PIXEL_AGENTS_VERSION ?? '0.0.0' },
+      // The tutorial's first message is only its skill's command: this is the fallback.
+      { instructions: tutorialMcpInstructions(this.provider.skills) },
+    );
     // Every tool registered here uses only capabilities this office supplies (toolsFor).
     const ctx: ToolContext = {
       caller,

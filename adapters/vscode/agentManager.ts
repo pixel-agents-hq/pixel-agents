@@ -15,7 +15,7 @@ import {
 } from '../../server/src/agentPersistence.js';
 import { createAgentState } from '../../server/src/agentState.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
-import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
+import { JSONL_POLL_INTERVAL_MS, OFFICE_MCP_SERVER_NAME } from '../../server/src/constants.js';
 import { clearContextUsage } from '../../server/src/contextUsage.js';
 import {
   ensureProjectScan,
@@ -85,6 +85,17 @@ export interface LaunchTerminalOptions {
   /** The Pixel Office MCP: with the user's consent, the agent is launched
    *  with `--mcp-config <its own file>` (a token minted for it alone). */
   mcp?: AgentMcpAccess;
+  /** The Guide's asks: its first message (the CLI's starting
+   *  prompt), Nickname, permission mode, and the Pixel Office MCP tools it may
+   *  call without a prompt (only with the MCP given). The drawer asks none. */
+  firstMessage?: string;
+  nickname?: string;
+  permissionMode?: string;
+  /** The model the CLI runs (the Guide's). */
+  model?: string;
+  preapprovedMcpTools?: readonly string[];
+  /** A plugin folder this session alone loads (the tutorial's onboarding skill). */
+  pluginDir?: string;
 }
 
 export async function launchNewTerminal(
@@ -109,6 +120,12 @@ export async function launchNewTerminal(
     worktree,
     sessionId: chosenSessionId,
     mcp,
+    firstMessage,
+    nickname,
+    permissionMode,
+    model,
+    preapprovedMcpTools,
+    pluginDir,
   }: LaunchTerminalOptions = {},
 ): Promise<number> {
   const folders = vscode.workspace.workspaceFolders;
@@ -145,6 +162,14 @@ export async function launchNewTerminal(
   const launch = claudeProvider.buildLaunchCommand?.(sessionId, cwd, {
     bypassPermissions,
     mcpConfig,
+    permissionMode,
+    model,
+    prompt: firstMessage,
+    preapprovedMcpTools:
+      mcpConfig && preapprovedMcpTools
+        ? { server: OFFICE_MCP_SERVER_NAME, tools: preapprovedMcpTools }
+        : undefined,
+    pluginDirs: pluginDir ? [pluginDir] : undefined,
   });
   if (!launch) {
     mcp?.revoke(id);
@@ -184,6 +209,7 @@ export async function launchNewTerminal(
     jsonlFile: expectedFile,
     directoryName,
     worktree,
+    nickname,
     // Where its session runs: a hook naming this folder is no move.
     cwd,
   });

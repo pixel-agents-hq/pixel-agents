@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONSENT_DISCLOSURE,
   CONSENT_INSTALL_HEADLINE,
+  CONSENT_SUMMARY,
 } from '../src/providers/hook/claude/consentCopy.js';
 import { consentActionFor, hooksConsentRequest } from '../src/providers/hook/consentGate.js';
 import { claudeProvider } from '../src/providers/index.js';
@@ -26,7 +27,9 @@ describe('hooksConsentRequest — when to ask', () => {
       type: 'hooksConsentRequest',
       providerId: 'claude',
       headline: CONSENT_INSTALL_HEADLINE,
+      summary: CONSENT_SUMMARY,
       disclosure: CONSENT_DISCLOSURE,
+      cliInstalled: expect.any(Boolean),
     });
   });
 
@@ -36,6 +39,18 @@ describe('hooksConsentRequest — when to ask', () => {
     const request = hooksConsentRequest(askable, claudeProvider);
     expect(request?.disclosure).toBe(CONSENT_DISCLOSURE);
     expect(request?.disclosure).toContain('~/.claude/settings.json');
+  });
+
+  it('a provider with no summary of its own is asked with its headline in its place', () => {
+    const provider = {
+      ...claudeProvider,
+      consentDisclosure: () => ({ headline: 'Install hooks?', disclosure: 'What it writes.' }),
+    };
+    expect(hooksConsentRequest(askable, provider)).toMatchObject({
+      headline: 'Install hooks?',
+      summary: 'Install hooks?',
+      disclosure: 'What it writes.',
+    });
   });
 
   // Each of these is a reason the ask would be wrong, not merely redundant.

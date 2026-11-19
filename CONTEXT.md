@@ -60,7 +60,7 @@ _Avoid_: spawn (that's the character-level visual event), create
 
 **Directory**:
 A named filesystem location agents can be launched into. Directories come from two sources: defined by the user in the office, or contributed by the host — VS Code contributes its workspace folders, standalone contributes the directory the server was started from. Host-contributed directories cannot be edited in the office.
-_Avoid_: folder, workspace folder (that's the VS Code-contributed source, not the concept), project
+_Avoid_: folder, workspace folder (that's the VS Code-contributed source, not the concept), project (everyday speech for one, as in a headline like the Tutorial's "Add a project"; never as the term)
 
 **Worktree**:
 A separate checkout of a Directory's repo on its own branch, created by Pixel Agents for one agent's work and cleaned up when it leaves. A Worktree agent is still an agent of its Directory. Its states, in UI copy too: **running** (an agent works in it), **kept** (its folder stays by the user's choice), **parked** (folder removed, branch kept: it has commits of its own), **needs a decision** (its agent left uncommitted changes; the answer is Save & remove, Keep folder or Discard). "Commits of its own" are the branch's commits whose changes are not in its base, so squash- or rebase-merged work counts as none. A worktree the CLI made itself in the same folder (Claude Code: `claude -w`, EnterWorktree) is a **CLI worktree**, never a Worktree: the office lists it and removes it only at the user's word.
@@ -125,12 +125,28 @@ _Avoid_: closet, inventory, asset list
 ## First Run
 
 **Intro**:
-The five-step first-run tour the Greeter speaks: welcome, Claude Code, hooks consent, Pixel Office MCP consent, all set. Each consent ask is one step of it, not a separate dialog; someone who finished the Intro before a step existed is greeted with that step alone.
-_Avoid_: onboarding, tutorial, wizard, consent modal
+The first-run tour the Greeter speaks: welcome, getting Claude Code (only when it isn't installed), choices, all set. The choices step asks for the usage bars, live updates (hooks) and the Pixel Office MCP, one box each, all off to start, not a separate dialog per ask; someone who finished the Intro before an ask existed is greeted with that ask alone. Where the Tutorial can run, the all-set step asks to start it, saying what that does. The Intro itself is scripted: no session, no tokens.
+_Avoid_: onboarding, tutorial (that's what it offers), wizard, consent modal
 
 **Greeter**:
 The character that speaks the Intro. Not an agent and not a Pet: it has no session, takes no seat, never wanders, and exists exactly as long as the Intro is open.
 _Avoid_: mascot, tutorial character
+
+**Tutorial**:
+The optional hands-on tour offered at the end of the Intro (or from Settings): the Greeter walks to a seat and sits, and there becomes the Guide. The Guide opens by saying what Pixel Agents is, then asks whether the user wants to try something in particular or be shown around; either way it suggests what fits next, and the user does the Quests in any order. Starting it is asked for on its own, because it starts a Claude Code session; quitting it closes that session. Not the Intro, and not an agent of its own: it is the run the Guide is on.
+_Avoid_: onboarding (alone), walkthrough, game mode
+
+**Guide**:
+The agent giving the Tutorial: a real agent with a terminal, following its Onboarding skill over the Pixel Office MCP. It wears the Greeter's character and goes by that character's name (Byte, unless the user renamed it).
+_Avoid_: tutorial agent, host, greeter (that's the Intro's character before it sits down)
+
+**Onboarding skill**:
+The Claude Code skill (`pixel-agents:onboarding`) that tells the Guide how to give the Tutorial. Loaded for that one session from a plugin folder the office writes under `~/.pixel-agents` (`--plugin-dir`); never installed.
+_Avoid_: brief, script, prompt
+
+**Quest**:
+One of the Tutorial's few first steps in the office, shown in its checklist ("Create a character"), done in any order. Each completes when the office sees it happen, never because someone says so. The user may skip any, in the checklist or by asking the Guide. What the checklist leaves out (an Area for a Directory, its default characters) the Guide offers as it fits, untracked.
+_Avoid_: task, mission, challenge, achievement, step (they have no order)
 
 ## Agent Status
 

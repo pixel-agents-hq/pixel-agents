@@ -160,12 +160,12 @@ describe('list_wardrobe and list_characters (composed server, seeded roster)', (
     expect(reply.images).toEqual([]);
     const characters = reply.value!.characters as Json[];
     expect(characters.map((c) => [c.palette, c.id, c.name])).toEqual([
-      [0, 'char-0', 'Suit'],
-      [1, 'char-1', 'Dress'],
-      [2, 'char-2', 'Spike'],
-      [3, 'char-3', 'Aura'],
-      [4, 'char-4', 'Tidy'],
-      [5, 'char-5', 'Bob'],
+      [0, 'char-0', 'Byte'],
+      [1, 'char-1', 'Nova'],
+      [2, 'char-2', 'Pip'],
+      [3, 'char-3', 'Echo'],
+      [4, 'char-4', 'Dot'],
+      [5, 'char-5', 'Volt'],
       [6, 'twin-a', 'Twin'],
       [7, 'twin-b', 'Twin'],
     ]);
@@ -196,7 +196,7 @@ describe('list_wardrobe and list_characters (composed server, seeded roster)', (
     // A palette square reads back by its name.
     expect(characters[6].colors.hair).toMatchObject({ name: 'Yellow' });
 
-    // Spike is a default of two Directories, in their order.
+    // Pip is a default of two Directories, in their order.
     expect(characters[2].directories).toEqual(['Varys', 'Other']);
     expect(characters[1].directories).toEqual([]);
 
@@ -212,17 +212,17 @@ describe('list_wardrobe and list_characters (composed server, seeded roster)', (
   it('preview: one PNG per named character (by id, exact name, palette index), its standing frames as drawn', async () => {
     const { client } = await h.launchAgent();
     const reply = await h.callTool(client, 'list_characters', {
-      preview: ['char-1', 'Bob', 0],
+      preview: ['char-1', 'Volt', 0],
     });
     expect(reply.isError, reply.text).toBe(false);
     expect(reply.value!.previews).toEqual([
-      { id: 'char-1', name: 'Dress', palette: 1 },
-      { id: 'char-5', name: 'Bob', palette: 5 },
-      { id: 'char-0', name: 'Suit', palette: 0 },
+      { id: 'char-1', name: 'Nova', palette: 1 },
+      { id: 'char-5', name: 'Volt', palette: 5 },
+      { id: 'char-0', name: 'Byte', palette: 0 },
     ]);
     expect(reply.images.map((i) => i.mimeType)).toEqual(['image/png', 'image/png', 'image/png']);
 
-    // Bob's picture: down, up and right standing frames (column 1 of each sheet row), side by side.
+    // Volt's picture: down, up and right standing frames (column 1 of each sheet row), side by side.
     const png = PNG.sync.read(Buffer.from(reply.images[1].data, 'base64'));
     const scale = CHARACTER_PREVIEW_SCALE;
     expect([png.width, png.height]).toEqual([3 * 16 * scale, 32 * scale]);

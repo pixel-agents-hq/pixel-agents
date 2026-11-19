@@ -260,6 +260,7 @@ export const TOOL_OVERLAY_GAP_PX = -2;
 /** Reserved character id for the Intro's greeter. Far outside both real agent
  *  ids (positive) and sub-agent ids (small negatives from -1 down). */
 export const GREETER_ID = -1_000_000_000;
+export { GREETER_CHARACTER_ID } from '../../core/src/greeterCharacter.js';
 /** Stacking order for the Intro's bubble. Deliberately BELOW the modal stack
  *  (ui/Modal defaults to 50, ChangelogModal 51, the migration notice z-100): the
  *  Intro is diegetic furniture over the office, not a modal, so a modal opened
@@ -402,6 +403,12 @@ export const TERMINAL_DRAWER_MAX_WIDTH_RATIO = 0.8;
  *  16px close/status column + card chrome ≈ 63px, plus a little air each
  *  side). */
 export const TERMINAL_SIDEBAR_WIDTH_PX = 72;
+/** Space above the desktop card bar's first card; the tutorial's checklist
+ *  sits at the same height, so its collapsed header lines up with that card. */
+export const CARD_BAR_TOP_PX = 4;
+/** How long the checklist shows "Tutorial complete!" before it fades, and the fade. */
+export const TUTORIAL_COMPLETE_LINGER_MS = 4000;
+export const TUTORIAL_COMPLETE_FADE_MS = 600;
 /** Grab width of the drag handle on the panel's left edge. */
 export const TERMINAL_DRAWER_RESIZE_HANDLE_PX = 6;
 /** How long a launch (or resume) this client sent waits for its terminal:
@@ -689,7 +696,7 @@ export const KEYBOARD_MIN_HEIGHT_PX = 150;
 
 // ── Characters view ─────────────────────────────────────────
 /** Stacking order for the Characters view: over the whole office UI and every
- *  modal (ui/Modal 50, ChangelogModal 51, the hooks notice 52), since it is
+ *  modal (ui/Modal 50, ChangelogModal 51), since it is
  *  opened from them and takes the screen while it is up. */
 export const CHARACTERS_VIEW_Z_INDEX = 60;
 /** How long a status line stays up (it also clears on the next press). */

@@ -98,7 +98,7 @@ function LoadingText() {
 }
 
 /** The default characters the scene is cast from, by name. */
-const CAST_NAMES = { left: 'Suit', right: 'Dress', walker: 'Aura' } as const;
+const CAST_NAMES = { left: 'Byte', right: 'Nova', walker: 'Echo' } as const;
 
 /**
  * The loading screen: while the office loads, a lamp-lit corner of it in a dark room — two of

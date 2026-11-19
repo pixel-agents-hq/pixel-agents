@@ -79,8 +79,8 @@ test.describe('Standalone / Pixel Office MCP', () => {
     // Consent in the Intro: without it no launch gets the MCP.
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible({ timeout: 30_000 });
-    await expect(dialog).toContainText('Pixel Agents Office MCP');
-    await finishIntro(dialog, 'allow');
+    await expect(dialog).toContainText('Agents that use the office');
+    await finishIntro(dialog, { mcp: true });
     await waitForClaudeHookSetup(standalone.tmpHome);
 
     // The first agent: once running, it launches a helper with a first

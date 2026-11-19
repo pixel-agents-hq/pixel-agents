@@ -128,6 +128,9 @@ components:
         # Pixel Office MCP (consent + settings)
         - $ref: '#/components/schemas/OfficeMcpConsentRequest'
         - $ref: '#/components/schemas/OfficeMcpStatus'
+        # The tutorial (the Guide's hands-on tour, on top of the Pixel Office MCP)
+        - $ref: '#/components/schemas/TutorialStatus'
+        - $ref: '#/components/schemas/TutorialRejected'
         # Usage bars (the account's plan limits)
         - $ref: '#/components/schemas/UsageBridgeStatus'
         - $ref: '#/components/schemas/UsageLimits'
@@ -177,7 +180,9 @@ components:
         - $ref: '#/components/schemas/OfficeMcpConsentResponse'
         - $ref: '#/components/schemas/SetOfficeMcpEnabled'
         - $ref: '#/components/schemas/SetOfficeMcpReadOnly'
-        - $ref: '#/components/schemas/SetHooksInfoShown'
+        - $ref: '#/components/schemas/StartTutorial'
+        - $ref: '#/components/schemas/SkipTutorialQuest'
+        - $ref: '#/components/schemas/QuitTutorial'
         - $ref: '#/components/schemas/SetWatchAllSessions'
         - $ref: '#/components/schemas/ExportLayout'
         - $ref: '#/components/schemas/ImportLayout'
@@ -945,7 +950,6 @@ components:
         - alwaysShowLabels
         - ghostHeadlessAgents
         - hooksEnabled
-        - hooksInfoShown
         - externalAssetDirectories
         - showAreas
         - bypassPermissions
@@ -966,8 +970,6 @@ components:
         ghostHeadlessAgents:
           type: boolean
         hooksEnabled:
-          type: boolean
-        hooksInfoShown:
           type: boolean
         externalAssetDirectories:
           type: array
@@ -1041,7 +1043,7 @@ components:
         outcome. Privileged connections only, like `usageLimits`.
       type: object
       additionalProperties: false
-      required: [type, providerId, providerName, installed, disclosure]
+      required: [type, providerId, providerName, installed, summary, disclosure]
       properties:
         type:
           const: usageBridgeStatus
@@ -1053,6 +1055,9 @@ components:
           description: Its name for people (HookProvider.displayName), whose plan the bars show.
         installed:
           type: boolean
+        summary:
+          type: string
+          description: One line beside the Intro's checkbox.
         disclosure:
           type: string
           description: >-
@@ -1103,12 +1108,15 @@ components:
         returns on the next connect.
       type: object
       additionalProperties: false
-      required: [type, headline, disclosure]
+      required: [type, headline, summary, disclosure]
       properties:
         type:
           const: officeMcpConsentRequest
         headline:
           type: string
+        summary:
+          type: string
+          description: One line beside the Intro's checkbox; the full terms are `disclosure`, behind its "Read more".
         disclosure:
           type: string
           description: What agents could do through it (paragraphs split on blank lines).
@@ -1152,7 +1160,7 @@ components:
         next connect. One request per provider that needs an answer.
       type: object
       additionalProperties: false
-      required: [type, providerId, headline, disclosure]
+      required: [type, providerId, headline, summary, disclosure, cliInstalled]
       properties:
         type:
           const: hooksConsentRequest
@@ -1165,6 +1173,12 @@ components:
         headline:
           type: string
           description: One-sentence summary of what is being approved.
+        summary:
+          type: string
+          description: One line beside the Intro's checkbox; the full terms are `disclosure`, behind its "Read more".
+        cliInstalled:
+          type: boolean
+          description: Whether the provider's CLI was found on this machine; the Intro's "get Claude Code" step shows only when it wasn't.
         disclosure:
           type: string
           description: |
@@ -2062,10 +2076,130 @@ components:
         choice:
           $ref: '#/components/schemas/OfficeMcpChoice'
 
-    OfficeMcpChoice:
-      description: An answer to the Intro's Pixel Office MCP step.
+    TutorialQuestState:
+      description: Where one tutorial quest stands.
       type: string
-      enum: [allow, decline]
+      enum: [open, done, skipped]
+
+    TutorialQuestProgress:
+      description: One quest of the tutorial and where it stands (its title and goal are core's TUTORIAL_QUESTS).
+      type: object
+      additionalProperties: false
+      required: [id, state]
+      properties:
+        id:
+          type: string
+        state:
+          $ref: '#/components/schemas/TutorialQuestState'
+
+    TutorialRun:
+      description: A tutorial under way — the agent running it and every quest's state.
+      type: object
+      additionalProperties: false
+      required: [agentId, quests, finished]
+      properties:
+        agentId:
+          type: integer
+        quests:
+          type: array
+          items:
+            $ref: '#/components/schemas/TutorialQuestProgress'
+        finished:
+          type: boolean
+
+    TutorialStatus:
+      description: |
+        The tutorial as the server holds it: whether the Intro may offer it
+        (`available`, else `unavailableReason` in plain words), the copy its
+        permission step shows verbatim (`headline`, `disclosure`: it starts a
+        Claude Code session), and the run under way, if any — the agent
+        running it (the Guide) and every quest's state. `finished` once every quest
+        is done or skipped (the run stays until its agent leaves or the user
+        quits). Sent on connect and broadcast after every change, privileged
+        connections of a server that offers the Pixel Office MCP only.
+      type: object
+      additionalProperties: false
+      required: [type, available, headline, disclosure]
+      properties:
+        type:
+          const: tutorialStatus
+        available:
+          type: boolean
+        unavailableReason:
+          type: string
+        headline:
+          type: string
+        disclosure:
+          type: string
+          description: What starting it does (paragraphs split on blank lines).
+        run:
+          $ref: '#/components/schemas/TutorialRun'
+
+    TutorialRejected:
+      description: |
+        A `startTutorial` that started nothing, to its sender alone: why (no
+        Pixel Office MCP consent, no terminal, a run already under way, the
+        launch failed).
+      type: object
+      additionalProperties: false
+      required: [type, reason]
+      properties:
+        type:
+          const: tutorialRejected
+        reason:
+          type: string
+
+    StartTutorial:
+      description: |
+        The user said yes to the tutorial's permission step and the greeter
+        sat down: launch the Guide as a real Claude Code agent (wearing
+        `palette`, the greeter's character, and named after it, in `seatId`,
+        the seat it walked to, when free), given the Pixel Office MCP and the
+        onboarding skill, its first message that skill's command. Answered with a `tutorialStatus`
+        broadcast carrying the run, or `tutorialRejected` to the sender.
+        Nothing launches without it.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: startTutorial
+        palette:
+          type: integer
+          minimum: 0
+        seatId:
+          type: string
+
+    SkipTutorialQuest:
+      description: The user skipped a quest from the tutorial panel.
+      type: object
+      additionalProperties: false
+      required: [type, questId]
+      properties:
+        type:
+          const: skipTutorialQuest
+        questId:
+          type: string
+
+    QuitTutorial:
+      description: |
+        The user quit the tutorial: the run ends and its Guide is
+        closed, as its card's × would.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: quitTutorial
+
+    OfficeMcpChoice:
+      description: |
+        An answer to the Intro's Pixel Office MCP ask, an absolute state:
+        `allow` grants, `decline` declines for good, `notNow` leaves it
+        unanswered (asked again on the next open; a revision from `allow`
+        revokes every agent's access, as a decline does).
+      type: string
+      enum: [allow, notNow, decline]
 
     SetOfficeMcpEnabled:
       description: |
@@ -2135,14 +2269,6 @@ components:
         undoes what that answer left behind.)
       type: string
       enum: [install, notNow, never]
-
-    SetHooksInfoShown:
-      type: object
-      additionalProperties: false
-      required: [type]
-      properties:
-        type:
-          const: setHooksInfoShown
 
     SetWatchAllSessions:
       type: object

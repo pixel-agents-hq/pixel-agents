@@ -12,6 +12,7 @@ vi.mock('os', async () => {
 
 const {
   recordUsageReport,
+  usageBridgeStatusMessage,
   usageLimitsMessage,
   usageSnapshotMessages,
   resetUsageLimitsCacheForTests,
@@ -147,9 +148,16 @@ describe('recordUsageReport', () => {
         providerId: 'claude',
         providerName: 'Claude Code',
         installed: false,
+        summary: claudeProvider.usageBridge!.summary,
         disclosure: claudeProvider.usageBridge!.disclosure,
       },
       usageLimitsMessage('claude'),
     ]);
+  });
+
+  it('a bridge with no summary of its own is shown a line naming the CLI, never an empty one', () => {
+    const { summary: _summary, ...bridge } = claudeProvider.usageBridge!;
+    const status = usageBridgeStatusMessage({ ...claudeProvider, usageBridge: bridge });
+    expect(status.summary).toBe("See how much of your Claude Code plan's limits is left.");
   });
 });

@@ -11,17 +11,22 @@
 import { randomUUID } from 'crypto';
 import type { FastifyInstance } from 'fastify';
 
+import { greeterPalette } from '../../../core/src/greeterCharacter.js';
 import type { ServerMessage } from '../../../core/src/messages.js';
 import { characterRenderer } from '../characterArt.js';
 import { commitCharacterProfiles } from '../characterProfilesPersistence.js';
 import { getCharacterProfiles, getWardrobeItems } from '../characterProfilesStore.js';
-import { readConfig } from '../configPersistence.js';
+import { getOfficeMcpConsent, readConfig } from '../configPersistence.js';
 import {
   normalizeDirectoryPath,
   setDirectoryCharacters,
   writeUserDirectories,
 } from '../directories.js';
 import type { AgentTerminals } from '../terminal/agentTerminals.js';
+import { writeOnboardingPlugin } from '../tutorial/onboardingPlugin.js';
+import { Tutorial, type TutorialSurface } from '../tutorial/tutorial.js';
+import { GUIDE_FALLBACK_NAME } from '../tutorial/tutorialCopy.js';
+import { layoutSignature } from '../tutorial/tutorialSightings.js';
 import { invalidateAttributionDirectories } from '../worktreeAttribution.js';
 import { isRepo } from '../worktreeGit.js';
 import { agentLabel } from './agentLabel.js';
@@ -56,6 +61,9 @@ export interface OfficeMcpSurface {
   /** How it ends an agent closed from close_agent (as its card's × does).
    *  Absent: close_agent isn't offered. */
   close?(id: number): void;
+  /** How it launches the tutorial's Guide and ends it. Absent: the
+   *  Intro never offers the tutorial here. */
+  tutorial?: TutorialSurface;
   /** Defaults to every tool. */
   tools?: readonly OfficeTool[];
 }
@@ -91,7 +99,8 @@ export interface OfficeMcpFeature extends AgentMcpAccess {
     client: object | undefined,
     reply: (message: ServerMessage) => void,
   ): boolean;
-  /** An office saved the layout or the Area mappings: what an undo would revert may have changed. */
+  /** An office saved the layout or the Area mappings: what an undo would revert
+   *  may have changed, and the tutorial's layout quest may be done. */
   layoutSaved(): void;
   /** The roster or a Directory was saved by other means (a Characters-view Save, a Directory
    *  saved or removed, characters.json changed on disk): what a Character undo would revert
@@ -172,6 +181,39 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
   });
 
   const visits = createVisitOps(facts);
+  // Its MCP access is this feature's own (`officeMcp`, below): read at launch time.
+  const tutorial = new Tutorial({
+    store,
+    surface: surface.tutorial,
+    // The Guide's skill sends it to the MCP's tools: no MCP here, no tutorial.
+    mcpUnavailable: () => {
+      if (officeMcp.offered()) return null;
+      if (!facts.provider.mcpConfigFile) {
+        return `The tutorial runs on the Pixel Agents Office MCP, which ${facts.provider.displayName} can't be given.`;
+      }
+      return decided
+        ? "This window shares another window's office: start the tutorial from that one."
+        : 'The office is still starting.';
+    },
+    mcpGranted: () => getOfficeMcpConsent() === 'granted',
+    mcp: {
+      configFor: (agentId) => officeMcp.configFor(agentId),
+      revoke: (agentId) => officeMcp.revoke(agentId),
+    },
+    readFacts: () => ({
+      characterIds: getCharacterProfiles().flatMap((p) => (p.id ? [p.id] : [])),
+      directoryPaths: readConfig().directories.map((d) => d.path),
+      layout: layoutSignature(facts.layout()),
+      agentIds: [...store.entries()].map(([id]) => id),
+    }),
+    guideName: (palette) => {
+      const cast = getCharacterProfiles();
+      return cast[palette ?? greeterPalette(cast)]?.name || GUIDE_FALLBACK_NAME;
+    },
+    skills: facts.provider.skills,
+    writePlugin: (name) =>
+      facts.provider.skills ? writeOnboardingPlugin(facts.provider.skills, name) : undefined,
+  });
   const closing = surface.close ? createClosing(facts, surface.close, terminals) : undefined;
   const launch = surface.launch;
   const office: OfficeOperations = {
@@ -181,6 +223,7 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
     visits,
     characters: createCharacterOps(facts, characterEdits),
     directories,
+    tutorial,
     // launch_agent's launch gives the agent this MCP, like any other launch.
     ...(launch ? { launch: createLaunching(facts, (request) => launch(request, officeMcp)) } : {}),
     ...(closing ? { close: closing } : {}),
@@ -213,6 +256,7 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
         send(officeMcp.statusMessage());
         send(layoutEdits.statusMessage());
         send(characterEdits.statusMessage());
+        send(tutorial.statusMessage());
         const ask = () => {
           const request = officeMcp.consentRequest();
           if (request) send(request);
@@ -224,17 +268,27 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
       else void whenDecided.then(offer);
     },
 
-    handleMessage: (message, client, reply) =>
-      handleOfficeMcpMessage(message, {
+    handleMessage(message, client, reply) {
+      if (tutorial.handleMessage(message, reply)) return true;
+      const handled = handleOfficeMcpMessage(message, {
         officeMcp,
         layoutEdits,
         characterEdits,
         client,
         broadcast: (m) => store.broadcast({ ...m }),
         reply,
-      }),
+      });
+      // The consent decides whether the tutorial can be offered.
+      if (message.type === 'officeMcpConsentResponse' || message.type === 'setOfficeMcpEnabled') {
+        tutorial.broadcastStatus();
+      }
+      return handled;
+    },
 
-    layoutSaved: () => layoutEdits.layoutSaved(),
+    layoutSaved() {
+      layoutEdits.layoutSaved();
+      tutorial.layoutSavedByOffice();
+    },
     charactersChanged: () => characterEdits.charactersChanged(),
     clientGone: (client) => {
       layoutEdits.clientGone(client);
@@ -244,6 +298,7 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
     dispose() {
       // Every agent's token dies with the server (and its config files go).
       officeMcp.dispose();
+      tutorial.dispose();
       visits.dispose();
       closing?.dispose();
     },

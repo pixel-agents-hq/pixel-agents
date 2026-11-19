@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { OfficeMcpChoice } from '../../../core/src/messages.js';
+import type {
+  HooksConsentRequest,
+  OfficeMcpChoice,
+  OfficeMcpConsentRequest,
+  TutorialStatus,
+} from '../../../core/src/messages.js';
 import { DISCORD_INVITE_URL } from '../changelogData.js';
 import { useCast } from '../characters/castStore.js';
 import { greeterPalette } from '../characters/profiles.js';
@@ -13,9 +18,12 @@ import {
 } from '../constants.js';
 import type { ConsentChoice } from '../hooks/introTourState.js';
 import type { OfficeState } from '../office/engine/officeState.js';
+import { TutorialAsk } from '../tutorial/TutorialAsk.js';
+import { tutorialOffered } from '../tutorial/tutorialOffer.js';
 import { useUsageBridge } from '../usage/useUsageBridge.js';
 import { DiscordIcon } from './ChangelogModal.js';
 import { computeIntroBubbleGeometry } from './introBubbleGeometry.js';
+import { type IntroChoiceId, type IntroChoiceOption, IntroChoices } from './IntroChoices.js';
 import { Button } from './ui/Button.js';
 
 interface IntroBubbleProps {
@@ -27,12 +35,12 @@ interface IntroBubbleProps {
    *  terms, only orientation. Null = no hooks ask: an office whose user
    *  finished the Intro before the Pixel Office MCP step existed sees that
    *  step alone. */
-  hooksAsk: { headline: string; disclosure: string } | null;
-  /** The Pixel Office MCP step's server copy (officeMcpConsentRequest), or
-   *  null when this office is not asked. Comes after the hooks step. */
-  mcpAsk: { headline: string; disclosure: string } | null;
-  /** The Pixel Office MCP step's answer, sent at once like the hooks one
-   *  (Back re-opens the step and a revised answer replaces it). */
+  hooksAsk: HooksConsentRequest | null;
+  /** The Pixel Office MCP ask's server copy (officeMcpConsentRequest), or
+   *  null when this office is not asked. Shares the consent step with hooks. */
+  mcpAsk: OfficeMcpConsentRequest | null;
+  /** The Pixel Office MCP answer, sent at once with the hooks one (Back
+   *  re-opens the step and a revised answer replaces it). */
   onMcpChoice: (choice: OfficeMcpChoice) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
@@ -63,23 +71,45 @@ interface IntroBubbleProps {
    *  ladder. Escape aborts the tour only when the tour is topmost; without
    *  this gate it silently aborted UNDER an open modal. */
   escapeSuppressed: boolean;
+  /** The tutorial the Intro may offer at its end (tutorialStatus), the last
+   *  refusal of a start, and the start itself (the caller sends startTutorial
+   *  wearing the greeter's look). Without hooks and MCP asks the Intro is the
+   *  tutorial step alone (Settings → Play the tutorial). */
+  tutorial: {
+    status: TutorialStatus | undefined;
+    rejected: { reason: string; seq: number } | null;
+    onStart: (palette: number) => void;
+  };
 }
 
-type StepId = 'welcome' | 'claudeCode' | 'usage' | 'consent' | 'mcp' | 'closing';
+type StepId = 'welcome' | 'claudeCode' | 'choices' | 'closing' | 'tutorial';
+
+/** Each box's name in the choices step (the server writes the line and the terms). */
+const CHOICE_LABELS: Record<IntroChoiceId, string> = {
+  usage: 'Usage bars',
+  hooks: 'Live updates',
+  mcp: 'Agents that use the office',
+};
 
 /**
  * The Intro: the first-run tour the greeter character "speaks",
  * shared by both surfaces (the VS Code webview and the standalone browser
  * render this same component off the same server message).
  *
- * Steps: welcome → Claude Code → usage bars (only where the bridge can be
- * installed and is not yet) → hooks consent → Pixel Office MCP consent (only
- * where the server offers it and it is unanswered) → all set. Without a hooks
- * ask (the user finished the Intro before the MCP step existed) the tour is
- * the MCP step alone, then all set. The consent step is
- * the same first-run ask as before, now wrapped in a tour; its copy still
- * arrives from the server and its buttons still send `hooksConsentResponse`
- * the moment they are clicked. Back from the closing step re-opens the consent
+ * Steps: welcome ("Hi, I'm <greeter>") → get Claude Code (only when the
+ * server found no CLI) → choices → all set, which offers the tutorial where
+ * the server can start one (its ask, one paragraph, on the same step). The
+ * choices step (IntroChoices) holds one box per thing to turn on, all off to
+ * start: usage bars (only where the bridge can be installed and is not yet),
+ * live updates (the hooks ask) and the Pixel Office MCP (where the server
+ * offers it and it is unanswered), each a line with its terms behind "Read
+ * more". Continue sends every answer at once — `hooksConsentResponse`
+ * install | never, `officeMcpConsentResponse` allow | decline, the usage
+ * bridge on (or back off, on a revision) — and holds until they settle.
+ * Without a hooks ask (the user finished the Intro before the MCP ask
+ * existed) the tour is the choices step with the MCP box alone, then all set;
+ * without either, the tutorial's ask alone (Settings → Play the Tutorial).
+ * Copy for every ask arrives from the server. Back from the closing step re-opens the consent
  * step for a genuine change of mind — the server treats a revised answer as an
  * absolute statement and undoes a landed install when the revision asks for
  * that (consentGate's disable/revert actions).
@@ -98,8 +128,7 @@ type StepId = 'welcome' | 'claudeCode' | 'usage' | 'consent' | 'mcp' | 'closing'
  * computeIntroBubbleGeometry, a pure per-frame function of the measured
  * frame; this component only measures and renders.
  *
- * Fail-closed by construction: only the consent steps' buttons (the hooks
- * step's three, the Pixel Office MCP step's two) send anything. The X and Escape close without sending, so an unanswered ask
+ * Fail-closed by construction: only the choices step's Continue sends anything. The X and Escape close without sending, so an unanswered ask
  * changes nothing and reappears on the next open. Clicks on the office around
  * the bubble are deliberately inert — the consent step is a decision surface,
  * and a stray click must not read as an answer.
@@ -117,56 +146,92 @@ export function IntroBubble({
   onChoice,
   onClose,
   escapeSuppressed,
+  tutorial,
 }: IntroBubbleProps) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
-  const [chosenStep, setStep] = useState<StepId>(hooksAsk ? 'welcome' : 'mcp');
+  const [chosenStep, setStep] = useState<StepId>(
+    hooksAsk ? 'welcome' : mcpAsk ? 'choices' : 'tutorial',
+  );
 
   // The usage bridge's install state (usageBridgeStatus), undefined until the
   // server says — and forever on a host that has none. Decides whether the
-  // tour offers the usage bars step, and is that step's verdict. The step's
-  // install is pending until a NEWER status arrives (the server answers every
-  // request, success or not); then the step moves on, or stays to show why it
-  // failed.
-  const usage = useUsageBridge((status) => {
-    if (status?.installed) setStep('consent');
-  });
+  // choices offer the usage bars box. Its install is pending until a NEWER
+  // status arrives (the server answers every request, success or not).
+  const usage = useUsageBridge();
   const usageBridge = usage.status;
   const usagePending = usage.pending;
-  // "Show Usage": the step shows the disclosure, so the click is the consent.
-  const enableUsageBars = (): void => usage.setEnabled(true);
 
-  // The usage bars step, decided ONCE from the first usageBridgeStatus: offered
+  // The usage bars box, decided ONCE from the first usageBridgeStatus: offered
   // when the bridge can be installed and isn't yet, and then kept for the whole
-  // tour (installing it from the step must not make the step vanish under Back).
+  // tour (installing it from the step must not make the box vanish under Back).
   // The status can land after the tour mounts (VS Code sends it after the hooks
   // ask); the user is still on an earlier step then.
   const [offerUsage, setOfferUsage] = useState<boolean | null>(null);
   useEffect(() => {
     if (offerUsage === null && usageBridge) setOfferUsage(!usageBridge.installed);
   }, [offerUsage, usageBridge]);
+  // The tutorial, offered on the closing step while the server can start one —
+  // and kept once its start is sent (the start makes it unavailable).
+  const [tutorialStartSent, setTutorialStartSent] = useState(false);
+  const offerTutorial = tutorialOffered(tutorial.status) || tutorialStartSent;
+  const startTutorial = (): void => {
+    setTutorialStartSent(true);
+    tutorial.onStart(palette);
+  };
   const steps: StepId[] = hooksAsk
-    ? [
-        'welcome',
-        'claudeCode',
-        ...(offerUsage ? (['usage'] as const) : []),
-        'consent',
-        ...(mcpAsk ? (['mcp'] as const) : []),
-        'closing',
-      ]
-    : ['mcp', 'closing'];
+    ? ['welcome', ...(hooksAsk.cliInstalled ? [] : (['claudeCode'] as const)), 'choices', 'closing']
+    : mcpAsk
+      ? ['choices', 'closing']
+      : ['tutorial'];
+
+  // The choices step's boxes (all off to start; kept across Back, so a revision starts from them).
+  const options: IntroChoiceOption[] = [
+    ...(hooksAsk && offerUsage && usageBridge
+      ? [
+          {
+            id: 'usage' as const,
+            summary: usageBridge.summary,
+            disclosure: usageBridge.disclosure,
+            error: usageBridge.error,
+          },
+        ]
+      : []),
+    ...(hooksAsk
+      ? [{ id: 'hooks' as const, summary: hooksAsk.summary, disclosure: hooksAsk.disclosure }]
+      : []),
+    ...(mcpAsk
+      ? [{ id: 'mcp' as const, summary: mcpAsk.summary, disclosure: mcpAsk.disclosure }]
+      : []),
+  ].map((o) => ({ ...o, label: CHOICE_LABELS[o.id] }));
+  const [choices, setChoices] = useState<Record<IntroChoiceId, boolean>>({
+    usage: false,
+    hooks: false,
+    mcp: false,
+  });
+  // Continue was pressed and its answers have not all settled: the step holds.
+  const [applying, setApplying] = useState(false);
+  // The usage bars this tour turned on (a revision turns only those back off).
+  const usageByTour = useRef(false);
+  const applyChoices = (): void => {
+    setApplying(true);
+    if (hooksAsk) onChoice(choices.hooks ? 'install' : 'never');
+    if (mcpAsk) onMcpChoice(choices.mcp ? 'allow' : 'decline');
+    if (options.some((o) => o.id === 'usage')) {
+      if (choices.usage && !usageBridge?.installed) {
+        usageByTour.current = true;
+        usage.setEnabled(true);
+      } else if (!choices.usage && usageBridge?.installed && usageByTour.current) {
+        usageByTour.current = false;
+        usage.setEnabled(false);
+      }
+    }
+  };
   // A step the tour no longer has (an ask mooted under it) falls back to the first.
   const step = steps.includes(chosenStep) ? chosenStep : steps[0];
   const stepIndex = steps.indexOf(step);
-  const stepsRef = useRef(steps);
-  stepsRef.current = steps;
-  /** The step after the hooks consent step: the MCP step when asked, else all set. */
-  const afterConsent = (): StepId => {
-    const all = stepsRef.current;
-    return all[all.indexOf('consent') + 1] ?? 'closing';
-  };
 
-  // The greeter lives exactly as long as this component, wearing Suit.
+  // The greeter lives exactly as long as this component, wearing Byte (by id: see greeterPalette).
   useEffect(() => {
     officeState.spawnGreeter();
     return () => officeState.despawnGreeter();
@@ -175,6 +240,7 @@ export function IntroBubble({
   // the cast arrives or changes while the Intro is up.
   const cast = useCast();
   const palette = greeterPalette(cast.profiles);
+  const greeterName = cast.profiles[palette]?.name ?? 'Byte';
   useEffect(() => {
     officeState.setGreeterPalette(palette);
   }, [officeState, palette]);
@@ -196,7 +262,7 @@ export function IntroBubble({
   useEffect(() => {
     let rafId = 0;
     const tick = () => {
-      const ch = officeState.greeter;
+      const ch = officeState.greeterAnchor();
       const bubble = bubbleRef.current;
       const container = containerRef.current;
       if (ch && bubble && container && bubble.offsetWidth > 0) {
@@ -220,19 +286,21 @@ export function IntroBubble({
     return () => cancelAnimationFrame(rafId);
   }, [officeState, zoom, containerRef, panRef]);
 
-  // The held install's verdict arrived (installPending fell): move on to the
-  // closing step. Back is disabled while pending, so the fall can only ever
-  // happen with the consent step on screen.
-  const prevPendingRef = useRef(false);
+  // Every answer settled: on to the closing step — unless the usage bars were
+  // asked for and didn't install, so the step stays to say why.
+  const choicesPending = installPending || usagePending;
   useEffect(() => {
-    if (prevPendingRef.current && !installPending) setStep(afterConsent());
-    prevPendingRef.current = installPending;
-  }, [installPending]);
+    if (!applying || choicesPending) return;
+    setApplying(false);
+    const usageFailed = choices.usage && usageByTour.current && !usageBridge?.installed;
+    if (!usageFailed) setStep('closing');
+  }, [applying, choicesPending, choices.usage, usageBridge]);
 
   const el = containerRef.current;
   if (!el) return null;
 
-  const greeter = officeState.greeter;
+  // The greeter, or the tutorial's agent that took its place (it sat for the Guide).
+  const greeter = officeState.greeterAnchor();
   // Let the materialization effect finish before the greeter "speaks".
   if (greeter && greeter.matrixEffect === 'spawn') return null;
 
@@ -271,26 +339,12 @@ export function IntroBubble({
 
   const back = (): void => setStep(steps[Math.max(0, stepIndex - 1)]);
   const forward = (): void => setStep(steps[Math.min(steps.length - 1, stepIndex + 1)]);
-  const choose = (choice: ConsentChoice): void => {
-    onChoice(choice);
-    // A decline has no outcome to wait on, so it advances immediately. An
-    // install holds this step (buttons disabled via installPending) and
-    // advances when its verdict arrives — the pending-fall effect above.
-    if (choice !== 'install') setStep(afterConsent());
-  };
-  const chooseMcp = (choice: OfficeMcpChoice): void => {
-    onMcpChoice(choice);
-    setStep('closing');
-  };
-  const pending = installPending || usagePending;
-
   const titles: Record<StepId, string> = {
     welcome: 'Welcome to Pixel Agents!',
-    claudeCode: 'Powered by Claude Code',
-    usage: 'Track your usage',
-    consent: hooksAsk?.headline ?? '',
-    mcp: mcpAsk?.headline ?? '',
+    claudeCode: 'First, get Claude Code',
+    choices: 'Pick what to turn on',
     closing: installFailed ? "Hooks couldn't be installed" : "You're all set!",
+    tutorial: tutorial.status?.headline ?? '',
   };
 
   return (
@@ -349,185 +403,125 @@ export function IntroBubble({
           ))}
         </div>
 
-        <div className="text-xl mb-8 text-accent-bright pr-20">{titles[step]}</div>
-
-        {step === 'welcome' && (
-          <p className="text-sm m-0 mb-8">
-            In this office, your AI agents become tiny pixel characters: they type at their desks
-            while they work, wander off when they're done, and speak up when they need you.
-          </p>
-        )}
-
-        {step === 'claudeCode' && (
+        {step === 'tutorial' && tutorial.status ? (
+          <TutorialAsk
+            status={tutorial.status}
+            rejected={tutorial.rejected}
+            embedded={false}
+            onClose={onClose}
+            onStart={startTutorial}
+          />
+        ) : (
           <>
-            <p className="text-sm m-0 mb-8">
-              The office watches your Claude Code sessions and brings them to life in here. New to
-              Claude Code? Download it first:
-            </p>
-            <div className="text-sm bg-btn-bg border-2 border-border py-4 px-8 mb-8 select-all">
-              {CLAUDE_CODE_INSTALL_COMMAND}
-            </div>
-            <p className="text-sm m-0 mb-8">
-              For more info, visit{' '}
-              <a
-                href={CLAUDE_CODE_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent-bright hover:text-accent no-underline"
-              >
-                claude.com/claude-code
-              </a>
-            </p>
-          </>
-        )}
+            <div className="text-xl mb-8 text-accent-bright pr-20">{titles[step]}</div>
 
-        {step === 'usage' &&
-          (usageBridge?.installed ? (
-            <p className="text-sm m-0 mb-8">Your usage now shows in the top-left corner.</p>
-          ) : (
-            <>
-              {(usageBridge?.disclosure ?? '').split('\n\n').map((paragraph, i) => (
-                <p key={i} className="text-sm m-0 mb-8">
-                  {paragraph}
-                </p>
-              ))}
-              {usageBridge?.error && !usagePending && (
-                <p className="text-sm m-0 mb-8 text-status-error">{usageBridge.error}</p>
-              )}
-            </>
-          ))}
-
-        {step === 'consent' &&
-          (hooksAsk?.disclosure ?? '').split('\n\n').map((paragraph, i) => (
-            <p key={i} className="text-sm m-0 mb-8">
-              {paragraph}
-            </p>
-          ))}
-
-        {step === 'mcp' &&
-          (mcpAsk?.disclosure ?? '').split('\n\n').map((paragraph, i) => (
-            <p key={i} className="text-sm m-0 mb-8">
-              {paragraph}
-            </p>
-          ))}
-
-        {step === 'closing' && !hooksAsk && (
-          <p className="text-sm m-0 mb-8">
-            You can turn the Pixel Agents Office MCP on or off, or make it read-only, any time in
-            Settings.
-          </p>
-        )}
-
-        {step === 'closing' && hooksAsk && (
-          <>
-            {installFailed ? (
+            {step === 'welcome' && (
               <p className="text-sm m-0 mb-8">
-                Something went wrong writing to your Claude Code settings, so the office will watch
-                your sessions the slower way instead. No worries, everything still works and you can
-                retry activating them any time from Settings.
+                Hi, I&apos;m {greeterName}. In this office, your AI agents become tiny pixel
+                characters: they type at their desks while they work, wander off when they&apos;re
+                done, and speak up when they need you.
               </p>
-            ) : null}
-            <p className="text-sm m-0 mb-8">
-              Enjoy your new office! Questions, ideas, or pixel art to show off? Come hang out in
-              our Discord.
-            </p>
-            <p className="text-base text-center m-0 mt-12 mb-12">
-              <a
-                href={DISCORD_INVITE_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-8 text-accent-bright hover:text-accent no-underline"
-              >
-                <DiscordIcon />
-                Join our Discord!
-              </a>
-            </p>
+            )}
+
+            {step === 'claudeCode' && (
+              <>
+                <p className="text-sm m-0 mb-8">
+                  The office brings your Claude Code sessions to life, but I couldn&apos;t find
+                  Claude Code on this computer. Install it first:
+                </p>
+                <div className="text-sm bg-btn-bg border-2 border-border py-4 px-8 mb-8 select-all">
+                  {CLAUDE_CODE_INSTALL_COMMAND}
+                </div>
+                <p className="text-sm m-0 mb-8">
+                  For more info, visit{' '}
+                  <a
+                    href={CLAUDE_CODE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-accent-bright hover:text-accent no-underline"
+                  >
+                    claude.com/claude-code
+                  </a>
+                </p>
+              </>
+            )}
+
+            {step === 'closing' && (
+              <>
+                {hooksAsk && installFailed ? (
+                  <p className="text-sm m-0 mb-8">
+                    Something went wrong writing to your Claude Code settings, so the office will
+                    watch your sessions the slower way instead. No worries, everything still works
+                    and you can retry activating them any time from Settings.
+                  </p>
+                ) : null}
+                {!offerTutorial && (
+                  <p className="text-sm m-0 mb-8">
+                    Enjoy your new office! Questions, ideas, or pixel art to show off? Come hang out
+                    in our Discord.
+                  </p>
+                )}
+                <p
+                  className={`text-base m-0 ${offerTutorial ? 'mb-10' : 'text-center mt-12 mb-12'}`}
+                >
+                  <a
+                    href={DISCORD_INVITE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-8 text-accent-bright hover:text-accent no-underline"
+                  >
+                    <DiscordIcon />
+                    Join our Discord!
+                  </a>
+                </p>
+              </>
+            )}
+
+            {/* The tutorial's ask closes the Intro's last step, with its own buttons. */}
+            {step === 'closing' && offerTutorial && tutorial.status ? (
+              <TutorialAsk
+                status={tutorial.status}
+                rejected={tutorial.rejected}
+                embedded
+                onBack={back}
+                onClose={onClose}
+                onStart={startTutorial}
+              />
+            ) : step === 'choices' ? (
+              <IntroChoices
+                options={options}
+                values={choices}
+                onToggle={(id) => setChoices((c) => ({ ...c, [id]: !c[id] }))}
+                pending={applying}
+                warnAllOff={hooksAsk !== null}
+                onBack={stepIndex > 0 ? back : undefined}
+                onContinue={applyChoices}
+              />
+            ) : (
+              <div className="flex items-center justify-between gap-6 mt-10 flex-wrap">
+                {/* Left slot: Back everywhere it can go back; a spacer on the opening
+              step keeps the right-side buttons in place. */}
+                {stepIndex === 0 ? (
+                  <span />
+                ) : (
+                  <Button variant="ghost" size="sm" onClick={back}>
+                    Back
+                  </Button>
+                )}
+
+                {step === 'closing' ? (
+                  <Button variant="accent" size="sm" onClick={onClose}>
+                    Let's Go
+                  </Button>
+                ) : (
+                  <Button variant="default" size="sm" onClick={forward}>
+                    Continue
+                  </Button>
+                )}
+              </div>
+            )}
           </>
         )}
-
-        <div className="flex items-center justify-between gap-6 mt-10 flex-wrap">
-          {/* Left slot: Back everywhere it can go back; a spacer on the opening
-              step keeps the right-side buttons in place. */}
-          {stepIndex === 0 ? (
-            <span />
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={pending}
-              className={pending ? 'opacity-[var(--btn-disabled-opacity)]' : ''}
-              onClick={back}
-            >
-              Back
-            </Button>
-          )}
-
-          {step === 'usage' && !usageBridge?.installed ? (
-            <div className="flex items-center justify-end gap-6 flex-wrap">
-              <Button
-                variant={usagePending ? 'disabled' : 'default'}
-                size="sm"
-                disabled={usagePending}
-                onClick={forward}
-              >
-                Skip
-              </Button>
-              <Button
-                variant={usagePending ? 'disabled' : 'accent'}
-                size="sm"
-                disabled={usagePending}
-                onClick={enableUsageBars}
-              >
-                {usagePending ? 'Connecting...' : 'Show Usage'}
-              </Button>
-            </div>
-          ) : step === 'consent' ? (
-            <div className="flex items-center justify-end gap-6 flex-wrap">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={installPending}
-                className={installPending ? 'opacity-[var(--btn-disabled-opacity)]' : ''}
-                onClick={() => choose('never')}
-              >
-                Don't Ask Again
-              </Button>
-              <Button
-                variant={installPending ? 'disabled' : 'default'}
-                size="sm"
-                disabled={installPending}
-                onClick={() => choose('notNow')}
-              >
-                Not Now
-              </Button>
-              <Button
-                variant={installPending ? 'disabled' : 'accent'}
-                size="sm"
-                disabled={installPending}
-                onClick={() => choose('install')}
-              >
-                {installPending ? 'Installing...' : 'Install Hooks'}
-              </Button>
-            </div>
-          ) : step === 'mcp' ? (
-            <div className="flex items-center justify-end gap-6 flex-wrap">
-              <Button variant="default" size="sm" onClick={() => chooseMcp('decline')}>
-                Don't Allow
-              </Button>
-              <Button variant="accent" size="sm" onClick={() => chooseMcp('allow')}>
-                Allow
-              </Button>
-            </div>
-          ) : step === 'closing' ? (
-            <Button variant="accent" size="sm" onClick={onClose}>
-              Let's Go
-            </Button>
-          ) : (
-            <Button variant="default" size="sm" onClick={forward}>
-              Continue
-            </Button>
-          )}
-        </div>
       </div>
     </div>
   );

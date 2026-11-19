@@ -21,6 +21,7 @@ import { WebSocket } from 'ws';
 
 import { createVscodeOfficeMcp } from '../../../adapters/vscode/vscodeOfficeMcp.js';
 import type { CatalogSource } from '../../../core/src/layout/index.js';
+import type { OfficeMcpChoice } from '../../../core/src/messages.js';
 import type { HookProvider } from '../../../core/src/provider.js';
 import type { TerminalHandle } from '../../../core/src/terminalAdapter.js';
 import { AgentRuntime } from '../../src/agentRuntime.js';
@@ -52,6 +53,7 @@ import { ptyAgentTerminals } from '../../src/terminal/agentTerminals.js';
 import { PtySessionManager } from '../../src/terminal/ptySessionManager.js';
 import { closeStandaloneAgent } from '../../src/terminal/standaloneClose.js';
 import { launchForOffice } from '../../src/terminal/standaloneLaunches.js';
+import { standaloneTutorialSurface } from '../../src/terminal/standaloneTutorial.js';
 import { holdWorktreesOf } from '../../src/worktreeLeave.js';
 
 export type Json = Record<string, any>;
@@ -251,6 +253,8 @@ export interface StandaloneOfficeOptions {
   launch?: boolean;
   /** close_agent closes standalone agents (else it isn't offered). */
   close?: boolean;
+  /** The tutorial can be started (the Guide launched into `proj`, as cli.ts composes it). */
+  tutorial?: boolean;
   /** Worktrees are held while their agents live (as cli.ts holds them). */
   holdWorktrees?: boolean;
   /** The MCP's tool table (default: every tool). */
@@ -259,7 +263,8 @@ export interface StandaloneOfficeOptions {
   forwardHooks?: boolean;
   /** After the handshake, the office answers the MCP ask with allow. */
   grant?: boolean;
-  /** The CLI the MCP writes agents' config files for. Default: Claude's. */
+  /** The CLI the MCP writes agents' config files for, and the tutorial's
+   *  Guide is launched with. Default: Claude's. */
   provider?: HookProvider;
 }
 
@@ -293,7 +298,7 @@ export interface StandaloneOffice extends AgentSide {
   /** A message from the first office (or the given socket). */
   send(message: Message, ws?: WebSocket): void;
   /** The office's answer to the MCP ask, once the status comes back. */
-  answer(choice: 'allow' | 'decline'): Promise<void>;
+  answer(choice: OfficeMcpChoice): Promise<void>;
   /** What `claude` on the PATH runs from now on. */
   useClaude(script: string): void;
   /** mock-claude's invocations.log lines. */
@@ -556,6 +561,20 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
         : {}),
       ...(options.close
         ? { close: (id: number) => closeStandaloneAgent(ptyManager, runtime, id) }
+        : {}),
+      ...(options.tutorial
+        ? {
+            tutorial: standaloneTutorialSurface(
+              {
+                store,
+                runtime,
+                ptyManager,
+                provider: options.provider ?? claudeProvider,
+                hostDirectories: directories,
+              },
+              (id: number) => closeStandaloneAgent(ptyManager, runtime, id),
+            ),
+          }
         : {}),
       ...(options.tools ? { tools: options.tools } : {}),
     });

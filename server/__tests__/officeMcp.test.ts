@@ -155,6 +155,26 @@ describe('Pixel Office MCP (composed server, mock-claude launches)', () => {
     expect(config.officeMcpConsent).toBe('granted');
   });
 
+  it('not now leaves it unanswered, revoking an earlier allow, and the ask returns', async () => {
+    await answer('allow');
+    const granted = await launch();
+    const token = tokenIn(mcpConfigPath(granted.args)!);
+
+    await answer('notNow');
+    expect((await rawInitialize({ Authorization: `Bearer ${token}` })).status).toBe(401);
+    expect((await launch()).args).not.toContain('--mcp-config');
+    const config = JSON.parse(
+      fs.readFileSync(path.join(h.home, '.pixel-agents', 'config.json'), 'utf8'),
+    );
+    expect('officeMcpConsent' in config).toBe(false);
+    const again = await h.connectOffice();
+    await waitFor(
+      () => again.received.find((m) => m.type === 'officeMcpConsentRequest'),
+      'the ask again',
+    );
+    again.socket.close();
+  });
+
   // ── Injection + list_agents ─────────────────────────────────
 
   it('a granted launch lists the office through list_agents and is marked as itself', async () => {

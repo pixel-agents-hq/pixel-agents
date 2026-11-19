@@ -34,7 +34,13 @@ export function handleOfficeMcpMessage(
   switch (msg.type) {
     case 'officeMcpConsentResponse': {
       const answer =
-        msg.choice === 'allow' ? 'granted' : msg.choice === 'decline' ? 'declined' : null;
+        msg.choice === 'allow'
+          ? 'granted'
+          : msg.choice === 'decline'
+            ? 'declined'
+            : msg.choice === 'notNow'
+              ? 'unanswered'
+              : null;
       if (answer) ctx.broadcast(officeMcp.answer(answer));
       return true;
     }

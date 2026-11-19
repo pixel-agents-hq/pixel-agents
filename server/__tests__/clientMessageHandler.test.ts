@@ -1490,7 +1490,6 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
       { type: 'setWatchAllSessions', enabled: true },
       { type: 'setHooksEnabled', providerId: 'claude', enabled: false },
       { type: 'hooksConsentResponse', providerId: 'claude', choice: 'allow' },
-      { type: 'setHooksInfoShown' },
       { type: 'addExternalAssetDirectory', path: directory },
       { type: 'removeExternalAssetDirectory', path: directory },
       { type: 'saveAreaMappings', mappings: { Lab: ['project'] } },

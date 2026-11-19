@@ -21,16 +21,18 @@ import { readLayoutFromFile, writeLayoutToFile } from '../../server/src/layoutPe
 
 /** VS Code globalState keys → setting key passed to adapter.getSetting/setSetting.
  *  `pixel-agents.hooksEnabled` is NOT here: a legacy hooks-off is deliberately
- *  discarded rather than migrated (see the branch below). */
+ *  discarded rather than migrated (see the branch below), and the retired
+ *  `pixel-agents.hooksInfoShown` is dropped. */
 const SETTINGS_MIGRATIONS: readonly { vscodeKey: string; settingKey: string }[] = [
   { vscodeKey: 'pixel-agents.soundEnabled', settingKey: 'pixel-agents.soundEnabled' },
   { vscodeKey: 'pixel-agents.lastSeenVersion', settingKey: 'pixel-agents.lastSeenVersion' },
   { vscodeKey: 'pixel-agents.alwaysShowLabels', settingKey: 'pixel-agents.alwaysShowLabels' },
   { vscodeKey: 'pixel-agents.watchAllSessions', settingKey: 'pixel-agents.watchAllSessions' },
-  { vscodeKey: 'pixel-agents.hooksInfoShown', settingKey: 'pixel-agents.hooksInfoShown' },
 ];
 
 const VSCODE_KEY_HOOKS_ENABLED = 'pixel-agents.hooksEnabled';
+/** The retired first-run hooks notice's "seen" flag: nothing reads it any more. */
+const VSCODE_KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 
 const WORKSPACE_KEY_AGENTS = 'pixel-agents.agents';
 const WORKSPACE_KEY_AGENT_SEATS = 'pixel-agents.agentSeats';
@@ -63,8 +65,10 @@ export function migrateVsCodeState(context: vscode.ExtensionContext, adapter: St
   // having been told what hooks add or where the data goes. They get the Intro
   // and decide with the full disclosure. The key is still cleared, or it counts
   // as unmigrated forever and warns on every launch.
-  if (context.globalState.get<unknown>(VSCODE_KEY_HOOKS_ENABLED) !== undefined) {
-    void context.globalState.update(VSCODE_KEY_HOOKS_ENABLED, undefined);
+  for (const key of [VSCODE_KEY_HOOKS_ENABLED, VSCODE_KEY_HOOKS_INFO_SHOWN]) {
+    if (context.globalState.get<unknown>(key) !== undefined) {
+      void context.globalState.update(key, undefined);
+    }
   }
 
   // ── Agents (workspaceState) ──

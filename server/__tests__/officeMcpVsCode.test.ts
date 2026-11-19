@@ -61,6 +61,7 @@ import { AgentStateStore } from '../src/agentStateStore.js';
 import { turnGuard } from '../src/mcp/messaging.js';
 import { PixelAgentsServer } from '../src/server.js';
 import { PLAIN_INPUT_MODES } from '../src/terminal/agentTerminals.js';
+import type { TutorialSurface } from '../src/tutorial/tutorial.js';
 import {
   type Message,
   useVscodeOffice,
@@ -128,7 +129,12 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
 
   function allow(): void {
     expect(fromWebview({ type: 'officeMcpConsentResponse', choice: 'allow' }).handled).toBe(true);
-    expect(h.broadcasts.at(-1)).toMatchObject({ type: 'officeMcpStatus', consent: 'granted' });
+    expect(lastStatus()).toMatchObject({ consent: 'granted' });
+  }
+
+  /** The newest officeMcpStatus broadcast (a consent answer is followed by the tutorial's status). */
+  function lastStatus(): Message | undefined {
+    return h.broadcasts.filter((m) => m.type === 'officeMcpStatus').at(-1);
   }
 
   /** Launch as the office's + does (agentManager), registered for its hooks. */
@@ -217,6 +223,7 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
       'officeMcpStatus',
       'agentLayoutEditStatus',
       'agentCharacterEditStatus',
+      'tutorialStatus',
       'officeMcpConsentRequest',
     ]);
     expect(asked[0]).toMatchObject({ consent: 'unanswered', readOnly: false });
@@ -232,9 +239,13 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
 
     // Settings' read-only switch, then turning it off: every office hears each.
     expect(fromWebview({ type: 'setOfficeMcpReadOnly', readOnly: true }).handled).toBe(true);
-    expect(h.broadcasts.at(-1)).toMatchObject({ type: 'officeMcpStatus', readOnly: true });
+    expect(lastStatus()).toMatchObject({ readOnly: true });
     expect(fromWebview({ type: 'setOfficeMcpEnabled', enabled: false }).handled).toBe(true);
-    expect(h.broadcasts.at(-1)).toMatchObject({ type: 'officeMcpStatus', consent: 'declined' });
+    expect(lastStatus()).toMatchObject({ consent: 'declined' });
+    // No tutorial without the MCP (this VS Code test office has no tutorial surface either).
+    expect(h.broadcasts.filter((m) => m.type === 'tutorialStatus').at(-1)).toMatchObject({
+      available: false,
+    });
     const declined = await launchTerminal();
     expect(declined.terminal.commands[0]).not.toContain('--mcp-config');
 
@@ -403,8 +414,9 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
 
   // ── Whether this office offers it at all ────────────────────
 
-  /** Another window's MCP, composed as the adapter composes it. */
-  function anotherWindow(): {
+  /** Another window's MCP, composed as the adapter composes it (with the
+   *  window's way to launch the tutorial's Guide, when given). */
+  function anotherWindow(tutorial?: TutorialSurface): {
     store: AgentStateStore;
     mcp: ReturnType<typeof createVscodeOfficeMcp>;
   } {
@@ -416,9 +428,17 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
       assets: () => null,
       directories: () => [],
       characterRefsChanged: () => {},
+      ...(tutorial ? { tutorial } : {}),
     });
     return { store, mcp };
   }
+
+  /** A window's tutorial side that could launch the Guide into `proj`. */
+  const guideLauncher: TutorialSurface = {
+    where: () => ({ ok: true, directoryName: 'proj' }),
+    launch: () => Promise.resolve({ ok: false, reason: 'No Guide in this test.' }),
+    close: () => {},
+  };
 
   it('a handshake before the server has started waits for it, then offers as usual', async () => {
     const { store, mcp } = anotherWindow();
@@ -435,6 +455,7 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
         'officeMcpStatus',
         'agentLayoutEditStatus',
         'agentCharacterEditStatus',
+        'tutorialStatus',
         'officeMcpConsentRequest',
       ]);
     } finally {
@@ -460,6 +481,50 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
       // Granted (the consent is machine-wide), its launches still get none.
       allow();
       expect(mcp.configFor(1)).toBeUndefined();
+    } finally {
+      mcp.dispose();
+      server.stop();
+      store.dispose();
+    }
+  });
+
+  it('a window whose server serves the MCP offers the tutorial as usual', async () => {
+    const { store, mcp } = anotherWindow(guideLauncher);
+    try {
+      mcp.setEndpoint(`http://127.0.0.1:${h.port}/mcp`);
+      allow();
+      const sent: Message[] = [];
+      mcp.handshake((m) => sent.push({ ...m }));
+      await Promise.resolve();
+      expect(sent.find((m) => m.type === 'tutorialStatus')).toMatchObject({ available: true });
+      expect(sent.find((m) => m.type === 'tutorialStatus')?.unavailableReason).toBeUndefined();
+    } finally {
+      mcp.dispose();
+      store.dispose();
+    }
+  });
+
+  it("a second window reusing this one's server does not offer the tutorial, and says where it starts", async () => {
+    const { store, mcp } = anotherWindow(guideLauncher);
+    const server = new PixelAgentsServer();
+    const heard: Message[] = [];
+    store.on('broadcast', (m) => heard.push({ ...m }));
+    try {
+      await server.start({ store, embedded: true, officeMcp: mcp });
+      expect(mcp.offered()).toBe(false);
+      // Granted from this window: its tutorial status is broadcast, unavailable.
+      mcp.handleMessage({ type: 'officeMcpConsentResponse', choice: 'allow' }, {}, () => {});
+      const status = heard.filter((m) => m.type === 'tutorialStatus').at(-1);
+      expect(status).toMatchObject({ available: false });
+      expect(status?.unavailableReason).toMatch(/shares another window's office/);
+
+      const replies: Message[] = [];
+      mcp.handleMessage({ type: 'startTutorial' }, {}, (m) => replies.push({ ...m }));
+      const rejected = await waitFor(
+        () => replies.find((m) => m.type === 'tutorialRejected'),
+        'the refusal',
+      );
+      expect(rejected.reason).toBe(status?.unavailableReason);
     } finally {
       mcp.dispose();
       server.stop();

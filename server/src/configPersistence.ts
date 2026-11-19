@@ -15,7 +15,6 @@ export interface AdapterSettings {
   alwaysShowLabels: boolean;
   ghostHeadlessAgents: boolean;
   watchAllSessions: boolean;
-  hooksInfoShown: boolean;
   showAreas: boolean;
   areaMappings: Record<string, string[]>;
   /** Permission posture for every launch on this host (the CLI's skip-permissions flag). */
@@ -38,7 +37,6 @@ export const ADAPTER_SETTING_KEYS = [
   'alwaysShowLabels',
   'ghostHeadlessAgents',
   'watchAllSessions',
-  'hooksInfoShown',
   'showAreas',
   'areaMappings',
   'bypassPermissions',
@@ -110,7 +108,6 @@ const DEFAULT_ADAPTER_SETTINGS: AdapterSettings = {
   alwaysShowLabels: false,
   ghostHeadlessAgents: false,
   watchAllSessions: false,
-  hooksInfoShown: false,
   showAreas: false,
   areaMappings: {},
   bypassPermissions: false,
@@ -260,10 +257,6 @@ function parseAdapterSettings(raw: unknown): AdapterSettings {
       typeof obj.watchAllSessions === 'boolean'
         ? obj.watchAllSessions
         : DEFAULT_ADAPTER_SETTINGS.watchAllSessions,
-    hooksInfoShown:
-      typeof obj.hooksInfoShown === 'boolean'
-        ? obj.hooksInfoShown
-        : DEFAULT_ADAPTER_SETTINGS.hooksInfoShown,
     showAreas:
       typeof obj.showAreas === 'boolean' ? obj.showAreas : DEFAULT_ADAPTER_SETTINGS.showAreas,
     areaMappings: parseAreaMappings(obj.areaMappings),
@@ -421,10 +414,11 @@ export function getOfficeMcpConsent(): OfficeMcpConsentAnswer | 'unanswered' {
 
 /** Record an answer (the Intro's, or the Settings switch's). Returns whether
  *  the record now says so. */
-export function setOfficeMcpConsent(answer: OfficeMcpConsentAnswer): boolean {
+export function setOfficeMcpConsent(answer: OfficeMcpConsentAnswer | 'unanswered'): boolean {
   const cfg = readConfig();
-  if (cfg.officeMcpConsent === answer) return true;
-  cfg.officeMcpConsent = answer;
+  if ((cfg.officeMcpConsent ?? 'unanswered') === answer) return true;
+  if (answer === 'unanswered') delete cfg.officeMcpConsent;
+  else cfg.officeMcpConsent = answer;
   return writeConfig(cfg);
 }
 
@@ -443,16 +437,13 @@ export function setOfficeMcpReadOnly(readOnly: boolean): boolean {
 }
 
 /** Called on extension uninstall: return every hooks-related choice to factory state — all providers' consent and
- *  preferences cleared, hooksInfoShown back to default in both namespaces. Those choices belonged to an installation
+ *  preferences cleared. Those choices belonged to an installation
  *  that no longer exists, so a future install starts from the first-run experience rather than inheriting a stale
  *  hooks-off that would skip the ask forever. */
 export function resetHooksConfig(): void {
   const cfg = readConfig();
   cfg.hooksConsent = {};
   cfg.hooksEnabled = {};
-  for (const ns of ['vscode', 'standalone'] as const) {
-    cfg[ns].hooksInfoShown = DEFAULT_ADAPTER_SETTINGS.hooksInfoShown;
-  }
   writeConfig(cfg);
 }
 

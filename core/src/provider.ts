@@ -115,6 +115,9 @@ export interface ReportedContext {
  * the body into a ReportedUsage. Install is always an explicit user choice.
  */
 export interface UsageBridge {
+  /** One line on what it shows: the Intro's checkbox text. Absent = a
+   *  generic line naming the CLI (the server's `usageBridgeStatus`). */
+  readonly summary?: string;
   /** What installing writes, what data moves, how to undo it — shown before
    *  the user confirms (paragraphs split on blank lines). */
   readonly disclosure: string;
@@ -137,6 +140,35 @@ export interface UsageBridge {
 }
 
 // ── Hook-based Provider (CLIs with hooks APIs) ────────────────
+
+/**
+ * How a CLI packages instructions it loads for one session as a skill. The
+ * office names the skill (`plugin` is the namespace, `id` the skill) and
+ * writes its words; the folder layout, the file format and how the skill is
+ * invoked are the CLI's.
+ */
+export interface SkillPackaging {
+  /** The message that makes a session follow the skill (Claude: its slash
+   *  command, `/<plugin>:<id>`). */
+  command(plugin: string, id: string): string;
+  /** How the CLI names the skill to the agent running it (Claude:
+   *  `<plugin>:<id>`). */
+  skillName(plugin: string, id: string): string;
+  /** Write the skill under `dir` in the CLI's own layout, over any files of
+   *  the same names already there (others are left alone), and return the
+   *  folder a launch names in `pluginDirs`. Throws when it can't be written. */
+  write(
+    dir: string,
+    skill: {
+      plugin: string;
+      pluginDescription: string;
+      id: string;
+      description: string;
+      title: string;
+      instructions: string;
+    },
+  ): string;
+}
 
 /**
  * How a CLI keeps a repo's git worktrees and files their sessions. The office
@@ -199,11 +231,15 @@ export interface HookProvider {
   uninstallHooks(): Promise<void>;
   /** Check if hooks are currently installed. */
   areHooksInstalled(): Promise<boolean>;
-  /** First-run consent copy for THIS provider's hook install: the headline titles the ask, the disclosure is its body
-   *  (what is written, what data moves, how to undo; paragraphs split on blank lines). Required, not optional — a
-   *  provider that installs anything must state its terms, and the gate ships these verbatim so no client copy can
-   *  drift. */
-  consentDisclosure(): { headline: string; disclosure: string };
+  /** First-run consent copy for THIS provider's hook install: the headline labels the ask, the summary is its one line
+   *  beside the Intro's checkbox, the disclosure its full terms behind "Read more" (what is written, what data moves,
+   *  how to undo). The method, the headline and the disclosure are required — a provider that installs anything must
+   *  state its terms, and the gate ships them verbatim so no client copy can drift; the summary is optional (absent =
+   *  the headline stands in for it). */
+  consentDisclosure(): { headline: string; summary?: string; disclosure: string };
+  /** Whether the provider's CLI is installed on this machine (the Intro's "get Claude Code" step shows only when it
+   *  isn't). Absent = assumed installed. */
+  isCliInstalled?(): boolean;
 
   /** Format tool status for display (e.g., "Read" -> "Reading foo.ts") */
   formatToolStatus(toolName: string, input?: unknown): string;
@@ -244,6 +280,19 @@ export interface HookProvider {
    *  (Claude: `relocated`, `worktree-state`), else null. What the runtime
    *  follows an agent by without hooks. Undefined = no such records. */
   sessionMoveFromRecord?(record: unknown): SessionWhereabouts | null;
+  /** How this CLI loads a set of instructions for one session (Claude: a
+   *  plugin folder holding a skill). Undefined = it has no such thing: the
+   *  session is sent to the instructions another way (the tutorial's brief
+   *  comes from its MCP tool). */
+  readonly skills?: SkillPackaging;
+  /** The permission mode that lets safe actions through without a prompt and
+   *  still asks before risky ones (Claude: `auto`), one of `permissionModes`.
+   *  Undefined = the CLI's default mode is used where this one is wanted (the
+   *  tutorial's Guide, which never launches with prompts skipped). */
+  readonly autoPermissionMode?: string;
+  /** This CLI's name for its most capable model, as its launch takes it
+   *  (Claude: the alias `opus`). Undefined = the user's default model. */
+  readonly mostCapableModel?: string;
   /** The terminal input modes this CLI's TUI runs with: whether it turns
    *  bracketed paste on, and whether its cursor keys are in application mode.
    *  For a surface that types into an agent's terminal without being able to
@@ -278,6 +327,13 @@ export interface HookProvider {
       /** The session's first message, passed as the CLI's starting prompt (an
        *  argv entry: never typed into the terminal, never a shell string). */
       prompt?: string;
+      /** Tools of an MCP server this launch may call without a permission
+       *  prompt (the tutorial agent's read-only Pixel Office MCP tools). The
+       *  provider spells them its CLI's way; every other tool still asks. */
+      preapprovedMcpTools?: { server: string; tools: readonly string[] };
+      /** Plugin folders this session alone loads (the tutorial's onboarding
+       *  skill); nothing is installed. */
+      pluginDirs?: readonly string[];
     },
   ): {
     command: string;

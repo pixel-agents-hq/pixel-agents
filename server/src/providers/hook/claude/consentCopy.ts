@@ -21,9 +21,9 @@ const SETTINGS_FILE = '~/.claude/settings.json';
 
 /** WHY we ask + WHAT we write. */
 export const CONSENT_FACT_WHAT =
-  `To bring your agents to life in real time, Pixel Agents adds hooks for ` +
-  `${CLAUDE_HOOK_EVENTS.length} Claude Code events to ${SETTINGS_FILE}. ` +
-  `Note that your existing settings are kept, and a one-time backup is saved as settings.json${SETTINGS_BACKUP_SUFFIX}.`;
+  `So your agents move in real time, Pixel Agents adds hooks for ` +
+  `${CLAUDE_HOOK_EVENTS.length} Claude Code events to ${SETTINGS_FILE} ` +
+  `(your existing settings are kept, with a one-time backup in settings.json${SETTINGS_BACKUP_SUFFIX}).`;
 
 /** WHAT data moves, and where it stops.
  *
@@ -34,30 +34,35 @@ export const CONSENT_FACT_WHAT =
  *  thing that changes it, rather than making a promise the software can be
  *  asked to break. */
 export const CONSENT_FACT_DATA =
-  'Claude Code will send those events - including tool names and tool inputs - to a Pixel Agents ' +
-  'server on this machine. Everything stays local - the server listens only on 127.0.0.1 - unless ' +
-  'you explicitly start it with --host to expose it on your network.';
+  'The events, tool names and tool inputs included, go only to the Pixel Agents server on this ' +
+  'machine (127.0.0.1), unless you start it with --host.';
 
 /** HOW to undo it. */
 export const CONSENT_FACT_REVERSIBLE =
-  'You can remove the hooks at any time from Settings → Instant Detection (Hooks).';
+  'Remove them any time in Settings → Instant Detection (Hooks).';
 
 /** Headline for the first-run gate — the only population that is asked. A user
  *  whose hooks a pre-consent version already installed is migrated silently
  *  (the migration only ever drops events), so there is no second headline.
- *  Title of the Intro's consent step ("Welcome to Pixel Agents!" is the
+ *  Labels the hooks half of the Intro's consent step ("Welcome to Pixel Agents!" is the
  *  Intro's own opening-step title, owned by the webview). Carries NO
  *  disclosure facts by design: the facts all live in CONSENT_DISCLOSURE. */
-export const CONSENT_INSTALL_HEADLINE = 'One more thing: hooks!';
+export const CONSENT_INSTALL_HEADLINE = 'Live updates';
 
-/** The three disclosure facts, in order, as one block.
+/** The Intro's checkbox line; the facts are in CONSENT_DISCLOSURE, behind "Read more". */
+export const CONSENT_SUMMARY =
+  'Your agents react the instant they work, through Claude Code hooks.';
+
+/** The three disclosure facts, in order, as one block (one paragraph: the
+ *  Intro shows it beside the Pixel Office MCP's on one step, so it stays short).
  *
- *  This is the consent step's body. The IntroBubble splits it on the blank
- *  lines and renders every paragraph in full on the decision surface itself — no
- *  "Details" affordance, which would put the disclosure one click away from
- *  the decision it is there to inform. */
+ *  This is the hooks half of the consent step's body, rendered in full on the
+ *  decision surface itself, behind the
+ *  Intro checkbox's "Read more" (the user chose a short step over the full
+ *  terms on its face; the checkbox starts off, so nothing installs unread
+ *  unless they tick it). */
 export const CONSENT_DISCLOSURE = [
   CONSENT_FACT_WHAT,
   CONSENT_FACT_DATA,
   CONSENT_FACT_REVERSIBLE,
-].join('\n\n');
+].join(' ');

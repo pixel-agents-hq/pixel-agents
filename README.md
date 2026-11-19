@@ -43,6 +43,7 @@ Claude Code is supported today; Codex, Gemini, Cursor, and others are on the roa
 - **Usage and context bars** — health bars for your plan limits, and one on every agent for the context it has left
 - **Office radio** — procedural 8-bit background music with moods and shareable song codes
 - **Agents that work the office** — with the [Pixel Office MCP](#pixel-office-mcp), agents you launch can see the office, rearrange it, launch helpers and message each other, and you watch them walk over to do it
+- **A hands-on tutorial** — at the end of the first-run Intro, [the greeter, Byte, can become a real agent](#the-tutorial) and show you around the office
 
 <p align="center">
   <img src="webview-ui/public/characters.png" alt="Pixel Agents characters" width="600" style="image-rendering: pixelated;">
@@ -118,7 +119,7 @@ Only devices on your tailnet can reach it.
 
 ### Layout
 
-Click **Layout** to edit the office: paint floors, walls and carpets, place and recolour furniture, add pets you can click on, and paint named **Areas** that a Directory's agents prefer to sit in. Layouts can be exported and imported as JSON.
+Click **Layout** to edit the office: paint floors, walls and carpets, place and recolour furniture, add pets you can click on, and paint named **Areas** that a Directory's agents prefer to sit in. Layouts can be exported and imported as JSON. The default office comes with two Areas, Studio and Lounge.
 
 ### Office assets
 
@@ -142,7 +143,7 @@ The **Pixel Agents Office MCP** (Pixel Office MCP for short) lets the agents you
 
 ### Turning it on
 
-- **The Intro asks.** The first-run tour has a step for it, after the hooks step; if you finished the tour before this step existed, the greeter asks this one alone. Unanswered means no: agents launched meanwhile get nothing.
+- **The Intro asks.** The first-run tour's choices step has a box for it (off to start) beside the live updates and usage bars ones; if you finished the tour before it existed, the greeter asks this one alone. Unanswered means no: agents launched meanwhile get nothing.
 - **Settings → Pixel Office MCP** turns it on or off at any time. Off takes effect at once, also for agents already running.
 - **Settings → Pixel Office MCP Read-only** lets agents look (list agents, read the layout, the catalogue and terminals) but not change anything, launch, close or message. Also at once.
 
@@ -170,8 +171,19 @@ Ask an agent in plain words — "start an agent in the api repo to review the RE
 | `close_agent`         | Close an agent, answering the Worktree question if its Worktree has uncommitted files                                                                                                                       |
 | `read_agent_terminal` | Read another agent's terminal screen                                                                                                                                                                        |
 | `send_message`        | Type text (tagged with who sent it) or press keys (to answer a prompt or a menu) in other agents' terminals, refused if their screen changed since it was read                                              |
+| `get_feature_guide`   | Read what Pixel Agents does, feature by feature, to answer your questions about the office accurately                                                                                                       |
+| `tutorial`            | The tutorial's quests and progress; its Guide also gets its skill's name (the brief on request) and skips a quest when you ask it to. Quests tick when the office sees them                                 |
 
 In VS Code there is no screen to read: `read_agent_terminal` gives an agent's status only, and `send_message` types text only, and only to agents that are done or working. `launch_agent` and `close_agent` aren't offered in VS Code yet: agents there are launched and closed from the office.
+
+### The tutorial
+
+The Intro's last step offers a guided tour, saying up front what yes does, because the tour is run by a **real Claude Code session**: the greeter (Byte, unless you renamed that character) walks to a free desk, sits down, and becomes an agent with its own terminal and card. It tells you what Pixel Agents is, then asks whether you'd like to try something in particular or be shown around. It uses your plan like any session you start. It needs the Pixel Office MCP on, and you can start it later from **Settings → Play the Tutorial**.
+
+- **Four first steps, in any order**: create your first character, add a project (a Directory), put an agent to work, and make the office yours. Each ticks itself off when the office sees it happen. Along the way Byte offers more (an Area for your Directory, default characters, resuming conversations, what agents can do through the Pixel Office MCP), and it stays around once you're done.
+- **A checklist** sits collapsed at the top right; open it to see progress, **Skip** a step, or **Quit** at any time: quitting closes Byte's session. Once every step is done it says so and goes away.
+- **How Byte knows what to do**: an onboarding skill, loaded for that one session with `--plugin-dir` from a folder under `~/.pixel-agents` (nothing is installed into `~/.claude`).
+- **What Byte may do**: read the office without asking (its read-only tools are pre-approved for this one session). It runs in Claude Code's auto mode, even when Settings skips permissions: safe actions go ahead, and anything risky waits for Claude Code's own permission prompt in its terminal. It launches into the folder `pixel-agents` was started in (VS Code: the first workspace folder).
 
 ## Where This Is Going
 

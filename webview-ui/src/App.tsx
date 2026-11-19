@@ -17,8 +17,6 @@ import { NewWorktreeModal } from './components/NewWorktreeModal.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TerminalDrawer } from './components/TerminalDrawer.js';
 import { TerminalHideRibbon } from './components/TerminalHideRibbon.js';
-import { Tooltip } from './components/Tooltip.js';
-import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import {
   CloseAgentQuestionDialog,
@@ -26,7 +24,12 @@ import {
 } from './components/WorktreeDecisionDialog.js';
 import { WorktreeRejectedModal } from './components/WorktreeRejectedModal.js';
 import { MobileZoomLevel, ZoomControls } from './components/ZoomControls.js';
-import { CONVERSATION_SIDEBAR_WIDTH_PX, OFFICE_CANVAS_TEST_ID } from './constants.js';
+import {
+  CARD_BAR_TOP_PX,
+  CONVERSATION_SIDEBAR_WIDTH_PX,
+  OFFICE_CANVAS_TEST_ID,
+  TERMINAL_SIDEBAR_WIDTH_PX,
+} from './constants.js';
 import type { ConversationSearchScope } from './conversations/ConversationList.js';
 import { ConversationSearch } from './conversations/ConversationSearch.js';
 import { ConversationSidebar } from './conversations/ConversationSidebar.js';
@@ -63,6 +66,8 @@ import { useOfficeMcp } from './officeMcp/useOfficeMcp.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
+import { TutorialPanel } from './tutorial/TutorialPanel.js';
+import { useTutorial } from './tutorial/useTutorial.js';
 import { UsageBars } from './usage/UsageBars.js';
 import { useUsageBridge } from './usage/useUsageBridge.js';
 import { useNewWorktree } from './worktrees/useNewWorktree.js';
@@ -135,10 +140,8 @@ function App() {
     alwaysShowLabels,
     ghostHeadlessAgents,
     setGhostHeadlessAgents,
-    hooksEnabled,
     hooksInstalled,
     hooksStatusSeq,
-    hooksInfoShown,
     consentRequest,
     dismissConsentRequest,
     areaMappings,
@@ -185,8 +188,6 @@ function App() {
     setIsCharactersOpen(true);
   }, []);
   const closeCharacters = useCallback(() => setIsCharactersOpen(false), []);
-  const [isHooksInfoOpen, setIsHooksInfoOpen] = useState(false);
-  const [hooksTooltipDismissed, setHooksTooltipDismissed] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
   const [alwaysShowOverlay, setAlwaysShowOverlay] = useState(false);
 
@@ -264,6 +265,13 @@ function App() {
     transport.send({ type: 'setLastSeenVersion', version: currentMajorMinor });
   }, [currentMajorMinor]);
 
+  // A first run records the version it starts on, so only a later release is
+  // announced as an update (VersionIndicator shows nothing while none is seen).
+  useEffect(() => {
+    if (currentMajorMinor && lastSeenVersion === '' && !officeReadOnly)
+      transport.send({ type: 'setLastSeenVersion', version: currentMajorMinor });
+  }, [currentMajorMinor, lastSeenVersion, officeReadOnly]);
+
   const handleOpenChangelog = useCallback(() => {
     setIsChangelogOpen(true);
     transport.send({ type: 'setLastSeenVersion', version: currentMajorMinor });
@@ -314,14 +322,50 @@ function App() {
     onChoice: handleConsentChoice,
     onClose: handleIntroClose,
   } = useIntroTour({ consentRequest, hooksInstalled, hooksStatusSeq, dismissConsentRequest });
+  // An office still on its Intro is new here whatever version it last opened
+  // on: nothing is announced to it as an update, and the version it meets the
+  // Intro on is recorded as seen, so the notice doesn't follow the Intro either.
+  const introUnfinished = intro !== null || consentRequest !== null;
+  useEffect(() => {
+    if (
+      introUnfinished &&
+      currentMajorMinor &&
+      lastSeenVersion !== '' &&
+      lastSeenVersion !== currentMajorMinor &&
+      !officeReadOnly
+    )
+      transport.send({ type: 'setLastSeenVersion', version: currentMajorMinor });
+  }, [introUnfinished, currentMajorMinor, lastSeenVersion, officeReadOnly]);
   // The Intro's Pixel Office MCP step (after the hooks one, or alone for an
   // office that finished the Intro before it existed) and its Settings rows.
   const officeMcp = useOfficeMcp();
   const dismissOfficeMcpAsk = officeMcp.dismiss;
-  // Every way the tour ends closes both asks it may hold.
+  // The tutorial: offered at the Intro's end (or alone, from Settings), its
+  // checklist while a run is under way.
+  const tutorial = useTutorial();
+  const [tutorialRequested, setTutorialRequested] = useState(false);
+  const { expectLaunch } = terminalDrawer;
+  const { start: startTutorial } = tutorial;
+  const tutorialSteps = useMemo(
+    () => ({
+      status: tutorial.status,
+      rejected: tutorial.rejected,
+      onStart: (palette: number) => {
+        // The greeter walks to a desk and sits; then the Guide's session starts in
+        // that seat, and its terminal opens focused once it joins, like a + launch.
+        getOfficeState().handoff.begin((seatId) => {
+          expectLaunch();
+          startTutorial(palette, seatId);
+        });
+      },
+    }),
+    [tutorial.status, tutorial.rejected, expectLaunch, startTutorial],
+  );
+  // Every way the tour ends closes every ask it may hold.
   const handleTourClose = useCallback(() => {
     handleIntroClose();
     dismissOfficeMcpAsk();
+    setTutorialRequested(false);
   }, [handleIntroClose, dismissOfficeMcpAsk]);
 
   // The Settings surface renders one provider today; its checkbox binds to
@@ -633,6 +677,18 @@ function App() {
             />
           )}
 
+          {/* The tutorial's quest log, top-right (clear of the desktop card
+              bar, which overlaps the office's right edge), while a run is under way. */}
+          {tutorial.status?.run && !officeReadOnly && (
+            <TutorialPanel
+              run={tutorial.status.run}
+              onSkip={tutorial.skip}
+              onQuit={tutorial.quit}
+              rightInset={isMobile || isDebugMode ? 0 : TERMINAL_SIDEBAR_WIDTH_PX}
+              top={CARD_BAR_TOP_PX}
+            />
+          )}
+
           {/* Vignette overlay */}
           <div
             className="absolute inset-0 pointer-events-none"
@@ -737,35 +793,6 @@ function App() {
         />
       )}
 
-      {/* Hooks first-run tooltip. Gated on hooksInstalled (the hooksStatus
-          message), NOT the hooksEnabled preference: hooksEnabled defaults true
-          while first-run consent is still pending, and announcing "Instant
-          Detection Active" before anything is installed would be a lie. */}
-      {hooksEnabled && claudeHooksInstalled && !hooksInfoShown && !hooksTooltipDismissed && (
-        <Tooltip
-          title="Instant Detection Active"
-          position="top-right"
-          onDismiss={() => {
-            setHooksTooltipDismissed(true);
-            transport.send({ type: 'setHooksInfoShown' });
-          }}
-        >
-          <span className="text-sm text-text leading-none">
-            Your agents now respond in real-time.{' '}
-            <span
-              className="text-accent cursor-pointer underline"
-              onClick={() => {
-                setIsHooksInfoOpen(true);
-                setHooksTooltipDismissed(true);
-                transport.send({ type: 'setHooksInfoShown' });
-              }}
-            >
-              View more
-            </span>
-          </span>
-        </Tooltip>
-      )}
-
       {officeReadOnly && (
         <div className="absolute mobile-safe-top left-1/2 -translate-x-1/2 z-10 text-sm text-text-muted pointer-events-none select-none whitespace-nowrap">
           View only
@@ -808,7 +835,7 @@ function App() {
       <VersionIndicator
         currentVersion={extensionVersion}
         lastSeenVersion={lastSeenVersion}
-        hideUpdateNotice={officeReadOnly}
+        hideUpdateNotice={officeReadOnly || introUnfinished}
         onDismiss={handleWhatsNewDismiss}
         onOpenChangelog={handleOpenChangelog}
       />
@@ -816,7 +843,7 @@ function App() {
       {/* A hooks ask still on its way into `intro` (useIntroTour takes it a
           render later) holds the MCP step back, so the tour opens on its
           first step rather than on the MCP step alone. */}
-      {(intro || (officeMcp.ask && !consentRequest)) && (
+      {(intro || (officeMcp.ask && !consentRequest) || tutorialRequested) && (
         <IntroBubble
           officeState={officeState}
           hooksAsk={intro}
@@ -829,11 +856,11 @@ function App() {
           installPending={installPending}
           onChoice={handleConsentChoice}
           onClose={handleTourClose}
+          tutorial={tutorialSteps}
           escapeSuppressed={
             isSettingsOpen ||
             isCharactersOpen ||
             isChangelogOpen ||
-            isHooksInfoOpen ||
             showMigrationNotice ||
             editor.isEditMode
           }
@@ -930,40 +957,6 @@ function App() {
         </>
       )}
 
-      {/* Hooks info modal. Top level, beside the other modals: inside the
-          office region it would sit in the mobile shell's transformed track,
-          and a transformed ancestor is the containing block of position:
-          fixed — the modal would size to the 200%-wide track. */}
-      <Modal
-        isOpen={isHooksInfoOpen}
-        onClose={() => setIsHooksInfoOpen(false)}
-        title="Instant Detection is ON"
-        zIndex={52}
-      >
-        <div className="text-base text-text px-10" style={{ lineHeight: 1.4 }}>
-          <p className="mb-8">Your Pixel Agents office now reacts in real-time:</p>
-          <ul className="mb-8 pl-18 list-disc m-0">
-            <li className="text-sm mb-2">Permission prompts appear instantly</li>
-            <li className="text-sm mb-2">Turn completions detected the moment they happen</li>
-            <li className="text-sm mb-2">Sound notifications play immediately</li>
-          </ul>
-          <p className="mb-12 text-text-muted">
-            This works through Claude Code Hooks, small event listeners that notify Pixel Agents
-            whenever something happens in your Claude sessions.
-          </p>
-          <div className="text-center">
-            <button
-              onClick={() => setIsHooksInfoOpen(false)}
-              className="py-4 px-20 text-lg bg-accent text-white border-2 border-accent rounded-none cursor-pointer shadow-pixel"
-            >
-              Got it
-            </button>
-          </div>
-          <p className="mt-8 text-xs text-text-muted text-center">
-            To disable, go to Settings {'>'} Instant Detection
-          </p>
-        </div>
-      </Modal>
       {/* Rendered at the composition root, not inside a launch surface: the
           drawer that opens it lives in BottomToolbar on desktop and
           MobileAgentBar on mobile, and both close as soon as it appears. */}
@@ -1100,6 +1093,9 @@ function App() {
         uploadDirectory={terminalAvailable ? uploadDirectory : null}
         onExportLayout={handleExportLayout}
         onImportLayout={handleImportLayout}
+        onPlayTutorial={
+          tutorial.status && !tutorial.status.run ? () => setTutorialRequested(true) : undefined
+        }
       />
 
       {showMigrationNotice && (

@@ -6,6 +6,7 @@ import type { Frame, Page } from '@playwright/test';
 import { expect, test } from '../../../fixtures/pixel-agents';
 import {
   addArea,
+  areaCard,
   enterEditMode,
   exitEditMode,
   paintTile,
@@ -38,11 +39,10 @@ import {
  * directoryName in a multi-root workspace — adapters/vscode/agentManager.ts).
  *
  * The fixture opens a generated multi-root workspace with folders "alpha" and
- * "beta" (see e2e/helpers/launch.ts). The bundled default layout (which has
- * seats) loads; specs discover seat coordinates via the getSeats hook rather
- * than hardcoding layout positions. Seat-preference is asserted by AREA
- * MEMBERSHIP (the seated agent's area === the mapped label), which is invariant
- * under findFreeSeat's PC-bias randomness.
+ * "beta" (see e2e/helpers/launch.ts). The bundled default layout loads, with seats and Areas of
+ * its own (Studio, Lounge): specs read seat coordinates from the getSeats hook and reach an Area's
+ * card by its label, never by position. Seat-preference is asserted by AREA MEMBERSHIP (the seated
+ * agent's area === the mapped label), which is invariant under findFreeSeat's PC-bias randomness.
  */
 
 const ALPHA = 'alpha';
@@ -131,7 +131,7 @@ test.describe('Areas (multi-root)', () => {
 
     // Remove it via the card's × button.
     narrator.step('removing "Design" with its card\'s × button');
-    await frame.locator('button[title="Remove area"]').first().click();
+    await areaCard(frame, 'Design').locator('button[title="Remove area"]').click();
     await frame.waitForFunction(
       () =>
         !((window as TestHooksWindow).__pixelAgentsTestHooks?.getAreas?.() ?? []).some(
@@ -155,7 +155,7 @@ test.describe('Areas (multi-root)', () => {
 
     // Open the area card's "Add folder…" menu and map the alpha folder.
     narrator.step('opening Engineering\'s "Map a folder…" menu and picking alpha');
-    await frame.locator('button[title*="Map a folder"]').first().click();
+    await areaCard(frame, 'Engineering').locator('button[title*="Map a folder"]').click();
     await frame.getByText(ALPHA, { exact: true }).click();
 
     await frame.waitForFunction(

@@ -38,6 +38,8 @@ export const PRIVILEGED_BROADCAST_TYPES: ReadonlySet<string> = new Set([
   'worktreesLoaded',
   // Who may act on the office through the Pixel Office MCP: the operator's setting.
   'officeMcpStatus',
+  // The tutorial's offer and progress: only an office that may start or skip it.
+  'tutorialStatus',
 ]);
 
 let cache: Record<string, StoredUsage> | null = null;
@@ -129,6 +131,11 @@ export function usageLimitsMessage(providerId: string): UsageLimits {
   return { type: 'usageLimits', providerId, ...(entry ?? {}) };
 }
 
+/** The Intro's line for a usage bridge that brings none of its own. */
+export function usageBridgeFallbackSummary(provider: Pick<HookProvider, 'displayName'>): string {
+  return `See how much of your ${provider.displayName} plan's limits is left.`;
+}
+
 /** The `usageBridgeStatus` message: install state, plus why a change failed. */
 export function usageBridgeStatusMessage(
   provider: HookProvider,
@@ -139,6 +146,7 @@ export function usageBridgeStatusMessage(
     providerId: provider.id,
     providerName: provider.displayName,
     installed: provider.usageBridge?.isInstalled() ?? false,
+    summary: provider.usageBridge?.summary ?? usageBridgeFallbackSummary(provider),
     disclosure: provider.usageBridge?.disclosure ?? '',
     ...(error ? { error } : {}),
   };

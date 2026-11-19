@@ -132,7 +132,6 @@ const KEY_LAST_SEEN_VERSION = 'pixel-agents.lastSeenVersion';
 const KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
 const KEY_GHOST_HEADLESS_AGENTS = 'pixel-agents.ghostHeadlessAgents';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
-const KEY_HOOKS_INFO_SHOWN = 'pixel-agents.hooksInfoShown';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
 const KEY_SHOW_HOST_DIRECTORIES = 'pixel-agents.showHostDirectories';
 const KEY_UPLOAD_DIRECTORY = 'pixel-agents.uploadDirectory';
@@ -376,7 +375,11 @@ export function handleClientMessage(
     case 'officeMcpConsentResponse':
     case 'setOfficeMcpEnabled':
     case 'setOfficeMcpReadOnly':
-      // The Pixel Office MCP's consent, its switches, the editing lock and undo.
+    case 'startTutorial':
+    case 'skipTutorialQuest':
+    case 'quitTutorial':
+      // The Pixel Office MCP's consent, its switches, the editing lock and undo,
+      // and the tutorial that runs on it.
       ctx.officeMcp?.handleMessage(msg, ctx.client, (m) => send({ ...m }));
       break;
 
@@ -495,10 +498,6 @@ export function handleClientMessage(
       );
       break;
     }
-
-    case 'setHooksInfoShown':
-      adapter?.setSetting(KEY_HOOKS_INFO_SHOWN, true);
-      break;
 
     case 'addExternalAssetDirectory': {
       const newPath = msg.path as string | undefined;
@@ -930,7 +929,6 @@ function settingsSnapshot(adapter: StateAdapter | undefined) {
     // Settings UI grows a per-provider list -- its sole webview reader is the
     // hooks tooltip gate.
     hooksEnabled: getHooksEnabled(claudeProvider.id),
-    hooksInfoShown: adapter?.getSetting(KEY_HOOKS_INFO_SHOWN, false) ?? false,
     externalAssetDirectories: readConfig().externalAssetDirectories,
     showAreas: adapter?.getSetting(KEY_SHOW_AREAS, false) ?? false,
     bypassPermissions: adapter?.getSetting(KEY_BYPASS_PERMISSIONS, false) ?? false,

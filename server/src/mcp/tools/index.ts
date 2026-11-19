@@ -3,6 +3,7 @@ import { closeAgent } from './closeAgent.js';
 import { editCharacters } from './editCharacters.js';
 import { editDirectories } from './editDirectories.js';
 import { editLayout } from './editLayout.js';
+import { getFeatureGuide } from './getFeatureGuide.js';
 import { getLayout } from './getLayout.js';
 import { launchAgent } from './launchAgent.js';
 import { listAgents } from './listAgents.js';
@@ -12,6 +13,7 @@ import { listDirectories } from './listDirectories.js';
 import { listWardrobe } from './listWardrobe.js';
 import { readAgentTerminal } from './readAgentTerminal.js';
 import { sendMessage } from './sendMessage.js';
+import { tutorial } from './tutorial.js';
 import { undoCharacterEdit } from './undoCharacterEdit.js';
 import { undoLayoutEdit } from './undoLayoutEdit.js';
 import { visit } from './visit.js';
@@ -35,4 +37,6 @@ export const OFFICE_TOOLS: readonly OfficeTool[] = [
   closeAgent,
   editLayout,
   undoLayoutEdit,
+  getFeatureGuide,
+  tutorial,
 ];
