@@ -4,10 +4,10 @@
  * list_catalog's assets, and agents' edits through layoutEdits.ts.
  */
 
+import { catalogOf } from '../officeFacts.js';
 import type { LayoutEdits } from './layoutEdits.js';
 import { type OfficeFacts, officeSnapshot } from './officeFacts.js';
 import type { LayoutOps, OfficeLayoutSnapshot } from './officeOperations.js';
-import { catalogOf } from './seatPlace.js';
 
 export function createLayoutOps(facts: OfficeFacts, layoutEdits: LayoutEdits): LayoutOps {
   /** Area label → the Directories mapped to it. */

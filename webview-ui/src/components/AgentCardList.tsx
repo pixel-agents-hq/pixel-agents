@@ -1,16 +1,18 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { CARD_SCROLL_INTO_VIEW_MARGIN_PX } from '../constants.js';
 import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCard } from './AgentCard.js';
-import { cardVariant, closeMode } from './cardBar.js';
+import { type Card, cardVariant, closeMode } from './cardBar.js';
+import { PcShellCard } from './PcShellCard.js';
 import type { CardAxis } from './useCardReorder.js';
 import { useCardReorder } from './useCardReorder.js';
 
 interface AgentCardListProps {
-  /** The cards, in the shared order (useExtensionMessages' cardAgents). */
-  agentIds: number[];
+  /** The cards, in the shared order (useExtensionMessages' cards): agents'
+   *  (AgentCard) and PC shells' (PcShellCard), by kind. */
+  cards: Card[];
   /** A row (phone) or a column (desktop). */
   axis: CardAxis;
   /** The scroller's own classes and style: everything that differs per shell. */
@@ -28,8 +30,8 @@ interface AgentCardListProps {
   closeOnlyWhenActive?: boolean;
   getAppearance: (agentId: number) => AgentAppearance;
   statusFor: (agentId: number) => TabStatus | null;
-  onSelect: (agentId: number) => void;
-  onClose: (agentId: number) => void;
+  onSelect: (card: Card) => void;
+  onClose: (card: Card) => void;
   /** Drawn after the cards, in the same scroller (the desktop terminal's hide ribbon). */
   trailing?: ReactNode;
 }
@@ -41,7 +43,7 @@ interface AgentCardListProps {
  * along the office's right edge; that layout is all the two wrappers add.
  */
 export function AgentCardList({
-  agentIds,
+  cards,
   axis,
   className,
   style,
@@ -56,8 +58,10 @@ export function AgentCardList({
   onClose,
   trailing,
 }: AgentCardListProps) {
+  const ids = useMemo(() => cards.map((card) => card.id), [cards]);
+  const byId = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
   const reorder = useCardReorder({
-    ids: agentIds,
+    ids,
     axis,
     enabled: onReorder !== undefined,
     onCommit: (order) => onReorder?.(order),
@@ -73,15 +77,18 @@ export function AgentCardList({
     if (container && card) scrollIntoBar(container, card, axis);
   }, [focusedAgentId, axis, container, cardElement]);
 
-  if (agentIds.length === 0) return null;
+  if (cards.length === 0) return null;
 
   return (
     <div ref={reorder.containerRef} className={className} style={style}>
       {reorder.displayIds.map((agentId) => {
+        const card = byId.get(agentId);
+        if (!card) return null;
         const variant = cardVariant(agentId, {
           activeId: activeAgentId,
           focusedId: focusedAgentId,
         });
+        const close = closeMode(variant, closeOnlyWhenActive);
         const lifted = reorder.draggingId === agentId;
         return (
           <div
@@ -93,15 +100,25 @@ export function AgentCardList({
               lifted ? `relative z-10 opacity-70 ${LIFT[axis]}` : ''
             }`}
           >
-            <AgentCard
-              agentId={agentId}
-              variant={variant}
-              appearance={getAppearance(agentId)}
-              status={statusFor(agentId)}
-              close={closeMode(variant, closeOnlyWhenActive)}
-              onSelect={onSelect}
-              onClose={onClose}
-            />
+            {card.kind === 'pcShell' ? (
+              <PcShellCard
+                shell={card.shell}
+                variant={variant}
+                close={close}
+                onSelect={() => onSelect(card)}
+                onClose={() => onClose(card)}
+              />
+            ) : (
+              <AgentCard
+                agentId={agentId}
+                variant={variant}
+                appearance={getAppearance(agentId)}
+                status={statusFor(agentId)}
+                close={close}
+                onSelect={() => onSelect(card)}
+                onClose={() => onClose(card)}
+              />
+            )}
           </div>
         );
       })}

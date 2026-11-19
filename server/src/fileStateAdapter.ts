@@ -4,7 +4,7 @@
  * Settings (per adapter namespace) persist to
  *   ~/.pixel-agents/config.json  under keys "vscode" or "standalone".
  *
- * Agents + seats (per adapter) persist to
+ * Agents, seats, the card order and the live PC shells (per adapter) persist to
  *   ~/.pixel-agents/<namespace>-state.json
  *
  * Runtime visibility (which agents show in the office) is scope-controlled by the
@@ -18,6 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import { parsePersistedPcShells, type PersistedPcShell } from '../../core/src/pcShells.js';
 import type { PersistedAgent } from '../../core/src/schemas.js';
 import { parseCardOrder } from './cardOrder.js';
 import type { AdapterSettingKey, AdapterSettings, ConfigNamespace } from './configPersistence.js';
@@ -36,9 +37,10 @@ interface AdapterState {
   agents: PersistedAgent[];
   seats: Record<string, { palette?: number; repeat?: number; seatId?: string }>;
   cardOrder: number[];
+  pcShells: PersistedPcShell[];
 }
 
-const EMPTY_STATE: AdapterState = { agents: [], seats: {}, cardOrder: [] };
+const EMPTY_STATE: AdapterState = { agents: [], seats: {}, cardOrder: [], pcShells: [] };
 
 export interface FileStateAdapterOptions {
   namespace: ConfigNamespace;
@@ -101,6 +103,15 @@ export class FileStateAdapter implements StateAdapter {
     this.patchState({ cardOrder: order });
   }
 
+  /** The live PC shells (standalone: terminal/pcShells.ts PcShellSaves). */
+  loadPcShells(): PersistedPcShell[] {
+    return this.readState().pcShells;
+  }
+
+  savePcShells(shells: PersistedPcShell[]): void {
+    this.patchState({ pcShells: shells });
+  }
+
   // ── Internal state-file I/O ─────────────────────────────────
 
   private readState(): AdapterState {
@@ -117,6 +128,7 @@ export class FileStateAdapter implements StateAdapter {
             ? (parsed.seats as AdapterState['seats'])
             : {},
         cardOrder: parseCardOrder(parsed.cardOrder) ?? [],
+        pcShells: parsePersistedPcShells(parsed.pcShells),
       };
     } catch (err) {
       console.error('[Pixel Agents] Failed to read adapter state:', err);

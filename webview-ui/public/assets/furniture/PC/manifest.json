@@ -8,6 +8,19 @@
   "canPlaceOnWalls": false,
   "canPlaceOnSurfaces": true,
   "backgroundTiles": 1,
+  "interactive": {
+    "agentUse": "workstation",
+    "label": {
+      "name": "PC",
+      "lines": [
+        { "when": "panelInUse", "text": "Shell in {panel}" },
+        { "when": "agentWorking", "text": "{agent} works here" },
+        { "when": "free", "text": "Free" }
+      ]
+    },
+    "panel": "terminal",
+    "states": [{ "state": "on", "when": ["agentWorking", "panelInUse"] }]
+  },
   "members": [
     {
       "type": "group",

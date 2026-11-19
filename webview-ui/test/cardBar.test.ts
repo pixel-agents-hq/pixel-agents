@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  type Card,
   cardOrderOf,
   cardVariant,
   closeMode,
@@ -17,16 +18,37 @@ describe('cardVariant', () => {
 });
 
 describe('cardOrderOf', () => {
+  const ids = (cards: Card[]) => cards.map((card) => card.id);
+
   it('only main agents get a card: teammates are left out, in order', () => {
-    expect(cardOrderOf([], [1, 8, 3, 10], new Set([8, 10]))).toEqual([1, 3]);
+    expect(ids(cardOrderOf([], [1, 8, 3, 10], new Set([8, 10]), []))).toEqual([1, 3]);
   });
 
   it('is every agent when there are no teammates', () => {
-    expect(cardOrderOf([], [1, 2], new Set())).toEqual([1, 2]);
+    expect(cardOrderOf([], [1, 2], new Set(), [])).toEqual([
+      { kind: 'agent', id: 1 },
+      { kind: 'agent', id: 2 },
+    ]);
   });
 
   it('keeps the saved order, without teammates', () => {
-    expect(cardOrderOf([3, 8, 1], [1, 3, 8, 4], new Set([8]))).toEqual([3, 1, 4]);
+    expect(ids(cardOrderOf([3, 8, 1], [1, 3, 8, 4], new Set([8]), []))).toEqual([3, 1, 4]);
+  });
+
+  it('gives each PC shell a card in the same order: saved where it was put, new ones last', () => {
+    const shell = { id: 1_000_000_001, uid: 'pc', furnitureType: 'PC_FRONT_OFF' };
+    expect(cardOrderOf([], [1, 2], new Set(), [shell])).toEqual([
+      { kind: 'agent', id: 1 },
+      { kind: 'agent', id: 2 },
+      { kind: 'pcShell', id: shell.id, shell },
+    ]);
+    expect(ids(cardOrderOf([shell.id, 2, 1], [1, 2], new Set(), [shell]))).toEqual([
+      shell.id,
+      2,
+      1,
+    ]);
+    // An ended shell's card goes, its place in the saved order with it.
+    expect(ids(cardOrderOf([shell.id, 2, 1], [1, 2], new Set(), []))).toEqual([2, 1]);
   });
 });
 

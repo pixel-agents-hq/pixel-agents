@@ -5,6 +5,7 @@
  * prompt they answer) and the layout editor's "Undo <label>'s edit".
  */
 
+import { agentLabelOf } from '../../../core/src/agentLabel.js';
 import { getCharacterProfiles } from '../characterProfilesStore.js';
 import type { AgentState } from '../types.js';
 
@@ -13,9 +14,12 @@ import type { AgentState } from '../types.js';
 export function agentLabel(
   agent: Pick<AgentState, 'nickname' | 'palette' | 'directoryName'>,
 ): string | null {
-  if (agent.nickname) return agent.nickname;
   const character = agent.palette === undefined ? undefined : getCharacterProfiles()[agent.palette];
-  return character?.name || agent.directoryName || null;
+  return agentLabelOf({
+    nickname: agent.nickname,
+    characterName: character?.name,
+    directoryName: agent.directoryName,
+  });
 }
 
 /** The tag a Message's text is prefixed with. */

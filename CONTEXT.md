@@ -103,7 +103,7 @@ Text or named keys one agent types into another agent's terminal: a request, or 
 _Avoid_: prompt (that's what the user types), chat, DM
 
 **Card bar**:
-The row of agent cards: one card per running main agent (teammates and sub-agents get none), in an order the user can drag and every open office shares. Pressing a card reaches its agent.
+The row of cards for the office's terminals: one card per running main agent (teammates and sub-agents get none) and one per live PC shell, in one order the user can drag and every open office shares. Pressing a card reaches its agent or shell. A PC shell's card shows the PC switched on, and names its Directory only where the PC offered a choice of several, with no status dot and no context gauge, since a shell is not an agent; its × ends the shell, asking first while a command still runs in it.
 _Avoid_: agent list, tabs, roster (that's the characters to launch as)
 
 **Roster**:
@@ -264,6 +264,42 @@ _Avoid_: roam, patrol
 **Visit**:
 A character walking, on request, to a tile or to stand by a piece of furniture, facing a given way. It lingers a while, then wanders as usual; a visit asked to **stay** holds there until its agent has work.
 _Avoid_: move (that's a session changing folders), teleport, goto
+
+## Interactive Furniture
+
+Panel, program and source are everyday words elsewhere; in this glossary they carry these meanings only when the subject is interactive furniture.
+
+**Interactive furniture**:
+Furniture that reacts to what happens in the office or can be used: by agents (through their agent events), by the user (in the office), by pushes from outside, or any mix. Every part is optional and declared by the furniture itself; furniture that declares none is plain furniture.
+_Avoid_: interactable, smart furniture, widget, appliance
+
+**Piece**:
+One placed item of furniture in the layout. Two pieces of the same furniture are separate: each has its own settings and its own source.
+_Avoid_: instance, object, item
+
+**Source**:
+What holds the content a piece shows: a PC's shell, a board of tasks, the debriefs of a Directory. A piece points at a source and several pieces may point at the same one; removing a piece never removes its source's content.
+_Avoid_: backend, store, data
+
+**Program**:
+The code a piece of interactive furniture ships with, beside its art. Optional: reactions simple enough to state as rules need none. A program that did not ship with Pixel Agents runs only after the user approved it, and is asked about again when it changes.
+_Avoid_: plugin (also avoided for providers), extension, behaviour, script
+
+**Panel**:
+The interface a piece opens for the user: a terminal, a board, a review screen. Furniture without a panel can still be hovered, but offers nothing to click.
+_Avoid_: card (that's an agent's), window, dialog
+
+**Furniture label**:
+The small box over a hovered piece showing whatever the furniture chose to say (its name only when it has nothing to say), with a faint outline round the piece: the furniture's counterpart of an agent's activity label.
+_Avoid_: card, tooltip
+
+**Push**:
+A message from outside Pixel Agents arriving at one piece, at an address that belongs to that piece alone.
+_Avoid_: webhook (the sender's word for it), hook (that's a provider's), notification
+
+**PC shell**:
+The plain terminal on the host that a PC opens for the user, in a Directory of the Area the PC stands in. It has a card in the card bar like an agent's, the PC's screen is on for as long as it lives, and closing its card ends it, as does the × on the PC's label. Deleting the PC from the layout closes its shell, asking first while a command runs. A view-only office is shown no shells: there a PC with a live shell is on and its label says only "Busy". A PC with a live shell opens that shell; otherwise a PC an agent works at opens that agent's terminal. Agents are seated elsewhere while a PC's shell lives, where they can be. Agents the office launched may open, read, type into and close PC shells too (the user's own included), so they can set up a terminal for the user to watch; a PC shell is still not an agent.
+_Avoid_: user terminal, console, SSH session
 
 ## Activity Detection
 

@@ -54,6 +54,18 @@ export const TERMINAL_FILES_LOCATE_SUFFIX = '/locate';
  *  sending: a server refusing mid-upload reads as a network error in a browser. */
 export const TERMINAL_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
+// ── PC shells ────────────────────────────────────────────────
+// A PC shell (CONTEXT.md → Interactive Furniture) is a terminal the office owns
+// that is not an agent. Its ids are its own, from here up: apart from every
+// agent id (counting from 1) and the Sub-agent watch's shadow ids (from
+// 1 000 000), so one number names one terminal socket and one card, and a PC
+// shell's id is never mistaken for an agent's (core/src/pcShells.ts).
+
+/** The first PC shell id is one above this. */
+export const PC_SHELL_ID_BASE = 1_000_000_000;
+/** A PC shell's name when it started in the home folder (no Directory): its card's name. */
+export const PC_SHELL_HOME_NAME = 'Home';
+
 // ── Transport ────────────────────────────────────────────────
 // Connection-state names for the MessageTransport state machine.
 

@@ -4,20 +4,21 @@ import { useRosterLaunch } from '../hooks/useRosterLaunch.js';
 import { isTypingInTerminal } from '../terminal/terminalDom.js';
 import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCardList } from './AgentCardList.js';
+import type { Card } from './cardBar.js';
 import { PhoneCharacterPicker } from './CharacterPicker.js';
 import { LaunchDrawer } from './LaunchDrawer.js';
 import { PixelIcon } from './ui/PixelIcon.js';
 
 interface MobileAgentBarProps {
-  /** Every main agent (launched and external), in the shared card order. */
-  agentIds: number[];
+  /** The cards (agents' and PC shells'), in the shared card order. */
+  cards: Card[];
   /** Agent whose character is selected in the office (bg highlight, no border). */
   focusedAgentId: number | null;
   /** Agent whose terminal pane is showing — accent border and the only
    *  visible ×. App passes null on the office page, where no pane shows. */
   activeAgentId: number | null;
-  onSelectAgent: (agentId: number) => void;
-  onCloseAgent: (agentId: number) => void;
+  onSelectAgent: (card: Card) => void;
+  onCloseAgent: (card: Card) => void;
   /** Launch into a Directory picked from the + card's drawer, wearing
    *  `palette` when the launch started from the roster. */
   onLaunchDirectory: (directory: Directory, palette?: number, worktree?: boolean) => void;
@@ -50,7 +51,7 @@ interface MobileAgentBarProps {
  * Press-and-hold a card to reorder (useCardReorder).
  */
 export function MobileAgentBar({
-  agentIds,
+  cards,
   focusedAgentId,
   activeAgentId,
   onSelectAgent,
@@ -87,7 +88,8 @@ export function MobileAgentBar({
     const target = e.target instanceof HTMLElement ? e.target : null;
     if (isTypingInTerminal(document.activeElement) && target && !target.closest('button')) {
       e.preventDefault();
-      onSelectAgent(agentId);
+      const card = cards.find((c) => c.id === agentId);
+      if (card) onSelectAgent(card);
     }
   };
 
@@ -176,7 +178,7 @@ export function MobileAgentBar({
           />
         </div>
         <AgentCardList
-          agentIds={agentIds}
+          cards={cards}
           axis="x"
           className="flex items-stretch gap-6 overflow-x-auto no-scrollbar flex-1 min-w-0"
           onReorder={onReorder}

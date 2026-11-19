@@ -9,6 +9,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { withInteractive } from '../furniture/interactive.js';
 import type { FurnitureManifest, InheritedProps, ManifestGroup } from './manifestUtils.js';
 import { flattenManifest } from './manifestUtils.js';
 import type { CatalogEntry } from './types.js';
@@ -47,7 +48,7 @@ export function buildFurnitureCatalog(assetsDir: string): CatalogEntry[] {
           continue;
         }
         const file = manifest.file ?? `${manifest.id}.png`;
-        catalog.push({
+        const entry: CatalogEntry = {
           id: manifest.id,
           name: manifest.name,
           label: manifest.name,
@@ -63,7 +64,8 @@ export function buildFurnitureCatalog(assetsDir: string): CatalogEntry[] {
           canPlaceOnSurfaces: manifest.canPlaceOnSurfaces,
           backgroundTiles: manifest.backgroundTiles,
           groupId: manifest.id,
-        });
+        };
+        catalog.push(...withInteractive(manifest.interactive, [entry], folderName));
       } else {
         // Group manifest — flatten into individual assets
         if (!manifest.members) continue;
@@ -82,7 +84,11 @@ export function buildFurnitureCatalog(assetsDir: string): CatalogEntry[] {
           rotationScheme: manifest.rotationScheme,
           members: manifest.members,
         };
-        const assets = flattenManifest(rootGroup, inherited);
+        const assets = withInteractive(
+          manifest.interactive,
+          flattenManifest(rootGroup, inherited),
+          folderName,
+        );
         for (const asset of assets) {
           catalog.push({
             ...asset,

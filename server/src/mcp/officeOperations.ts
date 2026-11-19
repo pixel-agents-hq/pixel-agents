@@ -3,7 +3,7 @@
  * the MCP module (route, tokens, tool table) and the runtime, split by
  * capability (OfficeCapabilities). composeOfficeMcp.ts builds them from the
  * surface's office facts — one module per capability (agentsView, layoutOps,
- * messaging, visitsOps, charactersView, directoryOps, lifecycle) — and tools only ever call these, never the
+ * messaging, visitsOps, charactersView, directoryOps, lifecycle, pcShellOps) — and tools only ever call these, never the
  * store or the runtime directly.
  *
  * A later tool that needs a new operation adds it HERE (typed in office
@@ -11,13 +11,16 @@
  */
 
 import type { FurnitureCatalog, OfficeLayout } from '../../../core/src/layout/index.js';
-import type { MessageKey, TypedInput } from '../terminal/agentTerminals.js';
+import type { MessageKey, ShellKey, TypedInput } from '../terminal/agentTerminals.js';
 import type { LaunchAsks } from '../terminal/launchAsks.js';
 import type { TutorialSkipOutcome, TutorialView } from '../tutorial/tutorial.js';
 
 /** The named keys a Message may press (the office's word for them). */
 export { MESSAGE_KEYS } from '../terminal/agentTerminals.js';
 export type { MessageKey };
+/** The named keys typed into a PC shell: a Message's, plus Ctrl+C and Ctrl+D. */
+export { SHELL_KEYS } from '../terminal/agentTerminals.js';
+export type { ShellKey };
 import type { Facing, VisitSpot } from '../../../core/src/layout/index.js';
 import type { CharacterOp } from './characterEditOps.js';
 import type { CharacterEditOutcome, CharacterUndoOutcome } from './characterEdits.js';
@@ -244,6 +247,63 @@ export interface Closing {
   closeAgent(request: OfficeCloseRequest): Promise<OfficeCloseOutcome>;
 }
 
+/** PC shells (list_pc_shells, open_pc_shell, read_pc_shell, type_in_pc_shell,
+ *  close_pc_shell): the plain terminals PCs open for the user, driven as an office
+ *  drives them (pcShellOps.ts). Only a surface whose shells' terminals can be read
+ *  and written supplies it (standalone). */
+export interface PcShellOps {
+  /** Every live PC shell, and every piece of the layout that opens one. */
+  listPcShells(): Promise<{ shells: OfficePcShell[]; pcs: OfficePc[] }>;
+  /** The PC shell of piece `uid`: its live one, else a new one in `directory` (one of
+   *  its Area's), else the Area's single Directory, else the home folder. */
+  openPcShell(uid: string, directory?: string): PcShellOpenOutcome;
+  /** A shell's visible screen as text, and its token. */
+  readPcShell(
+    id: number,
+  ): Promise<{ ok: true; screen: AgentScreen } | { ok: false; reason: string }>;
+  /** Type text (Enter after it when `submit`) or press keys in a shell. */
+  typeInPcShell(
+    id: number,
+    input: ShellInput,
+  ): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** End a shell as its card's × does: refused while a command runs, unless `confirmed`. */
+  closePcShell(
+    id: number,
+    confirmed: boolean,
+  ): Promise<{ ok: true } | { ok: false; reason: string; command?: string }>;
+}
+
+/** One live PC shell, as the Pixel Office MCP describes it. */
+export interface OfficePcShell {
+  id: number;
+  /** The piece it was opened at, or null when that piece left the layout. */
+  furnitureUid: string | null;
+  /** The Directory it opened in, or null (the home folder). */
+  directory: string | null;
+  cwd: string;
+  /** A command is running in it (its × would ask first). */
+  busy: boolean;
+  /** That command, when the office can tell. */
+  command?: string;
+}
+
+/** A piece of the layout that opens a PC shell. */
+export interface OfficePc {
+  furnitureUid: string;
+  area: string | null;
+  /** The Directories a new shell there may open in. */
+  directories: string[];
+  /** Its live shell, or null. */
+  shellId: number | null;
+}
+
+export type PcShellOpenOutcome =
+  | { ok: true; id: number; cwd: string; directory: string | null; alreadyOpen: boolean }
+  | { ok: false; reason: string };
+
+/** What is typed into a PC shell: text (Enter after it when `submit`), or keys. */
+export type ShellInput = { text: string; submit: boolean } | { keys: readonly ShellKey[] };
+
 /** The tutorial (the Guide's hands-on tour): its progress as the caller sees
  *  it, and the Guide skipping a quest the user asked it to (tutorial/tutorial.ts). */
 export interface TutorialOps {
@@ -262,20 +322,21 @@ export interface OfficeCapabilities {
   directories: DirectoryOps;
   launch: Launching;
   close: Closing;
+  shells: PcShellOps;
   tutorial: TutorialOps;
 }
 
 export type Capability = keyof OfficeCapabilities;
 
 /** What a surface's office supplies: every capability (the tutorial's too,
- *  even where it can't be started: its tool then says none runs) but launching and
- *  closing, which only a surface that can do them has (standalone; VS Code
- *  doesn't list launch_agent / close_agent at all). */
+ *  even where it can't be started: its tool then says none runs) but launching,
+ *  closing and PC shells, which only a surface that can do them has (standalone;
+ *  VS Code doesn't list launch_agent / close_agent or the PC shell tools at all). */
 export type OfficeOperations = Pick<
   OfficeCapabilities,
   'agents' | 'layout' | 'messaging' | 'visits' | 'characters' | 'directories' | 'tutorial'
 > &
-  Partial<Pick<OfficeCapabilities, 'launch' | 'close'>>;
+  Partial<Pick<OfficeCapabilities, 'launch' | 'close' | 'shells'>>;
 
 // ── Launch (launch_agent) ───────────────────────────────────
 

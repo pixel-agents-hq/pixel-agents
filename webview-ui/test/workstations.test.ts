@@ -17,9 +17,12 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { beforeAll, describe, test } from 'vitest';
 
+import { parseInteractive } from '../../core/src/furniture/interactive.js';
 import { OfficeState } from '../src/office/engine/officeState.js';
 import type { LoadedAssetData } from '../src/office/layout/furnitureCatalog.js';
 import { buildDynamicCatalog, getCatalogEntry } from '../src/office/layout/furnitureCatalog.js';
@@ -50,11 +53,26 @@ function asset(
   };
 }
 
+/** The shipped PC's own declaration: agents work at it, its screen on while they do. */
+function shippedPcInteractive(): CatalogAsset['interactive'] {
+  const manifest = JSON.parse(
+    readFileSync(join(__dirname, '../public/assets/furniture/PC/manifest.json'), 'utf-8'),
+  ) as { interactive: unknown };
+  const parsed = parseInteractive(manifest.interactive, new Set(['on', 'off']));
+  assert.ok(parsed.ok);
+  return parsed.interactive;
+}
+
 const OFF_SPRITE: SpriteData = [['off']];
 const ON_SPRITE: SpriteData = [['on']];
 
 beforeAll(() => {
-  const pc = { groupId: 'PC', canPlaceOnSurfaces: true, backgroundTiles: 1 };
+  const pc = {
+    groupId: 'PC',
+    canPlaceOnSurfaces: true,
+    backgroundTiles: 1,
+    interactive: shippedPcInteractive(),
+  };
   const chair = { groupId: 'CUSHIONED_CHAIR' };
   const catalog = [
     asset('TABLE_FRONT', 'desks', 3, 4, { backgroundTiles: 1 }),

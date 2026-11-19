@@ -19,6 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import type { StateAdapter } from '../../core/src/adapter.js';
 import type { Directory } from '../../core/src/messages.js';
 import {
   readConfig,
@@ -143,6 +144,23 @@ function repoFacts(directoryPath: string): Pick<Directory, 'isRepo' | 'hasOrigin
 /** The union for this host, read fresh from the shared config. */
 export function listDirectories(hostDirectories: HostDirectoryEntry[]): Directory[] {
   return buildDirectoryUnion(readConfig().directories, hostDirectories);
+}
+
+/** The adapter setting behind Settings → Show host Directories (off by default). */
+export const KEY_SHOW_HOST_DIRECTORIES = 'pixel-agents.showHostDirectories';
+
+/**
+ * The host Directories the office lists: all of them while Show host
+ * Directories is on, none while it is off (the default). Only the LIST is
+ * gated -- a launch still names its agent from every host Directory -- but
+ * what the office is offered (its drawer, a PC's Directory selector) and what
+ * a PC shell may open in are this list alike.
+ */
+export function shownHostDirectories(
+  adapter: Pick<StateAdapter, 'getSetting'> | undefined,
+  hostDirectories: HostDirectoryEntry[],
+): HostDirectoryEntry[] {
+  return adapter?.getSetting(KEY_SHOW_HOST_DIRECTORIES, false) ? hostDirectories : [];
 }
 
 /** Where this host's Directories are, by name: the union without the `.git`

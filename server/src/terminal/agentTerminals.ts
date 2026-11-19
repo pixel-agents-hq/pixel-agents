@@ -8,8 +8,15 @@
  * Standalone: the PTY sessions (`ptyAgentTerminals`, below, for the in-process
  * manager and the PTY host alike). VS Code: its terminal adapter's sendText,
  * with no screen to read (`screenlessAgentTerminals`, below).
+ *
+ * PC shells share the terminal sessions but never this seam: an agent's
+ * terminal tools can't address one (`ptyAgentTerminals` refuses shell ids).
+ * The MCP's own shell tools read and write a shell through its registry
+ * (terminal/pcShells.ts), typing with the same `typeInto` and the wider
+ * SHELL_KEYS.
  */
 
+import { isPcShellId } from '../../../core/src/pcShells.js';
 import type { TerminalHandle } from '../../../core/src/terminalAdapter.js';
 import { MESSAGE_KEY_DELAY_MS } from '../constants.js';
 import { pause } from '../pause.js';
@@ -41,6 +48,12 @@ export const MESSAGE_KEYS = [
 ] as const;
 export type MessageKey = (typeof MESSAGE_KEYS)[number];
 
+/** The keys typed into a PC shell: a Message's, plus what a shell needs to
+ *  stop a command (Ctrl+C) or end input (Ctrl+D). Never a Message's: an
+ *  agent's interrupt is its own user's to press. */
+export const SHELL_KEYS = [...MESSAGE_KEYS, 'ctrl+c', 'ctrl+d'] as const;
+export type ShellKey = (typeof SHELL_KEYS)[number];
+
 /** What a Message types: text (then Enter, when `submit`), or keys pressed one after another. */
 export type TypedInput = { text: string; submit: boolean } | { keys: readonly MessageKey[] };
 
@@ -49,8 +62,10 @@ export type InputModes = Pick<TerminalScreen, 'bracketedPaste' | 'applicationCur
 
 const ESC = '\x1b';
 /** The bytes each named key sends, as xterm sends them (the key bar's too). */
-const KEY_BYTES: Record<Exclude<MessageKey, 'up' | 'down' | 'left' | 'right'>, string> = {
+const KEY_BYTES: Record<Exclude<ShellKey, 'up' | 'down' | 'left' | 'right'>, string> = {
   enter: '\r',
+  'ctrl+c': '\x03',
+  'ctrl+d': '\x04',
   escape: ESC,
   tab: '\t',
   'shift+tab': `${ESC}[Z`,
@@ -69,7 +84,7 @@ const KEY_BYTES: Record<Exclude<MessageKey, 'up' | 'down' | 'left' | 'right'>, s
 const ARROW_FINAL = { up: 'A', down: 'B', right: 'C', left: 'D' } as const;
 
 /** The bytes a named key sends: arrows as CSI, or SS3 under application cursor keys. */
-export function keyBytes(key: MessageKey, modes: InputModes): string {
+export function keyBytes(key: ShellKey, modes: InputModes): string {
   if (key in ARROW_FINAL) {
     const final = ARROW_FINAL[key as keyof typeof ARROW_FINAL];
     return modes.applicationCursorKeys ? `${ESC}O${final}` : `${ESC}[${final}`;
@@ -115,7 +130,7 @@ export const PLAIN_INPUT_MODES: InputModes = {
  */
 export async function typeInto(
   write: (bytes: string) => void,
-  input: { text: string } | { keys: readonly MessageKey[] },
+  input: { text: string } | { keys: readonly ShellKey[] },
   modes: InputModes,
 ): Promise<void> {
   if ('text' in input) {
@@ -130,14 +145,18 @@ export async function typeInto(
 
 /** The standalone surface's terminals: its PTY sessions (in process or in the PTY host). */
 export function ptyAgentTerminals(sessions: TerminalSessions): AgentTerminals {
+  // The terminal sessions also hold the PC shells (the user's own login
+  // shells): this seam never addresses one, whatever its caller checked.
+  const agentSession = (agentId: number) =>
+    isPcShellId(agentId) ? undefined : sessions.get(agentId);
   return {
-    has: (agentId) => sessions.has(agentId),
+    has: (agentId) => agentSession(agentId) !== undefined,
     async screen(agentId) {
-      const session = sessions.get(agentId);
+      const session = agentSession(agentId);
       return session ? readScreen(session) : null;
     },
     write(agentId, bytes) {
-      const session = sessions.get(agentId);
+      const session = agentSession(agentId);
       if (!session) throw new Error(`agent ${agentId} has no terminal`);
       session.write(bytes);
     },

@@ -40,12 +40,17 @@ import {
   WORKTREE_SHUTDOWN_WAIT_MS,
   WORKTREE_SWEEP_DELAY_MS,
 } from './constants.js';
-import { listDirectoryLocations, userDirectoryDefaults } from './directories.js';
+import {
+  listDirectoryLocations,
+  shownHostDirectories,
+  userDirectoryDefaults,
+} from './directories.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import { composeOfficeMcp, type OfficeMcpFeature } from './mcp/composeOfficeMcp.js';
 import { screenTokenGuard } from './mcp/messaging.js';
+import type { OfficePlaceFacts } from './officeFacts.js';
 import {
   claudeProvider,
   copyHookScript,
@@ -54,6 +59,7 @@ import {
 } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
 import { ptyAgentTerminals } from './terminal/agentTerminals.js';
+import { StandalonePcShells } from './terminal/pcShells.js';
 import {
   defaultPtyHostSocket,
   ptyHostLogFile,
@@ -440,24 +446,39 @@ async function main(): Promise<void> {
 
     // The Pixel Office MCP: served at /mcp, its tools acting on this office;
     // agents launched (or resumed) here get it once the user consents.
+    // The office's layout and places, read alike by the MCP and the PC shells.
+    const places: OfficePlaceFacts = {
+      layout: () => readLayoutFromFile() ?? assetCache.defaultLayout,
+      catalog: () => assetCache.furniture?.catalog ?? [],
+      directories: () => listDirectoryLocations([hostDirectory()]),
+      readAreaMappings: () => readConfig().standalone.areaMappings,
+    };
+    // PC shells: a PC's plain login shell, on the agents' terminal sessions
+    // (never an agent: agents reach them only through the MCP's shell tools).
+    const pcShells = new StandalonePcShells({
+      ptyManager,
+      saves: adapter,
+      facts: places,
+      // The Directories every office is shown: a hidden host one isn't offered.
+      directories: () => listDirectoryLocations(shownHostDirectories(adapter, [hostDirectory()])),
+      broadcast: (message) => store.broadcast({ ...message }),
+      providers: hookProviders,
+    });
     const terminals = ptyAgentTerminals(ptyManager);
     const officeMcp = composeOfficeMcp({
       facts: {
+        ...places,
         store,
         provider: claudeProvider,
-        layout: () => readLayoutFromFile() ?? assetCache.defaultLayout,
         writeLayout: writeLayoutToFile,
-        catalog: () => assetCache.furniture?.catalog ?? [],
         assets: () => ({
           floorPatterns: assetCache.floorTiles?.length ?? 0,
           wallSets: assetCache.wallTiles?.length ?? 0,
           carpets: assetCache.carpetTiles?.length ?? 0,
           pets: assetCache.pets?.manifests ?? [],
         }),
-        directories: () => listDirectoryLocations([hostDirectory()]),
         userDirectories: userDirectoryDefaults,
         seats: () => adapter.loadSeats(),
-        readAreaMappings: () => readConfig().standalone.areaMappings,
         writeAreaMappings: (mappings) => {
           const cfg = readConfig();
           cfg.standalone.areaMappings = mappings;
@@ -484,6 +505,8 @@ async function main(): Promise<void> {
         ),
       // close_agent: the card's ×, as this host ends an agent.
       close: (id) => closeStandaloneAgent(ptyManager, runtime, id),
+      // The PC shell tools: this host's shells, read and written through their registry.
+      pcShells,
       // The tutorial: the Guide launched into the start Directory, ended as its card's ×.
       tutorial: standaloneTutorialSurface(
         {
@@ -498,6 +521,13 @@ async function main(): Promise<void> {
     });
     officeMcpFeature = officeMcp;
 
+    // Shells whose terminals outlived the last server (--pty-host): back
+    // before any browser connects; the saved ones with no terminal are dropped.
+    const reattachedShells = pcShells.restore();
+    if (reattachedShells.length > 0) {
+      console.log(`[Pixel Agents] Reattached ${reattachedShells.length} running PC shell(s)`);
+    }
+
     const config = await server.start({
       store,
       runtime,
@@ -509,6 +539,8 @@ async function main(): Promise<void> {
       onSetHooksEnabled,
       onReloadAssets,
       ptyManager,
+      pcShells,
+      pcShellControl: pcShells,
       packageRoot,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,
@@ -619,7 +651,7 @@ async function main(): Promise<void> {
       // sweep does it unhurried); git work already under way finishes first.
       await stopRetiring(WORKTREE_SHUTDOWN_WAIT_MS);
       // In process: kill child terminals and wait for them (each exit closes
-      // its agent): exiting now would cancel the SIGKILL escalation and leave
+      // its agent or PC shell, so no saved shell outlives them): exiting now would cancel the SIGKILL escalation and leave
       // a child that ignores SIGHUP orphaned on a dead server. With the PTY
       // host: just disconnect; the agents keep running.
       await ptyManager.shutdown();

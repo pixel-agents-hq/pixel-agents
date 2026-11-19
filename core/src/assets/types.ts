@@ -1,3 +1,5 @@
+import type { FurnitureInteractive } from '../furniture/interactive.js';
+
 /**
  * Asset pipeline types — shared between the extension host, Vite build
  * scripts, browser mock, and future standalone backends.
@@ -37,6 +39,8 @@ export interface CatalogEntry {
   rotationScheme?: string;
   animationGroup?: string;
   frame?: number;
+  /** The furniture's validated `interactive` block (furniture/interactive.ts). */
+  interactive?: FurnitureInteractive;
 }
 
 export interface PetSpriteFrames {

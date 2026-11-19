@@ -21,6 +21,7 @@ import {
   DELETE_BUTTON_BG,
   DELETE_BUTTON_HOVER_BG,
   FALLBACK_FLOOR_COLOR,
+  FURNITURE_HOVER_OUTLINE_ALPHA,
   GHOST_BORDER_HOVER_FILL,
   GHOST_BORDER_HOVER_STROKE,
   GHOST_BORDER_STROKE,
@@ -457,11 +458,12 @@ export function renderScene(
   offsetX: number,
   offsetY: number,
   zoom: number,
-  selectedAgentId: number | null,
-  hoveredAgentId: number | null,
+  selection: Pick<SelectionRenderState, 'selectedAgentId' | 'hoveredAgentId' | 'hoveredPieceUid'>,
   pets: Pet[] = [],
   dissolving: DissolvingSprite[] = [],
 ): void {
+  const { selectedAgentId, hoveredAgentId } = selection;
+  const hoveredPieceUid = selection.hoveredPieceUid ?? null;
   const drawables: ZDrawable[] = [];
 
   // A Buildout's removed walls and furniture, dissolving in matrix rain where they stood
@@ -481,6 +483,27 @@ export function renderScene(
     const cached = getCachedSprite(f.sprite, zoom);
     const fx = offsetX + f.x * zoom;
     const fy = offsetY + f.y * zoom;
+    // A hovered piece: a character's selection outline, faint, sorted just before it.
+    if (hoveredPieceUid !== null && f.uid === hoveredPieceUid) {
+      const outline = getCachedSprite(getOutlineSprite(f.sprite), zoom);
+      const mirrored = f.mirrored === true;
+      drawables.push({
+        zY: f.zY - OUTLINE_Z_SORT_OFFSET,
+        draw: (c) => {
+          c.save();
+          c.globalAlpha = FURNITURE_HOVER_OUTLINE_ALPHA;
+          if (mirrored) {
+            // The outline is the sprite's, a sprite pixel bigger all round: flip it the same way.
+            c.translate(fx + cached.width + zoom, fy - zoom);
+            c.scale(-1, 1);
+            c.drawImage(outline, 0, 0);
+          } else {
+            c.drawImage(outline, fx - zoom, fy - zoom);
+          }
+          c.restore();
+        },
+      });
+    }
     if (f.mirrored) {
       drawables.push({
         zY: f.zY,
@@ -999,6 +1022,9 @@ export interface EditorRenderState {
 export interface SelectionRenderState {
   selectedAgentId: number | null;
   hoveredAgentId: number | null;
+  /** The hovered piece of interactive furniture (outlined faintly), or null. None
+   *  while the layout editor is open: opening it clears the hover (OfficeCanvas). */
+  hoveredPieceUid?: string | null;
   hoveredTile: { col: number; row: number } | null;
   seats: Map<string, Seat>;
   characters: Map<number, Character>;
@@ -1086,8 +1112,6 @@ export function renderFrame(
   const allFurniture = wallInstances.length > 0 ? [...wallInstances, ...furniture] : furniture;
 
   // Draw walls + furniture + characters (z-sorted)
-  const selectedId = selection?.selectedAgentId ?? null;
-  const hoveredId = selection?.hoveredAgentId ?? null;
   renderScene(
     ctx,
     allFurniture,
@@ -1095,8 +1119,7 @@ export function renderFrame(
     offsetX,
     offsetY,
     zoom,
-    selectedId,
-    hoveredId,
+    selection ?? { selectedAgentId: null, hoveredAgentId: null },
     pets ?? [],
     buildout && buildout.dissolving.length > 0 ? buildoutSceneDissolves(buildout) : [],
   );

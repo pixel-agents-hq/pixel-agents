@@ -21,6 +21,7 @@ import {
 } from './constants.js';
 import { createHttpServer } from './httpServer.js';
 import type { OfficeMcpFeature } from './mcp/composeOfficeMcp.js';
+import type { PcShellRegistry, PcShellView } from './pcShells.js';
 import type { ServerConfig, StandaloneAccess } from './serverConfig.js';
 import { isServerConfig, isServerTarget, sameStandaloneAccess } from './serverConfig.js';
 import { loadOrCreateStandaloneToken } from './serverToken.js';
@@ -76,6 +77,10 @@ export class PixelAgentsServer {
     onSetHooksEnabled?: SetHooksEnabledSideEffect;
     onReloadAssets?: ReloadAssetsSideEffect;
     ptyManager?: TerminalSessions;
+    /** The surface's PC shells as every office sees them (both surfaces). */
+    pcShells?: PcShellView;
+    /** The PC shells opened and closed over /ws (standalone, over `ptyManager`'s terminals). */
+    pcShellControl?: PcShellRegistry;
     /** Package root holding dist/hooks/ (standalone; see HttpServerOptions). */
     packageRoot?: string;
     /** Extra privileged Host names (standalone; see wsAuth.privilegedHostnames). */
@@ -154,6 +159,8 @@ export class PixelAgentsServer {
       onSetHooksEnabled: options?.onSetHooksEnabled,
       onReloadAssets: options?.onReloadAssets,
       ptyManager: options?.ptyManager,
+      pcShells: options?.pcShells,
+      pcShellControl: options?.pcShellControl,
       packageRoot: options?.packageRoot,
       allowedHosts: standalone?.allowedHosts,
       officeMcp: options?.officeMcp,

@@ -3,10 +3,11 @@ import type { ReactNode } from 'react';
 import { CARD_BAR_TOP_PX, TERMINAL_SIDEBAR_WIDTH_PX } from '../constants.js';
 import type { AgentAppearance, TabStatus } from './AgentCard.js';
 import { AgentCardList } from './AgentCardList.js';
+import type { Card } from './cardBar.js';
 
 interface AgentCardBarProps {
-  /** Agents to show, top to bottom (the shared card order). */
-  agentIds: number[];
+  /** The cards (agents' and PC shells'), in the shared card order. */
+  cards: Card[];
   /** The agent whose terminal pane is showing (standalone). Its card gets the
    *  accent border. */
   activeAgentId?: number | null;
@@ -15,8 +16,8 @@ interface AgentCardBarProps {
   focusedAgentId?: number | null;
   getAppearance: (agentId: number) => AgentAppearance;
   statusFor: (agentId: number) => TabStatus | null;
-  onSelect: (agentId: number) => void;
-  onClose: (agentId: number) => void;
+  onSelect: (card: Card) => void;
+  onClose: (card: Card) => void;
   /** Persist a dragged order; absent in a read-only office. */
   onReorder?: (order: number[]) => void;
   /** Drawn right below the cards (the terminal's hide ribbon). */
@@ -39,7 +40,7 @@ interface AgentCardBarProps {
  * editor terminal via focusAgent.
  */
 export function AgentCardBar({
-  agentIds,
+  cards,
   activeAgentId = null,
   focusedAgentId = null,
   getAppearance,
@@ -51,7 +52,7 @@ export function AgentCardBar({
 }: AgentCardBarProps) {
   return (
     <AgentCardList
-      agentIds={agentIds}
+      cards={cards}
       axis="y"
       className="relative z-30 h-full shrink-0 flex flex-col items-center gap-4 overflow-y-auto pointer-events-none"
       style={{

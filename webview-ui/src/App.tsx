@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { toMajorMinor } from './changelogData.js';
+import { castStore } from './characters/castStore.js';
 import { CharactersView } from './characters/ui/CharactersView.js';
 import { AgentCardBar } from './components/AgentCardBar.js';
 import { AgentEditUndoBar } from './components/AgentEditUndoBar.js';
 import { BottomToolbar } from './components/BottomToolbar.js';
+import type { Card } from './components/cardBar.js';
 import { ChangelogModal } from './components/ChangelogModal.js';
 import { ConnectionIndicator } from './components/ConnectionIndicator.js';
 import { DebugView } from './components/DebugView.js';
@@ -50,6 +52,7 @@ import { MobileShell } from './mobile/MobileShell.js';
 import { useMobileMenu } from './mobile/useMobileMenu.js';
 import { useMobileShell } from './mobile/useMobileShell.js';
 import { MusicPlayer } from './music/MusicPlayer.js';
+import { FurnitureLabel } from './office/components/FurnitureLabel.js';
 import { OfficeCanvas } from './office/components/OfficeCanvas.js';
 import { ToolOverlay } from './office/components/ToolOverlay.js';
 import { EditorState } from './office/editor/editorState.js';
@@ -63,6 +66,11 @@ import { getPetCount } from './office/sprites/petSpriteData.js';
 import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
 import { useAgentLayoutEdits } from './officeMcp/useAgentLayoutEdits.js';
 import { useOfficeMcp } from './officeMcp/useOfficeMcp.js';
+import { PcDirectorySelector } from './pcShells/PcDirectorySelector.js';
+import { PcShellCloseDialog } from './pcShells/PcShellCloseDialog.js';
+import { PcShellRejectedModal } from './pcShells/PcShellRejectedModal.js';
+import { closePcShell } from './pcShells/pcShellStore.js';
+import { usePcShellPanels } from './pcShells/usePcShellPanels.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
@@ -83,7 +91,12 @@ if (isE2E) installTestHooks(officeStateRef);
 
 function getOfficeState(): OfficeState {
   if (!officeStateRef.current) {
-    officeStateRef.current = new OfficeState();
+    const os = new OfficeState();
+    // A Furniture label names the agent at a piece by its character's name too.
+    os.pieces.setCharacterName(
+      (palette) => castStore.getState().profiles[palette]?.name || undefined,
+    );
+    officeStateRef.current = os;
   }
   return officeStateRef.current;
 }
@@ -157,7 +170,8 @@ function App() {
     terminalAvailable,
     terminalUnavailableReason,
     terminalAgentIds,
-    cardAgents,
+    panes,
+    cards,
     saveCardOrder,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
   const usage = useUsageBridge();
@@ -211,7 +225,7 @@ function App() {
   // active tab on both shells; the desktop-only bits (isOpen, width, resize)
   // are simply unread on mobile, where the sliding track plays the drawer.
   const terminalDrawer = useTerminalDrawer({
-    terminalAgentIds,
+    panes,
     getOfficeState,
     agentTools,
     agentStatuses,
@@ -233,9 +247,11 @@ function App() {
     },
     [askNewWorktree, launchAgent],
   );
+  // Every pane's id: agents' terminals and PC shells'.
+  const paneIds = useMemo(() => panes.map((pane) => pane.id), [panes]);
   const mobileShell = useMobileShell({
     getOfficeState,
-    terminalAgentIds,
+    paneIds,
     drawer: terminalDrawer,
     focusedAgentId,
     launchAgent: launchIntoDirectory,
@@ -250,7 +266,7 @@ function App() {
   // app's main screen, so a reload that re-announces live sessions must land
   // on the office.
   const { lastLaunched } = terminalDrawer;
-  const { showTerminal: showMobileTerminal } = mobileShell;
+  const { showTerminal: showMobileTerminal, openAgent: openMobileAgent } = mobileShell;
   useEffect(() => {
     if (!lastLaunched) return;
     getOfficeState().selectAndFollow(lastLaunched.agentId);
@@ -466,9 +482,18 @@ function App() {
     editor.handleToggleEditMode,
   );
 
+  // A card's ×: an agent's, or a PC shell's (which asks first when a command
+  // still runs in it: PcShellCloseDialog).
   const handleCloseAgent = useCallback((id: number) => {
     transport.send({ type: 'closeAgent', id });
   }, []);
+  const handleCloseCard = useCallback(
+    (card: Card) => {
+      if (card.kind === 'pcShell') closePcShell(card.id);
+      else handleCloseAgent(card.id);
+    },
+    [handleCloseAgent],
+  );
 
   const { reveal: revealTerminal } = terminalDrawer;
   const handleClick = useCallback(
@@ -500,15 +525,23 @@ function App() {
   // show — and select its character so the office follows the click.
   const { select: selectTerminal } = terminalDrawer;
   const handleCardSelect = useCallback(
-    (agentId: number) => {
-      if (terminalAgentIds.includes(agentId)) {
+    (card: Card) => {
+      if (card.kind === 'pcShell') {
+        // Its pane (standalone); else VS Code shows its integrated terminal,
+        // and a browser office without one (read-only) has nothing to raise.
+        if (paneIds.includes(card.id)) revealTerminal(card.id);
+        else if (!isBrowserRuntime) transport.send({ type: 'focusAgent', id: card.id });
+        return;
+      }
+      const agentId = card.id;
+      if (paneIds.includes(agentId)) {
         selectTerminal(agentId);
         return;
       }
       transport.send({ type: 'focusAgent', id: agentId });
       getOfficeState().selectAndFollow(agentId);
     },
-    [terminalAgentIds, selectTerminal],
+    [paneIds, selectTerminal, revealTerminal],
   );
 
   // A running conversation pressed in the desktop sidebar: its agent, as its
@@ -522,10 +555,23 @@ function App() {
   const openAgentFromSidebar = useCallback(
     (agentId: number) => {
       getOfficeState().selectAndFollow(agentId);
-      handleCardSelect(agentId);
+      handleCardSelect({ kind: 'agent', id: agentId });
     },
     [handleCardSelect],
   );
+
+  // Interactive furniture: what a click on a piece opens, and this office's
+  // own PC shell shown once it opens (pcShells/usePcShellPanels.ts).
+  const { show: showPaneOnDesktop } = terminalDrawer;
+  const { openPane: openMobilePane } = mobileShell;
+  const pcShellPanels = usePcShellPanels({
+    terminalAvailable,
+    isBrowser: isBrowserRuntime,
+    officeReadOnly,
+    openAgent: isMobile ? openMobileAgent : openAgentFromSidebar,
+    showPane: isMobile ? openMobilePane : showPaneOnDesktop,
+  });
+  const { canOpenPanels, directoryChoice } = pcShellPanels;
 
   const officeState = getOfficeState();
 
@@ -652,6 +698,8 @@ function App() {
         showAreas={effectiveShowAreas}
         activeAreaLabel={activeAreaLabel}
         tapSelectsFirst={isMobile}
+        readOnly={!canOpenPanels}
+        onPieceClick={pcShellPanels.onPieceClick}
       />
 
       {!isDebugMode ? (
@@ -779,6 +827,28 @@ function App() {
               onCloseAgent={handleCloseAgent}
               alwaysShowOverlay={alwaysShowOverlay}
             />
+            <FurnitureLabel
+              officeState={officeState}
+              containerRef={containerRef}
+              zoom={editor.zoom}
+              panRef={editor.panRef}
+              readOnly={!canOpenPanels}
+              // The Directory selector stands where the label would.
+              hidden={directoryChoice !== null}
+              alwaysShow={alwaysShowOverlay && !editor.isEditMode}
+              onCloseShell={canOpenPanels ? closePcShell : undefined}
+            />
+            {directoryChoice && canOpenPanels && !editor.isEditMode && (
+              <PcDirectorySelector
+                choice={directoryChoice}
+                officeState={officeState}
+                containerRef={containerRef}
+                zoom={editor.zoom}
+                panRef={editor.panRef}
+                onChoose={pcShellPanels.chooseDirectory}
+                onClose={pcShellPanels.closeDirectoryChoice}
+              />
+            )}
           </div>
         </>
       ) : (
@@ -886,15 +956,15 @@ function App() {
           office={officeRegion}
           shell={mobileShell}
           drawer={terminalDrawer}
-          agentIds={cardAgents}
-          terminalAgentIds={terminalAgentIds}
+          cards={cards}
+          paneIds={paneIds}
           focusedAgentId={focusedAgentId}
           terminalAvailable={terminalAvailable}
           terminalUnavailableReason={terminalUnavailableReason}
           directories={directories}
           onAddDirectory={directoryEditor.add}
           onEditDirectory={directoryEditor.edit}
-          onCloseAgent={handleCloseAgent}
+          onCloseCard={handleCloseCard}
           onReorder={officeReadOnly ? undefined : saveCardOrder}
           onOpenCharacters={officeReadOnly ? undefined : openCharacters}
           keyboardOpen={keyboard.keyboardOpen}
@@ -924,16 +994,16 @@ function App() {
               character. */}
           {!(isDebugMode && !terminalAvailable) && (
             <AgentCardBar
-              agentIds={cardAgents}
+              cards={cards}
               activeAgentId={terminalAvailable ? terminalDrawer.shownAgentId : null}
               focusedAgentId={focusedAgentId}
               getAppearance={terminalDrawer.getAppearance}
               statusFor={terminalDrawer.statusFor}
               onSelect={handleCardSelect}
-              onClose={handleCloseAgent}
+              onClose={handleCloseCard}
               onReorder={officeReadOnly ? undefined : saveCardOrder}
               trailing={
-                terminalAvailable && terminalAgentIds.length > 0 ? (
+                terminalAvailable && paneIds.length > 0 ? (
                   <TerminalHideRibbon shown={terminalDrawer.isOpen} onHide={terminalDrawer.close} />
                 ) : undefined
               }
@@ -946,7 +1016,7 @@ function App() {
               region reflows beside it instead of being overlaid. */}
           {terminalAvailable && (
             <TerminalDrawer
-              agentIds={terminalAgentIds}
+              agentIds={paneIds}
               shownAgentId={terminalDrawer.shownAgentId}
               isOpen={terminalDrawer.isOpen}
               widthPx={terminalDrawer.widthPx}
@@ -995,6 +1065,9 @@ function App() {
         directories={directories}
         onDone={clearAgentCloseQuestion}
       />
+      {/* This office's × on a PC shell with a command still running in it. */}
+      <PcShellCloseDialog />
+      <PcShellRejectedModal />
 
       <ChangelogModal
         isOpen={isChangelogOpen}

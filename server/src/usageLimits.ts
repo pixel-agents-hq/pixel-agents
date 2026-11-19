@@ -40,6 +40,9 @@ export const PRIVILEGED_BROADCAST_TYPES: ReadonlySet<string> = new Set([
   'officeMcpStatus',
   // The tutorial's offer and progress: only an office that may start or skip it.
   'tutorialStatus',
+  // The operator's PC shells (which PC, which Directory): a view-only office
+  // sees the agents, never the shells.
+  'pcShellsLoaded',
 ]);
 
 let cache: Record<string, StoredUsage> | null = null;

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef } from 'react';
 
 import { Button } from '../../components/ui/Button.js';
 import { PixelIcon } from '../../components/ui/PixelIcon.js';
@@ -21,6 +21,7 @@ import {
   TOOL_OVERLAY_VERTICAL_OFFSET,
 } from '../../constants.js';
 import type { SubagentCharacter } from '../../hooks/useExtensionMessages.js';
+import { useFrameTick } from '../../hooks/useFrameTick.js';
 import { ContextBar } from '../ContextBar.js';
 import { contextLeft } from '../contextGauge.js';
 import type { OfficeState } from '../engine/officeState.js';
@@ -142,19 +143,10 @@ export function ToolOverlay({
   onCloseAgent,
   alwaysShowOverlay,
 }: ToolOverlayProps) {
-  const [, setTick] = useState(0);
+  useFrameTick();
   // Each shown gist bubble's height (CSS px), measured when its text changes:
   // the label stacks above it (a frame late after a change).
   const gistHeights = useRef(new Map<number, number>());
-  useEffect(() => {
-    let rafId = 0;
-    const tick = () => {
-      setTick((n) => n + 1);
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
 
   const el = containerRef.current;
   if (!el) return null;

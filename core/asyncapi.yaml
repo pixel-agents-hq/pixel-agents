@@ -153,6 +153,12 @@ components:
         - $ref: '#/components/schemas/TerminalAvailability'
         - $ref: '#/components/schemas/TerminalSessionOpened'
         - $ref: '#/components/schemas/TerminalSessionClosed'
+        # PC shells (a PC's plain login shell on the host: not an agent)
+        - $ref: '#/components/schemas/PcShellsLoaded'
+        - $ref: '#/components/schemas/PanelsInUse'
+        - $ref: '#/components/schemas/PcShellReady'
+        - $ref: '#/components/schemas/PcShellCloseQuestion'
+        - $ref: '#/components/schemas/PcShellRejected'
         # Diagnostics
         - $ref: '#/components/schemas/AgentDiagnostics'
       discriminator: type
@@ -205,6 +211,8 @@ components:
         - $ref: '#/components/schemas/RequestWorktrees'
         - $ref: '#/components/schemas/RequestWorktreeOptions'
         - $ref: '#/components/schemas/DecideWorktree'
+        - $ref: '#/components/schemas/OpenPcShell'
+        - $ref: '#/components/schemas/ClosePcShell'
         - $ref: '#/components/schemas/RequestDiagnostics'
       discriminator: type
 
@@ -1792,6 +1800,109 @@ components:
         exitCode:
           type: integer
 
+    PcShell:
+      description: >-
+        One live PC shell: the plain login shell on the host a PC opened for
+        the user. Not an agent: no provider, session, transcript, hooks, look
+        or seat. Its id is its own (from PC_SHELL_ID_BASE up, apart from every
+        agent id), the id its terminal socket (GET /terminal/:id) and its card
+        go by.
+      type: object
+      additionalProperties: false
+      required: [id, uid, furnitureType]
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+          description: The piece (placed furniture uid) that opened it; the piece may have left the layout since.
+        furnitureType:
+          type: string
+          description: The piece's furniture type when it opened (the card draws its sprite).
+        directoryName:
+          type: string
+          description: The Directory it started in, by name as it was then. Absent = the home folder.
+
+    PcShellsLoaded:
+      description: >-
+        Every live PC shell, the whole list: broadcast to privileged offices only
+        (a view-only office sees the agents, never the operator's shells: it is told only which pieces are in use, `panelsInUse`)
+        whenever one opens or ends, and sent in their connect snapshot, so a
+        reconnect is a resync.
+      type: object
+      additionalProperties: false
+      required: [type, shells]
+      properties:
+        type:
+          const: pcShellsLoaded
+        shells:
+          type: array
+          items:
+            $ref: '#/components/schemas/PcShell'
+
+    PanelsInUse:
+      description: >-
+        The pieces whose panel is in use (a PC with a live PC shell), by uid and
+        nothing else: broadcast to every office beside `pcShellsLoaded` and sent
+        in every connect snapshot. A view-only office, which is never sent the
+        shells, shows those pieces in their "panel in use" state and labels them
+        "Busy", without learning what the panel holds.
+      type: object
+      additionalProperties: false
+      required: [type, uids]
+      properties:
+        type:
+          const: panelsInUse
+        uids:
+          type: array
+          items:
+            type: string
+
+    PcShellReady:
+      description: >-
+        The answer to an `openPcShell`, to its sender alone: the shell that
+        answers it (a new one, or the piece's live one). The office opens its
+        terminal.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: pcShellReady
+        id:
+          type: integer
+
+    PcShellCloseQuestion:
+      description: >-
+        The answer to a `closePcShell` (not `confirmed`) for a shell with a
+        command still running in it (its foreground process is not the shell
+        itself): the shell is NOT closed, and the office asks the user once. A
+        `closePcShell` with `confirmed` closes it. To the sender alone.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: pcShellCloseQuestion
+        id:
+          type: integer
+        command:
+          type: string
+          description: The running command's name, when the host could tell.
+
+    PcShellRejected:
+      description: An `openPcShell` that could not be done, to its sender alone.
+      type: object
+      additionalProperties: false
+      required: [type, uid, reason]
+      properties:
+        type:
+          const: pcShellRejected
+        uid:
+          type: string
+        reason:
+          type: string
+
     # ── Client message variants ────────────────────────────────────
 
     WebviewReady:
@@ -2365,7 +2476,7 @@ components:
               type: string
 
     SaveCardOrder:
-      description: Persist a reordered agent-card list (agent ids, first card first).
+      description: Persist a reordered card list (agent and PC shell ids, first card first).
       type: object
       additionalProperties: false
       required: [type, order]
@@ -2376,6 +2487,45 @@ components:
           type: array
           items:
             type: integer
+
+    OpenPcShell:
+      description: >-
+        Open the PC shell of a piece (a placed furniture uid whose furniture
+        declares the `terminal` panel): its live shell when it has one, else a
+        new login shell in the named `directory` (one of the Directories mapped
+        to the piece's Area: the office's Directory selector), else the single
+        Directory mapped to the piece's Area, else the home folder. A
+        `directory` that is not one of the Area's is refused. Answered with
+        `pcShellReady` (or `pcShellRejected`). Privileged, and refused where the
+        office offers no terminal.
+      type: object
+      additionalProperties: false
+      required: [type, uid]
+      properties:
+        type:
+          const: openPcShell
+        uid:
+          type: string
+        directory:
+          type: string
+          description: The chosen Directory's name.
+
+    ClosePcShell:
+      description: >-
+        End a PC shell (its card's ×). An idle shell ends at once; one running a
+        command is answered with `pcShellCloseQuestion` unless `confirmed`.
+        Privileged.
+      type: object
+      additionalProperties: false
+      required: [type, id]
+      properties:
+        type:
+          const: closePcShell
+        id:
+          type: integer
+        confirmed:
+          type: boolean
+          description: The user confirmed closing it with a command running.
 
     SetBypassPermissions:
       description: >-
@@ -2981,3 +3131,92 @@ components:
           type: string
         frame:
           type: integer
+        interactive:
+          $ref: '#/components/schemas/FurnitureInteractive'
+
+    FurnitureInteractive:
+      description: |
+        How a furniture takes part in the office (CONTEXT.md → Interactive furniture), as
+        its manifest's `interactive` block declares it, validated where the manifest was
+        read (core/src/furniture/interactive.ts) and carried on every asset of that
+        furniture. Every part is optional; a block that failed validation is never sent
+        (the furniture is plain furniture). A condition list holds when ANY of its
+        conditions does.
+      type: object
+      additionalProperties: false
+      properties:
+        agentUse:
+          $ref: '#/components/schemas/FurnitureAgentUse'
+        label:
+          $ref: '#/components/schemas/FurnitureLabelSpec'
+        panel:
+          $ref: '#/components/schemas/FurniturePanel'
+        states:
+          type: array
+          description: |
+            Which declared state a piece shows under which condition, the first rule
+            whose condition holds winning; no rule holding = its usual sprite.
+          items:
+            $ref: '#/components/schemas/FurnitureStateRule'
+
+    FurnitureAgentUse:
+      description: |
+        How agents use a furniture: `workstation` = agents work here (a seat facing it
+        pairs with it, and its agent at work is the `agentWorking` condition).
+      type: string
+      enum: [workstation]
+
+    FurniturePanel:
+      description: The panel the office provides that a piece opens (CONTEXT.md → Panel).
+      type: string
+      enum: [terminal]
+
+    FurnitureCondition:
+      description: |
+        A fact the office holds about a piece: `agentWorking` = an agent is working at
+        it; `panelInUse` = its panel is in use (a PC: a live PC shell); `free` = neither.
+      type: string
+      enum: [agentWorking, panelInUse, free]
+
+    FurnitureLabelSpec:
+      description: |
+        A Furniture label: its name, then the first of its lines whose condition
+        holds (a label says one thing: list the lines in the order a click resolves).
+        A line's text may name `{agent}` (the agent working at it; only in a line shown
+        on `agentWorking` alone) or `{panel}` (what its panel holds, a PC shell's
+        Directory; only in a line shown on `panelInUse` alone).
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/FurnitureLabelLine'
+
+    FurnitureLabelLine:
+      type: object
+      additionalProperties: false
+      required: [when, text]
+      properties:
+        when:
+          type: array
+          items:
+            $ref: '#/components/schemas/FurnitureCondition'
+        text:
+          type: string
+
+    FurnitureStateRule:
+      type: object
+      additionalProperties: false
+      required: [state, when]
+      properties:
+        state:
+          type: string
+          description: One of the furniture's declared states (its manifest's `state` values).
+        when:
+          type: array
+          items:
+            $ref: '#/components/schemas/FurnitureCondition'

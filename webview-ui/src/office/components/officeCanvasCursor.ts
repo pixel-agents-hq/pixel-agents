@@ -1,7 +1,8 @@
 // webview-ui/src/office/components/officeCanvasCursor.ts
 //
 // Pure cursor resolver for the OfficeCanvas in normal (non-edit) mode.
-// Decision cascade: character hit → pet hit → seat-reassign hit → default.
+// Decision cascade: character hit → pet hit → seat-reassign hit → a piece offering a
+// click → default.
 // All callers pass closures over the OfficeState — no direct coupling.
 
 export interface OfficeCursorTile {
@@ -25,6 +26,9 @@ export interface OfficeCursorState {
   getSeatAtTile: (col: number, row: number) => string | null;
   getSeat: (seatId: string) => OfficeCursorSeat | undefined;
   getCharacter: (id: number) => OfficeCursorCharacter | undefined;
+  /** The hovered piece of furniture offers a click (core's pieceView: never in a
+   *  read-only office, never for a label-only piece). */
+  pieceClickable?: boolean;
 }
 
 export type OfficeCursor = 'pointer' | 'default';
@@ -54,6 +58,9 @@ export function computeNormalModeCursor(state: OfficeCursorState): OfficeCursor 
       }
     }
   }
+
+  // 4. A piece of furniture that opens something.
+  if (state.pieceClickable) return 'pointer';
 
   return 'default';
 }

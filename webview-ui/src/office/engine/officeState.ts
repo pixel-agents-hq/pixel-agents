@@ -17,7 +17,11 @@ import {
   WAITING_BUBBLE_DURATION_SEC,
 } from '../../constants.js';
 import { contextUsedShare } from '../contextGauge.js';
-import { getAnimationFrames, getCatalogEntry, getOnStateType } from '../layout/furnitureCatalog.js';
+import {
+  getAnimationFrames,
+  getCatalogEntry,
+  getStateVariant,
+} from '../layout/furnitureCatalog.js';
 import {
   createDefaultLayout,
   getBlockedTiles,
@@ -52,6 +56,7 @@ import {
 import { GreeterHandoff } from './greeterHandoff.js';
 import { advanceMatrixEffect, startMatrixEffect } from './matrixEffectState.js';
 import { createPet, updatePet } from './petEntity.js';
+import { PiecesController } from './piecesController.js';
 import { anchorTile, closestFreeSeat } from './seatPlacement.js';
 import { VisitsController } from './visitsController.js';
 
@@ -63,8 +68,8 @@ function takesSeat(ch: Character): boolean {
 
 type Tile = { col: number; row: number };
 
-function sameSet<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
-  return a.size === b.size && [...a].every((x) => b.has(x));
+function sameMap<K, V>(a: ReadonlyMap<K, V>, b: ReadonlyMap<K, V>): boolean {
+  return a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
 }
 
 /** Score by steps from `from` (Manhattan distance). */
@@ -87,10 +92,11 @@ export class OfficeState {
   layout: OfficeLayout;
   tileMap: TileTypeVal[][];
   seats: Map<string, Seat>;
-  /** Seat uid → the uid of the PC that seat works at (workstations.ts). */
+  /** Seat uid → the uid of the workstation that seat works at (workstations.ts). */
   seatWorkstations: Map<string, string> = new Map();
-  /** The PCs lit in the current furniture instances. */
-  private litPcs: ReadonlySet<string> = new Set();
+  /** Piece uid → the declared state it shows in the current furniture instances
+   *  (its state rules under pieceFacts); pieces showing their usual sprite are absent. */
+  private shownStates: ReadonlyMap<string, string> = new Map();
   blockedTiles: Set<string>;
   furniture: FurnitureInstance[];
   walkableTiles: Array<{ col: number; row: number }>;
@@ -116,6 +122,10 @@ export class OfficeState {
     return () => this.selectionListeners.delete(listener);
   }
   cameraFollowId: number | null = null;
+  /** The piece of interactive furniture the camera centres on (the last one
+   *  clicked), as it follows a clicked character. A followed character
+   *  outranks it; a manual pan or a click anywhere else lets go of it. */
+  cameraPieceUid: string | null = null;
   hoveredAgentId: number | null = null;
   hoveredTile: { col: number; row: number } | null = null;
   /** Maps "parentId:toolId" → sub-agent character ID (negative) */
@@ -162,6 +172,20 @@ export class OfficeState {
 
   /** The Buildout playing, if any: drawing reads it (shownLayout, shownTileMap). */
   readonly buildout = new BuildoutPlayer();
+
+  /** Interactive furniture: each piece's facts, state, label and click, and the
+   *  piece under a pointer (piecesController.ts). */
+  readonly pieces = new PiecesController({
+    layout: () => this.layout,
+    shownLayout: () => this.shownLayout(),
+    furniture: () => this.furniture,
+    characters: this.characters,
+    seats: () => this.seats,
+    seatWorkstations: () => this.seatWorkstations,
+    areaMappings: () => this.areaMappings,
+    occupiedAt: (x, y) => this.getCharacterAt(x, y) !== null || this.getPetAt(x, y) !== null,
+    shellsChanged: () => this.rebuildFurnitureInstances(),
+  });
 
   /** Visits, Message shows and Buildout work: each character's errand stack. */
   readonly visits = new VisitsController({
@@ -386,6 +410,29 @@ export class OfficeState {
     return result;
   }
 
+  /**
+   * The free seats a new agent may be given: every unassigned seat, except those
+   * whose workstation has a live PC shell (the user works there) while any other
+   * seat is free. Only the office's own picks go through this; a seat asked for
+   * by name (a resume's, launch_agent's) or assigned by hand ignores it.
+   */
+  private seatChoices(): string[] {
+    const free: string[] = [];
+    const shared: string[] = [];
+    for (const [uid, seat] of this.seats) {
+      if (seat.assigned) continue;
+      const piece = this.seatWorkstations.get(uid);
+      (piece !== undefined && this.pieces.hasShell(piece) ? shared : free).push(uid);
+    }
+    return free.length > 0 ? free : shared;
+  }
+
+  /** The free seat closest to a tile (teammates beside their lead), by seatChoices. */
+  private closestSeatChoice(col: number, row: number): string | null {
+    const choices = new Set(this.seatChoices());
+    return closestFreeSeat(this.seats, col, row, (uid) => choices.has(uid));
+  }
+
   /** Find the area label assigned to a seat's tile, or null. Public for e2e
    *  observability (getAgentSeats hook reads a seated agent's area). */
   seatZone(uid: string): string | null {
@@ -429,16 +476,14 @@ export class OfficeState {
    *   Stage 2: Prefer free seats whose tile has NO area label (unzoned).
    *   Stage 3: Any free seat.
    *
-   * Each stage routes through `pickFromSeats` for the PC-bias rule. Returns
-   * null only when every seat is already occupied. Passing `undefined`
+   * Each stage routes through `pickFromSeats` for the PC-bias rule, over
+   * `seatChoices` (a seat at a PC with a live PC shell only once no other is
+   * free). Returns null only when every seat is already occupied. Passing `undefined`
    * preserves pre-Areas single-stage behavior (skips Stage 1; Stage 2 picks
    * unzoned seats from a layout without `areaTiles`, which is every seat).
    */
   private findFreeSeat(directoryName?: string): string | null {
-    const freeSeats: string[] = [];
-    for (const [uid, seat] of this.seats) {
-      if (!seat.assigned) freeSeats.push(uid);
-    }
+    const freeSeats = this.seatChoices();
     if (freeSeats.length === 0) return null;
 
     const areaLabels = directoryName ? this.areaMappings[directoryName] : undefined;
@@ -556,7 +601,7 @@ export class OfficeState {
       }
     }
     if (!seatId && anchorAt) {
-      seatId = closestFreeSeat(this.seats, anchorAt.col, anchorAt.row);
+      seatId = this.closestSeatChoice(anchorAt.col, anchorAt.row);
     }
     if (!seatId) {
       seatId = this.findFreeSeat(directoryName);
@@ -694,6 +739,7 @@ export class OfficeState {
    *  automatic drivers: character follow and the greeter's ask. */
   breakCameraFollow(): void {
     this.cameraFollowId = null;
+    this.cameraPieceUid = null;
     this.cancelGreeterCamera();
   }
 
@@ -703,6 +749,7 @@ export class OfficeState {
     if (!this.characters.has(id)) return;
     this.selectedAgentId = id;
     this.cameraFollowId = id;
+    this.cameraPieceUid = null;
   }
 
   /** The agent that owns `id`'s terminal: a sub-agent's parent, else itself. */
@@ -832,7 +879,7 @@ export class OfficeState {
     if (!teammate || !lead) return;
     const anchorAt = anchorTile(lead, this.seats);
     if (!anchorAt) return;
-    const target = closestFreeSeat(this.seats, anchorAt.col, anchorAt.row);
+    const target = this.closestSeatChoice(anchorAt.col, anchorAt.row);
     if (!target || target === teammate.seatId) return;
     const targetSeat = this.seats.get(target)!;
     const targetDist =
@@ -1096,44 +1143,32 @@ export class OfficeState {
     this.rebuildFurnitureInstances();
   }
 
-  /**
-   * The PCs whose seat has an agent working at it: active, sitting in that
-   * seat and typing. Walking to the seat, resting there between turns, or
-   * standing beside it does not count.
-   */
-  private litWorkstations(): Set<string> {
-    const lit = new Set<string>();
-    for (const ch of this.characters.values()) {
-      if (!ch.isActive || !ch.seatId || ch.state !== CharacterState.TYPE || ch.matrixEffect) {
-        continue;
-      }
-      const seat = this.seats.get(ch.seatId);
-      if (!seat || ch.tileCol !== seat.seatCol || ch.tileRow !== seat.seatRow) continue;
-      const pc = this.seatWorkstations.get(ch.seatId);
-      if (pc) lit.add(pc);
-    }
-    return lit;
+  /** Rebuild furniture instances, each piece in the state its rules say (a piece
+   *  with no art for that state keeps its usual sprite), animated states on the
+   *  current frame. */
+  /** The declared state a piece is drawn in now (its state rules' pick, e.g. a PC's
+   *  "on"), or null when it shows its usual sprite. */
+  pieceShownState(uid: string): string | null {
+    return this.shownStates.get(uid) ?? null;
   }
 
-  /** Rebuild furniture instances with auto-state applied (a working agent's PC turns ON) */
-  private rebuildFurnitureInstances(lit = this.litWorkstations()): void {
-    this.litPcs = lit;
+  private rebuildFurnitureInstances(shown = this.pieces.showingStates()): void {
+    this.shownStates = shown;
     const placed = this.shownLayout().furniture;
-    if (lit.size === 0) {
+    if (shown.size === 0) {
       this.furniture = layoutToFurnitureInstances(placed);
       return;
     }
 
-    // Build modified furniture list with auto-state and animation applied
     const animFrame = Math.floor(this.furnitureAnimTimer / FURNITURE_ANIM_INTERVAL_SEC);
     const modifiedFurniture: PlacedFurniture[] = placed.map((item) => {
-      if (!lit.has(item.uid)) return item;
-      let onType = getOnStateType(item.type);
-      if (onType === item.type) return item;
-      // Check if the on-state type has animation frames
-      const frames = getAnimationFrames(onType);
-      if (frames && frames.length > 1) onType = frames[animFrame % frames.length];
-      return { ...item, type: onType };
+      const state = shown.get(item.uid);
+      if (!state) return item;
+      let type = getStateVariant(item.type, state);
+      if (!type || type === item.type) return item;
+      const frames = getAnimationFrames(type);
+      if (frames && frames.length > 1) type = frames[animFrame % frames.length];
+      return { ...item, type };
     });
 
     this.furniture = layoutToFurnitureInstances(modifiedFurniture);
@@ -1424,9 +1459,10 @@ export class OfficeState {
       this.characters.delete(id);
     }
 
-    // A PC turns on when its agent sits down to work, not when the turn starts.
-    const lit = this.litWorkstations();
-    if (!sameSet(lit, this.litPcs)) this.rebuildFurnitureInstances(lit);
+    // A piece's state follows its facts as they change: a PC turns on when its agent
+    // sits down to work, not when the turn starts.
+    const shown = this.pieces.showingStates();
+    if (!sameMap(shown, this.shownStates)) this.rebuildFurnitureInstances(shown);
 
     // ── Pet FSM ────────────────────────────────────────────────
     for (const pet of this.pets) {

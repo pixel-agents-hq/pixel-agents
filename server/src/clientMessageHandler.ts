@@ -34,13 +34,16 @@ import {
   directoryAt,
   handleDirectoryClientMessage,
   type HostDirectoryEntry,
+  KEY_SHOW_HOST_DIRECTORIES,
   listDirectories,
+  shownHostDirectories,
 } from './directories.js';
 import { collectDirectorySuggestions } from './directorySuggestions.js';
 import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import type { OfficeMcpFeature } from './mcp/composeOfficeMcp.js';
 import { getPaletteCount } from './paletteAssigner.js';
+import { handlePcShellMessage, type PcShellRegistry, type PcShellView } from './pcShells.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
@@ -117,6 +120,13 @@ export interface ClientMessageContext {
   /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
    *  mode, where the editor owns terminal lifecycle. */
   ptyManager?: TerminalSessions;
+  /** The surface's PC shells as every office sees them: the list in each
+   *  connect's snapshot, and their ids in the card order. Both surfaces. */
+  pcShells?: PcShellView;
+  /** The PC shells opened and closed over /ws, by privileged offices only (the
+   *  gate above every message). Standalone only: VS Code's are opened by its
+   *  own webview, never by its embedded server's /ws clients. */
+  pcShellControl?: PcShellRegistry;
   /** The Pixel Office MCP, on a server that offers it: launches and resumes
    *  get its per-agent config; its consent and settings messages, the editing
    *  lock and the editor's "Undo <agent>'s edit" are answered. Absent = no MCP,
@@ -133,7 +143,6 @@ const KEY_ALWAYS_SHOW_LABELS = 'pixel-agents.alwaysShowLabels';
 const KEY_GHOST_HEADLESS_AGENTS = 'pixel-agents.ghostHeadlessAgents';
 const KEY_WATCH_ALL_SESSIONS = 'pixel-agents.watchAllSessions';
 const KEY_SHOW_AREAS = 'pixel-agents.showAreas';
-const KEY_SHOW_HOST_DIRECTORIES = 'pixel-agents.showHostDirectories';
 const KEY_UPLOAD_DIRECTORY = 'pixel-agents.uploadDirectory';
 
 /** The provider whose conversations the sidebar lists and resumes: the first
@@ -162,9 +171,7 @@ function hostDirectoriesFor(ctx: Pick<ClientMessageContext, 'ptyManager'>): Host
 function shownHostDirectoriesFor(
   ctx: Pick<ClientMessageContext, 'store' | 'ptyManager'>,
 ): HostDirectoryEntry[] {
-  return ctx.store.getAdapter()?.getSetting(KEY_SHOW_HOST_DIRECTORIES, false)
-    ? hostDirectoriesFor(ctx)
-    : [];
+  return shownHostDirectories(ctx.store.getAdapter(), hostDirectoriesFor(ctx));
 }
 
 /**
@@ -336,6 +343,13 @@ export function handleClientMessage(
       ).catch((err: unknown) => console.error('[Pixel Agents] Close failed:', err));
       break;
     }
+
+    case 'openPcShell':
+    case 'closePcShell':
+      // A PC's shell: privileged (past the gate above), and only where this
+      // office opens them over /ws (the registry refuses without terminals).
+      if (ctx.pcShellControl) handlePcShellMessage(ctx.pcShellControl, msg, (m) => send({ ...m }));
+      break;
 
     case 'requestWorktrees':
       void handleRequestWorktrees(store, msg, send);
@@ -524,7 +538,12 @@ export function handleClientMessage(
     }
 
     case 'saveCardOrder': {
-      const loaded = saveCardOrder(adapter, msg.order, (id) => store.has(id));
+      // Agents' cards and PC shells' cards share the one order.
+      const loaded = saveCardOrder(
+        adapter,
+        msg.order,
+        (id) => store.has(id) || ctx.pcShells?.has(id) === true,
+      );
       // Every open office follows the reorder, the sender's included.
       if (loaded) store.broadcast(loaded);
       break;
@@ -884,6 +903,14 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     worktrees: existingAgentWorktrees(store),
     nicknames: existingAgentNicknames(store),
   });
+
+  // 6b. The live PC shells, privileged offices only: a view-only office sees
+  // the agents, never the operator's shells (no card, no Directory). Every
+  // office is told which pieces are in use: the PC lit, its label "Busy".
+  if (ctx.pcShells) {
+    if (ctx.privileged) send({ ...ctx.pcShells.message() });
+    send({ ...ctx.pcShells.inUseMessage() });
+  }
 
   // 7. Layout last (see step 3): flushes the webview's buffered existingAgents
   // into characters once seats are rebuilt.

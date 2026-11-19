@@ -1,5 +1,5 @@
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AgentActivity, AgentAppearance, TabStatus } from '../components/AgentCard.js';
 import { TERMINAL_DRAWER_DEFAULT_WIDTH_PX } from '../constants.js';
@@ -8,13 +8,15 @@ import type { ToolActivity } from '../office/types.js';
 import type { TerminalConnectionStatus } from '../terminal/terminalClient.js';
 import { clampDrawerWidth } from './drawerWidth.js';
 import { answersLaunch } from './launchLatch.js';
+import { agentPaneIds, openedAgentPane, type Pane } from './terminalPanes.js';
 
 /** A character not (yet) in the office — the mug shot falls back to palette 0. */
 const DEFAULT_APPEARANCE: AgentAppearance = { palette: 0, repeat: 0 };
 
 interface TerminalDrawerInputs {
-  /** Agent ids with a live server-side PTY, in open order (control plane). */
-  terminalAgentIds: number[];
+  /** The panes with a live server-side PTY, in open order (control plane):
+   *  agents', then PC shells' where this office runs terminals. */
+  panes: Pane[];
   getOfficeState: () => OfficeState;
   agentTools: Record<number, ToolActivity[]>;
   agentStatuses: Record<number, string>;
@@ -33,8 +35,9 @@ export interface TerminalDrawerController {
   shownAgentId: number | null;
   isOpen: boolean;
   widthPx: number;
-  /** The newest terminal the drawer saw appear (launch answered, or a reload
-   *  re-announcing live sessions) — it became the active tab. `seq` makes
+  /** The newest agent terminal the drawer saw appear (launch answered, or a
+   *  reload re-announcing live sessions) — it became the active tab. A PC
+   *  shell's never does: only the office that opened it shows it. `seq` makes
    *  every appearance a distinct value for effects to key on. */
   lastOpened: { agentId: number; seq: number } | null;
   /** `lastOpened` when it answered a launch this client made (`expectLaunch`
@@ -45,10 +48,13 @@ export interface TerminalDrawerController {
    *  LAUNCH_ANSWER_TIMEOUT_MS answers it. Every open disarms it, whether or
    *  not it was armed, and so does the timeout (a failed spawn opens none). */
   expectLaunch: () => void;
-  /** Show an agent's terminal if it has one; no-op otherwise. The office's
+  /** Show a pane (an agent's terminal, or a PC shell's) if there is one; no-op otherwise. The office's
    *  character click routes here: standalone has no editor panel to raise, so
    *  "focus the agent" means "open its tab", mirroring VS Code's terminalRef.show(). */
   reveal: (agentId: number) => void;
+  /** Show pane `id` now (a PC shell this office just opened), even before the
+   *  pane list that holds it has rendered: shownAgentId follows once it has. */
+  show: (id: number) => void;
   /** Card click: open the tab AND select + follow the character, so the card
    *  and the office stay in sync. */
   select: (agentId: number) => void;
@@ -70,7 +76,7 @@ export interface TerminalDrawerController {
  * state, and the per-agent lookups the cards render from. App only composes it.
  */
 export function useTerminalDrawer({
-  terminalAgentIds,
+  panes,
   getOfficeState,
   agentTools,
   agentStatuses,
@@ -98,23 +104,24 @@ export function useTerminalDrawer({
   }, []);
   const widthPx = clampDrawerWidth(preferredWidthPx, viewportPx, besidePx);
   const [connStatuses, setConnStatuses] = useState<Record<number, TerminalConnectionStatus>>({});
+  const paneIds = useMemo(() => panes.map((pane) => pane.id), [panes]);
 
   const shownAgentId =
-    activeAgentId !== null && terminalAgentIds.includes(activeAgentId)
+    activeAgentId !== null && paneIds.includes(activeAgentId)
       ? activeAgentId
-      : (terminalAgentIds[0] ?? null);
+      : (paneIds[0] ?? null);
 
-  // Reveal a newly-opened terminal. Launching is async — the toolbar sends
-  // launchAgent and the server answers with terminalSessionOpened once the PTY
-  // is up — so "open the drawer on launch" is expressed as "open it when a
-  // terminal we hadn't seen appears". This also restores the drawer after a
-  // reload, when webviewReady re-announces the live sessions.
-  const knownIdsRef = useRef<number[]>([]);
+  // Reveal a newly-opened agent terminal. Launching is async — the toolbar
+  // sends launchAgent and the server answers with terminalSessionOpened once
+  // the PTY is up — so "open the drawer on launch" is expressed as "open it
+  // when an agent terminal we hadn't seen appears". This also restores the
+  // drawer after a reload, when webviewReady re-announces the live sessions.
+  // PC shells never count (terminalPanes.ts openedAgentPane).
+  const knownAgentIdsRef = useRef<number[]>([]);
   useEffect(() => {
-    const added = terminalAgentIds.filter((id) => !knownIdsRef.current.includes(id));
-    knownIdsRef.current = terminalAgentIds;
-    if (added.length === 0) return;
-    const newest = added[added.length - 1];
+    const newest = openedAgentPane(knownAgentIdsRef.current, panes);
+    knownAgentIdsRef.current = agentPaneIds(panes);
+    if (newest === null) return;
     setActiveAgentId(newest);
     setIsOpen(true);
     setLastOpened((prev) => ({ agentId: newest, seq: (prev?.seq ?? 0) + 1 }));
@@ -122,16 +129,21 @@ export function useTerminalDrawer({
       setLastLaunched((prev) => ({ agentId: newest, seq: (prev?.seq ?? 0) + 1 }));
     }
     launchArmedAtRef.current = null;
-  }, [terminalAgentIds]);
+  }, [panes]);
 
   const reveal = useCallback(
     (agentId: number) => {
-      if (!terminalAgentIds.includes(agentId)) return;
+      if (!paneIds.includes(agentId)) return;
       setActiveAgentId(agentId);
       setIsOpen(true);
     },
-    [terminalAgentIds],
+    [paneIds],
   );
+
+  const show = useCallback((id: number) => {
+    setActiveAgentId(id);
+    setIsOpen(true);
+  }, []);
 
   const select = useCallback(
     (agentId: number) => {
@@ -215,12 +227,12 @@ export function useTerminalDrawer({
   const statusFor = useCallback(
     (id: number): TabStatus | null => {
       const conn = connStatuses[id];
-      if (terminalAgentIds.includes(id) && (conn === 'closed' || conn === 'reconnecting')) {
+      if (paneIds.includes(id) && (conn === 'closed' || conn === 'reconnecting')) {
         return 'disconnected';
       }
       return getActivity(id);
     },
-    [connStatuses, terminalAgentIds, getActivity],
+    [connStatuses, paneIds, getActivity],
   );
 
   return {
@@ -232,6 +244,7 @@ export function useTerminalDrawer({
     isOpen,
     widthPx,
     reveal,
+    show,
     select,
     close,
     onResizeStart,

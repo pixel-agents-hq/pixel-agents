@@ -1,6 +1,12 @@
-/** Pure rules shared by the agent card bars — which agents get a card and in
+/** Pure rules shared by the agent card bars — which cards there are and in
  *  what order, highlight tier, the ×, and drag-to-reorder (DOM-free, so they
  *  run on the Node runner). */
+
+import type { PcShell } from '../../../core/src/messages.js';
+
+/** A card in the bar, by kind: an agent's, or a PC shell's (its own card,
+ *  CONTEXT.md → PC shell). The bars and App switch on `kind`, never on the id. */
+export type Card = { kind: 'agent'; id: number } | { kind: 'pcShell'; id: number; shell: PcShell };
 
 /** Card highlight tiers: 'focused' = the agent's character is selected in the
  *  office (active background, no border); 'active' = its terminal pane is the
@@ -29,18 +35,21 @@ export function closeMode(variant: CardVariant, onlyWhenActive: boolean): CloseM
   return variant === 'active' ? 'shown' : 'hidden';
 }
 
-/** The cards, in order: main agents only (a Teammate is shown by its
- *  character beside its Lead, never as a card of its own), in the saved
- *  order with new ones appended (mergeOrder). */
+/** The cards, in order: main agents (a Teammate is shown by its character
+ *  beside its Lead, never as a card of its own) and the live PC shells, in
+ *  the saved order with new ones appended (mergeOrder). */
 export function cardOrderOf(
   saved: readonly number[],
   agents: readonly number[],
   teammateIds: ReadonlySet<number>,
-): number[] {
-  return mergeOrder(
-    saved,
-    agents.filter((id) => !teammateIds.has(id)),
-  );
+  pcShells: readonly PcShell[],
+): Card[] {
+  const shells = new Map(pcShells.map((shell) => [shell.id, shell]));
+  const live = [...agents.filter((id) => !teammateIds.has(id)), ...shells.keys()];
+  return mergeOrder(saved, live).map((id): Card => {
+    const shell = shells.get(id);
+    return shell ? { kind: 'pcShell', id, shell } : { kind: 'agent', id };
+  });
 }
 
 /** Saved order first (dropping closed agents), then any new agents appended

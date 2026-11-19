@@ -18,6 +18,7 @@ export type {
   Seat,
 } from '../../../core/src/layout/types.js';
 export { Direction, TileType } from '../../../core/src/layout/types.js';
+import type { FurnitureInteractive } from '../../../core/src/furniture/interactive.js';
 import type { Direction } from '../../../core/src/layout/types.js';
 import type { AgentWorktree } from '../../../core/src/messages.js';
 
@@ -93,6 +94,8 @@ export interface FurnitureCatalogEntry {
   canPlaceOnWalls?: boolean;
   /** Whether this is a side-oriented asset that produces a mirrored "left" variant */
   mirrorSide?: boolean;
+  /** How the furniture takes part in the office (core's furniture/interactive.ts); absent = plain furniture. */
+  interactive?: FurnitureInteractive;
 }
 
 /** A blink clock (office/engine/blink.ts drives it). */

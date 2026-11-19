@@ -14,7 +14,7 @@ import type {
 import { handleCastMessage } from '../characters/castMessages.js';
 import { castStore } from '../characters/castStore.js';
 import { startOfficeSync } from '../characters/officeSprites.js';
-import { cardOrderOf } from '../components/cardBar.js';
+import { type Card, cardOrderOf } from '../components/cardBar.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import { clearAgentContextUsed, setAgentContextUsed } from '../office/contextGauge.js';
 import { applyAgentMessageShow, applyAgentVisit } from '../office/engine/agentVisit.js';
@@ -41,11 +41,13 @@ import { setWallSprites } from '../office/wallTiles.js';
 import { handleAgentCharacterEditMessage } from '../officeMcp/agentCharacterEdits.js';
 import { handleAgentLayoutEditMessage } from '../officeMcp/agentLayoutEdits.js';
 import { handleOfficeMcpMessage } from '../officeMcp/officeMcpStore.js';
+import { handlePcShellMessage, usePcShells } from '../pcShells/pcShellStore.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
 import { transport } from '../transport/index.js';
 import { onReconnect } from '../transport/onReconnect.js';
 import { handleTutorialMessage } from '../tutorial/tutorialStore.js';
 import { handleUsageMessage } from '../usage/usageStore.js';
+import type { Pane } from './terminalPanes.js';
 import { prefersReducedMotion } from './usePresence.js';
 
 /**
@@ -212,9 +214,13 @@ interface ExtensionMessageState {
   terminalUnavailableReason: string | null;
   /** Agent ids with a live server-side PTY, in the order they opened. */
   terminalAgentIds: number[];
-  /** The agents that get a card, in the card order every client shares:
-   *  `agents` minus Teammates, the server's order first, newer agents after. */
-  cardAgents: number[];
+  /** The panes this office may attach to, in the order they opened: agents',
+   *  then PC shells' (only where this office runs terminals; a read-only one
+   *  is never told of shells). */
+  panes: Pane[];
+  /** The cards, in the card order every client shares: `agents` minus
+   *  Teammates, and the live PC shells; the server's order first, newer after. */
+  cards: Card[];
   /** Reorder the cards (a finished drag): shown at once, saved by the server,
    *  which tells every open office. */
   saveCardOrder: (order: number[]) => void;
@@ -304,9 +310,21 @@ export function useExtensionMessages(
   const unmarkTeammate = (id: number) =>
     setTeammateIds((prev) => (prev.has(id) ? new Set([...prev].filter((t) => t !== id)) : prev));
   const [cardOrder, setCardOrder] = useState<number[]>([]);
-  const cardAgents = useMemo(
-    () => cardOrderOf(cardOrder, agents, teammateIds),
-    [cardOrder, agents, teammateIds],
+  // PC shells (pcShells/pcShellStore.ts): a card each, and a pane where this
+  // office runs terminals. Not agents: never in `agents` or the office's characters.
+  const { shells: pcShells } = usePcShells();
+  const cards = useMemo(
+    () => cardOrderOf(cardOrder, agents, teammateIds, pcShells),
+    [cardOrder, agents, teammateIds, pcShells],
+  );
+  const panes = useMemo(
+    (): Pane[] => [
+      ...terminalAgentIds.map((id): Pane => ({ kind: 'agent', id })),
+      ...(terminalAvailable
+        ? pcShells.map((shell): Pane => ({ kind: 'pcShell', id: shell.id }))
+        : []),
+    ],
+    [terminalAvailable, terminalAgentIds, pcShells],
   );
   const saveCardOrder = useCallback((order: number[]) => {
     setCardOrder(order);
@@ -419,6 +437,8 @@ export function useExtensionMessages(
       if (handleOfficeMcpMessage(msg)) return;
       // The tutorial (tutorial/tutorialStore.ts): its offer, its run, a refused start.
       if (handleTutorialMessage(msg)) return;
+      // PC shells (pcShells/pcShellStore.ts): the live list (it lights their PCs), answers.
+      if (handlePcShellMessage(msg, os)) return;
       if (handleAgentLayoutEditMessage(msg)) return;
       if (handleAgentCharacterEditMessage(msg)) return;
       // The cast (characters/castMessages.ts): profiles, items, looks, external sprites.
@@ -885,6 +905,7 @@ export function useExtensionMessages(
       } else if (msg.type === 'directoriesLoaded') {
         const directories = msg.directories as Directory[];
         setDirectories(directories);
+        os.pieces.setDirectoryNames(directories.map((d) => d.name));
       } else if (msg.type === 'directorySuggestions') {
         setDirectorySuggestions((msg.paths ?? []) as string[]);
       } else if (msg.type === 'directorySaved') {
@@ -1079,7 +1100,7 @@ export function useExtensionMessages(
 
   return {
     agents,
-    cardAgents,
+    cards,
     saveCardOrder,
     selectedAgent,
     agentTools,
@@ -1139,5 +1160,6 @@ export function useExtensionMessages(
     terminalAvailable,
     terminalUnavailableReason,
     terminalAgentIds,
+    panes,
   };
 }

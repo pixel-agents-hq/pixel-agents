@@ -63,6 +63,10 @@ export const CHARACTER_Z_SORT_OFFSET = 0.5;
 export const OUTLINE_Z_SORT_OFFSET = 0.001;
 export const SELECTED_OUTLINE_ALPHA = 1.0;
 export const HOVERED_OUTLINE_ALPHA = 0.5;
+/** The selection outline's colour (getOutlineSprite): a character's, and a hovered piece's. */
+export const SELECTION_OUTLINE_COLOR = '#FFFFFF';
+/** A hovered piece of interactive furniture: its outline, fainter than a hovered character's. */
+export const FURNITURE_HOVER_OUTLINE_ALPHA = 0.3;
 /** Headless agents (adopted, no terminal to focus) render slightly translucent. */
 export const HEADLESS_CHARACTER_ALPHA = 0.5;
 export const GHOST_PREVIEW_SPRITE_ALPHA = 0.5;
@@ -272,6 +276,25 @@ export const INTRO_BUBBLE_Z_INDEX = 45;
 export const OVERLAY_LABEL_Z_INDEX = 41;
 export const OVERLAY_LABEL_SELECTED_Z_INDEX = 42;
 export const OVERLAY_BUBBLE_Z_INDEX = 43;
+/** A hovered piece's Furniture label: under the characters' labels and bubbles
+ *  (a character in front of a piece wins over it). */
+export const FURNITURE_LABEL_Z_INDEX = 40;
+/** A PC's Directory selector: over the characters' labels and bubbles (the user
+ *  just asked for it), under the Intro and modals. */
+export const PC_DIRECTORY_SELECTOR_Z_INDEX = 44;
+/** CSS px between a Furniture label's bottom and the top of the piece's sprite. */
+export const FURNITURE_LABEL_GAP_PX = 2;
+/** How long a Furniture label holding a button (a shell's ×) stays after the mouse
+ *  leaves its piece: time for the pointer to cross to it, however it travels. */
+export const FURNITURE_LABEL_HOVER_GRACE_MS = 450;
+/** How the canvas tells the pointer moved onto a piece's Furniture label (still that piece). */
+export const FURNITURE_LABEL_SELECTOR = '[data-testid="furniture-label"]';
+/** The Directory selector stands this far above its PC (a label hugs it; a menu of buttons needs air). */
+export const PC_DIRECTORY_SELECTOR_GAP_PX = 8;
+/** A PC shell's card draws its furniture in this state: a shell means the PC is on. */
+export const PC_SHELL_CARD_STATE = 'on';
+/** How a Furniture label names an agent that has no Nickname, character name or Directory. */
+export const UNNAMED_AGENT_LABEL = 'An agent';
 /** The greeter stands this many tiles in from the office's bottom-left corner
  *  (target tile (margin, rows-1-margin); nearest walkable tile if blocked). */
 export const GREETER_TILE_MARGIN = 3;

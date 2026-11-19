@@ -5,6 +5,8 @@
  * Recursively flattens furniture manifest trees into flat asset arrays.
  */
 
+import type { FurnitureInteractive } from '../furniture/interactive.js';
+
 // ── Manifest types ──────────────────────────────────────────
 
 export interface ManifestAsset {
@@ -50,6 +52,9 @@ export interface FurnitureManifest {
   groupType?: string;
   rotationScheme?: string;
   members?: ManifestNode[];
+  /** How the furniture takes part in the office, as written: validated by
+   *  furniture/interactive.ts withInteractive where the manifest is read. */
+  interactive?: unknown;
 }
 
 export interface InheritedProps {
@@ -86,6 +91,8 @@ export interface FurnitureAsset {
   rotationScheme?: string;
   animationGroup?: string;
   frame?: number;
+  /** The furniture's validated `interactive` block (furniture/interactive.ts). */
+  interactive?: FurnitureInteractive;
 }
 
 /**
