@@ -8,13 +8,12 @@
  */
 
 import type { AgentStateStore } from '../agentStateStore.js';
-import { getCharacterProfiles } from '../characterProfilesStore.js';
 import { SELF_CLOSE_FALLBACK_MS } from '../constants.js';
-import { getPaletteCount } from '../paletteAssigner.js';
 import type { AgentTerminals } from '../terminal/agentTerminals.js';
 import type { AgentTurnStatus } from '../types.js';
 import { closeAgentAsking } from '../worktreeLeave.js';
 import { characterOf } from './agentsView.js';
+import { paletteOf } from './charactersView.js';
 import { type OfficeFacts, officeSnapshot } from './officeFacts.js';
 import type {
   AgentLaunch,
@@ -24,27 +23,6 @@ import type {
   OfficeCloseOutcome,
 } from './officeOperations.js';
 import { noAgentReason } from './officeOperations.js';
-
-/** The palette a launch's `character` names: a roster label (exactly, else
- *  ignoring case) or a palette index. */
-function paletteOf(
-  character: string | number,
-): { ok: true; palette: number } | { ok: false; reason: string } {
-  const profiles = getCharacterProfiles();
-  const count = getPaletteCount();
-  const labels = profiles.map((p, i) => `${i} ${p.name ?? '(unnamed)'}`).join(', ');
-  if (typeof character === 'number') {
-    if (Number.isInteger(character) && character >= 0 && character < count) {
-      return { ok: true, palette: character };
-    }
-    return { ok: false, reason: `There is no character ${character}: the roster is ${labels}.` };
-  }
-  const wanted = character.trim();
-  let index = profiles.findIndex((p) => p.name === wanted);
-  if (index < 0) index = profiles.findIndex((p) => p.name?.toLowerCase() === wanted.toLowerCase());
-  if (index >= 0) return { ok: true, palette: index };
-  return { ok: false, reason: `There is no character called ${wanted}: the roster is ${labels}.` };
-}
 
 export function createLaunching(
   facts: OfficeFacts,

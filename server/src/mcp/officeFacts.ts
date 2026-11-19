@@ -37,11 +37,16 @@ export interface OfficeFacts {
   assets(): AssetCounts;
   /** This host's Directories (name → path). */
   directories(): ReadonlyArray<{ name: string; path: string }>;
+  /** The user's own Directories (config.json), with their default characters (palette indices). */
+  userDirectories(): ReadonlyArray<{ name: string; path: string; characters: readonly number[] }>;
   /** The seats the office saved (agent id → seat id). */
   seats(): Record<string, { seatId?: string }>;
   /** Directory name → the Area labels it is mapped to (the office's areaMappings). */
   readAreaMappings(): AreaMappings;
   writeAreaMappings(mappings: AreaMappings): void;
+  /** The Directories' default characters or the roster's recency changed (an agent's
+   *  Character edit): re-send them to every office, as a Characters-view save does. */
+  characterRefsChanged(): void;
 }
 
 /** The office at one moment: what one operation (one tool call) works on. */

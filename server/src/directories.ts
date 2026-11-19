@@ -160,14 +160,11 @@ export function listDirectoryLocations(
   return [...byPath.values()];
 }
 
-/**
- * Add or edit a user-defined Directory. `previousPath` identifies the entry
- * being edited; without it this is an add. Nothing is persisted when the path
- * fails validation.
- */
-export function saveUserDirectory(input: {
+/** A user-defined Directory as it is asked for: by the Directory modal, or an agent. */
+export interface UserDirectoryInput {
   name: string;
   path: string;
+  /** The path of the entry being edited; without it this is an add. */
   previousPath?: string;
   /** Default characters, as sent (validated here). */
   characters?: unknown;
@@ -175,7 +172,20 @@ export function saveUserDirectory(input: {
   /** Worktree settings, as sent (validated here). */
   worktreeBase?: unknown;
   worktreeBranchPrefix?: unknown;
-}): DirectoryStoreResult {
+}
+
+/**
+ * `directories` with the user-defined Directory `input` asks for added or
+ * edited, and that entry as it would be stored. Nothing is written: the path
+ * must exist, the branch prefix be one git takes, an empty name becomes the
+ * folder's.
+ */
+export function withUserDirectory(
+  directories: readonly UserDirectory[],
+  input: UserDirectoryInput,
+):
+  | { ok: true; directories: UserDirectory[]; directory: UserDirectory }
+  | { ok: false; reason: string } {
   const validation = validateDirectoryPath(input.path);
   if (!validation.ok) {
     return validation;
@@ -190,14 +200,13 @@ export function saveUserDirectory(input: {
   const resolvedPath = validation.path;
   const name = input.name.trim() || directoryNameFor(resolvedPath);
 
-  const cfg = readConfig();
   const newKey = normalizeDirectoryPath(resolvedPath);
   const previousKey =
     input.previousPath === undefined ? null : normalizeDirectoryPath(input.previousPath);
 
   // Drop the entry being edited AND any entry already at the target path, so an
   // edit that re-points onto an existing Directory merges rather than duplicates.
-  cfg.directories = cfg.directories.filter((entry) => {
+  const rest = directories.filter((entry) => {
     const key = normalizeDirectoryPath(entry.path);
     return key !== newKey && key !== previousKey;
   });
@@ -205,12 +214,33 @@ export function saveUserDirectory(input: {
     withDirectoryCharacters({ name, path: resolvedPath }, input),
     input,
   );
-  cfg.directories.push(stored);
+  return { ok: true, directories: [...rest, stored], directory: stored };
+}
 
+/**
+ * Add or edit a user-defined Directory. `previousPath` identifies the entry
+ * being edited; without it this is an add. Nothing is persisted when the path
+ * fails validation.
+ */
+export function saveUserDirectory(input: UserDirectoryInput): DirectoryStoreResult {
+  const cfg = readConfig();
+  const next = withUserDirectory(cfg.directories, input);
+  if (!next.ok) {
+    return next;
+  }
+  cfg.directories = next.directories;
   if (!writeConfig(cfg)) {
     return { ok: false, reason: DIRECTORY_WRITE_FAILED_REASON };
   }
-  return { ok: true, directory: stored };
+  return { ok: true, directory: next.directory };
+}
+
+/** Replace the user-defined Directories in ONE config write (an agent's batch
+ *  of Directory edits). Returns whether the write succeeded. */
+export function writeUserDirectories(directories: readonly UserDirectory[]): boolean {
+  const cfg = readConfig();
+  cfg.directories = [...directories];
+  return writeConfig(cfg);
 }
 
 /**
@@ -225,6 +255,40 @@ export function removeUserDirectory(rawPath: string): DirectoryRemoveResult {
     return { ok: false, reason: DIRECTORY_WRITE_FAILED_REASON };
   }
   return { ok: true };
+}
+
+/** The user-defined Directories (config.json) with their default characters (palette
+ *  indices, highest priority first; none = empty): what OfficeFacts.userDirectories gives. */
+export function userDirectoryDefaults(): Array<{
+  name: string;
+  path: string;
+  characters: readonly number[];
+}> {
+  return readConfig().directories.map((d) => ({
+    name: d.name,
+    path: d.path,
+    characters: d.characters ?? [],
+  }));
+}
+
+/**
+ * Set user-defined Directories' default characters (palette indices), each
+ * keeping its pick order and every other setting, in ONE config write. A path
+ * that names no user-defined Directory is skipped (a host Directory has no
+ * defaults of its own). Returns whether the write succeeded.
+ */
+export function setDirectoryCharacters(
+  writes: ReadonlyArray<{ path: string; characters: readonly number[] }>,
+): boolean {
+  const cfg = readConfig();
+  const wanted = new Map(writes.map((w) => [normalizeDirectoryPath(w.path), w.characters]));
+  cfg.directories = cfg.directories.map((entry) => {
+    const characters = wanted.get(normalizeDirectoryPath(entry.path));
+    return characters
+      ? withDirectoryCharacters(entry, { characters, characterOrder: entry.characterOrder })
+      : entry;
+  });
+  return writeConfig(cfg);
 }
 
 /**

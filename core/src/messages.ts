@@ -30,6 +30,7 @@ export type ServerMessage =
   | AgentMessageShow
   | LayoutLoaded
   | AgentLayoutEditStatus
+  | AgentCharacterEditStatus
   | FurnitureAssetsLoaded
   | CharacterProfilesLoaded
   | RecentCharactersLoaded
@@ -76,6 +77,8 @@ export type ClientMessage =
   | LayoutEditing
   | UndoAgentLayoutEdit
   | SaveCharacterProfiles
+  | CharactersEditing
+  | UndoAgentCharacterEdit
   | SetSoundEnabled
   | SetLastSeenVersion
   | SetAlwaysShowLabels
@@ -296,6 +299,15 @@ export interface AgentLayoutEditStatus {
   type: 'agentLayoutEditStatus';
   agentId?: number;
   agentName?: string;
+  refused?: string;
+}
+
+export interface AgentCharacterEditStatus {
+  type: 'agentCharacterEditStatus';
+  agentId?: number;
+  agentName?: string;
+  summary?: string;
+  landed?: boolean;
   refused?: string;
 }
 
@@ -747,6 +759,15 @@ export interface SaveCharacterProfiles {
   profiles: CharacterProfile[];
   saveId: string;
   items?: WardrobeItem[];
+}
+
+export interface CharactersEditing {
+  type: 'charactersEditing';
+  dirty: boolean;
+}
+
+export interface UndoAgentCharacterEdit {
+  type: 'undoAgentCharacterEdit';
 }
 
 export interface SetSoundEnabled {

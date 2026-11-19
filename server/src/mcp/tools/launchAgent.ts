@@ -11,8 +11,8 @@ export const launchAgent = defineTool({
     'Areas and Worktree rules apply), or resume a past conversation as the conversation list does. ' +
     'Give only the options the user asked for. `directory` is a Directory name (list_agents and ' +
     'get_layout show them) or an absolute folder path. `first_message` is sent as its first prompt, so ' +
-    'it starts working at once. `character` is a roster label or palette index (list_agents shows ' +
-    'both); `seat` a seat id from get_layout, taken when free (else the office picks one, and `notes` ' +
+    'it starts working at once. `character` is a character id, exact name or palette index (list_characters ' +
+    'shows them); `seat` a seat id from get_layout, taken when free (else the office picks one, and `notes` ' +
     `says so). \`nickname\` (at most ${NICKNAME_MAX_LENGTH} characters) labels it "Directory · nickname · ` +
     'worktree" on its card and over its character; it is only a label. `worktree` launches it into a new ' +
     'Worktree of the Directory (`name`, and `from`: the branch to start from, `origin/<name>` for ' +
@@ -27,7 +27,7 @@ export const launchAgent = defineTool({
     character: z
       .union([z.string().min(1), z.number().int()])
       .optional()
-      .describe('A roster label or palette index.'),
+      .describe('A character id, exact name or palette index.'),
     seat: z.string().min(1).optional().describe('A seat id (get_layout).'),
     nickname: z.string().optional().describe('A short label shown after its Directory.'),
     worktree: z

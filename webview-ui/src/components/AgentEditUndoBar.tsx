@@ -8,8 +8,9 @@ import { Button } from './ui/Button.js';
  * same operation as undo_layout_edit. Shows why when the server refused it.
  */
 export function AgentEditUndoBar({ edits }: { edits: AgentLayoutEditControls }) {
-  const label = undoButtonLabel(edits);
-  if (!label && !edits.refused) return null;
+  const { entry } = edits;
+  const label = undoButtonLabel(entry);
+  if (!label && !entry.refused) return null;
   return (
     <div className="absolute top-8 left-1/2 -translate-x-1/2 z-10 flex gap-4 items-center pixel-panel p-4 max-w-[90vw]">
       {label && (
@@ -23,7 +24,7 @@ export function AgentEditUndoBar({ edits }: { edits: AgentLayoutEditControls }) 
           {label}
         </Button>
       )}
-      {edits.refused && <span className="text-sm text-reset-text">{edits.refused}</span>}
+      {entry.refused && <span className="text-sm text-reset-text">{entry.refused}</span>}
     </div>
   );
 }

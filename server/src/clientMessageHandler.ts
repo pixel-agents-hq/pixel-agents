@@ -149,7 +149,7 @@ const conversationProvider = hookProviders.find(
  * ptyManager means VS Code embedded mode, whose adapter contributes its
  * workspace folders instead and must not have this server's cwd added to them.
  */
-function hostDirectoriesFor(ctx: ClientMessageContext): HostDirectoryEntry[] {
+function hostDirectoriesFor(ctx: Pick<ClientMessageContext, 'ptyManager'>): HostDirectoryEntry[] {
   return ctx.ptyManager ? [hostDirectory()] : [];
 }
 
@@ -160,7 +160,9 @@ function hostDirectoriesFor(ctx: ClientMessageContext): HostDirectoryEntry[] {
  * in the start directory keeps its name (and its Area mapping) either way, and
  * a hidden start directory becomes something the suggestions can offer.
  */
-function shownHostDirectoriesFor(ctx: ClientMessageContext): HostDirectoryEntry[] {
+function shownHostDirectoriesFor(
+  ctx: Pick<ClientMessageContext, 'store' | 'ptyManager'>,
+): HostDirectoryEntry[] {
   return ctx.store.getAdapter()?.getSetting(KEY_SHOW_HOST_DIRECTORIES, false)
     ? hostDirectoriesFor(ctx)
     : [];
@@ -204,11 +206,22 @@ function launchDepsFor(
 }
 
 /** The drawer's Directories as this client is sent them (shown host entries + the user's). */
-function directoriesMessage(ctx: ClientMessageContext) {
+function directoriesMessage(ctx: Pick<ClientMessageContext, 'store' | 'ptyManager'>) {
   return {
     type: 'directoriesLoaded',
     directories: listDirectories(shownHostDirectoriesFor(ctx)),
   } as const;
+}
+
+/**
+ * What standalone re-sends to every office when what names characters by index
+ * moved (the Directories' default characters, the roster's recency): after a
+ * Characters-view save or an agent's Character edit.
+ */
+export function sharedCharacterRefsMessages(
+  ctx: Pick<ClientMessageContext, 'store' | 'ptyManager'>,
+) {
+  return [directoriesMessage(ctx), recentCharactersMessage()] as const;
 }
 
 /**
@@ -358,6 +371,8 @@ export function handleClientMessage(
 
     case 'layoutEditing':
     case 'undoAgentLayoutEdit':
+    case 'charactersEditing':
+    case 'undoAgentCharacterEdit':
     case 'officeMcpConsentResponse':
     case 'setOfficeMcpEnabled':
     case 'setOfficeMcpReadOnly':
@@ -373,10 +388,11 @@ export function handleClientMessage(
         reply: send,
         store,
         sharedRefsChanged: () => {
-          store.broadcast(directoriesMessage(ctx));
-          store.broadcast(recentCharactersMessage());
+          for (const m of sharedCharacterRefsMessages(ctx)) store.broadcast(m);
         },
       });
+      // A Save over an agent's Character edit takes away what its undo would restore.
+      ctx.officeMcp?.charactersChanged();
       break;
 
     case 'saveAgentSeats':
@@ -579,6 +595,8 @@ export function handleClientMessage(
         suggestions: () =>
           collectDirectorySuggestions(claudeProvider, shownHostDirectoriesFor(ctx)),
       });
+      // A Directory's default characters an agent's Character edit wrote, changed by hand.
+      if (msg.type !== 'requestDirectorySuggestions') ctx.officeMcp?.charactersChanged();
       break;
 
     default:

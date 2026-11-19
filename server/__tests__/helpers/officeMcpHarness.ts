@@ -34,8 +34,12 @@ import {
   loadPetSprites,
   loadWallTiles,
 } from '../../src/assetLoader.js';
+import { watchCharacterProfiles } from '../../src/characterProfilesPersistence.js';
+import { sharedCharacterRefsMessages } from '../../src/clientMessageHandler.js';
 import { readConfig, writeConfig } from '../../src/configPersistence.js';
+import { listDirectoryLocations, userDirectoryDefaults } from '../../src/directories.js';
 import { FileStateAdapter } from '../../src/fileStateAdapter.js';
+import type { JsonFileWatcher } from '../../src/jsonFileWatcher.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../../src/layoutPersistence.js';
 import { composeOfficeMcp, type OfficeMcpFeature } from '../../src/mcp/composeOfficeMcp.js';
 import { screenTokenGuard } from '../../src/mcp/messaging.js';
@@ -103,6 +107,8 @@ export interface ToolReply {
   isError: boolean;
   value: Json | null;
   text: string;
+  /** The images after the JSON (MCP image content), in order. */
+  images: Array<{ data: string; mimeType: string }>;
 }
 
 export interface AgentSide {
@@ -144,15 +150,24 @@ function agentSide(ctx: () => AgentSideContext): AgentSide {
     },
     async callTool(client, name, args = {}) {
       const result = await client.callTool({ name, arguments: args });
-      const text = (result.content as Array<{ text: string }>)[0]?.text ?? '';
-      if (result.isError) return { isError: true, value: null, text };
-      return { isError: false, value: JSON.parse(text) as Json, text };
+      const content = result.content as Array<{
+        type: string;
+        text?: string;
+        data?: string;
+        mimeType?: string;
+      }>;
+      const text = content[0]?.text ?? '';
+      const images = content
+        .filter((c) => c.type === 'image')
+        .map((c) => ({ data: c.data!, mimeType: c.mimeType! }));
+      if (result.isError) return { isError: true, value: null, text, images };
+      return { isError: false, value: JSON.parse(text) as Json, text, images };
     },
     async callToolCaught(client, name, args = {}) {
       try {
         return await side.callTool(client, name, args);
       } catch (err) {
-        return { isError: true, value: null, text: String(err) };
+        return { isError: true, value: null, text: String(err), images: [] };
       }
     },
     async callJson(client, name, args = {}) {
@@ -328,6 +343,7 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
   let officeMcp: OfficeMcpFeature;
   let server: PixelAgentsServer;
   let unhold: (() => void) | undefined;
+  let profilesWatcher: JsonFileWatcher;
   let port: number;
   let token: string;
   let socket: WebSocket;
@@ -506,13 +522,18 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
         writeLayout: writeLayoutToFile,
         catalog,
         assets: counts ?? (() => ({ floorPatterns: 0, wallSets: 0, carpets: 0, pets: [] })),
-        directories: () => directories,
+        // As cli.ts: the host's folder and the user's own (config.json).
+        directories: () => listDirectoryLocations(directories),
+        userDirectories: userDirectoryDefaults,
         seats: () => adapter.loadSeats(),
         readAreaMappings: () => readConfig().standalone.areaMappings,
         writeAreaMappings: (mappings) => {
           const cfg = readConfig();
           cfg.standalone.areaMappings = mappings;
           writeConfig(cfg);
+        },
+        characterRefsChanged: () => {
+          for (const m of sharedCharacterRefsMessages({ store, ptyManager })) store.broadcast(m);
         },
       },
       terminals,
@@ -538,6 +559,11 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
         : {}),
       ...(options.tools ? { tools: options.tools } : {}),
     });
+    // characters.json changed on disk: followed as cli.ts follows it.
+    profilesWatcher = watchCharacterProfiles((message) => {
+      store.broadcast(message);
+      officeMcp.charactersChanged();
+    }, store);
     server = new PixelAgentsServer();
     const config = await server.start({
       store,
@@ -565,6 +591,7 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
     for (const client of clients.splice(0)) await client.close().catch(() => {});
     for (const ws of sockets.splice(0)) ws.close();
     await ptyManager.shutdown();
+    profilesWatcher.dispose();
     officeMcp.dispose();
     unhold?.();
     runtime.dispose();
@@ -655,6 +682,7 @@ export function useVscodeOffice(options: VscodeOfficeOptions): VscodeOffice {
       defaultLayout: () => null,
       assets: () => null,
       directories: () => [{ name: 'proj', path: workspace }],
+      characterRefsChanged: () => {},
     });
     server = new PixelAgentsServer();
     server.onHookEvent((providerId, event) => runtime.handleHookEvent(providerId, event));

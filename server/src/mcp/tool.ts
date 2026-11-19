@@ -25,12 +25,20 @@ export interface ToolContext<Uses extends Capability = Capability> {
   target(agentId: number | undefined): number;
 }
 
-/** A tool's outcome: a value for the agent, or a refusal saying what to do next. */
-export type ToolResult = { ok: true; value: unknown } | { ok: false; reason: string };
+/** A picture for the agent: sent as MCP image content after the JSON, in order.
+ *  What each one shows is said in the JSON (the image itself carries no label). */
+export interface ToolImage {
+  data: Buffer;
+  mimeType: 'image/png';
+}
 
-/** A successful result; `value` is sent to the agent as JSON. */
-export function ok(value: unknown): ToolResult {
-  return { ok: true, value };
+/** A tool's outcome: a value for the agent (and pictures), or a refusal saying what to do next. */
+export type ToolResult =
+  { ok: true; value: unknown; images?: readonly ToolImage[] } | { ok: false; reason: string };
+
+/** A successful result; `value` is sent to the agent as JSON, then `images`. */
+export function ok(value: unknown, images?: readonly ToolImage[]): ToolResult {
+  return images?.length ? { ok: true, value, images } : { ok: true, value };
 }
 
 /** A refusal. Say what went wrong AND what the agent can do about it. */

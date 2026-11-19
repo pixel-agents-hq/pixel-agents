@@ -216,6 +216,7 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
     expect(asked.map((m) => m.type)).toEqual([
       'officeMcpStatus',
       'agentLayoutEditStatus',
+      'agentCharacterEditStatus',
       'officeMcpConsentRequest',
     ]);
     expect(asked[0]).toMatchObject({ consent: 'unanswered', readOnly: false });
@@ -368,6 +369,9 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
     // VS Code can't do them: they aren't offered, so an agent never tries.
     const offered = (await a.client.listTools()).tools.map((t) => t.name);
     expect(offered).toContain('send_message');
+    // The characters need no terminal: both surfaces offer them.
+    expect(offered).toContain('list_wardrobe');
+    expect(offered).toContain('list_characters');
     expect(offered).not.toContain('launch_agent');
     expect(offered).not.toContain('close_agent');
     const launched = await call(a.client, 'launch_agent', { directory: 'proj' });
@@ -411,6 +415,7 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
       defaultLayout: () => null,
       assets: () => null,
       directories: () => [],
+      characterRefsChanged: () => {},
     });
     return { store, mcp };
   }
@@ -429,6 +434,7 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
       expect(sent.map((m) => m.type)).toEqual([
         'officeMcpStatus',
         'agentLayoutEditStatus',
+        'agentCharacterEditStatus',
         'officeMcpConsentRequest',
       ]);
     } finally {

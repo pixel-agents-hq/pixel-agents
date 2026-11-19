@@ -70,7 +70,7 @@ export function remapAgentLooks(store: AgentStateStore, remap: PaletteRemap): Ag
 }
 
 /** An index list renumbered, deleted characters left out (and no index twice). */
-function remapList(list: readonly number[], remap: PaletteRemap): number[] {
+export function remapList(list: readonly number[], remap: PaletteRemap): number[] {
   const out: number[] = [];
   for (const i of list) {
     const next = remap(i);

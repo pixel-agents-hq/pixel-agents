@@ -118,6 +118,10 @@ _Avoid_: `+ New` (that's the roster's add-a-character slot)
 One wearable part in the Characters view's wardrobe (a hairstyle, a top, a hat, an accessory). Built-in items ship with the app; custom items are ones the user saved from the pixel editor ("Save as new item"), worn by any character and drawn in the colours of the built-in item they started from. A piece sheet is one item's frames alone, uncoloured, as a 128×96 PNG (Export / Import PNG).
 _Avoid_: part (the code's word, fine there), asset, sprite
 
+**Wardrobe**:
+Everything a character is made of: the items for each slot (built-in and custom), the bodies, eye shapes and eye colouring, and the colours each part can take — named colours, a part's own colourways, or any colour fitted to its shading. Characters are dressed from it in the Characters view, and agents read it through the Pixel Office MCP to make or restyle one.
+_Avoid_: closet, inventory, asset list
+
 ## First Run
 
 **Intro**:

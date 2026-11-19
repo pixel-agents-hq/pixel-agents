@@ -10,7 +10,9 @@ import { useSyncExternalStore } from 'react';
 import { CharacterRenderer } from '../../../core/src/characters/renderer.js';
 import { type ItemArt, type Wardrobe, withItems } from '../../../core/src/characters/wardrobe.js';
 import type { WardrobeItem } from '../../../core/src/wardrobeItems.js';
+import { createEditingReporter } from '../officeMcp/editingReporter.js';
 import { transport } from '../transport/index.js';
+import { onReconnect } from '../transport/onReconnect.js';
 import { type CastState, CastStore } from './cast.js';
 import { decodeItemPng, loadWardrobe } from './loadWardrobe.js';
 
@@ -79,6 +81,12 @@ castStore.subscribe(refreshRenderer);
 transport.onStateChange((state) => {
   if (state === 'connected') castStore.resendInFlight();
 });
+
+// The Characters view's editing lock: while a draft is unsaved, agents' Character edits
+// (edit_characters) wait, so neither side silently overwrites the other.
+const charactersEditing = createEditingReporter('charactersEditing', (m) => transport.send(m));
+castStore.subscribe(() => charactersEditing.report(castStore.getState().dirty));
+onReconnect(transport, () => charactersEditing.reconnected());
 
 /** The cast, re-rendering on every change. */
 export function useCast(): CastState {

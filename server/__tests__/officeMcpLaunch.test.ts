@@ -185,6 +185,9 @@ describe('launch_agent (composed server, mock-claude in a PTY)', () => {
     // By palette index too.
     const byIndex = await launched(client, { directory: 'proj', character: 1 });
     expect(byIndex.character).toMatchObject({ palette: 1 });
+    // And by its permanent id (list_characters shows it).
+    const byId = await launched(client, { directory: 'proj', character: 'char-3' });
+    expect(byId.character).toMatchObject({ palette: 3 });
   });
 
   it('refuses what it cannot do, saying why, and launches nothing', async () => {

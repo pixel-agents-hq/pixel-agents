@@ -859,6 +859,13 @@
   gap: 8px;
   margin-left: auto;
 }
+/* an agent's Character edit's undo, at the header's left */
+.chv-desk .chv-agent-undo {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 /* the stage column sizes the row; the roster and the wardrobe scroll inside that height */
 .chv-desk .chv-roster,
 .chv-desk .chv-wardrobe {

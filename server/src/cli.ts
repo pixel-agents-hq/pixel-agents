@@ -19,7 +19,11 @@ import {
   loadExternalCharacters,
 } from './assetReload.js';
 import { getCharacterProfiles, watchCharacterProfiles } from './characterProfilesPersistence.js';
-import type { AssetCache, ReloadAssetsSideEffect } from './clientMessageHandler.js';
+import {
+  type AssetCache,
+  type ReloadAssetsSideEffect,
+  sharedCharacterRefsMessages,
+} from './clientMessageHandler.js';
 import {
   getHooksConsent,
   getHooksEnabled,
@@ -36,11 +40,11 @@ import {
   WORKTREE_SHUTDOWN_WAIT_MS,
   WORKTREE_SWEEP_DELAY_MS,
 } from './constants.js';
-import { listDirectoryLocations } from './directories.js';
+import { listDirectoryLocations, userDirectoryDefaults } from './directories.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
-import { composeOfficeMcp } from './mcp/composeOfficeMcp.js';
+import { composeOfficeMcp, type OfficeMcpFeature } from './mcp/composeOfficeMcp.js';
 import { screenTokenGuard } from './mcp/messaging.js';
 import {
   claudeProvider,
@@ -320,10 +324,13 @@ async function main(): Promise<void> {
   holdWorktreesOf(store);
 
   // characters.json is shared with the VS Code surface (and hand-editable): follow it.
-  const characterProfilesWatcher = watchCharacterProfiles(
-    (message) => store.broadcast(message),
-    store,
-  );
+  // The office's Pixel Office MCP, once composed below.
+  let officeMcpFeature: OfficeMcpFeature | undefined;
+  const characterProfilesWatcher = watchCharacterProfiles((message) => {
+    store.broadcast(message);
+    // The roster changed on disk: an agent's Character edit may no longer be undoable.
+    officeMcpFeature?.charactersChanged();
+  }, store);
 
   // ── Create server ──
   const server = new PixelAgentsServer();
@@ -447,12 +454,16 @@ async function main(): Promise<void> {
           pets: assetCache.pets?.manifests ?? [],
         }),
         directories: () => listDirectoryLocations([hostDirectory()]),
+        userDirectories: userDirectoryDefaults,
         seats: () => adapter.loadSeats(),
         readAreaMappings: () => readConfig().standalone.areaMappings,
         writeAreaMappings: (mappings) => {
           const cfg = readConfig();
           cfg.standalone.areaMappings = mappings;
           writeConfig(cfg);
+        },
+        characterRefsChanged: () => {
+          for (const m of sharedCharacterRefsMessages({ store, ptyManager })) store.broadcast(m);
         },
       },
       terminals,
@@ -473,6 +484,7 @@ async function main(): Promise<void> {
       // close_agent: the card's ×, as this host ends an agent.
       close: (id) => closeStandaloneAgent(ptyManager, runtime, id),
     });
+    officeMcpFeature = officeMcp;
 
     const config = await server.start({
       store,

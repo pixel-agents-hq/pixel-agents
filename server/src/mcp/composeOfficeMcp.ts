@@ -12,14 +12,29 @@ import { randomUUID } from 'crypto';
 import type { FastifyInstance } from 'fastify';
 
 import type { ServerMessage } from '../../../core/src/messages.js';
+import { characterRenderer } from '../characterArt.js';
+import { commitCharacterProfiles } from '../characterProfilesPersistence.js';
+import { getCharacterProfiles, getWardrobeItems } from '../characterProfilesStore.js';
+import { readConfig } from '../configPersistence.js';
+import {
+  normalizeDirectoryPath,
+  setDirectoryCharacters,
+  writeUserDirectories,
+} from '../directories.js';
 import type { AgentTerminals } from '../terminal/agentTerminals.js';
+import { invalidateAttributionDirectories } from '../worktreeAttribution.js';
+import { isRepo } from '../worktreeGit.js';
 import { agentLabel } from './agentLabel.js';
 import { createAgentsView } from './agentsView.js';
+import type { EditDirectory } from './characterEditOps.js';
+import { createCharacterEdits } from './characterEdits.js';
+import { createCharacterOps } from './charactersView.js';
+import { createDirectoryOps } from './directoryOps.js';
 import { createLayoutEdits } from './layoutEdits.js';
 import { createLayoutOps } from './layoutOps.js';
 import { createClosing, createLaunching } from './lifecycle.js';
 import { createMessaging, type DeliveryGuard } from './messaging.js';
-import type { OfficeFacts } from './officeFacts.js';
+import { type OfficeFacts, officeSnapshot } from './officeFacts.js';
 import { type AgentMcpAccess, OfficeMcp } from './officeMcp.js';
 import { handleOfficeMcpMessage } from './officeMcpMessages.js';
 import type { AgentLaunch, AgentLaunchOutcome, OfficeOperations } from './officeOperations.js';
@@ -69,7 +84,7 @@ export interface OfficeMcpFeature extends AgentMcpAccess {
    */
   handshake(send: (message: ServerMessage) => void, afterHooksAsks?: Promise<unknown>): void;
   /** Answer one of an office's MCP messages (consent, its switches, the editing
-   *  lock, the editor's undo); false when it isn't one. `client` is the office
+   *  locks, the layout editor's and the Characters view's undo); false when it isn't one. `client` is the office
    *  sending it; replies meant for it alone go to `reply`. */
   handleMessage(
     message: Record<string, unknown>,
@@ -78,7 +93,11 @@ export interface OfficeMcpFeature extends AgentMcpAccess {
   ): boolean;
   /** An office saved the layout or the Area mappings: what an undo would revert may have changed. */
   layoutSaved(): void;
-  /** An office went: its editing-lock report goes with it. */
+  /** The roster or a Directory was saved by other means (a Characters-view Save, a Directory
+   *  saved or removed, characters.json changed on disk): what a Character undo would revert
+   *  may have changed. */
+  charactersChanged(): void;
+  /** An office went: its editing-lock reports (layout, characters) go with it. */
   clientGone(client: object): void;
   /** Revoke every token, stop following the store (shutdown). */
   dispose(): void;
@@ -87,6 +106,11 @@ export interface OfficeMcpFeature extends AgentMcpAccess {
 export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
   const { facts, terminals } = surface;
   const { store } = facts;
+
+  const agentName = (id: number): string => {
+    const agent = store.get(id);
+    return (agent && agentLabel(agent)) ?? `agent ${id}`;
+  };
 
   const layoutEdits = createLayoutEdits({
     readLayout: facts.layout,
@@ -101,11 +125,50 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
     writeAreaMappings: facts.writeAreaMappings,
     // The store's broadcast reaches every office of the surface.
     broadcast: (message) => store.broadcast(message),
-    agentName: (id) => {
-      const agent = store.get(id);
-      return (agent && agentLabel(agent)) ?? `agent ${id}`;
-    },
+    agentName,
     newId: () => randomUUID(),
+  });
+
+  const characterEdits = createCharacterEdits({
+    profiles: getCharacterProfiles,
+    renderer: () => characterRenderer(getWardrobeItems()),
+    directories: () => editDirectories(facts.userDirectories(), facts.directories()),
+    // The Characters view's Save path, without a saveId: every office takes it as a foreign list.
+    commitProfiles: (profiles) =>
+      commitCharacterProfiles(profiles, undefined, {
+        broadcast: (message) => store.broadcast(message),
+        store,
+        // The save renumbered the Directories or the recency: re-send them, as a hand save
+        // does (the batch's own Directory writes re-send them again, harmlessly).
+        sharedRefsChanged: facts.characterRefsChanged,
+      }) !== null,
+    writeDirectoryCharacters: setDirectoryCharacters,
+    characterRefsChanged: facts.characterRefsChanged,
+    agentName,
+    broadcast: (message) => store.broadcast(message),
+  });
+
+  const directories = createDirectoryOps({
+    userDirectories: () => readConfig().directories,
+    officeDirectories: facts.directories,
+    writeUserDirectories,
+    profiles: getCharacterProfiles,
+    areas: () => (officeSnapshot(facts).layout?.areas ?? []).map((a) => a.label),
+    readAreaMappings: facts.readAreaMappings,
+    writeAreaMappings: facts.writeAreaMappings,
+    isRepo,
+    directoriesChanged: () => {
+      invalidateAttributionDirectories();
+      // Re-sent to every office, as a Directory saved in the modal is.
+      facts.characterRefsChanged();
+      // A Directory's defaults an agent's Character edit wrote may have moved.
+      characterEdits.charactersChanged();
+    },
+    mappingsChanged: (mappings) => {
+      store.broadcast({ type: 'areaMappingsLoaded', mappings });
+      // The mappings an agent's layout edit wrote may have moved.
+      layoutEdits.layoutSaved();
+    },
   });
 
   const visits = createVisitOps(facts);
@@ -116,6 +179,8 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
     layout: createLayoutOps(facts, layoutEdits),
     messaging: createMessaging(store, terminals, surface.deliveryGuard),
     visits,
+    characters: createCharacterOps(facts, characterEdits),
+    directories,
     // launch_agent's launch gives the agent this MCP, like any other launch.
     ...(launch ? { launch: createLaunching(facts, (request) => launch(request, officeMcp)) } : {}),
     ...(closing ? { close: closing } : {}),
@@ -147,6 +212,7 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
         if (!officeMcp.offered()) return;
         send(officeMcp.statusMessage());
         send(layoutEdits.statusMessage());
+        send(characterEdits.statusMessage());
         const ask = () => {
           const request = officeMcp.consentRequest();
           if (request) send(request);
@@ -162,13 +228,18 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
       handleOfficeMcpMessage(message, {
         officeMcp,
         layoutEdits,
+        characterEdits,
         client,
         broadcast: (m) => store.broadcast({ ...m }),
         reply,
       }),
 
     layoutSaved: () => layoutEdits.layoutSaved(),
-    clientGone: (client) => layoutEdits.clientGone(client),
+    charactersChanged: () => characterEdits.charactersChanged(),
+    clientGone: (client) => {
+      layoutEdits.clientGone(client);
+      characterEdits.clientGone(client);
+    },
 
     dispose() {
       // Every agent's token dies with the server (and its config files go).
@@ -177,4 +248,22 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
       closing?.dispose();
     },
   };
+}
+
+/**
+ * The Directories a Character edit may name: every Directory of the office, the
+ * user's own (config.json) with their default characters, the host's with none
+ * (a host Directory has no defaults of its own; a user entry at its path wins).
+ */
+function editDirectories(
+  users: ReturnType<OfficeFacts['userDirectories']>,
+  office: ReturnType<OfficeFacts['directories']>,
+): EditDirectory[] {
+  const userPaths = new Set(users.map((d) => normalizeDirectoryPath(d.path)));
+  return [
+    ...users.map((d) => ({ name: d.name, path: d.path, characters: d.characters })),
+    ...office
+      .filter((d) => !userPaths.has(normalizeDirectoryPath(d.path)))
+      .map((d) => ({ name: d.name, path: d.path, characters: null })),
+  ];
 }

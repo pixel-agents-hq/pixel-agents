@@ -3,7 +3,7 @@
  * the MCP module (route, tokens, tool table) and the runtime, split by
  * capability (OfficeCapabilities). composeOfficeMcp.ts builds them from the
  * surface's office facts — one module per capability (agentsView, layoutOps,
- * messaging, visitsOps, lifecycle) — and tools only ever call these, never the
+ * messaging, visitsOps, charactersView, directoryOps, lifecycle) — and tools only ever call these, never the
  * store or the runtime directly.
  *
  * A later tool that needs a new operation adds it HERE (typed in office
@@ -18,6 +18,10 @@ import type { LaunchAsks } from '../terminal/launchAsks.js';
 export { MESSAGE_KEYS } from '../terminal/agentTerminals.js';
 export type { MessageKey };
 import type { Facing, VisitSpot } from '../../../core/src/layout/index.js';
+import type { CharacterOp } from './characterEditOps.js';
+import type { CharacterEditOutcome, CharacterUndoOutcome } from './characterEdits.js';
+import type { CharacterPreview, CharacterRef, OfficeCharacter } from './charactersView.js';
+import type { DirectoryOp } from './directoryOps.js';
 import type { LayoutOp } from './layoutEditOps.js';
 import type { LayoutEditOutcome, LayoutUndoOutcome } from './layoutEdits.js';
 
@@ -157,6 +161,73 @@ export interface VisitOps {
   spotBesideAgent(agentId: number, visitorId?: number): VisitSpot | null;
 }
 
+/** The roster and the wardrobe (list_wardrobe, list_characters, edit_characters): needs no
+ *  office open, the server draws characters itself. */
+export interface CharacterOps {
+  /** What characters are made of: parts per slot, colours per colour key, eyes, bodies, rules. */
+  listWardrobe(): Record<string, unknown>;
+  /** Every roster character, in palette order, and how many external character sprites
+   *  (char_N.png) hold the palettes after them. */
+  listCharacters(): { characters: OfficeCharacter[]; externalSprites: number };
+  /** The roster character `ref` (id, exact name or palette index) as it is now, or the bare
+   *  palette when it names none (an external sprite's palette, past the roster). */
+  characterAt(
+    ref: CharacterRef,
+  ): { id: string; name: string; palette: number } | { palette: CharacterRef };
+  /** Pictures of the named characters (each once, in the order named), at most
+   *  CHARACTER_PREVIEW_LIMIT of them; `asked` counts the distinct characters named.
+   *  Refused, with no picture, when any of them names no character or several. */
+  previews(
+    refs: readonly CharacterRef[],
+  ): { ok: true; previews: CharacterPreview[]; asked: number } | { ok: false; reason: string };
+  /** Apply `agentId`'s batch of character ops: all or none, saved through the Characters
+   *  view's Save path and shown in every office (characterEdits.ts). Refused while an
+   *  office's Characters view holds an unsaved draft. */
+  editCharacters(agentId: number, ops: readonly CharacterOp[]): CharacterEditOutcome;
+  /** Restore the roster and Directories' defaults from before the newest agent Character
+   *  edit, while the office still holds exactly what it wrote (characterEdits.ts). */
+  undoCharacterEdit(): CharacterUndoOutcome;
+}
+
+/** One Directory, as the Pixel Office MCP describes it (list_directories). */
+export interface OfficeDirectory {
+  name: string;
+  path: string;
+  /** `user`: one the user defined (editable). `host`: the folder the office runs in
+   *  (VS Code: a workspace folder), which has no settings of its own. */
+  source: 'user' | 'host';
+  isRepo: boolean;
+  /** The Areas its agents sit in (this office's Area mappings). */
+  areas: string[];
+  /** Its default characters, highest priority first. */
+  characters: Array<{ id: string; name: string; palette: number }>;
+  characterOrder: 'priority' | 'random';
+  worktreeBase: 'head' | 'fresh';
+  /** '' for none. */
+  worktreeBranchPrefix: string;
+}
+
+/** What a batch of Directory ops came to: the Directories added or changed as they are
+ *  now and the ones removed, or the failing op (`index`) and why — nothing written then. */
+export type DirectoryEditOutcome =
+  | {
+      ok: true;
+      changed: boolean;
+      directories: OfficeDirectory[];
+      removed: Array<{ name: string; path: string }>;
+      notes: string[];
+    }
+  | { ok: false; index?: number; reason: string };
+
+/** Directories (list_directories, edit_directories): what the Directory modal does. */
+export interface DirectoryOps {
+  /** Every Directory of the office: the user's own, then the host's. */
+  listDirectories(): OfficeDirectory[];
+  /** Apply a batch of Directory ops: all or none, written once, shown in every office
+   *  (directoryOps.ts). */
+  editDirectories(ops: readonly DirectoryOp[]): DirectoryEditOutcome;
+}
+
 /** Launching agents (launch_agent): a surface that can tell when its CLI joined. */
 export interface Launching {
   /** Launch an agent (or resume a conversation) the way the office's drawer and
@@ -179,6 +250,8 @@ export interface OfficeCapabilities {
   layout: LayoutOps;
   messaging: Messaging;
   visits: VisitOps;
+  characters: CharacterOps;
+  directories: DirectoryOps;
   launch: Launching;
   close: Closing;
 }
@@ -190,7 +263,7 @@ export type Capability = keyof OfficeCapabilities;
  *  doesn't list launch_agent / close_agent at all). */
 export type OfficeOperations = Pick<
   OfficeCapabilities,
-  'agents' | 'layout' | 'messaging' | 'visits'
+  'agents' | 'layout' | 'messaging' | 'visits' | 'characters' | 'directories'
 > &
   Partial<Pick<OfficeCapabilities, 'launch' | 'close'>>;
 
@@ -200,7 +273,7 @@ export type OfficeOperations = Pick<
 export interface OfficeLaunchRequest {
   /** A Directory's name, or a folder's path. */
   directory: string;
-  /** A roster label or a palette index. */
+  /** A character id, exact name or palette index (charactersView's resolver). */
   character?: string | number;
   /** A seat id (get_layout): taken when free, else the office picks one. */
   seat?: string;
