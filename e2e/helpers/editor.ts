@@ -170,6 +170,12 @@ export async function selectArea(frame: Frame, label: string): Promise<void> {
   await frame.locator(`span[title^="${label} —"]`).click();
 }
 
+/** An Area's card, by its label (the card's header row holds the label's span). The bundled
+ *  default layout has Areas of its own, so a card is never "the first one". */
+export function areaCard(frame: Frame, label: string): Locator {
+  return frame.locator(`div:has(> div > span[title^="${label} —"])`);
+}
+
 /** Paint a tile with the active tool via the real tile-action handler (by col,row). */
 export async function paintTile(frame: Frame, col: number, row: number): Promise<void> {
   await frame.evaluate(
