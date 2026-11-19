@@ -71,15 +71,15 @@ async function launchIntoBetaWorktree(
   await confirmNewWorktree(frame);
 }
 
-/** Close the agent's terminal the way a user does in VS Code: the × on its
- *  editor tab (the fixture sets `confirmOnKill: never`, so no prompt). */
+/** Close the agent's terminal the way a user does in VS Code: the × on its editor tab, found by
+ *  role and name since its classes vary by VS Code version (`confirmOnKill: never`: no prompt). */
 async function killAgentTerminal(window: Page): Promise<void> {
   const terminalTab = window
     .locator('.tabs-container .tab', { hasText: /Claude Code #\d+/ })
     .last();
   await expect(terminalTab).toBeVisible({ timeout: 15_000 });
   await terminalTab.hover();
-  await terminalTab.locator('.tab-actions .codicon-close').click();
+  await terminalTab.getByRole('button', { name: /^Close/ }).click();
   await expect(terminalTab).toHaveCount(0, { timeout: 15_000 });
 }
 
