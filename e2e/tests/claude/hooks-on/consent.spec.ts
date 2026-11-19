@@ -23,6 +23,8 @@ const NO_CONSENT_CONFIG = {
   vscode: { alwaysShowLabels: true, showHostDirectories: true },
   standalone: { alwaysShowLabels: true, showHostDirectories: true },
   // hooksConsent deliberately absent -> parses to unanswered -> dialog shows.
+  // The Pixel Office MCP ask is answered: these specs are about the hooks step.
+  officeMcpConsent: 'declined',
 };
 
 /** The in-app Intro. IntroBubble is the only role="dialog" element
@@ -547,6 +549,7 @@ test.describe('Hooks consent gate / toggle-off failure', () => {
     seedConfig: {
       vscode: { alwaysShowLabels: true, showHostDirectories: true },
       hooksConsent: { claude: 'granted' },
+      officeMcpConsent: 'declined',
     },
   });
 

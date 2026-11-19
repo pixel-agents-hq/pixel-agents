@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+import type { OfficeMcpChoice } from '../../../core/src/messages.js';
 import { DISCORD_INVITE_URL } from '../changelogData.js';
 import { useCast } from '../characters/castStore.js';
 import { greeterPalette } from '../characters/profiles.js';
@@ -23,9 +24,16 @@ interface IntroBubbleProps {
    *  verbatim so that step shows the exact terms being approved — the webview
    *  keeps no copy of its own to drift out of sync with the server's
    *  disclosure. The other steps' copy is the webview's own: it carries no
-   *  terms, only orientation. */
-  headline: string;
-  disclosure: string;
+   *  terms, only orientation. Null = no hooks ask: an office whose user
+   *  finished the Intro before the Pixel Office MCP step existed sees that
+   *  step alone. */
+  hooksAsk: { headline: string; disclosure: string } | null;
+  /** The Pixel Office MCP step's server copy (officeMcpConsentRequest), or
+   *  null when this office is not asked. Comes after the hooks step. */
+  mcpAsk: { headline: string; disclosure: string } | null;
+  /** The Pixel Office MCP step's answer, sent at once like the hooks one
+   *  (Back re-opens the step and a revised answer replaces it). */
+  onMcpChoice: (choice: OfficeMcpChoice) => void;
   containerRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
   panRef: React.RefObject<{ x: number; y: number }>;
@@ -57,7 +65,7 @@ interface IntroBubbleProps {
   escapeSuppressed: boolean;
 }
 
-type StepId = 'welcome' | 'claudeCode' | 'usage' | 'consent' | 'closing';
+type StepId = 'welcome' | 'claudeCode' | 'usage' | 'consent' | 'mcp' | 'closing';
 
 /**
  * The Intro: the first-run tour the greeter character "speaks",
@@ -65,7 +73,10 @@ type StepId = 'welcome' | 'claudeCode' | 'usage' | 'consent' | 'closing';
  * render this same component off the same server message).
  *
  * Steps: welcome → Claude Code → usage bars (only where the bridge can be
- * installed and is not yet) → hooks consent → all set. The consent step is
+ * installed and is not yet) → hooks consent → Pixel Office MCP consent (only
+ * where the server offers it and it is unanswered) → all set. Without a hooks
+ * ask (the user finished the Intro before the MCP step existed) the tour is
+ * the MCP step alone, then all set. The consent step is
  * the same first-run ask as before, now wrapped in a tour; its copy still
  * arrives from the server and its buttons still send `hooksConsentResponse`
  * the moment they are clicked. Back from the closing step re-opens the consent
@@ -87,16 +98,17 @@ type StepId = 'welcome' | 'claudeCode' | 'usage' | 'consent' | 'closing';
  * computeIntroBubbleGeometry, a pure per-frame function of the measured
  * frame; this component only measures and renders.
  *
- * Fail-closed by construction: only the three consent-step buttons send
- * anything. The X and Escape close without sending, so an unanswered ask
+ * Fail-closed by construction: only the consent steps' buttons (the hooks
+ * step's three, the Pixel Office MCP step's two) send anything. The X and Escape close without sending, so an unanswered ask
  * changes nothing and reappears on the next open. Clicks on the office around
  * the bubble are deliberately inert — the consent step is a decision surface,
  * and a stray click must not read as an answer.
  */
 export function IntroBubble({
   officeState,
-  headline,
-  disclosure,
+  hooksAsk,
+  mcpAsk,
+  onMcpChoice,
   containerRef,
   zoom,
   panRef,
@@ -108,7 +120,7 @@ export function IntroBubble({
 }: IntroBubbleProps) {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [, setTick] = useState(0);
-  const [step, setStep] = useState<StepId>('welcome');
+  const [chosenStep, setStep] = useState<StepId>(hooksAsk ? 'welcome' : 'mcp');
 
   // The usage bridge's install state (usageBridgeStatus), undefined until the
   // server says — and forever on a host that has none. Decides whether the
@@ -133,14 +145,26 @@ export function IntroBubble({
   useEffect(() => {
     if (offerUsage === null && usageBridge) setOfferUsage(!usageBridge.installed);
   }, [offerUsage, usageBridge]);
-  const steps: StepId[] = [
-    'welcome',
-    'claudeCode',
-    ...(offerUsage ? (['usage'] as const) : []),
-    'consent',
-    'closing',
-  ];
+  const steps: StepId[] = hooksAsk
+    ? [
+        'welcome',
+        'claudeCode',
+        ...(offerUsage ? (['usage'] as const) : []),
+        'consent',
+        ...(mcpAsk ? (['mcp'] as const) : []),
+        'closing',
+      ]
+    : ['mcp', 'closing'];
+  // A step the tour no longer has (an ask mooted under it) falls back to the first.
+  const step = steps.includes(chosenStep) ? chosenStep : steps[0];
   const stepIndex = steps.indexOf(step);
+  const stepsRef = useRef(steps);
+  stepsRef.current = steps;
+  /** The step after the hooks consent step: the MCP step when asked, else all set. */
+  const afterConsent = (): StepId => {
+    const all = stepsRef.current;
+    return all[all.indexOf('consent') + 1] ?? 'closing';
+  };
 
   // The greeter lives exactly as long as this component, wearing Suit.
   useEffect(() => {
@@ -201,7 +225,7 @@ export function IntroBubble({
   // happen with the consent step on screen.
   const prevPendingRef = useRef(false);
   useEffect(() => {
-    if (prevPendingRef.current && !installPending) setStep('closing');
+    if (prevPendingRef.current && !installPending) setStep(afterConsent());
     prevPendingRef.current = installPending;
   }, [installPending]);
 
@@ -252,7 +276,11 @@ export function IntroBubble({
     // A decline has no outcome to wait on, so it advances immediately. An
     // install holds this step (buttons disabled via installPending) and
     // advances when its verdict arrives — the pending-fall effect above.
-    if (choice !== 'install') setStep('closing');
+    if (choice !== 'install') setStep(afterConsent());
+  };
+  const chooseMcp = (choice: OfficeMcpChoice): void => {
+    onMcpChoice(choice);
+    setStep('closing');
   };
   const pending = installPending || usagePending;
 
@@ -260,7 +288,8 @@ export function IntroBubble({
     welcome: 'Welcome to Pixel Agents!',
     claudeCode: 'Powered by Claude Code',
     usage: 'Track your usage',
-    consent: headline,
+    consent: hooksAsk?.headline ?? '',
+    mcp: mcpAsk?.headline ?? '',
     closing: installFailed ? "Hooks couldn't be installed" : "You're all set!",
   };
 
@@ -369,13 +398,27 @@ export function IntroBubble({
           ))}
 
         {step === 'consent' &&
-          disclosure.split('\n\n').map((paragraph, i) => (
+          (hooksAsk?.disclosure ?? '').split('\n\n').map((paragraph, i) => (
             <p key={i} className="text-sm m-0 mb-8">
               {paragraph}
             </p>
           ))}
 
-        {step === 'closing' && (
+        {step === 'mcp' &&
+          (mcpAsk?.disclosure ?? '').split('\n\n').map((paragraph, i) => (
+            <p key={i} className="text-sm m-0 mb-8">
+              {paragraph}
+            </p>
+          ))}
+
+        {step === 'closing' && !hooksAsk && (
+          <p className="text-sm m-0 mb-8">
+            You can turn the Pixel Agents Office MCP on or off, or make it read-only, any time in
+            Settings.
+          </p>
+        )}
+
+        {step === 'closing' && hooksAsk && (
           <>
             {installFailed ? (
               <p className="text-sm m-0 mb-8">
@@ -405,7 +448,7 @@ export function IntroBubble({
         <div className="flex items-center justify-between gap-6 mt-10 flex-wrap">
           {/* Left slot: Back everywhere it can go back; a spacer on the opening
               step keeps the right-side buttons in place. */}
-          {step === 'welcome' ? (
+          {stepIndex === 0 ? (
             <span />
           ) : (
             <Button
@@ -464,6 +507,15 @@ export function IntroBubble({
                 onClick={() => choose('install')}
               >
                 {installPending ? 'Installing...' : 'Install Hooks'}
+              </Button>
+            </div>
+          ) : step === 'mcp' ? (
+            <div className="flex items-center justify-end gap-6 flex-wrap">
+              <Button variant="default" size="sm" onClick={() => chooseMcp('decline')}>
+                Don't Allow
+              </Button>
+              <Button variant="accent" size="sm" onClick={() => chooseMcp('allow')}>
+                Allow
               </Button>
             </div>
           ) : step === 'closing' ? (

@@ -2,9 +2,10 @@ import { EventEmitter } from 'node:events';
 import { appendFileSync } from 'node:fs';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { AgentStatus } from '../../core/src/messages.js';
 import type { PersistedAgent } from '../../core/src/schemas.js';
 import { toPersistedAgent } from './agentPersistence.js';
-import type { AgentState } from './types.js';
+import type { AgentState, AgentStatusReport, AgentTurnStatus } from './types.js';
 
 /**
  * CI / e2e diagnostics: when PIXEL_AGENTS_DEBUG_LOG points to a writable
@@ -37,6 +38,8 @@ export interface StoreEvents {
   agentRemoved: (id: number) => void;
   agentUpdated: (id: number, agent: AgentState, field: string) => void;
   broadcast: (message: Record<string, unknown>) => void;
+  /** Every turn report (setAgentStatus), repeats included. */
+  agentStatus: (id: number, status: AgentTurnStatus) => void;
 }
 
 /**
@@ -138,6 +141,29 @@ export class AgentStateStore {
   broadcast(message: Record<string, unknown>): void {
     debugLogBroadcast(message);
     this.emitter.emit('broadcast', message);
+  }
+
+  // ── Agent status ────────────────────────────────────────────
+
+  /**
+   * The ONE way an agent's turn status changes: recorded on the agent
+   * (`turnStatus`), told to every office (`agentStatus`), and announced to the
+   * server's own followers (the `agentStatus` event: visits end on a turn).
+   * Every signal — hooks, transcript heuristics, timers — reports through here.
+   */
+  setAgentStatus(id: number, report: AgentStatusReport): void {
+    const status: AgentTurnStatus = report.active
+      ? 'active'
+      : report.awaitingInput
+        ? 'waiting for input'
+        : 'done';
+    const agent = this.agents.get(id);
+    if (agent) agent.turnStatus = status;
+    const message: AgentStatus = report.active
+      ? { type: 'agentStatus', id, status: 'active' }
+      : { type: 'agentStatus', id, status: 'waiting', awaitingInput: report.awaitingInput };
+    this.broadcast({ ...message });
+    this.emitter.emit('agentStatus', id, status);
   }
 
   // ── Lifecycle ───────────────────────────────────────────────

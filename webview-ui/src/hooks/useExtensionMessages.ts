@@ -33,6 +33,7 @@ import {
 } from '../office/toolUtils.js';
 import type { OfficeLayout, ToolActivity } from '../office/types.js';
 import { setWallSprites } from '../office/wallTiles.js';
+import { handleOfficeMcpMessage } from '../officeMcp/officeMcpStore.js';
 import { isBrowserRuntime, isE2E } from '../runtime.js';
 import { transport } from '../transport/index.js';
 import { onReconnect } from '../transport/onReconnect.js';
@@ -407,6 +408,8 @@ export function useExtensionMessages(
 
       // Usage bars (usage/usageStore.ts): the bridge's state and the plan usage.
       if (handleUsageMessage(msg)) return;
+      // The Pixel Office MCP (officeMcp/officeMcpStore.ts): its settings and Intro step.
+      if (handleOfficeMcpMessage(msg)) return;
       // The cast (characters/castMessages.ts): profiles, items, looks, external sprites.
       if (handleCastMessage(msg, os)) return;
 

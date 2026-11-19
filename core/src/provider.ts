@@ -244,6 +244,11 @@ export interface HookProvider {
    *  (Claude: `relocated`, `worktree-state`), else null. What the runtime
    *  follows an agent by without hooks. Undefined = no such records. */
   sessionMoveFromRecord?(record: unknown): SessionWhereabouts | null;
+  /** The contents of the file a launch's `mcpConfig` names, in this CLI's own
+   *  format, for one MCP server reached over HTTP with a bearer token (Claude:
+   *  the `--mcp-config` JSON). Undefined = this CLI takes no such file, and its
+   *  agents are offered no MCP. */
+  mcpConfigFile?(server: { name: string; url: string; token: string }): string;
   /** Build CLI launch command for +Agent button. `resume`: continue the
    *  existing session `sessionId` (its transcript) instead of starting one. Only
    *  a provider with `conversationTitle` is asked to resume (the conversation
@@ -252,7 +257,15 @@ export interface HookProvider {
   buildLaunchCommand?(
     sessionId: string,
     cwd: string,
-    opts?: { bypassPermissions?: boolean; resume?: boolean },
+    opts?: {
+      bypassPermissions?: boolean;
+      resume?: boolean;
+      /** A file holding the MCP servers this launch gets (the Pixel Office MCP's
+       *  per-agent config). A path, never the config itself: it carries a token,
+       *  and a command line is readable by every process on the machine. Its
+       *  contents are this provider's own (`mcpConfigFile`). */
+      mcpConfig?: string;
+    },
   ): {
     command: string;
     args: string[];

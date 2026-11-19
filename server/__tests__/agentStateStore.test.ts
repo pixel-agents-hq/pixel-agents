@@ -35,6 +35,7 @@ function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
     activeSubagentToolNames: new Map(),
     backgroundSpawns: new Map(),
     isWaiting: false,
+    turnStatus: 'waiting for input',
     permissionSent: false,
     hadToolsInTurn: false,
     lastDataAt: 0,
@@ -283,6 +284,45 @@ describe('AgentStateStore', () => {
       store.set(1, createTestAgent({ id: 1 }));
       expect(cb1).toHaveBeenCalledOnce();
       expect(cb2).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('setAgentStatus', () => {
+    it('records the turn on the agent, tells every office, and announces each report', () => {
+      store.set(1, createTestAgent({ id: 1 }));
+      const broadcasts: Array<Record<string, unknown>> = [];
+      const reports: Array<[number, string]> = [];
+      store.on('broadcast', (m) => broadcasts.push(m));
+      store.on('agentStatus', (id, status) => reports.push([id, status]));
+
+      store.setAgentStatus(1, { active: true });
+      expect(store.get(1)?.turnStatus).toBe('active');
+      store.setAgentStatus(1, { active: false, awaitingInput: true });
+      expect(store.get(1)?.turnStatus).toBe('waiting for input');
+      store.setAgentStatus(1, { active: false, awaitingInput: false });
+      expect(store.get(1)?.turnStatus).toBe('done');
+      store.setAgentStatus(1, { active: false, awaitingInput: false });
+
+      expect(broadcasts).toEqual([
+        { type: 'agentStatus', id: 1, status: 'active' },
+        { type: 'agentStatus', id: 1, status: 'waiting', awaitingInput: true },
+        { type: 'agentStatus', id: 1, status: 'waiting', awaitingInput: false },
+        { type: 'agentStatus', id: 1, status: 'waiting', awaitingInput: false },
+      ]);
+      // Repeats included: a follower decides what a repeat means.
+      expect(reports).toEqual([
+        [1, 'active'],
+        [1, 'waiting for input'],
+        [1, 'done'],
+        [1, 'done'],
+      ]);
+    });
+
+    it('still tells the offices about an agent no longer in the store', () => {
+      const broadcasts: Array<Record<string, unknown>> = [];
+      store.on('broadcast', (m) => broadcasts.push(m));
+      store.setAgentStatus(9, { active: true });
+      expect(broadcasts).toEqual([{ type: 'agentStatus', id: 9, status: 'active' }]);
     });
   });
 });

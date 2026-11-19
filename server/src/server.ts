@@ -12,17 +12,20 @@ import type {
   SetHooksEnabledSideEffect,
 } from './clientMessageHandler.js';
 import {
+  OFFICE_MCP_PATH,
   SERVER_JSON_DIR,
   SERVER_JSON_NAME,
   SERVER_REGISTRY_PROTOCOL_VERSION,
   SERVERS_DIR,
+  WILDCARD_HOSTNAMES,
 } from './constants.js';
 import { createHttpServer } from './httpServer.js';
+import type { OfficeMcpFeature } from './mcp/composeOfficeMcp.js';
 import type { ServerConfig, StandaloneAccess } from './serverConfig.js';
 import { isServerConfig, isServerTarget, sameStandaloneAccess } from './serverConfig.js';
 import { loadOrCreateStandaloneToken } from './serverToken.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
-import { normalizeHostname } from './wsAuth.js';
+import { isLoopbackHost, normalizeHostname } from './wsAuth.js';
 
 export type { ServerConfig } from './serverConfig.js';
 
@@ -81,6 +84,11 @@ export class PixelAgentsServer {
      *  the old one. Refused while another standalone server is running: it
      *  would keep honouring the old token until it restarts. */
     rotateToken?: boolean;
+    /** The Pixel Office MCP to serve at /mcp (see httpServer's option). Told
+     *  its endpoint once the port is known. When an existing server is reused
+     *  it is told it has none: that one serves its own agents, so this office
+     *  offers no MCP. */
+    officeMcp?: OfficeMcpFeature;
   }): Promise<ServerConfig> {
     const embedded = options?.embedded ?? true;
     const wantsSpa = !embedded;
@@ -117,6 +125,7 @@ export class PixelAgentsServer {
     if (candidate) {
       this.config = candidate;
       this.ownsServer = false;
+      options?.officeMcp?.setEndpoint(null);
       console.log(
         `[Pixel Agents] Reusing existing ${wantsSpa ? 'standalone' : 'embedded'} server on port ${candidate.port} (PID ${candidate.pid})`,
       );
@@ -147,7 +156,9 @@ export class PixelAgentsServer {
       ptyManager: options?.ptyManager,
       packageRoot: options?.packageRoot,
       allowedHosts: standalone?.allowedHosts,
+      officeMcp: options?.officeMcp,
     });
+    options?.officeMcp?.setEndpoint(officeMcpEndpoint(host, port));
 
     this.app = app;
     this.config = {
@@ -319,6 +330,15 @@ export class PixelAgentsServer {
       // File may already be gone
     }
   }
+}
+
+/** Where an agent on this machine reaches the /mcp route: the bind address
+ *  itself, or loopback when bound to loopback or a wildcard. */
+function officeMcpEndpoint(host: string, port: number): string {
+  const wildcard = host === '' || (WILDCARD_HOSTNAMES as readonly string[]).includes(host);
+  const reach = wildcard || isLoopbackHost(host) ? '127.0.0.1' : host;
+  const hostPart = reach.includes(':') ? `[${reach}]` : reach;
+  return `http://${hostPart}:${port}${OFFICE_MCP_PATH}`;
 }
 
 /** Allowed hosts as compared and recorded: normalized, de-duplicated, sorted,

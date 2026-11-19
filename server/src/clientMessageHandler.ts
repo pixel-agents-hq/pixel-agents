@@ -39,6 +39,7 @@ import {
 import { collectDirectorySuggestions } from './directorySuggestions.js';
 import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
+import type { OfficeMcpFeature } from './mcp/composeOfficeMcp.js';
 import { getPaletteCount } from './paletteAssigner.js';
 import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
@@ -120,6 +121,10 @@ export interface ClientMessageContext {
   /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
    *  mode, where the editor owns terminal lifecycle. */
   ptyManager?: TerminalSessions;
+  /** The Pixel Office MCP, on a server that offers it: launches and resumes
+   *  get its per-agent config; its consent and settings messages are answered.
+   *  Absent = no MCP, those messages ignored. */
+  officeMcp?: OfficeMcpFeature;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -237,7 +242,7 @@ export function handleClientMessage(
       // The one launch: into the Directory, or into the Worktree prepared below.
       const launch = (where: { cwd?: string } & Partial<WorktreeTerminalLaunch>) =>
         launchStandaloneAgent(
-          { store, runtime, ptyManager, provider: claudeProvider },
+          { store, runtime, ptyManager, provider: claudeProvider, mcp: ctx.officeMcp },
           { ...where, directory, bypassPermissions, palette: picked },
         );
       if (msg.worktree !== true) {
@@ -323,7 +328,7 @@ export function handleClientMessage(
           terminalUnavailable: () => terminalUnavailableReason(ptyManager),
           launch: (options) =>
             launchStandaloneAgent(
-              { store, runtime, ptyManager, provider },
+              { store, runtime, ptyManager, provider, mcp: ctx.officeMcp },
               { ...options, bypassPermissions },
             ),
         },
@@ -380,6 +385,13 @@ export function handleClientMessage(
         // watcher (the standalone server has none), so don't silence it.
         writeLayoutToFile(msg.layout as Record<string, unknown>, { reportToWatchers: true });
       }
+      break;
+
+    case 'officeMcpConsentResponse':
+    case 'setOfficeMcpEnabled':
+    case 'setOfficeMcpReadOnly':
+      // The Pixel Office MCP's consent and its switches.
+      ctx.officeMcp?.handleMessage(msg);
       break;
 
     case 'saveCharacterProfiles':
@@ -765,13 +777,14 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // provider checks are async, so these land as follow-ups right after the
   // synchronous handshake; the webview's default (not installed) is the safe
   // assumption until each arrives. One status + at most one ask PER PROVIDER.
+  const hookAsks: Array<Promise<void>> = [];
   for (const provider of hookProviders) {
     // One provider's unreadable settings file must degrade to
     // installed=false (matching the executor's fail-closed read: no choice
     // ever uninstalls on a guess) rather than surface as an unhandled
     // rejection that can take the process down — and must never block the
     // other providers' statuses.
-    void provider
+    const ask = provider
       .areHooksInstalled()
       .catch((err: unknown) => {
         console.error(`[Pixel Agents] hooks status check failed for provider ${provider.id}:`, err);
@@ -794,14 +807,23 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
         );
         if (request) send({ ...request }); // spread: WsSend takes an index-signature shape
       });
+    hookAsks.push(ask);
   }
 
-  // 4a-ter. Usage bars: the operator's account usage, privileged clients only.
+  // 4a-ter. The Pixel Office MCP: its settings, and its Intro step while
+  // unanswered — privileged clients only, and the ask strictly AFTER the hooks
+  // asks, so an office asked both opens the full tour with this step after
+  // the hooks one (an office asked only this shows the step alone).
+  if (ctx.privileged) {
+    ctx.officeMcp?.handshake((m) => send({ ...m }), Promise.allSettled(hookAsks));
+  }
+
+  // 4a-quater. Usage bars: the operator's account usage, privileged clients only.
   if (ctx.privileged) {
     for (const message of usageSnapshotMessages()) send({ ...message });
   }
 
-  // 4a-quater. The Worktrees we made, privileged clients only: one waiting on
+  // 4a-quinquies. The Worktrees we made, privileged clients only: one waiting on
   // a decision opens its dialog in this office too. Async (git reads); lands
   // as a follow-up to the handshake.
   if (ctx.privileged) {

@@ -2,6 +2,13 @@ import type * as vscode from 'vscode';
 
 import type { BackgroundSpawns } from './backgroundSpawns.js';
 
+/** An agent's turn: running (`active`), ended (`done`), or ended on a
+ *  question to its user (`waiting for input`). */
+export type AgentTurnStatus = 'active' | 'done' | 'waiting for input';
+
+/** A turn report, as the runtime's signals give it (hooks and transcript heuristics alike). */
+export type AgentStatusReport = { active: true } | { active: false; awaitingInput: boolean };
+
 export interface AgentState {
   id: number;
   sessionId: string;
@@ -26,6 +33,11 @@ export interface AgentState {
    *  yet 'waiting'), so a connecting client is told too: a turn between two
    *  tools has no live tool to say so. Unset for an agent with no turn seen. */
   turnActive?: boolean;
+  /** Its turn as every office was last told it (`agentStatus`): the ONE
+   *  record of it, kept by AgentStateStore.setAgentStatus and nowhere else.
+   *  An agent nothing has reported on yet (just launched, restored, adopted)
+   *  reads 'waiting for input'. The permission bubble is `permissionSent`. */
+  turnStatus: AgentTurnStatus;
   permissionSent: boolean;
   hadToolsInTurn: boolean;
   /** Directory name — the agent's origin label (only set for multi-root workspaces) */

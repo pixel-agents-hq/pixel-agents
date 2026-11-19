@@ -38,6 +38,8 @@ import {
 import { listDirectoryLocations } from './directories.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
 import { hostDirectory } from './hostDirectory.js';
+import { readLayoutFromFile } from './layoutPersistence.js';
+import { composeOfficeMcp } from './mcp/composeOfficeMcp.js';
 import {
   claudeProvider,
   copyHookScript,
@@ -423,6 +425,19 @@ async function main(): Promise<void> {
       console.log('[Pixel Agents] Assets reloaded (external directory change)');
     };
 
+    // The Pixel Office MCP: served at /mcp, its tools acting on this office;
+    // agents launched (or resumed) here get it once the user consents.
+    const officeMcp = composeOfficeMcp({
+      facts: {
+        store,
+        provider: claudeProvider,
+        layout: () => readLayoutFromFile() ?? assetCache.defaultLayout,
+        catalog: () => assetCache.furniture?.catalog ?? [],
+        directories: () => listDirectoryLocations([hostDirectory()]),
+        seats: () => adapter.loadSeats(),
+      },
+    });
+
     const config = await server.start({
       store,
       runtime,
@@ -437,6 +452,7 @@ async function main(): Promise<void> {
       packageRoot,
       allowedHosts: args.allowedHosts,
       rotateToken: args.rotateToken,
+      officeMcp,
     });
     currentConfig = { port: config.port, token: config.token };
     if (args.rotateToken) {
@@ -548,6 +564,8 @@ async function main(): Promise<void> {
       // host: just disconnect; the agents keep running.
       await ptyManager.shutdown();
       characterProfilesWatcher.dispose();
+      // Every agent's token dies with this server (and its config files go).
+      officeMcp.dispose();
       // With the PTY host, stop, not dispose: the saved list keeps whoever is
       // still running, for the next server to reattach. In process, dispose:
       // every terminal is gone, and the next server starts with no agents.

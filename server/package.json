@@ -15,8 +15,10 @@
     "@fastify/cors": "^11.2.0",
     "@fastify/static": "^10.1.2",
     "@fastify/websocket": "^11.2.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@xterm/addon-serialize": "^0.13.0",
     "@xterm/headless": "^5.5.0",
-    "fastify": "^5.8.5"
+    "fastify": "^5.8.5",
+    "zod": "^4.6.7"
   }
 }

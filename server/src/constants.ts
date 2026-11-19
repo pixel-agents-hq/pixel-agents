@@ -350,6 +350,23 @@ export const AGENT_MOVE_RETRY_ATTEMPTS = 10;
  *  asks again, so a stale answer never applies to some later leave. */
 export const WORKTREE_CLOSE_CHOICE_TTL_MS = 30_000;
 
+// ── Pixel Office MCP (server/src/mcp/) ──────────────────────
+/** The MCP's id: what Claude Code's /mcp list and tool names show
+ *  (`mcp__pixel-office__list_agents`). */
+export const OFFICE_MCP_SERVER_NAME = 'pixel-office';
+/** The route the MCP is served on (Streamable HTTP, stateless). */
+export const OFFICE_MCP_PATH = '/mcp';
+/** Folder under ~/.pixel-agents holding one folder per running server, each
+ *  with one 0600 `--mcp-config` file per agent it launched. */
+export const OFFICE_MCP_CONFIG_DIR = 'mcp';
+/** Request body cap for /mcp (a layout edit batch can be larger than a hook). */
+export const OFFICE_MCP_MAX_BODY_SIZE = 1_048_576; // 1MB
+/** Bytes of randomness in an agent's MCP token. */
+export const OFFICE_MCP_TOKEN_BYTES = 32;
+/** What a changing tool answers while the MCP is read-only. */
+export const OFFICE_MCP_READ_ONLY_REASON =
+  'The Pixel Office MCP is read-only in Pixel Agents settings: listing and reading work, changes are refused. Ask the user to turn read-only off in Settings if this change is needed.';
+
 // ── Character art (server/src/characterArt.ts) ──────────────
 /** Screen pixels per sprite pixel in a character preview PNG (whole number, so the
  *  pixel art stays crisp): a 16x32 frame becomes 64x128. */

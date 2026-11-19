@@ -62,6 +62,7 @@ import {
   watchLayoutFile,
   writeLayoutToFile,
 } from '../../server/src/layoutPersistence.js';
+import type { OfficeMcpFeature } from '../../server/src/mcp/composeOfficeMcp.js';
 import { getPaletteCount } from '../../server/src/paletteAssigner.js';
 import { PathSet } from '../../server/src/pathKey.js';
 import type { ConsentEffects } from '../../server/src/providers/hook/consentExecutor.js';
@@ -106,6 +107,7 @@ import {
   LAYOUT_REVISION_KEY,
 } from './constants.js';
 import { workspaceDirectories } from './hostDirectories.js';
+import { createVscodeOfficeMcp, type VscodeOfficeAssets } from './vscodeOfficeMcp.js';
 import { VscodeTerminalAdapter } from './vscodeTerminalAdapter.js';
 import { VscodeWorktrees } from './vscodeWorktrees.js';
 
@@ -165,6 +167,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   // Worktrees: held, swept, their messages answered, launches prepared.
   private readonly worktrees: VscodeWorktrees;
 
+  // The Pixel Office MCP: served at the embedded server's /mcp, given to this
+  // window's launches once the user consents (vscodeOfficeMcp.ts).
+  private readonly mcp: OfficeMcpFeature;
+  // What the office's assets are, once the handshake loaded them (its tools read them).
+  private officeAssets: VscodeOfficeAssets | null = null;
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     adapter: StateAdapter,
@@ -197,6 +205,12 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     setTerminalAdapter(new VscodeTerminalAdapter());
+    this.mcp = createVscodeOfficeMcp({
+      store: this.store,
+      defaultLayout: () => this.defaultLayout,
+      assets: () => this.officeAssets,
+      directories: () => listDirectoryLocations(this.hostDirectories()),
+    });
 
     // Sessions in a Directory's worktrees (ours or Claude's own) belong to
     // that Directory: every workspace folder and user Directory.
@@ -258,7 +272,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       this.runtime.jsonlPollTimers,
       this.runtime.projectScanTimer,
       () => this.store.persist(),
-      options,
+      { ...options, mcp: this.mcp },
     );
     const agent = this.store.get(id);
     if (agent) this.runtime.registerAgent(agent.sessionId, id);
@@ -326,7 +340,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     this.pixelAgentsServer
-      .start({ store: this.store, embedded: true })
+      .start({
+        store: this.store,
+        embedded: true,
+        officeMcp: this.mcp,
+      })
       .then((config) => {
         // Server always starts regardless of hooks-enabled state.
         // It's the foundation for WebSocket transport and health monitoring.
@@ -530,6 +548,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.html = getWebviewContent(webviewView.webview, this.extensionUri);
 
     webviewView.webview.onDidReceiveMessage(async (message) => {
+      // The Pixel Office MCP's consent and its switches.
+      if (this.mcp.handleMessage(message)) {
+        return;
+      }
       if (message.type === 'launchAgent') {
         const picked = rosterPick(message.palette, getPaletteCount());
         // Every launch comes from a drawer row and carries its Directory's
@@ -845,6 +867,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           if (consentRequest) this.webview?.postMessage(consentRequest);
         }
 
+        // The Pixel Office MCP: its settings, and its Intro step while unanswered —
+        // after the hooks asks.
+        this.mcp.handshake((message) => void this.webview?.postMessage(message));
+
         // Usage bars: install state and the last known account usage.
         for (const message of usageSnapshotMessages()) this.webview?.postMessage(message);
 
@@ -1017,6 +1043,10 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
               console.log('[Extension] ✅ Assets loaded, sending to webview');
               sendAssetsToWebview(this.webview, assets);
             }
+            // What the Pixel Office MCP's tools describe.
+            this.officeAssets = {
+              catalog: assets?.catalog ?? [],
+            };
           } catch (err) {
             console.error('[Extension] ❌ Error loading assets:', err);
           }
@@ -1222,6 +1252,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       const assets = await this.loadAllFurnitureAssets();
       if (assets) {
         sendAssetsToWebview(this.webview, assets);
+        if (this.officeAssets) this.officeAssets.catalog = assets.catalog;
       }
     } catch (err) {
       console.error('[Extension] Error reloading furniture assets:', err);
@@ -1270,6 +1301,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.worktrees.dispose();
     this.pixelAgentsServer?.stop();
     this.pixelAgentsServer = null;
+    // Every agent's token dies with this window's server (and its config files go).
+    this.mcp.dispose();
     this.runtime.dispose();
     this.layoutWatcher?.dispose();
     this.layoutWatcher = null;

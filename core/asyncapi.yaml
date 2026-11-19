@@ -119,6 +119,9 @@ components:
         - $ref: '#/components/schemas/BypassPermissionsUpdated'
         - $ref: '#/components/schemas/HooksStatus'
         - $ref: '#/components/schemas/HooksConsentRequest'
+        # Pixel Office MCP (consent + settings)
+        - $ref: '#/components/schemas/OfficeMcpConsentRequest'
+        - $ref: '#/components/schemas/OfficeMcpStatus'
         # Usage bars (the account's plan limits)
         - $ref: '#/components/schemas/UsageBridgeStatus'
         - $ref: '#/components/schemas/UsageLimits'
@@ -161,6 +164,9 @@ components:
         - $ref: '#/components/schemas/SetHooksEnabled'
         - $ref: '#/components/schemas/HooksConsentResponse'
         - $ref: '#/components/schemas/SetUsageBridgeEnabled'
+        - $ref: '#/components/schemas/OfficeMcpConsentResponse'
+        - $ref: '#/components/schemas/SetOfficeMcpEnabled'
+        - $ref: '#/components/schemas/SetOfficeMcpReadOnly'
         - $ref: '#/components/schemas/SetHooksInfoShown'
         - $ref: '#/components/schemas/SetWatchAllSessions'
         - $ref: '#/components/schemas/ExportLayout'
@@ -907,6 +913,55 @@ components:
         updatedAt:
           type: number
           description: When the last report arrived (epoch milliseconds).
+
+    OfficeMcpConsentState:
+      description: The Pixel Office MCP consent as recorded (absent in config.json = unanswered).
+      type: string
+      enum: [unanswered, granted, declined]
+
+    OfficeMcpConsentRequest:
+      description: |
+        Ask this client the Intro's Pixel Office MCP step: may the agents this
+        office launches use the Pixel Agents Office MCP? Sent during the
+        `webviewReady` handshake, after the hooks asks, while the answer is
+        unrecorded — on privileged connections of a server that offers the
+        MCP only. Carries the server's own copy, rendered verbatim. Answered
+        with `officeMcpConsentResponse`; dismissing sends nothing and the ask
+        returns on the next connect.
+      type: object
+      additionalProperties: false
+      required: [type, headline, disclosure]
+      properties:
+        type:
+          const: officeMcpConsentRequest
+        headline:
+          type: string
+        disclosure:
+          type: string
+          description: What agents could do through it (paragraphs split on blank lines).
+
+    OfficeMcpStatus:
+      description: |
+        The Pixel Office MCP's settings as recorded: the consent answer
+        (`unanswered` until one is given; `granted` = launches and resumes get
+        the MCP, `declined` = they don't) and whether it is read-only (agents
+        may list and read, nothing else). Sent on connect and broadcast after
+        every change, privileged connections of a server that offers the MCP
+        only. Carries the disclosure the Settings switch confirms with.
+      type: object
+      additionalProperties: false
+      required: [type, consent, readOnly, headline, disclosure]
+      properties:
+        type:
+          const: officeMcpStatus
+        consent:
+          $ref: '#/components/schemas/OfficeMcpConsentState'
+        readOnly:
+          type: boolean
+        headline:
+          type: string
+        disclosure:
+          type: string
 
     HooksConsentRequest:
       description: |
@@ -1761,6 +1816,55 @@ components:
         providerId:
           type: string
         enabled:
+          type: boolean
+
+    OfficeMcpConsentResponse:
+      description: |
+        The Intro's answer to `officeMcpConsentRequest` — an ABSOLUTE statement
+        of the state the user wants, revisable with Back: `allow` records the
+        grant, `decline` records a decline (and revokes every agent's access at
+        once). Any other value writes nothing. One config write per answer.
+      type: object
+      additionalProperties: false
+      required: [type, choice]
+      properties:
+        type:
+          const: officeMcpConsentResponse
+        choice:
+          $ref: '#/components/schemas/OfficeMcpChoice'
+
+    OfficeMcpChoice:
+      description: An answer to the Intro's Pixel Office MCP step.
+      type: string
+      enum: [allow, decline]
+
+    SetOfficeMcpEnabled:
+      description: |
+        Settings → Pixel Office MCP: on (the user confirmed its disclosure —
+        this is the grant) or off (a decline: every running agent's access is
+        revoked at once). Answered with an `officeMcpStatus` broadcast.
+      type: object
+      additionalProperties: false
+      required: [type, enabled]
+      properties:
+        type:
+          const: setOfficeMcpEnabled
+        enabled:
+          type: boolean
+
+    SetOfficeMcpReadOnly:
+      description: |
+        Settings → Pixel Office MCP read-only: while on, agents may list and
+        read through it, and every tool that would change something refuses.
+        Takes effect at once for running agents. Answered with an
+        `officeMcpStatus` broadcast.
+      type: object
+      additionalProperties: false
+      required: [type, readOnly]
+      properties:
+        type:
+          const: setOfficeMcpReadOnly
+        readOnly:
           type: boolean
 
     HooksConsentResponse:

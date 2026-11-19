@@ -13,7 +13,7 @@ import {
   sessionStartClear,
   sessionStartStartup,
 } from '../../helpers/hooks';
-import { advanceIntroToConsentStep, finishIntro } from '../../helpers/intro';
+import { advanceIntroToConsentStep, finishIntro, officeMcpButtons } from '../../helpers/intro';
 import { expectContextGauge, expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
 import type { RecordedServerMessage } from '../../helpers/standalone';
 import { getClaudeProjectDir } from '../../helpers/team';
@@ -332,3 +332,79 @@ async function openSpectator(page: Page): Promise<Page> {
     .toBeGreaterThan(0);
   return spectator;
 }
+
+/** The Pixel Office MCP answer recorded in config.json (absent = unanswered). */
+function readOfficeMcpConsent(tmpHome: string): string {
+  try {
+    const raw = fs.readFileSync(path.join(tmpHome, '.pixel-agents', 'config.json'), 'utf8');
+    return (JSON.parse(raw) as { officeMcpConsent?: string }).officeMcpConsent ?? 'unanswered';
+  } catch {
+    return 'unanswered';
+  }
+}
+
+/**
+ * The Intro's fifth step: may agents launched here use the Pixel Agents
+ * Office MCP? It comes after the hooks step, sends its answer at once, and
+ * Back revises it as an absolute state (docs/adr/0001).
+ */
+test.describe('Standalone / Pixel Office MCP consent', () => {
+  test.use({ seedHooksConsent: false });
+
+  test('the tour asks after the hooks step, and Back revises the answer @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await advanceIntroToConsentStep(dialog);
+    await dialog.getByRole('button', { name: 'Not Now' }).click();
+
+    const { allow, decline } = officeMcpButtons(dialog);
+    await expect(allow).toBeVisible();
+    await expect(dialog).toContainText('Pixel Agents Office MCP');
+    expect(readOfficeMcpConsent(standalone.tmpHome)).toBe('unanswered');
+
+    await allow.click();
+    await expect.poll(() => readOfficeMcpConsent(standalone.tmpHome)).toBe('granted');
+    await expect(dialog).toContainText("You're all set!");
+
+    await dialog.getByRole('button', { name: 'Back' }).click();
+    await decline.click();
+    await expect.poll(() => readOfficeMcpConsent(standalone.tmpHome)).toBe('declined');
+    await finishIntro(dialog);
+  });
+});
+
+test.describe('Standalone / Pixel Office MCP step alone', () => {
+  // Hooks answered long ago (the Intro done), the MCP never asked.
+  test.use({ standaloneOptions: { seedConfig: { officeMcpConsent: undefined } } });
+
+  test('an office that finished the Intro earlier sees the step alone; Settings follows it @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await expect(dialog).toContainText('Pixel Agents Office MCP');
+    await expect(dialog).not.toContainText('Welcome to Pixel Agents!');
+    await expect(dialog.getByRole('button', { name: 'Install Hooks' })).toHaveCount(0);
+
+    await finishIntro(dialog, 'allow');
+    await expect.poll(() => readOfficeMcpConsent(standalone.tmpHome)).toBe('granted');
+
+    // Settings shows the switch on, with the read-only switch beside it.
+    const settingsModal = await openSettingsModal(page);
+    const mcpRow = settingsModal.locator('button', { hasText: /^Pixel Office MCP/ }).first();
+    await expect(mcpRow).toBeVisible();
+    await expect(
+      settingsModal.locator('button', { hasText: 'Pixel Office MCP Read-only' }),
+    ).toBeVisible();
+    // Off applies at once (no confirm).
+    await mcpRow.click();
+    await expect.poll(() => readOfficeMcpConsent(standalone.tmpHome)).toBe('declined');
+    await expect(
+      settingsModal.locator('button', { hasText: 'Pixel Office MCP Read-only' }),
+    ).toHaveCount(0);
+  });
+});

@@ -2,7 +2,8 @@ import type { Locator } from '@playwright/test';
 import { expect } from '@playwright/test';
 
 /**
- * Drivers for the Intro — the four-step first-run tour the greeter speaks
+ * Drivers for the Intro — the first-run tour the greeter speaks (five steps
+ * where the server asks the Pixel Office MCP step, standalone; four in VS Code)
  * (webview-ui/src/components/IntroBubble.tsx). Locator-based so the same
  * helpers drive both surfaces: the VS Code webview frame and the standalone
  * browser page.
@@ -33,8 +34,29 @@ export async function advanceIntroToConsentStep(dialog: Locator): Promise<void> 
   await expect(install).toBeVisible();
 }
 
-/** Close the Intro from its closing step ("You're all set!"). */
-export async function finishIntro(dialog: Locator): Promise<void> {
+/** The Pixel Office MCP step's buttons (only standalone servers ask it). */
+export function officeMcpButtons(dialog: Locator): { allow: Locator; decline: Locator } {
+  return {
+    allow: dialog.getByRole('button', { name: 'Allow', exact: true }),
+    decline: dialog.getByRole('button', { name: "Don't Allow", exact: true }),
+  };
+}
+
+/**
+ * Close the Intro from its closing step ("You're all set!"). When the tour
+ * shows the Pixel Office MCP step first (a standalone server whose answer is
+ * unrecorded), it is answered with `mcpChoice` (default: decline) on the way.
+ */
+export async function finishIntro(
+  dialog: Locator,
+  mcpChoice: 'allow' | 'decline' = 'decline',
+): Promise<void> {
+  const closing = dialog.getByRole('button', { name: "Let's Go" });
+  const { allow, decline } = officeMcpButtons(dialog);
+  await expect(closing.or(decline)).toBeVisible();
+  if (await decline.isVisible()) {
+    await (mcpChoice === 'allow' ? allow : decline).click();
+  }
   await expect(dialog).toContainText("You're all set!");
   await dialog.getByRole('button', { name: "Let's Go" }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
