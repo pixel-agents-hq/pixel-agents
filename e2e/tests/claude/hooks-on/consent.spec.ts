@@ -391,9 +391,9 @@ test.describe('Hooks consent gate', () => {
     const dialog = await openConsentDialog(frame);
 
     narrator.step('clicking the office beside the greeter');
-    // Top-left corner of the canvas — away from the centered character+bubble.
-    // force: the click targets the canvas even if some overlay pixel intercepts.
-    await frame.locator('canvas').click({ position: { x: 8, y: 8 }, force: true });
+    // Top-left corner of the office canvas (the dialog box draws a canvas of its own: the
+    // speaker's face). force: the click lands even if some overlay pixel intercepts.
+    await frame.getByTestId('office-canvas').click({ position: { x: 8, y: 8 }, force: true });
     await frame.page().waitForTimeout(1_000);
 
     await expect(dialog).toBeVisible();
