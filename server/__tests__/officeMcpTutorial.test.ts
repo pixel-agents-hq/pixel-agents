@@ -95,10 +95,10 @@ describe('the tutorial (composed server, the Guide in a PTY)', () => {
 
     await h.answer('allow');
     const offered = await waitFor(() => latest()?.available === true && latest(), 'the offer');
-    expect(offered.headline).toBe('Want Byte to show you around?');
+    expect(offered.headline).toBe('Want me to show you around?');
     expect(offered.disclosure).toMatch(/real Claude Code session in proj/);
     expect(offered.disclosure).toMatch(/Claude plan/);
-    expect(offered.disclosure).toMatch(/^Byte takes a desk/);
+    expect(offered.disclosure).toMatch(/^I'll take a desk/);
   });
 
   it('refuses to start before the MCP is granted, launching nothing', async () => {
@@ -217,10 +217,8 @@ describe('the tutorial (composed server, the Guide in a PTY)', () => {
       saveId: 'rename',
     });
     await waitFor(
-      () =>
-        /Zed takes a desk/.test(String(latest()?.disclosure)) &&
-        latest()?.headline === 'Want Zed to show you around?',
-      'the renamed offer',
+      () => h.received.some((m) => m.type === 'characterProfilesLoaded' && m.saveId === 'rename'),
+      'the rename to be saved',
     );
     const { client } = await startGuide();
     const withBrief = await h.callJson(client, 'tutorial', { brief: true });

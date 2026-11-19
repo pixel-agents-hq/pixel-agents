@@ -13,7 +13,10 @@ printf '%s wrapper node=%s cwd=%s args=%s\n' "$(date -Iseconds)" "${NODE_BIN}" "
 # for terminal-hosted (internal) sessions — external spawns set no
 # PIXEL_AGENTS_TEST_NARRATION_LOG (their stdout IS the external log, so a tail
 # there would loop). The tail dies with the terminal at test teardown.
-if [ -n "${PIXEL_AGENTS_TEST_NARRATION_LOG:-}" ]; then
+# Never for `claude auth …`: the server runs it as a plain child process and
+# reads its stdout to the end, and a tail sharing that pipe would hold it open
+# (the call then only ends at its timeout) and append narration to the JSON.
+if [ -n "${PIXEL_AGENTS_TEST_NARRATION_LOG:-}" ] && [ "${1:-}" != "auth" ]; then
   "${NODE_BIN}" "${SCRIPT_DIR}/tail-follow.cjs" none \
     "${PIXEL_AGENTS_TEST_NARRATION_LOG}" "${PIXEL_AGENTS_EXTERNAL_NARRATION_LOG:-}" \
     2>/dev/null &

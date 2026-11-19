@@ -56,6 +56,9 @@
   --color-preview-wall-seam: #25233a;
   --color-figure-shadow: rgba(10, 10, 20, 0.45);
 
+  /* The Intro's dialog box: its frame and its words */
+  --color-dialog-line: #ffffff;
+
   /* Shadow */
   --color-shadow: #0a0a14;
   --shadow-pixel: 2px 2px 0px var(--color-shadow);
@@ -734,4 +737,96 @@
   animation-name: usage-heart-beat;
   animation-timing-function: step-end;
   animation-iteration-count: infinite;
+}
+
+/* The Intro's dialog, a game's: a dark box framed in white with a hard shadow,
+   the greeter's message in large type, a "more" arrow blinking in its corner.
+   The step's menu above it wears the same frame. */
+.intro-dialog-box {
+  background: var(--color-bg);
+  border: 2px solid var(--color-dialog-line);
+  outline: 2px solid var(--color-bg);
+  box-shadow: 4px 4px 0 2px var(--color-shadow);
+}
+.intro-options .intro-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+/* A step's options inside the dialog box, under the greeter's words. */
+.intro-options-inline {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.intro-options-inline:empty,
+.intro-options-inline[hidden] {
+  display: none;
+}
+/* The dialog box's foot: Back on the left, the inline options on the right
+   (the Next arrow sits over its right end). Always there, at one height. */
+.intro-dialog-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 28px;
+  margin-top: 4px;
+  cursor: default;
+}
+.intro-options {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 2px;
+  width: 200px;
+  max-width: 100%;
+  padding: 4px;
+}
+/* The menu scrolls when it is taller than the office; the padding keeps its
+   boxes' outlines and shadows inside the scrolled area. */
+.intro-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 8px 8px 4px;
+  margin: -4px -8px -8px -4px;
+}
+.intro-dialog-text {
+  font-size: 26px;
+  line-height: 1.15;
+  color: var(--color-dialog-line);
+  /* Two rows, so a one-row message doesn't shrink the box. */
+  min-height: 2.3em;
+}
+.intro-dialog-next {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  width: 0;
+  height: 0;
+  padding: 0;
+  background: none;
+  border: 6px solid transparent;
+  border-bottom: 0;
+  border-top: 7px solid var(--color-dialog-line);
+  cursor: pointer;
+  animation: intro-dialog-blink 1s steps(2) infinite;
+}
+.intro-dialog-next.is-typing {
+  animation: none;
+  opacity: 0.35;
+}
+@keyframes intro-dialog-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro-dialog-next {
+    animation: none;
+  }
 }

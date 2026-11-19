@@ -8,7 +8,6 @@ import {
   DISMISS_BUBBLE_FAST_FADE_SEC,
   FURNITURE_ANIM_INTERVAL_SEC,
   GREETER_ID,
-  GREETER_TILE_MARGIN,
   INACTIVE_SEAT_TIMER_MIN_SEC,
   INACTIVE_SEAT_TIMER_RANGE_SEC,
   MAX_PET_ID_LENGTH,
@@ -163,12 +162,18 @@ export class OfficeState {
   greeter: Character | null = null;
 
   /** World-space point the camera drifts to while the greeter is up
-   *  (the bubble overlay recomputes it every frame: the combined center of the
-   *  character and its speech bubble). An explicit cameraFollowId outranks it. */
+   *  (the Intro's dialog recomputes it every frame: the greeter, centred in what the
+   *  dialog leaves of the office). An explicit cameraFollowId outranks it. */
   greeterCameraTarget: { x: number; y: number } | null = null;
   /** Latched by a manual pan during the ask: the user took the camera, so the
    *  overlay's per-frame updates stop re-centering. Reset on spawn/despawn. */
   private greeterCameraCancelled = false;
+  /** The Intro's camera goes to its first target at once (no drift): the
+   *  office opens already centred on the greeter's spot. */
+  private greeterCameraSnap = false;
+  /** Where the greeter appeared (world px, its feet): what the Intro's camera
+   *  stays on, wherever the greeter walks to afterwards. */
+  greeterHome: { x: number; y: number } | null = null;
 
   /** The Buildout playing, if any: drawing reads it (shownLayout, shownTileMap). */
   readonly buildout = new BuildoutPlayer();
@@ -226,7 +231,7 @@ export class OfficeState {
     },
   });
   /** The agent that took the greeter's place (handoff), until the Intro closes:
-   *  the bubble stays anchored over it. */
+   *  the camera stays on it. */
   private greeterStandInId: number | null = null;
 
   setAreaMappings(mappings: Record<string, string[]>): void {
@@ -638,28 +643,38 @@ export class OfficeState {
   }
 
   // ── Greeter ───────────────────────────────────────────────────
-  // The Intro is diegetic: a character (Byte, by id: see greeterPalette) stands near the office's
-  // bottom-left corner and "speaks" the tour through a DOM bubble
-  // (IntroBubble). It is not an agent — see the `greeter` field.
+  // The Intro is diegetic: a character (Byte, by id: see greeterPalette) stands in the middle of
+  // the office and "speaks" the tour through a DOM dialog box
+  // (IntroDialog). It is not an agent — see the `greeter` field.
 
-  /** Spawn the greeter near the office's bottom-left corner: target tile
-   *  GREETER_TILE_MARGIN in from the left and bottom edges, falling
-   *  back to the closest walkable tile when the target is a seat, furniture,
+  /** Spawn the greeter in the middle of the office: the centre of the box
+   *  round its walkable tiles, falling
+   *  back to the closest walkable tile when that is a seat, furniture,
    *  a wall, or VOID (seat tiles are in blockedTiles, so closestFreeWalkableTile
    *  covers every one of those). Idempotent; a remount mid-despawn (StrictMode)
    *  revives it. */
   spawnGreeter(): void {
     this.greeterCameraCancelled = false;
+    this.greeterCameraSnap = true;
     this.greeterStandInId = null;
     if (this.greeter) {
       if (this.greeter.matrixEffect === 'despawn') startMatrixEffect(this.greeter, 'spawn');
       return;
     }
+    // The middle of the floor, not of the grid: a layout may keep rows of
+    // void around its rooms.
+    let [minCol, maxCol, minRow, maxRow] = [Infinity, -Infinity, Infinity, -Infinity];
+    for (const tile of this.walkableTiles) {
+      minCol = Math.min(minCol, tile.col);
+      maxCol = Math.max(maxCol, tile.col);
+      minRow = Math.min(minRow, tile.row);
+      maxRow = Math.max(maxRow, tile.row);
+    }
     const spawn = this.closestFreeWalkableTile(
-      GREETER_TILE_MARGIN,
-      this.layout.rows - 1 - GREETER_TILE_MARGIN,
+      Math.floor((minCol + maxCol + 1) / 2),
+      Math.floor((minRow + maxRow + 1) / 2),
     );
-    if (!spawn) return; // no walkable tile — IntroBubble falls back to a fixed panel
+    if (!spawn) return; // no walkable tile — the dialog speaks with no character
     const ch = createCharacter(GREETER_ID, 0, null, null, 0);
     ch.isGreeter = true;
     ch.state = CharacterState.IDLE;
@@ -671,9 +686,10 @@ export class OfficeState {
     ch.tileRow = spawn.row;
     startMatrixEffect(ch, 'spawn');
     this.greeter = ch;
+    this.greeterHome = { x: ch.x, y: ch.y };
   }
 
-  /** Dress the greeter as a cast character (IntroBubble picks which). */
+  /** Dress the greeter as a cast character (IntroDialog picks which). */
   setGreeterPalette(palette: number): void {
     if (this.greeter) this.greeter.palette = palette;
   }
@@ -716,7 +732,7 @@ export class OfficeState {
     this.greeterStandInId = id;
   }
 
-  /** What the Intro's bubble stands over: the greeter, or the agent that took its place. */
+  /** The Intro's speaker: the greeter, or the agent that took its place. */
   greeterAnchor(): Character | null {
     if (this.greeter) return this.greeter;
     return this.greeterStandInId === null
@@ -724,9 +740,17 @@ export class OfficeState {
       : (this.characters.get(this.greeterStandInId) ?? null);
   }
 
-  /** Per-frame update from the bubble overlay; ignored once the user panned. */
+  /** Per-frame update from the Intro's dialog; ignored once the user panned. */
   setGreeterCameraTarget(p: { x: number; y: number }): void {
     if (!this.greeterCameraCancelled) this.greeterCameraTarget = p;
+  }
+
+  /** Whether the camera should jump to the greeter target (true once per
+   *  spawn: the first frame it is applied), rather than drift there. */
+  takeGreeterCameraSnap(): boolean {
+    const snap = this.greeterCameraSnap;
+    this.greeterCameraSnap = false;
+    return snap;
   }
 
   /** Manual pan during the ask: stop re-centering until the next spawn. */

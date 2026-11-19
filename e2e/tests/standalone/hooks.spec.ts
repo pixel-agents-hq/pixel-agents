@@ -15,9 +15,11 @@ import {
 } from '../../helpers/hooks';
 import {
   advanceIntroToChoices,
+  backInIntro,
   chooseInIntro,
   finishIntro,
   introChoice,
+  readIntro,
 } from '../../helpers/intro';
 import { expectContextGauge, expectOverlayCount, expectOverlayVisible } from '../../helpers/office';
 import type { RecordedServerMessage } from '../../helpers/standalone';
@@ -173,7 +175,8 @@ test.describe('Standalone / context after /clear', () => {
  * the token boundary and the checkbox route.
  */
 test.describe('Standalone / hooks consent', () => {
-  test.use({ seedHooksConsent: false });
+  // The mock CLI answers the Intro's sign-in check (signed in), whatever this machine has installed.
+  test.use({ seedHooksConsent: false, standaloneOptions: { mockClaude: true } });
 
   function readConsentFrom(tmpHome: string): boolean {
     try {
@@ -361,7 +364,8 @@ function readOfficeMcpConsent(tmpHome: string): string {
  * revises them as absolute states (docs/adr/0001).
  */
 test.describe('Standalone / Pixel Office MCP consent', () => {
-  test.use({ seedHooksConsent: false });
+  // The mock CLI answers the Intro's sign-in check (signed in), whatever this machine has installed.
+  test.use({ seedHooksConsent: false, standaloneOptions: { mockClaude: true } });
 
   test('the choices step asks both, and Back revises the answer @area:standalone', async ({
     page,
@@ -378,7 +382,8 @@ test.describe('Standalone / Pixel Office MCP consent', () => {
     await expect.poll(() => readOfficeMcpConsent(standalone.tmpHome)).toBe('granted');
 
     // Back keeps the boxes: swap them. The MCP declined, the hooks installed.
-    await dialog.getByRole('button', { name: 'Back' }).click();
+    await readIntro(dialog);
+    await backInIntro(dialog, introChoice(dialog, 'mcp'));
     await expect(introChoice(dialog, 'mcp')).toHaveAttribute('aria-pressed', 'true');
     await introChoice(dialog, 'mcp').click();
     await chooseInIntro(dialog, { hooks: true });

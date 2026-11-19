@@ -170,7 +170,7 @@ export function OfficeCanvas({
           : undefined;
 
         // Camera: smoothly center on the followed agent, or — while the greeter
-        // is speaking the Intro — on the character+bubble center the IntroBubble
+        // is speaking the Intro — on the point the IntroDialog
         // overlay feeds via greeterCameraTarget. An explicit follow (clicking an
         // agent) outranks the greeter target; a manual pan cancels both. A
         // clicked piece of interactive furniture is centred on the same way.
@@ -191,9 +191,13 @@ export function OfficeCanvas({
           const targetY = mapH / 2 - cameraFocus.y * zoom;
           const dx = targetX - panRef.current.x;
           const dy = targetY - panRef.current.y;
+          // The Intro's camera starts on its target (no drift across the office).
+          const jump =
+            cameraFocus === officeState.greeterCameraTarget && officeState.takeGreeterCameraSnap();
           if (
-            Math.abs(dx) < CAMERA_FOLLOW_SNAP_THRESHOLD &&
-            Math.abs(dy) < CAMERA_FOLLOW_SNAP_THRESHOLD
+            jump ||
+            (Math.abs(dx) < CAMERA_FOLLOW_SNAP_THRESHOLD &&
+              Math.abs(dy) < CAMERA_FOLLOW_SNAP_THRESHOLD)
           ) {
             panRef.current = { x: targetX, y: targetY };
           } else {

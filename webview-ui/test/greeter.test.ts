@@ -25,7 +25,7 @@ import assert from 'node:assert/strict';
 
 import { test } from 'vitest';
 
-import { GREETER_ID, GREETER_TILE_MARGIN } from '../src/constants.js';
+import { GREETER_ID } from '../src/constants.js';
 import { OfficeState } from '../src/office/engine/officeState.js';
 import type { OfficeLayout } from '../src/office/types.js';
 import { CharacterState, MATRIX_EFFECT_DURATION, TileType } from '../src/office/types.js';
@@ -41,13 +41,12 @@ function floorLayout(cols = 9, rows = 7): OfficeLayout {
   };
 }
 
-/** The greeter's target tile, derived from the margin constant rather than
- *  restated — retuning the margin is a design change, not a broken test. */
-function targetTile(rows: number): { col: number; row: number } {
-  return { col: GREETER_TILE_MARGIN, row: rows - 1 - GREETER_TILE_MARGIN };
+/** The greeter's target tile: the middle of the office. */
+function targetTile(rows: number, cols = rows): { col: number; row: number } {
+  return { col: Math.floor(cols / 2), row: Math.floor(rows / 2) };
 }
 
-test('spawns in from the bottom-left corner, standing, without a seat', () => {
+test('spawns in the middle of the office, standing, without a seat', () => {
   const os = new OfficeState(floorLayout(9, 9));
   os.spawnGreeter();
 
@@ -55,13 +54,23 @@ test('spawns in from the bottom-left corner, standing, without a seat', () => {
   const ch = os.greeter;
   assert.ok(ch, 'greeter exists after spawn');
   assert.equal(ch.isGreeter, true);
-  assert.equal(ch.tileCol, target.col, 'margin tiles in from the left edge');
-  assert.equal(ch.tileRow, target.row, 'margin tiles up from the bottom edge');
+  assert.equal(ch.tileCol, target.col, 'the middle column');
+  assert.equal(ch.tileRow, target.row, 'the middle row');
+  assert.deepEqual(os.greeterHome, { x: ch.x, y: ch.y }, 'where the camera stays');
   assert.equal(ch.seatId, null, 'the greeter never takes a seat');
   assert.equal(ch.state, CharacterState.IDLE);
   assert.equal(ch.palette, 0, 'char_0 sprite');
   assert.equal(ch.repeat, 0);
   assert.equal(ch.matrixEffect, 'spawn', 'materializes with the matrix effect');
+});
+
+test('the middle is the middle of the floor: void around the rooms does not count', () => {
+  // A 9x12 grid whose top 6 rows are void: the floor is rows 6-11.
+  const layout = floorLayout(9, 12);
+  layout.tiles.fill(TileType.VOID, 0, 6 * 9);
+  const os = new OfficeState(layout);
+  os.spawnGreeter();
+  assert.deepEqual([os.greeter?.tileCol, os.greeter?.tileRow], [4, 9]);
 });
 
 test('falls back to the closest walkable tile when the target is not walkable', () => {
@@ -211,6 +220,9 @@ test('greeter camera target: per-frame updates land until a manual pan cancels t
 
   os.setGreeterCameraTarget({ x: 10, y: 20 });
   assert.deepEqual(os.greeterCameraTarget, { x: 10, y: 20 });
+  // The camera jumps to its first target, then never again for this spawn.
+  assert.equal(os.takeGreeterCameraSnap(), true);
+  assert.equal(os.takeGreeterCameraSnap(), false);
 
   // Manual pan: target cleared AND later per-frame updates ignored.
   os.cancelGreeterCamera();

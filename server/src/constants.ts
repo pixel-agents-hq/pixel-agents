@@ -434,3 +434,17 @@ export const MAX_DIRECTORY_OPS = 20;
 export const CHARACTER_ROSTER_HINT_MAX = 30;
 /** Where the build puts the wardrobe art, under dist/ (esbuild.js copyWardrobeArt). */
 export const WARDROBE_ART_DIST_DIR = 'assets/wardrobe';
+
+// ── The CLI's trust question (--trust-directories) ───────────
+/** How often a launched agent's screen is read for the question. */
+export const TRUST_PROMPT_POLL_MS = 500;
+/** How long after a launch it is looked for: it is the first thing a session shows, or it never comes. */
+export const TRUST_PROMPT_WATCH_MS = 30_000;
+
+// ── CLI sign-in (the Intro's sign-in step) ───────────────────
+/** How long asking a CLI whether it is signed in may take. */
+export const CLI_SIGN_IN_STATUS_TIMEOUT_MS = 10_000;
+/** How long a sign-in may stay open before it is ended: the user left the page, or the Intro. */
+export const CLI_SIGN_IN_TIMEOUT_MS = 15 * 60_000;
+/** The longest code a sign-in page hands back that is passed on to the CLI. */
+export const CLI_SIGN_IN_CODE_MAX_LENGTH = 1024;

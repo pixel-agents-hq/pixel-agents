@@ -16,6 +16,11 @@ export const SERVER_JSON_DIR = '.pixel-agents';
 export const SERVER_JSON_NAME = 'server.json';
 export const HOOK_SCRIPTS_DIR = '.pixel-agents/hooks';
 
+// ── Community ────────────────────────────────────────────────
+
+/** The project's Discord invite (the Intro, the changelog, the tutorial's Guide). */
+export const DISCORD_INVITE_URL = 'https://discord.gg/Yk7jXebv9H';
+
 // ── Display ──────────────────────────────────────────────────
 
 export const BASH_COMMAND_DISPLAY_MAX_LENGTH = 30;

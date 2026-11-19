@@ -1,7 +1,7 @@
 import type { Locator } from '@playwright/test';
 
 import { expect, test } from '../../fixtures/standalone';
-import { chooseInIntro } from '../../helpers/intro';
+import { chooseInIntro, readIntroClosing } from '../../helpers/intro';
 import { arrangeNextClaudeInvocation, claudeScenario } from '../../helpers/mock-claude';
 
 /**
@@ -53,17 +53,18 @@ test.describe('Standalone / Tutorial', () => {
 
     const dialog = page.getByRole('dialog');
     await introToClosing(dialog);
-    // The closing step's ask says plainly what yes does, and nothing has launched yet.
+    // The closing step asks, and nothing has launched yet.
+    const said = await readIntroClosing(dialog);
+    expect(said).toContain('Come hang out in our Discord.');
+    expect(said).toContain('Want me to show you around?');
     await expect(dialog.getByTestId('tutorial-offer')).toBeVisible();
-    await expect(dialog).toContainText('Want Byte to show you around?');
-    await expect(dialog).toContainText('real Claude Code session');
-    await expect(dialog).toContainText('Claude plan');
     await expect(page.getByTitle(/Tutorial/)).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Show Me Around' }).click();
 
     // The greeter walks to a desk first; then the Guide is an agent with a card
     // and a terminal, and the Intro closes.
-    await expect(dialog.getByRole('button', { name: 'Taking a Seat...' })).toBeVisible();
+    // The dialog goes at once; the greeter walks to its seat on its own.
+    await expect(dialog).toBeHidden();
     const card = page.getByTitle(/· Guide$/);
     await expect(card).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('.xterm:visible')).toBeVisible({ timeout: 15_000 });
@@ -119,6 +120,7 @@ test.describe('Standalone / Tutorial', () => {
   }) => {
     const dialog = page.getByRole('dialog');
     await introToClosing(dialog);
+    await readIntroClosing(dialog);
     await expect(dialog.getByTestId('tutorial-offer')).toBeVisible();
     await dialog.getByRole('button', { name: "Let's Go" }).click();
     await expect(dialog).toBeHidden({ timeout: 15_000 });

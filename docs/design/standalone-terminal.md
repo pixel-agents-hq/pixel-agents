@@ -230,6 +230,22 @@ token in transit, to the LAN over plain HTTP. The explicit allowlist keeps the b
 applying it to `/ws` too means no privileged path is weaker than another. A tokened `/ws` connection
 under an unlisted `Host` stays read-only and the server logs the `--allowed-host` hint.
 
+### `--trust-directories`
+
+Claude Code asks "do you trust this folder?" the first time a session opens in a folder, with "No,
+exit" selected. On a remote server set up for one person's own work, with nobody at a keyboard,
+that question meets a new user before their first agent has said a word. Started with
+`--trust-directories`, the office answers it for every agent it launches: `terminal/trustPrompt.ts`
+reads the new session's screen (`readScreen`) for `TRUST_PROMPT_WATCH_MS` after the launch, and
+when the provider recognizes its question (`HookProvider.trustPromptKeys`; Claude's wants both
+menu rows on screen and the pointer on one of them) it presses them through the same `typeInto` a
+Message uses, one key per read: a move, then the screen is read again, and Enter goes only to a
+screen whose pointer is on yes. The CLI drops keys for a moment after the question appears, so
+"down, enter" sent together lost the move and confirmed "No, exit", ending the session. Off by default and never a setting in the office: the question is the
+CLI's safeguard against a folder whose own config runs code, so answering it is the decision of
+whoever starts the server, made once, on the command line. The office writes nothing to Claude's
+config for it; the CLI records the answer itself.
+
 ### Other properties
 
 - The standalone token is persisted in `~/.pixel-agents/standalone-token` (mode `0o600`; the

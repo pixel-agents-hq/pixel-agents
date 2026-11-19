@@ -14,6 +14,7 @@ import {
   handleCharacterProfilesClientMessage,
   refusedSaveAnswer,
 } from './characterProfilesPersistence.js';
+import { cliSignIns } from './cliSignIn.js';
 import {
   getHooksConsent,
   getHooksEnabled,
@@ -499,6 +500,14 @@ export function handleClientMessage(
       });
       break;
     }
+
+    case 'requestCliSignInStatus':
+    case 'startCliSignIn':
+    case 'submitCliSignInCode':
+      // The Intro's sign-in step. Shared with the VS Code adapter; a sign-in
+      // belongs to the connection that started it.
+      cliSignIns.handle(msg, ctx.client ?? ctx, (m) => send({ ...m }));
+      break;
 
     case 'hooksConsentResponse': {
       // Fail-closed on the provider exactly like on the choice: an id naming
