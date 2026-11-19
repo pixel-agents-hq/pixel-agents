@@ -1,7 +1,8 @@
 import { useEffect, useReducer, useRef } from 'react';
 
+import { newProfile } from '../../../core/src/characters/profiles.js';
 import { castStore, useCast } from '../characters/castStore.js';
-import { characterLabel, newProfile } from '../characters/profiles.js';
+import { characterLabel } from '../characters/profiles.js';
 import type { RosterPick } from '../components/LaunchDrawer.js';
 import { LAUNCH_MENUS_CLOSED, launchMenusReducer } from './launchMenus.js';
 

@@ -6,7 +6,7 @@
  * the office can tell apart, so its repeat is hue-turned whole instead.
  */
 
-import type { CharacterColor, CharacterProfile } from '../../../core/src/characterProfiles.js';
+import type { CharacterColor, CharacterProfile } from '../characterProfiles.js';
 import { REPEAT_CLOTHES_HUES, REPEAT_CLOTHES_SATURATION } from '../constants.js';
 import type { ColorKey } from './slots.js';
 

@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { CharacterProfile } from '../../../core/src/characterProfiles.js';
 import { MAX_CHARACTER_PROFILES } from '../../../core/src/characterProfiles.js';
+import type { CharacterRenderer } from '../../../core/src/characters/renderer.js';
 import { useCast } from '../characters/castStore.js';
 import { characterLabel } from '../characters/profiles.js';
 import { rosterOrder } from '../characters/recent.js';
-import type { CharacterRenderer } from '../characters/renderer.js';
 import { SpriteCanvas } from '../characters/ui/SpriteCanvas.js';
 import { CHARACTER_ANIM_MS, CHARACTER_PICKER_SPRITE_SCALE } from '../constants.js';
 import { useDevicePixelRatio } from '../hooks/useDevicePixelRatio.js';

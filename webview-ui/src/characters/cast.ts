@@ -25,11 +25,11 @@ import {
   newCharacterId,
   pixId,
 } from '../../../core/src/characterProfiles.js';
+import type { CharacterRenderer } from '../../../core/src/characters/renderer.js';
 import { newLocalId } from '../../../core/src/localId.js';
 import { MAX_WARDROBE_ITEMS, type WardrobeItem } from '../../../core/src/wardrobeItems.js';
 import { CAST_HISTORY } from '../constants.js';
 import { History } from './history.js';
-import type { CharacterRenderer } from './renderer.js';
 
 /** The cast as one value: the profiles and the items they may wear move together. */
 interface Cast {

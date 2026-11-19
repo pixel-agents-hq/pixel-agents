@@ -1,16 +1,21 @@
 /**
- * Decode the wardrobe in the browser. Every art/ PNG is inlined into the bundle as a data
+ * Decode the wardrobe in the browser. Every core/src/characters/art PNG is inlined into the bundle as a data
  * URI: a canvas can read a data: image back, while one served from another origin (VS
  * Code's webview resource host) would taint it.
  */
 
-import manifest from './art/wardrobe.json';
-import { decodeSheet } from './sheet.js';
-import { EYE_FOLDERS } from './slots.js';
-import { decodeWardrobe, parseWardrobeManifest, type Rgba, type Wardrobe } from './wardrobe.js';
+import manifest from '../../../core/src/characters/art/wardrobe.json';
+import { decodeSheet } from '../../../core/src/characters/sheet.js';
+import { EYE_FOLDERS } from '../../../core/src/characters/slots.js';
+import {
+  decodeWardrobe,
+  parseWardrobeManifest,
+  type Rgba,
+  type Wardrobe,
+} from '../../../core/src/characters/wardrobe.js';
 
-/** './art/hair/bob.png' → data URI. */
-const pngs = import.meta.glob<string>('./art/**/*.png', {
+/** '../../../core/src/characters/art/hair/bob.png' → data URI. */
+const pngs = import.meta.glob<string>('../../../core/src/characters/art/**/*.png', {
   eager: true,
   query: '?inline',
   import: 'default',
@@ -35,7 +40,10 @@ export function loadWardrobe(): Promise<Wardrobe> {
   loading ??= Promise.all(
     Object.entries(pngs).map(
       async ([file, url]) =>
-        [file.replace(/^\.\/art\//, '').replace(/\.png$/, ''), await decodePng(url)] as const,
+        [
+          file.replace(/^(\.\.\/)+core\/src\/characters\/art\//, '').replace(/\.png$/, ''),
+          await decodePng(url),
+        ] as const,
     ),
   ).then((files) => decodeWardrobe(parseWardrobeManifest(manifest), new Map(files), EYE_FOLDERS));
   return loading;

@@ -25,7 +25,11 @@ export const REQUIRED_PACKAGE_FILES = [
   'package.json',
 ];
 
-export const REQUIRED_PACKAGE_PREFIXES = ['dist/assets/furniture/', 'dist/webview/assets/'];
+export const REQUIRED_PACKAGE_PREFIXES = [
+  'dist/assets/furniture/',
+  'dist/assets/wardrobe/',
+  'dist/webview/assets/',
+];
 
 export const FORBIDDEN_PACKAGE_PREFIXES = [
   '.github/',

@@ -38,7 +38,8 @@ export default [
     },
   },
   {
-    files: ['adapters/vscode/constants.ts'],
+    // Wardrobe art data: the colour pickers' swatches.
+    files: ['adapters/vscode/constants.ts', 'core/src/characters/art/**'],
     rules: {
       'pixel-agents/no-inline-colors': 'off',
     },

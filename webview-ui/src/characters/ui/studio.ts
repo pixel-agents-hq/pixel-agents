@@ -7,9 +7,9 @@
 import { createContext, useContext } from 'react';
 
 import type { CharacterProfile } from '../../../../core/src/characterProfiles.js';
+import type { CharacterRenderer } from '../../../../core/src/characters/renderer.js';
+import type { ColorKey, TabKey } from '../../../../core/src/characters/slots.js';
 import type { CastState } from '../castStore.js';
-import type { CharacterRenderer } from '../renderer.js';
-import type { ColorKey, TabKey } from '../slots.js';
 
 export type EditorTool = 'pencil' | 'eraser' | 'restore' | 'picker';
 

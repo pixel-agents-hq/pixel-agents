@@ -6,15 +6,22 @@ import { PNG } from 'pngjs';
 import { expect, it } from 'vitest';
 
 import type { CharacterProfile } from '../../core/src/characterProfiles.js';
+import { CharacterRenderer } from '../../core/src/characters/renderer.js';
+import { EYE_FOLDERS } from '../../core/src/characters/slots.js';
+import {
+  decodeWardrobe,
+  parseWardrobeManifest,
+  type Rgba,
+} from '../../core/src/characters/wardrobe.js';
 import { DEFAULT_CHARACTER_PROFILES } from '../../core/src/defaultCharacterProfiles.js';
 import { startOfficeSync } from '../src/characters/officeSprites.js';
-import { CharacterRenderer } from '../src/characters/renderer.js';
-import { EYE_FOLDERS } from '../src/characters/slots.js';
-import { decodeWardrobe, parseWardrobeManifest, type Rgba } from '../src/characters/wardrobe.js';
 import { getCharacterSprites } from '../src/office/sprites/spriteData.js';
 import { Direction } from '../src/office/types.js';
 
-const art = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/characters/art');
+const art = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../core/src/characters/art',
+);
 const files = new Map<string, Rgba>(
   fs
     .readdirSync(art, { recursive: true, encoding: 'utf-8' })

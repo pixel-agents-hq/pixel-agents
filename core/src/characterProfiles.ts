@@ -81,6 +81,10 @@ void slotsMatchContract;
 export const CHARACTER_PROFILE_VERSION = 35;
 /** Upper bound on a saved cast, so a hand-edited or hostile payload can't grow the file without limit. */
 export const MAX_CHARACTER_PROFILES = 500;
+/** The character the Intro's greeter wears, by its permanent profile id: the default cast's
+ *  Suit (the first in the cast if no character has that id). An id, not a name, so renaming
+ *  the character doesn't change who greets; it can't be deleted. */
+export const GREETER_CHARACTER_ID = 'char-0';
 
 /**
  * A pixel set's id: a piece (a sheet layer, e.g. 'hair') and the part id it draws. Keys a
@@ -158,6 +162,11 @@ export function isCharacterProfile(value: unknown): value is CharacterProfile {
   return true;
 }
 
+/** A profile's permanent id: its own, else `char-<index>` (a list saved before ids). Every
+ *  profile read through parseCharacterProfiles has its own. */
+export const characterIdOf = (profile: { id?: string }, index: number): string =>
+  profile.id ?? `char-${index}`;
+
 /**
  * The profiles in `value` (migrated) when it is a non-empty, bounded list of valid profiles;
  * otherwise null. The ONE validator: the server runs it before persisting and the webview
@@ -174,7 +183,7 @@ export function parseCharacterProfiles(value: unknown): CharacterProfile[] | nul
   const taken = new Set<string>();
   return value.map((p, i) => {
     const next = migrateCharacterProfile(p);
-    let id = next.id ?? `char-${i}`;
+    let id = characterIdOf(next, i);
     for (let n = i; taken.has(id); n += value.length) id = `${id.slice(0, 50)}-${n}`;
     taken.add(id);
     return id === next.id ? next : { ...next, id };

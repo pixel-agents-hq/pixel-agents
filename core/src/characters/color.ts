@@ -1,15 +1,15 @@
 /**
  * Pixel colour maths for character parts, on raw RGBA buffers.
  *
- * Same ColorValue model as office/colorize.ts (adjust mode shifts the art's own HSL,
+ * Same ColorValue model as the webview's office/colorize.ts (adjust mode shifts the art's own HSL,
  * colorize mode sets an absolute hue/saturation on the art's luminance), plus the
  * optional exact colour swap a CharacterColor can name. RGB → HSL and luminance are the
- * office's; HSL → RGB stays separate because its rounding is what every wardrobe
+ * office's (assets/colorUtils.ts); HSL → RGB stays separate because its rounding is what every wardrobe
  * colourway was tuned against (characterRenderer.test.ts pins it pixel for pixel).
  */
 
-import type { CharacterColor } from '../../../core/src/characterProfiles.js';
-import { luminance, rgbToHsl as rgbToHslDegrees } from '../office/colorize.js';
+import { luminance, rgbToHsl as rgbToHslDegrees } from '../assets/colorUtils.js';
+import type { CharacterColor } from '../characterProfiles.js';
 import { isOpaque } from './sheet.js';
 
 export type Rgb = [number, number, number];

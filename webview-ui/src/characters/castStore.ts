@@ -7,12 +7,12 @@
 
 import { useSyncExternalStore } from 'react';
 
+import { CharacterRenderer } from '../../../core/src/characters/renderer.js';
+import { type ItemArt, type Wardrobe, withItems } from '../../../core/src/characters/wardrobe.js';
 import type { WardrobeItem } from '../../../core/src/wardrobeItems.js';
 import { transport } from '../transport/index.js';
 import { type CastState, CastStore } from './cast.js';
 import { decodeItemPng, loadWardrobe } from './loadWardrobe.js';
-import { CharacterRenderer } from './renderer.js';
-import { type ItemArt, type Wardrobe, withItems } from './wardrobe.js';
 
 export type { CastState } from './cast.js';
 

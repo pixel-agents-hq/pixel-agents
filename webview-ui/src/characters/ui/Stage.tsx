@@ -5,6 +5,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
+import { SHEET_H, SHEET_W } from '../../../../core/src/characters/sheet.js';
+import { canBlink, editsOf } from '../../../../core/src/characters/slots.js';
 import { Button } from '../../components/ui/Button.js';
 import { PixelIcon } from '../../components/ui/PixelIcon.js';
 import {
@@ -16,8 +18,6 @@ import {
   CHARACTERS_PHONE_SCALES,
 } from '../../constants.js';
 import { useBoxSize } from '../../hooks/useBoxSize.js';
-import { SHEET_H, SHEET_W } from '../sheet.js';
-import { canBlink, editsOf } from '../slots.js';
 import {
   devicePixels,
   drawView,

@@ -6,11 +6,11 @@
  * pixel edits go over; then it is tinted and stacked in LAYERS order, and the props
  * (reading glasses, unless the eyes read bare, and the paper) go on top.
  *
- * DOM-free: works on RGBA buffers, so it runs in tests as it does in the webview.
+ * DOM-free: works on RGBA buffers, so it runs in tests and on the server as it does in the webview.
  */
 
-import { CHAR_FRAME_H } from '../../../core/src/assets/constants.js';
-import type { CharacterColor, CharacterPixelEdits } from '../../../core/src/characterProfiles.js';
+import { CHAR_FRAME_H } from '../assets/constants.js';
+import type { CharacterColor, CharacterPixelEdits } from '../characterProfiles.js';
 import { DEFAULT_COLORS } from './art/artColors.js';
 import { colorKey, hexLum, hexToRgb, lum, rgbHex, rgbToHsl, tintPixels } from './color.js';
 import { CLOTHES_COLOR_KEYS } from './repeatClothes.js';
@@ -73,6 +73,8 @@ export class CharacterRenderer {
   private readonly layerCache = new Map<string, Layer>();
   private readonly sheetCache = new Map<string, Uint8ClampedArray>();
   private readonly beardCache = new Map<string, CharacterColor>();
+  /** Each edits object's cache key (editsKey). */
+  private readonly editsKeys = new WeakMap<CharacterPixelEdits, string>();
   readonly wardrobe: Wardrobe;
 
   constructor(wardrobe: Wardrobe) {
@@ -312,7 +314,7 @@ export class CharacterRenderer {
     const src = this.source(art);
     if (!art || !src) return null;
     const edits = editsOf(p, layer.pix);
-    const key = `${art.path}|${editsKey(edits)}`;
+    const key = `${art.path}|${this.editsKey(edits)}`;
     const cached = this.layerCache.get(key);
     if (cached) return cached;
 
@@ -360,7 +362,7 @@ export class CharacterRenderer {
 
   /** The finished sheet, cached by everything that changes it. Callers must not mutate it. */
   sheet(p: RenderProfile): Uint8ClampedArray {
-    const key = sheetKey(p);
+    const key = this.sheetKey(p);
     let d = this.sheetCache.get(key);
     if (!d) {
       d = this.buildSheet(p);
@@ -369,25 +371,24 @@ export class CharacterRenderer {
     }
     return d;
   }
-}
 
-/** Each edits object's content as a cache key, computed once per object (profiles are immutable snapshots). */
-const editsKeys = new WeakMap<CharacterPixelEdits, string>();
-function editsKey(edits: CharacterPixelEdits | undefined): string {
-  if (!edits) return '';
-  let key = editsKeys.get(edits);
-  if (key === undefined) {
-    key = JSON.stringify(edits.cells);
-    editsKeys.set(edits, key);
+  /** An edits object's content as a cache key, computed once per object (profiles are immutable snapshots). */
+  private editsKey(edits: CharacterPixelEdits | undefined): string {
+    if (!edits) return '';
+    let key = this.editsKeys.get(edits);
+    if (key === undefined) {
+      key = JSON.stringify(edits.cells);
+      this.editsKeys.set(edits, key);
+    }
+    return key;
   }
-  return key;
-}
 
-/** The fields a sheet depends on (part ids, colours, edits, eyes, blink), by content. */
-function sheetKey(p: RenderProfile): string {
-  const edits = Object.entries(p.edits ?? {}).map(([k, e]) => `${k}=${editsKey(e)}`);
-  const look = { ...p, name: undefined, v: undefined, edits: undefined };
-  return JSON.stringify([look, edits]);
+  /** The fields a sheet depends on (part ids, colours, edits, eyes, blink), by content. */
+  private sheetKey(p: RenderProfile): string {
+    const edits = Object.entries(p.edits ?? {}).map(([k, e]) => `${k}=${this.editsKey(e)}`);
+    const look = { ...p, name: undefined, v: undefined, edits: undefined };
+    return JSON.stringify([look, edits]);
+  }
 }
 
 /** The back view: the sheet's middle (up) row of frames. */

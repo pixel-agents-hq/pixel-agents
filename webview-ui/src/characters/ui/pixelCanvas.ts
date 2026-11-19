@@ -12,7 +12,7 @@ import {
   CHAR_FRAMES_PER_ROW,
   CHARACTER_DIRECTIONS,
 } from '../../../../core/src/assets/constants.js';
-import { SHEET_H, SHEET_W } from '../sheet.js';
+import { SHEET_H, SHEET_W } from '../../../../core/src/characters/sheet.js';
 
 export type Facing = 'down' | 'right' | 'up' | 'left';
 export const FACINGS: readonly Facing[] = ['down', 'right', 'up', 'left'];

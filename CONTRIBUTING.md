@@ -157,6 +157,7 @@ Before using it, copy `port` and `token` from `~/.pixel-agents/server.json` into
 - **Shared backend timing/scanning constants:** `server/src/constants.ts` (imported by `adapters/vscode/` too)
 - **VS Code-only IDs / command names:** `adapters/vscode/constants.ts`
 - **Protocol-level constants:** `core/src/constants.ts`
+- **Layout constants (shared by the editor and the server):** `core/src/layout/constants.ts`
 - **Webview:** `webview-ui/src/constants.ts` (grid, animation, rendering, camera, zoom, editor, canvas overlay rgba strings)
 - **CSS variables:** `webview-ui/src/index.css` `:root` block (`--pixel-*` properties for React inline styles and CSS)
 

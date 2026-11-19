@@ -4,7 +4,7 @@
  *
  * This is the core package's public contract, so every type here is exported whether or
  * not it currently has an importer: some are mirrored by local copies (webview-ui keeps
- * its own OfficeLayout/SpriteData) and some describe wire/persistence shapes consumed
+ * its own SpriteData) and some describe wire/persistence shapes consumed
  * across the process boundary. Deleting one because knip reports it unused would break
  * the contract, hence the @public tags.
  */
@@ -67,23 +67,25 @@ export interface AgentMeta {
 
 // ── Layout ───────────────────────────────────────────────────
 
-/** Color value for floor/wall/furniture colorization */
+/** HSBC color value used for colorizing sprites, floor tiles, walls, and furniture. */
 export interface ColorValue {
+  /** Hue: 0-360 in colorize mode, -180 to +180 in adjust mode */
   h: number;
+  /** Saturation: 0-100 in colorize mode, -100 to +100 in adjust mode */
   s: number;
+  /** Brightness -100 to 100 */
   b: number;
+  /** Contrast -100 to 100 */
   c: number;
+  /** When true, use Photoshop-style Colorize (grayscale → fixed HSL). Default: adjust mode. */
   colorize?: boolean;
 }
 
-/** A placed furniture item in the layout */
-export interface PlacedFurniture {
-  type: string;
-  uid: string;
-  col: number;
-  row: number;
-  color?: ColorValue;
-}
+/** The layout model itself lives in layout/types.ts (the editor's and the server's one).
+ *
+ * @public
+ */
+export type { OfficeLayout, PlacedFurniture } from './layout/types.js';
 
 /** Floor color for a specific tile */
 export interface FloorColor {
@@ -94,19 +96,6 @@ export interface FloorColor {
   b: number;
   c: number;
   colorize?: boolean;
-}
-
-/** Complete office layout data
- *
- * @public
- */
-export interface OfficeLayout {
-  version: number;
-  cols: number;
-  rows: number;
-  tiles: number[];
-  furniture: PlacedFurniture[];
-  tileColors?: FloorColor[];
 }
 
 // ── Sprites & Assets ─────────────────────────────────────────

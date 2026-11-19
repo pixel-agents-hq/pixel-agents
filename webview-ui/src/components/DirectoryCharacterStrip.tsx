@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { CHAR_FRAME_W } from '../../../core/src/assets/constants.js';
+import { newProfile } from '../../../core/src/characters/profiles.js';
+import { isOpaque, SHEET_W } from '../../../core/src/characters/sheet.js';
 import { useCast } from '../characters/castStore.js';
-import { characterLabel, newProfile } from '../characters/profiles.js';
-import { isOpaque, SHEET_W } from '../characters/sheet.js';
+import { characterLabel } from '../characters/profiles.js';
 import {
   DIRECTORY_SILHOUETTE_COLOR,
   DIRECTORY_SILHOUETTE_DOT_PX,
