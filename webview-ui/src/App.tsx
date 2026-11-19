@@ -72,6 +72,7 @@ import { PcShellRejectedModal } from './pcShells/PcShellRejectedModal.js';
 import { closePcShell } from './pcShells/pcShellStore.js';
 import { usePcShellPanels } from './pcShells/usePcShellPanels.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
+import { useCliSignIn } from './signIn/useCliSignIn.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
 import { TutorialPanel } from './tutorial/TutorialPanel.js';
@@ -175,6 +176,13 @@ function App() {
     saveCardOrder,
   } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty);
   const usage = useUsageBridge();
+  // An account with no plan limits (an API account) has nothing for the bars
+  // to show: asked once, when the bars are on.
+  const usagePlan = useCliSignIn(usage.status?.installed ? usage.status.providerId : undefined);
+  const checkUsagePlan = usagePlan.check;
+  useEffect(() => {
+    checkUsagePlan();
+  }, [checkUsagePlan]);
 
   // Show migration notice once layout reset is detected
   const [migrationNoticeDismissed, setMigrationNoticeDismissed] = useState(false);
@@ -717,7 +725,7 @@ function App() {
           )}
 
           {/* The provider's plan usage, top-left (Settings → Usage Bars). */}
-          {usage.status?.installed && (
+          {usage.status?.installed && usagePlan.status?.planLimits !== false && (
             <UsageBars
               limits={usage.limits}
               providerName={usage.status.providerName}

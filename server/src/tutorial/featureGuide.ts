@@ -109,7 +109,8 @@ export const FEATURE_GUIDE: readonly FeatureGuideTopic[] = [
     title: 'Usage bars',
     body:
       'Top-left, beside the zoom buttons: how much of the Claude Code plan is left — a weekly bar over a 5-hour ' +
-      "bar, the share left in each, a pixel heart beside them. Hover (tap on a phone) to see each bar's reset time. " +
+      'bar (the weekly bar alone on a plan with no 5-hour limit; none for an API account, which has no plan), ' +
+      "the share left in each, a pixel heart beside them; they appear once a session has replied. Hover (tap on a phone) to see each bar's reset time. " +
       "They need Settings → Usage Bars, which wraps the user's Claude Code status line to read the plan limits " +
       '(disclosed before it is turned on, undone exactly when turned off).',
   },

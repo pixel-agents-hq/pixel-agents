@@ -13,11 +13,11 @@ import { PixelHeart } from './PixelHeart.js';
 import {
   freshnessLabel,
   heartBeatPeriodSec,
+  shownUsageBars,
+  type UsageBarId as BarId,
   type UsageBarView,
   usageBarView,
 } from './usageBarView.js';
-
-type BarId = 'weekly' | 'fiveHour';
 
 /** Fill colour per bar and level. The two bars differ all the way down,
  *  like a game's health and stamina: weekly green → yellow → red, 5-hour
@@ -90,9 +90,9 @@ function BarRow({ id, view, showReset }: { id: BarId; view: UsageBarView; showRe
 
 /**
  * Top-left of the office: how much of the provider's plan is left (`providerName`, e.g. Claude Code). A heart,
- * then the weekly bar (green) over the 5-hour bar (blue), equal in size, each
- * draining through its own colours to red,
- * each with its share left inside. Hovering any of it makes the heart beat, at a
+ * then one bar per window the plan reports (shownUsageBars): the weekly bar (green) over the 5-hour bar (blue),
+ * equal in size, each draining through its own colours to red, each with its share left inside; a plan with no
+ * 5-hour limit has the weekly bar alone. Hovering any of it makes the heart beat, at a
  * pace proportional to the weekly plan left, and shows when each bar resets,
  * right of it. On a phone a tap does it instead (a tap elsewhere undoes it),
  * with the reset times below the bars, where the narrow screen has room.
@@ -110,33 +110,44 @@ export function UsageBars({ limits, providerName, mobile }: UsageBarsProps) {
     document.addEventListener('pointerdown', close, true);
     return () => document.removeEventListener('pointerdown', close, true);
   }, [mobile, active]);
-  const weekly = usageBarView(limits?.sevenDay, now);
-  const fiveHour = usageBarView(limits?.fiveHour, now);
+  // One bar per window the plan reports (usageBarView's shownUsageBars).
+  const bars = shownUsageBars(limits).map((id) => ({
+    id,
+    view: usageBarView(id === 'weekly' ? limits?.sevenDay : limits?.fiveHour, now),
+  }));
   // Reset times: right of each bar on a desktop, below the bars on a phone.
   const showResetBeside = active && !mobile;
+  // Nothing reported yet (no session has replied since Usage Bars went on): nothing to draw.
+  if (bars.length === 0) return null;
 
   return (
     <div
       ref={rootRef}
+      data-testid="usage-bars"
       className={`absolute z-10 flex items-center gap-8 cursor-default ${mobile ? 'mobile-safe-top' : 'top-8'}`}
       style={{ left: USAGE_BARS_LEFT_PX }}
       title={freshnessLabel(limits?.updatedAt, now, providerName)}
-      aria-label={`${providerName} usage. Weekly: ${weekly.percent} left, ${weekly.reset}. 5-hour: ${fiveHour.percent} left, ${fiveHour.reset}.`}
+      aria-label={`${providerName} usage. ${bars
+        .map(({ id, view }) => `${BAR_NAME[id]}: ${view.percent} left, ${view.reset}.`)
+        .join(' ')}`}
       // A phone's tap also fires the emulated mouseenter, which would cancel
       // the click's toggle, so there only the tap counts.
       onMouseEnter={mobile ? undefined : () => setActive(true)}
       onMouseLeave={mobile ? undefined : () => setActive(false)}
       onClick={mobile ? () => setActive((a) => !a) : undefined}
     >
-      <PixelHeart periodSec={active ? heartBeatPeriodSec(weekly.remaining) : null} />
+      {/* The heart beats to the top bar: the weekly one wherever the plan has it. */}
+      <PixelHeart periodSec={active ? heartBeatPeriodSec(bars[0].view.remaining) : null} />
       <div className="flex flex-col gap-2">
-        <BarRow id="weekly" view={weekly} showReset={showResetBeside} />
-        <BarRow id="fiveHour" view={fiveHour} showReset={showResetBeside} />
+        {bars.map(({ id, view }) => (
+          <BarRow key={id} id={id} view={view} showReset={showResetBeside} />
+        ))}
       </div>
       {active && mobile && (
         <div className="absolute top-full left-0 mt-6 flex flex-col gap-4 pointer-events-none">
-          <ResetLabel id="weekly" view={weekly} />
-          <ResetLabel id="fiveHour" view={fiveHour} />
+          {bars.map(({ id, view }) => (
+            <ResetLabel key={id} id={id} view={view} />
+          ))}
         </div>
       )}
     </div>

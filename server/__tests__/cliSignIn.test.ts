@@ -9,6 +9,7 @@ import { CLI_SIGN_IN_CODE_MAX_LENGTH, CLI_SIGN_IN_TIMEOUT_MS } from '../src/cons
 function fakeProvider() {
   const state = {
     signedIn: false,
+    planLimits: undefined as boolean | undefined,
     begun: [] as Array<{ openBrowser: boolean; account: string }>,
     codes: [] as string[],
     cancelled: 0,
@@ -19,7 +20,10 @@ function fakeProvider() {
     id: 'fake',
     displayName: 'Fake CLI',
     cliSignIn: {
-      status: async () => state.signedIn,
+      status: async () => ({
+        signedIn: state.signedIn,
+        ...(state.planLimits === false ? { planLimits: false } : {}),
+      }),
       begin(options: { openBrowser: boolean; account: 'subscription' | 'api' }): CliSignInAttempt {
         state.begun.push(options);
         let finish: (o: { ok: true } | { ok: false; reason: string }) => void = () => undefined;
@@ -74,6 +78,16 @@ describe('CliSignIns', () => {
     signIns.handle({ type: 'requestCliSignInStatus', providerId: 'fake' }, client, reply);
     await settle();
     expect(sent).toEqual([{ type: 'cliSignInStatus', providerId: 'fake', signedIn: false }]);
+  });
+
+  it('says when the account signed in has no plan limits', async () => {
+    fake.state.signedIn = true;
+    fake.state.planLimits = false;
+    signIns.handle({ type: 'requestCliSignInStatus', providerId: 'fake' }, client, reply);
+    await settle();
+    expect(sent).toEqual([
+      { type: 'cliSignInStatus', providerId: 'fake', signedIn: true, planLimits: false },
+    ]);
   });
 
   it('counts a provider with no sign-in of its own as signed in', async () => {

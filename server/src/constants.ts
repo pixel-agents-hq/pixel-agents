@@ -250,6 +250,10 @@ export const USAGE_LIMITS_FILE_NAME = 'usage-limits.json';
 /** An unchanged usage report is still passed on (and saved) once this old, so
  *  the office's "updated N min ago" stays true while a session is open. */
 export const USAGE_UNCHANGED_REFRESH_MS = 60_000;
+/** A window that has reset and is missing from this many reports in a row is no longer part of the plan
+ *  (it is dropped, and its bar with it). One report without it is not enough: the CLI drops a window as it
+ *  resets and reports it again with the next reply. */
+export const USAGE_WINDOW_GONE_AFTER_REPORTS = 3;
 
 // ── Avatar Customization ────────────────────────────────────
 /** The character profiles agents are drawn from, in the persistence dir (shared by both surfaces). */

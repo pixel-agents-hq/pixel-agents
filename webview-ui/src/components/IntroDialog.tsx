@@ -241,7 +241,8 @@ export function IntroDialog({
 
   // The choices step's boxes (all off to start; kept across Back, so a revision starts from them).
   const options: IntroChoiceOption[] = [
-    ...(hooksAsk && offerUsage && usageBridge
+    // Not for an account with no plan limits (an API account): its bars would stay empty.
+    ...(hooksAsk && offerUsage && usageBridge && signIn.status?.planLimits !== false
       ? [
           {
             id: 'usage' as const,

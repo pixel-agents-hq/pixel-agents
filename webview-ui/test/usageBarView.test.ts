@@ -5,6 +5,7 @@ import {
   formatDuration,
   freshnessLabel,
   heartBeatPeriodSec,
+  shownUsageBars,
   usageBarView,
 } from '../src/usage/usageBarView.js';
 
@@ -84,5 +85,26 @@ describe('freshnessLabel', () => {
     expect(freshnessLabel(undefined, NOW, 'Claude Code')).toBe(
       'Updates once a Claude Code session replies',
     );
+  });
+});
+
+describe('shownUsageBars', () => {
+  const window = { usedPercentage: 10, resetsAt: 1_900_000_000 };
+
+  it('draws a bar per window the plan reports, the weekly one on top', () => {
+    expect(shownUsageBars({ sevenDay: window, fiveHour: window })).toEqual(['weekly', 'fiveHour']);
+  });
+
+  it('draws the weekly bar alone for a plan with no 5-hour limit', () => {
+    expect(shownUsageBars({ sevenDay: window })).toEqual(['weekly']);
+  });
+
+  it('draws the 5-hour bar alone where only that is reported', () => {
+    expect(shownUsageBars({ fiveHour: window })).toEqual(['fiveHour']);
+  });
+
+  it('draws none before any report says what the plan has', () => {
+    expect(shownUsageBars(undefined)).toEqual([]);
+    expect(shownUsageBars({})).toEqual([]);
   });
 });

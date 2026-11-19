@@ -20,12 +20,13 @@ const {
 const { normalizeClaudeUsageReport, normalizeClaudeContextReport } =
   await import('../src/providers/hook/claude/claudeUsageBridge.js');
 const { claudeProvider } = await import('../src/providers/index.js');
-const { USAGE_UNCHANGED_REFRESH_MS } = await import('../src/constants.js');
+const { USAGE_UNCHANGED_REFRESH_MS, USAGE_WINDOW_GONE_AFTER_REPORTS } =
+  await import('../src/constants.js');
 
-const report = (fiveHour?: number, sevenDay?: number) => ({
+const report = (fiveHour?: number, sevenDay?: number, fiveHourResetsAt = 1_900_000_000) => ({
   rate_limits: {
     ...(fiveHour !== undefined
-      ? { five_hour: { used_percentage: fiveHour, resets_at: 1_900_000_000 } }
+      ? { five_hour: { used_percentage: fiveHour, resets_at: fiveHourResetsAt } }
       : {}),
     ...(sevenDay !== undefined
       ? { seven_day: { used_percentage: sevenDay, resets_at: 1_900_500_000 } }
@@ -127,6 +128,45 @@ describe('recordUsageReport', () => {
       fiveHour: { usedPercentage: 42 },
       sevenDay: { usedPercentage: 20 },
     });
+  });
+
+  it('keeps a window that reset through a report without it: the next reply reports it again', () => {
+    const resetAtMs = 1_900_000_000 * 1000;
+    recordUsageReport(claudeProvider, report(42, 18), 1000);
+    recordUsageReport(claudeProvider, report(undefined, 19), resetAtMs + 1000);
+    expect(usageLimitsMessage('claude').fiveHour).toEqual({
+      usedPercentage: 42,
+      resetsAt: 1_900_000_000,
+    });
+    // Reported again: the count starts over.
+    recordUsageReport(claudeProvider, report(3, 19, 1_900_018_000), resetAtMs + 2000);
+    recordUsageReport(claudeProvider, report(undefined, 20), resetAtMs + 3000);
+    expect(usageLimitsMessage('claude').fiveHour?.usedPercentage).toBe(3);
+  });
+
+  it('drops a window that reset and then stays out of the reports: the plan no longer has it', () => {
+    const after = 1_900_000_000 * 1000 + 1000;
+    recordUsageReport(claudeProvider, report(42, 18), 1000);
+    for (let i = 1; i < USAGE_WINDOW_GONE_AFTER_REPORTS; i++) {
+      recordUsageReport(claudeProvider, report(undefined, 18 + i), after + i);
+      expect(usageLimitsMessage('claude').fiveHour).toBeDefined();
+    }
+    expect(recordUsageReport(claudeProvider, report(undefined, 30), after + 100)).toBe(true);
+    const message = usageLimitsMessage('claude');
+    expect(message.fiveHour).toBeUndefined();
+    expect(message.sevenDay?.usedPercentage).toBe(30);
+    // The count is the server's own: it never rides the message.
+    expect(Object.keys(message).sort()).toEqual(['providerId', 'sevenDay', 'type', 'updatedAt']);
+  });
+
+  it('counts reports without a window even when they are too alike to pass on', () => {
+    const after = 1_900_000_000 * 1000 + 1000;
+    recordUsageReport(claudeProvider, report(42, 18), 1000);
+    recordUsageReport(claudeProvider, report(undefined, 18), after);
+    for (let i = 1; i < USAGE_WINDOW_GONE_AFTER_REPORTS; i++) {
+      recordUsageReport(claudeProvider, report(undefined, 18), after + i);
+    }
+    expect(usageLimitsMessage('claude').fiveHour).toBeUndefined();
   });
 
   it('ignores a malformed report', () => {

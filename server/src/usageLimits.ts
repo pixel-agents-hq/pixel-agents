@@ -20,6 +20,7 @@ import {
   PIXEL_AGENTS_DIR,
   USAGE_LIMITS_FILE_NAME,
   USAGE_UNCHANGED_REFRESH_MS,
+  USAGE_WINDOW_GONE_AFTER_REPORTS,
 } from './constants.js';
 import { writeJsonAtomic } from './jsonFileWatcher.js';
 import { hookProviders } from './providers/index.js';
@@ -28,7 +29,12 @@ import { isRecord } from './serverConfig.js';
 /** A provider's last report: its windows and when it arrived (epoch ms). */
 interface StoredUsage extends ReportedUsage {
   updatedAt: number;
+  /** Per window still kept: the reports in a row, since it reset, that came without it. */
+  missed?: Partial<Record<WindowKey, number>>;
 }
+
+const WINDOW_KEYS = ['fiveHour', 'sevenDay'] as const;
+type WindowKey = (typeof WINDOW_KEYS)[number];
 
 /** Wire message types only privileged sockets receive. */
 export const PRIVILEGED_BROADCAST_TYPES: ReadonlySet<string> = new Set([
@@ -68,12 +74,20 @@ function parseStored(raw: unknown): Record<string, StoredUsage> {
   if (!isRecord(raw)) return out;
   for (const [id, entry] of Object.entries(raw)) {
     if (!isRecord(entry)) continue;
-    const { fiveHour, sevenDay, updatedAt } = entry;
+    const { fiveHour, sevenDay, updatedAt, missed } = entry;
     if (typeof updatedAt !== 'number' || !Number.isFinite(updatedAt)) continue;
+    const counts: Partial<Record<WindowKey, number>> = {};
+    if (isRecord(missed)) {
+      for (const key of WINDOW_KEYS) {
+        const count = missed[key];
+        if (typeof count === 'number' && Number.isInteger(count) && count > 0) counts[key] = count;
+      }
+    }
     out[id] = {
       updatedAt,
       ...(isWindow(fiveHour) ? { fiveHour } : {}),
       ...(isWindow(sevenDay) ? { sevenDay } : {}),
+      ...(Object.keys(counts).length > 0 ? { missed: counts } : {}),
     };
   }
   return out;
@@ -97,7 +111,10 @@ function stored(): Record<string, StoredUsage> {
  *
  * A window missing from the report keeps its last value: Claude Code drops a
  * window once it resets, and the client already shows a window past its reset
- * time as full.
+ * time as full. But a plan can stop having a window altogether (one with no
+ * 5-hour limit reports the weekly one alone), so a window that has reset and
+ * then stays out of USAGE_WINDOW_GONE_AFTER_REPORTS reports in a row is
+ * dropped: what the office shows follows what is reported, not a plan's name.
  */
 export function recordUsageReport(
   provider: HookProvider,
@@ -108,30 +125,62 @@ export function recordUsageReport(
   if (!limits) return false;
   const all = stored();
   const prev = all[provider.id];
-  const next: StoredUsage = {
-    ...(prev?.fiveHour ? { fiveHour: prev.fiveHour } : {}),
-    ...(prev?.sevenDay ? { sevenDay: prev.sevenDay } : {}),
-    ...limits,
-    updatedAt: now,
-  };
-  const { updatedAt: _prevAt, ...prevWindows } = prev ?? { updatedAt: 0 };
-  const { updatedAt: _nextAt, ...nextWindows } = next;
-  const moved = !isDeepStrictEqual(prevWindows, nextWindows);
-  if (!moved && prev && now - prev.updatedAt < USAGE_UNCHANGED_REFRESH_MS) return false;
+  const next: StoredUsage = { updatedAt: now };
+  const missed: Partial<Record<WindowKey, number>> = {};
+  for (const key of WINDOW_KEYS) {
+    const reported = limits[key];
+    const kept = prev?.[key];
+    if (reported) next[key] = reported;
+    else if (kept && kept.resetsAt * 1000 > now) next[key] = kept;
+    else if (kept) {
+      const count = (prev?.missed?.[key] ?? 0) + 1;
+      if (count >= USAGE_WINDOW_GONE_AFTER_REPORTS) continue; // No longer part of the plan.
+      next[key] = kept;
+      missed[key] = count;
+    }
+  }
+  if (Object.keys(missed).length > 0) next.missed = missed;
+  const moved = !isDeepStrictEqual(windowsOf(prev), windowsOf(next));
+  if (!moved && prev && now - prev.updatedAt < USAGE_UNCHANGED_REFRESH_MS) {
+    // Nothing for the office, but the count of reports without a window is kept.
+    if (!isDeepStrictEqual(prev.missed, next.missed)) {
+      const { missed: _counted, ...rest } = prev;
+      all[provider.id] = { ...rest, ...(next.missed ? { missed: next.missed } : {}) };
+      save(all);
+    }
+    return false;
+  }
   all[provider.id] = next;
+  save(all);
+  return true;
+}
+
+/** An entry's windows alone. */
+function windowsOf(entry: StoredUsage | undefined): ReportedUsage {
+  return {
+    ...(entry?.fiveHour ? { fiveHour: entry.fiveHour } : {}),
+    ...(entry?.sevenDay ? { sevenDay: entry.sevenDay } : {}),
+  };
+}
+
+function save(all: Record<string, StoredUsage>): void {
   try {
     writeJsonAtomic(usageFilePath(), all);
   } catch (err) {
     // The office still gets the report; only a restart would lose it.
     console.error('[Pixel Agents] Could not save usage limits:', err);
   }
-  return true;
 }
 
 /** The `usageLimits` message for a provider (no windows when none is known). */
 export function usageLimitsMessage(providerId: string): UsageLimits {
   const entry = stored()[providerId];
-  return { type: 'usageLimits', providerId, ...(entry ?? {}) };
+  return {
+    type: 'usageLimits',
+    providerId,
+    ...windowsOf(entry),
+    ...(entry ? { updatedAt: entry.updatedAt } : {}),
+  };
 }
 
 /** The Intro's line for a usage bridge that brings none of its own. */

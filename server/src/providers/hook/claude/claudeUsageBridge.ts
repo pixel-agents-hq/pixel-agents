@@ -11,7 +11,8 @@
  *   }
  *
  * (https://code.claude.com/docs/en/statusline — "Rate limit usage"). Each
- * window can be absent on its own.
+ * window can be absent on its own: one that has just reset, and for good on
+ * a plan without it (one with no 5-hour limit reports `seven_day` alone).
  *
  * The same input carries the session's own context, which the office's gauge
  * copies so it reads what the status line reads:
@@ -39,11 +40,11 @@ import {
 } from './statusLineInstaller.js';
 
 /** The Intro's checkbox line. */
-export const USAGE_BRIDGE_SUMMARY = 'See how much of your weekly and 5-hour Claude limits is left.';
+export const USAGE_BRIDGE_SUMMARY = "See how much of your Claude plan's limits is left.";
 
 /** Shown before the user confirms the install (Settings → Usage Bars). */
 export const USAGE_BRIDGE_DISCLOSURE = [
-  'To show your remaining weekly and 5-hour usage in the top-left corner, Pixel Agents ' +
+  "To show how much of your plan's limits is left in the top-left corner, Pixel Agents " +
     'wraps your status line in ~/.claude/settings.json. It keeps working and looks the same ' +
     '(with no status line, Claude Code hides some footer hints). A one-time backup is saved as ' +
     `settings.json${SETTINGS_BACKUP_SUFFIX}.`,

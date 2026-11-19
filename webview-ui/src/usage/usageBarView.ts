@@ -47,6 +47,24 @@ export function usageBarView(window: UsageWindow | undefined, nowMs: number): Us
   };
 }
 
+/** The windows a plan has, as reported. */
+export type UsageBarId = 'weekly' | 'fiveHour';
+
+/**
+ * Which bars to draw: one per window the last report holds, the weekly one on
+ * top. A plan with no 5-hour limit reports the weekly window alone and gets a
+ * single bar. Before any report, none: what the plan has is not known, and
+ * empty bars reading "--" told the user nothing.
+ */
+export function shownUsageBars(
+  limits: { sevenDay?: UsageWindow; fiveHour?: UsageWindow } | undefined,
+): UsageBarId[] {
+  const shown: UsageBarId[] = [];
+  if (limits?.sevenDay) shown.push('weekly');
+  if (limits?.fiveHour) shown.push('fiveHour');
+  return shown;
+}
+
 /** Seconds per heartbeat for a share left: the pace is proportional to it
  *  (a full plan beats at USAGE_HEART_MAX_BPM), and an empty or unknown plan
  *  has no beat at all (null). */

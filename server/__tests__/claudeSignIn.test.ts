@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   type ClaudeCli,
   createClaudeSignIn,
-  signedInFromStatus,
+  signInStateFromStatus,
 } from '../src/providers/hook/claude/claudeSignIn.js';
 
 // A stand-in for `claude` that speaks the two commands the way the CLI does
@@ -73,20 +73,44 @@ afterEach(() => {
 const launchedWith = (): { args: string[]; browser: string | null; session: string | null } =>
   JSON.parse(fs.readFileSync(`${stateFile}.args`, 'utf8'));
 
-describe('signedInFromStatus', () => {
+describe('signInStateFromStatus', () => {
   it('reads loggedIn off the JSON and nothing else', () => {
-    expect(signedInFromStatus('{"loggedIn":true,"authMethod":"claude.ai"}')).toBe(true);
-    expect(signedInFromStatus('{"loggedIn":false,"authMethod":"none"}')).toBe(false);
-    expect(signedInFromStatus('{"loggedIn":"true"}')).toBe(false);
-    expect(signedInFromStatus('Not logged in.')).toBe(false);
-    expect(signedInFromStatus('')).toBe(false);
-    expect(signedInFromStatus('null')).toBe(false);
+    expect(signInStateFromStatus('{"loggedIn":true,"authMethod":"claude.ai"}').signedIn).toBe(true);
+    expect(signInStateFromStatus('{"loggedIn":false,"authMethod":"none"}').signedIn).toBe(false);
+    expect(signInStateFromStatus('{"loggedIn":"true"}').signedIn).toBe(false);
+    expect(signInStateFromStatus('Not logged in.').signedIn).toBe(false);
+    expect(signInStateFromStatus('').signedIn).toBe(false);
+    expect(signInStateFromStatus('null').signedIn).toBe(false);
+  });
+
+  it('says an account has no plan limits only when the CLI plainly names one without a plan', () => {
+    const state = (o: object) => signInStateFromStatus(JSON.stringify(o));
+    // A subscription, however it was signed in.
+    expect(state({ loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'max' })).toEqual({
+      signedIn: true,
+    });
+    expect(state({ loggedIn: true, authMethod: 'oauth_token' })).toEqual({ signedIn: true });
+    // An API account: another method, and no subscription named.
+    expect(state({ loggedIn: true, authMethod: 'api_key' })).toEqual({
+      signedIn: true,
+      planLimits: false,
+    });
+    expect(state({ loggedIn: true, authMethod: 'console', subscriptionType: '' })).toEqual({
+      signedIn: true,
+      planLimits: false,
+    });
+    // A method this code has never heard of that still names a subscription keeps its bars.
+    expect(state({ loggedIn: true, authMethod: 'sso', subscriptionType: 'team' })).toEqual({
+      signedIn: true,
+    });
+    // No method named: nothing to go on.
+    expect(state({ loggedIn: true })).toEqual({ signedIn: true });
   });
 });
 
 describe('Claude sign-in', () => {
   it('reports signed out although the CLI exits 1 to say so', async () => {
-    expect(await createClaudeSignIn(cli).status()).toBe(false);
+    expect(await createClaudeSignIn(cli).status()).toEqual({ signedIn: false });
   });
 
   it('signs in with the code the page ended on', async () => {
@@ -95,7 +119,7 @@ describe('Claude sign-in', () => {
     expect(await attempt.url).toBe('https://claude.example/authorize?code=true&state=abc');
     attempt.submitCode('good-code#state');
     expect(await attempt.done).toEqual({ ok: true });
-    expect(await signIn.status()).toBe(true);
+    expect((await signIn.status()).signedIn).toBe(true);
     expect(launchedWith().args).toEqual(['auth', 'login', '--claudeai']);
   });
 
@@ -161,7 +185,7 @@ describe('Claude sign-in', () => {
     await attempt.url;
     attempt.cancel();
     expect((await attempt.done).ok).toBe(false);
-    expect(await signIn.status()).toBe(false);
+    expect((await signIn.status()).signedIn).toBe(false);
   });
 
   it('says so when the CLI cannot be started', async () => {
@@ -171,7 +195,7 @@ describe('Claude sign-in', () => {
         spawn(path.join(dir, 'no-such-claude'), args, { env, stdio: ['pipe', 'pipe', 'pipe'] }),
     };
     const signIn = createClaudeSignIn(missing);
-    expect(await signIn.status()).toBe(false);
+    expect((await signIn.status()).signedIn).toBe(false);
     const attempt = signIn.begin({ openBrowser: false, account: 'subscription' });
     await expect(attempt.url).rejects.toThrow();
     const outcome = await attempt.done;
