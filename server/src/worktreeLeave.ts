@@ -360,7 +360,7 @@ async function closeQuestion(
 
 /** The answer a `closeAgent` carries, when it still covers what the
  *  Worktree holds: a discard only for at least as many files as there are now. */
-function closeDecision(msg: Partial<CloseAgent>, files: number): WorktreeDecision | null {
+function closeDecision(msg: CloseAnswer, files: number): WorktreeDecision | null {
   switch (msg.worktreeChoice) {
     case 'save':
     case 'keep':
@@ -376,16 +376,67 @@ function closeDecision(msg: Partial<CloseAgent>, files: number): WorktreeDecisio
   }
 }
 
+/** The answer to a close question, as `closeAgent` carries it. */
+type CloseAnswer = Pick<Partial<CloseAgent>, 'worktreeChoice' | 'confirmedFiles'>;
+
+/** A Worktree answer kept for its agent's exit. */
+export interface KeptCloseAnswer {
+  name: string;
+  branch: string;
+  decision: WorktreeDecision;
+}
+
+/** What a close came to (`closeAgentAsking`). */
+export type CloseAttempt =
+  /** Closed (`close` was called). `answered`: the Worktree answer kept for its exit. */
+  | { closed: true; answered?: KeptCloseAnswer }
+  /** Not closed: the Worktree it would leave holds uncommitted files, and no
+   *  answer given covers them (none, or a discard of fewer files than now). */
+  | { closed: false; question: AgentCloseQuestion }
+  /** Not closed: there is no such agent (any more). */
+  | { closed: false; gone: true };
+
 /**
- * `closeAgent` (the card's ×), for either surface: an agent leaving a
- * Worktree of ours with uncommitted files is asked about BEFORE it is
- * stopped — the sender gets `agentCloseQuestion` and the agent keeps
- * running. The answer comes back as a `closeAgent` carrying
- * `worktreeChoice`; it is kept for the agent's exit, whose leave applies it
- * (`retireWhenUnused`), and the agent is closed. An answer that no longer
+ * Close agent `id` the way the card's × does, for any caller (the × itself,
+ * the Pixel Office MCP's close_agent): an agent leaving a Worktree of ours
+ * with uncommitted files is NOT closed unless `answer` covers them — the
+ * caller gets the question back and the agent keeps running. A covering
+ * answer is kept for the agent's exit, whose leave applies it
+ * (`retireWhenUnused`), and the agent is closed. Anything else closes at
+ * once. `close` is the surface's way to end the agent.
+ */
+export async function closeAgentAsking(
+  store: AgentStateStore,
+  id: number,
+  answer: CloseAnswer,
+  close: (id: number) => void,
+): Promise<CloseAttempt> {
+  if (!store.has(id)) return { closed: false, gone: true };
+  let asked: Awaited<ReturnType<typeof closeQuestion>> = null;
+  try {
+    asked = await closeQuestion(store, id);
+  } catch (err) {
+    // Couldn't look: close anyway, and the leave rules ask after the exit.
+    console.error('[Pixel Agents] Worktrees: could not check before closing:', err);
+  }
+  let answered: KeptCloseAnswer | undefined;
+  if (asked) {
+    const decision = closeDecision(answer, asked.question.uncommittedFiles);
+    if (!decision) return { closed: false, question: asked.question };
+    closeChoices.set(realPathKey(asked.path), { decision, at: Date.now() });
+    answered = { name: asked.question.name, branch: asked.question.branch, decision };
+  }
+  // It may have exited on its own while git looked.
+  if (!store.has(id)) return { closed: false, gone: true };
+  close(id);
+  return answered ? { closed: true, answered } : { closed: true };
+}
+
+/**
+ * `closeAgent` (the card's ×), for either surface: `closeAgentAsking`, with
+ * the question sent to the sender as `agentCloseQuestion`. The answer comes
+ * back as a `closeAgent` carrying `worktreeChoice`; one that no longer
  * covers the Worktree (more files than a discard confirmed) is asked again.
- * Anything else closes at once, as before. `close` is the surface's way to
- * end the agent.
  */
 export async function handleCloseAgent(
   store: AgentStateStore,
@@ -394,24 +445,9 @@ export async function handleCloseAgent(
   close: (id: number) => void,
 ): Promise<void> {
   const id = msg.id;
-  if (typeof id !== 'number' || !store.has(id)) return;
-  let asked: Awaited<ReturnType<typeof closeQuestion>> = null;
-  try {
-    asked = await closeQuestion(store, id);
-  } catch (err) {
-    // Couldn't look: close anyway, and the leave rules ask after the exit.
-    console.error('[Pixel Agents] Worktrees: could not check before closing:', err);
-  }
-  if (asked) {
-    const decision = closeDecision(msg as Partial<CloseAgent>, asked.question.uncommittedFiles);
-    if (!decision) {
-      send({ ...asked.question });
-      return;
-    }
-    closeChoices.set(realPathKey(asked.path), { decision, at: Date.now() });
-  }
-  // It may have exited on its own while git looked.
-  if (store.has(id)) close(id);
+  if (typeof id !== 'number') return;
+  const attempt = await closeAgentAsking(store, id, msg as Partial<CloseAgent>, close);
+  if (!attempt.closed && 'question' in attempt) send({ ...attempt.question });
 }
 
 // ── Restarts ────────────────────────────────────────────────

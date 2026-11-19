@@ -13,13 +13,15 @@ import assert from 'node:assert/strict';
 
 import { beforeAll, test } from 'vitest';
 
+import type { AgentVisit } from '../../core/src/messages.js';
 import { BUILDOUT_MAX_SEC, MATRIX_EFFECT_DURATION_SEC } from '../src/constants.js';
+import { applyAgentVisit } from '../src/office/engine/agentVisit.js';
 import { planBuildout } from '../src/office/engine/buildout.js';
 import { OfficeState } from '../src/office/engine/officeState.js';
 import type { LoadedAssetData } from '../src/office/layout/furnitureCatalog.js';
 import { buildDynamicCatalog } from '../src/office/layout/furnitureCatalog.js';
 import type { OfficeLayout, PlacedFurniture } from '../src/office/types.js';
-import { TileType } from '../src/office/types.js';
+import { CharacterState, Direction, TileType } from '../src/office/types.js';
 
 const FRAME = 1 / 30;
 const COLS = 12;
@@ -190,10 +192,53 @@ test('however large the edit, it builds in within the cap', () => {
   assert.equal(os.shownLayout(), os.getLayout());
 });
 
+test('the builder walks to a spot beside the origin, faces it and works there, then goes back to its desk', () => {
+  const os = office();
+  os.startBuildout(edited(), { agentId: 1, origin: { col: 5, row: 4 } });
+  const ch = os.characters.get(1)!;
+  const stop = os.visits.stopOf(1)!.stop;
+  assert.equal(Math.abs(stop.col - 5) + Math.abs(stop.row - 4), 1, 'beside the origin');
+  assert.equal(stop.work, true);
+
+  // A server Visit's clear (its next turn) doesn't cut the builder's walk short.
+  applyAgentVisit(os, { type: 'agentVisit', id: 1, cleared: true } as AgentVisit);
+  assert.ok(os.visits.stopOf(1), 'still on its way');
+
+  runUntil(os, () => os.visits.stopOf(1)?.arrived === true, 'reaching the spot');
+  assert.deepEqual({ col: ch.tileCol, row: ch.tileRow }, { col: stop.col, row: stop.row });
+  const facing =
+    stop.col < 5
+      ? Direction.RIGHT
+      : stop.col > 5
+        ? Direction.LEFT
+        : stop.row < 4
+          ? Direction.DOWN
+          : Direction.UP;
+  assert.equal(ch.dir, facing);
+  assert.equal(ch.state, CharacterState.IDLE);
+  run(os, 0.5);
+  assert.ok(os.visits.stopOf(1)?.arrived, 'it works there a while');
+
+  // Then back to its seat, at work again.
+  runUntil(os, () => os.visits.stopOf(1) === null, 'the work to end');
+  runUntil(os, () => ch.state === CharacterState.TYPE, 'back at its desk');
+  assert.deepEqual({ col: ch.tileCol, row: ch.tileRow }, { col: 1, row: 1 });
+});
+
+test('the build never waits for the walk: it starts at once and keeps to the cap', () => {
+  const os = office();
+  // Origin at the far corner: a long walk.
+  os.startBuildout(edited(), { agentId: 1, origin: { col: 10, row: 5 } });
+  run(os, BUILDOUT_MAX_SEC);
+  assert.ok(!os.buildout.isPlaying, 'built while the builder was still on its way');
+  assert.ok(os.visits.stopOf(1), 'the builder still goes to the spot');
+});
+
 test('a builder this office does not show: the edit still builds in', () => {
   const os = office();
   os.startBuildout(edited(), { agentId: 42, origin: ORIGIN });
   assert.ok(os.buildout.isPlaying);
+  assert.equal(os.visits.stopOf(1), null, 'no one else is sent');
   run(os, BUILDOUT_MAX_SEC);
   assert.ok(!os.buildout.isPlaying);
 });
@@ -221,6 +266,7 @@ test('a layout arriving mid-buildout: a plain one shows at once; another edit bu
   for (const uid of ['near', 'far']) assert.ok(shown.includes(uid), uid);
   assert.ok(!shown.includes('old'));
   assert.equal(os.shownLayout().tiles[11], TileType.FLOOR_1);
+  assert.equal(os.visits.stopOf(1)!.stop.work, true, 'the builder heads for the new spot');
 });
 
 test('a resize that moved the tiles: what stayed is not rebuilt, characters move with the grid', () => {
@@ -263,6 +309,7 @@ test('an edit with nothing visible to build (Areas only) builds nothing', () => 
   };
   os.startBuildout(after, { agentId: 1, origin: ORIGIN });
   assert.ok(!os.buildout.isPlaying);
+  assert.equal(os.visits.stopOf(1), null, 'no walk for nothing');
   assert.equal(os.getLayout(), after);
 });
 

@@ -22,6 +22,7 @@ import { WebSocket } from 'ws';
 import { createVscodeOfficeMcp } from '../../../adapters/vscode/vscodeOfficeMcp.js';
 import type { CatalogSource } from '../../../core/src/layout/index.js';
 import type { HookProvider } from '../../../core/src/provider.js';
+import type { TerminalHandle } from '../../../core/src/terminalAdapter.js';
 import { AgentRuntime } from '../../src/agentRuntime.js';
 import { AgentStateStore } from '../../src/agentStateStore.js';
 import {
@@ -37,11 +38,17 @@ import { readConfig, writeConfig } from '../../src/configPersistence.js';
 import { FileStateAdapter } from '../../src/fileStateAdapter.js';
 import { readLayoutFromFile, writeLayoutToFile } from '../../src/layoutPersistence.js';
 import { composeOfficeMcp, type OfficeMcpFeature } from '../../src/mcp/composeOfficeMcp.js';
-import type { OfficeOperations } from '../../src/mcp/officeOperations.js';
+import { screenTokenGuard } from '../../src/mcp/messaging.js';
+import type { AgentMcpAccess } from '../../src/mcp/officeMcp.js';
+import type { AgentLaunch, OfficeOperations } from '../../src/mcp/officeOperations.js';
 import type { OfficeTool } from '../../src/mcp/tool.js';
 import { claudeProvider } from '../../src/providers/index.js';
 import { PixelAgentsServer } from '../../src/server.js';
+import { ptyAgentTerminals } from '../../src/terminal/agentTerminals.js';
 import { PtySessionManager } from '../../src/terminal/ptySessionManager.js';
+import { closeStandaloneAgent } from '../../src/terminal/standaloneClose.js';
+import { launchForOffice } from '../../src/terminal/standaloneLaunches.js';
+import { holdWorktreesOf } from '../../src/worktreeLeave.js';
 
 export type Json = Record<string, any>;
 export type Message = Record<string, unknown>;
@@ -109,6 +116,8 @@ export interface AgentSide {
   callJson(client: Client, name: string, args?: Json): Promise<Json>;
   /** list_agents' agents (asserted not an error). */
   listAgents(client: Client): Promise<Json[]>;
+  /** send_message (gist "hello" unless given) — its per-recipient results. */
+  sendMessage(client: Client, args: Message): Promise<Json[]>;
   /** A hook event from the agent's CLI session, as its hook script posts it. */
   hook(id: number, event: Message): Promise<void>;
 }
@@ -154,6 +163,11 @@ function agentSide(ctx: () => AgentSideContext): AgentSide {
       const reply = await side.callTool(client, 'list_agents', {});
       expect(reply.isError, reply.text).toBe(false);
       return (reply.value as { agents: Json[] }).agents;
+    },
+    async sendMessage(client, args) {
+      const reply = await side.callToolCaught(client, 'send_message', { gist: 'hello', ...args });
+      expect(reply.isError, reply.text).toBe(false);
+      return (reply.value as { results: Json[] }).results;
     },
     async hook(id, event) {
       const { port, token, store, workspace } = ctx();
@@ -208,6 +222,8 @@ function useTempHome(
 export interface StandaloneOfficeOptions {
   /** Temp dir prefix. */
   name?: string;
+  /** Extra env for the test (e.g. PIXEL_AGENTS_MOCK_STDIN). */
+  env?: Record<string, string>;
   /** Runs with HOME and the workspace made, before the office boots. */
   prepare?: (dirs: { home: string; workspace: string }) => void;
   /** What the office reads as its layout: a function, or 'file' (layout.json). Default: none. */
@@ -216,8 +232,16 @@ export interface StandaloneOfficeOptions {
   catalog?: () => readonly CatalogSource[];
   /** The loaded asset counts and pets (get_layout's / list_catalog's). */
   assets?: () => OfficeAssetCounts & { pets: LoadedPetSprites['manifests'] };
+  /** launch_agent launches standalone agents (else it isn't offered). */
+  launch?: boolean;
+  /** close_agent closes standalone agents (else it isn't offered). */
+  close?: boolean;
+  /** Worktrees are held while their agents live (as cli.ts holds them). */
+  holdWorktrees?: boolean;
   /** The MCP's tool table (default: every tool). */
   tools?: readonly OfficeTool[];
+  /** Hook events posted to the server reach the runtime. */
+  forwardHooks?: boolean;
   /** After the handshake, the office answers the MCP ask with allow. */
   grant?: boolean;
   /** The CLI the MCP writes agents' config files for. Default: Claude's. */
@@ -255,8 +279,14 @@ export interface StandaloneOffice extends AgentSide {
   send(message: Message, ws?: WebSocket): void;
   /** The office's answer to the MCP ask, once the status comes back. */
   answer(choice: 'allow' | 'decline'): Promise<void>;
+  /** What `claude` on the PATH runs from now on. */
+  useClaude(script: string): void;
   /** mock-claude's invocations.log lines. */
   invocations(): string[];
+  /** Every mock-claude start, its argv exactly (argv.log). */
+  starts(): Array<{ sessionId: string; cwd: string; args: string[] }>;
+  /** The chunks typed into a session's terminal, as the mock read them. */
+  typedInto(sessionId: string): string[];
   /** Launch from the office's drawer (into a new Worktree of `repo` when
    *  given) and wait for the CLI to start. */
   launchFromOffice(opts?: { repo?: string }): Promise<Launched>;
@@ -271,10 +301,17 @@ export interface StandaloneOffice extends AgentSide {
     repo?: string;
     clientName?: (id: number) => string;
   }): Promise<Launched & { client: Client }>;
+  /** read_agent_terminal (asserted not an error). */
+  readTerminal(
+    client: Client,
+    agentId?: number,
+  ): Promise<{ status: string; screen: string; screen_token: string; agent_id: number }>;
+  /** A screen the mock is done drawing (its scenario ended), and its token. */
+  settled(client: Client, agentId: number): Promise<{ screen: string; token: string }>;
 }
 
 export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): StandaloneOffice {
-  const dirs = useTempHome(options.name ?? 'pxl-office-mcp', {}, (d) => {
+  const dirs = useTempHome(options.name ?? 'pxl-office-mcp', options.env ?? {}, (d) => {
     // mock-claude first on PATH (before the server tests' real-claude guard).
     const bin = path.join(d.home, 'bin');
     fs.mkdirSync(bin);
@@ -290,6 +327,7 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
   let ptyManager: PtySessionManager;
   let officeMcp: OfficeMcpFeature;
   let server: PixelAgentsServer;
+  let unhold: (() => void) | undefined;
   let port: number;
   let token: string;
   let socket: WebSocket;
@@ -372,7 +410,16 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
         'the answer',
       );
     },
+    useClaude(script) {
+      fs.writeFileSync(path.join(dirs.home(), 'bin', 'claude'), script, { mode: 0o755 });
+    },
     invocations: () => mockLog('invocations.log'),
+    starts: () =>
+      mockLog('argv.log').map(
+        (line) => JSON.parse(line) as { sessionId: string; cwd: string; args: string[] },
+      ),
+    typedInto: (sessionId) =>
+      mockLog(`stdin-${sessionId}.log`).map((line) => JSON.parse(line) as string),
     async launchFromOffice({ repo } = {}) {
       const ids = new Set(store.keys());
       const before = h.invocations().length;
@@ -409,6 +456,29 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       const client = await h.connectAs(launched, clientName?.(launched.id));
       return { ...launched, client };
     },
+    async readTerminal(client, agentId) {
+      const reply = await side.callToolCaught(
+        client,
+        'read_agent_terminal',
+        agentId === undefined ? {} : { agent_id: agentId },
+      );
+      expect(reply.isError, reply.text).toBe(false);
+      return reply.value as {
+        status: string;
+        screen: string;
+        screen_token: string;
+        agent_id: number;
+      };
+    },
+    async settled(client, agentId) {
+      const deadline = Date.now() + 15_000;
+      for (;;) {
+        const { screen, screen_token } = await h.readTerminal(client, agentId);
+        if (screen.includes('holding session open')) return { screen, token: screen_token };
+        if (Date.now() > deadline) throw new Error(`agent ${agentId} never settled:\n${screen}`);
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    },
   };
 
   beforeEach(async () => {
@@ -423,8 +493,10 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
     const adapter = new FileStateAdapter({ namespace: 'standalone' });
     store.setAdapter(adapter);
     runtime = new AgentRuntime(store, claudeProvider);
+    unhold = options.holdWorktrees ? holdWorktreesOf(store) : undefined;
     ptyManager = new PtySessionManager();
     const counts = options.assets;
+    const terminals = ptyAgentTerminals(ptyManager);
     // Composed as cli.ts composes it, over the test's layout, catalogue and assets.
     officeMcp = composeOfficeMcp({
       facts: {
@@ -443,6 +515,27 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
           writeConfig(cfg);
         },
       },
+      terminals,
+      deliveryGuard: screenTokenGuard(terminals),
+      ...(options.launch
+        ? {
+            launch: (request: AgentLaunch, mcp: AgentMcpAccess) =>
+              launchForOffice(
+                {
+                  store,
+                  runtime,
+                  ptyManager,
+                  provider: claudeProvider,
+                  mcp,
+                  hostDirectories: directories,
+                },
+                request,
+              ),
+          }
+        : {}),
+      ...(options.close
+        ? { close: (id: number) => closeStandaloneAgent(ptyManager, runtime, id) }
+        : {}),
       ...(options.tools ? { tools: options.tools } : {}),
     });
     server = new PixelAgentsServer();
@@ -453,6 +546,9 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
       ptyManager,
       officeMcp,
     });
+    if (options.forwardHooks) {
+      server.onHookEvent((providerId, event) => runtime.handleHookEvent(providerId, event));
+    }
     port = config.port;
     token = config.token;
     ({ socket, received } = await h.connectOffice());
@@ -470,6 +566,7 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
     for (const ws of sockets.splice(0)) ws.close();
     await ptyManager.shutdown();
     officeMcp.dispose();
+    unhold?.();
     runtime.dispose();
     server.stop();
     store.dispose();
@@ -483,6 +580,8 @@ export function useStandaloneOffice(options: StandaloneOfficeOptions = {}): Stan
 export interface VscodeOfficeOptions {
   /** Runs with HOME and the workspace made, before the office boots. */
   prepare?: (dirs: { home: string; workspace: string }) => void;
+  /** What VS Code's terminal adapter does with text sent to a terminal. */
+  sendText: (terminal: TerminalHandle, text: string) => void;
 }
 
 export interface VscodeOffice extends AgentSide {
@@ -552,6 +651,7 @@ export function useVscodeOffice(options: VscodeOfficeOptions): VscodeOffice {
     runtime = new AgentRuntime(store, claudeProvider);
     mcp = createVscodeOfficeMcp({
       store,
+      sendText: options.sendText,
       defaultLayout: () => null,
       assets: () => null,
       directories: () => [{ name: 'proj', path: workspace }],

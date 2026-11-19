@@ -7,6 +7,7 @@
 import { getCharacterProfiles } from '../characterProfilesStore.js';
 import { hasPromotedBackgroundAgent } from '../teamUtils.js';
 import type { AgentState } from '../types.js';
+import { currentVisit } from '../visits.js';
 import { type OfficeFacts, officeSnapshot } from './officeFacts.js';
 import type { AgentsView, OfficeAgent, OfficeAgentStatus } from './officeOperations.js';
 
@@ -24,7 +25,11 @@ export function characterOf(agent: AgentState): OfficeAgent['character'] {
   return { label: profile?.name ?? null, palette: agent.palette, repeat: agent.repeat ?? 0 };
 }
 
-export function createAgentsView(facts: OfficeFacts): AgentsView {
+export function createAgentsView(
+  facts: OfficeFacts,
+  /** Whether an agent has a terminal of ours a Message could be typed into. */
+  messageable: (agentId: number) => boolean,
+): AgentsView {
   const { store, provider } = facts;
 
   function activityOf(agent: AgentState): string | null {
@@ -82,6 +87,7 @@ export function createAgentsView(facts: OfficeFacts): AgentsView {
           : null;
         const seatId = office.seatOf(id);
         const place = seatId ? office.seats.get(seatId) : undefined;
+        const visit = currentVisit(agent);
         const teammates: OfficeAgent['teammates'] = [];
         for (const [otherId, other] of store) {
           if (other.leadAgentId === id)
@@ -89,6 +95,7 @@ export function createAgentsView(facts: OfficeFacts): AgentsView {
         }
         agents.push({
           id,
+          nickname: agent.nickname ?? null,
           directory,
           workingDirectory: agent.cwd ?? agent.worktree?.path ?? directory?.path ?? null,
           worktree: agent.worktree
@@ -105,7 +112,10 @@ export function createAgentsView(facts: OfficeFacts): AgentsView {
           seat: seatId
             ? { id: seatId, tile: place?.tile ?? null, area: place?.area ?? null }
             : null,
+          atDesk: !visit,
+          visit: visit ? { tile: visit.to, facing: visit.facing, stay: visit.stay } : null,
           character: characterOf(agent),
+          messageable: messageable(id),
         });
       }
       return agents;

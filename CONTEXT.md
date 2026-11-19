@@ -66,6 +66,10 @@ _Avoid_: folder, workspace folder (that's the VS Code-contributed source, not th
 A separate checkout of a Directory's repo on its own branch, created by Pixel Agents for one agent's work and cleaned up when it leaves. A Worktree agent is still an agent of its Directory. Its states, in UI copy too: **running** (an agent works in it), **kept** (its folder stays by the user's choice), **parked** (folder removed, branch kept: it has commits of its own), **needs a decision** (its agent left uncommitted changes; the answer is Save & remove, Keep folder or Discard). "Commits of its own" are the branch's commits whose changes are not in its base, so squash- or rebase-merged work counts as none. A worktree the CLI made itself in the same folder (Claude Code: `claude -w`, EnterWorktree) is a **CLI worktree**, never a Worktree: the office lists it and removes it only at the user's word.
 _Avoid_: workspace, quest, sandbox
 
+**Nickname**:
+An optional name given to an agent at launch, shown after its Directory ("app · reviewer · fix-login"). It only labels the agent; it never makes it a teammate.
+_Avoid_: name (reserved for Teammates), title (that's the conversation's), label
+
 **Adopt**:
 Begin tracking a session that was started outside the office. An adopted agent is a full citizen.
 _Avoid_: import, attach
@@ -93,6 +97,10 @@ _Avoid_: track
 
 **Focus**:
 Bring an agent's terminal to the front. Reserved exclusively for terminals — never the in-office highlight.
+
+**Message**:
+Text or named keys one agent types into another agent's terminal: a request, or an answer to the prompt or menu on its screen. The sender reads the recipient's screen first and the message is refused if that screen changed since. Its character walks to each recipient and faces it, the gist in its speech bubble; delivery never waits for the walk. Text arrives tagged with the sender's name.
+_Avoid_: prompt (that's what the user types), chat, DM
 
 **Card bar**:
 The row of agent cards: one card per running main agent (teammates and sub-agents get none), in an order the user can drag and every open office shares. Pressing a card reaches its agent.
@@ -144,7 +152,7 @@ The human-readable line describing what an agent is doing right now (e.g. "Readi
 _Avoid_: status text, tool status
 
 **Speech bubble**:
-The indicator above a character announcing a form of inactivity: "…" for a permission request (stays until resolved), a checkmark for a finished turn (fades on its own).
+The indicator above a character announcing a form of inactivity: "…" for a permission request (stays until resolved), a checkmark for a finished turn (fades on its own). Also carries what a character says when its agent messages another: the message's one-line gist (under 80 characters), shown while it stands facing the recipient.
 _Avoid_: bubble alone when ambiguous, notification
 
 **Context gauge**:
@@ -232,6 +240,10 @@ _Avoid_: mascot, animal
 **Wander**:
 The stroll a character takes away from its seat while its agent is done. Characters whose agents are waiting for input or awaiting a permission stay seated.
 _Avoid_: roam, patrol
+
+**Visit**:
+A character walking, on request, to a tile or to stand by a piece of furniture, facing a given way. It lingers a while, then wanders as usual; a visit asked to **stay** holds there until its agent has work.
+_Avoid_: move (that's a session changing folders), teleport, goto
 
 ## Activity Detection
 

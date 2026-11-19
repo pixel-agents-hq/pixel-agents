@@ -14,6 +14,8 @@ export interface AgentAppearance {
   repeat: number;
   /** The Worktree the agent runs in: the card wears its icon, the title its branch. */
   worktree?: AgentWorktree;
+  /** The Nickname it was launched with: in the title, after the agent's number. */
+  nickname?: string;
 }
 
 /** Agent activity reflected by the tab's status dot. */
@@ -68,11 +70,11 @@ export function AgentCard({
     <div
       className={`group relative pointer-events-auto flex items-stretch gap-1 p-1 cursor-pointer border-2 shrink-0 ${CARD_VARIANT[variant]}`}
       onClick={() => onSelect(agentId)}
-      title={
-        appearance.worktree
-          ? `Agent ${agentId} · worktree ${appearance.worktree.branch}`
-          : `Agent ${agentId}`
-      }
+      title={[
+        `Agent ${agentId}`,
+        ...(appearance.nickname ? [appearance.nickname] : []),
+        ...(appearance.worktree ? [`worktree ${appearance.worktree.branch}`] : []),
+      ].join(' · ')}
     >
       <span className="relative flex shrink-0">
         <CharacterMugShot

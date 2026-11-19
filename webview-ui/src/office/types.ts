@@ -103,6 +103,54 @@ export interface Blinker {
   blinkShut: number;
 }
 
+/** One stop of a Visit: the tile, the way to face there, and how long to stand
+ *  there before moving on (VISIT_LINGER_MS when not given). */
+export interface VisitStop {
+  col: number;
+  row: number;
+  dir: Direction;
+  lingerSec?: number;
+  /** A Message show's stop: stand beside this agent's character — `col`/`row`/`dir`
+   *  are re-aimed (visitsController) while walking, as the recipient moves — at `at`. */
+  beside?: { agentId: number; at?: { col: number; row: number } };
+  /** What the character says while it stands there (a Message's gist). */
+  say?: string;
+  /** Working there (a Buildout's builder): typing, standing, while arrived. */
+  work?: boolean;
+}
+
+/** What a character does once its visit's last stop is over: wander as usual,
+ *  hold there (until the visit is ended), or go back to its seat. */
+export type VisitEnd = 'wander' | 'stay' | 'seat';
+
+/** A Visit under way (CONTEXT.md): the stops still ahead (the first is the
+ *  current one) and what happens after the last. */
+export interface CharacterVisit {
+  stops: VisitStop[];
+  then: VisitEnd;
+  /** Standing at the current stop, facing its way. */
+  arrived: boolean;
+  /** Seconds left at the current stop once arrived. */
+  lingerLeft: number;
+}
+
+/**
+ * Something a character is off doing instead of its agent's work: the
+ * server's Visit, or a local errand of this office's own (a Message show, a
+ * Buildout's work) pushed above it. A character keeps them as a stack — the
+ * top one moves it; finishing it uncovers the one below
+ * (engine/visitsController.ts implements them).
+ */
+export interface Errand {
+  /** The stops it walks. */
+  readonly visit: CharacterVisit;
+  /** One frame: null while under way, else what the character does when
+   *  nothing is left underneath (wander, or back to its seat). */
+  step(ch: Character, dt: number): Exclude<VisitEnd, 'stay'> | null;
+  /** The server's Visit ended: whether this errand ends with it. */
+  endsWithServerVisit(): boolean;
+}
+
 export interface Character extends Blinker {
   id: number;
   state: CharacterState;
@@ -167,6 +215,9 @@ export interface Character extends Blinker {
   /** The Worktree the agent runs in (its label and card show the branch);
    *  teammates show their lead's. */
   worktree?: AgentWorktree;
+  /** The Nickname it was launched with: shown after its Directory on its label
+   *  and card. Only a label (a Teammate's name is `agentName`). */
+  nickname?: string;
   /** Headless agent: adopted from outside the office, so there is no terminal to
    *  focus. Rendered translucent. Teammates and sub-agents are never headless —
    *  clicking them reaches their lead's / parent's terminal. */
@@ -199,6 +250,14 @@ export interface Character extends Blinker {
   /** True once the server reported the context: from then on 0 is a real
    *  reading (a cleared session, a full gauge), not "no turn yet". */
   contextReported?: boolean;
+
+  /** Its errands, the top one current (a server Visit at the bottom, a
+   *  Message show or Buildout work above): while any, the top one — not its
+   *  agent's work or the wander AI — moves it (engine/visitsController.ts). */
+  errands?: Errand[];
+  /** A Message's gist said where it stands (reduced motion, or no one to walk
+   *  to), and the seconds it still shows. */
+  saying?: { gist: string; left: number } | null;
 }
 
 export const PetState = { IDLE: 'idle', WALK: 'walk', FOLLOW: 'follow' } as const;

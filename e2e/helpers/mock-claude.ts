@@ -55,6 +55,21 @@ export interface ClaudeMockRelocateSessionAction {
   cwd: string;
 }
 
+/** The session calls one Pixel Office MCP tool, the way the CLI's MCP client
+ *  does: with the endpoint and token from the `--mcp-config` file it was
+ *  launched with. `args` are templated against the scenario context (object
+ *  keys too; a string that is one whole `{{path}}` keeps that value's type),
+ *  which includes `{{mcp.<saveAs>.…}}` — earlier calls' results. Runs after
+ *  the previous action finished, `waitMs` later. */
+export interface ClaudeMockCallOfficeMcpAction {
+  kind: 'callOfficeMcp';
+  atMs: number;
+  tool: string;
+  args: Record<string, unknown>;
+  saveAs?: string;
+  waitMs?: number;
+}
+
 export interface ClaudeMockExitAction {
   kind: 'exit';
   atMs: number;
@@ -67,6 +82,7 @@ export type ClaudeMockAction =
   | ClaudeMockWriteJsonAction
   | ClaudeMockDeletePathAction
   | ClaudeMockRelocateSessionAction
+  | ClaudeMockCallOfficeMcpAction
   | ClaudeMockExitAction;
 
 export interface ClaudeMockScenario {
@@ -130,6 +146,22 @@ class TimedScenarioStepBuilder {
       kind: 'relocateSession',
       atMs: this.atMs,
       cwd,
+    });
+    return this.scenario;
+  }
+
+  callOfficeMcp(
+    tool: string,
+    args: Record<string, unknown>,
+    options?: { saveAs?: string; waitMs?: number },
+  ): ClaudeMockScenarioBuilder {
+    this.scenario.pushAction({
+      kind: 'callOfficeMcp',
+      atMs: this.atMs,
+      tool,
+      args,
+      saveAs: options?.saveAs,
+      waitMs: options?.waitMs,
     });
     return this.scenario;
   }

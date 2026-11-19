@@ -45,3 +45,11 @@ export const WALL_SET_LABELS = [
 export const AUTO_ON_FACING_DEPTH = 3;
 /** How deep a PC one tile to the side of a seat's line may stand. */
 export const AUTO_ON_SIDE_DEPTH = 2;
+
+// ── Visits ───────────────────────────────────────────────────
+
+/** How long a visiting character lingers at the spot before wandering as usual
+ *  (the office's timer, and the server's measure of when a visit is over). */
+export const VISIT_LINGER_MS = 20_000;
+/** How far from a piece of furniture a visit may stand when nothing beside it is free. */
+export const VISIT_SPOT_MAX_DISTANCE = 3;

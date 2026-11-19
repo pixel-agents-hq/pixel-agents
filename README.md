@@ -158,13 +158,20 @@ Ask an agent in plain words — "start an agent in the api repo to review the RE
 
 ### Tools
 
-| Tool               | What an agent can do                                                                                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_agents`      | See every agent: id, Directory, Worktree, status, activity, sub-agents, context left, conversation title, team, seat and Area, character, and which one is itself |
-| `get_layout`       | Read the office: a summary of Areas, seats and furniture by default, or the furniture list, or a tile map                                                         |
-| `list_catalog`     | See what can be placed: furniture, floor patterns, wall sets, carpets, pets                                                                                       |
-| `edit_layout`      | Change the office in one all-or-nothing batch: furniture, floors, walls, erase, carpets, pets, Areas and their Directories, grid size                             |
-| `undo_layout_edit` | Undo the last agent layout edit (also a button in the layout editor: "Undo <agent>'s edit")                                                                       |
+| Tool                  | What an agent can do                                                                                                                                                                                        |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_agents`         | See every agent: id, nickname, Directory, Worktree, status, activity, sub-agents, context left, conversation title, team, seat and Area, character, whether it can be messaged, and which one is itself     |
+| `get_layout`          | Read the office: a summary of Areas, seats and furniture by default, or the furniture list, or a tile map                                                                                                   |
+| `list_catalog`        | See what can be placed: furniture, floor patterns, wall sets, carpets, pets                                                                                                                                 |
+| `edit_layout`         | Change the office in one all-or-nothing batch: furniture, floors, walls, erase, carpets, pets, Areas and their Directories, grid size                                                                       |
+| `undo_layout_edit`    | Undo the last agent layout edit (also a button in the layout editor: "Undo <agent>'s edit")                                                                                                                 |
+| `visit`               | Walk a character to a tile or next to a piece of furniture, briefly or to stay until its agent has work                                                                                                     |
+| `launch_agent`        | Launch an agent into a Directory with a first message, character, seat, nickname, new Worktree, model or permission mode, or resume a past conversation (skipping permissions only when Settings allows it) |
+| `close_agent`         | Close an agent, answering the Worktree question if its Worktree has uncommitted files                                                                                                                       |
+| `read_agent_terminal` | Read another agent's terminal screen                                                                                                                                                                        |
+| `send_message`        | Type text (tagged with who sent it) or press keys (to answer a prompt or a menu) in other agents' terminals, refused if their screen changed since it was read                                              |
+
+In VS Code there is no screen to read: `read_agent_terminal` gives an agent's status only, and `send_message` types text only, and only to agents that are done or working. `launch_agent` and `close_agent` aren't offered in VS Code yet: agents there are launched and closed from the office.
 
 ## Where This Is Going
 

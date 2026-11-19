@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { pause } from '../../../pause.js';
 import { isRecord } from '../../../serverConfig.js';
 import { type ClaudeHookEntry, hooksHoldOnlyOurs } from './claudeHookEntries.js';
 import {
@@ -81,10 +82,6 @@ export function readClaudeSettings(): ClaudeSettings {
   return parseClaudeSettings(readRawClaudeSettings());
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /**
  * Guarded read-modify-write cycle for settings.json. `mutate` edits the parsed
  * settings in place and returns whether anything changed; returns whether a
@@ -108,7 +105,7 @@ export async function mutateClaudeSettings(
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < SETTINGS_MUTATE_ATTEMPTS; attempt++) {
     if (attempt > 0) {
-      await sleep(SETTINGS_MUTATE_RETRY_DELAY_MS);
+      await pause(SETTINGS_MUTATE_RETRY_DELAY_MS);
     }
     let raw: string | null;
     let settings: ClaudeSettings;

@@ -7,7 +7,7 @@ import type { StateAdapter } from '../../core/src/adapter.js';
 import type { Directory } from '../../core/src/messages.js';
 import type { PersistedAgent } from '../../core/src/schemas.js';
 import { resendAgentActivity } from '../../server/src/agentActivityResend.js';
-import { existingAgentWorktrees } from '../../server/src/agentMessages.js';
+import { existingAgentNicknames, existingAgentWorktrees } from '../../server/src/agentMessages.js';
 import {
   isPersistedSpawnChild,
   restoredAgentInit,
@@ -31,6 +31,7 @@ import { claudeProvider } from '../../server/src/providers/index.js';
 import { sessionMarkersUnset } from '../../server/src/terminal/terminalEnv.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from '../../server/src/timerManager.js';
 import type { AgentState } from '../../server/src/types.js';
+import { visitSnapshot } from '../../server/src/visits.js';
 import { retireWorktreesLeftBy } from '../../server/src/worktreeLeave.js';
 import { savedOccupant, type WorktreeOccupant } from '../../server/src/worktreeOccupancy.js';
 
@@ -587,6 +588,7 @@ export function sendExistingAgents(
     directoryNames,
     externalAgents,
     worktrees: existingAgentWorktrees(agents),
+    nicknames: existingAgentNicknames(agents),
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
   // so that agentStatus/agentToolStart messages arrive after characters are created.
@@ -598,6 +600,7 @@ export function sendCurrentAgentStatuses(
 ): void {
   if (!webview) return;
   resendAgentActivity((msg) => webview.postMessage(msg), agents);
+  for (const msg of visitSnapshot(agents)) void webview.postMessage(msg);
 }
 
 export function sendLayout(

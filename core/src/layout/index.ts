@@ -11,4 +11,5 @@ export * from './layoutSerializer.js';
 export * from './sections.js';
 export * from './tileMap.js';
 export * from './types.js';
+export * from './visitSpot.js';
 export * from './workstations.js';

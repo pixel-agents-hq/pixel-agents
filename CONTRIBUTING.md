@@ -250,7 +250,7 @@ claudeScenario('my-scenario')
   .build();
 ```
 
-`appendJsonl` writes a record to `$HOME/.claude/projects/<project-hash>/<session-id>.jsonl` at the given offset. `emitHook` POSTs a hook event to the running server's `/api/hooks/:providerId`. `holdOpenFor` keeps the wrapper process alive (and the terminal "busy") for that many ms after the last action, then exits.
+`appendJsonl` writes a record to `$HOME/.claude/projects/<project-hash>/<session-id>.jsonl` at the given offset. `emitHook` POSTs a hook event to the running server's `/api/hooks/:providerId`. `holdOpenFor` keeps the wrapper process alive (and the terminal "busy") for that many ms after the last action, then exits. `callOfficeMcp(tool, args, { saveAs, waitMs })` calls a Pixel Office MCP tool the way Claude Code's MCP client would — with the endpoint and token from the `--mcp-config` file the office launched the mock with — and keeps the result for later steps' `{{mcp.<saveAs>.<field>}}` templates (a string that is one whole template keeps the value's type, and object keys are templated too).
 
 Each test runs with an isolated `HOME`, workspace directory, VS Code `--user-data-dir`, and mock log file — no state leaks between runs or into your real VS Code profile.
 

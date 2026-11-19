@@ -30,6 +30,8 @@ export interface PendingAgent {
   isHeadless?: boolean;
   /** The Worktree it runs in (its card's marker, its label's branch). */
   worktree?: AgentWorktree;
+  /** The Nickname it was launched with. */
+  nickname?: string;
 }
 
 /** Minimal structural view of OfficeState this reconciler needs. */
@@ -50,6 +52,8 @@ export interface ExistingAgentsOffice {
   syncAgent: (id: number, palette?: number, repeat?: number, seatId?: string) => void;
   /** Give an agent (and its sub-agents) the Worktree it runs in, or none. */
   setAgentWorktree?: (id: number, worktree: AgentWorktree | undefined) => void;
+  /** Give an agent its Nickname, or none. */
+  setAgentNickname?: (id: number, nickname: string | undefined) => void;
 }
 
 /**
@@ -61,6 +65,7 @@ export function restoreAgent(os: ExistingAgentsOffice, p: PendingAgent): void {
   os.addAgent(p.id, p.palette, p.repeat, p.seatId, true, p.directoryName);
   if (p.isHeadless) os.setHeadless(p.id, true);
   if (p.worktree) os.setAgentWorktree?.(p.id, p.worktree);
+  if (p.nickname) os.setAgentNickname?.(p.id, p.nickname);
   os.restAgent(p.id);
 }
 
@@ -81,6 +86,7 @@ export function reconcileExistingAgents(
   pending: PendingAgent[],
   headlessAgents: Record<number, boolean> = {},
   worktrees: Record<number, AgentWorktree> = {},
+  nicknames: Record<number, string> = {},
 ): boolean {
   let addedDirectly = false;
   for (const id of incoming) {
@@ -93,6 +99,7 @@ export function reconcileExistingAgents(
       directoryName: directoryNames[id],
       isHeadless: headlessAgents[id] === true,
       ...(worktrees[id] ? { worktree: worktrees[id] } : {}),
+      ...(nicknames[id] ? { nickname: nicknames[id] } : {}),
     };
     if (layoutReady) {
       if (!os.characters.has(p.id)) {
@@ -104,6 +111,7 @@ export function reconcileExistingAgents(
         // office for every other viewer.
         os.syncAgent(p.id, p.palette, p.repeat, p.seatId);
         os.setAgentWorktree?.(p.id, p.worktree);
+        os.setAgentNickname?.(p.id, p.nickname);
       }
     } else {
       pending.push(p);

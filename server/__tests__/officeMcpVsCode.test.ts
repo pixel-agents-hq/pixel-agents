@@ -11,7 +11,10 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import * as fs from 'fs';
-import { describe, expect, it, vi } from 'vitest';
+import * as path from 'path';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { getCharacterProfiles } from '../src/characterProfilesStore.js';
 
 interface FakeTerminal {
   name: string;
@@ -52,9 +55,23 @@ vi.mock('vscode', () => ({
 
 import { launchNewTerminal } from '../../adapters/vscode/agentManager.js';
 import { createVscodeOfficeMcp } from '../../adapters/vscode/vscodeOfficeMcp.js';
+import type { TerminalHandle } from '../../core/src/terminalAdapter.js';
+import { createAgentState } from '../src/agentState.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
+import { turnGuard } from '../src/mcp/messaging.js';
 import { PixelAgentsServer } from '../src/server.js';
-import { type Message, useVscodeOffice } from './helpers/officeMcpHarness.js';
+import { PLAIN_INPUT_MODES } from '../src/terminal/agentTerminals.js';
+import {
+  type Message,
+  useVscodeOffice,
+  waitFor as harnessWaitFor,
+} from './helpers/officeMcpHarness.js';
+
+/** This suite's fake terminals answer fast: a shorter wait, polled more often. */
+const waitFor = <T>(
+  read: () => T | undefined | null | false | Promise<T | undefined | null | false>,
+  what: string,
+): Promise<T> => harnessWaitFor(read, what, 10_000, 25);
 
 interface Launched {
   id: number;
@@ -63,13 +80,34 @@ interface Launched {
 }
 
 describe('the Pixel Office MCP in a VS Code office (composed embedded server, fake terminals)', () => {
+  /** What the fake terminal adapter typed, per terminal. */
+  let typed: Map<TerminalHandle, string[]>;
+  /** What the CLI does as text lands in its terminal (unset: nothing). */
+  let onTyped: ((terminal: TerminalHandle, text: string) => void) | undefined;
+  beforeEach(() => {
+    typed = new Map();
+    onTyped = undefined;
+  });
+
   const h = useVscodeOffice({
     prepare: ({ workspace }) => {
       terminals.length = 0;
       workspaceFolders.length = 0;
       workspaceFolders.push({ name: 'proj', uri: { fsPath: workspace } });
     },
+    sendText: (terminal, text) => {
+      const list = typed.get(terminal) ?? [];
+      list.push(text);
+      typed.set(terminal, list);
+      onTyped?.(terminal, text);
+    },
   });
+  const { hook } = h;
+
+  /** The name of the character an agent wears: its Message tag, with no Nickname. */
+  function characterName(id: number): string {
+    return getCharacterProfiles()[h.store.get(id)!.palette!].name!;
+  }
 
   // ── Helpers ─────────────────────────────────────────────────
 
@@ -132,6 +170,45 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
 
   const call = h.callToolCaught;
 
+  async function sendMessage(client: Client, args: Message): Promise<Message> {
+    return (await h.sendMessage(client, args))[0];
+  }
+
+  async function statusOf(client: Client, id: number): Promise<string> {
+    const agents = (await call(client, 'list_agents', {})).value!.agents as Message[];
+    return agents.find((a) => a.id === id)?.status as string;
+  }
+
+  async function becomes(client: Client, id: number, status: string): Promise<void> {
+    await waitFor(async () => (await statusOf(client, id)) === status, `agent ${id} ${status}`);
+  }
+
+  /** A record the agent's CLI writes to its transcript (the heuristic path, no hooks). */
+  function transcript(id: number, record: Message): void {
+    const file = h.store.get(id)!.jsonlFile;
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, JSON.stringify(record) + '\n');
+  }
+
+  let toolSeq = 0;
+  /** The agent's turn is under way: it runs a tool. */
+  function working(id: number): void {
+    transcript(id, {
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', id: `toolu_${++toolSeq}`, name: 'Read', input: { file_path: '/x' } },
+        ],
+      },
+    });
+  }
+
+  /** The agent's turn ended. */
+  function turnEnds(id: number): void {
+    transcript(id, { type: 'system', subtype: 'turn_duration', durationMs: 10 });
+  }
+
   // ── Consent, in the webview ─────────────────────────────────
 
   it("asks in the webview's handshake until answered, and launches get the MCP only once granted", async () => {
@@ -166,7 +243,7 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
 
   // ── The office through the MCP ──────────────────────────────
 
-  it('a VS Code-launched agent lists the office', async () => {
+  it('a VS Code-launched agent lists the office; reading a terminal gives its status only', async () => {
     allow();
     const a = await launch();
     const b = await launch();
@@ -176,15 +253,125 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
     const agents = (listed.value as { agents: Message[] }).agents;
     expect(agents.map((x) => x.id).sort()).toEqual([a.id, b.id].sort());
     expect(agents.find((x) => x.id === b.id)).toMatchObject({
+      messageable: true,
       working_directory: h.workspace,
     });
+
+    const read = await call(a.client, 'read_agent_terminal', { agent_id: b.id });
+    expect(read.isError, read.text).toBe(false);
+    expect(read.value).toMatchObject({ agent_id: b.id, status: 'waiting for input' });
+    expect(read.value).not.toHaveProperty('screen');
+    expect(read.value).not.toHaveProperty('screen_token');
+    expect(String(read.value!.no_screen)).toContain("can't read");
+  });
+
+  // ── Messages: text only, to done or active agents, no token ──
+
+  it('types the tagged text into a done or active agent, no token needed', async () => {
+    allow();
+    const a = await launch();
+    const b = await launch();
+
+    working(b.id);
+    await becomes(a.client, b.id, 'active');
+    expect(await sendMessage(a.client, { to: [b.id], text: 'line one\nline two' })).toEqual({
+      agent_id: b.id,
+      delivered: true,
+    });
+    // A paste (bracketed, CR line breaks) tagged with the sender (in a single-root
+    // window an agent launched into no Directory is named by its id), then Enter on its own.
+    expect(typed.get(b.terminal)).toEqual([
+      `\x1b[200~[From ${characterName(a.id)}, agent ${a.id}] line one\rline two\x1b[201~`,
+      '\r',
+    ]);
+
+    turnEnds(b.id);
+    await becomes(a.client, b.id, 'done');
+    expect(
+      await sendMessage(a.client, {
+        to: [b.id],
+        text: 'no enter',
+        submit: false,
+        screen_tokens: {},
+      }),
+    ).toEqual({ agent_id: b.id, delivered: true });
+    expect(typed.get(b.terminal)?.slice(2)).toEqual([
+      `\x1b[200~[From ${characterName(a.id)}, agent ${a.id}] no enter\x1b[201~`,
+    ]);
+    // Nothing reached the sender's own terminal.
+    expect(typed.get(a.terminal)).toBeUndefined();
+  });
+
+  it('refuses keys, and text to an agent with a prompt open, with the reason', async () => {
+    allow();
+    const a = await launch();
+    const b = await launch();
+
+    // Launched and not yet prompted: its CLI waits on its user.
+    const fresh = await sendMessage(a.client, { to: [b.id], text: 'hi' });
+    expect(fresh).toMatchObject({ agent_id: b.id, delivered: false });
+    expect(String(fresh.reason)).toContain('a prompt waiting for its user');
+
+    working(b.id);
+    await becomes(a.client, b.id, 'active');
+    const keys = await sendMessage(a.client, { to: [b.id], keys: ['enter'] });
+    expect(keys).toMatchObject({ agent_id: b.id, delivered: false });
+    expect(String(keys.reason)).toContain("can't press keys");
+
+    await hook(b.id, {
+      hook_event_name: 'PermissionRequest',
+      tool_name: 'Bash',
+      tool_input: { command: 'rm -rf build' },
+    });
+    await becomes(a.client, b.id, 'permission request');
+    const prompt = await sendMessage(a.client, { to: [b.id], text: 'yes' });
+    expect(prompt).toMatchObject({ agent_id: b.id, delivered: false });
+    expect(String(prompt.reason)).toContain('a permission prompt');
+
+    expect(typed.get(b.terminal)).toBeUndefined();
+  });
+
+  it('leaves the Enter out when a prompt opens while the text is landing', async () => {
+    allow();
+    const a = await launch();
+    const b = await launch();
+    working(b.id);
+    await becomes(a.client, b.id, 'active');
+
+    // The CLI asks for a permission the moment the paste lands, before the Enter.
+    onTyped = (terminal) => {
+      if (terminal !== b.terminal) return;
+      onTyped = undefined;
+      h.runtime.handleHookEvent('claude', {
+        hook_event_name: 'PermissionRequest',
+        session_id: h.store.get(b.id)!.sessionId,
+        cwd: h.workspace,
+        tool_name: 'Bash',
+        tool_input: { command: 'rm -rf build' },
+      });
+    };
+    const result = await sendMessage(a.client, { to: [b.id], text: 'carry on' });
+    expect(result).toMatchObject({ agent_id: b.id, delivered: false });
+    expect(String(result.reason)).toContain('not submitted');
+    expect(String(result.reason)).toContain('a permission prompt');
+    expect(typed.get(b.terminal)).toEqual([
+      `\x1b[200~[From ${characterName(a.id)}, agent ${a.id}] carry on\x1b[201~`,
+    ]);
   });
 
   // ── The rest ────────────────────────────────────────────────
 
-  it("revokes an agent's token when it leaves", async () => {
+  it("offers no launch_agent or close_agent, and revokes an agent's token when it leaves", async () => {
     allow();
     const a = await launch();
+
+    // VS Code can't do them: they aren't offered, so an agent never tries.
+    const offered = (await a.client.listTools()).tools.map((t) => t.name);
+    expect(offered).toContain('send_message');
+    expect(offered).not.toContain('launch_agent');
+    expect(offered).not.toContain('close_agent');
+    const launched = await call(a.client, 'launch_agent', { directory: 'proj' });
+    expect(launched.isError).toBe(true);
 
     // Its terminal closed: the agent leaves, and its token with it.
     h.runtime.removeAgent(a.id);
@@ -220,6 +407,7 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
     const store = new AgentStateStore();
     const mcp = createVscodeOfficeMcp({
       store,
+      sendText: () => {},
       defaultLayout: () => null,
       assets: () => null,
       directories: () => [],
@@ -269,6 +457,32 @@ describe('the Pixel Office MCP in a VS Code office (composed embedded server, fa
     } finally {
       mcp.dispose();
       server.stop();
+      store.dispose();
+    }
+  });
+});
+
+describe('turnGuard: a CLI that declares no terminal input modes', () => {
+  it('is typed into in plain modes', async () => {
+    const store = new AgentStateStore();
+    try {
+      store.set(
+        1,
+        createAgentState({
+          id: 1,
+          sessionId: 'session-1',
+          projectDir: '/tmp/none',
+          jsonlFile: '/tmp/none/session-1.jsonl',
+          isExternal: false,
+        }),
+      );
+      store.setAgentStatus(1, { active: false, awaitingInput: false });
+      const verdict = await turnGuard(store, {}).check(
+        { id: 1, screenToken: undefined },
+        { text: 'hello', submit: true },
+      );
+      expect(verdict).toEqual({ ok: true, modes: PLAIN_INPUT_MODES });
+    } finally {
       store.dispose();
     }
   });

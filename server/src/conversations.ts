@@ -404,6 +404,24 @@ export function resumeRequest(
   return null;
 }
 
+/** Why `resumeRequest` found nothing to resume, in words for whoever asked
+ *  (the conversation list just stays quiet; the Pixel Office MCP says why). */
+export function resumeRefusal(
+  store: AgentStateStore,
+  msg: { sessionId?: unknown; directoryPath?: unknown },
+): string {
+  const { sessionId, directoryPath } = msg;
+  if (typeof sessionId !== 'string' || !SESSION_ID_PATTERN.test(sessionId)) {
+    return `${String(sessionId)} is not a session id: a session id is a UUID (list_agents shows each agent's transcript, named after it).`;
+  }
+  for (const [id, agent] of store) {
+    if (agent.sessionId === sessionId) {
+      return `Conversation ${sessionId} is already in the office: agent ${id} runs it.`;
+    }
+  }
+  return `No conversation ${sessionId} was found in ${String(directoryPath)} or its Worktrees.`;
+}
+
 /** A transcript as the listing sees it. */
 interface TranscriptFile {
   path: string;

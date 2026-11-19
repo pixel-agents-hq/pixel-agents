@@ -60,6 +60,9 @@ export interface LaunchStandaloneOptions {
    *  host's PATH, so agents launched from the browser spawn the scenario
    *  runner in the host's PTY instead of a real Claude CLI. */
   mockClaude?: boolean;
+  /** Extra environment for the host, which its PTYs (the mock claude) inherit
+   *  — e.g. `{ PIXEL_AGENTS_MOCK_STDIN: 'record' }`. */
+  hostEnv?: Record<string, string>;
   /** Browser viewport (default 1280×800, the desktop shell). A phone-sized
    *  viewport renders the mobile shell instead. */
   viewport?: { width: number; height: number };
@@ -150,6 +153,7 @@ function spawnStandaloneHost(args: {
   workspaceDir: string;
   cliArgs?: string[];
   mockClaude?: boolean;
+  hostEnv?: Record<string, string>;
 }): ChildProcessWithoutNullStreams {
   if (!fs.existsSync(STANDALONE_CLI)) {
     throw new Error(
@@ -158,6 +162,7 @@ function spawnStandaloneHost(args: {
   }
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    ...args.hostEnv,
     HOME: args.homeDir,
     USERPROFILE: args.homeDir,
   };
@@ -339,6 +344,7 @@ export async function launchStandalone(
       workspaceDir,
       cliArgs: options.cliArgs,
       mockClaude: options.mockClaude,
+      hostEnv: options.hostEnv,
     });
     proc.stdout.on('data', (chunk) => {
       hostStdout += chunk.toString();

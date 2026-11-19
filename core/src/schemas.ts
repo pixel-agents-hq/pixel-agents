@@ -53,6 +53,9 @@ export interface PersistedAgent {
    *  branch of its own): its folder name, path and branch. Persisted so a
    *  reload keeps the marker and branch; `directoryName` stays the Directory's. */
   worktree?: { name: string; path: string; branch: string };
+  /** The Nickname it was launched with: a label shown after its Directory,
+   *  never a Teammate's name (`agentName`). */
+  nickname?: string;
 }
 
 /** Agent seat assignment with visual identity

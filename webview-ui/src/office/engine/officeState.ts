@@ -1,3 +1,4 @@
+import { spotBeside } from '../../../../core/src/layout/visitSpot.js';
 import type { AgentWorktree, LayoutBuildout } from '../../../../core/src/messages.js';
 import { chooseLook } from '../../../../core/src/paletteUtils.js';
 import {
@@ -41,10 +42,17 @@ import type {
 import { CharacterState, Direction, PetState, TILE_SIZE } from '../types.js';
 import { tickBlink } from './blink.js';
 import { BuildoutPlayer } from './buildoutPlayer.js';
-import { createCharacter, restInChair, updateCharacter, updateHelper } from './characters.js';
+import {
+  createCharacter,
+  restInChair,
+  updateCharacter,
+  updateHelper,
+  updateVisit,
+} from './characters.js';
 import { advanceMatrixEffect, startMatrixEffect } from './matrixEffectState.js';
 import { createPet, updatePet } from './petEntity.js';
 import { anchorTile, closestFreeSeat } from './seatPlacement.js';
+import { VisitsController } from './visitsController.js';
 
 /** Whether a character sits in a chair: helpers stand by their lead, and a
  *  departing character is leaving. */
@@ -154,6 +162,23 @@ export class OfficeState {
   /** The Buildout playing, if any: drawing reads it (shownLayout, shownTileMap). */
   readonly buildout = new BuildoutPlayer();
 
+  /** Visits, Message shows and Buildout work: each character's errand stack. */
+  readonly visits = new VisitsController({
+    characters: this.characters,
+    walk: (ch, visit, dt) =>
+      this.withOwnSeatUnblocked(ch, () =>
+        updateVisit(ch, visit, dt, this.tileMap, this.blockedTiles),
+      ),
+    spotBeside: (ch, target) =>
+      this.withOwnSeatUnblocked(ch, () =>
+        spotBeside({ tileMap: this.tileMap, blockedTiles: this.blockedTiles }, target, {
+          from: { col: ch.tileCol, row: ch.tileRow },
+          taken: this.takenTiles({ except: ch.id, destinations: true }),
+        }),
+      ),
+    sendToSeat: (id) => this.sendToSeat(id),
+  });
+
   setAreaMappings(mappings: Record<string, string[]>): void {
     this.areaMappings = mappings;
   }
@@ -219,6 +244,17 @@ export class OfficeState {
         const seat = this.seats.get(ch.seatId)!;
         if (!seat.assigned) {
           seat.assigned = true;
+          const inGrid =
+            ch.tileCol >= 0 &&
+            ch.tileCol < layout.cols &&
+            ch.tileRow >= 0 &&
+            ch.tileRow < layout.rows;
+          if (ch.errands?.length && inGrid) {
+            // Away on a visit: keep it there; it re-paths on the new layout.
+            ch.path = [];
+            ch.moveProgress = 0;
+            continue;
+          }
           // Snap character to seat position
           ch.tileCol = seat.seatCol;
           ch.tileRow = seat.seatRow;
@@ -614,6 +650,7 @@ export class OfficeState {
   removeAgent(id: number): void {
     const ch = this.characters.get(id);
     if (!ch) return;
+    this.visits.forget(id);
     if (ch.matrixEffect === 'despawn') return; // already despawning
     // Give the seat up at once: a departing character holds none, so nothing
     // (a layout rebuild included) can mark it taken again during the effect.
@@ -664,6 +701,12 @@ export class OfficeState {
         ch.worktree = worktree;
       }
     }
+  }
+
+  /** Give an agent its Nickname (or none). */
+  setAgentNickname(agentId: number, nickname: string | undefined): void {
+    const ch = this.characters.get(agentId);
+    if (ch) ch.nickname = nickname;
   }
 
   /** Give an agent a new look (its character moved in the list); its sub-agents wear it too. */
@@ -744,6 +787,7 @@ export class OfficeState {
   sendToSeat(agentId: number): void {
     const ch = this.characters.get(agentId);
     if (!ch || !ch.seatId) return;
+    this.visits.drop(ch); // the user's word ends a visit (a Message show too)
     const seat = this.seats.get(ch.seatId);
     if (!seat) return;
     const path = this.withOwnSeatUnblocked(ch, () =>
@@ -780,6 +824,7 @@ export class OfficeState {
       findPath(ch.tileCol, ch.tileRow, col, row, this.tileMap, this.blockedTiles),
     );
     if (path.length === 0) return false;
+    this.visits.drop(ch); // the user's word ends a visit (a Message show too)
     ch.path = path;
     ch.moveProgress = 0;
     ch.state = CharacterState.WALK;
@@ -810,6 +855,7 @@ export class OfficeState {
     const plan = this.buildout.start(before, layout, buildout.origin, shift);
     if (!plan) return;
     this.rebuildFurnitureInstances();
+    this.visits.sendBuilder(buildout.agentId, plan.origin, plan.duration);
   }
 
   /** The layout as the office draws it now: the Buildout's frame, else the layout. */
@@ -1287,11 +1333,17 @@ export class OfficeState {
           this.tileMap,
           this.blockedTiles,
         );
-      } else {
-        // Temporarily unblock own seat so character can pathfind to it
+      } else if (!this.visits.step(ch, dt)) {
+        // On no errand: the usual FSM. Temporarily unblock own seat so
+        // character can pathfind to it
         this.withOwnSeatUnblocked(ch, () =>
           updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles),
         );
+      }
+
+      if (ch.saying) {
+        ch.saying.left -= dt;
+        if (ch.saying.left <= 0) ch.saying = null;
       }
 
       // Tick bubble timer for waiting bubbles

@@ -5,6 +5,7 @@ import {
   SEAT_REST_MAX_SEC,
   SEAT_REST_MIN_SEC,
   TYPE_FRAME_DURATION_SEC,
+  VISIT_LINGER_MS,
   WALK_FRAME_DURATION_SEC,
   WALK_SPEED_PX_PER_SEC,
   WANDER_MOVES_BEFORE_REST_MAX,
@@ -15,7 +16,14 @@ import {
 import { findPath } from '../layout/tileMap.js';
 import type { CharacterSprites } from '../sprites/spriteData.js';
 import { isReadingToolName } from '../toolUtils.js';
-import type { Character, Seat, SpriteData, TileType as TileTypeVal } from '../types.js';
+import type {
+  Character,
+  CharacterVisit,
+  Seat,
+  SpriteData,
+  TileType as TileTypeVal,
+  VisitStop,
+} from '../types.js';
 import { CharacterState, Direction, TILE_SIZE } from '../types.js';
 import { startBlink } from './blink.js';
 
@@ -324,6 +332,103 @@ function stepAlongPath(ch: Character, dt: number): void {
   }
 }
 
+/** How a visit went this frame: still under way (walking, lingering or
+ *  staying), over (the last stop's linger is done), or lost (a stop this
+ *  office can't walk to — its layout may differ from the server's). */
+export type VisitProgress = 'visiting' | 'over' | 'lost';
+
+/** The visit a character is walking now: its top errand's, or null. */
+export function currentVisit(ch: Character): CharacterVisit | null {
+  const errands = ch.errands;
+  return errands && errands.length > 0 ? errands[errands.length - 1].visit : null;
+}
+
+/**
+ * A character on `visit` (its current errand's) for one frame: walk to the current stop,
+ * face its way and stand there for its linger, then on to the next stop. At
+ * the last stop of a visit that stays it holds until the visit is ended. Its
+ * agent's work doesn't move it meanwhile — ending the visit hands it back to
+ * the usual FSM (updateCharacter), which takes an active agent to its seat.
+ */
+export function updateVisit(
+  ch: Character,
+  visit: CharacterVisit,
+  dt: number,
+  tileMap: TileTypeVal[][],
+  blockedTiles: Set<string>,
+): VisitProgress {
+  ch.frameTimer += dt;
+  for (;;) {
+    const stop = visit.stops[0];
+    if (!stop) return 'over';
+    if (visit.arrived) {
+      if (stop.work && ch.frameTimer >= TYPE_FRAME_DURATION_SEC) {
+        ch.frameTimer -= TYPE_FRAME_DURATION_SEC;
+        ch.frame = (ch.frame + 1) % 2;
+      }
+      if (visit.then === 'stay' && visit.stops.length === 1) return 'visiting';
+      visit.lingerLeft -= dt;
+      if (visit.lingerLeft > 0) return 'visiting';
+      visit.stops.shift();
+      visit.arrived = false;
+      dt = 0; // the next stop's walk starts next frame
+      if (visit.stops.length === 0) return 'over';
+      // A stop beside someone (a Message show's) is aimed before it is walked:
+      // until then it holds a placeholder tile, maybe the one underfoot.
+      if (visit.stops[0].beside) return 'visiting';
+      continue;
+    }
+
+    const end = ch.path[ch.path.length - 1];
+    if (!end || end.col !== stop.col || end.row !== stop.row) {
+      if (ch.moveProgress === 0 && ch.tileCol === stop.col && ch.tileRow === stop.row) {
+        arriveAt(ch, visit, stop);
+        continue;
+      }
+      // Mid-step, finish the step under way and set off from there.
+      const next = ch.moveProgress > 0 ? ch.path[0] : undefined;
+      const from = next ?? { col: ch.tileCol, row: ch.tileRow };
+      const rest = findPath(from.col, from.row, stop.col, stop.row, tileMap, blockedTiles);
+      const reached = rest.length > 0 || (from.col === stop.col && from.row === stop.row);
+      if (!reached) return 'lost';
+      ch.path = next ? [next, ...rest] : rest;
+      if (ch.state !== CharacterState.WALK) {
+        ch.state = CharacterState.WALK;
+        ch.frame = 0;
+        ch.frameTimer = 0;
+      }
+    }
+
+    if (ch.frameTimer >= WALK_FRAME_DURATION_SEC) {
+      ch.frameTimer -= WALK_FRAME_DURATION_SEC;
+      ch.frame = (ch.frame + 1) % 4;
+    }
+    stepAlongPath(ch, dt);
+    if (ch.path.length === 0) arriveAt(ch, visit, stop);
+    return 'visiting';
+  }
+}
+
+/** Stand at a visit's stop, facing its way, for its linger. */
+function arriveAt(ch: Character, visit: CharacterVisit, stop: VisitStop): void {
+  const center = tileCenter(stop.col, stop.row);
+  ch.x = center.x;
+  ch.y = center.y;
+  ch.path = [];
+  ch.moveProgress = 0;
+  ch.dir = stop.dir;
+  ch.state = CharacterState.IDLE;
+  ch.frame = 0;
+  ch.frameTimer = 0;
+  visit.arrived = true;
+  visit.lingerLeft = stop.lingerSec ?? VISIT_LINGER_MS / 1000;
+}
+
+/** Standing at a stop it works at (a Buildout's builder). */
+function isAtWork(visit: CharacterVisit | null): boolean {
+  return visit !== null && visit.arrived && visit.stops[0]?.work === true;
+}
+
 type Tile = { col: number; row: number };
 
 /** Tiles between two tiles, counting diagonals as one step. */
@@ -435,6 +540,8 @@ export function getCharacterSprite(ch: Character, sprites: CharacterSprites): Sp
     case CharacterState.WALK:
       return sprites.walk[ch.dir][ch.frame % 4];
     case CharacterState.IDLE:
+      // A builder at work (a Buildout): typing where it stands.
+      if (isAtWork(currentVisit(ch))) return sprites.typing[ch.dir][ch.frame % 2];
       return sprites.walk[ch.dir][1];
     default:
       return sprites.walk[ch.dir][1];

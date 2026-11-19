@@ -10,7 +10,15 @@ import type { AgentState } from '../types.js';
 
 /** An agent's label: its Nickname, else the name of the character it wears,
  *  else its Directory; null when it has none of them. */
-export function agentLabel(agent: Pick<AgentState, 'palette' | 'directoryName'>): string | null {
+export function agentLabel(
+  agent: Pick<AgentState, 'nickname' | 'palette' | 'directoryName'>,
+): string | null {
+  if (agent.nickname) return agent.nickname;
   const character = agent.palette === undefined ? undefined : getCharacterProfiles()[agent.palette];
   return character?.name || agent.directoryName || null;
+}
+
+/** The tag a Message's text is prefixed with. */
+export function messageTag(agentId: number, from: string | null): string {
+  return from ? `[From ${from}, agent ${agentId}] ` : `[From agent ${agentId}] `;
 }

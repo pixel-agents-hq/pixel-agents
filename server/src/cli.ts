@@ -41,6 +41,7 @@ import { FileStateAdapter } from './fileStateAdapter.js';
 import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import { composeOfficeMcp } from './mcp/composeOfficeMcp.js';
+import { screenTokenGuard } from './mcp/messaging.js';
 import {
   claudeProvider,
   copyHookScript,
@@ -48,6 +49,7 @@ import {
   hookProviders,
 } from './providers/index.js';
 import { PixelAgentsServer } from './server.js';
+import { ptyAgentTerminals } from './terminal/agentTerminals.js';
 import {
   defaultPtyHostSocket,
   ptyHostLogFile,
@@ -56,6 +58,8 @@ import {
 import { PtySessionManager } from './terminal/ptySessionManager.js';
 import { RemotePtySessions, startPtyHostProcess } from './terminal/remotePtySessions.js';
 import { reattachTerminalAgents } from './terminal/standaloneAgentLauncher.js';
+import { closeStandaloneAgent } from './terminal/standaloneClose.js';
+import { launchForOffice } from './terminal/standaloneLaunches.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
 import { setAttributionDirectories } from './worktreeAttribution.js';
 import { holdWorktreesOf, stopRetiring, sweepWorktrees } from './worktreeLeave.js';
@@ -428,6 +432,7 @@ async function main(): Promise<void> {
 
     // The Pixel Office MCP: served at /mcp, its tools acting on this office;
     // agents launched (or resumed) here get it once the user consents.
+    const terminals = ptyAgentTerminals(ptyManager);
     const officeMcp = composeOfficeMcp({
       facts: {
         store,
@@ -450,6 +455,23 @@ async function main(): Promise<void> {
           writeConfig(cfg);
         },
       },
+      terminals,
+      deliveryGuard: screenTokenGuard(terminals),
+      // launch_agent: the drawer's launch, as this host runs it.
+      launch: (request, mcp) =>
+        launchForOffice(
+          {
+            store,
+            runtime,
+            ptyManager,
+            provider: claudeProvider,
+            mcp,
+            hostDirectories: [hostDirectory()],
+          },
+          request,
+        ),
+      // close_agent: the card's ×, as this host ends an agent.
+      close: (id) => closeStandaloneAgent(ptyManager, runtime, id),
     });
 
     const config = await server.start({

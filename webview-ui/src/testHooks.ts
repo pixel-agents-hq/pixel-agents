@@ -18,6 +18,9 @@ declare global {
         /** The character profile it wears, and which copy of it (0 = the first). */
         palette: number;
         repeat: number;
+        /** The tile it stands on (or is leaving, mid-step). */
+        col: number;
+        row: number;
       }>;
       /** The character the camera follows (null = free camera). */
       getCameraFollowId?: () => number | null;
@@ -157,6 +160,8 @@ export function installTestHooks(officeStateRef: { current: OfficeState | null }
       isGreeter: ch.isGreeter,
       palette: ch.palette,
       repeat: ch.repeat,
+      col: ch.tileCol,
+      row: ch.tileRow,
     }));
   };
 

@@ -22,6 +22,7 @@ export function agentCreatedMessage(id: number, agent: AgentState): Record<strin
     seatId: agent.seatId,
     // The office shows name and branch; the folder stays server-side.
     worktree: officeWorktree(agent),
+    nickname: agent.nickname,
   };
 }
 
@@ -50,6 +51,21 @@ export function existingAgentWorktrees(
   for (const [id, agent] of agents) {
     const worktree = officeWorktree(agent);
     if (worktree) out[id] = worktree;
+  }
+  return out;
+}
+
+/**
+ * `existingAgents.nicknames`: the Nickname of every agent launched with one,
+ * keyed by id, so a reload or reconnect keeps it on the card and label. One
+ * builder for both surfaces, like existingAgentWorktrees.
+ */
+export function existingAgentNicknames(
+  agents: Iterable<[number, AgentState]>,
+): Record<number, string> {
+  const out: Record<number, string> = {};
+  for (const [id, agent] of agents) {
+    if (agent.nickname) out[id] = agent.nickname;
   }
   return out;
 }

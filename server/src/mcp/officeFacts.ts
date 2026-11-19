@@ -12,6 +12,8 @@ import {
   type FurnitureCatalog,
   layoutFromJson,
   type OfficeLayout,
+  type WalkGrid,
+  walkGrid,
 } from '../../../core/src/layout/index.js';
 import type { HookProvider } from '../../../core/src/provider.js';
 import type { AgentStateStore } from '../agentStateStore.js';
@@ -53,6 +55,10 @@ export interface OfficeSnapshot {
   seatOf(agentId: number): string | undefined;
   /** Seat id → the agent holding it (the first, when two claim one). */
   holders: Map<string, number>;
+  /** The tile of an agent's seat, when the office has seated it. */
+  seatTileOf(agentId: number): { col: number; row: number } | null;
+  /** The layout as walking sees it (built on first use), or null without a layout or catalogue. */
+  grid(): WalkGrid | null;
 }
 
 /** Read the office once: the layout read from its file and migrated once. */
@@ -68,11 +74,20 @@ export function officeSnapshot(facts: OfficeFacts): OfficeSnapshot {
     const seatId = seatOf(id);
     if (seatId && !holders.has(seatId)) holders.set(seatId, id);
   }
+  let grid: WalkGrid | null | undefined;
   return {
     layout,
     catalog,
     seats,
     seatOf,
     holders,
+    seatTileOf(agentId) {
+      const seatId = seatOf(agentId);
+      return (seatId && seats.get(seatId)?.tile) || null;
+    },
+    grid() {
+      if (grid === undefined) grid = layout && catalog ? walkGrid(catalog, layout) : null;
+      return grid;
+    },
   };
 }

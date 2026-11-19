@@ -39,6 +39,7 @@ export function toPersistedAgent(agent: AgentState): PersistedAgent | null {
     palette: agent.palette,
     repeat: agent.repeat,
     worktree: agent.worktree && { ...agent.worktree },
+    nickname: agent.nickname,
   };
 }
 
@@ -77,6 +78,7 @@ export function restoredAgentInit(p: PersistedAgent): Omit<AgentStateInit, 'isEx
     palette: p.palette,
     repeat: p.repeat ?? legacyRepeat(p.clothesHue ?? p.hueShift),
     worktree: persistedWorktree(p.worktree),
+    nickname: typeof p.nickname === 'string' && p.nickname ? p.nickname : undefined,
     // A Worktree's folder is where its session last ran; elsewhere is
     // unknown until a signal says (the first hook then reads it once).
     cwd: persistedWorktree(p.worktree)?.path,
