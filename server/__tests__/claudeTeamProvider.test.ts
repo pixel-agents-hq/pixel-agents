@@ -1,9 +1,10 @@
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { claudeTeamProvider } from '../src/providers/hook/claude/claudeTeamProvider.js';
 import { finishedNotice, interimNotice } from './fixtures/taskNotifications.js';
+import { removeInTempDir, removeTempDir } from './helpers/removeTempDir.js';
 
 describe('claudeTeamProvider', () => {
   describe('identity', () => {
@@ -78,14 +79,13 @@ describe('claudeTeamProvider', () => {
 
   describe('discoverTeammates', () => {
     const fsMod = require('fs') as typeof import('fs');
-    const tmpRoot = path.join(os.tmpdir(), 'pixel-agents-discover-' + Date.now());
+    let tmpRoot = '';
+    beforeEach(() => {
+      tmpRoot = fsMod.mkdtempSync(path.join(os.tmpdir(), 'pixel-agents-discover-'));
+    });
 
     afterEach(() => {
-      try {
-        fsMod.rmSync(tmpRoot, { recursive: true, force: true });
-      } catch {
-        /* ignore */
-      }
+      removeTempDir(tmpRoot);
     });
 
     it('returns empty array when teammate directory does not exist', () => {
@@ -306,7 +306,10 @@ describe('claudeTeamProvider', () => {
 
   describe('discoverTeammates (new-style: top-level tagged sessions)', () => {
     const fsMod = require('fs') as typeof import('fs');
-    const tmpRoot = path.join(os.tmpdir(), 'pixel-agents-discover-new-' + Date.now());
+    let tmpRoot = '';
+    beforeEach(() => {
+      tmpRoot = fsMod.mkdtempSync(path.join(os.tmpdir(), 'pixel-agents-discover-new-'));
+    });
     const LEAD_SESSION = '11111111-1111-4111-8111-111111111111';
     const MATE_SESSION = '22222222-2222-4222-8222-222222222222';
     const TEAM = 'session-abc12345';
@@ -333,11 +336,7 @@ describe('claudeTeamProvider', () => {
     }
 
     afterEach(() => {
-      try {
-        fsMod.rmSync(tmpRoot, { recursive: true, force: true });
-      } catch {
-        /* ignore */
-      }
+      removeTempDir(tmpRoot);
     });
 
     it('finds top-level teammate sessions tagged with the team, with their own sessionId', () => {
@@ -414,14 +413,13 @@ describe('claudeTeamProvider', () => {
 
   describe('getTeamMetadataForSession', () => {
     const fsMod = require('fs') as typeof import('fs');
-    const tmpRoot = path.join(os.tmpdir(), 'pixel-agents-meta-' + Date.now());
+    let tmpRoot = '';
+    beforeEach(() => {
+      tmpRoot = fsMod.mkdtempSync(path.join(os.tmpdir(), 'pixel-agents-meta-'));
+    });
 
     afterEach(() => {
-      try {
-        fsMod.rmSync(tmpRoot, { recursive: true, force: true });
-      } catch {
-        /* ignore */
-      }
+      removeTempDir(tmpRoot);
     });
 
     it('returns null when file does not exist', () => {
@@ -505,10 +503,7 @@ describe('claudeTeamProvider', () => {
     afterEach(() => {
       // Cleanup any test artifacts
       try {
-        fs.rmSync(path.join(os.homedir(), '.claude', 'teams', TEAM_NAME), {
-          recursive: true,
-          force: true,
-        });
+        removeInTempDir(path.join(os.homedir(), '.claude', 'teams', TEAM_NAME));
       } catch {
         /* ignore */
       }

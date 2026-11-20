@@ -28,6 +28,7 @@ import type {
   TerminalSession,
   TerminalSessions,
 } from '../src/terminal/terminalSessions.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 let tmpBase: string;
 
@@ -148,7 +149,7 @@ describe('terminal WebSocket auth', () => {
     void ptyManager?.disposeAll();
     server?.stop();
     try {
-      fs.rmSync(tmpBase, { recursive: true, force: true });
+      removeTempDir(tmpBase);
     } catch {
       /* ignore */
     }

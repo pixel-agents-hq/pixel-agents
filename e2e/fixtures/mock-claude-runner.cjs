@@ -203,8 +203,15 @@ function writeJsonFile(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+/** A scenario's deletePath: only ever something inside the temp dir (the test's own home). */
 function deletePathTarget(filePath) {
-  fs.rmSync(filePath, { recursive: true, force: true });
+  const tmp = fs.realpathSync(os.tmpdir());
+  const target = fs.existsSync(filePath) ? fs.realpathSync(filePath) : path.resolve(filePath);
+  const rel = path.relative(tmp, target);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`deletePath: refusing ${filePath} (not inside ${tmp})`);
+  }
+  fs.rmSync(target, { recursive: true, force: true });
 }
 
 function readSettings(homeDir) {

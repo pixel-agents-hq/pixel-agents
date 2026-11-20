@@ -7,6 +7,7 @@ import path from 'node:path';
 import { expect, type Page } from '@playwright/test';
 
 import { type HookServerConfig, waitForHookServer } from './hooks';
+import { removeTempDir } from './removeTempDir';
 
 const REPO_ROOT = path.join(__dirname, '../..');
 const STANDALONE_CLI = path.resolve(REPO_ROOT, 'dist', 'cli.js');
@@ -407,14 +408,14 @@ export async function launchStandalone(
       },
       cleanup: async () => {
         await stopProcess(hostProcess);
-        if (ownsHome) fs.rmSync(tmpHome, { recursive: true, force: true });
-        if (ownsWorkspace) fs.rmSync(workspaceDir, { recursive: true, force: true });
+        if (ownsHome) removeTempDir(tmpHome);
+        if (ownsWorkspace) removeTempDir(workspaceDir);
       },
     };
   } catch (error) {
     await stopProcess(hostProcess);
-    if (ownsHome) fs.rmSync(tmpHome, { recursive: true, force: true });
-    if (ownsWorkspace) fs.rmSync(workspaceDir, { recursive: true, force: true });
+    if (ownsHome) removeTempDir(tmpHome);
+    if (ownsWorkspace) removeTempDir(workspaceDir);
     // Setup failures never reach the fixture's log-attaching teardown, so fold
     // the host's output into the error itself — otherwise a host that dies at
     // boot on CI leaves nothing to diagnose but a connection-refused message.

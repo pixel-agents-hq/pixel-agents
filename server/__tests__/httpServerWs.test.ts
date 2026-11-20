@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 
 import { WS_CLOSE_FORBIDDEN_ORIGIN, WS_CLOSE_UNAUTHORIZED } from '../src/constants.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 // Isolated temp HOME: the server writes ~/.pixel-agents/{server.json,servers/}
 // and the consent assertions below read ~/.pixel-agents/config.json.
@@ -114,7 +115,7 @@ describe('/ws connection gate', () => {
     sockets.length = 0;
     server?.stop();
     try {
-      fs.rmSync(tmpBase, { recursive: true, force: true });
+      removeTempDir(tmpBase);
     } catch {
       /* ignore */
     }
@@ -267,7 +268,7 @@ describe('/ws privileged-message gate', () => {
     sockets.length = 0;
     server?.stop();
     try {
-      fs.rmSync(tmpBase, { recursive: true, force: true });
+      removeTempDir(tmpBase);
     } catch {
       /* ignore */
     }

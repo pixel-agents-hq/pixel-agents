@@ -25,6 +25,7 @@ import {
 import { heldPaths, savedOccupant, worktreeInUse } from '../src/worktreeOccupancy.js';
 import { readRegistry } from '../src/worktreeRegistry.js';
 import { gitIn, makeRepo, removeTempRepos } from './fixtures/gitRepos.js';
+import { clearTestHome, removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * Following an agent that moves into or out of a worktree mid-session
@@ -138,8 +139,7 @@ afterEach(() => {
   setAttributionDirectories(() => []);
   resumeRetiringForTests();
   removeTempRepos();
-  fs.rmSync(path.join(os.homedir(), '.claude'), { recursive: true, force: true });
-  fs.rmSync(path.join(os.homedir(), '.pixel-agents'), { recursive: true, force: true });
+  clearTestHome('.claude', '.pixel-agents');
 });
 
 function moves(): Array<Record<string, unknown>> {
@@ -407,7 +407,7 @@ describe('with hooks: a new cwd follows the agent', () => {
     expect(agent.jsonlFile).toBe(newFile);
     expect(agent.worktree).toBeUndefined();
     expect(agent.directoryName).toBe('Repo');
-    fs.rmSync(elsewhere, { recursive: true, force: true });
+    removeTempDir(elsewhere);
   });
 });
 

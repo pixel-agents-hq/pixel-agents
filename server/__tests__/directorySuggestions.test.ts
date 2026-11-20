@@ -9,6 +9,7 @@ import {
   collectDirectorySuggestions,
   type SuggestionProvider,
 } from '../src/directorySuggestions.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * Recovering "places you've already worked" out of the coding agent's session
@@ -43,7 +44,7 @@ describe('directorySuggestions', () => {
     } else {
       process.env.HOME = originalHome;
     }
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   /** A real directory on disk, so an existence check passes. */

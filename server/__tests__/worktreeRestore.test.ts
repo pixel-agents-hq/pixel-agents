@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -17,6 +16,7 @@ import {
   removeTempRepos,
   writeFile,
 } from './fixtures/gitRepos.js';
+import { clearTestHome } from './helpers/removeTempDir.js';
 
 /**
  * Bringing Worktrees back for a resume, and the Worktrees list's own actions,
@@ -25,7 +25,7 @@ import {
 
 afterEach(() => {
   removeTempRepos();
-  fs.rmSync(path.join(os.homedir(), '.pixel-agents'), { recursive: true, force: true });
+  clearTestHome('.pixel-agents');
 });
 
 async function created(repo: string, options: Parameters<typeof create>[1] = {}) {

@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 
 import { expect, test } from '../../fixtures/standalone';
+import { removeTempDir } from '../../helpers/removeTempDir';
 
 /**
  * A PC opens a PC shell (CONTEXT.md → Interactive Furniture): hovering a PC
@@ -108,7 +109,7 @@ test.describe('Standalone / PC shells', () => {
   // The shell runs in the host's PTY, POSIX only like the other terminal specs.
   test.skip(process.platform === 'win32', 'PC shells run through the POSIX PTY path here');
   test.use({ standaloneOptions: { seedConfig: TWO_DIRECTORIES, hostEnv: { SHELL: '/bin/sh' } } });
-  test.afterAll(() => fs.rmSync(DIRS_ROOT, { recursive: true, force: true }));
+  test.afterAll(() => removeTempDir(DIRS_ROOT));
 
   test('hover, the Directory selector, a shell that echoes, its card and lit PC, and × @area:standalone', async ({
     page,

@@ -5,6 +5,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { removeTempDir } from './helpers/removeTempDir.js';
+
 const SCRIPT = path.join(__dirname, '../../dist/hooks/claude-statusline.js');
 
 let tmpBase: string;
@@ -81,7 +83,7 @@ describe('claude-statusline.js integration', () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tmpBase, { recursive: true, force: true });
+    removeTempDir(tmpBase);
   });
 
   // Needs `npm run compile` (the bundled script); a loud skip, never a false green.

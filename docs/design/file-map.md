@@ -62,6 +62,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     providers/index.ts               Provider registry (claudeProvider + the hookProviders list the consent gate loops over)
     agentPersistence.ts              What of an agent survives a reload, and what a restored agent starts from (both surfaces)
     agentMoves.ts                    Following an agent that moves mid-session (EnterWorktree / ExitWorktree): AgentMoves.relocate(agentId, SessionWhereabouts) — the ONE operation every signal funnels into (a hook whose cwd differs from the agent's, the transcript's own move records without hooks, a scanner finding the session's file in another project dir after its old one vanished, the stale check's last look): the marker from the new folder (a Directory's `.claude/worktrees/<name>`, else none; the Directory stays), the transcript followed only to a file that exists once the read one is gone, offset + line buffer kept (same bytes: no replay, gauge kept), a short retry when the signal beats the rename; `agentWorktreeChanged` broadcast; a Worktree of ours moved out of records the agent's session in the registry, so it stays held (worktreeOccupancy.ts); agentForTranscript = the ONE "is this transcript already an agent's?" rule every scanner asks before adopting (its own file, or one named for its session while its own file is gone → followed; a same-named file while its own still exists is adopted as before, never hidden), findMovedTranscript (the stale check's last look)
+    resumedTranscript.ts             Following a /resume typed in a launched agent's terminal: resumedTranscript finds the newest transcript in the project dir written since the launch that no agent reads (regular files matching the provider's `sessionFilePattern`; none for a provider with no pattern). Both surfaces' launches call it once the transcript they expected has not appeared
     backgroundSpawns.ts              A lead's live background spawns: tool id → task id, their rules (launchSpawn, completionNotice, classifySpawn) and persisted form
     agentRuntime.ts                  Lifecycle core: timers, scanners, HookEventHandler, SessionRouter, DismissalTracker
     agentStateStore.ts               EventEmitter-backed single source of truth (typed mutations + events)
@@ -119,7 +120,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     teamUtils.ts                     isInlineTeammateOf, getInlineTeammates, hasInlineTeammates
     types.ts                         ServerAgentState
     constants.ts                     All timing/scanning constants
-  __tests__/                         28 Vitest files
+  __tests__/                         Vitest suites; helpers/removeTempDir.ts is the ONE place they delete folders (removeTempDir, removeInTempDir, clearTestHome; eslint-rules/noComputedRecursiveDelete.mjs bans any other recursive rm)
   manual-hook-events.http            Manual hook testing helper (REST-Client format)
 
 adapters/vscode/                     VS Code surface — composes core + server
@@ -306,6 +307,7 @@ e2e/                                 Playwright suite (real VS Code + mock-claud
     lifecycle.ts                     Reusable scenario fragments
     team.ts                          Team config seeding + teammate helpers
     allure-labels.ts                 @area:<tag> → Allure epic
+    removeTempDir.ts                 The ONE place e2e deletes folders: removeTempDir (a mkdtemp folder in the temp dir), removeUnder (the suite's own artifacts / results / cache under their root); the runner's deletePath is fenced to the temp dir
   tests/
     claude/hooks-on/                 basic.spec.ts, lifecycle.spec.ts, teams.spec.ts
     claude/hooks-off/                lifecycle.spec.ts, matrix.spec.ts

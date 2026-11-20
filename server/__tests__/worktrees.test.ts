@@ -17,10 +17,11 @@ import {
   tempDir,
   writeFile,
 } from './fixtures/gitRepos.js';
+import { clearTestHome, removeInTempDir } from './helpers/removeTempDir.js';
 
 afterEach(() => {
   removeTempRepos();
-  fs.rmSync(path.join(os.homedir(), '.pixel-agents'), { recursive: true, force: true });
+  clearTestHome('.pixel-agents');
 });
 
 /** A name generator handing out `names` in order. */
@@ -418,7 +419,7 @@ describe('retire: the leave rules', () => {
   it('a folder deleted by hand: git forgets it and the leave rules still apply', async () => {
     const repo = makeRepo();
     const worktree = await created(repo);
-    fs.rmSync(worktree.path, { recursive: true, force: true });
+    removeInTempDir(worktree.path);
 
     expect(await retire(worktree)).toMatchObject({ ok: true, outcome: 'removed' });
     expect(gitIn(repo, 'worktree', 'list', '--porcelain')).not.toContain(worktree.path);
@@ -526,7 +527,7 @@ describe('decide', () => {
     const repo = makeRepo();
     const worktree = await dirty(repo);
     gitIn(worktree.path, 'checkout', '--', 'README.md');
-    fs.rmSync(path.join(worktree.path, 'notes'), { recursive: true });
+    removeInTempDir(path.join(worktree.path, 'notes'));
 
     expect(await decide(worktree, { choice: 'save' })).toMatchObject({
       ok: true,

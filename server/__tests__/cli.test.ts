@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CliArgsError, parseArgs } from '../src/cli.js';
 import { CLAUDE_HOOK_EVENTS } from '../src/providers/hook/claude/constants.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 const CLI_BUNDLE = path.join(__dirname, '../../dist/cli.js');
 const CLI_START_TIMEOUT_MS = 10_000;
@@ -228,8 +229,8 @@ describe('dist/cli.js entry-point guard', () => {
       await body({ output: () => output, port });
     } finally {
       await stopChild(child);
-      fs.rmSync(tmpHome, { recursive: true, force: true });
-      fs.rmSync(workspaceDir, { recursive: true, force: true });
+      removeTempDir(tmpHome);
+      removeTempDir(workspaceDir);
     }
   }
 
@@ -457,8 +458,8 @@ describe('dist/cli.js entry-point guard', () => {
       expect(JSON.stringify(settings)).toContain(installedHook);
     } finally {
       await stopChild(child);
-      fs.rmSync(tmpHome, { recursive: true, force: true });
-      fs.rmSync(workspaceDir, { recursive: true, force: true });
+      removeTempDir(tmpHome);
+      removeTempDir(workspaceDir);
     }
   });
 });

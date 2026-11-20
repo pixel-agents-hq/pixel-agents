@@ -9,6 +9,7 @@ import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import type { AgentState } from '../src/types.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 function createTestAgent(overrides: Partial<AgentState> = {}): AgentState {
   return {
@@ -86,7 +87,7 @@ describe('AgentRuntime -- restore preserves palette/repeat', () => {
     // if the runtime is disposed mid-test (between a persist and a fresh
     // adapter's load) it can clobber in-memory state.
     runtime?.dispose();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   it('restoreExternalAgents keeps palette/repeat from the persisted record', () => {

@@ -18,6 +18,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import { isRecord } from '../../core/src/isRecord.js';
 import { parsePersistedPcShells, type PersistedPcShell } from '../../core/src/pcShells.js';
 import type { PersistedAgent } from '../../core/src/schemas.js';
 import { parseCardOrder } from './cardOrder.js';
@@ -41,6 +42,18 @@ interface AdapterState {
 }
 
 const EMPTY_STATE: AdapterState = { agents: [], seats: {}, cardOrder: [], pcShells: [] };
+
+/** A saved agent as read: what restoring one needs (id, terminal, transcript, project
+ *  folder) checked; its optional fields are read by agentPersistence.ts, each defensively. */
+function isPersistedAgent(raw: unknown): raw is PersistedAgent {
+  return (
+    isRecord(raw) &&
+    Number.isSafeInteger(raw.id) &&
+    typeof raw.terminalName === 'string' &&
+    typeof raw.jsonlFile === 'string' &&
+    typeof raw.projectDir === 'string'
+  );
+}
 
 export interface FileStateAdapterOptions {
   namespace: ConfigNamespace;
@@ -115,14 +128,21 @@ export class FileStateAdapter implements StateAdapter {
   // ── Internal state-file I/O ─────────────────────────────────
 
   private readState(): AdapterState {
+    return this.readStateFile() ?? { ...EMPTY_STATE };
+  }
+
+  /** The state file as it reads: each list checked, an agent missing what restoring
+   *  it needs dropped. Empty where there is no file; null where one is there but
+   *  cannot be read. */
+  private readStateFile(): AdapterState | null {
     try {
       if (!fs.existsSync(this.stateFilePath)) {
         return { ...EMPTY_STATE };
       }
       const raw = fs.readFileSync(this.stateFilePath, 'utf-8');
-      const parsed = JSON.parse(raw) as Partial<AdapterState>;
+      const parsed = JSON.parse(raw) as Partial<Record<keyof AdapterState, unknown>>;
       return {
-        agents: Array.isArray(parsed.agents) ? (parsed.agents as PersistedAgent[]) : [],
+        agents: Array.isArray(parsed.agents) ? parsed.agents.filter(isPersistedAgent) : [],
         seats:
           parsed.seats && typeof parsed.seats === 'object'
             ? (parsed.seats as AdapterState['seats'])
@@ -132,14 +152,30 @@ export class FileStateAdapter implements StateAdapter {
       };
     } catch (err) {
       console.error('[Pixel Agents] Failed to read adapter state:', err);
-      return { ...EMPTY_STATE };
+      return null;
     }
   }
 
-  /** Read, change these fields, write back. */
+  /** Read, change these fields, write back. A state file that is there but cannot be
+   *  read is not an empty one: nothing is written over it (every agent, the card order
+   *  and the PC shells would go with one save); it is kept for the user to look at. */
   private patchState(patch: Partial<AdapterState>): void {
-    this.writeState({ ...this.readState(), ...patch });
+    const current = this.readStateFile();
+    if (!current) {
+      if (!this.refusedBroken) {
+        this.refusedBroken = true;
+        console.error(
+          `[Pixel Agents] ${this.stateFilePath} cannot be read: not saving over it (fix or remove it).`,
+        );
+      }
+      return;
+    }
+    this.refusedBroken = false;
+    this.writeState({ ...current, ...patch });
   }
+
+  /** A broken state file was already reported (once until it reads again). */
+  private refusedBroken = false;
 
   private writeState(state: AdapterState): void {
     const dir = path.dirname(this.stateFilePath);

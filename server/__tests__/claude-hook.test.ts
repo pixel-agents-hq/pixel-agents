@@ -5,6 +5,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { removeTempDir } from './helpers/removeTempDir.js';
+
 const HOOK_SCRIPT = path.join(__dirname, '../../dist/hooks/claude-hook.js');
 
 // Isolated temp HOME
@@ -84,7 +86,7 @@ describe('claude-hook.js integration', () => {
 
   afterEach(() => {
     try {
-      fs.rmSync(tmpBase, { recursive: true, force: true });
+      removeTempDir(tmpBase);
     } catch {
       /* ignore */
     }

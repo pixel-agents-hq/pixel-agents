@@ -14,6 +14,7 @@ import { readConfig, writeConfig } from '../src/configPersistence.js';
 import { conversationLook, recordConversationLooks } from '../src/conversations.js';
 import { FileStateAdapter } from '../src/fileStateAdapter.js';
 import { setExternalCharacterCount } from '../src/paletteAssigner.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * Everything that names a character by its index (agents, their saved seats, Directory
@@ -113,7 +114,7 @@ describe('saving a list that moves characters', () => {
   afterEach(() => {
     process.env.HOME = originalHome;
     store.dispose();
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   it('a character inserted before them keeps every reference on its character', () => {

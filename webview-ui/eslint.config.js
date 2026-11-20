@@ -6,6 +6,7 @@ import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import tseslint from 'typescript-eslint';
 import eslintConfigPrettier from 'eslint-config-prettier';
 import { defineConfig, globalIgnores } from 'eslint/config';
+import { noComputedRecursiveDelete } from '../eslint-rules/noComputedRecursiveDelete.mjs';
 import pixelAgentsPlugin from '../eslint-rules/pixel-agents-rules.mjs';
 
 export default defineConfig([
@@ -47,6 +48,14 @@ export default defineConfig([
       'pixel-agents/no-inline-colors': 'off',
       'pixel-agents/pixel-shadow': 'off',
       'pixel-agents/pixel-font': 'off',
+    },
+  },
+  {
+    // Tests delete folders only through their guard (eslint-rules/noComputedRecursiveDelete.mjs).
+    files: ['test/**/*.ts'],
+    ignores: ['test/helpers/removeTempDir.ts'],
+    rules: {
+      'no-restricted-syntax': noComputedRecursiveDelete,
     },
   },
   eslintConfigPrettier,

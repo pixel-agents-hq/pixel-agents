@@ -22,6 +22,7 @@ import {
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import { CONVERSATION_TITLE_SCAN_BYTES } from '../src/providers/hook/claude/constants.js';
 import { conversationTitle } from '../src/providers/hook/claude/conversationTitle.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * The sidebar's recent conversations: Claude's own titles read off the
@@ -57,7 +58,7 @@ describe('conversations', () => {
   });
 
   afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
   });
 
   describe('conversationTitle', () => {

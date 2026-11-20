@@ -7,6 +7,7 @@ import path from 'path';
 import { namespaceE2EPath } from '../run-config';
 import { initGitRepo } from './git';
 import { applyMockHomeEnv } from './mock-claude';
+import { removeTempDir } from './removeTempDir';
 
 const REPO_ROOT = path.join(__dirname, '../..');
 const VSCODE_PATH_FILE = path.join(REPO_ROOT, '.vscode-test/vscode-executable.txt');
@@ -419,7 +420,7 @@ export async function launchVSCode(
       }
     }
     try {
-      fs.rmSync(tmpBase, { recursive: true, force: true });
+      removeTempDir(tmpBase);
     } catch {
       // ignore cleanup errors
     }

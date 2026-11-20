@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 
 import { build } from 'vite';
 import { test } from 'vitest';
+
+import { removeTempDir } from './helpers/removeTempDir';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -131,6 +133,6 @@ test('production build stays accessible from a fixed subpath', async () => {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
-    rmSync(outDir, { recursive: true, force: true });
+    removeTempDir(outDir);
   }
 });

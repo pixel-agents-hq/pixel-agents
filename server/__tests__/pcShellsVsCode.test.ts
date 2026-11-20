@@ -82,6 +82,7 @@ import { handlePcShellMessage } from '../src/pcShells.js';
 import { PixelAgentsServer } from '../src/server.js';
 import { type Json, loadBundledAssets, seededLayout, waitFor } from './helpers/officeMcpHarness.js';
 import { A_DESK, FRONT_PC, OTHER_PC } from './helpers/pcShellDriver.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 let catalog: readonly CatalogSource[] = [];
 beforeAll(async () => {
@@ -132,7 +133,7 @@ describe('PC shells in a VS Code office (vscode-free composition, fake terminals
   afterEach(() => {
     shells.dispose();
     store.dispose();
-    fs.rmSync(root, { recursive: true, force: true });
+    removeTempDir(root);
   });
 
   /** What the webview sends, as the provider hands it over; whether it was this module's. */

@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -15,12 +14,13 @@ import {
   tempDir,
   writeFile,
 } from './fixtures/gitRepos.js';
+import { clearTestHome } from './helpers/removeTempDir.js';
 
 /** The new-worktree modal: a name the user gives and a branch to start from. */
 
 afterEach(() => {
   removeTempRepos();
-  fs.rmSync(path.join(os.homedir(), '.pixel-agents'), { recursive: true, force: true });
+  clearTestHome('.pixel-agents');
 });
 
 /** A repo whose origin (a bare repo) has `main` plus a newer commit on it

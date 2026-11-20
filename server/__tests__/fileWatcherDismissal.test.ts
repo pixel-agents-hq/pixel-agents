@@ -33,6 +33,7 @@ import {
 import { PathSet } from '../src/pathKey.js';
 import { claudeTeamProvider } from '../src/providers/hook/claude/claudeTeamProvider.js';
 import type { AgentState } from '../src/types.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * Tests for the DismissalTracker integration with fileWatcher's scanner functions.
@@ -97,7 +98,7 @@ describe('fileWatcher dismissal state', () => {
     for (const t of waitingTimers.values()) clearTimeout(t);
     for (const t of permissionTimers.values()) clearTimeout(t);
     try {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
+      removeTempDir(tmpDir);
     } catch {
       /* ignore */
     }

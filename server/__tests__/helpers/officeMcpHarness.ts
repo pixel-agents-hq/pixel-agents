@@ -65,6 +65,7 @@ import { launchForOffice } from '../../src/terminal/standaloneLaunches.js';
 import { standaloneTutorialSurface } from '../../src/terminal/standaloneTutorial.js';
 import type { TerminalSessions } from '../../src/terminal/terminalSessions.js';
 import { holdWorktreesOf } from '../../src/worktreeLeave.js';
+import { removeTempDir } from './removeTempDir.js';
 
 export type Json = Record<string, any>;
 export type Message = Record<string, unknown>;
@@ -238,8 +239,8 @@ function useTempHome(
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
-    fs.rmSync(home, { recursive: true, force: true });
-    fs.rmSync(path.dirname(workspace), { recursive: true, force: true });
+    removeTempDir(home);
+    removeTempDir(path.dirname(workspace));
   });
   return { home: () => home, workspace: () => workspace };
 }

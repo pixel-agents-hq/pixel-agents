@@ -3,6 +3,14 @@ import type { Frame } from '@playwright/test';
 import { expect, test } from '../../../fixtures/pixel-agents';
 import { spawnInternalAgentAndWait } from '../../../helpers/internal-agent';
 import {
+  INLINE_TEAMMATE_ALIAS,
+  INLINE_TEAMMATE_ROLE,
+  TMUX_TEAMMATE_ALIAS,
+  uniqueTeamName,
+  withInlineTeammateSession,
+  withTmuxTeammateSession,
+} from '../../../helpers/lifecycle';
+import {
   arrangeNextClaudeInvocation,
   claudeScenario,
   spawnExternalClaudeScenario,
@@ -21,14 +29,6 @@ import {
   buildUserToolResultRecord,
   seedTeamConfig,
 } from '../../../helpers/team';
-import {
-  INLINE_TEAMMATE_ALIAS,
-  INLINE_TEAMMATE_ROLE,
-  TMUX_TEAMMATE_ALIAS,
-  uniqueTeamName,
-  withInlineTeammateSession,
-  withTmuxTeammateSession,
-} from '../../../helpers/lifecycle';
 import { getPixelAgentsFrame, openPixelAgentsPanel, setSettings } from '../../../helpers/webview';
 
 async function expectLeadActivity(frame: Frame, text: string): Promise<void> {

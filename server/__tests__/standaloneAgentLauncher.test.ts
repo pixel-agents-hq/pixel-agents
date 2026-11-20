@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HookProvider } from '../../core/src/provider.js';
 import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
-import { JSONL_POLL_INTERVAL_MS } from '../src/constants.js';
+import { JSONL_POLL_INTERVAL_MS, RESUME_FALLBACK_POLLS } from '../src/constants.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import { resumedTranscript } from '../src/resumedTranscript.js';
 import type { IPty, PtyModule, PtySpawnOptions } from '../src/terminal/ptyModule.js';
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from '../src/terminal/standaloneAgentLauncher.js';
 import { sessionMarkersUnset } from '../src/terminal/terminalEnv.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * launchStandaloneAgent is the standalone counterpart of the VS Code adapter's
@@ -100,7 +102,7 @@ describe('launchStandaloneAgent', () => {
     vi.useRealTimers();
     runtime.dispose();
     store.dispose();
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    removeTempDir(tempDir);
   });
 
   // ── Successful launch ────────────────────────────────────────
@@ -403,5 +405,59 @@ describe('launchStandaloneAgent', () => {
 
     expect(runtime.jsonlPollTimers.has(id)).toBe(false);
     expect(runtime.pollingTimers.has(id)).toBe(false);
+  });
+
+  it('a /resume typed in the terminal: past the threshold, the agent moves to the newest new transcript', () => {
+    vi.useFakeTimers();
+    const harness = workingPtyManager();
+    const id = launch(harness)!;
+    const expected = store.get(id)!.jsonlFile;
+    const stamp = (file: string, secondsFromNow: number) => {
+      const t = Date.now() / 1000 + secondsFromNow;
+      fs.utimesSync(file, t, t);
+    };
+    // Older than the launch: never a candidate.
+    const old = path.join(projectDir, 'old-session.jsonl');
+    fs.writeFileSync(old, '');
+    stamp(old, -60);
+
+    // Before the threshold a new transcript is left alone.
+    const resumed = path.join(projectDir, 'resumed-session.jsonl');
+    fs.writeFileSync(resumed, '');
+    stamp(resumed, 5);
+    vi.advanceTimersByTime(JSONL_POLL_INTERVAL_MS * RESUME_FALLBACK_POLLS);
+    expect(store.get(id)!.jsonlFile).toBe(expected);
+    expect(runtime.jsonlPollTimers.has(id)).toBe(true);
+
+    vi.advanceTimersByTime(JSONL_POLL_INTERVAL_MS);
+    expect(store.get(id)!.jsonlFile).toBe(resumed);
+    expect(runtime.jsonlPollTimers.has(id)).toBe(false);
+  });
+
+  it('resumedTranscript skips a transcript another agent reads', () => {
+    const harness = workingPtyManager();
+    const id = launch(harness)!;
+    const taken = path.join(projectDir, 'taken.jsonl');
+    fs.writeFileSync(taken, '');
+    store.get(id)!.jsonlFile = taken;
+    expect(resumedTranscript(store, projectDir, 0, '*.jsonl')).toBeNull();
+  });
+
+  it("resumedTranscript takes files only: a session's folder beside the transcripts is never one", () => {
+    // The CLI keeps a `<sessionId>/` folder (sub-agents, tool results) beside
+    // transcripts; one whose name ends like a transcript is still a folder.
+    const folder = path.join(projectDir, 'folder.jsonl');
+    fs.mkdirSync(folder);
+    expect(resumedTranscript(store, projectDir, 0, '*.jsonl')).toBeNull();
+
+    const transcript = path.join(projectDir, 'resumed.jsonl');
+    fs.writeFileSync(transcript, '');
+    expect(resumedTranscript(store, projectDir, 0, '*.jsonl')).toBe(transcript);
+  });
+
+  it('resumedTranscript finds nothing for a provider that declares no transcript pattern', () => {
+    fs.writeFileSync(path.join(projectDir, 'resumed.jsonl'), '');
+    fs.writeFileSync(path.join(projectDir, 'notes.txt'), '');
+    expect(resumedTranscript(store, projectDir, 0, undefined)).toBeNull();
   });
 });

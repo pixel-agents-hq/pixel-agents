@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { normalizeProjectPath } from '../../core/src/normalizeProjectPath.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 describe('claudeProvider', () => {
   describe('identity', () => {
@@ -321,7 +322,7 @@ describe('claudeProvider', () => {
         write(path.join(repo, '.claude', 'settings.local.json'), ['vendor', 7]);
         expect(convention.symlinkDirectories?.(repo)).toEqual(['node_modules', '.venv', 'vendor']);
       } finally {
-        fs.rmSync(repo, { recursive: true, force: true });
+        removeTempDir(repo);
         if (before) fs.writeFileSync(userSettings, before);
         else fs.rmSync(userSettings, { force: true });
       }

@@ -14,6 +14,7 @@ import {
   saveUserDirectory,
   validateDirectoryPath,
 } from '../src/directories.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * The shared Directory module both hosts drive. Everything here goes through the
@@ -43,7 +44,7 @@ describe('directories', () => {
     } else {
       process.env.HOME = originalHome;
     }
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   /** Make the next config write fail: the atomic write goes through a `.tmp`

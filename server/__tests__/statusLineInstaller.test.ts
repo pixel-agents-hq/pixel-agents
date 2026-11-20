@@ -3,6 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { removeInTempDir, removeTempDir } from './helpers/removeTempDir.js';
+
 let tmpBase: string;
 
 vi.mock('os', async () => {
@@ -61,7 +63,7 @@ describe('status line bridge installer', () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tmpBase, { recursive: true, force: true });
+    removeTempDir(tmpBase);
   });
 
   it('wraps an existing status line, keeping its other fields, and restores it byte for byte', async () => {
@@ -165,7 +167,7 @@ describe('status line bridge installer', () => {
 
   it('writes nothing when the bridge script is missing from the package', async () => {
     const raw = writeSettings({ statusLine: { type: 'command', command: USER_COMMAND } });
-    fs.rmSync(path.join(packageRoot, 'dist'), { recursive: true });
+    removeInTempDir(path.join(packageRoot, 'dist'));
 
     await expect(installStatusLineBridge(packageRoot)).rejects.toThrow(/script/);
     expect(fs.readFileSync(settingsPath(), 'utf-8')).toBe(raw);

@@ -1,6 +1,4 @@
 import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { PersistedAgent } from '../../core/src/schemas.js';
@@ -20,12 +18,13 @@ import {
 } from '../src/worktreeOccupancy.js';
 import { readRegistry, recordSession } from '../src/worktreeRegistry.js';
 import { makeRepo, removeTempRepos } from './fixtures/gitRepos.js';
+import { clearTestHome } from './helpers/removeTempDir.js';
 
 /** Who still runs in a Worktree: by where an agent runs, or by its session. */
 
 afterEach(() => {
   removeTempRepos();
-  fs.rmSync(path.join(os.homedir(), '.pixel-agents'), { recursive: true, force: true });
+  clearTestHome('.pixel-agents');
 });
 
 async function made(sessionId: string) {

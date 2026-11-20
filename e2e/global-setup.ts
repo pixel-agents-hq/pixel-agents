@@ -2,6 +2,7 @@ import { downloadAndUnzipVSCode } from '@vscode/test-electron';
 import fs from 'fs';
 import path from 'path';
 
+import { removeUnder } from './helpers/removeTempDir';
 import { namespaceE2EPath } from './run-config';
 
 export const VSCODE_CACHE_DIR = path.join(__dirname, '../.vscode-test');
@@ -71,7 +72,7 @@ async function withVSCodeDownloadLock<T>(callback: () => Promise<T>): Promise<T>
   try {
     return await callback();
   } finally {
-    fs.rmSync(VSCODE_DOWNLOAD_LOCK_DIR, { recursive: true, force: true });
+    removeUnder(VSCODE_CACHE_DIR, VSCODE_DOWNLOAD_LOCK_DIR);
   }
 }
 
@@ -133,7 +134,7 @@ function patchProductJsonForWindows(vscodePath: string): void {
 }
 
 export default async function globalSetup(): Promise<void> {
-  fs.rmSync(ALLURE_RESULTS_DIR, { recursive: true, force: true });
+  removeUnder(path.join(__dirname, '..'), ALLURE_RESULTS_DIR);
 
   let vscodePath = readCachedVSCodePath();
 

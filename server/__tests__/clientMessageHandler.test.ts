@@ -20,6 +20,7 @@ import { CLAUDE_HOOK_EVENTS } from '../src/providers/hook/claude/constants.js';
 import type { IPty, PtyModule } from '../src/terminal/ptyModule.js';
 import { PtySessionManager } from '../src/terminal/ptySessionManager.js';
 import type { AgentState } from '../src/types.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /** Let the setHooksEnabled dispatch's async chain (side effect →
  *  areHooksInstalled → persist → send) run to completion. */
@@ -93,7 +94,7 @@ describe('clientMessageHandler: areas + carpet wire ordering', () => {
       process.env.HOME = originalHome;
     }
     store.dispose();
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   // ── saveAreaMappings ─────────────────────────────────────────
@@ -462,7 +463,7 @@ describe('clientMessageHandler: saveAgentSeats palette sync', () => {
       process.env.HOME = originalHome;
     }
     store.dispose();
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   it('fills in the look of an agent that has none', () => {
@@ -617,7 +618,7 @@ describe('clientMessageHandler: character profiles', () => {
     if (originalHome === undefined) delete process.env.HOME;
     else process.env.HOME = originalHome;
     store.dispose();
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   it('webviewReady sends the six default profiles when none are saved', () => {
@@ -925,7 +926,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
     }
     runtime.dispose();
     store.dispose();
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   // ── webviewReady: availability ───────────────────────────────
@@ -1348,7 +1349,7 @@ describe('clientMessageHandler: standalone terminal control plane', () => {
       // (directoryAt in server/src/directories.ts).
       expect(store.get(id)?.directoryName).toBe('Side Project');
     } finally {
-      fs.rmSync(target, { recursive: true, force: true });
+      removeTempDir(target);
     }
   });
 
@@ -1445,7 +1446,7 @@ describe('clientMessageHandler: read-only (untokened) clients', () => {
 
   afterEach(() => {
     process.env.HOME = originalHome;
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   /** Everything under the temp HOME, as path -> contents. */
@@ -1597,7 +1598,7 @@ describe('clientMessageHandler: card order', () => {
   afterEach(() => {
     process.env.HOME = originalHome;
     store.dispose();
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   const tokened = (): ClientMessageContext => ({ store, cache: null, privileged: true });
@@ -1667,7 +1668,7 @@ describe('clientMessageHandler: roster recency', () => {
 
   afterEach(() => {
     process.env.HOME = originalHome;
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   it('sends the roster recency on connect', () => {

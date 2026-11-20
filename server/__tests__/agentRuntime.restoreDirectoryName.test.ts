@@ -8,6 +8,7 @@ import type { PersistedAgent } from '../../core/src/schemas.js';
 import { AgentRuntime } from '../src/agentRuntime.js';
 import { AgentStateStore } from '../src/agentStateStore.js';
 import { claudeProvider } from '../src/providers/hook/claude/claude.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 function createMockAdapter(initial: PersistedAgent[] = []): StateAdapter & {
   saved: PersistedAgent[][];
@@ -51,7 +52,7 @@ describe('AgentRuntime -- restore reads the legacy folderName', () => {
 
   afterEach(() => {
     runtime?.dispose();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    removeTempDir(tmpDir);
   });
 
   function restore(record: Partial<PersistedAgent>): {

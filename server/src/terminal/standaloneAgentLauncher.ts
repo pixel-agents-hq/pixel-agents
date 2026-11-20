@@ -7,7 +7,8 @@
  * server/) and takes twelve positional dependencies, so unifying the two would
  * mean rewriting the whole VS Code lifecycle -- out of scope here and a certain
  * conflict with the sibling branches. What IS shared is the thing that matters:
- * both call provider.buildLaunchCommand(), so the launched command is identical.
+ * both call provider.buildLaunchCommand(), so the launched command is identical,
+ * and both follow a /resume typed in the terminal with resumedTranscript().
  * Unifying the hosting is deferred (docs/design/standalone-terminal.md).
  */
 
@@ -23,12 +24,18 @@ import { restoredAgentInit } from '../agentPersistence.js';
 import type { AgentRuntime } from '../agentRuntime.js';
 import { createAgentState } from '../agentState.js';
 import type { AgentStateStore } from '../agentStateStore.js';
-import { JSONL_POLL_INTERVAL_MS, OFFICE_MCP_SERVER_NAME } from '../constants.js';
+import {
+  JSONL_POLL_INTERVAL_MS,
+  OFFICE_MCP_SERVER_NAME,
+  RESUME_FALLBACK_POLLS,
+} from '../constants.js';
 import { clearContextUsage } from '../contextUsage.js';
-import { startFileWatching } from '../fileWatcher.js';
+import { transcriptSuffix } from '../directorySuggestions.js';
+import { reassignAgentToFile, startFileWatching } from '../fileWatcher.js';
 import { directoryNameFor } from '../hostDirectory.js';
 import type { AgentMcpAccess } from '../mcp/officeMcp.js';
 import { assignPaletteIfNeeded } from '../paletteAssigner.js';
+import { resumedTranscript } from '../resumedTranscript.js';
 import type { AgentState } from '../types.js';
 import { retireWorktreesLeftBy } from '../worktreeLeave.js';
 import type { CheckedLaunchAsks } from './launchAsks.js';
@@ -112,7 +119,9 @@ export function launchStandaloneAgent(
   }
   // A resumed session's transcript is wherever the CLI filed it (under the
   // Directory's resolved path, when it was reached through a symlink).
-  const jsonlFile = options.resume?.transcript ?? path.join(dirs[0], `${sessionId}.jsonl`);
+  const jsonlFile =
+    options.resume?.transcript ??
+    path.join(dirs[0], `${sessionId}${transcriptSuffix(provider.sessionFilePattern)}`);
   const projectDir = path.dirname(jsonlFile);
 
   const id = store.nextAgentId.current++;
@@ -339,23 +348,50 @@ function admitTerminalAgent(
  * Wait for the session's JSONL to appear, then start watching it.
  *
  * Hooks (the default) already route by sessionId, so this is what backfills tool
- * content and keeps hooks-off standalone working at all. Unlike the VS Code
- * path this does NOT implement /resume reassignment: a launch either names a
- * fresh --session-id or --resume's an existing one, so the transcript is
- * known up front either way.
+ * content and keeps hooks-off working at all. A launch names its transcript up
+ * front (a fresh --session-id, or the --resume'd one), but the user can still
+ * `/resume` another conversation in the terminal before the first one writes
+ * anything: past `RESUME_FALLBACK_POLLS` with the expected file still missing,
+ * the agent is moved to the newest transcript in its project dir that appeared
+ * after the launch and no other agent reads.
  */
 function startJsonlPoll(deps: LaunchStandaloneAgentDeps, id: number, agent: AgentState): void {
   const { store, runtime } = deps;
+  const launchedAt = Date.now();
   let pollCount = 0;
 
   const timer = setInterval(() => {
     pollCount++;
     try {
       if (!fs.existsSync(agent.jsonlFile)) {
-        if (pollCount === 10) {
+        if (pollCount === RESUME_FALLBACK_POLLS) {
           console.warn(
             `[Pixel Agents] Terminal: Agent ${id} - JSONL not found after 10s. Expected: ${agent.jsonlFile}`,
           );
+        } else if (pollCount > RESUME_FALLBACK_POLLS && store.has(id)) {
+          const resumed = resumedTranscript(
+            store,
+            agent.projectDir,
+            launchedAt,
+            deps.provider.sessionFilePattern,
+          );
+          if (resumed) {
+            clearInterval(timer);
+            runtime.jsonlPollTimers.delete(id);
+            console.log(
+              `[Pixel Agents] Terminal: Agent ${id} - /resume detected, reassigning to ${path.basename(resumed)}`,
+            );
+            reassignAgentToFile(
+              id,
+              resumed,
+              store,
+              runtime.fileWatchers,
+              runtime.pollingTimers,
+              runtime.waitingTimers,
+              runtime.permissionTimers,
+              () => store.persist(),
+            );
+          }
         }
         return;
       }

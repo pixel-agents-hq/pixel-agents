@@ -17,6 +17,7 @@ import { claudeProvider } from '../src/providers/hook/claude/claude.js';
 import { claudeTeamProvider } from '../src/providers/hook/claude/claudeTeamProvider.js';
 import { setHookProvider } from '../src/transcriptParser.js';
 import { finishedNotice, interimNotice, noticeRecord } from './fixtures/taskNotifications.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 const launch = (toolId: string, taskId: string) =>
   JSON.stringify({
@@ -51,7 +52,7 @@ describe('stillRunningSpawns: a restored lead drops spawns that finished before 
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pa-spawns-'));
     file = path.join(dir, 'lead.jsonl');
   });
-  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+  afterEach(() => removeTempDir(dir));
 
   it('drops a spawn whose completion is in the transcript, keeps one still running', () => {
     write(

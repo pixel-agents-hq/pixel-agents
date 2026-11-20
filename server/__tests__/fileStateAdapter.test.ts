@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PersistedAgent } from '../../core/src/schemas.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 // Mock os.homedir() so the adapter resolves to an isolated temp dir on every
 // platform. Overriding process.env.HOME is not portable: os.homedir() reads
@@ -25,7 +26,7 @@ describe('FileStateAdapter', () => {
   });
 
   afterEach(() => {
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   // ── Settings (shared config.json, per-namespace section) ────
@@ -139,6 +140,24 @@ describe('FileStateAdapter', () => {
     ];
     adapter.saveAgents(agents);
     expect(adapter.loadAgents()).toEqual(agents);
+  });
+
+  it('never saves over a state file it cannot read: a broken file is not an empty one', () => {
+    const file = path.join(tempHome, '.pixel-agents', 'standalone-state.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, '{ "agents": [ broken');
+    const adapter = new FileStateAdapter({ namespace: 'standalone' });
+    expect(adapter.loadAgents()).toEqual([]);
+    adapter.saveCardOrder([3]);
+    expect(fs.readFileSync(file, 'utf-8')).toBe('{ "agents": [ broken');
+  });
+
+  it('drops a saved agent missing what restoring it needs', () => {
+    const file = path.join(tempHome, '.pixel-agents', 'standalone-state.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const good = { id: 2, terminalName: 't', jsonlFile: '/a.jsonl', projectDir: '/p' };
+    fs.writeFileSync(file, JSON.stringify({ agents: [good, { id: 'x' }, null] }));
+    expect(new FileStateAdapter({ namespace: 'standalone' }).loadAgents()).toEqual([good]);
   });
 
   it('writes state at ~/.pixel-agents/<namespace>-state.json', () => {

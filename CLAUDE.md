@@ -91,6 +91,7 @@ server/                              Lifecycle runtime + Fastify HTTP/WS server
     cli.ts                           npx pixel-agents entry
     agentPersistence.ts              What of an agent survives a reload
     agentMoves.ts                    Following an agent that moves mid-session (AgentMoves.relocate)
+    resumedTranscript.ts             The transcript a /resume typed in a launched agent's terminal moved to (both surfaces)
     backgroundSpawns.ts              A lead's live background spawns and their rules
     subagentWatch.ts                 Shadow store watching unnamed background spawns
     fileStateAdapter.ts              Namespaced ~/.pixel-agents/ persistence
@@ -679,7 +680,7 @@ Three tiers, each with its own framework.
 | `httpServerWs.test.ts`         | `/ws` gate: standalone same-origin, embedded Bearer                                                                                            |
 | `mockClaudeRunner.test.ts`     | E2E scenario runner sanity                                                                                                                     |
 
-Every server test file starts with `$HOME` pointed at a fresh temp dir (`__tests__/isolateHome.setup.ts`), so no test can read or write the real `~/.pixel-agents` or `~/.claude`.
+Every server test file starts with `$HOME` pointed at a fresh temp dir (`__tests__/isolateHome.setup.ts`), so no test can read or write the real `~/.pixel-agents` or `~/.claude`. **Tests delete folders only through a guard** (`server/__tests__/helpers/removeTempDir.ts`: `removeTempDir` — a mkdtemp folder directly in the temp dir —, `removeInTempDir` — something inside one —, `clearTestHome` — names under a home it first checks is a test's mkdtemp folder; `e2e/helpers/removeTempDir.ts`; `webview-ui/test/helpers/removeTempDir.ts`): an ESLint rule (`eslint-rules/noComputedRecursiveDelete.mjs`) bans every other recursive rm under `server/__tests__`, `e2e` and `webview-ui/test`, since a test removing a computed path once emptied the user's whole temp directory.
 
 Run: `npm run test:server` (or `npm test` for all).
 

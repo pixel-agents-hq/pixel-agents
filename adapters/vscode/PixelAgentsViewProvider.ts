@@ -146,6 +146,11 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   private isWebviewReady = false;
   private pendingBroadcasts: Array<Record<string, unknown>> = [];
 
+  // The window's terminal listeners (focus selects an agent, a close removes
+  // it): registered on the first resolveWebviewView, once for the provider's
+  // lifetime — the view is resolved again each time it is shown.
+  private terminalListeners: vscode.Disposable[] | null = null;
+
   // Shared agent lifecycle core (timer Maps, scanners, hook handler, dismissal tracker)
   private runtime: AgentRuntime;
 
@@ -620,7 +625,15 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.mcp.clientGone(this.editingClient);
     this.editingClient = {};
     const editingClient = this.editingClient;
-    webviewView.onDidDispose(() => this.mcp.clientGone(editingClient));
+    webviewView.onDidDispose(() => {
+      // Nothing is posted to a dead view (sendOrBuffer drops what comes while
+      // there is none); the next view's handshake resends the office.
+      if (this.webviewView === webviewView) {
+        this.webviewView = undefined;
+        this.isWebviewReady = false;
+      }
+      this.mcp.clientGone(editingClient);
+    });
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = getWebviewContent(webviewView.webview, this.extensionUri);
 
@@ -1237,40 +1250,47 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       }
     });
 
-    vscode.window.onDidChangeActiveTerminal((terminal) => {
-      if (!terminal) return;
-      this.runtime.activeAgentId.current = null;
-      for (const [id, agent] of this.store) {
-        if (agent.terminalRef && agent.terminalRef === terminal) {
-          this.runtime.activeAgentId.current = id;
-          webviewView.webview.postMessage({ type: 'agentSelected', id });
-          break;
-        }
-      }
-    });
+    this.watchTerminals();
+  }
 
-    vscode.window.onDidCloseTerminal((closed) => {
-      for (const [id, agent] of this.store) {
-        if (agent.terminalRef && agent.terminalRef === closed) {
-          if (this.runtime.activeAgentId.current === id) {
-            this.runtime.activeAgentId.current = null;
+  /** The window's terminal listeners, registered once (see `terminalListeners`). */
+  private watchTerminals(): void {
+    if (this.terminalListeners) return;
+    this.terminalListeners = [
+      vscode.window.onDidChangeActiveTerminal((terminal) => {
+        if (!terminal) return;
+        this.runtime.activeAgentId.current = null;
+        for (const [id, agent] of this.store) {
+          if (agent.terminalRef && agent.terminalRef === terminal) {
+            this.runtime.activeAgentId.current = id;
+            this.webview?.postMessage({ type: 'agentSelected', id });
+            break;
           }
-          // If this is a team lead, remove its teammates
-          if (agent.isTeamLead) {
-            this.runtime.removeTeammates(id);
-          }
-          // Dismiss JSONL so external scanner doesn't re-adopt it
-          this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
-          this.runtime.unregisterAgent(agent.sessionId);
-          this.runtime.removeAgent(id);
-          // Its process is gone (however it left: the card's x, /exit, the
-          // user closing the terminal in VS Code): the leave rules apply once
-          // no other agent runs in its Worktree. In the background — closing
-          // never waits on git.
-          void retireWorktreesLeftBy(this.store, agent);
         }
-      }
-    });
+      }),
+      vscode.window.onDidCloseTerminal((closed) => {
+        for (const [id, agent] of this.store) {
+          if (agent.terminalRef && agent.terminalRef === closed) {
+            if (this.runtime.activeAgentId.current === id) {
+              this.runtime.activeAgentId.current = null;
+            }
+            // If this is a team lead, remove its teammates
+            if (agent.isTeamLead) {
+              this.runtime.removeTeammates(id);
+            }
+            // Dismiss JSONL so external scanner doesn't re-adopt it
+            this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
+            this.runtime.unregisterAgent(agent.sessionId);
+            this.runtime.removeAgent(id);
+            // Its process is gone (however it left: the card's x, /exit, the
+            // user closing the terminal in VS Code): the leave rules apply once
+            // no other agent runs in its Worktree. In the background — closing
+            // never waits on git.
+            void retireWorktreesLeftBy(this.store, agent);
+          }
+        }
+      }),
+    ];
   }
 
   /** Export current saved layout as a versioned default-layout-{N}.json (dev utility) */
@@ -1396,6 +1416,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   }
 
   dispose() {
+    for (const listener of this.terminalListeners ?? []) listener.dispose();
+    this.terminalListeners = null;
     this.worktrees.dispose();
     this.pcShells.dispose();
     this.pixelAgentsServer?.stop();

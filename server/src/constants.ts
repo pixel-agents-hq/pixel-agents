@@ -1,5 +1,7 @@
 // ── JSONL File Watching ─────────────────────────────────────
 export const JSONL_POLL_INTERVAL_MS = 1000;
+/** Polls (1 s each) of a launch's missing transcript before a terminal /resume is looked for. */
+export const RESUME_FALLBACK_POLLS = 10;
 export const FILE_WATCHER_POLL_INTERVAL_MS = 500;
 export const PROJECT_SCAN_INTERVAL_MS = 1000;
 

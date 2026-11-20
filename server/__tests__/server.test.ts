@@ -3,6 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { removeTempDir } from './helpers/removeTempDir.js';
+
 // Use isolated temp HOME to avoid touching real ~/.pixel-agents/
 let tmpBase: string;
 let serverJsonDir: string;
@@ -58,7 +60,7 @@ describe('PixelAgentsServer', () => {
   afterEach(() => {
     server?.stop();
     try {
-      fs.rmSync(tmpBase, { recursive: true, force: true });
+      removeTempDir(tmpBase);
     } catch {
       /* ignore */
     }

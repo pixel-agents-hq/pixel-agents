@@ -24,6 +24,7 @@ import {
 } from '../../core/src/layout/index.js';
 import { loadFurnitureAssets } from '../src/assetLoader.js';
 import { loadAllFurniture } from '../src/assetReload.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 const ASSETS_ROOT = path.resolve(__dirname, '../../webview-ui/public');
 const ON_OFF = new Set(['on', 'off']);
@@ -314,7 +315,7 @@ describe('furniture from an external asset directory', () => {
   const warn = vi.spyOn(console, 'warn');
 
   afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
     warn.mockClear();
   });
 

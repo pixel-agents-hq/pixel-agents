@@ -12,6 +12,7 @@ import {
   watchCharacterProfiles,
 } from '../src/characterProfilesPersistence.js';
 import { getPaletteCount } from '../src/paletteAssigner.js';
+import { removeTempDir } from './helpers/removeTempDir.js';
 
 /**
  * The file side of the character-profile owner: the cache, and following characters.json
@@ -39,21 +40,22 @@ describe('characterProfilesPersistence', () => {
     watcher?.dispose();
     watcher = null;
     process.env.HOME = originalHome;
-    fs.rmSync(tempHome, { recursive: true, force: true });
+    removeTempDir(tempHome);
   });
 
   it('serves the defaults when nothing is saved, and a malformed file as the defaults', () => {
     expect(getCharacterProfiles()).toEqual(DEFAULT_CHARACTER_PROFILES);
     // a new $HOME is a new file: re-read
-    process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-profiles-bad-'));
+    const badHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-profiles-bad-'));
+    process.env.HOME = badHome;
     try {
       const file = path.join(process.env.HOME, '.pixel-agents', 'characters.json');
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, JSON.stringify([{ body: 'flat', colors: { hair: 'red' } }]));
       expect(getCharacterProfiles()).toEqual(DEFAULT_CHARACTER_PROFILES);
     } finally {
-      fs.rmSync(process.env.HOME, { recursive: true, force: true });
       process.env.HOME = tempHome;
+      removeTempDir(badHome);
     }
   });
 
