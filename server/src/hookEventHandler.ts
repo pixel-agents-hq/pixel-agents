@@ -57,6 +57,9 @@ interface SessionLifecycleCallbacks {
   onTeammateRemoved?: (teammateAgentId: number) => void;
 }
 
+/** Disambiguates hook tool ids generated within the same millisecond. */
+let hookToolSeq = 0;
+
 export class HookEventHandler {
   private lifecycleCallbacks: SessionLifecycleCallbacks = {};
 
@@ -122,6 +125,11 @@ export class HookEventHandler {
   /** Remove an agent's session mapping (called on agent removal/terminal close). */
   unregisterAgent(sessionId: string): void {
     this.sessionRouter.unregister(sessionId);
+  }
+
+  /** Remove a session mapping that still points at this agent (see SessionRouter). */
+  unregisterAgentIfOwner(sessionId: string, agentId: number): void {
+    this.sessionRouter.unregisterIfOwner(sessionId, agentId);
   }
 
   /**
@@ -417,7 +425,9 @@ export class HookEventHandler {
     const toolName = normEvent.toolName;
     const toolInput = (normEvent.input as Record<string, unknown> | undefined) ?? {};
     const status = this.provider.formatToolStatus(toolName, toolInput);
-    const hookToolId = `hook-${Date.now()}`;
+    // A counter, not the clock alone: two PreToolUse hooks in one millisecond
+    // (parallel read-only tools) must not share an id.
+    const hookToolId = `hook-${Date.now()}-${++hookToolSeq}`;
 
     // Track for PostToolUse/SubagentStart correlation (always, even if suppressed below).
     // currentHookIsTeammateSpawn is the authoritative teammate-vs-subagent discriminator.

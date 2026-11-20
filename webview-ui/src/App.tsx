@@ -46,10 +46,10 @@ import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { OfficeState } from './office/engine/officeState.js';
 import { exportLayoutToFile } from './office/layout/exportLayout.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
-import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
+import { layoutFromWire } from './office/layout/layoutSerializer.js';
 import { overlayProjection } from './office/projection.js';
 import { getPetCount } from './office/sprites/petSpriteData.js';
-import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
+import { EditTool, TILE_SIZE } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
@@ -478,18 +478,13 @@ function App() {
       const reader = new FileReader();
       reader.onload = () => {
         try {
-          const imported = JSON.parse(String(reader.result)) as Record<string, unknown>;
-          // Match the VS Code guard, plus the furniture-array check VS Code omits
-          // (migrate + rebuild iterate furniture and would throw on a non-array).
-          if (
-            imported.version !== 1 ||
-            !Array.isArray(imported.tiles) ||
-            !Array.isArray(imported.furniture)
-          ) {
+          // The same check every layoutLoaded goes through (version, a grid
+          // whose tiles fill cols x rows, placed furniture only).
+          const migrated = layoutFromWire(JSON.parse(String(reader.result)));
+          if (!migrated) {
             window.alert('Invalid layout file.');
             return;
           }
-          const migrated = migrateLayoutColors(imported as unknown as OfficeLayout);
           getOfficeState().rebuildFromLayout(migrated);
           editor.setLastSavedLayout(migrated);
           transport.send({

@@ -284,7 +284,7 @@ function registerWebSocketRoute(
       try {
         const msg = JSON.parse(data.toString()) as Record<string, unknown>;
         if (!options.embedded && msg.type) {
-          console.log('[Pixel Agents] WS client message:', msg.type);
+          console.log('[Pixel Agents] WS client message:', String(msg.type).slice(0, 64));
         }
         handleClientMessage(msg, (m) => safeSend(socket, m), {
           store,

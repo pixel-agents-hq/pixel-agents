@@ -138,6 +138,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   // Auto-spawn guard: ensures the startup spawn fires at most once per VS Code
   // session, even though webviewReady fires on every panel focus.
   private autoSpawnAttempted = false;
+  /** The window terminal listeners of the current view (see resolveWebviewView). */
+  private terminalListeners: vscode.Disposable[] = [];
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -1048,7 +1050,17 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         try {
           const raw = fs.readFileSync(uris[0].fsPath, 'utf-8');
           const imported = JSON.parse(raw) as Record<string, unknown>;
-          if (imported.version !== 1 || !Array.isArray(imported.tiles)) {
+          // The webview validates the grid itself (layoutFromWire), but a file
+          // with no furniture list written here would be every window's saved
+          // layout from now on.
+          if (
+            imported.version !== 1 ||
+            !Array.isArray(imported.tiles) ||
+            !Array.isArray(imported.furniture) ||
+            !Number.isInteger(imported.cols) ||
+            !Number.isInteger(imported.rows) ||
+            imported.tiles.length !== (imported.cols as number) * (imported.rows as number)
+          ) {
             vscode.window.showErrorMessage('Pixel Agents: Invalid layout file.');
             return;
           }
@@ -1061,35 +1073,44 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
       }
     });
 
-    vscode.window.onDidChangeActiveTerminal((terminal) => {
-      if (!terminal) return;
-      this.runtime.activeAgentId.current = null;
-      for (const [id, agent] of this.store) {
-        if (agent.terminalRef && agent.terminalRef === terminal) {
-          this.runtime.activeAgentId.current = id;
-          webviewView.webview.postMessage({ type: 'agentSelected', id });
-          break;
+    // resolveWebviewView runs again each time the view is re-created (hidden
+    // and shown, moved): keep ONE pair of terminal listeners, not one per call,
+    // or each stale pair posts to a disposed webview on every terminal switch.
+    for (const d of this.terminalListeners) d.dispose();
+    this.terminalListeners = [];
+    this.terminalListeners.push(
+      vscode.window.onDidChangeActiveTerminal((terminal) => {
+        if (!terminal) return;
+        this.runtime.activeAgentId.current = null;
+        for (const [id, agent] of this.store) {
+          if (agent.terminalRef && agent.terminalRef === terminal) {
+            this.runtime.activeAgentId.current = id;
+            void this.webview?.postMessage({ type: 'agentSelected', id });
+            break;
+          }
         }
-      }
-    });
+      }),
+    );
 
-    vscode.window.onDidCloseTerminal((closed) => {
-      for (const [id, agent] of this.store) {
-        if (agent.terminalRef && agent.terminalRef === closed) {
-          if (this.runtime.activeAgentId.current === id) {
-            this.runtime.activeAgentId.current = null;
+    this.terminalListeners.push(
+      vscode.window.onDidCloseTerminal((closed) => {
+        for (const [id, agent] of this.store) {
+          if (agent.terminalRef && agent.terminalRef === closed) {
+            if (this.runtime.activeAgentId.current === id) {
+              this.runtime.activeAgentId.current = null;
+            }
+            // If this is a team lead, remove its teammates
+            if (agent.isTeamLead) {
+              this.runtime.removeTeammates(id);
+            }
+            // Dismiss JSONL so external scanner doesn't re-adopt it
+            this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
+            this.runtime.unregisterAgent(agent.sessionId);
+            this.runtime.removeAgent(id);
           }
-          // If this is a team lead, remove its teammates
-          if (agent.isTeamLead) {
-            this.runtime.removeTeammates(id);
-          }
-          // Dismiss JSONL so external scanner doesn't re-adopt it
-          this.runtime.dismissalTracker.dismiss(agent.jsonlFile);
-          this.runtime.unregisterAgent(agent.sessionId);
-          this.runtime.removeAgent(id);
         }
-      }
-    });
+      }),
+    );
   }
 
   /** Export current saved layout as a versioned default-layout-{N}.json (dev utility) */
@@ -1203,6 +1224,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
   }
 
   dispose() {
+    for (const d of this.terminalListeners) d.dispose();
+    this.terminalListeners = [];
     this.pixelAgentsServer?.stop();
     this.pixelAgentsServer = null;
     this.runtime.dispose();

@@ -157,10 +157,17 @@ export class RemotePtySessions implements TerminalSessions {
     const decoder = new LineDecoder();
     const early: HostMessage[] = [];
     const hello = await new Promise<Extract<HostMessage, { t: 'hello' }>>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error('the PTY host did not answer')),
-        PTY_HOST_REQUEST_TIMEOUT_MS,
-      );
+      const timer = setTimeout(() => {
+        socket.destroy();
+        reject(new Error('the PTY host did not answer'));
+      }, PTY_HOST_REQUEST_TIMEOUT_MS);
+      // tryConnect dropped its 'error' listener once connected: without one
+      // here, a host that resets the socket mid-handshake (its idle exit, a
+      // crash) would raise an unhandled 'error' and take the server down.
+      socket.once('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
       const onData = (chunk: string): void => {
         for (const msg of decoder.push(chunk) as HostMessage[]) {
           if (msg.t === 'hello') {
@@ -186,6 +193,7 @@ export class RemotePtySessions implements TerminalSessions {
 
     const sessions = new RemotePtySessions(socket, hello);
     socket.removeAllListeners('close');
+    socket.removeAllListeners('error');
     socket.on('data', (chunk: string) => {
       for (const msg of decoder.push(chunk)) sessions.receive(msg as HostMessage);
     });

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { JSON_FILE_POLL_INTERVAL_MS } from './constants.js';
+import { removeTmp, uniqueTmpPath } from './tmpPath.js';
 
 export interface JsonFileWatcher {
   dispose(): void;
@@ -24,9 +25,14 @@ export function writeJsonAtomic(
   { reportToWatchers = false }: { reportToWatchers?: boolean } = {},
 ): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmpPath = filePath + '.tmp';
-  fs.writeFileSync(tmpPath, JSON.stringify(value, null, 2), 'utf-8');
-  fs.renameSync(tmpPath, filePath);
+  const tmpPath = uniqueTmpPath(filePath);
+  try {
+    fs.writeFileSync(tmpPath, JSON.stringify(value, null, 2), 'utf-8');
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    removeTmp(tmpPath);
+    throw err;
+  }
   if (reportToWatchers) return;
   for (const mark of ownWriteMarks.get(filePath) ?? []) mark();
 }

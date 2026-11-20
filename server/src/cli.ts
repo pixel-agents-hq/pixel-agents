@@ -430,6 +430,19 @@ async function main(): Promise<void> {
       rotateToken: args.rotateToken,
     });
     currentConfig = { port: config.port, token: config.token };
+
+    if (!server.ownsListener) {
+      // Another process already serves this office. Its own runtime scans,
+      // persists and answers every client; a second runtime here would be
+      // seen by no one, yet would scan, install hooks and rewrite the same
+      // standalone-state.json, wiping the running server's agents on disk.
+      console.log(
+        `\n  Pixel Agents is already running at ${officeUrl(args.host, config.port, config.token)}\n`,
+      );
+      await ptyManager.shutdown();
+      process.exit(0);
+    }
+
     if (args.rotateToken) {
       console.log(
         '[Pixel Agents] Server token rotated: URLs carrying the old token no longer grant access. Open the new URL below on each device.',
@@ -502,10 +515,8 @@ async function main(): Promise<void> {
     // hook install (see standaloneTokenValid in httpServer.ts). Under `--host
     // 0.0.0.0` the office stays readable from the LAN at this machine's own
     // address; only the consent-bearing toggle needs the token.
-    const displayHost =
-      args.host === '0.0.0.0' || args.host === '::' || args.host === '' ? '127.0.0.1' : args.host;
     console.log(
-      `\n  Pixel Agents server running at http://${displayHost}:${config.port}/?token=${config.token}\n`,
+      `\n  Pixel Agents server running at ${officeUrl(args.host, config.port, config.token)}\n`,
     );
 
     // ── Graceful shutdown ──
@@ -546,4 +557,16 @@ if (require.main === module) {
     console.error(err);
     process.exit(1);
   });
+}
+
+/**
+ * The URL the operator opens. A wildcard bind address is a bind target, not an
+ * address you can browse to, so it prints as loopback; an IPv6 literal needs
+ * brackets, or browsers reject the URL (and the token it carries with it).
+ */
+export function officeUrl(bindHost: string, port: number, token: string): string {
+  const host =
+    bindHost === '0.0.0.0' || bindHost === '::' || bindHost === '' ? '127.0.0.1' : bindHost;
+  const urlHost = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+  return `http://${urlHost}:${port}/?token=${token}`;
 }

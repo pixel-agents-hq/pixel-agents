@@ -6,6 +6,9 @@ export const DEFAULT_COLS = 20;
 export const DEFAULT_ROWS = 11;
 export const MAX_COLS = 64;
 export const MAX_ROWS = 64;
+/** Colorized sprites kept (office/colorize.ts): far above one office's distinct
+ *  colours, so only slider sweeps ever evict. */
+export const COLORIZE_CACHE_LIMIT = 4000;
 
 // ── Character Animation ─────────────────────────────────────
 export const WALK_SPEED_PX_PER_SEC = 48;
@@ -372,6 +375,9 @@ export const MAX_PET_ID_LENGTH = 128;
 export const WS_RECONNECT_DELAYS_MS = [250, 500, 1_000, 2_000, 4_000] as const;
 
 // ── Terminal drawer (standalone only) ────────────────────────
+/** How long after the user's own input in a terminal pane an OSC 52 clipboard
+ *  write from its program is still honoured (terminal/clipboardInput.ts). */
+export const OSC52_USER_INPUT_WINDOW_MS = 3000;
 
 // This file is the one place inline colors are allowed (see eslint.config.js),
 // which is why xterm's theme lives here rather than next to the component.

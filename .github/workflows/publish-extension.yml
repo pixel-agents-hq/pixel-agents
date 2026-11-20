@@ -50,7 +50,7 @@ jobs:
 
       - name: Package VSIX for Verification
         id: package-vsix
-        uses: HaaLeo/publish-vscode-extension@v2
+        uses: HaaLeo/publish-vscode-extension@1b8df468b849f76a143b8c18bf0ffa2075398d12 # v2
         with:
           pat: dry-run
           registryUrl: https://marketplace.visualstudio.com
@@ -63,26 +63,28 @@ jobs:
         run: xvfb-run -a node scripts/verify-vsix-package.mjs "$VSIX_PATH"
 
       - name: Publish Verified VSIX to VS Code Marketplace
-        uses: HaaLeo/publish-vscode-extension@v2
+        uses: HaaLeo/publish-vscode-extension@1b8df468b849f76a143b8c18bf0ffa2075398d12 # v2
         with:
           pat: ${{ secrets.VSCE_PAT }}
           registryUrl: https://marketplace.visualstudio.com
           extensionFile: ${{ steps.package-vsix.outputs.vsixPath }}
           skipDuplicate: true
-          dryRun: ${{ inputs.dry_run }}
+          # Only a release (whose commit is verified on main above) publishes;
+          # a manual dispatch from any branch can only package.
+          dryRun: ${{ github.event_name != 'release' || inputs.dry_run }}
 
       - name: Publish Verified VSIX to Open VSX
-        uses: HaaLeo/publish-vscode-extension@v2
+        uses: HaaLeo/publish-vscode-extension@1b8df468b849f76a143b8c18bf0ffa2075398d12 # v2
         with:
           pat: ${{ secrets.OPEN_VSX_TOKEN }}
           registryUrl: https://open-vsx.org
           extensionFile: ${{ steps.package-vsix.outputs.vsixPath }}
           skipDuplicate: true
-          dryRun: ${{ inputs.dry_run }}
+          dryRun: ${{ github.event_name != 'release' || inputs.dry_run }}
 
       - name: Upload VSIX to Release
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         with:
           files: ${{ steps.package-vsix.outputs.vsixPath }}
 
@@ -146,8 +148,13 @@ jobs:
 
       - name: Publish Verified Artifact to npm
         if: github.event_name == 'release' && github.event.action == 'published'
+        # Untrusted values (a tag name may hold $(...)) go through env, never
+        # spliced into the script text before bash parses it.
+        env:
+          NPM_PACKAGE_METADATA: ${{ steps.npm-package.outputs.metadata }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: >-
           node scripts/publish-npm-package.mjs
-          --metadata "${{ steps.npm-package.outputs.metadata }}"
-          --tag "${{ github.event.release.tag_name }}"
-          --ref "${{ github.ref }}"
+          --metadata "$NPM_PACKAGE_METADATA"
+          --tag "$RELEASE_TAG"
+          --ref "$GITHUB_REF"

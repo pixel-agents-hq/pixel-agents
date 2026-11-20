@@ -17,7 +17,7 @@ import type { OfficeState } from '../office/engine/officeState.js';
 import { setGhostHeadlessAgents as setRendererGhostHeadlessAgents } from '../office/engine/renderer.js';
 import { setFloorSprites } from '../office/floorTiles.js';
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js';
-import { migrateLayoutColors } from '../office/layout/layoutSerializer.js';
+import { layoutFromWire } from '../office/layout/layoutSerializer.js';
 import { setCarpetSprites } from '../office/sprites/carpetTiles.js';
 import { setPetTemplates } from '../office/sprites/petSpriteData.js';
 import {
@@ -392,8 +392,7 @@ export function useExtensionMessages(
           console.log('[Webview] Skipping external layout update — editor has unsaved changes');
           return;
         }
-        const rawLayout = msg.layout as OfficeLayout | null;
-        const layout = rawLayout && rawLayout.version === 1 ? migrateLayoutColors(rawLayout) : null;
+        const layout = layoutFromWire(msg.layout);
         if (layout) {
           os.rebuildFromLayout(layout);
           onLayoutLoaded?.(layout);

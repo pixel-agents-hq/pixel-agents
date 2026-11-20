@@ -7,7 +7,8 @@ import {
   parseDirectoryCharacters,
 } from '../../core/src/directoryCharacters.js';
 import type { DirectoryCharacterOrder } from '../../core/src/messages.js';
-import { CONFIG_FILE_NAME, PIXEL_AGENTS_DIR } from './constants.js';
+import { CONFIG_CORRUPT_SUFFIX, CONFIG_FILE_NAME, PIXEL_AGENTS_DIR } from './constants.js';
+import { removeTmp, uniqueTmpPath } from './tmpPath.js';
 
 export interface AdapterSettings {
   soundEnabled: boolean;
@@ -245,13 +246,48 @@ function emptyConfig(): PixelAgentsConfig {
   };
 }
 
+/**
+ * Configs read from a config.json that exists but could not be READ (EMFILE,
+ * EACCES, …). Every mutator is read → modify → write, so writing such an empty
+ * stand-in back would wipe the user's Directories, consent and preferences
+ * over a transient error; writeConfig refuses them instead.
+ */
+const unreadableConfigs = new WeakSet<PixelAgentsConfig>();
+
+/**
+ * A config.json that reads but doesn't parse (a hand edit with a trailing
+ * comma) is replaced by the next write, as before — but first copied aside once
+ * per content, so the user's Directories and settings survive in
+ * `config.json.corrupt`.
+ */
+function preserveUnparseableConfig(filePath: string, raw: string): void {
+  const backup = `${filePath}${CONFIG_CORRUPT_SUFFIX}`;
+  try {
+    if (fs.existsSync(backup) && fs.readFileSync(backup, 'utf-8') === raw) return;
+    fs.writeFileSync(backup, raw, { encoding: 'utf-8', mode: 0o600 });
+    console.error(
+      `[Pixel Agents] config.json is not valid JSON; kept a copy at ${backup} before it is replaced.`,
+    );
+  } catch (err) {
+    console.error('[Pixel Agents] Failed to back up the unparseable config file:', err);
+  }
+}
+
 export function readConfig(): PixelAgentsConfig {
   const filePath = getConfigFilePath();
+  if (!fs.existsSync(filePath)) {
+    return emptyConfig();
+  }
+  let raw: string;
   try {
-    if (!fs.existsSync(filePath)) {
-      return emptyConfig();
-    }
-    const raw = fs.readFileSync(filePath, 'utf-8');
+    raw = fs.readFileSync(filePath, 'utf-8');
+  } catch (err) {
+    console.error('[Pixel Agents] Failed to read config file:', err);
+    const config = emptyConfig();
+    unreadableConfigs.add(config);
+    return config;
+  }
+  try {
     const parsed = JSON.parse(raw) as Partial<PixelAgentsConfig>;
     return {
       vscode: parseAdapterSettings(parsed.vscode),
@@ -267,7 +303,8 @@ export function readConfig(): PixelAgentsConfig {
         : [],
     };
   } catch (err) {
-    console.error('[Pixel Agents] Failed to read config file:', err);
+    console.error('[Pixel Agents] Failed to parse config file:', err);
+    preserveUnparseableConfig(filePath, raw);
     return emptyConfig();
   }
 }
@@ -378,18 +415,26 @@ export function resetHooksConfig(): void {
  * — a Directory save must not be announced as saved when it never hit the disk.
  */
 export function writeConfig(config: PixelAgentsConfig): boolean {
+  if (unreadableConfigs.has(config)) {
+    console.error(
+      '[Pixel Agents] Not writing config.json: it could not be read, and this write would replace it with defaults.',
+    );
+    return false;
+  }
   const filePath = getConfigFilePath();
   const dir = path.dirname(filePath);
+  let tmpPath: string | undefined;
   try {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
     const json = JSON.stringify(config, null, 2);
-    const tmpPath = filePath + '.tmp';
+    tmpPath = uniqueTmpPath(filePath);
     fs.writeFileSync(tmpPath, json, 'utf-8');
     fs.renameSync(tmpPath, filePath);
     return true;
   } catch (err) {
+    if (tmpPath) removeTmp(tmpPath);
     console.error('[Pixel Agents] Failed to write config file:', err);
     return false;
   }

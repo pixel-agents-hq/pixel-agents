@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { SERVER_JSON_DIR, STANDALONE_TOKEN_FILE_NAME } from './constants.js';
+import { removeTmp, uniqueTmpPath } from './tmpPath.js';
 
 /** A token we wrote ourselves is a UUID; anything else in the file is treated
  *  as damage and replaced rather than handed to the auth gate. */
@@ -48,10 +49,14 @@ export function loadOrCreateStandaloneToken({ rotate = false } = {}): string {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     // tmp + rename: a rotation replaces the file whole (never a torn token),
     // and the new inode is created 0600 even if the old one was looser.
-    const tmp = `${file}.tmp`;
-    fs.rmSync(tmp, { force: true });
-    fs.writeFileSync(tmp, `${token}\n`, { encoding: 'utf-8', mode: 0o600 });
-    fs.renameSync(tmp, file);
+    const tmp = uniqueTmpPath(file);
+    try {
+      fs.writeFileSync(tmp, `${token}\n`, { encoding: 'utf-8', mode: 0o600, flag: 'wx' });
+      fs.renameSync(tmp, file);
+    } catch (err) {
+      removeTmp(tmp);
+      throw err;
+    }
   } catch (err) {
     // A rotation that didn't land would bring the leaked token back on the
     // next start; fail loudly instead of running on a per-process token.

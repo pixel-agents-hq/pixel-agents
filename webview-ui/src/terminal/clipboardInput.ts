@@ -1,5 +1,6 @@
 import type { Terminal } from '@xterm/xterm';
 
+import { OSC52_USER_INPUT_WINDOW_MS } from '../constants.js';
 import { writeClipboardText } from './clipboard.js';
 import { clipboardKeyAction, decodeOsc52 } from './clipboardKeys.js';
 import { terminalCopyText } from './flowCopy.js';
@@ -16,7 +17,8 @@ const OSC_CLIPBOARD = 52;
  * - Alt+C (Option+C on a Mac) with a selection is "Copy as text": the
  *   selection with Claude Code's soft wraps re-flowed (terminalCopyText);
  * - Ctrl+V / Ctrl+Shift+V paste on Windows and Linux;
- * - OSC 52 writes from the running program reach this browser's clipboard.
+ * - OSC 52 writes from the running program reach this browser's clipboard,
+ *   but only right after the user typed into this pane (see below).
  *
  * Returns a dispose function that removes everything it added.
  */
@@ -52,10 +54,21 @@ export function attachClipboardInput(
     return false;
   });
 
+  // Terminal output is untrusted (an agent may `cat` a file or print a fetched
+  // page), and an OSC 52 sequence in it is invisible: honoured unconditionally
+  // it could silently put `curl … | sh` on the viewer's clipboard. A program's
+  // legitimate copy (Claude Code's /copy) answers the user's own input in
+  // this pane, so OSC 52 is honoured only within a short window after it.
+  let lastUserInputAt = Number.NEGATIVE_INFINITY;
+  const input = term.onData(() => {
+    lastUserInputAt = performance.now();
+  });
+
   // Plain-http origins fall back to a copy event, which works only while the
   // triggering key press still counts as a user gesture (writeClipboardText).
   const osc = term.parser.registerOscHandler(OSC_CLIPBOARD, (data) => {
-    const text = opts.isActive() ? decodeOsc52(data) : null;
+    const recent = performance.now() - lastUserInputAt <= OSC52_USER_INPUT_WINDOW_MS;
+    const text = opts.isActive() && recent ? decodeOsc52(data) : null;
     if (text !== null) void writeClipboardText(text);
     return true;
   });
@@ -63,5 +76,6 @@ export function attachClipboardInput(
   return () => {
     term.attachCustomKeyEventHandler(() => true);
     osc.dispose();
+    input.dispose();
   };
 }

@@ -16,7 +16,7 @@ vi.mock('os', async () => {
 });
 
 // Must import AFTER mock setup.
-const { FileStateAdapter } = await import('../src/fileStateAdapter.js');
+const { FileStateAdapter, sanitizeSeats } = await import('../src/fileStateAdapter.js');
 const { getHooksEnabled, setHooksEnabled } = await import('../src/configPersistence.js');
 
 describe('FileStateAdapter', () => {
@@ -171,5 +171,29 @@ describe('FileStateAdapter', () => {
     adapter.saveAgents([{ id: 1, terminalName: 'x', jsonlFile: '/x.jsonl', projectDir: '/tmp' }]);
     expect(adapter.loadSeats()).toEqual({ '1': { palette: 3 } });
     expect(adapter.loadAgents()).toHaveLength(1);
+  });
+});
+
+describe('sanitizeSeats', () => {
+  it('drops entries that are not objects and fields of the wrong type', () => {
+    expect(
+      sanitizeSeats({
+        '1': { palette: 2, repeat: 1, seatId: 'chair-a' },
+        '7': null,
+        '8': 'x',
+        '9': { palette: -1, repeat: 1.5, seatId: 3 },
+        '10': { palette: 0 },
+      }),
+    ).toEqual({
+      '1': { palette: 2, repeat: 1, seatId: 'chair-a' },
+      '9': {},
+      '10': { palette: 0 },
+    });
+  });
+
+  it('returns no seats for a value that is not a seat map', () => {
+    expect(sanitizeSeats(null)).toEqual({});
+    expect(sanitizeSeats([{ palette: 1 }])).toEqual({});
+    expect(sanitizeSeats('seats')).toEqual({});
   });
 });

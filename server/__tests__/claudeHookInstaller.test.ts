@@ -593,6 +593,29 @@ describe('claudeHookInstaller', () => {
     },
   );
 
+  // 8i-3b. A settings.json linked in from a dotfiles repo stays a link: the
+  //        write goes through it to the real file instead of replacing it.
+  it.skipIf(process.platform === 'win32')(
+    'writes through a symlinked settings.json and keeps the link',
+    async () => {
+      const settingsPath = settingsPathFor();
+      const dotfile = path.join(tmpBase, 'dotfiles', 'settings.json');
+      fs.mkdirSync(path.dirname(dotfile), { recursive: true });
+      fs.writeFileSync(dotfile, JSON.stringify({ model: 'opus' }));
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      fs.symlinkSync(dotfile, settingsPath);
+
+      await installHooks();
+
+      expect(fs.lstatSync(settingsPath).isSymbolicLink()).toBe(true);
+      expect(areHooksInstalled()).toBe(true);
+      const written = JSON.parse(fs.readFileSync(dotfile, 'utf-8'));
+      expect(written.model).toBe('opus');
+      expect(written.hooks).toBeDefined();
+      expect(fs.readdirSync(path.dirname(dotfile))).toEqual(['settings.json']);
+    },
+  );
+
   // 8i-4. A symlink that DOES resolve to a real file is a recoverable copy —
   //       the check follows symlinks rather than banning them.
   it.skipIf(process.platform === 'win32')(

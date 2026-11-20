@@ -448,7 +448,15 @@ export function restoreAgents(
           console.log(
             `[Pixel Agents] Terminal: Agent ${id} - removing restored agent, no data received`,
           );
-          agent.terminalRef?.dispose();
+          // Transcript silence is not death: with persistent terminal sessions
+          // (VS Code's default) a reloaded window revives the terminal with
+          // Claude still running, idle at its prompt or busy in a long tool
+          // that writes nothing for 10 s. Disposing it killed that session.
+          // Only a terminal whose process already exited is closed; a live one
+          // is left to the user and just stops being tracked.
+          if (agent.terminalRef?.exitStatus !== undefined) {
+            agent.terminalRef?.dispose();
+          }
           removeAgent(
             id,
             store,

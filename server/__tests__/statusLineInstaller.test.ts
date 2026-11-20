@@ -218,3 +218,16 @@ describe('status line bridge installer', () => {
     expect(fs.readFileSync(settingsPath() + SETTINGS_BACKUP_SUFFIX, 'utf-8')).toBe(raw);
   });
 });
+
+describe('wrappedStatusLineCommand', () => {
+  it('reads the wrapped command back when the home path has a character whose lower case is longer', async () => {
+    const { makeStatusLineCommand } =
+      await import('../src/providers/hook/claude/statusLineBridge.js');
+    // 'İ'.toLowerCase() is two UTF-16 units: a whole-string toLowerCase shifted
+    // the index of our script's end and lost the wrapped command.
+    const script = '/home/İLKİM.İ/.pixel-agents/hooks/claude-statusline.js';
+    const user = 'bash ~/.claude/my-status.sh';
+    expect(wrappedStatusLineCommand(makeStatusLineCommand(script, user))).toBe(user);
+    expect(wrappedStatusLineCommand(makeStatusLineCommand(script))).toBeNull();
+  });
+});
