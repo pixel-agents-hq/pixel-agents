@@ -103,7 +103,14 @@ export class AgentRuntime {
     if (provider.team) {
       setTeamProvider(provider.team);
     }
-    setAgentRemovalCallback((id) => this.removeAgent(id));
+    // The scanners' removals (stale transcript, orphaned terminal) take the
+    // agent's children with it, as closeAgent and sessionEnd do: a watched
+    // Sub-agent's 500 ms poll would otherwise outlive its lead.
+    setAgentRemovalCallback((id) => {
+      this.removeTeammates(id);
+      this.subagentWatch.removeByLead(id);
+      this.removeAgent(id);
+    });
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
     // New-style teammates run their own sessions; registering routes their hook
     // events (PreToolUse, Stop, SessionEnd) directly to the teammate agent.
@@ -321,6 +328,10 @@ export class AgentRuntime {
     if (!agent) return;
 
     this.stopWatching(id);
+    // A removed agent's session must not stay mapped to it: the session's next
+    // SessionStart (a `claude --resume` of it) would resolve to this dead id,
+    // be taken as "known", and the session would never be adopted again.
+    if (agent.sessionId) this.hookEventHandler.unregisterAgentIfOwner(agent.sessionId, id);
 
     // Notify adapter before deleting from store
     this.lifecycleCallbacks.onAgentRemoved?.(id, agent);

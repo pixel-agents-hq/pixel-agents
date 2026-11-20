@@ -221,9 +221,13 @@ export function readNewLines(
     const fd = fs.openSync(agent.jsonlFile, 'r');
     fs.readSync(fd, buf, 0, buf.length, agent.fileOffset);
     fs.closeSync(fd);
-    agent.fileOffset += bytesToRead;
+    // Stop before a multi-byte character cut by the 64 KB cap (or by a write
+    // still in progress): decoding its first bytes alone turns it into U+FFFD
+    // for good. Its bytes are read whole on the next poll.
+    const usable = completeUtf8Length(buf);
+    agent.fileOffset += usable;
 
-    const text = agent.lineBuffer + buf.toString('utf-8');
+    const text = agent.lineBuffer + buf.toString('utf-8', 0, usable);
     const lines = text.split('\n');
     agent.lineBuffer = lines.pop() || '';
 
@@ -1597,4 +1601,25 @@ export function reassignAgentToFile(
     permissionTimers,
   );
   readNewLines(agentId, agents, waitingTimers, permissionTimers);
+}
+
+/**
+ * How many leading bytes of `buf` end on a UTF-8 character boundary: the whole
+ * buffer, minus a trailing multi-byte sequence whose continuation bytes have
+ * not been read yet.
+ */
+export function completeUtf8Length(buf: Buffer): number {
+  // Walk back over at most 3 continuation bytes (10xxxxxx) to the lead byte.
+  let i = buf.length - 1;
+  let continuation = 0;
+  while (i >= 0 && continuation < 3 && (buf[i] & 0xc0) === 0x80) {
+    i--;
+    continuation++;
+  }
+  if (i < 0) return buf.length;
+  const lead = buf[i];
+  const needed = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+  // ASCII, or a sequence already complete: everything is usable. A lead byte
+  // whose sequence runs past the end: stop right before it.
+  return needed > 1 && continuation + 1 < needed ? i : buf.length;
 }

@@ -35,6 +35,7 @@ import {
   listDirectories,
 } from './directories.js';
 import { collectDirectorySuggestions } from './directorySuggestions.js';
+import { sanitizeSeats } from './fileStateAdapter.js';
 import { hostDirectory } from './hostDirectory.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import { getPaletteCount } from './paletteAssigner.js';
@@ -299,10 +300,7 @@ export function handleClientMessage(
 
     case 'saveAgentSeats':
       if (msg.seats) {
-        const seats = msg.seats as Record<
-          string,
-          { palette?: number; repeat?: number; seatId?: string }
-        >;
+        const seats = sanitizeSeats(msg.seats);
         // The server owns an agent's look: it picks one when the agent is
         // created (random pick, roster or Directory pick, a teammate inherits its lead's).
         // A seat save only fills in a look the agent doesn't have yet — a
@@ -804,6 +802,9 @@ function settingsSnapshot(adapter: StateAdapter | undefined) {
 /** Message types already reported as refused, so a read-only client that keeps
  *  sending (seat saves, layout saves) logs once per type, not per message. */
 const reportedRefusals = new Set<string>();
+/** More than every real ClientMessage type, so each real one keeps its line. */
+const MAX_REPORTED_REFUSAL_TYPES = 64;
+const MAX_LOGGED_MESSAGE_TYPE_LENGTH = 64;
 
 /**
  * Drop a message from a read-only (unprivileged) client. Where the UI changes
@@ -816,9 +817,13 @@ function refuseReadOnly(
   send: WsSend,
   ctx: ClientMessageContext,
 ): void {
-  const type = String(msg.type);
-  if (!reportedRefusals.has(type)) {
-    reportedRefusals.add(type);
+  // The type is chosen by an unauthenticated sender: cap its length and the
+  // number of distinct types remembered, so a client cycling made-up types
+  // can neither grow this set without bound nor flood the log.
+  const type = String(msg.type).slice(0, MAX_LOGGED_MESSAGE_TYPE_LENGTH);
+  const key = reportedRefusals.size < MAX_REPORTED_REFUSAL_TYPES ? type : '(other)';
+  if (!reportedRefusals.has(key)) {
+    reportedRefusals.add(key);
     console.warn(
       `[Pixel Agents] Ignoring ${type} from a read-only client. Changes need the tokened URL the CLI printed (at localhost or an --allowed-host name).`,
     );

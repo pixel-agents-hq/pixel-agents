@@ -1,7 +1,14 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Atomic writes use a unique tmp name per write; pin it to `<file>.tmp` here so
+// blockConfigWrites can squat on it and make the next config write fail.
+vi.mock('../src/tmpPath.js', () => ({
+  uniqueTmpPath: (filePath: string, suffix = '.tmp') => `${filePath}${suffix}`,
+  removeTmp: () => {},
+}));
 
 import { readConfig } from '../src/configPersistence.js';
 import {

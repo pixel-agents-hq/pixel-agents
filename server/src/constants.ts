@@ -200,6 +200,8 @@ export const LAYOUT_FILE_NAME = 'layout.json';
 export const JSON_FILE_POLL_INTERVAL_MS = 2000;
 export const LAYOUT_REVISION_KEY = 'layoutRevision';
 export const CONFIG_FILE_NAME = 'config.json';
+/** Where an unparseable config.json is copied before a write replaces it. */
+export const CONFIG_CORRUPT_SUFFIX = '.corrupt';
 
 // ── Usage bars (plan rate limits) ───────────────────────────
 /** The last usage report per provider, in the persistence dir (shared by both surfaces). */

@@ -23,6 +23,7 @@ import { parseCardOrder } from './cardOrder.js';
 import type { AdapterSettingKey, AdapterSettings, ConfigNamespace } from './configPersistence.js';
 import { ADAPTER_SETTING_KEYS, readConfig, writeConfig } from './configPersistence.js';
 import { PIXEL_AGENTS_DIR } from './constants.js';
+import { removeTmp, uniqueTmpPath } from './tmpPath.js';
 
 const ADAPTER_SETTING_KEY_SET: ReadonlySet<string> = new Set(ADAPTER_SETTING_KEYS);
 
@@ -39,6 +40,31 @@ interface AdapterState {
 }
 
 const EMPTY_STATE: AdapterState = { agents: [], seats: {}, cardOrder: [] };
+
+type SeatMeta = AdapterState['seats'][string];
+
+/**
+ * Seats as stored: only plain-object entries, each field kept only when it has
+ * its type (a non-negative integer palette/repeat, a string seatId). Seats come
+ * from a client's saveAgentSeats and from a file anyone can edit; a `null`
+ * entry used to be stored as-is and later crash the character remap that
+ * reads every seat's palette.
+ */
+export function sanitizeSeats(value: unknown): AdapterState['seats'] {
+  const seats: AdapterState['seats'] = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return seats;
+  for (const [key, meta] of Object.entries(value as Record<string, unknown>)) {
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) continue;
+    const m = meta as Record<string, unknown>;
+    const clean: SeatMeta = {};
+    if (Number.isInteger(m.palette) && (m.palette as number) >= 0)
+      clean.palette = m.palette as number;
+    if (Number.isInteger(m.repeat) && (m.repeat as number) >= 0) clean.repeat = m.repeat as number;
+    if (typeof m.seatId === 'string') clean.seatId = m.seatId;
+    seats[key] = clean;
+  }
+  return seats;
+}
 
 export interface FileStateAdapterOptions {
   namespace: ConfigNamespace;
@@ -112,10 +138,7 @@ export class FileStateAdapter implements StateAdapter {
       const parsed = JSON.parse(raw) as Partial<AdapterState>;
       return {
         agents: Array.isArray(parsed.agents) ? (parsed.agents as PersistedAgent[]) : [],
-        seats:
-          parsed.seats && typeof parsed.seats === 'object'
-            ? (parsed.seats as AdapterState['seats'])
-            : {},
+        seats: sanitizeSeats(parsed.seats),
         cardOrder: parseCardOrder(parsed.cardOrder) ?? [],
       };
     } catch (err) {
@@ -136,9 +159,14 @@ export class FileStateAdapter implements StateAdapter {
         fs.mkdirSync(dir, { recursive: true });
       }
       const json = JSON.stringify(state, null, 2);
-      const tmpPath = this.stateFilePath + '.tmp';
-      fs.writeFileSync(tmpPath, json, 'utf-8');
-      fs.renameSync(tmpPath, this.stateFilePath);
+      const tmpPath = uniqueTmpPath(this.stateFilePath);
+      try {
+        fs.writeFileSync(tmpPath, json, 'utf-8');
+        fs.renameSync(tmpPath, this.stateFilePath);
+      } catch (err) {
+        removeTmp(tmpPath);
+        throw err;
+      }
     } catch (err) {
       console.error('[Pixel Agents] Failed to write adapter state:', err);
     }

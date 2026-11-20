@@ -130,4 +130,18 @@ describe('SessionRouter', () => {
       expect(router.hasBuffered('sess-2')).toBe(false);
     });
   });
+
+  describe('unregisterIfOwner', () => {
+    it('drops the mapping when it points at the removed agent', () => {
+      router.register('s1', 5);
+      router.unregisterIfOwner('s1', 5);
+      expect(router.resolve('s1')).toBeUndefined();
+    });
+
+    it('keeps a mapping another agent owns (a teammate sharing its lead session)', () => {
+      router.register('lead-session', 1);
+      router.unregisterIfOwner('lead-session', 7);
+      expect(router.resolve('lead-session')).toBe(1);
+    });
+  });
 });

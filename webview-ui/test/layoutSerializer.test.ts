@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 
 import type { ColorValue } from '../src/components/ui/types.js';
-import { migrateLayoutColors } from '../src/office/layout/layoutSerializer.js';
+import { layoutFromWire, migrateLayoutColors } from '../src/office/layout/layoutSerializer.js';
 import type { OfficeLayout, PlacedFurniture, PlacedPet } from '../src/office/types.js';
 import { TileType } from '../src/office/types.js';
 
@@ -146,4 +146,44 @@ test('migrateLayoutColors is idempotent (running twice produces equivalent outpu
   assert.deepEqual(twice.pets, once.pets);
   assert.deepEqual(twice.tiles, once.tiles);
   assert.deepEqual(twice.tileColors, once.tileColors);
+});
+
+// ── layoutFromWire: the check every received layout goes through ──
+
+test('layoutFromWire accepts a well-formed layout and migrates it', () => {
+  const layout = layoutFromWire(baseLayout());
+  assert.ok(layout);
+  assert.deepEqual(layout.pets, []);
+});
+
+test('layoutFromWire treats a missing furniture list as empty instead of throwing', () => {
+  const raw = { ...baseLayout() } as Record<string, unknown>;
+  delete raw.furniture;
+  const layout = layoutFromWire(raw);
+  assert.ok(layout);
+  assert.deepEqual(layout.furniture, []);
+});
+
+test('layoutFromWire drops furniture entries that are not placed items', () => {
+  const ok: PlacedFurniture = { uid: 'a', type: 'DESK', col: 1, row: 1 };
+  const layout = layoutFromWire(
+    baseLayout({
+      furniture: [ok, null, 'x', { uid: 'b', type: 'PC' }] as unknown as PlacedFurniture[],
+    }),
+  );
+  assert.ok(layout);
+  assert.deepEqual(layout.furniture, [ok]);
+});
+
+test('layoutFromWire rejects shapes the office cannot index', () => {
+  assert.equal(layoutFromWire(null), null);
+  assert.equal(layoutFromWire('layout'), null);
+  assert.equal(layoutFromWire({ ...baseLayout(), version: 2 }), null);
+  assert.equal(layoutFromWire({ ...baseLayout(), tiles: 'x' }), null);
+  assert.equal(layoutFromWire({ ...baseLayout(), cols: 5 }), null); // 5 x 3 != 12 tiles
+  assert.equal(layoutFromWire({ ...baseLayout(), cols: 0, rows: 0, tiles: [] }), null);
+  assert.equal(
+    layoutFromWire({ ...baseLayout(), cols: 65, rows: 1, tiles: new Array(65).fill(0) }),
+    null,
+  );
 });

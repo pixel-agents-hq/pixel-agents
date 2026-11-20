@@ -11,6 +11,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import { isRecord } from '../../../serverConfig.js';
+import { uniqueTmpPath } from '../../../tmpPath.js';
 import { type ClaudeHookEntry, hooksHoldOnlyOurs } from './claudeHookEntries.js';
 import {
   SETTINGS_BACKUP_SUFFIX,
@@ -202,11 +203,18 @@ export function settingsUnusableBackupMessage(backupPath: string): string {
 function writeClaudeSettings(settings: ClaudeSettings, expectedRaw: string | null): void {
   const settingsPath = getClaudeSettingsPath();
   const dir = path.dirname(settingsPath);
-  const tmpPath = settingsPath + SETTINGS_TMP_SUFFIX;
+  // A settings.json linked in from a dotfiles repo (stow, chezmoi, home-manager)
+  // is written THROUGH the link: rename(2) replaces a directory entry, so
+  // renaming onto the link itself would swap it for a plain file and silently
+  // detach the user's dotfiles. The tmp sits beside the real file, keeping the
+  // rename atomic on that file's filesystem.
+  const target = resolveSettingsWriteTarget(settingsPath);
+  // Unique per write: the VS Code extension and the standalone server can write
+  // at once, and a shared tmp name let one commit the other's content.
+  const tmpPath = uniqueTmpPath(target, SETTINGS_TMP_SUFFIX);
 
-  // A tmp file left by a crashed earlier run would make the rename below write
-  // stale content on a platform where rename is not the commit we assume.
-  removeIfPresent(tmpPath);
+  // The fixed-name tmp an older version left behind after a crash.
+  removeIfPresent(settingsPath + SETTINGS_TMP_SUFFIX);
 
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -249,11 +257,25 @@ function writeClaudeSettings(settings: ClaudeSettings, expectedRaw: string | nul
     if (readRawClaudeSettings() !== expectedRaw) {
       throw new ConcurrentWriteError();
     }
-    fs.renameSync(tmpPath, settingsPath);
+    fs.renameSync(tmpPath, target);
   } catch (e) {
     removeIfPresent(tmpPath);
     throw e;
   }
+}
+
+/** The path a write replaces: settings.json itself, or the file its symlink
+ *  points at. A dangling or unreadable link falls back to the link's own path
+ *  (there is no file behind it to preserve). */
+function resolveSettingsWriteTarget(settingsPath: string): string {
+  try {
+    if (fs.lstatSync(settingsPath).isSymbolicLink()) {
+      return fs.realpathSync(settingsPath);
+    }
+  } catch {
+    /* absent or dangling: write the path itself */
+  }
+  return settingsPath;
 }
 
 /** Best-effort unlink: a leftover tmp file we cannot remove must not mask the

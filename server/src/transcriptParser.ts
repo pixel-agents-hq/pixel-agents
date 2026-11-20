@@ -462,7 +462,12 @@ export function processTranscriptLine(
       // Definitive turn-end: clean up any stale tool state, but preserve background agents.
       // When hooks are active, the Stop hook already handled the status change,
       // but we still perform state cleanup here as a safety net.
-      const hasForegroundTools = agent.activeToolIds.size > agent.backgroundSpawns.size;
+      // Looked up per id, not by comparing sizes: a restored lead's live spawns
+      // are in backgroundSpawns without being in activeToolIds, so a size
+      // comparison missed a stale foreground tool left beside them.
+      const hasForegroundTools = [...agent.activeToolIds].some(
+        (toolId) => !agent.backgroundSpawns.has(toolId),
+      );
       if (hasForegroundTools) {
         // Remove only non-background tool state
         for (const toolId of agent.activeToolIds) {

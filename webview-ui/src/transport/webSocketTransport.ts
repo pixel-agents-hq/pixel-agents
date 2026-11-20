@@ -70,12 +70,13 @@ export class WebSocketTransport implements MessageTransport {
     };
 
     this.ws.onmessage = (e: MessageEvent) => {
+      let msg: ServerMessage;
       try {
-        const msg = JSON.parse(e.data as string) as ServerMessage;
-        for (const handler of this.handlers) handler(msg);
+        msg = JSON.parse(e.data as string) as ServerMessage;
       } catch {
-        // Malformed JSON, ignore
+        return; // Malformed JSON, ignore
       }
+      this.deliver(msg);
     };
 
     this.ws.onclose = () => {
@@ -112,7 +113,16 @@ export class WebSocketTransport implements MessageTransport {
    * `window` messages (there is no real server to connect to in dev).
    */
   deliver(message: ServerMessage): void {
-    for (const handler of this.handlers) handler(message);
+    // One handler that throws must not starve the others of the message (the
+    // usage store, the conversation list, … subscribe after the main one), and
+    // its error must reach the console instead of passing for bad JSON.
+    for (const handler of this.handlers) {
+      try {
+        handler(message);
+      } catch (err) {
+        console.error(`[Transport] Handler failed on ${message.type}:`, err);
+      }
+    }
   }
 
   onStateChange(handler: (state: TransportState) => void): () => void {

@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it } from 'vitest';
 
-import { CliArgsError, parseArgs } from '../src/cli.js';
+import { CliArgsError, officeUrl, parseArgs } from '../src/cli.js';
 import { CLAUDE_HOOK_EVENTS } from '../src/providers/hook/claude/constants.js';
 
 const CLI_BUNDLE = path.join(__dirname, '../../dist/cli.js');
@@ -259,6 +259,31 @@ describe('dist/cli.js entry-point guard', () => {
   // silently read-only session: the office renders, and the hooks toggle is
   // refused with no way for the operator to find out why. Nothing else in this
   // repo reads the CLI's stdout, so nothing else can catch that.
+  // A second launch that finds a compatible server already running must not
+  // start a runtime of its own: no client would see it, yet it would scan and
+  // rewrite the same standalone-state.json as the running server.
+  itBuilt('a second launch reuses the running server, prints its URL and exits', async () => {
+    const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-reuse-'));
+    await runCliServer(tmpHome, async ({ port }) => {
+      const workspaceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-workspace-2-'));
+      const second = spawn(
+        process.execPath,
+        [CLI_BUNDLE, '--port', port.toString(), '--host', '127.0.0.1'],
+        { cwd: workspaceDir, env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome } },
+      );
+      let out = '';
+      second.stdout?.on('data', (c: Buffer) => (out += c.toString()));
+      second.stderr?.on('data', (c: Buffer) => (out += c.toString()));
+      const code = await new Promise<number | null>((resolve) => second.on('exit', resolve));
+      fs.rmSync(workspaceDir, { recursive: true, force: true });
+      expect(code).toBe(0);
+      expect(out).toMatch(/already running at http:\/\/127\.0\.0\.1:\d+\/\?token=/);
+      expect(out).not.toMatch(/Scanning project dir/);
+      // The running server is untouched.
+      expect((await fetch(`http://127.0.0.1:${port.toString()}/api/health`)).ok).toBe(true);
+    });
+  });
+
   itBuilt('prints a URL carrying the token the server actually minted', async () => {
     const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-cli-url-'));
     await runCliServer(tmpHome, async ({ output, port }) => {
@@ -460,5 +485,23 @@ describe('dist/cli.js entry-point guard', () => {
       fs.rmSync(tmpHome, { recursive: true, force: true });
       fs.rmSync(workspaceDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('officeUrl', () => {
+  it('prints a wildcard bind as loopback', () => {
+    expect(officeUrl('0.0.0.0', 3100, 't')).toBe('http://127.0.0.1:3100/?token=t');
+    expect(officeUrl('::', 3100, 't')).toBe('http://127.0.0.1:3100/?token=t');
+  });
+
+  it('brackets an IPv6 literal so the URL parses', () => {
+    const url = officeUrl('::1', 3100, 't');
+    expect(url).toBe('http://[::1]:3100/?token=t');
+    expect(new URL(url).searchParams.get('token')).toBe('t');
+  });
+
+  it('leaves names and IPv4 addresses alone', () => {
+    expect(officeUrl('my-box.ts.net', 80, 't')).toBe('http://my-box.ts.net:80/?token=t');
+    expect(officeUrl('127.0.0.1', 80, 't')).toBe('http://127.0.0.1:80/?token=t');
   });
 });

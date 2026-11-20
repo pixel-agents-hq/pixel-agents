@@ -349,3 +349,115 @@ describe('transcriptParser: teammate spawn results (new-harness implicit teams)'
     expect(agent.isTeamLead).toBeUndefined();
   });
 });
+
+describe('transcriptParser: foreground sub-agent spawn (Agent and legacy Task alias)', () => {
+  let agents: AgentStateStore;
+  let messages: Array<Record<string, unknown>>;
+  const waitingTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  const permissionTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+  beforeEach(() => {
+    setHookProvider(claudeProvider);
+    agents = new AgentStateStore();
+    messages = [];
+    agents.on('broadcast', (msg) => {
+      messages.push(msg as Record<string, unknown>);
+    });
+    vi.useFakeTimers();
+    return () => {
+      vi.useRealTimers();
+    };
+  });
+
+  // Since Claude Code 2.1.63 the spawn tool is `Agent`; `Task` survives as an alias.
+  // Current harnesses omit run_in_background on foreground spawns. Both names, with
+  // hooks on or off, must start a basic Sub-agent and clear it when the result lands.
+  it.each([
+    ['Agent', false],
+    ['Agent', true],
+    ['Task', false],
+    ['Task', true],
+  ])(
+    '%s spawn (hookDelivered=%s) starts a foreground Sub-agent and clears it on result',
+    (toolName, hookDelivered) => {
+      agents.set(1, createTestAgent({ hookDelivered }));
+
+      processTranscriptLine(
+        1,
+        agentToolUseRecord('toolu_fg', toolName, { description: 'Foreground agent subtask' }),
+        agents,
+        waitingTimers,
+        permissionTimers,
+      );
+
+      const start = messages.find((m) => m.type === 'agentToolStart' && m.toolId === 'toolu_fg');
+      expect(start).toMatchObject({
+        id: 1,
+        toolName,
+        status: 'Subtask: Foreground agent subtask',
+        runInBackground: false,
+      });
+      expect(start?.isTeammateSpawn).toBeUndefined();
+
+      processTranscriptLine(
+        1,
+        toolResultRecord('toolu_fg', 'Done.'),
+        agents,
+        waitingTimers,
+        permissionTimers,
+      );
+
+      expect(messages).toContainEqual(
+        expect.objectContaining({ type: 'subagentClear', id: 1, parentToolId: 'toolu_fg' }),
+      );
+      expect(agents.get(1)?.backgroundSpawns.size).toBe(0);
+    },
+  );
+});
+
+describe('transcriptParser: turn end beside restored background spawns', () => {
+  const waitingTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  const permissionTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+  beforeEach(() => {
+    setHookProvider(claudeProvider);
+    vi.useFakeTimers();
+    return () => {
+      vi.useRealTimers();
+    };
+  });
+
+  it('clears a stale foreground tool even when more background spawns are live', () => {
+    const agents = new AgentStateStore();
+    // A restored lead: two live spawns in backgroundSpawns, never in activeToolIds.
+    const agent = createTestAgent({
+      backgroundSpawns: new Map([
+        ['toolu_bg1', { taskId: 'a1' }],
+        ['toolu_bg2', { taskId: 'a2' }],
+      ]) as AgentState['backgroundSpawns'],
+    });
+    agents.set(1, agent);
+
+    // One foreground tool left open (an interrupted turn: no tool_result).
+    processTranscriptLine(
+      1,
+      agentToolUseRecord('toolu_fg', 'Bash', { command: 'sleep 100' }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+    expect(agent.activeToolIds.has('toolu_fg')).toBe(true);
+
+    processTranscriptLine(
+      1,
+      JSON.stringify({ type: 'system', subtype: 'turn_duration' }),
+      agents,
+      waitingTimers,
+      permissionTimers,
+    );
+
+    expect(agent.activeToolIds.has('toolu_fg')).toBe(false);
+    expect(agent.activeToolStatuses.has('toolu_fg')).toBe(false);
+    expect(agent.backgroundSpawns.size).toBe(2);
+  });
+});

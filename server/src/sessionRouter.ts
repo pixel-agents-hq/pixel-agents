@@ -41,6 +41,15 @@ export class SessionRouter {
     this.sessionToAgentId.delete(sessionId);
   }
 
+  /** Drop the mapping only while it still points at `agentId`: background
+   *  teammates share their lead's session id, and removing one must not cut
+   *  the lead off from its hooks. */
+  unregisterIfOwner(sessionId: string, agentId: number): void {
+    if (this.sessionToAgentId.get(sessionId) === agentId) {
+      this.sessionToAgentId.delete(sessionId);
+    }
+  }
+
   resolve(sessionId: string): number | undefined {
     return this.sessionToAgentId.get(sessionId);
   }

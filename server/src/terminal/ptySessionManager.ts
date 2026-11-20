@@ -186,6 +186,8 @@ function isValidDimension(value: number): boolean {
 
 export class PtySessionManager implements TerminalSessions {
   private readonly byAgent = new Map<number, PtySession>();
+  /** Disposed sessions whose process has not exited yet (SIGKILL pending). */
+  private readonly dying = new Set<PtySession>();
   private resolution: ReturnType<typeof resolvePtyModule> | null = null;
   /** True for a manager built by disabled(): the operator opted out, as opposed
    *  to the PTY module failing to load. Recorded in the server registry. */
@@ -293,6 +295,12 @@ export class PtySessionManager implements TerminalSessions {
     const session = this.byAgent.get(agentId);
     if (!session) return;
     this.byAgent.delete(agentId);
+    // Remember it until it exits, so a shutdown that comes before its SIGKILL
+    // escalation still waits for it (an exiting server never runs that timer).
+    if (!session.hasExited) {
+      this.dying.add(session);
+      session.onExit(() => this.dying.delete(session));
+    }
     session.dispose();
   }
 
@@ -313,10 +321,12 @@ export class PtySessionManager implements TerminalSessions {
    * timer is ref'd, so it also keeps the event loop alive until then).
    */
   disposeAll(): Promise<void> {
-    const sessions = [...this.byAgent.values()];
     for (const agentId of [...this.byAgent.keys()]) {
       this.dispose(agentId);
     }
+    // Every disposed session still running, including ones closed just before
+    // shutdown whose kill escalation is still pending.
+    const sessions = [...this.dying];
     if (sessions.length === 0) return Promise.resolve();
     const exited = Promise.all(
       sessions.map((session) => new Promise<void>((resolve) => session.onExit(() => resolve()))),

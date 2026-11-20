@@ -7,6 +7,7 @@
  */
 
 import type { ColorValue } from '../components/ui/types.js';
+import { COLORIZE_CACHE_LIMIT } from '../constants.js';
 import type { SpriteData } from './types.js';
 
 /** Generic colorized sprite cache: arbitrary string key → SpriteData */
@@ -25,6 +26,14 @@ export function getColorizedSprite(
   const cached = colorizeCache.get(cacheKey);
   if (cached) return cached;
   const result = color.colorize ? colorizeSprite(sprite, color) : adjustSprite(sprite, color);
+  // Keys carry the colour values, so dragging a slider across its range adds
+  // an entry per value per catalog thumbnail (each pinning its canvas in the
+  // sprite cache). Evict the oldest once past the limit; a still-visible
+  // sprite evicted this way is simply recomputed on its next frame.
+  if (colorizeCache.size >= COLORIZE_CACHE_LIMIT) {
+    const oldest = colorizeCache.keys().next().value;
+    if (oldest !== undefined) colorizeCache.delete(oldest);
+  }
   colorizeCache.set(cacheKey, result);
   return result;
 }

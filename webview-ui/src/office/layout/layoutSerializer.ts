@@ -7,7 +7,15 @@ import type {
   Seat,
   TileType as TileTypeVal,
 } from '../types.js';
-import { DEFAULT_COLS, DEFAULT_ROWS, Direction, TILE_SIZE, TileType } from '../types.js';
+import {
+  DEFAULT_COLS,
+  DEFAULT_ROWS,
+  Direction,
+  MAX_COLS,
+  MAX_ROWS,
+  TILE_SIZE,
+  TileType,
+} from '../types.js';
 import { getCatalogEntry, getOrientationInGroup } from './furnitureCatalog.js';
 
 /** Convert flat tile array from layout into 2D grid */
@@ -333,6 +341,41 @@ export function deserializeLayout(json: string): OfficeLayout | null {
  */
 export function migrateLayoutColors(layout: OfficeLayout): OfficeLayout {
   return migrateLayout(layout);
+}
+
+/**
+ * A layout that arrived over the wire (layoutLoaded: the saved file, an import,
+ * another window's save), checked before anything indexes into it, then
+ * migrated; null when it isn't a usable layout, so the office keeps its
+ * default instead of throwing on every load. Furniture entries that aren't
+ * placed items are dropped; a missing furniture list is an empty one.
+ */
+export function layoutFromWire(raw: unknown): OfficeLayout | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const l = raw as Partial<OfficeLayout> & Record<string, unknown>;
+  if (l.version !== 1 || !Array.isArray(l.tiles)) return null;
+  const { cols, rows } = l;
+  if (
+    !Number.isInteger(cols) ||
+    !Number.isInteger(rows) ||
+    (cols as number) < 1 ||
+    (rows as number) < 1 ||
+    (cols as number) > MAX_COLS ||
+    (rows as number) > MAX_ROWS ||
+    l.tiles.length !== (cols as number) * (rows as number)
+  ) {
+    return null;
+  }
+  const furniture = (Array.isArray(l.furniture) ? l.furniture : []).filter(
+    (item): item is PlacedFurniture =>
+      !!item &&
+      typeof item === 'object' &&
+      typeof (item as PlacedFurniture).uid === 'string' &&
+      typeof (item as PlacedFurniture).type === 'string' &&
+      Number.isInteger((item as PlacedFurniture).col) &&
+      Number.isInteger((item as PlacedFurniture).row),
+  );
+  return migrateLayout({ ...(l as OfficeLayout), furniture });
 }
 
 /**

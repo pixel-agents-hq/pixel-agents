@@ -22,6 +22,7 @@ import type { ServerConfig, StandaloneAccess } from './serverConfig.js';
 import { isServerConfig, isServerTarget, sameStandaloneAccess } from './serverConfig.js';
 import { loadOrCreateStandaloneToken } from './serverToken.js';
 import type { TerminalSessions } from './terminal/terminalSessions.js';
+import { removeTmp, uniqueTmpPath } from './tmpPath.js';
 import { normalizeHostname } from './wsAuth.js';
 
 export type { ServerConfig } from './serverConfig.js';
@@ -188,6 +189,12 @@ export class PixelAgentsServer {
     this.ownsServer = false;
   }
 
+  /** Whether start() brought up this process's own listener, rather than
+   *  reusing a compatible server another process runs. */
+  get ownsListener(): boolean {
+    return this.ownsServer;
+  }
+
   /** Returns the current server config, or null if not started. */
   getConfig(): ServerConfig | null {
     return this.config;
@@ -206,9 +213,14 @@ export class PixelAgentsServer {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
       }
-      const tmpPath = filePath + '.tmp';
-      fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), { mode: 0o600 });
-      fs.renameSync(tmpPath, filePath);
+      const tmpPath = uniqueTmpPath(filePath);
+      try {
+        fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), { mode: 0o600 });
+        fs.renameSync(tmpPath, filePath);
+      } catch (err) {
+        removeTmp(tmpPath);
+        throw err;
+      }
     } catch (e) {
       console.error(`[Pixel Agents] Failed to write server.json: ${e}`);
     }
@@ -301,9 +313,14 @@ export class PixelAgentsServer {
         fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
       }
       const filePath = this.getRegistryFilePath(config);
-      const tmpPath = `${filePath}.tmp`;
-      fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), { mode: 0o600 });
-      fs.renameSync(tmpPath, filePath);
+      const tmpPath = uniqueTmpPath(filePath);
+      try {
+        fs.writeFileSync(tmpPath, JSON.stringify(config, null, 2), { mode: 0o600 });
+        fs.renameSync(tmpPath, filePath);
+      } catch (err) {
+        removeTmp(tmpPath);
+        throw err;
+      }
     } catch (e) {
       console.error(`[Pixel Agents] Failed to write registry entry: ${e}`);
     }

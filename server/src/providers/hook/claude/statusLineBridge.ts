@@ -65,8 +65,13 @@ export function wrappedStatusLineCommand(command: string): string | null | undef
   // Everything after our script path (and its closing quote, if quoted). The
   // search runs on a copy normalized 1:1 (separators, case), so its index is
   // valid in the original; the first token ends in our suffix, so its first
-  // occurrence is the script path.
-  const normalized = command.replace(/\\/g, '/').toLowerCase();
+  // occurrence is the script path. Case is folded per character, keeping a
+  // character whose lower case is longer (`İ` → `i̇`): String#toLowerCase is
+  // not length-preserving, and a home like /home/İSMAİL shifted the index.
+  const normalized = Array.from(command.replace(/\\/g, '/'), (ch) => {
+    const lower = ch.toLowerCase();
+    return lower.length === ch.length ? lower : ch;
+  }).join('');
   const end = normalized.indexOf(STATUSLINE_PATH_SUFFIX) + STATUSLINE_PATH_SUFFIX.length;
   const rest = command.slice(end).replace(/^["']/, '').trim();
   if (rest === '') return null;

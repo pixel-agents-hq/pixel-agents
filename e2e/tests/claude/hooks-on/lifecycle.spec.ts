@@ -69,6 +69,8 @@ import {
 } from '../../../helpers/webview';
 
 const PARALLEL_PARENT_TOOL_ID = 'toolu-b5-parent';
+const FOREGROUND_AGENT_TOOL_ID = 'toolu-b5b-agent';
+const FOREGROUND_AGENT_DESCRIPTION = 'Foreground agent subtask';
 const SECOND_TEAMMATE_ALIAS = 'reviewer';
 const SECOND_TEAMMATE_ROLE = 'reviewer';
 
@@ -457,6 +459,54 @@ test.describe('Hooks ON / lifecycle', () => {
     narrator.step('after the batched tool_results + turn_duration, the subtasks should collapse');
     await expectOverlayCount(panelFrame, 1, 16_000);
     narrator.check('everything collapses back to just the parent (count → 1)');
+  });
+
+  test('foreground Agent subagent renders a sub-character and collapses at turn end @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
+
+    await waitForClaudeHookSetup(tmpHome);
+    // Since Claude Code 2.1.63 the sub-agent tool is named Agent (Task is a legacy
+    // alias), and current harnesses omit run_in_background on foreground spawns.
+    narrator.step('arranging one turn with a single foreground Agent tool_use');
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      claudeScenario('foreground Agent subagent hooks on')
+        .at(300)
+        .emitHook(
+          sessionStartStartup('{{sessionId}}', '{{cwd}}', '{{transcriptPath}}') as Record<
+            string,
+            unknown
+          >,
+        )
+        .at(2_500)
+        .appendJsonl(
+          buildAssistantToolUseRecord(FOREGROUND_AGENT_TOOL_ID, 'Agent', {
+            description: FOREGROUND_AGENT_DESCRIPTION,
+          }),
+        )
+        .at(7_000)
+        .appendJsonl(buildUserToolResultRecord(FOREGROUND_AGENT_TOOL_ID))
+        .at(8_000)
+        .appendJsonl(buildTurnDurationRecord())
+        .holdOpenFor(11_000)
+        .build(),
+    );
+
+    await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+    await openPixelAgentsPanel(window);
+    const panelFrame = await getPixelAgentsFrame(window);
+
+    narrator.step('waiting for the Agent Subtask sub-character to appear');
+    await expectOverlayVisible(panelFrame, `Subtask: ${FOREGROUND_AGENT_DESCRIPTION}`);
+    await expectOverlayCount(panelFrame, 2, 10_000);
+    await expectSubagentLabels(panelFrame, [FOREGROUND_AGENT_DESCRIPTION]);
+    narrator.check('parent + 1 Agent subtask on screen (count → 2)');
+
+    narrator.step('after the tool_result + turn_duration, the subtask should collapse');
+    await expectOverlayCount(panelFrame, 1, 14_000);
+    narrator.check('back to just the parent (count → 1)');
   });
 
   test('inline teammate removed from team config disappears within one second @area:lifecycle', async ({

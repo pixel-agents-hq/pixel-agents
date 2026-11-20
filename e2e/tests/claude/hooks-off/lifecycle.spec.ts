@@ -47,6 +47,8 @@ import {
 } from '../../../helpers/webview';
 
 const PARALLEL_PARENT_TOOL_ID = 'toolu-b5-parent';
+const FOREGROUND_AGENT_TOOL_ID = 'toolu-b5b-agent';
+const FOREGROUND_AGENT_DESCRIPTION = 'Foreground agent subtask';
 
 function otherOverlayId(ids: number[], knownId: number): number {
   const otherId = ids.find((id) => id !== knownId);
@@ -477,6 +479,51 @@ test.describe('Hooks OFF / lifecycle', () => {
 
     narrator.step('after the tool_results + turn_duration, the subtasks should collapse');
     await expectOverlayCount(panelFrame, 1, 16_000);
+    narrator.check('back to a single character — count 1');
+  });
+
+  test('foreground Agent subagent renders a sub-character and collapses at turn end via polling @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
+
+    narrator.step('hooks OFF — a foreground Agent subagent detected by JSONL polling alone');
+    await setSettings(frame, {
+      hooksEnabled: false,
+    });
+
+    // Since Claude Code 2.1.63 the sub-agent tool is named Agent (Task is a legacy
+    // alias), and current harnesses omit run_in_background on foreground spawns.
+    narrator.step('arranging one Agent tool_use, then its result + turn_duration');
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      claudeScenario('foreground Agent subagent hooks off')
+        .at(2_500)
+        .appendJsonl(
+          buildAssistantToolUseRecord(FOREGROUND_AGENT_TOOL_ID, 'Agent', {
+            description: FOREGROUND_AGENT_DESCRIPTION,
+          }),
+        )
+        .at(7_000)
+        .appendJsonl(buildUserToolResultRecord(FOREGROUND_AGENT_TOOL_ID))
+        .at(8_000)
+        .appendJsonl(buildTurnDurationRecord())
+        .holdOpenFor(11_000)
+        .build(),
+    );
+
+    await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+    await openPixelAgentsPanel(window);
+    const panelFrame = await getPixelAgentsFrame(window);
+
+    narrator.step('waiting for the Agent Subtask sub-character to appear');
+    await expectOverlayVisible(panelFrame, `Subtask: ${FOREGROUND_AGENT_DESCRIPTION}`);
+    await expectOverlayCount(panelFrame, 2, 10_000);
+    await expectSubagentLabels(panelFrame, [FOREGROUND_AGENT_DESCRIPTION]);
+    narrator.check('lead + 1 Agent subtask render — count 2');
+
+    narrator.step('after the tool_result + turn_duration, the subtask should collapse');
+    await expectOverlayCount(panelFrame, 1, 14_000);
     narrator.check('back to a single character — count 1');
   });
 

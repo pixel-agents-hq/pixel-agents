@@ -346,3 +346,56 @@ describe('configPersistence: areas', () => {
     });
   });
 });
+
+describe('configPersistence: damaged config.json', () => {
+  let tempHome: string;
+  let originalHome: string | undefined;
+  let configPath: string;
+
+  beforeEach(() => {
+    tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pxl-config-damaged-'));
+    originalHome = process.env.HOME;
+    process.env.HOME = tempHome;
+    configPath = path.join(tempHome, '.pixel-agents', 'config.json');
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it('copies an unparseable config aside before a write replaces it', () => {
+    const broken = '{ "directories": [ { "name": "web", "path": "/w" }, ] }';
+    fs.writeFileSync(configPath, broken);
+
+    const cfg = readConfig();
+    expect(cfg.directories).toEqual([]);
+    expect(fs.readFileSync(configPath + '.corrupt', 'utf-8')).toBe(broken);
+
+    cfg.recentCharacters = [1];
+    expect(writeConfig(cfg)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(configPath, 'utf-8')).recentCharacters).toEqual([1]);
+    // The user's content is still recoverable after the overwrite.
+    expect(fs.readFileSync(configPath + '.corrupt', 'utf-8')).toBe(broken);
+  });
+
+  it('refuses to write back a config it could not read', () => {
+    // A directory squatting on config.json: exists, but every read fails.
+    fs.mkdirSync(configPath);
+
+    const cfg = readConfig();
+    cfg.recentCharacters = [2];
+    expect(writeConfig(cfg)).toBe(false);
+    expect(fs.statSync(configPath).isDirectory()).toBe(true);
+  });
+
+  it('leaves no tmp files behind after a write', () => {
+    expect(writeConfig(readConfig())).toBe(true);
+    expect(fs.readdirSync(path.dirname(configPath))).toEqual(['config.json']);
+  });
+});
