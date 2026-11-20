@@ -355,6 +355,18 @@ export const ICONS = {
     '.....##.',
     '......##',
   ],
+  // A brand mark keeps the website header's own grid, the one exception to
+  // 8×8: Discord's logo at 11×8.
+  discord: [
+    '..##...##..',
+    '.#########.',
+    '###########',
+    '##..###..##',
+    '##..###..##',
+    '###########',
+    '.###...###.',
+    '..#.....#..',
+  ],
 } as const satisfies Record<string, readonly string[]>;
 
 export type PixelIconName = keyof typeof ICONS;

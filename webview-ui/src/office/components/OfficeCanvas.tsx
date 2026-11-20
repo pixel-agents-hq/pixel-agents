@@ -5,6 +5,7 @@ import {
   CAMERA_FOLLOW_LERP,
   CAMERA_FOLLOW_SNAP_THRESHOLD,
   FURNITURE_LABEL_SELECTOR,
+  GREETER_ID,
   OFFICE_CANVAS_TEST_ID,
   PAN_MARGIN_FRACTION,
   ZOOM_MAX,
@@ -116,6 +117,12 @@ export function OfficeCanvas({
   const isEraseDraggingRef = useRef(false);
   // Zoom scroll accumulator for trackpad pinch sensitivity
   const zoomAccumulatorRef = useRef(0);
+  // While the Intro's greeter stands, the furniture opens nothing (its labels
+  // still show): the Intro is not to be left for a terminal half-way.
+  const piecesReadOnly = useCallback(
+    () => readOnly || officeState.greeter !== null,
+    [readOnly, officeState],
+  );
   // Clamp pan so the map edge can't go past a margin inside the viewport
   const clampPan = useCallback(
     (px: number, py: number): { x: number; y: number } => {
@@ -444,14 +451,21 @@ export function OfficeCanvas({
       const pos = screenToWorld(e.clientX, e.clientY);
       if (!pos) return;
       const hitId = officeState.getCharacterAt(pos.worldX, pos.worldY);
+      // The Intro's greeter takes the hover outline too, and nothing else: no
+      // click, no pointer (it is no agent).
+      const greeterHit = hitId === null && officeState.greeterAt(pos.worldX, pos.worldY);
       // Only run pet hit-test if no character was hit (avoids redundant work).
-      const petId = hitId === null ? officeState.getPetAt(pos.worldX, pos.worldY) : null;
+      const petId =
+        hitId === null && !greeterHit ? officeState.getPetAt(pos.worldX, pos.worldY) : null;
       const tile = screenToTile(e.clientX, e.clientY);
       officeState.hoveredTile = tile;
       // The piece of furniture under the mouse (none under a character or a pet).
-      const piece = mouseHovers()
-        ? officeState.pieces.hoverAt(pos.worldX, pos.worldY, { readOnly })
-        : null;
+      const piece =
+        mouseHovers() && !greeterHit
+          ? officeState.pieces.hoverAt(pos.worldX, pos.worldY, {
+              readOnly: piecesReadOnly(),
+            })
+          : null;
       const canvas = canvasRef.current;
       if (canvas) {
         canvas.style.cursor = computeNormalModeCursor({
@@ -465,13 +479,13 @@ export function OfficeCanvas({
           getCharacter: (id) => officeState.characters.get(id),
         });
       }
-      officeState.hoveredAgentId = hitId;
+      officeState.hoveredAgentId = greeterHit ? GREETER_ID : hitId;
     },
     [
       officeState,
       screenToWorld,
       screenToTile,
-      readOnly,
+      piecesReadOnly,
       isEditMode,
       editorState,
       onEditorTileAction,
@@ -699,11 +713,15 @@ export function OfficeCanvas({
       // A piece of interactive furniture (never under a character or a pet: they
       // win). On touch the first tap only shows its outline and label; a tap
       // anywhere else clears them.
+      // The Intro's greeter answers no click (and hides what stands behind it).
+      if (officeState.greeterAt(pos.worldX, pos.worldY)) return;
       const piece = officeState.pieces.tapAt(pos.worldX, pos.worldY, {
-        readOnly,
+        readOnly: piecesReadOnly(),
         twoStep: touch,
       });
       if (piece) {
+        // During the Intro a piece answers nothing, the camera included (it stays on the greeter).
+        if (officeState.greeter !== null) return;
         if (piece.click) onPieceClick?.(piece.click, piece.uid);
         officeState.selectedAgentId = null;
         officeState.cameraFollowId = null;
@@ -789,7 +807,15 @@ export function OfficeCanvas({
         officeState.cameraFollowId = null;
       }
     },
-    [officeState, onClick, onPieceClick, readOnly, screenToWorld, screenToTile, tapSelectsFirst],
+    [
+      officeState,
+      onClick,
+      onPieceClick,
+      piecesReadOnly,
+      screenToWorld,
+      screenToTile,
+      tapSelectsFirst,
+    ],
   );
 
   const handleClick = useCallback(

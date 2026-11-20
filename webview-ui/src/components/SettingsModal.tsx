@@ -53,6 +53,9 @@ interface SettingsModalProps {
   /** Settings → Play the Tutorial: opens the tutorial's ask (absent: no
    *  tutorial on this server, or one is running). */
   onPlayTutorial?: () => void;
+  /** Settings → Replay the Intro: the first-run tour again, its choices
+   *  starting from what is on now (absent: not offered here). */
+  onReplayIntro?: () => void;
 }
 
 export function SettingsModal({
@@ -80,6 +83,7 @@ export function SettingsModal({
   onExportLayout,
   onImportLayout,
   onPlayTutorial,
+  onReplayIntro,
 }: SettingsModalProps) {
   // The office radio's player is a per-browser setting the radio keeps itself.
   const radio = useOfficeRadio();
@@ -135,6 +139,16 @@ export function SettingsModal({
             }}
           >
             Play the Tutorial
+          </MenuItem>
+        )}
+        {onReplayIntro && (
+          <MenuItem
+            onClick={() => {
+              onReplayIntro();
+              onClose();
+            }}
+          >
+            Replay the Intro
           </MenuItem>
         )}
         <MenuItem

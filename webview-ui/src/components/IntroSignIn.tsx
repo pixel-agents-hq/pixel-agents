@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import type { CliSignInControls } from '../signIn/useCliSignIn.js';
-import { IntroOption, IntroOptionLink, IntroOptions, IntroPanel } from './IntroOptions.js';
+import { IntroOption, IntroOptionLink, IntroOptions } from './IntroOptions.js';
+import { IntroBelowSlot } from './introOptionsSlot.js';
 import { type Say, useSay } from './introSpeech.js';
 import { Button } from './ui/Button.js';
 
@@ -25,6 +27,7 @@ interface IntroSignInProps {
  */
 export function IntroSignIn({ signIn, say, onContinue }: IntroSignInProps) {
   const { status, pending, onHost, check, start, submitCode } = signIn;
+  const below = useContext(IntroBelowSlot);
   const [code, setCode] = useState('');
   // A sign-in was started from this step (its end moves the tour on).
   const [started, setStarted] = useState(false);
@@ -92,8 +95,9 @@ export function IntroSignIn({ signIn, say, onContinue }: IntroSignInProps) {
   return (
     <>
       {status === undefined || signedIn ? null : url ? (
-        // The code bar: the dialog's width, the field and the button that goes on.
-        <IntroPanel wide className="flex items-center gap-6">
+        // The code bar: the dialog's width, the field and the button that goes
+        // on, bare on the office (no box of its own).
+        <div className="flex w-full items-center gap-6">
           <input
             type="text"
             value={code}
@@ -116,15 +120,21 @@ export function IntroSignIn({ signIn, say, onContinue }: IntroSignInProps) {
           >
             {pending ? 'Checking...' : 'Finish'}
           </Button>
-        </IntroPanel>
+        </div>
       ) : (
         status.error &&
-        !pending && (
-          <IntroPanel>
-            <p className="text-sm m-0 text-status-error" data-testid="intro-sign-in-error">
-              {status.error}
-            </p>
-          </IntroPanel>
+        !pending &&
+        below &&
+        // Under the dialog box, centred in the space below it: the options stay on the box.
+        createPortal(
+          <p
+            className="text-sm m-0 text-center text-status-error"
+            data-testid="intro-sign-in-error"
+            role="alert"
+          >
+            {status.error}
+          </p>,
+          below,
         )
       )}
 

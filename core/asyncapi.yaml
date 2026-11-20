@@ -207,6 +207,7 @@ components:
         - $ref: '#/components/schemas/SetBypassPermissions'
         - $ref: '#/components/schemas/SetShowHostDirectories'
         - $ref: '#/components/schemas/SetUploadDirectory'
+        - $ref: '#/components/schemas/ReplayIntro'
         - $ref: '#/components/schemas/SaveDirectory'
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/RequestDirectorySuggestions'
@@ -2620,6 +2621,22 @@ components:
           const: setUploadDirectory
         path:
           type: string
+
+    ReplayIntro:
+      description: >-
+        Settings → Replay the Intro: ask this office the Intro's questions
+        again, whatever was answered before. Privileged. Answered to the
+        sender alone with a `hooksConsentRequest` per hook provider and,
+        where the server offers the Pixel Office MCP, an
+        `officeMcpConsentRequest` after them; nothing is changed until the
+        choices step is answered (each answer the usual absolute state), and
+        closing the replayed Intro changes nothing.
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          const: replayIntro
 
     SaveDirectory:
       description: |

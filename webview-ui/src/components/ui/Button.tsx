@@ -31,6 +31,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   ref?: Ref<HTMLButtonElement>;
   /** A pixel icon drawn left of the label, centred on it. */
   icon?: PixelIconName;
+  /** The icon's CSS pixels per icon pixel (PixelIcon's `scale`). */
+  iconScale?: number;
 }
 
 export function Button({
@@ -38,6 +40,7 @@ export function Button({
   size = 'lg',
   className = '',
   icon,
+  iconScale,
   children,
   ...props
 }: ButtonProps) {
@@ -45,7 +48,7 @@ export function Button({
     <button className={`${variants[variant]} ${sizes[size]} ${className}`} {...props}>
       {icon ? (
         <span className="inline-flex items-center gap-8 align-middle">
-          <PixelIcon name={icon} />
+          <PixelIcon name={icon} scale={iconScale} />
           {children}
         </span>
       ) : (

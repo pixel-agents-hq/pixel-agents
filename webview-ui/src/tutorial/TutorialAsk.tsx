@@ -9,12 +9,9 @@ interface TutorialAskProps {
   status: TutorialStatus;
   /** The last refusal of a start (tutorialStore), numbered. */
   rejected: { reason: string; seq: number } | null;
-  /** Inside the Intro's closing step the way out reads "Let's Go"; alone
-   *  (Settings → Play the Tutorial) "Not Now". */
-  embedded: boolean;
   /** What the greeter says: the server's headline. */
   say: Say;
-  /** The no: Let's Go / Not Now. */
+  /** The no: No, thanks (in the Intro's closing step and alone, Settings → Play the Tutorial). */
   onDecline: () => void;
   /** Close, and a started run. */
   onClose: () => void;
@@ -24,13 +21,12 @@ interface TutorialAskProps {
 
 /**
  * The tutorial's ask, one step: the server's headline, spoken by the greeter in the Intro's dialog (`say`), and this, its
- * menu: Show Me Around, then the wait for the Guide's run. IntroDialog
+ * menu: Yes, please!, then the wait for the Guide's run. IntroDialog
  * supplies the boxes and the close x. The flow is tutorialOffer.ts.
  */
 export function TutorialAsk({
   status,
   rejected,
-  embedded,
   say,
   onDecline,
   onClose,
@@ -98,10 +94,10 @@ export function TutorialAsk({
                 onStart();
               }}
             >
-              {starting ? 'Taking a Seat...' : 'Show Me Around'}
+              {starting ? 'Taking a Seat...' : 'Yes, please!'}
             </IntroOption>
             <IntroOption disabled={starting} onClick={onDecline}>
-              {embedded ? "Let's Go" : 'Not Now'}
+              No, thanks
             </IntroOption>
           </>
         )}

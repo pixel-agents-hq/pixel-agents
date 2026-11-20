@@ -207,8 +207,12 @@ test.describe('Standalone / hooks consent', () => {
       .getByTestId('intro-choice-hooks')
       .getByRole('button', { name: 'Read more' })
       .click();
-    await expect(dialog).toContainText('~/.claude/settings.json');
-    await expect(dialog).toContainText('Instant Detection (Hooks)');
+    // In a modal of their own, over the Intro; Escape closes it.
+    const terms = page.getByTestId('intro-choice-terms');
+    await expect(terms).toContainText('~/.claude/settings.json');
+    await expect(terms).toContainText('Instant Detection (Hooks)');
+    await page.keyboard.press('Escape');
+    await expect(terms).toHaveCount(0);
 
     expect(fs.existsSync(path.join(standalone.tmpHome, '.claude', 'settings.json'))).toBe(false);
 

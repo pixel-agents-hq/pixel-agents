@@ -39,6 +39,14 @@ export function hooksConsentRequest(
   if (state.installed || state.consentAnswered || !state.hooksEnabled || !state.privileged) {
     return null;
   }
+  return replayedConsentRequest(provider);
+}
+
+/** The same ask, unconditionally: Settings → Replay the Intro (`replayIntro`, privileged only), where the user asks
+ *  to be asked again. Every answer is an absolute state (below), so re-asking whatever is on disk is safe. */
+export function replayedConsentRequest(
+  provider: Pick<HookProvider, 'id' | 'consentDisclosure' | 'isCliInstalled'>,
+): HooksConsentRequest {
   const { headline, summary = headline, disclosure } = provider.consentDisclosure();
   return {
     type: 'hooksConsentRequest',

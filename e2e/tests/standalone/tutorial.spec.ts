@@ -59,7 +59,7 @@ test.describe('Standalone / Tutorial', () => {
     expect(said).toContain('Want me to show you around?');
     await expect(dialog.getByTestId('tutorial-offer')).toBeVisible();
     await expect(page.getByTitle(/Tutorial/)).toHaveCount(0);
-    await dialog.getByRole('button', { name: 'Show Me Around' }).click();
+    await dialog.getByRole('button', { name: 'Yes, please!' }).click();
 
     // The greeter walks to a desk first; then the Guide is an agent with a card
     // and a terminal, and the Intro closes.
@@ -114,7 +114,7 @@ test.describe('Standalone / Tutorial', () => {
     await expect(card).toBeVisible();
   });
 
-  test("Let's Go ends the Intro as before, launching nothing @area:standalone", async ({
+  test('No, thanks ends the Intro as before, launching nothing @area:standalone', async ({
     page,
     standalone: _standalone, // boots the office the page opens
   }) => {
@@ -122,7 +122,7 @@ test.describe('Standalone / Tutorial', () => {
     await introToClosing(dialog);
     await readIntroClosing(dialog);
     await expect(dialog.getByTestId('tutorial-offer')).toBeVisible();
-    await dialog.getByRole('button', { name: "Let's Go" }).click();
+    await dialog.getByRole('button', { name: 'No, thanks' }).click();
     await expect(dialog).toBeHidden({ timeout: 15_000 });
     await expect(page.getByTestId('tutorial-panel')).toHaveCount(0);
     await expect(page.getByTitle(/Tutorial/)).toHaveCount(0);

@@ -95,6 +95,9 @@ export interface OfficeMcpFeature extends AgentMcpAccess {
    * for it.
    */
   handshake(send: (message: ServerMessage) => void, afterHooksAsks?: Promise<unknown>): void;
+  /** Settings → Replay the Intro: the Intro's MCP ask again, whatever was
+   *  answered, where the MCP is offered (`offered()`); elsewhere nothing. */
+  replayAsk(send: (message: ServerMessage) => void): void;
   /** Answer one of an office's MCP messages (consent, its switches, the editing
    *  locks, the layout editor's and the Characters view's undo); false when it isn't one. `client` is the office
    *  sending it; replies meant for it alone go to `reply`. */
@@ -254,6 +257,10 @@ export function composeOfficeMcp(surface: OfficeMcpSurface): OfficeMcpFeature {
       decide();
     },
     offered: () => officeMcp.offered(),
+
+    replayAsk(send) {
+      if (officeMcp.offered()) send(officeMcp.replayedConsentRequest());
+    },
 
     handshake(send, afterHooksAsks) {
       const offer = () => {

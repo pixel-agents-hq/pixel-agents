@@ -368,6 +368,13 @@ function App() {
   // checklist while a run is under way.
   const tutorial = useTutorial();
   const [tutorialRequested, setTutorialRequested] = useState(false);
+  // What was on as the Intro's asks arrived (first run, Settings → Replay the
+  // Intro): the choices' boxes start there.
+  const [introReplay, setIntroReplay] = useState<{
+    usage: boolean;
+    hooks: boolean;
+    mcp: boolean;
+  } | null>(null);
   const { expectLaunch } = terminalDrawer;
   const { start: startTutorial } = tutorial;
   const tutorialSteps = useMemo(
@@ -390,11 +397,27 @@ function App() {
     handleIntroClose();
     dismissOfficeMcpAsk();
     setTutorialRequested(false);
+    setIntroReplay(null);
   }, [handleIntroClose, dismissOfficeMcpAsk]);
 
   // The Settings surface renders one provider today; its checkbox binds to
   // the Claude row of the per-provider install-state map.
   const claudeHooksInstalled = hooksInstalled['claude'] === true;
+  // Every Intro's choices start from what is on as it opens (first run: nothing;
+  // a replay's: the machine's settings), so its Continue never turns off what
+  // was on without being unticked. Set as its ask arrives, before the dialog
+  // mounts (it reads them once).
+  if (introReplay === null && (consentRequest !== null || officeMcp.ask !== null)) {
+    setIntroReplay({
+      usage: usage.status?.installed === true,
+      hooks: claudeHooksInstalled,
+      mcp: officeMcp.status?.consent === 'granted',
+    });
+  }
+  // The Intro is up: what could take the user out of it mid-way is hidden or
+  // inert (the bottom toolbar, the PCs' panels; the canvas locks its own pieces
+  // while the greeter stands).
+  const introShowing = !!(intro || (officeMcp.ask && !consentRequest) || tutorialRequested);
 
   // Mutate Directory→Area mappings locally + send to server. Updates OfficeState in
   // the same tick so a follow-up agentCreated picks up the new mapping.
@@ -840,7 +863,7 @@ function App() {
               containerRef={containerRef}
               zoom={editor.zoom}
               panRef={editor.panRef}
-              readOnly={!canOpenPanels}
+              readOnly={!canOpenPanels || introShowing}
               // The Directory selector stands where the label would.
               hidden={directoryChoice !== null}
               alwaysShow={alwaysShowOverlay && !editor.isEditMode}
@@ -879,7 +902,7 @@ function App() {
 
       {/* A read-only office gets no toolbar: launching, layout editing and every
           setting would be refused by the server anyway. */}
-      {!isMobile && !officeReadOnly && (
+      {!isMobile && !officeReadOnly && !introShowing && (
         <BottomToolbar
           isEditMode={editor.isEditMode}
           onToggleEditMode={editor.handleToggleEditMode}
@@ -921,7 +944,7 @@ function App() {
       {/* A hooks ask still on its way into `intro` (useIntroTour takes it a
           render later) holds the MCP step back, so the tour opens on its
           first step rather than on the MCP step alone. */}
-      {(intro || (officeMcp.ask && !consentRequest) || tutorialRequested) && (
+      {introShowing && (
         <IntroDialog
           officeState={officeState}
           hooksAsk={intro}
@@ -935,6 +958,7 @@ function App() {
           onChoice={handleConsentChoice}
           onClose={handleTourClose}
           tutorial={tutorialSteps}
+          replay={introReplay ?? undefined}
           escapeSuppressed={
             isSettingsOpen ||
             isCharactersOpen ||
@@ -1176,6 +1200,11 @@ function App() {
         onImportLayout={handleImportLayout}
         onPlayTutorial={
           tutorial.status && !tutorial.status.run ? () => setTutorialRequested(true) : undefined
+        }
+        onReplayIntro={
+          !officeReadOnly && !introUnfinished
+            ? () => transport.send({ type: 'replayIntro' })
+            : undefined
         }
       />
 
