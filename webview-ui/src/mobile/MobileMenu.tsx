@@ -33,6 +33,8 @@ interface MobileMenuProps {
   worktrees?: WorktreesListing;
   /** Open the conversation search (over the menu). */
   onSearch?: (scope: ConversationSearchScope) => void;
+  /** Add a Directory, offered while the list has none (the menu closes first). */
+  onAddDirectory?: () => void;
 }
 
 /**
@@ -59,6 +61,7 @@ export function MobileMenu({
   statusFor,
   worktrees,
   onSearch,
+  onAddDirectory,
 }: MobileMenuProps) {
   useEffect(() => {
     if (!open) return;
@@ -133,6 +136,14 @@ export function MobileMenu({
             statusFor={statusFor}
             worktrees={worktrees}
             onSearch={onSearch}
+            onAddDirectory={
+              onAddDirectory
+                ? () => {
+                    onClose();
+                    onAddDirectory();
+                  }
+                : undefined
+            }
           />
         ) : (
           <div className="flex-1" />

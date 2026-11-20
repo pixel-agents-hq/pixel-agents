@@ -4,6 +4,7 @@ import { expect, test } from 'vitest';
 import {
   dragCarriesFiles,
   isLoopbackHostname,
+  pasteCarriesFiles,
   pathsToPaste,
   terminalFileLocateUrl,
   terminalFileUrl,
@@ -52,4 +53,18 @@ test('a file drag is told from a text drag, in every browser', () => {
   expect(dragCarriesFiles([])).toBe(false);
   // A drop that holds files counts whatever its types say.
   expect(dragCarriesFiles(['text/uri-list'], 1)).toBe(true);
+});
+
+test("a paste is one of files unless the clipboard holds a document's text beside them", () => {
+  // A screenshot; files copied in Explorer.
+  expect(pasteCarriesFiles(['Files'], 1)).toBe(true);
+  // A file copied in Finder also carries its name as text.
+  expect(pasteCarriesFiles(['text/plain', 'Files'], 1)).toBe(true);
+  // An image copied off a web page carries its markup.
+  expect(pasteCarriesFiles(['text/html', 'Files'], 1)).toBe(true);
+  // Cells copied from a spreadsheet: text, markup and a picture of them.
+  expect(pasteCarriesFiles(['text/plain', 'text/html', 'Files'], 1)).toBe(false);
+  // Plain text, and a type list that names files where none came.
+  expect(pasteCarriesFiles(['text/plain'], 0)).toBe(false);
+  expect(pasteCarriesFiles(['Files'], 0)).toBe(false);
 });

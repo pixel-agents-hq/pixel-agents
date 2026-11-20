@@ -253,3 +253,29 @@ test.describe('Standalone / conversation sidebar', () => {
     await expect(section).toHaveCount(0, promptly);
   });
 });
+
+test.describe('Standalone / conversation sidebar, as a new browser finds it', () => {
+  test.use({ standaloneOptions: { conversationSidebarAsFound: true } });
+
+  test('the sidebar starts shut, opens from its button and stays as it was left @area:standalone', async ({
+    page,
+    standalone: _standalone,
+  }) => {
+    const sidebar = page.getByTestId('conversation-sidebar');
+    const show = page.getByTitle('Show conversations');
+    await expect(show).toBeVisible();
+    await expect(sidebar).toBeHidden();
+
+    await show.click();
+    await expect(sidebar).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Settings' })).toBeVisible();
+
+    await page.reload();
+    await expect(sidebar).toBeVisible();
+    await page.getByTitle('Hide conversations').click();
+    await expect(sidebar).toBeHidden();
+    await page.reload();
+    await expect(page.getByTitle('Show conversations')).toBeVisible();
+    await expect(sidebar).toBeHidden();
+  });
+});

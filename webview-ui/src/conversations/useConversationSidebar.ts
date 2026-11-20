@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 
-import { CONVERSATION_SIDEBAR_SHUT_KEY } from '../constants.js';
+import { CONVERSATION_SIDEBAR_OPEN_KEY } from '../constants.js';
 
 export interface ConversationSidebar {
   /** Whether this office has the sidebar at all. */
@@ -12,34 +12,34 @@ export interface ConversationSidebar {
 
 /**
  * The desktop conversation sidebar. Resuming needs a terminal, so only a
- * tokened standalone office lists past conversations. Open unless this
- * browser last shut it.
+ * tokened standalone office lists past conversations. Shut until this
+ * browser opens it, and it stays as this browser last left it.
  */
 export function useConversationSidebar(
   terminalAvailable: boolean,
   officeReadOnly: boolean,
 ): ConversationSidebar {
-  const [open, setOpen] = useState(() => !storedSidebarShut());
+  const [open, setOpen] = useState(storedSidebarOpen);
   const toggle = useCallback(() => {
     const next = !open;
-    storeSidebarShut(!next);
+    storeSidebarOpen(next);
     setOpen(next);
   }, [open]);
   return { hasSidebar: terminalAvailable && !officeReadOnly, open, toggle };
 }
 
-function storedSidebarShut(): boolean {
+function storedSidebarOpen(): boolean {
   try {
-    return localStorage.getItem(CONVERSATION_SIDEBAR_SHUT_KEY) === '1';
+    return localStorage.getItem(CONVERSATION_SIDEBAR_OPEN_KEY) === '1';
   } catch {
     return false;
   }
 }
 
-function storeSidebarShut(shut: boolean): void {
+function storeSidebarOpen(open: boolean): void {
   try {
-    if (shut) localStorage.setItem(CONVERSATION_SIDEBAR_SHUT_KEY, '1');
-    else localStorage.removeItem(CONVERSATION_SIDEBAR_SHUT_KEY);
+    if (open) localStorage.setItem(CONVERSATION_SIDEBAR_OPEN_KEY, '1');
+    else localStorage.removeItem(CONVERSATION_SIDEBAR_OPEN_KEY);
   } catch {
     // Not remembered; it still opens and shuts.
   }

@@ -29,6 +29,8 @@ interface ConversationSidebarProps {
   worktrees?: WorktreesListing;
   /** Open the conversation search. */
   onSearch?: (scope: ConversationSearchScope) => void;
+  /** Add a Directory, offered while the list has none. */
+  onAddDirectory?: () => void;
 }
 
 export function ConversationSidebar({
@@ -40,6 +42,7 @@ export function ConversationSidebar({
   onToggleSettings,
   worktrees,
   onSearch,
+  onAddDirectory,
 }: ConversationSidebarProps) {
   const { rendered, shown, panelTransition, contentTransition, onPanelTransitionEnd } =
     useSlidePanel(open, { initiallyOpen: open });
@@ -73,6 +76,7 @@ export function ConversationSidebar({
           statusFor={statusFor}
           worktrees={worktrees}
           onSearch={onSearch}
+          onAddDirectory={onAddDirectory}
         />
         <div className="p-8 border-t-2 border-border">
           <Button

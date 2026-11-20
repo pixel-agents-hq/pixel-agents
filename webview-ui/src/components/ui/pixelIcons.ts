@@ -187,6 +187,17 @@ export const ICONS = {
     '##..####',
     '....####',
   ],
+  // A clock: the conversations' history (the sidebar's empty view).
+  history: [
+    '..####..',
+    '.#....#.',
+    '#..#...#',
+    '#..#...#',
+    '#..###.#',
+    '#......#',
+    '.#....#.',
+    '..####..',
+  ],
   office: [
     '...##...',
     '..####..',

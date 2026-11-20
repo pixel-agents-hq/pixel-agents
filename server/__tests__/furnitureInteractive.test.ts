@@ -28,8 +28,20 @@ import { loadAllFurniture } from '../src/assetReload.js';
 const ASSETS_ROOT = path.resolve(__dirname, '../../webview-ui/public');
 const ON_OFF = new Set(['on', 'off']);
 
-const FREE: PieceFacts = { agentAtWork: null, panelInUse: null, places: [], readOnly: false };
-const AGENT: PieceFacts = { ...FREE, agentAtWork: { id: 7, name: 'Ada' } };
+const FREE: PieceFacts = {
+  agentAtWork: null,
+  agentSeated: null,
+  panelInUse: null,
+  places: [],
+  readOnly: false,
+};
+const AGENT: PieceFacts = {
+  ...FREE,
+  agentAtWork: { id: 7, name: 'Ada' },
+  agentSeated: { id: 7, name: 'Ada' },
+};
+/** Ada's desk, Ada idle between turns. */
+const SEATED: PieceFacts = { ...FREE, agentSeated: { id: 7, name: 'Ada' } };
 const SHELL: PieceFacts = { ...FREE, panelInUse: { name: 'pixel-agents' } };
 const BOTH: PieceFacts = { ...AGENT, panelInUse: { name: 'pixel-agents' } };
 
@@ -39,7 +51,7 @@ const PC_LIKE: FurnitureInteractive = {
     name: 'PC',
     lines: [
       { when: ['panelInUse'], text: 'Shell in {panel}' },
-      { when: ['agentWorking'], text: '{agent} works here' },
+      { when: ['agentSeated'], text: '{agent} works here' },
       { when: ['free'], text: 'Free' },
     ],
   },
@@ -101,7 +113,7 @@ describe('parseInteractive: the one validator', () => {
     ['states that are not a list', { states: { state: 'on', when: 'free' } }],
     ['an unknown placeholder', { label: { name: 'PC', lines: [{ when: 'free', text: '{who}' }] } }],
     [
-      '{agent} on a line not shown on agentWorking alone',
+      '{agent} on a line not shown on agentWorking / agentSeated alone',
       { label: { name: 'PC', lines: [{ when: ['agentWorking', 'free'], text: '{agent}' }] } },
     ],
     [
@@ -184,6 +196,9 @@ describe('pieceView: the one rules function', () => {
     expect(pieceView(PC_LIKE, FREE).label).toEqual({ name: 'PC', line: 'Free' });
     expect(pieceView(PC_LIKE, AGENT).label).toEqual({ name: 'PC', line: 'Ada works here' });
     expect(pieceView(PC_LIKE, SHELL).label).toEqual({ name: 'PC', line: 'Shell in pixel-agents' });
+    // Ada's desk while she is idle: hers, not free, and off.
+    expect(pieceView(PC_LIKE, SEATED).label).toEqual({ name: 'PC', line: 'Ada works here' });
+    expect(pieceView(PC_LIKE, SEATED).state).toBeNull();
     // An agent at work AND a live shell: one line, the first that holds.
     expect(pieceView(PC_LIKE, BOTH).label).toEqual({ name: 'PC', line: 'Shell in pixel-agents' });
     const agentFirst: FurnitureInteractive = {
