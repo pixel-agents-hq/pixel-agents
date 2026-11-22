@@ -4,7 +4,13 @@
 # Add allowlist entries below to handle false positives.
 # See: https://github.com/gitleaks/gitleaks/wiki/Configuration#allowlists
 
+# Without this, a custom config replaces the built-in rules and nothing is detected.
+[extend]
+useDefault = true
+
 [allowlist]
+# Fake token used by server/__tests__/httpServerLog.test.ts
+regexes = ['''^c0ffee00-1234-4abc-9def-0123456789ab$''']
 # Example: allow a specific commit
 # commits = ["abc1234"]
 #
