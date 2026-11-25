@@ -59,7 +59,7 @@
         {
             "label": "Mocked Pixel Agent Dev Server",
             "type": "shell",
-            "command": "cd webview-ui && npm run dev",
+            "command": "cd webview-ui && bun run dev",
             "isBackground": true,
             "group": "build",
             "presentation": {
